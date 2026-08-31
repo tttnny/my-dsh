@@ -1,0 +1,24 @@
+{
+  "name": "@lynn123411/dsh-ask-user-grilling",
+  "version": "0.1.0",
+  "description": "DSH 适配工具：grilling 轮次提问（ask_user_grilling：子代理闸门/强制多选/补充选项/题干硬校验）与进入 plan mode（enter_plan_mode）。不改动任何技能文件。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "README.md"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.1.2-alpha.1",
+    "@deepseek-ai/dsh-user-questions": "^0.1.2-alpha.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

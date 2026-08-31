@@ -14,14 +14,16 @@
 | [@lynn123411/dsh-oil-sticky-prompt](./plugins/dsh-oil-sticky-prompt) | `dsh.bundle` + `dsh.client/web` | **对话吸顶提示**：将最近的用户 Prompt 悬浮固定在对话流顶部，点击平滑回滚至对应消息，告别长对话迷路 | `dsh plugin --profile web add @lynn123411/dsh-oil-sticky-prompt` |
 | [@lynn123411/dsh-chat-translate](./plugins/dsh-chat-translate) | `dsh.bundle` + `dsh.client/web` | **聊天翻译**：工具调用与思考摘要自动译中（仅当前会话、正文不翻）：OpenAI 兼容 AI 通道（可配 Base URL/模型，Key 存 `~/.dsh/.credentials.yaml`）+ 免 Key Bing 兜底双通道，内置「聊天翻译」面板 | `dsh plugin --profile web add @lynn123411/dsh-chat-translate` |
 | [@lynn123411/dsh-a6api](./plugins/dsh-a6api) | `dsh.bundle` + `dsh.client/web` | **A6API 接入**：将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，提供多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步、商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比） | `dsh plugin --profile web add @lynn123411/dsh-a6api` |
+| [@lynn123411/dsh-ask-user-grilling](./plugins/dsh-ask-user-grilling) | 普通 Cordis 插件（preset 工具行消费，非 bundle） | **grilling 适配工具**：`ask_user_grilling`（后台子代理闸门 / 强制多选 / 每问「✍️ 补充」选项 / 轮末补充问题 / 题干-选项分离硬校验）+ `enter_plan_mode`（grilling 共识后自动进入计划模式）。配合 `matt-standard` 预设使用，不改动任何技能文件 | 本地同步至 `~/.dsh/profiles/web/node_modules/@lynn123411/`（未发布，勿进 bundles/dependencies） |
 
 ---
 
-## 🎨 Agent Presets（dsh-presets/）
+## 🎨 Agent Presets（presets/）
 
 | preset | 说明 |
 | --- | --- |
-| [ptc-creative-cordis](./dsh-presets/ptc-creative-cordis) | **PTC 创造·混合模式**：融合 PTC `code` 多步工具编排与 Cordis 动态插件编辑（`preset.yml` + `agent.cordis.yml`），含 `cordis-plugin-development` / `editing-cordis-compositions` 随附技能，开箱与官方 `standard` / `code` / `cordis` 并列可选 |
+| [ptc-creative-cordis](./presets/ptc-creative-cordis) | **PTC 创造·混合模式**：融合 PTC `code` 多步工具编排与 Cordis 动态插件编辑（`preset.yml` + `agent.cordis.yml`），含 `cordis-plugin-development` / `editing-cordis-compositions` 随附技能，开箱与官方 `standard` / `code` / `cordis` 并列可选 |
+| [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：基于官方 `standard` 的全功能编码 Agent，随附 Matt Pocock 25 个工程/生产力技能（[mattpocock/skills](https://github.com/mattpocock/skills)，字节级原样）与 grilling 适配插件（`ask_user_grilling`：子代理闸门/强制多选/补充选项/题干硬校验；`enter_plan_mode`）。只适配不改本意，不影响 implement 等其他会话 |
 
 ---
 
