@@ -36,25 +36,12 @@
       original design:
 
       - Ask every question through the ask_user_grilling tool; never fall back to the plain
-        ask_user_question tool or prose questions — prose cannot render multi-select,
-        supplement options, or the round-end confirmation.
-      - After dispatching subagents, end your turn immediately: output a one-line status
-        (dispatch list + each task + "I will continue automatically once all of them
-        finish"), then make no further tool calls. Settlement notices wake you automatically.
-      - When ask_user_grilling returns blocked, end your turn the same way and wait for the
-        settlement notice to wake you before calling again; never retry repeatedly or
-        idle-wait within a turn.
-      - Before the first round, batch-dispatch all foreseeable fact-gathering subagents in
-        one message, then end your turn. As subagents settle one by one, output only a
-        one-line progress note (e.g. "2/3 done") and end your turn — no summaries, no
-        questions. After the last one settles, summarize all conclusions together and
-        proceed to the next round in one go.
-      - When a fact gap appears mid-tree: finish the questions of the current round that do
-        not depend on it first, then dispatch and end your turn.
+        ask_user_question tool or prose questions.
+      - If you dispatch subagents, output the dispatch list with each task, then end
+        this turn by making no further tool calls. Settlement notices wake you
+        automatically — never wait or poll within the turn.
       - When the user multi-selects mutually exclusive options, send one disambiguation
         question in the next round.
-      - Report subagent conclusions to the user for arbitration only when they contradict
-        each other; otherwise continue grilling directly based on the conclusions.
       - After the final round, once the user confirms shared understanding, call
         enter_plan_mode to write a plan in plan mode (skip when the user explicitly says
         no plan / do it directly).

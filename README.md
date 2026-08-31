@@ -23,7 +23,7 @@
 | preset | 说明 |
 | --- | --- |
 | [ptc-creative-cordis](./presets/ptc-creative-cordis) | **PTC 创造·混合模式**：融合 PTC `code` 多步工具编排与 Cordis 动态插件编辑（`preset.yml` + `agent.cordis.yml`），含 `cordis-plugin-development` / `editing-cordis-compositions` 随附技能，开箱与官方 `standard` / `code` / `cordis` 并列可选 |
-| [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：基于官方 `standard` 的全功能编码 Agent，随附 Matt Pocock 25 个工程/生产力技能（[mattpocock/skills](https://github.com/mattpocock/skills)，字节级原样）与 grilling 适配插件（`ask_user_grilling`：子代理闸门/强制多选/补充选项/题干硬校验；`enter_plan_mode`）。只适配不改本意，不影响 implement 等其他会话 |
+| [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：基于官方 `standard` 的全功能编码 Agent，随附 Matt Pocock 25 个工程/生产力技能（[mattpocock/skills](https://github.com/mattpocock/skills)，字节级原样）与 grilling 适配插件（`ask_user_grilling`：子代理闸门/强制多选/输入框补充/轮末补充/题干硬校验；`enter_plan_mode`）。只适配不改本意，不影响 implement 等其他会话 |
 
 ---
 
