@@ -29,20 +29,35 @@
     text: |
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
 
-      本 preset 随附 Matt Pocock 的 25 个工程/生产力技能，按需通过 skill 工具加载。
-      以下规则仅适用于 grilling 会话（grill-me / grill-with-docs / 其他技能内部的
-      grilling 流程）；其他会话（implement、to-spec、wayfinder、triage、teach 等）
-      不受影响，按技能原设计执行：
+      This preset ships Matt Pocock's 25 engineering/productivity skills, loaded on demand
+      via the skill tool. The rules below apply ONLY to grilling sessions (grill-me /
+      grill-with-docs / grilling flows inside other skills); other sessions (implement,
+      to-spec, wayfinder, triage, teach, etc.) are unaffected and follow the skills'
+      original design:
 
-      - 提问一律通过 ask_user_grilling 工具发出；不要用普通 ask_user_question 或散文
-        提问代替——散文提问无法渲染多选、补充选项和轮末确认机制。
-      - 开始 grilling 时若后台有子代理运行：先发「等子代理完毕我们再开始」状态行，
-        等待全部结束后再开始第一轮；等待期间不预览问题。
-      - 第一轮前先批量派出可预见的事实采集子代理，等齐再开始（事实先行）。
-      - 树中段发现事实缺口：同轮不依赖该事实的问题先问完，再暂停派发等待。
-      - 互斥选项被用户多选时，下一轮发一条消歧问题。
-      - 最后一轮答完、用户确认达成共识后，调用 enter_plan_mode 进入计划模式写方案
-        （用户明确说「不用方案/直接做」时跳过）。
+      - Ask every question through the ask_user_grilling tool; never fall back to the plain
+        ask_user_question tool or prose questions — prose cannot render multi-select,
+        supplement options, or the round-end confirmation.
+      - After dispatching subagents, end your turn immediately: output a one-line status
+        (dispatch list + each task + "I will continue automatically once all of them
+        finish"), then make no further tool calls. Settlement notices wake you automatically.
+      - When ask_user_grilling returns blocked, end your turn the same way and wait for the
+        settlement notice to wake you before calling again; never retry repeatedly or
+        idle-wait within a turn.
+      - Before the first round, batch-dispatch all foreseeable fact-gathering subagents in
+        one message, then end your turn. As subagents settle one by one, output only a
+        one-line progress note (e.g. "2/3 done") and end your turn — no summaries, no
+        questions. After the last one settles, summarize all conclusions together and
+        proceed to the next round in one go.
+      - When a fact gap appears mid-tree: finish the questions of the current round that do
+        not depend on it first, then dispatch and end your turn.
+      - When the user multi-selects mutually exclusive options, send one disambiguation
+        question in the next round.
+      - Report subagent conclusions to the user for arbitration only when they contradict
+        each other; otherwise continue grilling directly based on the conclusions.
+      - After the final round, once the user confirms shared understanding, call
+        enter_plan_mode to write a plan in plan mode (skip when the user explicitly says
+        no plan / do it directly).
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -217,6 +232,10 @@
         toolName: subagent
         modelSelectionSettings: true
         backgroundMode: continuable
+        # maxDepth is an ABSOLUTE depth cap: main agent (depth 0) may delegate
+        # one layer; a subagent (depth 1) delegating again exceeds 1 and gets a
+        # SubagentDepthError at its own tool call — no grandchild delegation.
+        maxDepth: 1
 
     # Fork omits model selection so provider/model stay equal to the parent and
     # the inherited history remains eligible for KV Cache reuse. This preset
@@ -228,6 +247,7 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
+        maxDepth: 1
 
     # Production dsh does not install these optional providers. Install the
     # matching Bundle in this Profile and restart the Host, then copy this

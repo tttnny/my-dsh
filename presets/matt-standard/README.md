@@ -4,9 +4,11 @@
 
 设计原则：**只适配不改本意**——25 个技能文件一个字节不改，预设只提供 DSH 侧的输送机制：
 
-- `ask_user_grilling`：grilling 轮次专用提问工具——后台子代理闸门、强制多选、每问「✍️ 补充」选项、轮末补充问题、题干/选项分离硬校验；
+- `ask_user_grilling`：grilling 轮次专用提问工具——后台子代理闸门、强制多选、每问「补充」选项、轮末补充问题、题干只含问题本身的引导（不硬校验）；
 - `enter_plan_mode`：grilling 共识确认后自动进入 plan mode 写方案，防止 agent 自行开始执行；
-- persona 仅含 grilling 限定的 DSH 执行纪律，不影响 implement / to-spec / wayfinder / triage 等其他会话类型。
+- persona 仅含 grilling 限定的 DSH 执行纪律，不影响 implement / to-spec / wayfinder / triage 等其他会话类型；
+- **派遣即结束**：主 agent 派遣子代理后立即结束回合（状态行 = 名单 + 分工 + 自动继续说明），子代理结算通知自动唤醒；子代理逐个完成仅输出进度，全部完成后统一汇总进入下一轮；
+- **禁止双层子代理**：`delegation` 两个委派工具行 `maxDepth: 1`，子代理再派遣直接报错。
 
 ## 安装与启用
 
