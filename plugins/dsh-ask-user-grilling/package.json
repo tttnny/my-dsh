@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-ask-user-grilling",
   "version": "0.1.0",
-  "description": "DSH 适配工具：grilling 轮次提问（ask_user_grilling：子代理闸门/强制多选/补充选项/题干硬校验）与进入 plan mode（enter_plan_mode）。不改动任何技能文件。",
+  "description": "DSH delivery adaptations for grilling rounds: ask_user_grilling (subagent gate / forced multi-select / supplement option / stem guidance) and enter_plan_mode. Does not modify any skill file.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

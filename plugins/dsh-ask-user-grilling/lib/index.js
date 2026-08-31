@@ -9,8 +9,9 @@ import "@deepseek-ai/dsh-user-questions";
  * ask_user_grilling:
  *   - gate: refuses while background subagents are running (R1)
  *   - forces multi-select on every question (R2)
- *   - appends a per-question "✍️ 补充" option and a round-end question (R3)
- *   - rejects stems that contain option labels (R4)
+ *   - appends a per-question "Supplement" option and a round-end question (R3)
+ *   - stem/option separation is guidance only — never rejects stems (R4
+ *     relaxed: substring checks false-positive on legitimate stems)
  *
  * enter_plan_mode:
  *   - activates DSH plan mode for the current agent (planMode.set)
@@ -19,17 +20,17 @@ const name = "tool-ask-user-grilling";
 const inject = ["tools", "userQuestions"];
 
 const SUPPLEMENT_OPTION = {
-  label: "✍️ 补充",
-  description: "勾选此项，并在回复中写下你对这个问题的补充。",
+  label: "Supplement",
+  description: "Select this and write your supplement for this question in your reply.",
 };
 
 const ROUND_END_QUESTION = {
   id: "__grill_round_supplement__",
-  question: "本轮还有什么要补充或调整的吗？",
-  header: "本轮补充",
+  question: "Anything else to add or adjust this round?",
+  header: "Round supplement",
   options: [
-    { label: "✓ 无补充" },
-    { label: "✍️ 有补充（在回复中写明）", description: "勾选此项，并在回复中写下本轮的任何补充或调整。" },
+    { label: "Nothing to add" },
+    { label: "I have something to add (write it in my reply)", description: "Select this and write any additions or adjustments for this round in your reply." },
   ],
   multiSelect: true,
 };
@@ -41,7 +42,7 @@ function displayName(entry) {
 function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
-    description: "Ask the user a ROUND of grilling questions (decision-tree interview). Use for grilling sessions (grill-me / grill-with-docs / triage / wayfinder / architecture grilling): send ALL frontier questions of the current round in ONE call. The tool forces multi-select, appends a per-question '✍️ 补充' option, and appends a round-end supplement question automatically. If background subagents are running, this tool returns blocked — wait for them to finish, then call again. The question stem must contain ONLY the question itself; never repeat any option label inside the stem. Example of one round with two questions: questions: [{ id: 'q1', question: 'Which issue tracker?', options: [{ label: 'GitHub' }, { label: 'Local markdown' }] }, { id: 'q2', question: 'Any deadline?', options: [{ label: 'This week' }, { label: 'Next month' }] }].",
+    description: "Ask the user a ROUND of grilling questions (decision-tree interview). Use for grilling sessions (grill-me / grill-with-docs / triage / wayfinder / architecture grilling): send ALL frontier questions of the current round in ONE call. The tool forces multi-select, appends a per-question 'Supplement' option, and appends a round-end supplement question automatically. If background subagents are running, this tool returns blocked — do NOT retry within the same turn: end your turn and wait; the settlement notice will wake you automatically, then call again. Keep the question stem to the question itself, without repeating option labels (style guidance only — stems are never rejected). Example of one round with two questions: questions: [{ id: 'q1', question: 'Which issue tracker?', options: [{ label: 'GitHub' }, { label: 'Local markdown' }] }, { id: 'q2', question: 'Any deadline?', options: [{ label: 'This week' }, { label: 'Next month' }] }].",
     parameters: {
       questions: {
         type: "array",
@@ -104,12 +105,12 @@ function apply(ctx) {
           },
           rejected: {
             type: "boolean",
-            description: "True when the stem/option hygiene check failed and the round was not asked.",
+            description: "True when input validation failed and the round was not asked.",
           },
           violations: {
             type: "array",
             items: { type: "string" },
-            description: "Stem/option violations when rejected.",
+            description: "Validation violations when rejected (reserved id prefix only).",
           },
           error: { type: "string" },
           answers: {
@@ -148,7 +149,7 @@ function apply(ctx) {
           return {
             blocked: true,
             waiting: [],
-            error: "无法确认后台子代理状态（subagents 查询失败）。请稍后重新调用本工具。",
+            error: "Cannot confirm background subagent status (subagents query failed). Please call this tool again later.",
           };
         }
       }
@@ -156,33 +157,26 @@ function apply(ctx) {
         return {
           blocked: true,
           waiting,
-          error: `后台仍有 ${waiting.length} 个子代理运行中（${waiting.join("、")}）。等待其全部完成后重新调用本工具。`,
+          error: `Still ${waiting.length} subagent(s) running (${waiting.join(", ")}). End your turn and wait — the settlement notice will wake you automatically, then call again.`,
         };
       }
 
-      // 2. input validation on the ORIGINAL questions (R4): stem/option hygiene
-      //    + reserved id prefix guard (the round-end question owns __grill_)
+      // 2. input validation: reserved id prefix guard only (the round-end
+      //    question owns __grill_). Stem/option separation (R4) is guidance,
+      //    NOT enforced: substring matching rejected legitimate stems (e.g. a
+      //    stem that naturally mentions an option name), so no stem check may
+      //    refuse a round — a bad stem is preferable to a false rejection.
       const violations = [];
       for (const question of args.questions) {
         if (typeof question.id === "string" && question.id.startsWith("__grill_")) {
-          violations.push(`问题 id「${question.id}」使用了保留前缀 __grill_`);
-        }
-        const stem = question.question ?? "";
-        if (stem.includes(SUPPLEMENT_OPTION.label)) {
-          violations.push(`题干「${stem}」包含保留选项「${SUPPLEMENT_OPTION.label}」`);
-        }
-        for (const option of question.options ?? []) {
-          const label = option.label;
-          if (typeof label === "string" && label.trim().length > 0 && stem.includes(label)) {
-            violations.push(`题干「${stem}」包含选项「${label}」`);
-          }
+          violations.push(`Question id "${question.id}" uses the reserved prefix __grill_`);
         }
       }
       if (violations.length > 0) {
         return {
           rejected: true,
           violations,
-          error: "输入不符合要求：题干不得包含选项内容（选项只出现在选项列表里）；问题 id 不得使用保留前缀 __grill_。请修正后重新调用本工具。",
+          error: "Question ids must not use the reserved prefix __grill_ (reserved for the round-end supplement question). Fix the ids and call this tool again.",
         };
       }
 
