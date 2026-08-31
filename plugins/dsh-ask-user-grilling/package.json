@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-ask-user-grilling",
-  "version": "0.1.1",
-  "description": "DSH delivery adaptations for grilling rounds: ask_user_grilling (subagent gate / forced multi-select / supplement option / stem guidance) and enter_plan_mode. Does not modify any skill file.",
+  "version": "0.1.2",
+  "description": "DSH delivery adaptations for grilling rounds: ask_user_grilling (subagent gate / forced multi-select / round-end supplement / stem guidance) and enter_plan_mode. Does not modify any skill file.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

@@ -9,7 +9,10 @@ import "@deepseek-ai/dsh-user-questions";
  * ask_user_grilling:
  *   - gate: refuses while background subagents are running (R1)
  *   - forces multi-select on every question (R2)
- *   - appends a per-question "Supplement" option and a round-end question (R3)
+ *   - appends a round-end supplement question (R3) — per-question supplement is
+ *     via the built-in custom input ("Type your answer" / "输入你的答案"), no
+ *     extra per-question "Supplement" option to avoid duplication with that
+ *     field (see image.png issue: checkbox + input were redundant)
  *   - stem/option separation is guidance only — never rejects stems (R4
  *     relaxed: substring checks false-positive on legitimate stems)
  *
@@ -19,18 +22,12 @@ import "@deepseek-ai/dsh-user-questions";
 const name = "tool-ask-user-grilling";
 const inject = ["tools", "userQuestions"];
 
-const SUPPLEMENT_OPTION = {
-  label: "Supplement",
-  description: "Select this and write your supplement for this question in your reply.",
-};
-
 const ROUND_END_QUESTION = {
   id: "__grill_round_supplement__",
-  question: "Anything else to add or adjust this round?",
-  header: "Round supplement",
+  question: "这轮还有什么要补充或调整的吗？",
+  header: "轮末补充",
   options: [
-    { label: "Nothing to add" },
-    { label: "I have something to add (write it in my reply)", description: "Select this and write any additions or adjustments for this round in your reply." },
+    { label: "无需补充" },
   ],
   multiSelect: true,
 };
@@ -42,7 +39,7 @@ function displayName(entry) {
 function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
-    description: "Ask the user a ROUND of grilling questions (decision-tree interview). Use for grilling sessions (grill-me / grill-with-docs / triage / wayfinder / architecture grilling): send ALL frontier questions of the current round in ONE call. The tool forces multi-select, appends a per-question 'Supplement' option, and appends a round-end supplement question automatically. If background subagents are running, this tool returns blocked — do NOT retry within the same turn: end your turn and wait; the settlement notice will wake you automatically, then call again. Keep the question stem to the question itself, without repeating option labels (style guidance only — stems are never rejected). Example of one round with two questions: questions: [{ id: 'q1', question: 'Which issue tracker?', options: [{ label: 'GitHub' }, { label: 'Local markdown' }] }, { id: 'q2', question: 'Any deadline?', options: [{ label: 'This week' }, { label: 'Next month' }] }].",
+    description: "Ask the user a ROUND of grilling questions (decision-tree interview). Use for grilling sessions (grill-me / grill-with-docs / triage / wayfinder / architecture grilling): send ALL frontier questions of the current round in ONE call. The tool forces multi-select and appends a round-end supplement question automatically; per-question supplement is via the built-in custom input (\"Type your answer\" / \"输入你的答案\") — no extra per-question option is added (avoids duplication where a \"Supplement\" checkbox and the custom field were both shown). The round-end question has a single \"无需补充\" option and its supplement is also via custom input. If background subagents are running, this tool returns blocked — do NOT retry within the same turn: end your turn and wait; the settlement notice will wake you automatically, then call again. Keep the question stem to the question itself, without repeating option labels (style guidance only — stems are never rejected). Example of one round with two questions: questions: [{ id: 'q1', question: 'Which issue tracker?', options: [{ label: 'GitHub' }, { label: 'Local markdown' }] }, { id: 'q2', question: 'Any deadline?', options: [{ label: 'This week' }, { label: 'Next month' }] }].",
     parameters: {
       questions: {
         type: "array",
@@ -180,7 +177,7 @@ function apply(ctx) {
         };
       }
 
-      // 3. transform: force multi-select (R2), append supplement option (R3)
+      // 3. transform: force multi-select (R2); per-question supplement is via the built-in custom input ("Type your answer"/"输入你的答案") — no extra option is added to avoid duplication with that field
       const questions = args.questions.map((question) => ({
         id: question.id,
         question: question.question,
@@ -190,12 +187,11 @@ function apply(ctx) {
             label: option.label,
             ...(option.description !== undefined ? { description: option.description } : {}),
           })),
-          SUPPLEMENT_OPTION,
         ],
         multiSelect: true,
       }));
 
-      // 4. round-end supplement question (R3)
+      // 4. round-end supplement question (R3) — single "无需补充" option; supplement is via custom input, so no "I have something to add" option (duplicates that field)
       questions.push(ROUND_END_QUESTION);
 
       // 5. ask through the userQuestions seam (UI renders from the service)
