@@ -2489,7 +2489,7 @@ var A6ApiSidebarCardBody = ({
     /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
       "span",
       {
-        className: "dsh-a6-side-btn-wrap",
+        className: `dsh-a6-side-btn-wrap${wide ? "" : " rail"}`,
         "data-tooltip": !canOpen ? "\u5F53\u524D\u4F1A\u8BDD\u672A\u4F7F\u7528 A6api \u6A21\u578B" : void 0,
         children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
           "button",
@@ -4283,6 +4283,14 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 .dsh-a6-side-btn-wrap {
   display: flex;
   min-width: 0;
+  /* footerActions \u662F\u884C\u5411 flex \u5BB9\u5668(width:100%)\uFF1A\u62C9\u4F38\u5360\u6EE1,\u4E0E\u4E0A\u65B9\u300C\u8BBE\u7F6E\u300D\u6309\u94AE\u540C\u5BBD\u7684\u4E00\u6A2A\u6761 */
+  flex: 1;
+}
+
+/* rail(\u6298\u53E0)\u6001:footerActions \u6536\u7F29\u4E3A\u5C45\u4E2D\u5185\u5BB9\u5BBD,wrap \u4E0D\u53C2\u4E0E\u62C9\u4F38 */
+.dsh-a6-side-btn-wrap.rail {
+  flex: none;
+  width: auto;
 }
 
 /* \u539F\u751F\u98CE\u683C:\u5BF9\u9F50\u8BBE\u7F6E\u6309\u94AE(42px \u900F\u660E\u5E7D\u7075\u6309\u94AE,\u65E0\u8FB9\u6846\u65E0\u5E95\u8272,label-primary \u6587\u5B57,

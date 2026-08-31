@@ -1696,6 +1696,14 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 .dsh-a6-side-btn-wrap {
   display: flex;
   min-width: 0;
+  /* footerActions 是行向 flex 容器(width:100%)：拉伸占满,与上方「设置」按钮同宽的一横条 */
+  flex: 1;
+}
+
+/* rail(折叠)态:footerActions 收缩为居中内容宽,wrap 不参与拉伸 */
+.dsh-a6-side-btn-wrap.rail {
+  flex: none;
+  width: auto;
 }
 
 /* 原生风格:对齐设置按钮(42px 透明幽灵按钮,无边框无底色,label-primary 文字,

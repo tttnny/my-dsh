@@ -242,7 +242,7 @@ const A6ApiSidebarCardBody: React.FC<A6ApiSidebarCardBodyProps> = ({
   return (
     <>
       <span
-        className="dsh-a6-side-btn-wrap"
+        className={`dsh-a6-side-btn-wrap${wide ? '' : ' rail'}`}
         data-tooltip={!canOpen ? '当前会话未使用 A6api 模型' : undefined}
       >
         <button
