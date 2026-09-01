@@ -600,8 +600,18 @@ function useSimpleVirtualizer({ count, getScrollElement, estimateSize, overscan 
     return { offsets, total };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count, estimateSize, state.tick]);
-  const start = Math.max(0, Math.floor(scrollTop / estimateSize) - overscan);
-  const end = Math.min(count, Math.ceil((scrollTop + viewport) / estimateSize) + overscan);
+  function findIndexForOffset(value, offsets) {
+    let low = 0;
+    let high = offsets.length - 1;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (offsets[mid] <= value) low = mid + 1;
+      else high = mid;
+    }
+    return Math.max(0, low - 1);
+  }
+  const start = Math.max(0, findIndexForOffset(scrollTop, metrics.offsets) - overscan);
+  const end = Math.min(count, findIndexForOffset(scrollTop + viewport, metrics.offsets) + 1 + overscan);
   const items = [];
   for (let index = start; index < end; index++) items.push(index);
   const measure = (index) => (el) => {

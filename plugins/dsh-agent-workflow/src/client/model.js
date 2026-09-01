@@ -8,8 +8,11 @@ const WorkflowStatus = {
   ERROR: 'error',
 };
 
+const STEP_TITLE_PREFIX = 'Step ';
 function stepNumber(title) {
-  const match = /^Step (\d+)$/.exec(title);
+  if (!title.startsWith(STEP_TITLE_PREFIX)) return null;
+  const rest = title.slice(STEP_TITLE_PREFIX.length).trim();
+  const match = /^(\d+)(?:\b|$)/.exec(rest);
   return match === null ? null : Number(match[1]);
 }
 
@@ -71,6 +74,7 @@ function callDuration(request, cells) {
 
 function turnStatus(calls) {
   if (calls.some(call => call.status === 'running')) return 'running';
+  if (calls.some(call => call.status === 'error')) return 'error';
   const last = calls.at(-1);
   return last !== undefined ? last.status : 'waiting';
 }

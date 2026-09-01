@@ -8,14 +8,14 @@
 const EMPTY_LIST = [];
 
 /** Stable empty target used until a Session has assembled Workflow records. */
-const EMPTY_WORKFLOW_SNAPSHOT = {
-  eventNodes: EMPTY_LIST,
+const EMPTY_WORKFLOW_SNAPSHOT = Object.freeze({
+  eventNodes: Object.freeze(EMPTY_LIST),
   eventLocations: new Map(),
-  requests: EMPTY_LIST,
+  requests: Object.freeze(EMPTY_LIST),
   callSchemas: new Map(),
   partial: null,
-  runningCalls: EMPTY_LIST,
-};
+  runningCalls: Object.freeze(EMPTY_LIST),
+});
 
 function workflowNode(context, anchorSeq, data) {
   return {
@@ -90,20 +90,22 @@ function interruptCompactions(requests, boundaries) {
       }
       nextRequest++;
     }
-    let index = runningCompactions.pop();
-    while (index !== undefined && requests[index] !== undefined
-      && requests[index].status !== 'running') {
-      index = runningCompactions.pop();
+    // Interrupt all running compactions accumulated before this boundary (supports concurrent compactions via replay)
+    while (runningCompactions.length > 0) {
+      let index = runningCompactions.pop();
+      while (index !== undefined && requests[index] !== undefined && requests[index].status !== 'running') {
+        index = runningCompactions.pop();
+      }
+      if (index === undefined) break;
+      const request = requests[index];
+      if (request === undefined || request.purpose !== 'compaction') continue;
+      requests[index] = {
+        ...request,
+        completedAt: boundary.time,
+        status: 'error',
+        error: COMPACTION_INTERRUPTED_ERROR,
+      };
     }
-    if (index === undefined) continue;
-    const request = requests[index];
-    if (request === undefined || request.purpose !== 'compaction') continue;
-    requests[index] = {
-      ...request,
-      completedAt: boundary.time,
-      status: 'error',
-      error: COMPACTION_INTERRUPTED_ERROR,
-    };
   }
 }
 
@@ -142,7 +144,8 @@ function applySurfaceRecord(entries, record) {
   const start = entries.findIndex(entry => entry.seq === operation.start);
   const end = entries.findIndex(entry => entry.seq === operation.end);
   if (start === -1 || end === -1 || start > end) {
-    entries.splice(0, entries.length, next);
+    if (typeof console !== 'undefined' && console.warn) console.warn('[dsh-agent-workflow] surface replace range not found, appending', operation);
+    entries.push(next);
     return;
   }
   entries.splice(start, end - start + 1, next);
@@ -176,7 +179,6 @@ class WorkflowSnapshotBuilder {
     this.nodes = new Map();
     this.positions = new Map();
     this.contributions = [];
-    this.empty = EMPTY_WORKFLOW_SNAPSHOT;
   }
 
   replace(input) {
@@ -212,9 +214,7 @@ class WorkflowSnapshotBuilder {
       const previous = headersByStep.get(key);
       headersByStep.set(key, {
         latest: contribution.data.header,
-        ...(contribution.data.header.change !== undefined
-          ? { change: contribution.data.header.change }
-          : previous !== undefined && previous.change !== undefined ? { change: previous.change } : {}),
+        ...(contribution.data.header.change !== undefined ? { change: contribution.data.header.change } : {}),
       });
     }
     const finalized = [];
@@ -263,7 +263,7 @@ class WorkflowSnapshotBuilder {
       if (data.kind === 'tool') {
         if ('kind' in data.root) finalized.push(data.root);
         else runningCalls.push(data.root);
-        if (previousHeader !== undefined && previousHeader.seq < contribution.anchorSeq) {
+        if (previousHeader !== undefined && previousHeader.seq <= contribution.anchorSeq) {
           captureSchemas(data.root, previousTools, callSchemas);
         }
         continue;

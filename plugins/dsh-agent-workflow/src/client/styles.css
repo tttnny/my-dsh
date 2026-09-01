@@ -379,8 +379,8 @@ body[data-ds-dark-theme] .dshaw-jsonDialogBody {
 }
 
 @media (max-width: 560px) {
-  .dshaw-metric:nth-child(4) { display: none; }
-  .dshaw-callHeader > span:not(.dshaw-status) { display: none; }
+  .dshaw-callHeader { gap: 8px; overflow-x: auto; flex-wrap: nowrap; }
+  .dshaw-callHeader > span:not(.dshaw-status) { display: inline-flex; font-size: 9px; }
   .dshaw-flowCard { flex-basis: 178px; }
   .dshaw-jsonDialog.dshaw-jsonDialog { width: calc(100vw - 20px); height: calc(100vh - 20px); border-radius: 10px; }
   .dshaw-jsonDialogBody { padding: 14px 12px 20px; }
