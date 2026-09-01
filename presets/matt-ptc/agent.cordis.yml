@@ -1,8 +1,8 @@
 # The `matt-ptc` agent preset: everything in `matt-standard` (the full coding
 # agent, the 25 mattpocock/skills shipped verbatim under skills/, and the DSH
-# grilling adaptations), plus the official `ptc` presentation row in `both`
-# mode: the model keeps every native tool (grilling interaction included) and
-# additionally gets a generated SDK with `run_code`, so a sequence that would
+# grilling adaptations), plus the official `ptc` presentation row in `ptc`
+# mode: the model sees only `run_code` and reaches every tool (grilling
+# interaction included) through the generated SDK, so a sequence that would
 # be five round trips can become one program.
 #
 # This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
@@ -32,6 +32,10 @@
     text: |
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
 
+      This session presents every tool in PTC mode: the ONLY tool you may call directly is `run_code`, and it takes two REQUIRED top-level arguments — `code` (the body of an async program) and `description` (a short summary of the program). These are top-level arguments of `run_code` itself: the `description` you pass inside the program to another tool, like `tools.bash({ description, ... })`, is a DIFFERENT argument and does not satisfy the requirement. Omitting either top-level argument is rejected with exactly `Error: invalid arguments: missing required property "code"` / `"description"` — if you see that error, add the missing TOP-LEVEL argument to `run_code`, not to a tool call inside the program.
+
+      Every other tool (bash, fs, skill, subagent, ask_user_grilling, ask_user_question, enter_plan_mode, ...) is reached ONLY from inside a `run_code` program as `await tools.<name>(args)` — e.g. `await tools.ask_user_grilling({...})`. A direct call to any other tool fails with `unknown tool`. The rules and skill documents below are written in native-tool wording ("ask through the ask_user_grilling tool", "call enter_plan_mode"): interpret every such instruction as a `tools.<name>(...)` call inside a `run_code` program, and include that program's own top-level `code` AND `description`.
+
       This preset ships Matt Pocock's 25 engineering/productivity skills, loaded on demand via the skill tool. The rules below apply ONLY to grilling sessions (grill-me / grill-with-docs / grilling flows inside other skills — including the grilling phases of triage, wayfinder and improve-codebase-architecture); all other sessions (implement, to-spec, teach, etc.) are unaffected and follow the skills' original design. Interview flows that merely look like grilling — to-questionnaire's "Grill the send", to-tickets' "Quiz the user", and the questions of setup-matt-pocock-skills, wizard, teach, prototype, diagnosing-bugs, code-review and research — are NOT grilling rounds and keep the plain ask_user_question tool. In triage, wayfinder and improve-codebase-architecture, ONLY their grilling phases are grilling sessions for these rules; every other question in those sessions (one-off picks, confirmations, direction requests) follows the skills' original design and uses the plain ask_user_question tool:
 
       - Ask every question through the ask_user_grilling tool; never fall back to the plain ask_user_question tool or prose questions.
@@ -39,6 +43,8 @@
       - When the user multi-selects mutually exclusive options, send one disambiguation question in the next round.
       - After the final round is over and the user confirms reaching a consensus, you need to confirm with the user (ask this final confirmation with the plain ask_user_question tool, not ask_user_grilling): Generate an execution plan or execute directly? If you choose to generate a plan, call enter_plan_mode to enter the plan mode and write the plan (if the user explicitly requests not to generate a plan, skip this step and directly execute).
       - Once in plan mode, clarifying questions follow the plan-mode rules and use the plain ask_user_question tool.
+
+      — and remember: in this session you reach every tool, including ask_user_grilling / ask_user_question / enter_plan_mode, through `tools.<name>(...)` inside `run_code({ code, description })`.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -286,11 +292,12 @@
 
 # ── presentation ────────────────────────────────────────────────────────────
 
-# PTC + native presentation for this agent alone (from the official `ptc`
-# preset, widened to `both`). The row waits for the host's `codeRuntime`
+# PTC mode for this agent alone (from the official `ptc` preset): the model
+# sees only `run_code` and reaches every tool (grilling interaction included)
+# through the generated SDK. The row waits for the host's `codeRuntime`
 # rather than assuming it: a deployment that composes no TypeScript runtime
 # fails this preset at mount, naming this id, instead of at the first request.
 - id: tool-presentation
   name: '@deepseek-ai/dsh-agent-tool-presentation'
   config:
-    mode: both
+    mode: ptc

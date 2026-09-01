@@ -1,17 +1,19 @@
-# matt-ptc — Matt PTC 模式
+# matt-ptc — Matt PTC 模式（实验性）
 
-> **matt-standard 全量 ＋ 官方 `ptc` 呈现（`mode: both`）**：25 个 Matt Pocock 工程/生产力技能与 grilling 适配工具（`ask_user_grilling` / `enter_plan_mode`）原样保留，同时模型额外获得 `run_code` ＋ 生成的 SDK——多步工具序列可写成一个 TypeScript 程序一次执行，grilling 交互仍走原生工具。
+> **matt-standard 全量 ＋ 官方 `ptc` 呈现（`mode: ptc`）**：25 个 Matt Pocock 工程/生产力技能与 grilling 适配工具（`ask_user_grilling` / `enter_plan_mode`）原样保留，但模型只见 `run_code`，一切工具（含 grilling 交互）都通过生成的 SDK 以脚本形式调用。
+
+> ⚠️ **实验性 preset**：早期版本用 `mode: both`（原生工具与 run_code SDK 并存），实测模型倾向直接调用原生工具、不会主动写脚本，PTC 呈现形同虚设；现改为官方 `ptc` 模式强制脚本化。副作用是 grilling 的多轮交互也必须写成代码通过 SDK 调用，不再有原生交互体验。若你更需要原生 grilling 交互，请改用 [matt-standard](./matt-standard/README.md)；若只想保留 PTC 脚本化能力，这是本 preset 的定位。
 
 ## 与 matt-standard 的关系
 
 | 项 | matt-standard | matt-ptc |
 | --- | --- | --- |
 | 25 个 Matt 技能 | ✅ 字节级原样 | ✅ 字节级原样 |
-| grilling 适配（ask_user_grilling / enter_plan_mode） | ✅ | ✅ |
+| grilling 适配（ask_user_grilling / enter_plan_mode） | ✅ 原生工具 | ✅ 折叠进 SDK（脚本调用） |
 | 禁止双层子代理（maxDepth: 1） | ✅ | ✅ |
-| PTC 呈现 | ❌（纯原生工具） | ✅ `mode: both`（原生 + run_code SDK 并存） |
+| PTC 呈现 | ❌（纯原生工具） | ✅ `mode: ptc`（强制 run_code 脚本） |
 
-`mode: both` 而非官方 `ptc` 的 `mode: ptc`：纯 PTC 下模型只见 `run_code`，grilling 的多轮交互也会被迫写成代码；`both` 保留原生交互，同时获得批量编排能力。宿主未组装 TypeScript 代码运行时时本 preset 会在挂载时报错点名 `tool-presentation` 行。
+`mode: ptc` 与官方 `ptc` 预设一致：模型只见 `run_code`，所有工具通过 SDK 调用；grilling 交互也因此被折叠进脚本。宿主未组装 TypeScript 代码运行时时本 preset 会在挂载时报错点名 `tool-presentation` 行。
 
 ## 安装与启用
 
@@ -33,7 +35,7 @@ dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 
 ```
 matt-ptc/
-├── agent.cordis.yml       # Preset 主配置（matt-standard 全量 + tool-presentation mode: both）
+├── agent.cordis.yml       # Preset 主配置（matt-standard 全量 + tool-presentation mode: ptc）
 ├── preset.yml             # Preset 元数据（显示名称与描述）
 ├── README.md              # 仓库说明文档（导入 ~/.dsh/.agent-presets/ 时不带入）
 └── skills/                # mattpocock/skills 25 个技能（字节级原样，勿改）

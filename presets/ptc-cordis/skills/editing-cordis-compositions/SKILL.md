@@ -3,6 +3,8 @@ name: editing-cordis-compositions
 description: Use when creating, changing, or validating a Cordis composition for this harness — writing or editing an agent preset, adding or removing a plugin row, deciding whether something belongs to the host composition or to one session, checking whether a preset you authored actually mounts, or diagnosing a row that mounted but contributed nothing.
 ---
 
+> **PTC 模式适配（仅 ptc-cordis 预设）**：本 preset 下没有任何工具可以直接调用——唯一可直接调用的是 `run_code`，它有两个顶层必填参数 `code` 和 `description`。本技能中所有工具名（如 `cordis_mount`、`cordis_inspect`）均指 `run_code` 程序内的 SDK 绑定（`await tools.cordis_mount({...})`），技能内容按原生工具编写，请自动换算为程序内调用。
+
 # Editing Cordis compositions
 
 Every capability in this harness is a plugin row in a `cordis.yml`. There is no separate configuration language: changing what an agent can do means changing which rows are composed for it.

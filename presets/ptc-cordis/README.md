@@ -1,6 +1,6 @@
 # ptc-cordis — PTC-Cordis 混合模式
 
-> 融合 **PTC** 与 **Cordis 创造能力**：原生工具与 `run_code` SDK 并存（`mode: both`），既能用 SDK 一次组合多步工具，又能动态定义 / 修改 Cordis 插件（`cordis_define` / `cordis_run`）。
+> 融合 **PTC** 与 **Cordis 创造能力**（`mode: ptc`）：模型只见 `run_code`，所有工具（含 `cordis_define` / `cordis_run`）都通过生成的 SDK 以脚本形式调用，既能用 SDK 一次组合多步工具，又能动态定义 / 修改 Cordis 插件。
 
 安装后与官方 `standard` / `ptc` / `cordis` 预设并列，可在新建会话时直接选用。
 
@@ -21,7 +21,7 @@ cp -R ptc-cordis/skills ~/.dsh/.agent-presets/ptc-cordis/
 
 ```
 ptc-cordis/
-├── agent.cordis.yml       # Preset 主配置（基于 standard，叠加 PTC(both) 呈现与 cordis 创造能力）
+├── agent.cordis.yml       # Preset 主配置（基于 standard，叠加 PTC(ptc) 呈现与 cordis 创造能力）
 ├── preset.yml             # Preset 元数据（显示名称与描述）
 ├── README.md              # 仓库说明文档（导入 ~/.dsh/.agent-presets/ 时不带入）
 └── skills/                # 随附 Agent 技能

@@ -1,9 +1,9 @@
-# The `ptc-cordis` agent preset: the standard coding agent, presented with both
-# native and PTC tool forms, plus the Cordis self-modification toolset.
+# The `ptc-cordis` agent preset: the standard coding agent, presented in PTC
+# mode, plus the Cordis self-modification toolset.
 #
 # Everything in `standard` is here unchanged. What is added is the `tool-presentation`
-# row (`mode: both`): the model keeps every native tool and additionally gets a
-# generated SDK with `run_code`, so a sequence that would be five round trips
+# row (`mode: ptc`): the model writes a TypeScript program against a generated
+# SDK and `run_code` executes it, so a sequence that would be five round trips
 # can become one program — plus the `tool-cordis` row for dynamic plugin
 # authoring (cordis_define / cordis_run / ...).
 #
@@ -36,13 +36,17 @@
     text: |-
       You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.
 
+      This session presents every tool in PTC mode: the ONLY tool you may call directly is `run_code`, and it takes two REQUIRED top-level arguments — `code` (the body of an async program) and `description` (a short summary of the program). These are top-level arguments of `run_code` itself: the `description` you pass inside the program to another tool, like `tools.bash({ description, ... })`, is a DIFFERENT argument and does not satisfy the requirement. Omitting either top-level argument is rejected with exactly `Error: invalid arguments: missing required property "code"` / `"description"` — if you see that error, add the missing TOP-LEVEL argument to `run_code`, not to a tool call inside the program.
+
+      Every other tool (bash, fs, skill, subagent, cordis_define, cordis_inspect_*, ...) is reached ONLY from inside a `run_code` program as `await tools.<name>(args)` — e.g. `await tools.cordis_define({...})`. A direct call to any other tool fails with `unknown tool`. Skill documents below are written in native-tool wording ("call cordis_inspect_list", "call cordis_define"): interpret every such instruction as a `tools.<name>(...)` call inside a `run_code` program, and include that program's own top-level `code` AND `description`.
+
       You can read and modify the harness you run on. Its composition is Cordis: every capability is a plugin row in a `cordis.yml`, and an agent preset is one such file mounted for a single session.
 
       Two planes decide where an edit belongs. The HOST composition holds the registries and anything shared across sessions — persistence, the sandbox and approval stack, the model route, the subagent registry and its backends. An AGENT PRESET holds what one session contributes to those registries: its tools, its persona, its prompt sections. A row that publishes a service belongs in the host composition, or inside an `isolate` realm if the preset genuinely owns that service and nothing outside one agent reads it.
 
       Presets you author live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/<id>/`; the roster reports each preset's real path, so take the one you edit from there. NEVER edit or delete the shipped preset install (the `agent-presets` directory beside the deployment's own config): it belongs to the deployment, an upgrade overwrites it, and corrupting the `cordis` preset would disable this very mode. To change what a shipped preset does, copy its composition into a new preset directory and edit the copy.
 
-      Load the `editing-cordis-compositions` skill before writing or changing a composition.
+      Load the `editing-cordis-compositions` skill before writing or changing a composition — and remember: in this session you reach every tool through `tools.<name>(...)` inside `run_code({ code, description })`.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -271,11 +275,12 @@
 
 # ── presentation ────────────────────────────────────────────────────────────
 
-# PTC + native presentation for this agent alone. The row waits for the host's
-# `codeRuntime` rather than assuming it: a deployment that composes no
-# TypeScript runtime fails this preset at mount, naming this id, instead of at
-# the first request.
+# PTC mode for this agent alone (from the official `ptc` preset): the model
+# sees only `run_code` and reaches every tool through the generated SDK. The
+# row waits for the host's `codeRuntime` rather than assuming it: a deployment
+# that composes no TypeScript runtime fails this preset at mount, naming this
+# id, instead of at the first request.
 - id: tool-presentation
   name: '@deepseek-ai/dsh-agent-tool-presentation'
   config:
-    mode: both
+    mode: ptc

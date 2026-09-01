@@ -3,6 +3,8 @@ name: cordis-plugin-development
 description: Create, modify, debug, or extend dynamic Cordis Plugins, including Host Services and Events, Client Slot and theme UI, Package-private Client-to-Host calls, dynamic Tools, version updates, approval failures, and runtime diagnostics. Use this Skill to route a user request to the correct platform and Inspect Provider, then define, run, repair, or roll back the Plugin.
 ---
 
+> **PTC 模式适配（仅 ptc-cordis 预设）**：本 preset 下没有任何工具可以直接调用——唯一可直接调用的是 `run_code`，它有两个顶层必填参数 `code` 和 `description`。本技能中所有「调用 cordis_inspect_list / cordis_define / cordis_run」等指令，均指在 `run_code` 程序内通过 `await tools.cordis_inspect_list({...})` 等 SDK 绑定调用。技能内容按原生工具编写，请自动换算为程序内调用。
+
 # Develop Dynamic Cordis Plugins
 
 First determine whether a capability belongs on Host or Client, then query the real interface before writing code. Never infer a complete API from a Service name, Event payload, Slot props, theme token, or example.
