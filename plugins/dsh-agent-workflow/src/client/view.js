@@ -67,6 +67,11 @@ const css = {
   jsonDialogHeader: 'dshaw-jsonDialogHeader',
   jsonDialogBody: 'dshaw-jsonDialogBody',
   empty: 'dshaw-empty',
+  drawer: 'dshaw-drawer',
+  drawerBackdrop: 'dshaw-drawerBackdrop',
+  drawerHeader: 'dshaw-drawerHeader',
+  drawerBody: 'dshaw-drawerBody',
+  drawerClose: 'dshaw-drawerClose',
 };
 
 const TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
@@ -369,6 +374,26 @@ function ToolCard({ call, tool, index, selected, onSelect, t }) {
 // JSON inspector (primitives JsonTree + Modal instead of react-json-view-lite).
 // ---------------------------------------------------------------------------
 
+function jsonTreeLabels(t) {
+  const pick = (key, fallback) => {
+    try { const v = t(key); return v !== undefined && v !== null && v !== key ? v : fallback; } catch { return fallback; }
+  };
+  return {
+    copyValue: pick('copy.value', 'Copy value'),
+    copyJson: pick('copy.json', 'Copy JSON'),
+    copyPath: pick('copy.path', 'Copy path'),
+    copyPrettyJson: pick('copy.prettyJson', 'Copy pretty JSON'),
+    copyCompactJson: pick('copy.compactJson', 'Copy compact JSON'),
+    copied: pick('copied', 'Copied'),
+    copyFailed: pick('copy.failed', 'Copy failed'),
+    collapseNode: pick('json.collapseNode', 'Collapse'),
+    expandNode: pick('json.expandNode', 'Expand'),
+    copyButtonTitle: (action) => {
+      try { const v = t('copy.optionsHint', { action }); return v && v !== 'copy.optionsHint' ? v : `Copy: ${action}`; } catch { return `Copy: ${action}`; }
+    },
+  };
+}
+
 function WorkflowJsonInspector({ data, label, t }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const expandButton = useRef(null);
@@ -383,6 +408,7 @@ function WorkflowJsonInspector({ data, label, t }) {
     className: `${css.jsonTree} ${className ?? ''}`.trim(),
     copyable: true,
     expandTopLevel: false,
+    labels: jsonTreeLabels(t),
   });
   return jsxs(Fragment, {
     children: [
@@ -618,61 +644,7 @@ function DetailPanel({ call, target, onClose, t }) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Simple dependency-free virtualizer.
-// ---------------------------------------------------------------------------
-
-function useSimpleVirtualizer({ count, getScrollElement, estimateSize, overscan }) {
-  const [state, setState] = useState({ scrollTop: 0, viewport: 0, tick: 0 });
-  const sizes = useRef(new Map());
-  useEffect(() => {
-    const el = getScrollElement();
-    if (el === null || el === undefined) return undefined;
-    const update = () => setState((prev) => ({ ...prev, scrollTop: el.scrollTop, viewport: el.clientHeight }));
-    update();
-    el.addEventListener('scroll', update, { passive: true });
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
-    if (observer !== null) observer.observe(el);
-    return () => {
-      el.removeEventListener('scroll', update);
-      if (observer !== null) observer.disconnect();
-    };
-  }, [getScrollElement]);
-  const { scrollTop, viewport } = state;
-  const metrics = useMemo(() => {
-    const offsets = [0];
-    let total = 0;
-    for (let index = 0; index < count; index++) {
-      total += sizes.current.get(index) ?? estimateSize;
-      offsets.push(total);
-    }
-    return { offsets, total };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [count, estimateSize, state.tick]);
-  function findIndexForOffset(value, offsets) {
-    let low = 0;
-    let high = offsets.length - 1;
-    while (low < high) {
-      const mid = (low + high) >> 1;
-      if (offsets[mid] <= value) low = mid + 1;
-      else high = mid;
-    }
-    return Math.max(0, low - 1);
-  }
-  const start = Math.max(0, findIndexForOffset(scrollTop, metrics.offsets) - overscan);
-  const end = Math.min(count, findIndexForOffset(scrollTop + viewport, metrics.offsets) + 1 + overscan);
-  const items = [];
-  for (let index = start; index < end; index++) items.push(index);
-  const measure = (index) => (el) => {
-    if (el === null) return;
-    const height = el.offsetHeight;
-    if (height > 0 && sizes.current.get(index) !== height) {
-      sizes.current.set(index, height);
-      setState((prev) => ({ ...prev, tick: prev.tick + 1 }));
-    }
-  };
-  return { items, offsets: metrics.offsets, total: metrics.total, measure };
-}
+// Virtualizer removed — plain list rendering (Q6: avg 43 calls, no virtualization needed)
 
 function CallRow({ call, detail, onDetail, t }) {
   const selectedKey = detail === null ? null : detailKey(detail);
@@ -755,10 +727,38 @@ function CallRow({ call, detail, onDetail, t }) {
             : null,
         ],
       }),
-      detail !== null
-        ? jsx(DetailErrorBoundary, { fallbackTitle: t('workflow.request.details'), t, children: jsx(DetailPanel, { call, target: detail, onClose: () => { onDetail(null); }, t }) })
-        : null,
     ],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Drawer for detail — slide-out panel (Q5: A+C)
+// ---------------------------------------------------------------------------
+
+function DetailDrawer({ detail, call, onClose, t }) {
+  if (detail === null || call === null || call === undefined) return null;
+  return jsx('div', {
+    className: css.drawerBackdrop,
+    onClick: onClose,
+    children: jsx('div', {
+      className: css.drawer,
+      onClick: (e) => e.stopPropagation(),
+      'aria-label': t('workflow.request.details'),
+      children: [
+        jsx('div', {
+          className: css.drawerHeader,
+          children: [
+            jsx('strong', { children: detail.kind === 'request' ? t('workflow.request.details') : detail.kind === 'response' ? t('workflow.response.details') : t('workflow.tool.details') }),
+            jsx('button', { type: 'button', className: css.drawerClose, onClick: onClose, 'aria-label': t('workflow.details.close'), children: jsx(IconCloseOutline16, { size: 16, 'aria-hidden': true }) }),
+          ],
+        }),
+        jsx('div', {
+          className: css.drawerBody,
+          'data-workflow-scroll-region': '',
+          children: jsx(DetailErrorBoundary, { fallbackTitle: detail.kind === 'request' ? t('workflow.request.details') : detail.kind === 'response' ? t('workflow.response.details') : t('workflow.tool.details'), t, children: jsx(DetailPanel, { call, target: detail, onClose, t }) }),
+        }),
+      ],
+    }),
   });
 }
 
@@ -803,13 +803,7 @@ function WorkflowView({ useSession, useWorkflow, loadOlder, viewRequest, complet
   const [detail, setDetail] = useState(null);
   const scrollRef = useRef(null);
   const calls = selectedTurn !== undefined ? selectedTurn.calls : [];
-  const getScrollElement = useCallback(() => scrollRef.current, []);
-  const virtualizer = useSimpleVirtualizer({
-    count: calls.length,
-    getScrollElement,
-    estimateSize: 230,
-    overscan: 4,
-  });
+  const detailCall = detail !== null ? calls.find((c) => c.id === detail.key) ?? null : null;
   const handleCallWheel = useCallback((event) => {
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
     if (event.target instanceof Element
@@ -918,24 +912,14 @@ function WorkflowView({ useSession, useWorkflow, loadOlder, viewRequest, complet
                   onWheelCapture: handleCallWheel,
                   children: calls.length === 0
                     ? jsx('div', { className: css.empty, children: t('workflow.emptyCalls') })
-                    : jsx('div', {
-                      className: css.virtualBody,
-                      style: { height: virtualizer.total },
-                      children: virtualizer.items.map((item) => {
-                        const call = calls[item];
-                        if (call === undefined) return null;
+                    : calls.map((call) => {
                         const activeDetail = detail !== null && detail.key === call.id ? detail : null;
-                        return jsx('div', {
-                          key: call.id,
-                          ref: virtualizer.measure(item),
-                          'data-index': item,
-                          className: css.virtualRow,
-                          style: { transform: `translateY(${virtualizer.offsets[item]}px)` },
-                          children: jsx(CallRow, { call, detail: activeDetail, onDetail: setDetail, t }),
-                        });
+                        return jsx(CallRow, { key: call.id, call, detail: activeDetail, onDetail: setDetail, t });
                       }),
-                    }),
                 }),
+                detail !== null && detailCall !== null
+                  ? jsx(DetailDrawer, { detail, call: detailCall, onClose: () => setDetail(null), t })
+                  : null,
               ],
           }),
         ],

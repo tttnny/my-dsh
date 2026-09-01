@@ -359,6 +359,16 @@ body[data-ds-dark-theme] .dshaw-jsonDialogBody {
 .dshaw-jsonDialogBody .dshaw-jsonTree { font-size: 12px; line-height: 20px; }
 .dshaw-empty { display: grid; min-height: 160px; place-items: center; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 
+.dshaw-main { position: relative; }
+.dshaw-drawerBackdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.12); z-index: 10; }
+.dshaw-drawer { position: absolute; top: 0; right: 0; width: min(520px, 90%); height: 100%; display: flex; flex-direction: column; background: var(--dsw-alias-bg-layer-1); border-left: 1px solid var(--dsw-alias-border-l2); box-shadow: -8px 0 24px rgba(0,0,0,0.08); z-index: 11; overflow: hidden; }
+.dshaw-drawerHeader { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-2); }
+.dshaw-drawerHeader strong { font-size: 13px; }
+.dshaw-drawerClose { display: grid; place-items: center; width: 28px; height: 28px; color: var(--dsw-alias-label-secondary); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.dshaw-drawerClose:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dshaw-drawerClose:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
+.dshaw-drawerBody { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px; box-sizing: border-box; }
+
 @keyframes dshaw-spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
