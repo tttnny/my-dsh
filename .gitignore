@@ -3,6 +3,7 @@ skills-lock.json
 .DS_Store
 **/.DS_Store
 AGENTS.md
+docs/
 .agent-teams/
 tmp/
 
