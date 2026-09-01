@@ -37,23 +37,10 @@ ptc-cordis/
 `@deepseek-ai/dsh-tool-cordis` 会向全局单例 `ctx.cordisInspect` 注册 Host inspect provider。由于该注册表未做幂等处理，同一进程先后加载两个包含 `dsh-tool-cordis` 的预设时会触发 `already registered` 异常。
 
 ### 一键修复
-对 `dsh-tool-cordis` 的 `lib/index.js` 添加幂等判断（同 ID provider 跳过重复注册）。脚本会同时搜索 npm 全局根与 DSH Desktop 应用包内的运行时副本：
+运行仓库里的补丁脚本（幂等、自动定位 DSH Desktop 应用包 / npm 全局根 / `~/.dsh/profiles/*`，含备份与回滚）：
 
 ```bash
-node -e '
-const fs = require("fs"), cp = require("child_process");
-const candidates = [];
-try { candidates.push(cp.execSync("npm root -g 2>/dev/null || pnpm root -g 2>/dev/null").toString().trim()); } catch {}
-const app = "/Applications/DSH Desktop.app/Contents/Resources/app.asar.unpacked/node_modules";
-if (fs.existsSync(app)) candidates.push(app);
-if (!candidates.length) { console.error("未找到候选搜索路径"); process.exit(1); }
-const target = cp.execSync(`find ${candidates.map(c => `"${c}"`).join(" ")} -type f -path "*dsh-tool-cordis/lib/index.js" 2>/dev/null | head -n 1`).toString().trim();
-if (!target) { console.error("未找到 dsh-tool-cordis"); process.exit(1); }
-let s = fs.readFileSync(target, "utf8");
-const old = "\tfor (const provider of hostInspectProviders(ctx)) ctx.effect(() => ctx.cordisInspect.register(provider), `tool-cordis: inspect ${provider.manifest.id}`);";
-const neu = "\tconst existingHostInspect = new Set(ctx.cordisInspect.list().filter(p => p.platform === \"host\").map(p => p.id));\n\tfor (const provider of hostInspectProviders(ctx)) {\n\t\tif (existingHostInspect.has(provider.manifest.id)) continue;\n\t\tctx.effect(() => ctx.cordisInspect.register(provider), `tool-cordis: inspect ${provider.manifest.id}`);\n\t}";
-if (s.includes("existingHostInspect")) { console.log("补丁已存在，无需重复应用"); }
-else if (s.includes(old)) { fs.writeFileSync(target, s.replace(old, neu)); console.log("补丁已成功应用：", target); }
-else { console.error("未匹配到待替换代码"); process.exit(2); }
-'
+bash ../patches/patch-dsh-cordis-inspect-idempotent/patch-dsh-cordis-inspect-idempotent.sh
 ```
+
+详见 [patch-dsh-cordis-inspect-idempotent](../patches/patch-dsh-cordis-inspect-idempotent/README.md)。
