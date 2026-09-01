@@ -22,9 +22,9 @@
 
 | preset | 说明 |
 | --- | --- |
-| [ptc-cordis](./presets/ptc-cordis) | **PTC-Cordis 混合模式**：融合 PTC（`mode: both`：原生工具 + run_code SDK 并存）与 Cordis 动态插件编辑（`cordis_define`/`run`），含 `cordis-plugin-development` / `editing-cordis-compositions` 随附技能，开箱与官方 `standard` / `ptc` / `cordis` 并列可选 |
+| [ptc-cordis](./presets/ptc-cordis) | **PTC-Cordis 混合模式**：融合 PTC（`mode: ptc`：模型只见 `run_code`，全部工具经 SDK 以脚本调用）与 Cordis 动态插件编辑（`cordis_define`/`run`），含 `cordis-plugin-development` / `editing-cordis-compositions` 随附技能，开箱与官方 `standard` / `ptc` / `cordis` 并列可选 |
 | [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：基于官方 `standard` 的全功能编码 Agent，随附 Matt Pocock 25 个工程/生产力技能（[mattpocock/skills](https://github.com/mattpocock/skills)，字节级原样）与 grilling 适配插件（`ask_user_grilling`：子代理闸门/强制多选/输入框补充/轮末补充/题干硬校验；`enter_plan_mode`）。只适配不改本意，不影响 implement 等其他会话 |
-| [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式**：matt-standard 全量 + 官方 `ptc` 呈现（`mode: both`：原生工具与 run_code SDK 并存，一次程序组合多步工具，grilling 交互保持原生） |
+| [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式（实验性）**：matt-standard 全量 + 官方 `ptc` 呈现（`mode: ptc`：模型只见 `run_code`，一次程序组合多步工具，grilling 交互也折叠进 SDK） |
 | [matt-cordis](./presets/matt-cordis) | **Matt 创造模式**：matt-standard 全量 + 官方 `cordis` 创造能力（`tool-cordis` 动态插件工具集、两个随附技能并入 skills/、双平面 persona 追加） |
 
 ---
@@ -38,6 +38,7 @@
 | [dsh-message-edit-log-compat](./patches/dsh-message-edit-log-compat/) | 修复第三方插件 `dsh-message-edit` 写入自定义事件 `message-edit/version` 导致的历史会话加载失败。详见 [README](./patches/dsh-message-edit-log-compat/README.md) |
 | [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `ptc-cordis` / `matt-cordis`）同进程互斥」。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
 | [dsh-mattpocock-skills-deck](./patches/dsh-mattpocock-skills-deck/) | 修复第三方插件 `dsh-mattpocock-skills-deck` 无法检测 agent-preset 技能套件（红条「未检测到核心技能套件」）；候选根追加 `~/.dsh/.agent-presets/<id>/skills/`。详见 [README](./patches/dsh-mattpocock-skills-deck/README.md) |
+| [ptc-preset-fusion-checklist](./patches/ptc-preset-fusion-checklist/) | **PTC 融合预设防错清单（经验文档）**：写新融合 preset 前逐项核对——persona 融合、技能注释、mode 与措辞一致、同步与验证；附标准 persona 契约文案（ptc/both 两版）与排查命令。详见 [README](./patches/ptc-preset-fusion-checklist/README.md) |
 
 ---
 
