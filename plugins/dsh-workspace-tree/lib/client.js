@@ -143,6 +143,15 @@ window.__ModuleLoader__.load({
       return false;
     }
 
+    /**
+     * 跨客户端占用声明（host 内存注册表）：localStorage 心跳只在同一浏览器档案内
+     * 互通，桌面端/浏览器/不同 Chrome Profile 之间互不可见；host 声明全局可见，
+     * 是空白草稿回收的全局占用判定的权威来源。失败静默（回收端按失败安全处理）。
+     */
+    function claimHeartbeat(sid) {
+      apiPost("/claims/heartbeat", { tabId: heartbeatTabId(), sid: sid ? String(sid) : null }).catch(() => { /* ignore */ });
+    }
+
     // ══════════════ Host API ══════════════
     async function apiPost(path, body) {
       const res = await fetch(API + path, {
@@ -1147,17 +1156,26 @@ window.__ModuleLoader__.load({
       const heartbeatSid = sessions ? sessions.current : null;
       useEffect(() => {
         writeHeartbeat(heartbeatSid);
-        const timer = setInterval(() => writeHeartbeat(heartbeatSid), 3000);
+        claimHeartbeat(heartbeatSid);
+        const timer = setInterval(() => {
+          writeHeartbeat(heartbeatSid);
+          claimHeartbeat(heartbeatSid);
+        }, 3000);
         return () => clearInterval(timer);
       }, [heartbeatSid]);
 
       // 自动清理离场未发送任何消息的历史空白草稿会话（物理删除与注册表清理，避免磁盘残留）
+      // 全局占用判定走 host 声明注册表（跨浏览器档案可见）；拿不到占用表时整轮放弃
+      // 删除（失败安全）。「双检」规则：候选首次通过全部守卫只打戳，≥10s 后下一轮
+      // 仍无占用才删除——覆盖 host 重启后各客户端尚未重新声明的竞态窗口。
       const cleanBlankInFlight = useRef(new Set());
+      const unclaimedSince = useRef(new Map());
       useEffect(() => {
         if (!sessions || sessions.phase !== "ready") return;
         const cur = sessions.current ? String(sessions.current) : null;
         const byId = sessions.byId || {};
         const now = Date.now();
+        const candidates = [];
         for (const sid of sessions.ids || []) {
           const id = String(sid);
           const row = byId[id];
@@ -1170,20 +1188,47 @@ window.__ModuleLoader__.load({
           // 保护刚刚在 15 秒内新建中的会话，避免与创建过程发生竞态
           const age = now - (row.updatedAt || row.createdAt || 0);
           if (age < 15000) continue;
-          // 其他标签页正打开此草稿（跨标签页心跳占用）时保留，杜绝误删
+          // 其他标签页正打开此草稿（同浏览器档案心跳占用）时保留
           if (claimedByOtherTab(id)) continue;
           if (cleanBlankInFlight.current.has(id)) continue;
-          cleanBlankInFlight.current.add(id);
-          (async () => {
-            try {
-              await apiPost("/session/deleteDirect", { sessionId: id });
-            } catch (e) {
-              // 静默失败
-            } finally {
-              cleanBlankInFlight.current.delete(id);
-            }
-          })();
+          candidates.push(id);
         }
+        // 打戳表只保留仍是候选的 ID
+        for (const k of [...unclaimedSince.current.keys()]) {
+          if (!candidates.includes(k)) unclaimedSince.current.delete(k);
+        }
+        if (candidates.length === 0) return;
+        let cancelled = false;
+        (async () => {
+          // host 全局占用表：任一客户端（含桌面端/其他浏览器）正打开即保留；
+          // 拉取失败时整轮放弃删除（失败安全，宁可多留不可误删）
+          let hostClaimed;
+          try {
+            const r = await apiPost("/claims/list", {});
+            if (!r || r.ok !== true || !Array.isArray(r.sids)) return;
+            hostClaimed = new Set(r.sids.map(String));
+          } catch { return; }
+          if (cancelled) return;
+          for (const id of candidates) {
+            if (hostClaimed.has(id)) { unclaimedSince.current.delete(id); continue; }
+            const since = unclaimedSince.current.get(id);
+            if (since === void 0) { unclaimedSince.current.set(id, Date.now()); continue; }
+            if (Date.now() - since < 10000) continue;
+            unclaimedSince.current.delete(id);
+            if (cleanBlankInFlight.current.has(id)) continue;
+            cleanBlankInFlight.current.add(id);
+            (async () => {
+              try {
+                await apiPost("/session/deleteDirect", { sessionId: id });
+              } catch (e) {
+                // 静默失败
+              } finally {
+                cleanBlankInFlight.current.delete(id);
+              }
+            })();
+          }
+        })();
+        return () => { cancelled = true; };
       }, [sessions.ids, sessions.byId, sessions.phase, sessions.current, hardDeleted]);
 
       // 清理「移除显示」集合中已不存在的工作区 ID（注册被外部删除后避免残留）。

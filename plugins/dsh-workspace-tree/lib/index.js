@@ -964,6 +964,44 @@ async function handlePruneStaleArchives(ctx, req, res) {
   sendJson(res, 200, { ok: true, pruned, orphanProjcache });
 }
 
+/**
+ * 跨客户端空白草稿占用声明注册表（host 内存态，全客户端共享）。
+ * 背景：localStorage 心跳只在同一浏览器档案内互通——桌面端与浏览器、两个不同
+ * Chrome Profile 之间互不可见，导致另一客户端的空白草稿回收把本端正在使用的
+ * 草稿物理删除。占用声明改走 host，天然跨进程/跨浏览器档案全局可见。
+ * tabId -> { sid, t }；读取/写入时顺带按 TTL 清扫死亡声明。
+ */
+const claims = new Map();
+const CLAIM_TTL_MS = 5 * 60 * 1000;
+
+function sweepClaims() {
+  const cutoff = Date.now() - CLAIM_TTL_MS;
+  for (const [k, v] of claims) {
+    if (!v || typeof v.t !== "number" || v.t < cutoff) claims.delete(k);
+  }
+}
+
+/** POST /claims/heartbeat { tabId, sid|null } —— 声明本客户端当前打开的会话。 */
+async function handleClaimHeartbeat(req, res) {
+  const raw = await parseJsonBody(req);
+  const tabId = typeof raw.tabId === "string" ? raw.tabId.trim().slice(0, 128) : "";
+  if (!tabId) return sendJson(res, 200, { ok: false, error: "tabId 必填" });
+  sweepClaims();
+  claims.set(tabId, { sid: raw.sid ? String(raw.sid) : null, t: Date.now() });
+  sendJson(res, 200, { ok: true });
+}
+
+/** POST /claims/list {} —— 返回全部存活声明占用的会话 ID 列表。 */
+async function handleClaimList(req, res) {
+  await parseJsonBody(req); // 无条件消费请求体（保持连接复用）
+  sweepClaims();
+  const sids = [];
+  for (const v of claims.values()) {
+    if (v && v.sid) sids.push(v.sid);
+  }
+  sendJson(res, 200, { ok: true, sids });
+}
+
 function apply(ctx) {
   ctx.effect(() => ctx.webServer.register({
     kind: "prefix",
@@ -974,6 +1012,11 @@ function apply(ctx) {
       const head = rest[0];
       try {
         if (head === "debug" && (req.method === "GET" || req.method === "HEAD")) return await handleDebug(ctx, req, res);
+        if (head === "claims" && req.method === "POST") {
+          const sub = rest[1];
+          if (sub === "heartbeat") return await handleClaimHeartbeat(req, res);
+          if (sub === "list") return await handleClaimList(req, res);
+        }
         if (head === "mkdir" && req.method === "POST") return await handleMkdir(req, res);
         if (head === "open-ide" && req.method === "POST") return await handleOpenIde(req, res);
         if (head === "session" && req.method === "POST") {
