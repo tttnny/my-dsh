@@ -460,6 +460,31 @@ function WorkflowJsonInspector({ data, label, t }) {
 }
 
 // ---------------------------------------------------------------------------
+// Error boundary for DetailPanel — prevents white-screen on render errors.
+// ---------------------------------------------------------------------------
+
+class DetailErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, info) {
+    if (typeof console !== 'undefined' && console.error) console.error('[dsh-agent-workflow] DetailPanel error', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return jsx('div', {
+        className: css.detailPanel,
+        role: 'alert',
+        children: [
+          jsx('header', { children: jsx('strong', { children: this.props.fallbackTitle || 'Details' }) }),
+          jsx('div', { className: css.detailGrid, children: jsx('pre', { style: { padding: '12px', whiteSpace: 'pre-wrap' }, children: String(this.state.error && this.state.error.message ? this.state.error.message : this.state.error) }) }),
+        ],
+      });
+    }
+    return this.props.children;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Details panel.
 // ---------------------------------------------------------------------------
 
@@ -482,7 +507,20 @@ function textSection(label, value) {
   }
 }
 
+function clampMessages(messages) {
+  if (!Array.isArray(messages)) return messages;
+  if (messages.length <= 80) return messages;
+  return messages.slice(-80);
+}
+
+function clampText(value) {
+  if (typeof value !== 'string') return value;
+  if (value.length <= 20000) return value;
+  return value.slice(0, 20000) + '\n… [truncated ' + (value.length - 20000) + ' chars]';
+}
+
 function DetailPanel({ call, target, onClose, t }) {
+  try {
   let title = t('workflow.request.details');
   let sections = [];
   if (target.kind === 'request') {
@@ -491,7 +529,7 @@ function DetailPanel({ call, target, onClose, t }) {
       treeSection(t('workflow.systemPrompt'), 'system', request !== undefined && request.prompt !== undefined
         ? request.prompt.system ?? null
         : null),
-      treeSection(t('workflow.messages'), 'messages', call.messages),
+      treeSection(t('workflow.messages'), 'messages', clampMessages(call.messages)),
       treeSection(t('workflow.toolDefinitions'), 'tools', request !== undefined && request.prompt !== undefined
         ? request.prompt.tools ?? []
         : []),
@@ -500,12 +538,12 @@ function DetailPanel({ call, target, onClose, t }) {
     title = t('workflow.response.details');
     const response = call.response;
     sections = [
-      textSection(t('workflow.reasoning'), (response !== undefined && response.thinkingDetail !== undefined
+      textSection(t('workflow.reasoning'), clampText(response !== undefined && response.thinkingDetail !== undefined
         ? response.thinkingDetail
         : t('workflow.empty'))),
-      textSection(t('workflow.content'), response !== undefined
+      textSection(t('workflow.content'), clampText(response !== undefined
         ? response.outputDetail !== undefined ? response.outputDetail : response.text ?? t('workflow.empty')
-        : t('workflow.empty')),
+        : t('workflow.empty'))),
       jsonSection(t('workflow.metadata'), response !== undefined && response.assistantMetrics !== undefined
         ? response.assistantMetrics
         : {}),
@@ -514,14 +552,14 @@ function DetailPanel({ call, target, onClose, t }) {
     title = t('workflow.tool.details');
     const tool = call.tools[target.tool];
     sections = [
-      textSection(t('workflow.arguments'), tool !== undefined
+      textSection(t('workflow.arguments'), clampText(tool !== undefined
         ? tool.inputDetail !== undefined ? tool.inputDetail : tool.previewMarkdown ?? t('workflow.empty')
-        : t('workflow.empty')),
-      textSection(t('workflow.result'), tool !== undefined
+        : t('workflow.empty'))),
+      textSection(t('workflow.result'), clampText(tool !== undefined
         ? tool.outputDetail !== undefined
           ? tool.outputDetail
           : tool.resultPreviewMarkdown !== undefined ? tool.resultPreviewMarkdown : tool.result ?? t('workflow.empty')
-        : t('workflow.empty')),
+        : t('workflow.empty'))),
       textSection(t('workflow.schema'), tool !== undefined
         ? tool.schemaDetail !== undefined ? tool.schemaDetail : t('workflow.empty')
         : t('workflow.empty')),
@@ -567,6 +605,17 @@ function DetailPanel({ call, target, onClose, t }) {
       }),
     ],
   });
+  } catch (e) {
+    if (typeof console !== 'undefined' && console.error) console.error('[dsh-agent-workflow] DetailPanel render error', e);
+    return jsx('section', {
+      className: css.detailPanel,
+      'aria-label': 'Details',
+      children: [
+        jsx('header', { children: jsx('strong', { children: title || 'Details' }) }),
+        jsx('div', { className: css.detailGrid, children: jsx('pre', { children: String(e && e.message ? e.message : e), style: { padding: '12px', whiteSpace: 'pre-wrap' } }) }),
+      ],
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -707,7 +756,7 @@ function CallRow({ call, detail, onDetail, t }) {
         ],
       }),
       detail !== null
-        ? jsx(DetailPanel, { call, target: detail, onClose: () => { onDetail(null); }, t })
+        ? jsx(DetailErrorBoundary, { fallbackTitle: t('workflow.request.details'), t, children: jsx(DetailPanel, { call, target: detail, onClose: () => { onDetail(null); }, t }) })
         : null,
     ],
   });
@@ -780,7 +829,6 @@ function WorkflowView({ useSession, useWorkflow, loadOlder, viewRequest, complet
 
   return jsx('section', {
     className: css.root,
-    'data-conversation-composer-overlay': '',
     'aria-label': t('workflow.aria'),
     children: [
       jsx('header', {

@@ -8,6 +8,7 @@
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1);
+  box-sizing: border-box;
 }
 
 .dshaw-summary {
@@ -19,6 +20,7 @@
   padding: 0 24px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .dshaw-summaryTitle { display: flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -64,7 +66,7 @@
   font-size: 12px;
 }
 .dshaw-turns > header span { color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }
-.dshaw-turnList { display: flex; flex: 1; flex-direction: column; gap: 8px; min-height: 0; padding: 10px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.dshaw-turnList { display: flex; flex: 1; flex-direction: column; gap: 8px; min-height: 0; padding: 10px 10px 48px 10px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; box-sizing: border-box; }
 
 .dshaw-turnItem {
   position: relative;
@@ -137,7 +139,7 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 14px 16px 24px;
+  padding: 14px 16px 48px;
   box-sizing: border-box;
   scrollbar-gutter: stable;
 }
