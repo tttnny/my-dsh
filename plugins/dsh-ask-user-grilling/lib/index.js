@@ -39,12 +39,12 @@ function displayName(entry) {
 function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
-    description: "Ask the user a ROUND of grilling questions (decision-tree interview). Use ONLY for grilling rounds: the `grilling` skill (including its `grill-me` and `grill-with-docs` wrappers) and the grilling phases inside `triage`, `wayfinder` and `improve-codebase-architecture` — send ALL frontier questions of the current round in ONE call. Never use this tool for non-grilling questions: one-off selection/confirmation questions and the interview flows of `to-questionnaire` (its \"Grill the send\" interview is NOT a grilling round), `setup-matt-pocock-skills`, `wizard`, `teach`, `prototype`, `diagnosing-bugs`, `code-review`, `research` and the \"Quiz the user\" iteration of `to-tickets` keep using the plain ask_user_question tool — and so do the one-off questions inside `triage`, `wayfinder` and `improve-codebase-architecture` themselves (candidate picks, \"how they'd like to proceed\", bucket picks, brief-writing confirmations, spec-seam checks). Number each question in the round so the user can refer to it by number. For every question, give your recommended answer: put the option you recommend first and append \"(Recommended)\" to its label; if your recommendation is not an option (open question or synthesis), state it briefly in the question text. Multi-select is a form-level detail, not a design constraint: design each question as single- or multi-choice per its content, and single-choice questions are normal; the form always lets the user select one or more options, and conflicting multi-selections are resolved with one disambiguation question in the next round. The form is forced multi-select only because that is what surfaces the built-in custom input (\"Type your answer\" / \"输入你的答案\") for per-question supplements — never add your own \"Supplement\"/\"补充\" option to any question; the custom input covers that. A round-end supplement question (\"这轮还有什么要补充或调整的吗？\") with a single \"无需补充\" option is appended automatically to every round — never add your own catch-all/\"anything else?\" question; if its custom input contains new material, treat it as user input that reshapes the tree and ask a further round. The session is final only when the supplement is empty AND the user has confirmed shared understanding. If background subagents are running, this tool returns blocked — do NOT retry within the same turn: end your turn and wait; the settlement notice will wake you automatically, then call again. (While the gate is closed, this overrides the grilling skill's \"ask the rest of the frontier now\" guidance.) Keep the question stem to the question itself, without repeating option labels (style guidance only — stems are never rejected, and stems MAY carry the multi-paragraph context the question needs). The final plan-vs-execute confirmation after the last round is a one-off confirmation question — use the plain ask_user_question tool for it. Example of one round with two questions: questions: [{ id: 'q1', question: 'Which issue tracker?', options: [{ label: 'GitHub (Recommended)' }, { label: 'Local markdown' }] }, { id: 'q2', question: 'Any deadline?', options: [{ label: 'This week (Recommended)' }, { label: 'Next month' }] }].",
+    description: "Ask the user one ROUND of grilling questions (decision-tree interview) as a form. Use ONLY for grilling rounds: the grilling skill (incl. grill-me / grill-with-docs wrappers) and the grilling phases of triage, wayfinder, improve-codebase-architecture — send ALL frontier questions of the current round in ONE call (round/frontier/numbering/recommended-answer/session-end protocol is defined by the grilling skill; follow it). Everything else keeps the plain ask_user_question tool. For every question, put your recommended option first and append \"(Recommended)\" to its label; if your recommendation is not an option, state it briefly in the question text. Form details: forced multi-select only surfaces the built-in custom input (\"Type your answer\" / \"输入你的答案\") for per-question supplements — design each question single- or multi-choice per content, never add your own \"Supplement\"/\"补充\" option; conflicting multi-selections get one disambiguation question in the next round. A round-end supplement question (\"这轮还有什么要补充或调整的吗？\") with a single \"无需补充\" option is appended automatically — never add your own catch-all/\"anything else?\" question; non-empty supplement input is user input that reshapes the tree (ask a further round), and the session is final only when the supplement is empty AND the user has confirmed shared understanding (grilling skill: frontier empty + user confirmation). If background subagents are running, this tool returns blocked — do NOT retry within the same turn: end your turn and wait; the settlement notice will wake you automatically, then call again. (While the gate is closed, this overrides the grilling skill's \"ask the rest of the frontier now\" guidance.) Stems: keep the stem to the question itself, option text belongs in options (guidance only — never rejected).",
     parameters: {
       questions: {
         type: "array",
         required: true,
-        description: "All frontier questions of the current round, each with a stable id, the question text (stem) and options.",
+        description: "The current round's questions (round/frontier protocol: see the grilling skill). Each needs a stable id, a stem and options.",
         items: {
           type: "object",
           additionalProperties: true,
@@ -61,11 +61,11 @@ function apply(ctx) {
             },
             header: {
               type: "string",
-              description: "Optional short heading, e.g. \"Q2 — Deadline\". Number each question in the round so the user can refer to it by number.",
+              description: "Optional short heading, e.g. \"Q2 — Deadline\".",
             },
             options: {
               type: "array",
-              description: "Choices to show the user. Mark the option you recommend by putting it first and appending \"(Recommended)\" to its label — every question gets one recommended answer.",
+              description: "Choices to show the user. Put your recommended option first and append \"(Recommended)\" to its label.",
               items: {
                 type: "object",
                 additionalProperties: true,
@@ -228,7 +228,7 @@ function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: "enter_plan_mode",
-    description: "Enter plan mode for the current agent. Call it ONLY after the final round of a grilling session, once the user has confirmed shared understanding AND you have asked them (with the plain ask_user_question tool) whether they want an execution plan or direct execution — call it only if they chose the plan; if they chose direct execution, skip it. Never call it mid-grilling or outside a grilling session. Plan mode ends via exit_plan_mode or the /plan off command.",
+    description: "Enter DSH plan mode for the current agent (ends via exit_plan_mode or /plan off). Call ONLY after a grilling session's final round when the user — asked with the plain ask_user_question tool — chose an execution plan over direct execution. Never mid-grilling or outside a grilling session.",
     parameters: {},
     output: {
       schema: {
