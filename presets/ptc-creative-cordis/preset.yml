@@ -1,2 +1,0 @@
-name: PTC-创造 混合模式
-description: 融合 PTC(Code)与创造模式：既能用 Code SDK 一次组合多步工具，又能动态定义/修改 Cordis 插件（cordis_define/run）。
