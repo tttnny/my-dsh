@@ -34,7 +34,8 @@ description」，模型以为它已经传了。
      → tools:sdk(5000)，长 persona 把注意力从契约上引开。
    - **技能按原生调用编写**：技能里写「Call `cordis_inspect_list`」「调用
      `cordis_define`」，好像能直接调；PTC 模式下只能 `await tools.x(args)` 在
-     程序里调，直接调报 `unknown tool "x": only run_code is callable directly`。
+     程序里调，直接调报
+     `unknown tool "<name>": only \`run_code\` is callable directly — call \`<name>\` from inside a \`run_code\` program instead`。
    - **SDK 变长**：工具越多 SDK 声明越长，「two required arguments」越容易被稀释。
 
 ## 3. 实证（当时的会话日志）
@@ -72,9 +73,9 @@ description」，模型以为它已经传了。
 插在 persona `text:` 的身份句之后、原有内容之前。**ptc 版**：
 
 ```text
-This session presents every tool in PTC mode: the ONLY tool you may call directly is `run_code`, and it takes two REQUIRED top-level arguments — `code` (the body of an async program) and `description` (a short summary of the program). These are top-level arguments of `run_code` itself: the `description` you pass inside the program to another tool, like `tools.bash({ description, ... })`, is a DIFFERENT argument and does not satisfy the requirement. Omitting either top-level argument is rejected with exactly `Error: invalid arguments: missing required property "code"` / `"description"` — if you see that error, add the missing TOP-LEVEL argument to `run_code`, not to a tool call inside the program.
+This session presents every tool in PTC mode: the ONLY tool you may call directly is `run_code`, and it takes two REQUIRED top-level arguments — `code` (the body of an async program) and `description` (a short summary of the program). These are top-level arguments of `run_code` itself: the `description` you pass inside the program to another tool, like `tools.bash({ description, ... })`, is a DIFFERENT argument and does not satisfy the requirement. Omitting either top-level argument is rejected with exactly `Error: invalid arguments: missing required property "code"` / `"description"` — if you see that error, add the missing TOP-LEVEL argument to `run_code`, not to a tool call inside the program. The first argument is named `code` (the program body), NOT `command` — `command` is `tools.bash`'s parameter name, and calling `run_code({ command, description })` fails with `missing required property "code"`.
 
-Every other tool (bash, fs, skill, subagent, <本预设专属工具>, ...) is reached ONLY from inside a `run_code` program as `await tools.<name>(args)`. A direct call to any other tool fails with `unknown tool`. Skill documents below are written in native-tool wording ("call <工具名>"): interpret every such instruction as a `tools.<name>(...)` call inside a `run_code` program, and include that program's own top-level `code` AND `description`.
+Every other tool (bash, fs, skill, subagent, <本预设专属工具>, ...) is reached ONLY from inside a `run_code` program as `await tools.<name>(args)`. A direct call to any other tool fails with `unknown tool`. Skill documents below are written in native-tool wording ("call <工具名>"): interpret every such instruction as a `tools.<name>(...)` call inside a `run_code` program, and include that program's own top-level `code` AND `description`. When a bash command itself contains single quotes, wrap the whole command in a template literal (backticks) or double quotes — nesting single quotes inside a JS single-quoted string (e.g. `command: '... require('$D/...') ...'`) ends the string early and the program fails to parse (`code run failed (exception): …`, e.g. `Expression expected` or `Expected ',', got 'ident'`).
 ```
 
 **both 版**（原生调用照常，所以措辞不同）：
@@ -110,8 +111,15 @@ EOF
 ```
 
 - 外层只有 `['code']` → 就是「顶层 description 漏传」，修 persona（§4 ② / §5）。
-- 错误是 `unknown tool "x": only run_code is callable directly` → 模型尝试原生调用，
-  同样是 persona/技能没融合到位。
+- 外层是 `['command','description']` → 模型把 run_code 的第一个参数名 `code`
+  写成了 bash 的 `command`，属同源混淆，§5 文案已内置纠正。
+- 错误是
+  `unknown tool "<name>": only \`run_code\` is callable directly — call \`<name>\` from inside a \`run_code\` program instead`
+  → 模型尝试原生调用，同样是 persona/技能没融合到位。
+- 错误是 `code run failed (exception): Expression expected` /
+  `code run failed (exception): Expected ',', got 'ident'`
+  → 程序体 JS 语法错，最常见是 bash 命令串里单引号嵌套（`'... require('$D/...') ...'`
+  提前结束字符串），属模型写作能力问题，§5 文案可减少但无法根除。
 
 ## 7. 背景与边界
 
@@ -119,5 +127,9 @@ EOF
   预设、不可修改——这正是**融合版预设要自带 persona 契约**的原因。
 - 本次修复已落地：`presets/ptc-cordis/`（persona + 两个 Cordis 技能头部注释）、
   `presets/matt-ptc/`（persona，含 grilling 工具点名），均已同步本地安装。
+- 实测效果：修复后新建的 ptc-cordis 会话，`missing required property` 从约 50%
+  调用失败降到个位数（一次会话 22 步仅 5 次报错）；其中「外层漏 description」已
+  归零，剩余为 `code↔command` 混淆与程序体引号嵌套（§5 第二轮文案针对性覆盖）。
+  persona 只对新会话生效，旧会话仍挂旧 persona，对比时用新建会话。
 - 相关补丁：[patch-dsh-cordis-inspect-idempotent](../patch-dsh-cordis-inspect-idempotent/README.md)
   解决的是另一个问题（含 `tool-cordis` 的预设同进程互斥），与本清单不冲突。
