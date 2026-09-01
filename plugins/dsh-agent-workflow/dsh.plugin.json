@@ -1,0 +1,13 @@
+{
+  "id": "dsh-agent-workflow",
+  "version": "0.1.0",
+  "main": "lib/index.js",
+  "description": "Visual user-turn, model-request, response, and tool-call explorer for DeepSeek Harness (adapted to dsh 0.1.2-alpha.1).",
+  "engines": {
+    "dsh": ">=0.1.2-alpha.1"
+  },
+  "contributes": {
+    "tools": [],
+    "skills": []
+  }
+}
