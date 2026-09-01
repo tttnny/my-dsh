@@ -39,7 +39,7 @@ function displayName(entry) {
 function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
-    description: "Ask the user a ROUND of grilling questions (decision-tree interview). Use for grilling sessions (grill-me / grill-with-docs / triage / wayfinder / architecture grilling): send ALL frontier questions of the current round in ONE call. The tool forces multi-select and appends a round-end supplement question automatically; per-question supplement is via the built-in custom input (\"Type your answer\" / \"输入你的答案\") — no extra per-question option is added (avoids duplication where a \"Supplement\" checkbox and the custom field were both shown). The round-end question has a single \"无需补充\" option and its supplement is also via custom input. If background subagents are running, this tool returns blocked — do NOT retry within the same turn: end your turn and wait; the settlement notice will wake you automatically, then call again. Keep the question stem to the question itself, without repeating option labels (style guidance only — stems are never rejected). Example of one round with two questions: questions: [{ id: 'q1', question: 'Which issue tracker?', options: [{ label: 'GitHub' }, { label: 'Local markdown' }] }, { id: 'q2', question: 'Any deadline?', options: [{ label: 'This week' }, { label: 'Next month' }] }].",
+    description: "Ask the user a ROUND of grilling questions (decision-tree interview). Use ONLY for grilling rounds: the `grilling` skill (including its `grill-me` and `grill-with-docs` wrappers) and the grilling phases inside `triage`, `wayfinder` and `improve-codebase-architecture` — send ALL frontier questions of the current round in ONE call. Never use this tool for non-grilling questions: one-off selection/confirmation questions and the interview flows of `to-questionnaire` (its \"Grill the send\" interview is NOT a grilling round), `setup-matt-pocock-skills`, `wizard`, `teach`, `prototype`, `diagnosing-bugs`, `code-review`, `research` and the \"Quiz the user\" iteration of `to-tickets` keep using the plain ask_user_question tool — and so do the one-off questions inside `triage`, `wayfinder` and `improve-codebase-architecture` themselves (candidate picks, \"how they'd like to proceed\", bucket picks, brief-writing confirmations, spec-seam checks). Number each question in the round so the user can refer to it by number. For every question, give your recommended answer: put the option you recommend first and append \"(Recommended)\" to its label; if your recommendation is not an option (open question or synthesis), state it briefly in the question text. Multi-select is a form-level detail, not a design constraint: design each question as single- or multi-choice per its content, and single-choice questions are normal; the form always lets the user select one or more options, and conflicting multi-selections are resolved with one disambiguation question in the next round. The form is forced multi-select only because that is what surfaces the built-in custom input (\"Type your answer\" / \"输入你的答案\") for per-question supplements — never add your own \"Supplement\"/\"补充\" option to any question; the custom input covers that. A round-end supplement question (\"这轮还有什么要补充或调整的吗？\") with a single \"无需补充\" option is appended automatically to every round — never add your own catch-all/\"anything else?\" question; if its custom input contains new material, treat it as user input that reshapes the tree and ask a further round. The session is final only when the supplement is empty AND the user has confirmed shared understanding. If background subagents are running, this tool returns blocked — do NOT retry within the same turn: end your turn and wait; the settlement notice will wake you automatically, then call again. (While the gate is closed, this overrides the grilling skill's \"ask the rest of the frontier now\" guidance.) Keep the question stem to the question itself, without repeating option labels (style guidance only — stems are never rejected, and stems MAY carry the multi-paragraph context the question needs). The final plan-vs-execute confirmation after the last round is a one-off confirmation question — use the plain ask_user_question tool for it. Example of one round with two questions: questions: [{ id: 'q1', question: 'Which issue tracker?', options: [{ label: 'GitHub (Recommended)' }, { label: 'Local markdown' }] }, { id: 'q2', question: 'Any deadline?', options: [{ label: 'This week (Recommended)' }, { label: 'Next month' }] }].",
     parameters: {
       questions: {
         type: "array",
@@ -57,15 +57,15 @@ function apply(ctx) {
             question: {
               type: "string",
               required: true,
-              description: "The question stem only — never include option text here.",
+              description: "The question stem — option text belongs in options (style guidance, not enforced; stems may carry the multi-paragraph context the question needs).",
             },
             header: {
               type: "string",
-              description: "Optional short heading for the question, such as \"Round 3\".",
+              description: "Optional short heading, e.g. \"Q2 — Deadline\". Number each question in the round so the user can refer to it by number.",
             },
             options: {
               type: "array",
-              description: "Choices to show the user. If you recommend one, put it first and append \"(Recommended)\" to that label.",
+              description: "Choices to show the user. Mark the option you recommend by putting it first and appending \"(Recommended)\" to its label — every question gets one recommended answer.",
               items: {
                 type: "object",
                 additionalProperties: true,
@@ -109,16 +109,32 @@ function apply(ctx) {
             items: { type: "string" },
             description: "Validation violations when rejected (reserved id prefix only).",
           },
-          error: { type: "string" },
+          error: {
+            type: "string",
+            description: "Human-readable error when blocked or rejected.",
+          },
           answers: {
             type: "array",
+            description: "One entry per question, in the order asked.",
             items: {
               type: "object",
               additionalProperties: false,
               properties: {
-                id: { type: "string", required: true },
-                selected: { type: "array", required: true, items: { type: "string" } },
-                custom: { type: "string" },
+                id: {
+                  type: "string",
+                  required: true,
+                  description: "The question id you supplied.",
+                },
+                selected: {
+                  type: "array",
+                  required: true,
+                  items: { type: "string" },
+                  description: "Labels of the options the user picked (may be empty if skipped).",
+                },
+                custom: {
+                  type: "string",
+                  description: "Free text the user typed in the built-in custom input, if any.",
+                },
               },
             },
           },
@@ -146,7 +162,7 @@ function apply(ctx) {
           return {
             blocked: true,
             waiting: [],
-            error: "Cannot confirm background subagent status (subagents query failed). Please call this tool again later.",
+            error: "Cannot confirm background subagent status (subagents query failed). End your turn and wait; call this tool again in a later turn.",
           };
         }
       }
@@ -212,7 +228,7 @@ function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: "enter_plan_mode",
-    description: "Enter plan mode for the current agent. Call it after the final round of a grilling session once the user has confirmed shared understanding, so a plan is written for review instead of executing directly. Plan mode ends via exit_plan_mode or the /plan off command.",
+    description: "Enter plan mode for the current agent. Call it ONLY after the final round of a grilling session, once the user has confirmed shared understanding AND you have asked them (with the plain ask_user_question tool) whether they want an execution plan or direct execution — call it only if they chose the plan; if they chose direct execution, skip it. Never call it mid-grilling or outside a grilling session. Plan mode ends via exit_plan_mode or the /plan off command.",
     parameters: {},
     output: {
       schema: {
