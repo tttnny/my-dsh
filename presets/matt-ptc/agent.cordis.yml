@@ -2,10 +2,12 @@
 # edits, each marked `# MATT-ADD:` — (1) `skill-filesystem` gains
 # `customSkillDirs: ./skills/` (the 25 vendored mattpocock skills) and (2) the
 # planning group gains the `tool-ask-user-grilling` row. Grilling discipline
-# lives in `skills/grilling/SKILL.md` (local adaptation notes, incl. the PTC
-# `tools.<name>`-inside-`run_code` wording) and in the plugin's tool
-# descriptions; the persona below is stock official. When upgrading from
-# upstream, re-copy the official file and re-apply the two MATT-ADD edits.
+# lives in `skills/grilling/SKILL.md` (local adaptation notes — byte-identical
+# across matt-standard/matt-ptc/matt-cordis; the PTC `tools.<name>`-inside-
+# `run_code` paragraph is conditional guidance for PTC presets) and in the
+# plugin's tool descriptions; the persona below is stock official. When
+# upgrading from upstream, re-copy the official file and re-apply the two
+# MATT-ADD edits.
 #
 # The `ptc` agent preset: the standard coding agent, presented as PTC mode.
 #

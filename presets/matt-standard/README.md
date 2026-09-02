@@ -4,7 +4,7 @@
 
 设计原则：**不改原厂 preset 的任何行为**——原厂组合写得很标准，工具调用报错就一定是模型问题而非组合问题。全部 DSH 适配都下沉到两处：
 
-1. **技能层**：仅 `skills/grilling/SKILL.md` 带三段本地适配旁注（重同步上游时保留）：
+1. **技能层**：仅 `skills/grilling/SKILL.md` 带本地适配（三个 matt preset 的三份逐字节相同；重同步上游时必须全部保留——共 5 处：格式块 emoji→纯文本改写、DSH delivery / Sub-agent rounds / Consensus→plan mode 三段旁注、删除上游 "don't block, ask the rest of the frontier now" 一句）：
    - **DSH delivery**：轮次的 Qn./Recommended: 格式只是逻辑结构，必须整轮一次 `ask_user_grilling` 调用（含元素映射表与散文轮恢复指令）；
    - **子代理停轮**：派遣子代理即输出任务列表、停止一切工具调用并结束回合，全部结算后才提问（插件闸门硬约束配合）；
    - **共识直入 plan mode**：用户确认共识后直接调 `enter_plan_mode`，不再先问「写方案还是直接执行」（用户明确不要方案除外）。

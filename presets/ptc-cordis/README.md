@@ -40,7 +40,7 @@ ptc-cordis/
 运行仓库里的补丁脚本（幂等、自动定位 DSH Desktop 应用包 / npm 全局根 / `~/.dsh/profiles/*`，含备份与回滚）：
 
 ```bash
-bash ../patches/patch-dsh-cordis-inspect-idempotent/patch-dsh-cordis-inspect-idempotent.sh
+bash ../../patches/patch-dsh-cordis-inspect-idempotent/patch-dsh-cordis-inspect-idempotent.sh
 ```
 
-详见 [patch-dsh-cordis-inspect-idempotent](../patches/patch-dsh-cordis-inspect-idempotent/README.md)。
+详见 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md)。

@@ -108,7 +108,10 @@ PTC 模式下 `run_code` 是唯一可直接调用的工具，其参数校验（`
 ## 5. 标准 persona 契约文案（v2，可直接粘贴）
 
 插在 persona `text:` 的身份句之后、原有内容之前。**ptc 版**（三段 + 末尾提醒，
-即 `matt-ptc` / `ptc-cordis` 当前在用的加固版）：
+即 `ptc-cordis` 当前在用的加固版；`matt-ptc` 自 v3 重构（2026-09-03）起 persona
+已回归官方 `ptc` 逐字、不再携带任何加固文案——其 grilling 纪律改由
+`skills/grilling/SKILL.md` 旁注与插件工具描述承载，见
+`patches/matt-presets-bootstrap/`）：
 
 ```text
 This session presents every tool in PTC mode: the ONLY tool you may call directly is `run_code`, and it takes two REQUIRED top-level arguments — `code` (the body of an async program) and `description` (a short summary of the program). These are top-level arguments of `run_code` itself: the `description` you pass inside the program to another tool, like `tools.bash({ description, ... })`, is a DIFFERENT argument and does not satisfy the requirement. The first argument is named `code` (the program body), NOT `command` — `command` is `tools.bash`'s parameter name, and calling `run_code({ command, description })` fails with `missing required property "code"`.
@@ -195,6 +198,11 @@ persona 补译（§5 已做）；根治候选是宿主补丁——在参数校�
     模板字面量指引），均已同步 `~/.dsh/.agent-presets/` 并通过
     `agentPresets.standingKeyFor` 挂载校验。standing mount 进程内常驻，
     **改动后需重启 DSH 再开新会话验证**。
+  - **v3**（2026-09-03 重构）：`presets/matt-ptc/` persona 回归官方 `ptc` 逐字，
+    v2 加固文案随之移除（其中 grilling 纪律改入 `skills/grilling/SKILL.md` 旁注 +
+    插件工具描述，见 `patches/matt-presets-bootstrap/`）；`presets/ptc-cordis/`
+    不在该次重构范围，v2 文案继续保留。本节 §5 的契约文案仍是新写 PTC 融合
+    preset 时的推荐起点。
 - `presets/matt-cordis/` **不适用本清单的 persona 契约**（2026-09 复查确认）：它是
   §4 ① 中的 `native` 融合——无 `tool-presentation` 行、无 `run_code`，全部工具
   （含 `cordis_define` 等）直接原生调用，`missing required property` / `unknown tool`

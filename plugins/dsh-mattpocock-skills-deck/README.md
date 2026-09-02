@@ -1,6 +1,6 @@
 # @lynn123411/dsh-mattpocock-skills-deck
 
-> 基于 [FeatherHunter/dsh-mattpocock-skills-deck](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck) v1.7.12 的**分叉（fork）**：Matt Pocock 技能套件（[mattpocock/skills](https://github.com/mattpocock/skills)）的 DSH 控制面板（Deck）——把 wayfinder 地图/票务/进度、triage / grilling / handoff 等动作注入 DSH 侧栏。分叉动机：本合集通过 **agent-preset** 分发技能（`presets/matt-*/skills/`，随会话所选 preset 生效），原插件只探测四个标准技能根、看不到 preset 目录里的技能（红条「未检测到核心技能套件」）；本分叉把「识别 preset 技能根 + 按会话生效 preset 门控」做进源码，替代此前 `patches/dsh-mattpocock-skills-deck` 补丁脚本。上游原版说明文档保留在 [docs/README-UPSTREAM.md](./docs/README-UPSTREAM.md)。
+> 基于 [FeatherHunter/dsh-mattpocock-skills-deck](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck) v1.7.12 的**分叉（fork）**：Matt Pocock 技能套件（[mattpocock/skills](https://github.com/mattpocock/skills)）的 DSH 控制面板（Deck）——把 wayfinder 地图/票务/进度、triage / grilling / handoff 等动作注入 DSH 侧栏。分叉动机：本合集通过 **agent-preset** 分发技能（`presets/matt-*/skills/`，随会话所选 preset 生效），原插件只探测四个标准技能根、看不到 preset 目录里的技能（红条「未检测到核心技能套件」）；本分叉把「识别 preset 技能根 + 按会话生效 preset 门控」做进源码，替代此前 `patches/dsh-mattpocock-skills-deck` 补丁脚本。上游原版说明见其仓库 README。
 
 ## 特性
 

@@ -6,7 +6,7 @@
 
 设计原则与 matt-standard 相同：**不改原厂 preset 的任何行为**。全部 DSH 适配下沉到：
 
-1. **技能层**：`skills/grilling/SKILL.md` 三段本地旁注（DSH delivery 含 PTC 专用的 `tools.<name>`-inside-`run_code` 措辞 / 子代理停轮 / 共识直入 plan mode）；
+1. **技能层**：`skills/grilling/SKILL.md` 本地适配（三段旁注 + 格式块纯文本化 + 删除上游一句冲突指引，共 5 处；三个 matt preset 的三份逐字节相同——DSH delivery 旁注里的 `tools.<name>`-inside-`run_code` 段落是写给 PTC preset 的条件指引，在原生 preset 下无害）；
 2. **插件层**：`ask_user_grilling` 闸门与表单硬约束 + `enter_plan_mode`。
 
 `agent.cordis.yml` 相对官方 `ptc` 只有两处 `MATT-ADD` 附加改动（`customSkillDirs` + planning 组内插件行），升级原厂组合时重新复制官方文件并重打。

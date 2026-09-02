@@ -6,8 +6,9 @@
 # ----
 #   setup（默认）  安装 dsh-ask-user-grilling 插件 + 同步三个 preset 到
 #                  ~/.dsh/.agent-presets/（排除 README.md）+ 自检。幂等。
-#   check <id|路径>  grilling 会话验收：统计 ask_user_grilling 调用与散文轮
-#                  失守（Qn. **… 轮次格式出现在消息文本而当轮未调工具）。
+#   check <id|路径>  grilling 会话验收：统计 ask_user_grilling 调用（原生与
+#                  PTC code-dispatch 两种形态）与散文轮失守（Qn./Recommended:
+#                  轮次格式出现在消息文本而当回合未调工具）。
 #
 # 用法
 # ----
@@ -16,7 +17,10 @@
 #   bash matt-presets-bootstrap.sh check 5ed25954-7a67-4504-a40b-c715194c2903
 #   bash matt-presets-bootstrap.sh check <session.jsonl.zstd 路径>
 #
-# 依赖：rsync、python3；setup 可选 dsh CLI；check 需要 zstd（brew install zstd）。
+# check 退出码：0=健康（有 grilling 调用且无失守） 1=用法/文件错误
+#               2=散文轮失守  3=无法判定（会话无 grilling 活动）
+#
+# 依赖：rsync、python3；check 需要 zstd（brew install zstd）。
 # 详细背景与手工推导步骤见同目录 README.md。
 # =============================================================================
 set -euo pipefail
@@ -28,7 +32,7 @@ PRESETS="matt-standard matt-ptc matt-cordis"
 PLUGIN_PKG="@lynn123411/dsh-ask-user-grilling"
 PLUGIN_DIR_NAME="dsh-ask-user-grilling"
 
-usage() { sed -n '2,24p' "$0"; exit "${1:-0}"; }
+usage() { sed -n '2,25p' "$0"; exit "${1:-0}"; }
 
 # =============================================================================
 # setup
@@ -58,21 +62,22 @@ cmd_setup() {
   local fail=0
   for p in $PRESETS; do
     local dir="$PRESET_ROOT/$p"
-    local n_mattadd n_skills n_note
-    n_mattadd=$(grep -c "MATT-ADD" "$dir/agent.cordis.yml" || true)
-    n_skills=$(find "$dir/skills" -name SKILL.md -maxdepth 2 2>/dev/null | wc -l | tr -d ' ')
+    # 行级检查（不看注释标记）：插件工具行必须存在；matt-standard/matt-ptc
+    # 还必须有 customSkillDirs（matt-cordis 官方自带）。
+    local has_row has_dirs n_skills n_note
+    has_row=$(grep -c "^    - id: tool-ask-user-grilling$" "$dir/agent.cordis.yml" || true)
+    has_dirs=$(grep -c "customSkillDirs" "$dir/agent.cordis.yml" || true)
+    n_skills=$(find "$dir/skills" -maxdepth 2 -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
     n_note=$(grep -c "DSH delivery" "$dir/skills/grilling/SKILL.md" 2>/dev/null || true)
     local expect=25; [[ "$p" == "matt-cordis" ]] && expect=27
-    local line="  $p: MATT-ADD=${n_mattadd} 技能=${n_skills}/${expect} grilling旁注=${n_note}"
-    if [[ "$n_mattadd" -ge 1 && "$n_skills" -eq "$expect" && "$n_note" -ge 1 ]]; then
+    local line="  $p: 插件行=${has_row} customSkillDirs=${has_dirs} 技能=${n_skills}/${expect} grilling旁注=${n_note}"
+    if [[ "$has_row" -eq 1 && "$has_dirs" -ge 1 && "$n_skills" -eq "$expect" && "$n_note" -ge 1 ]]; then
       echo "$line  OK"
     else
       echo "$line  FAIL 异常" >&2; fail=1
     fi
-  done
-  # persona 应为原厂逐字：不含 grilling 纪律残留
-  for p in $PRESETS; do
-    if grep -q "Ask every question through the ask_user_grilling" "$PRESET_ROOT/$p/agent.cordis.yml"; then
+    # persona 应为原厂逐字：不含 v2 grilling 纪律残留
+    if grep -q "Ask every question through the ask_user_grilling" "$dir/agent.cordis.yml" 2>/dev/null; then
       echo "  $p: FAIL persona 仍含 v2 grilling 纪律（应已下沉到技能旁注）" >&2; fail=1
     fi
   done
@@ -84,7 +89,8 @@ cmd_setup() {
   2. 新建会话选择「Matt 标准 / Matt PTC 模式 / Matt 创造模式」
   3. 跑一个 grilling 会话（如 /grill-me <任意话题>）
   4. 验收：bash patches/matt-presets-bootstrap/matt-presets-bootstrap.sh check <session-id>
-     健康标准：ask_user_grilling 调用 ≥ 1 且散文轮检测未命中
+     健康标准：exit 0（有 ask_user_grilling 调用且散文轮检测未命中；
+     matt-ptc 会话经 run_code 内的 tools.ask_user_grilling 计数）
 EOF
 }
 
@@ -99,7 +105,7 @@ sync_plugin_local() {
 }
 
 # =============================================================================
-# check —— grilling 会话验收（前 grilling-prose-fallback.sh）
+# check —— grilling 会话验收
 # =============================================================================
 cmd_check() {
   [[ $# -ge 1 ]] || usage 1
@@ -107,9 +113,13 @@ cmd_check() {
   if [[ -f "$INPUT" ]]; then
     SESSION_FILE="$INPUT"
   else
+    # 会话目录有两种命名：session-<id> 与裸 <id>
     local ID="$INPUT"
     [[ "$ID" == session-* ]] || ID="session-$ID"
-    for f in "$DSH_HOME"/sessions/*/"$ID"/session.jsonl.zstd; do
+    local BARE="$INPUT"
+    [[ "$BARE" == session-* ]] && BARE="${BARE#session-}"
+    local f
+    for f in "$DSH_HOME"/sessions/*/"$ID"/session.jsonl.zstd "$DSH_HOME"/sessions/*/"$BARE"/session.jsonl.zstd; do
       [[ -f "$f" ]] && SESSION_FILE="$f" && break
     done
   fi
@@ -141,14 +151,20 @@ with open(path) as f:
 preset = None
 models = set()
 grilling_loaded = False
-grill_calls = 0
+grill_calls = 0        # ask_user_grilling（原生 tool-call + PTC code-dispatch 合计）
 plain_q_calls = 0
 enter_plan_calls = 0
-prose_rounds = []
+prose_msgs = []        # (seq, turn) assistant 文本含轮次格式
 turns_with_grill = set()
 
-# 兼容检测：旧格式 ❓ **Qn（emoji 标记，上游原版）与新格式 Qn. **（本仓库纯文本版）
-PROSE_RE = re.compile(r'(❓\s*\*\*Q\d)|(^Q\d+\.\s+\*\*)', re.M)
+# 散文轮兼容检测（均为模型把轮次写成消息文本的形态）：
+#   旧 emoji 格式  ❓ **Q1
+#   新纯文本格式  Q1. **…（允许 - Q1. / > Q1. / **Q1** - / Q1、 等漂移）
+PROSE_RE = re.compile(
+    r'(❓\s*\*\*Q\d)'
+    r'|^[>\s\-]*(?:\*\*)?Q\d+(?:\*\*)?\s*[.、．\-:]\s*(?:\*\*)',
+    re.M,
+)
 
 for ev in events:
     t = ev.get('type')
@@ -157,11 +173,21 @@ for ev in events:
         preset = ev.get('agentPreset') or preset
     elif t == 'agent-preset/selected':
         preset = d.get('agentPreset') or preset
-    elif t == 'user/message':
-        for c in d.get('content') or []:
-            txt = c.get('text') or ''
-            if '<skill_content name="grilling"' in txt or '<skill_content name="grill-me"' in txt:
-                grilling_loaded = True
+    elif t in ('user/message', 'tool/result'):
+        # grilling 技能正文可能出现在 user/message（原生 skill 工具结果回放）
+        # 或 tool/result（PTC 下经 run_code 调用 skill 的结果）
+        blob = json.dumps(d, ensure_ascii=False)
+        if '<skill_content name="grilling"' in blob or '<skill_content name="grill-me"' in blob:
+            grilling_loaded = True
+    elif t == 'tool/code-dispatch':
+        # PTC：run_code 程序内的每个 SDK 调用各产生一条 code-dispatch
+        name = d.get('name')
+        if name == 'ask_user_grilling':
+            grill_calls += 1
+        elif name == 'ask_user_question':
+            plain_q_calls += 1
+        elif name == 'enter_plan_mode':
+            enter_plan_calls += 1
     elif t == 'assistant/message':
         msg = d.get('message') or {}
         src = msg.get('source') or {}
@@ -174,10 +200,19 @@ for ev in events:
         if 'ask_user_grilling' in tool_names:
             grill_calls += tool_names.count('ask_user_grilling')
             turns_with_grill.add(turn)
+        # PTC：ask_user_grilling 在 run_code 程序内，把该 run_code 所属
+        # 回合记为「有 grilling 调用」（调用数由 code-dispatch 精确计数）
+        for c in content:
+            if c.get('type') == 'tool-call' and c.get('name') == 'run_code' and 'ask_user_grilling' in (c.get('arguments') or ''):
+                turns_with_grill.add(turn)
         plain_q_calls += tool_names.count('ask_user_question')
         enter_plan_calls += tool_names.count('enter_plan_mode')
         if PROSE_RE.search(text):
-            prose_rounds.append((ev.get('seq'), turn, turn in turns_with_grill))
+            prose_msgs.append((ev.get('seq'), turn))
+
+# 两趟判定：先收齐所有「有 grilling 调用的回合」，再逐条判散文消息，
+# 避免同一回合内消息顺序导致的误判（turn 覆盖整个用户回合）。
+leaked = [(s, tn) for s, tn in prose_msgs if tn not in turns_with_grill]
 
 print(f"会话文件 : {os.environ.get('SESSION_FILE', path)}")
 print(f"preset   : {preset or '?'}")
@@ -186,31 +221,29 @@ print(f"grilling 技能已加载: {'是' if grilling_loaded else '否/未见'}")
 print(f"ask_user_grilling 调用: {grill_calls}   ask_user_question 调用: {plain_q_calls}   enter_plan_mode 调用: {enter_plan_calls}")
 print()
 
-healthy = True
-if not prose_rounds:
-    print("== 散文轮检测 == 未发现 Qn. **… 散文模式")
+if not prose_msgs:
+    print("== 散文轮检测 == 未发现轮次格式散文（Qn. **… / ❓ **Qn）")
     if grill_calls:
         print("结论: grilling 交付纪律执行良好（工具投递）。")
-    else:
-        print("结论: 无 grilling 轮次记录（可能非 grilling 会话或轮次未开始）。")
-        healthy = False
-else:
-    leaked = [(s, tn) for s, tn, ok in prose_rounds if not ok]
-    print(f"== 散文轮检测 == 命中 {len(prose_rounds)} 条 Qn. **… 消息，其中 {len(leaked)} 条所在 turn 未调用 ask_user_grilling ==")
-    for s, tn, ok in prose_rounds:
-        mark = '同轮有工具调用（散文仅为事实前言，OK）' if ok else '散文轮失守（整轮未走工具）'
-        print(f"  seq{s} turn{tn}: {mark}")
-    healthy = not leaked
-    if leaked:
-        print()
-        print("== 定位提示（README §5）==")
-        print("  0) 检查 grilling 旁注是否在技能文件里（具体样例 > 抽象禁令）：")
-        print("     grep -c 'DSH delivery' ~/.dsh/.agent-presets/matt-*/skills/grilling/SKILL.md 应为 1/1/1")
-        print("  1) 检查插件版本：ask_user_grilling 工具描述应含「NEVER as message text」")
-        print("  2) 仍高发则换路由模型复测（纪律执行度随模型差异巨大）")
-        print("  · 事实前言以散文出现是允许的；只有【问题】必须进工具")
+        sys.exit(0)
+    print("结论: 会话无 grilling 活动记录（非 grilling 会话、轮次未开始，或 PTC 会话无 code-dispatch 事件）。")
+    sys.exit(3)
 
-sys.exit(0 if healthy else 2)
+print(f"== 散文轮检测 == 命中 {len(prose_msgs)} 条轮次格式消息，其中 {len(leaked)} 条所在回合未调用 ask_user_grilling ==")
+for s, tn in prose_msgs:
+    mark = '同回合有工具调用（散文仅为事实前言，OK）' if tn in turns_with_grill else '散文轮失守（该回合未走工具）'
+    print(f"  seq{s} turn{tn}: {mark}")
+if leaked:
+    print()
+    print("== 定位提示（README §5）==")
+    print("  0) 检查 grilling 旁注是否在技能文件里（具体样例 > 抽象禁令）：")
+    print("     grep -c 'DSH delivery' ~/.dsh/.agent-presets/matt-*/skills/grilling/SKILL.md 应为 1/1/1")
+    print("  1) 检查插件版本：ask_user_grilling 工具描述应含「NEVER as message text」")
+    print("  2) 仍高发则换路由模型复测（纪律执行度随模型差异巨大）")
+    print("  · 事实前言以散文出现是允许的；只有【问题】必须进工具")
+    sys.exit(2)
+print("结论: 散文仅为工具调用回合的事实前言，纪律执行良好。")
+sys.exit(0)
 PYEOF
 }
 

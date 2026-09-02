@@ -2,7 +2,7 @@
 
 > 官方 `cordis` 组合**逐字保留**（persona 零改动，含 `tool-cordis` 动态插件工具集与双平面引导）＋ **Matt Pocock 的 25 个技能**并入 `skills/`（与 cordis 随附 2 技能共 27 个）＋ **grilling 适配插件**（[`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/)）。
 
-设计原则与 matt-standard 相同：**不改原厂 preset 的任何行为**。全部 DSH 适配下沉到技能层（`skills/grilling/SKILL.md` 三段本地旁注）与插件层（`ask_user_grilling` 闸门/表单硬约束 + `enter_plan_mode`），persona 保持官方 cordis 原文。
+设计原则与 matt-standard 相同：**不改原厂 preset 的任何行为**。全部 DSH 适配下沉到技能层（`skills/grilling/SKILL.md` 本地适配——三段旁注 + 格式块纯文本化 + 删除上游一句冲突指引，与另两 preset 逐字节相同）与插件层（`ask_user_grilling` 闸门/表单硬约束 + `enter_plan_mode`），persona 保持官方 cordis 原文。
 
 `agent.cordis.yml` 相对官方 `cordis` 只有一处 `MATT-ADD` 附加改动：planning 组内加 `tool-ask-user-grilling` 行（`customSkillDirs` 官方 cordis 自带）。升级原厂组合时重新复制官方文件并重打。
 

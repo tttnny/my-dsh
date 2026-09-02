@@ -41,9 +41,12 @@ SESSION_FILE=""
 if [[ -f "$INPUT" ]]; then
   SESSION_FILE="$INPUT"
 else
+  # 会话目录有两种命名：session-<id> 与裸 <id>
   ID="$INPUT"
   [[ "$ID" == session-* ]] || ID="session-$ID"
-  for f in "$HOME"/.dsh/sessions/*/"$ID"/session.jsonl.zstd; do
+  BARE="$INPUT"
+  [[ "$BARE" == session-* ]] && BARE="${BARE#session-}"
+  for f in "$HOME"/.dsh/sessions/*/"$ID"/session.jsonl.zstd "$HOME"/.dsh/sessions/*/"$BARE"/session.jsonl.zstd; do
     [[ -f "$f" ]] && SESSION_FILE="$f" && break
   done
 fi

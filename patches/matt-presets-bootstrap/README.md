@@ -11,7 +11,7 @@
 | 原厂组合 `standard` / `ptc` / `cordis` | DSH 安装自带（macOS：`/Applications/DSH Desktop.app/Contents/Resources/app.asar.unpacked/node_modules/@deepseek-ai/dsh-agent-presets/presets/`） | 基底。原厂写得标准，**persona 一行不改**——工具调用报错即模型问题，不怀疑组合 |
 | Matt 的 25 个技能 | [mattpocock/skills](https://github.com/mattpocock/skills) | 工程/生产力技能库，vendor 进各 preset 的 `skills/`（matt-cordis 再并入 cordis 自带 2 个，共 27 个） |
 | `@lynn123411/dsh-ask-user-grilling` | npm / 本仓库 `plugins/dsh-ask-user-grilling/` | grilling 输送层：`ask_user_grilling`（子代理闸门/强制多选/补充机制）+ `enter_plan_mode` |
-| grilling 本地旁注 | 本仓库 `presets/*/skills/grilling/SKILL.md` 内三段引用块 | grilling 纪律的唯一载体：强制 `ask_user_grilling`（含映射表）、子代理停轮、共识后直入 plan mode |
+| grilling 本地适配 | 本仓库 `presets/*/skills/grilling/SKILL.md`（三份逐字节相同） | grilling 纪律载体之一（另一处是插件工具描述）：强制 `ask_user_grilling`（含映射表）、子代理停轮、共识后直入 plan mode |
 
 原则：**纪律不写进 persona**（曾写过，v2 架构），而是下沉到「技能模仿点 + 插件工具描述」——模型加载 grilling 技能时正好读到纪律，比 system prompt 里的抽象禁令有效得多（根因见 §5）。
 
@@ -22,7 +22,12 @@
 3. **打 MATT-ADD 附加改动**（每个文件头部注释有完整指引；官方行零删除）：
    - `skill-filesystem` 行加 `config.customSkillDirs` 指向 `./skills/`（cordis 自带，跳过）；
    - `planning` 组内（`isolate: planMode`）追加工具行 `- id: tool-ask-user-grilling` / `name: '@lynn123411/dsh-ask-user-grilling'`——必须留在组内，因为 `enter_plan_mode` 消费 realm 隔离的 `planMode` 服务。
-4. **写入 grilling 旁注**：把本仓库 `presets/matt-standard/skills/grilling/SKILL.md` 的三段引用块（DSH delivery / Sub-agent rounds / Consensus → plan mode）合入上游 grilling 技能（格式块后、结尾处）。
+4. **应用 grilling 本地适配**：对上游 `grilling/SKILL.md` 共 5 处编辑（可直接对照本仓库成品）：
+   - 格式块的 emoji 标记（问号/箭头）改写为纯文本 `Qn.` / `Recommended:`，引言行加注 "(plain-text markers, no emoji)"；
+   - 格式块后插入旁注一 **DSH delivery**（映射表 + 恢复指令 + PTC 措辞）；
+   - 事实段中**删除**上游 "Don't block on it … ask the rest of the frontier now." 一句（与下一条冲突，有意删除）；
+   - 事实段后插入旁注二 **Sub-agent rounds**（派遣即停轮）；
+   - 结尾插入旁注三 **Consensus → plan mode**（共识后直入 plan mode）。
 5. **写 preset.yml**：`name` + `description`（参考本仓库各 preset）。
 6. **安装插件**：`dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling`。
 7. **同步**：三 preset 目录（`agent.cordis.yml` + `preset.yml` + `skills/`，不含 README.md）放入 `~/.dsh/.agent-presets/<id>/`。
@@ -40,7 +45,7 @@ bash patches/matt-presets-bootstrap/matt-presets-bootstrap.sh
 bash patches/matt-presets-bootstrap/matt-presets-bootstrap.sh setup
 ```
 
-脚本动作：① 检查依赖与材料完整性；② 安装/本地同步 `dsh-ask-user-grilling` 插件；③ rsync 三 preset 到 `~/.dsh/.agent-presets/`（排除 README.md）；④ 自检（MATT-ADD 标记数、技能计数 25/25/27、grilling 旁注在位）；⑤ 打印后续步骤（重启 DSH、跑一个 grilling 会话、用 check 验收）。
+脚本动作：① 检查依赖与材料完整性；② 本地同步 `dsh-ask-user-grilling` 插件；③ rsync 三 preset 到 `~/.dsh/.agent-presets/`（排除 README.md）；④ 自检（行级检查插件工具行与 customSkillDirs、技能计数 25/25/27、grilling 旁注在位、persona 无 v2 残留）；⑤ 打印后续步骤（重启 DSH、跑一个 grilling 会话、用 check 验收）。
 
 ## 4. 验收（check 子命令）
 
@@ -50,7 +55,7 @@ bash patches/matt-presets-bootstrap/matt-presets-bootstrap.sh setup
 bash patches/matt-presets-bootstrap/matt-presets-bootstrap.sh check <session-id>
 ```
 
-健康输出：`ask_user_grilling 调用 ≥ 1`、`散文轮检测: 未命中`。若散文轮失守（模型把 Qn./Recommended: 整轮写成纯文本而不调工具），按 §5 定位。
+健康输出：`ask_user_grilling 调用 ≥ 1`、`散文轮检测: 未命中`（exit 0）。退出码：`0`=健康；`2`=散文轮失守（模型把 Qn./Recommended: 整轮写成纯文本而不调工具，按 §5 定位）；`3`=无法判定（会话无 grilling 活动）；`1`=用法/文件错误。matt-ptc 会话的提问经 `run_code` 程序内 `tools.ask_user_grilling`，脚本通过 `tool/code-dispatch` 事件计数，与原生 preset 同等可检。
 
 ## 5. 排错（前 grilling-prose-fallback 补丁的根因框架）
 
