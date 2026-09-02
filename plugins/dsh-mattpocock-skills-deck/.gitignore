@@ -1,0 +1,44 @@
+node_modules/
+*.tgz
+
+# 临时工作区/调测产物（不入库）
+.scratch/
+_research/
+.bug-investigate/
+.tmp-screenshots/
+.dsh-waystation-cache/
+.dsh-mattskillsdeck-cache/
+.tmp/
+.dsh-tmp/
+
+# 根级临时件（debug / 抓取 / 原始导出）
+/dsh-market-registry.csv
+/dsh-market-registry.json
+/issue-path-mechanisms-r3.html
+/issue15-body.md
+/issue110_raw.md
+/111-body-100.md
+/111-body-raw.md
+/.tmp-*
+# 分叉调整：根 package.json（开发壳清单）在本合集入库；npm 发布物清单为 package/package.json
+/package-lock.json
+/tests/playwright-e2e-probe.js
+/cyberpunk-tokyo-16x9-4k.png
+
+# ===== T0 可变产物（G1 决策 A）：一源出两物，产物由 scripts/build.mjs 生成，不入库 =====
+/client.js
+/host.js
+/package/lib/
+
+# ===== teach skill teaching workspace (ignored, durable across resets) =====
+/MISSION.md
+/RESOURCES.md
+/NOTES.md
+/GLOSSARY.md
+/lessons/
+/reference/
+/learning-records/
+/assets/teach.css
+/assets/quiz.js
+.env
+.wizard-release.env

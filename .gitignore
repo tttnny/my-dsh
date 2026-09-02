@@ -4,6 +4,11 @@ skills-lock.json
 **/.DS_Store
 AGENTS.md
 docs/
+
+# 例外：deck 分叉插件自带 docs/（代码注释引用的 ADR 与上游 README）与 AGENTS.md（分叉开发约定），属插件内容，须入库
+!plugins/dsh-mattpocock-skills-deck/AGENTS.md
+!plugins/dsh-mattpocock-skills-deck/docs/
+!plugins/dsh-mattpocock-skills-deck/docs/**
 .agent-teams/
 tmp/
 

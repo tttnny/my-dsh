@@ -1,0 +1,55 @@
+{
+  "name": "@lynn123411/dsh-mattpocock-skills-deck",
+  "version": "1.8.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tttnny/my-dsh.git",
+    "directory": "plugins/dsh-mattpocock-skills-deck"
+  },
+  "description": "DeepSeek Harness 插件（my-dsh 合集分叉）：Matt Pocock 技能套件（mattpocock/skills）的 DSH 控制面板（Deck）——将 wayfinder 地图/票务/进度、triage / grilling / handoff 动作注入带进 DSH。技能经本合集 agent-preset 分发（presets/matt-*/skills/），判装按「会话当前生效 preset」门控。基于 FeatherHunter/dsh-mattpocock-skills-deck v1.7.12 分叉。安装：dsh plugin --profile <name> add @lynn123411/dsh-mattpocock-skills-deck",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "node ../scripts/build.mjs --pkg-only",
+    "prepare": "node ../scripts/build.mjs --pkg-only"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "shared",
+    "cordis.patch.yml"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "mattpocock",
+    "skills",
+    "wayfinder",
+    "triage",
+    "grilling",
+    "handoff",
+    "issue-tracker",
+    "deck"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  },
+  "homepage": "https://github.com/tttnny/my-dsh/tree/main/plugins/dsh-mattpocock-skills-deck#readme",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -15,6 +15,7 @@
 | [@lynn123411/dsh-chat-translate](./plugins/dsh-chat-translate) | `dsh.bundle` + `dsh.client/web` | **聊天翻译**：工具调用与思考摘要自动译中（仅当前会话、正文不翻）：OpenAI 兼容 AI 通道（可配 Base URL/模型，Key 存 `~/.dsh/.credentials.yaml`）+ 免 Key Bing 兜底双通道，内置「聊天翻译」面板 | `dsh plugin --profile web add @lynn123411/dsh-chat-translate` |
 | [@lynn123411/dsh-a6api](./plugins/dsh-a6api) | `dsh.bundle` + `dsh.client/web` | **A6API 接入**：将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，提供多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步、商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）、侧边栏快捷模型卡片与账户余额/价格波动/模型市场胶囊行 | `dsh plugin --profile web add @lynn123411/dsh-a6api` |
 | [@lynn123411/dsh-ask-user-grilling](./plugins/dsh-ask-user-grilling) | 普通 Cordis 插件（preset 工具行消费，非 bundle） | **grilling 适配工具**：`ask_user_grilling`（后台子代理闸门 / 强制多选 / 输入框补充（无每问补充选项）/ 轮末补充问题 / 题干引导不硬校验）+ `enter_plan_mode`（grilling 共识后自动进入计划模式）。配合 `matt-standard` 预设使用，不改动任何技能文件 | `dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling` |
+| [@lynn123411/dsh-mattpocock-skills-deck](./plugins/dsh-mattpocock-skills-deck) | `dsh.bundle` + `dsh.client/web`（上游分叉） | **Matt 技能控制面板（Deck）**：wayfinder 地图/票务/进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）。分叉改点：技能判装识别 `~/.dsh/.agent-presets/<id>/skills/` 根并**按当前会话生效 preset 门控**（没选 Matt preset 不虚报「环境 10/10」；选了不误报缺失）；移除上游随包全局技能 provider | `dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck` |
 
 ---
 
@@ -37,7 +38,6 @@
 | [patch-dsh-escalation-noop](./patches/patch-dsh-escalation-noop/) | 修复 `dsh-sandbox` 同模式 `sandbox_permissions` 升级报错（`danger→danger` no-op 放行，真实升级仍审批）。详见 [README](./patches/patch-dsh-escalation-noop/README.md) |
 | [dsh-message-edit-log-compat](./patches/dsh-message-edit-log-compat/) | 修复第三方插件 `dsh-message-edit` 写入自定义事件 `message-edit/version` 导致的历史会话加载失败。详见 [README](./patches/dsh-message-edit-log-compat/README.md) |
 | [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `ptc-cordis` / `matt-cordis`）同进程互斥」。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
-| [dsh-mattpocock-skills-deck](./patches/dsh-mattpocock-skills-deck/) | 修复第三方插件 `dsh-mattpocock-skills-deck` 无法检测 agent-preset 技能套件（红条「未检测到核心技能套件」）；候选根追加 `~/.dsh/.agent-presets/<id>/skills/`。详见 [README](./patches/dsh-mattpocock-skills-deck/README.md) |
 | [ptc-preset-fusion-checklist](./patches/ptc-preset-fusion-checklist/) | **PTC 融合预设防错清单（经验文档）**：写新融合 preset 前逐项核对——persona 融合、技能注释、mode 与措辞一致、同步与验证；附标准 persona 契约文案（ptc/both 两版）与排查命令。详见 [README](./patches/ptc-preset-fusion-checklist/README.md) |
 
 ---
