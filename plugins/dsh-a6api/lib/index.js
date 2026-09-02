@@ -1799,6 +1799,190 @@ function overlayPinsOnModels(models, pins, tokenId) {
     };
   });
 }
+function createUpstreamMemo(ttlMs) {
+  let cache = /* @__PURE__ */ new Map();
+  const inflight = /* @__PURE__ */ new Map();
+  let epoch = 0;
+  return {
+    /** 数据变更后调用：旧结果立即不可用；在途构建写缓存前校验代际，不会回填旧数据 */
+    invalidate() {
+      epoch += 1;
+      cache.clear();
+    },
+    async get(key, fetcher) {
+      const hit = cache.get(key);
+      if (hit && hit.epoch === epoch && Date.now() - hit.at < ttlMs) return hit.data;
+      let pending = inflight.get(key);
+      if (!pending) {
+        const buildEpoch = epoch;
+        const run = Promise.resolve().then(fetcher).then((data) => {
+          if (buildEpoch === epoch) cache.set(key, { data, at: Date.now(), epoch: buildEpoch });
+          return data;
+        }).finally(() => {
+          if (inflight.get(key) === run) inflight.delete(key);
+        });
+        inflight.set(key, run);
+        pending = run;
+      }
+      return pending;
+    }
+  };
+}
+var stateMemo = createUpstreamMemo(12e4);
+var priceCountsMemo = createUpstreamMemo(12e4);
+function stateCacheKeyOf(config) {
+  const fingerprint = (s) => {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = h * 31 + s.charCodeAt(i) | 0;
+    return (h >>> 0).toString(36);
+  };
+  return `${config.baseURL || ""}|${config.userId || ""}|${fingerprint(config.apiKey || "")}|${fingerprint(config.accessToken || "")}`;
+}
+async function getCachedStateResponse(config, configAccess) {
+  return stateMemo.get(stateCacheKeyOf(config), () => buildStateResponse(config, configAccess));
+}
+async function buildStateResponse(config, configAccess) {
+  const token = config.accessToken || "";
+  const [balance, dshConfiguredModels, modelIdsRaw, allLogs, pins] = await Promise.all([
+    fetchBalance(config.baseURL, config.apiKey, config.userId, token),
+    configAccess.getDshConfiguredModels(),
+    config.apiKey ? fetchTokenModels(config.baseURL, config.apiKey) : Promise.resolve([]),
+    fetchRecentLogs(config.userId, token, 100),
+    config.userId && token ? fetchMarketplacePins(config.userId, token).catch(() => []) : Promise.resolve([])
+  ]);
+  if (balance?.userId && String(balance.userId) !== config.userId) {
+    tokenResolveCache = null;
+    config.userId = String(balance.userId);
+    await configAccess.writeConfig({ userId: config.userId });
+  }
+  let modelIds = modelIdsRaw;
+  if (modelIds.length === 0) {
+    modelIds = [
+      .../* @__PURE__ */ new Set([
+        ...dshConfiguredModels,
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "claude-fable-5",
+        "claude-opus-5",
+        "grok-4.6"
+      ])
+    ];
+  }
+  allLogs.sort((a, b) => (Number(b.created_at) || 0) - (Number(a.created_at) || 0));
+  if (config.userId || token) {
+    const missing = modelIds.filter((m) => {
+      const entry = merchantCardCache.get(m.toLowerCase());
+      return !entry || Date.now() - entry.at >= MERCHANT_CARD_TTL_MS;
+    });
+    if (missing.length > 0) {
+      let found = {};
+      try {
+        found = await Promise.race([
+          getKnownMerchantsFromLogs(config.userId, token, missing, allLogs),
+          new Promise((resolve2) => setTimeout(() => resolve2({}), 1e4))
+        ]);
+      } catch {
+        found = {};
+      }
+      for (const [mName, card] of Object.entries(found)) {
+        merchantCardCache.set(mName.toLowerCase(), { card, at: Date.now() });
+      }
+    }
+  }
+  const lastRoutedMap = /* @__PURE__ */ new Map();
+  for (const log of allLogs) {
+    const mName = log.model_name;
+    const chId = Number(log.channel);
+    const ts = Number(log.created_at) || 0;
+    if (mName && chId > 0 && ts > 0 && !lastRoutedMap.has(mName.toLowerCase())) {
+      lastRoutedMap.set(mName.toLowerCase(), ts);
+    }
+  }
+  const dshSet = new Set(dshConfiguredModels);
+  let models = modelIds.map((mId) => {
+    const meta = resolveModelMeta(mId);
+    const cacheEntry = merchantCardCache.get(mId.toLowerCase());
+    const cachedCard = cacheEntry && Date.now() - cacheEntry.at < MERCHANT_CARD_TTL_MS ? cacheEntry.card : void 0;
+    const routedAt = lastRoutedMap.get(mId.toLowerCase());
+    return {
+      model_name: mId,
+      brand: meta.brand,
+      contextWindow: meta.contextWindow,
+      maxTokens: meta.maxTokens,
+      modalities: meta.modalities,
+      hasReasoning: Boolean(meta.reasoningEfforts || meta.thinkingFormat),
+      inDsh: dshSet.has(mId),
+      merchant: cachedCard,
+      probeStatus: cachedCard ? "success" : "idle",
+      lastRoutedAt: routedAt,
+      lastRoutedText: routedAt ? formatRelativeTime(routedAt) : void 0
+    };
+  });
+  const resolvedTokenId = pins.length > 0 ? await resolveTokenId(config) : null;
+  models = overlayPinsOnModels(models, pins, resolvedTokenId);
+  const rePointTargets = models.filter(
+    (m) => m.pinStatus === "pin_elsewhere" && m.pinTokenMatched === true && m.pinnedChannelId && m.pinnedChannelId > 0
+  ).map((m) => ({ modelName: m.model_name, channelId: m.pinnedChannelId }));
+  if (rePointTargets.length > 0 && config.userId && token) {
+    try {
+      await Promise.race([
+        (async () => {
+          for (let i = 0; i < rePointTargets.length; i += 4) {
+            const batch = rePointTargets.slice(i, i + 4);
+            await Promise.all(
+              batch.map(async ({ modelName, channelId }) => {
+                try {
+                  const pinnedCard = await fetchChannelDetails(
+                    channelId,
+                    config.userId,
+                    token,
+                    modelName
+                  );
+                  if (pinnedCard && Number(pinnedCard.channel_id) === Number(channelId)) {
+                    merchantCardCache.set(modelName.toLowerCase(), { card: pinnedCard, at: Date.now() });
+                  }
+                } catch {
+                }
+              })
+            );
+          }
+        })(),
+        new Promise((resolve2) => setTimeout(() => resolve2(), 1e4))
+      ]);
+    } catch {
+    }
+    models = models.map((m) => {
+      if (m.pinStatus !== "pin_elsewhere" || m.pinTokenMatched !== true) return m;
+      const entry = merchantCardCache.get(m.model_name.toLowerCase());
+      const card = entry && Date.now() - entry.at < MERCHANT_CARD_TTL_MS ? entry.card : void 0;
+      if (card && Number(card.channel_id) === Number(m.pinnedChannelId)) {
+        const pinnedLog = allLogs.find(
+          (l) => l.model_name?.toLowerCase() === m.model_name.toLowerCase() && Number(l.channel) === m.pinnedChannelId
+        );
+        const pinnedAt = pinnedLog ? Number(pinnedLog.created_at) || 0 : void 0;
+        return {
+          ...m,
+          merchant: card,
+          pinStatus: "pin_here",
+          probeStatus: "success",
+          lastRoutedAt: pinnedAt,
+          lastRoutedText: pinnedAt ? formatRelativeTime(pinnedAt) : void 0
+        };
+      }
+      return m;
+    });
+  }
+  const recentLogs = allLogs.slice(0, 20);
+  return {
+    config: maskConfig(config),
+    balance,
+    models,
+    dshConfiguredModels,
+    recentLogs,
+    pins
+  };
+}
 function apply(ctx) {
   const configAccess = createConfigAccess(ctx);
   void configAccess.ensureMigrated();
@@ -1821,146 +2005,7 @@ function apply(ctx) {
           try {
             if (pathname === "/state" && (req.method === "GET" || req.method === "HEAD")) {
               const config = await configAccess.readConfig();
-              const token = config.accessToken || "";
-              const [balance, dshConfiguredModels, modelIdsRaw, allLogs, pins] = await Promise.all([
-                fetchBalance(config.baseURL, config.apiKey, config.userId, token),
-                configAccess.getDshConfiguredModels(),
-                config.apiKey ? fetchTokenModels(config.baseURL, config.apiKey) : Promise.resolve([]),
-                fetchRecentLogs(config.userId, token, 100),
-                config.userId && token ? fetchMarketplacePins(config.userId, token).catch(() => []) : Promise.resolve([])
-              ]);
-              if (balance?.userId && String(balance.userId) !== config.userId) {
-                tokenResolveCache = null;
-                config.userId = String(balance.userId);
-                await configAccess.writeConfig({ userId: config.userId });
-              }
-              let modelIds = modelIdsRaw;
-              if (modelIds.length === 0) {
-                modelIds = [
-                  .../* @__PURE__ */ new Set([
-                    ...dshConfiguredModels,
-                    "gpt-5.6-sol",
-                    "gpt-5.6-terra",
-                    "gpt-5.6-luna",
-                    "claude-fable-5",
-                    "claude-opus-5",
-                    "grok-4.6"
-                  ])
-                ];
-              }
-              allLogs.sort((a, b) => (Number(b.created_at) || 0) - (Number(a.created_at) || 0));
-              if (config.userId || token) {
-                const missing = modelIds.filter((m) => {
-                  const entry = merchantCardCache.get(m.toLowerCase());
-                  return !entry || Date.now() - entry.at >= MERCHANT_CARD_TTL_MS;
-                });
-                if (missing.length > 0) {
-                  let found = {};
-                  try {
-                    found = await Promise.race([
-                      getKnownMerchantsFromLogs(config.userId, token, missing, allLogs),
-                      new Promise((resolve2) => setTimeout(() => resolve2({}), 1e4))
-                    ]);
-                  } catch {
-                    found = {};
-                  }
-                  for (const [mName, card] of Object.entries(found)) {
-                    merchantCardCache.set(mName.toLowerCase(), { card, at: Date.now() });
-                  }
-                }
-              }
-              const lastRoutedMap = /* @__PURE__ */ new Map();
-              for (const log of allLogs) {
-                const mName = log.model_name;
-                const chId = Number(log.channel);
-                const ts = Number(log.created_at) || 0;
-                if (mName && chId > 0 && ts > 0 && !lastRoutedMap.has(mName.toLowerCase())) {
-                  lastRoutedMap.set(mName.toLowerCase(), ts);
-                }
-              }
-              const dshSet = new Set(dshConfiguredModels);
-              let models = modelIds.map((mId) => {
-                const meta = resolveModelMeta(mId);
-                const cacheEntry = merchantCardCache.get(mId.toLowerCase());
-                const cachedCard = cacheEntry && Date.now() - cacheEntry.at < MERCHANT_CARD_TTL_MS ? cacheEntry.card : void 0;
-                const routedAt = lastRoutedMap.get(mId.toLowerCase());
-                return {
-                  model_name: mId,
-                  brand: meta.brand,
-                  contextWindow: meta.contextWindow,
-                  maxTokens: meta.maxTokens,
-                  modalities: meta.modalities,
-                  hasReasoning: Boolean(meta.reasoningEfforts || meta.thinkingFormat),
-                  inDsh: dshSet.has(mId),
-                  merchant: cachedCard,
-                  probeStatus: cachedCard ? "success" : "idle",
-                  lastRoutedAt: routedAt,
-                  lastRoutedText: routedAt ? formatRelativeTime(routedAt) : void 0
-                };
-              });
-              const resolvedTokenId = pins.length > 0 ? await resolveTokenId(config) : null;
-              models = overlayPinsOnModels(models, pins, resolvedTokenId);
-              const rePointTargets = models.filter(
-                (m) => m.pinStatus === "pin_elsewhere" && m.pinTokenMatched === true && m.pinnedChannelId && m.pinnedChannelId > 0
-              ).map((m) => ({ modelName: m.model_name, channelId: m.pinnedChannelId }));
-              if (rePointTargets.length > 0 && config.userId && token) {
-                try {
-                  await Promise.race([
-                    (async () => {
-                      for (let i = 0; i < rePointTargets.length; i += 4) {
-                        const batch = rePointTargets.slice(i, i + 4);
-                        await Promise.all(
-                          batch.map(async ({ modelName, channelId }) => {
-                            try {
-                              const pinnedCard = await fetchChannelDetails(
-                                channelId,
-                                config.userId,
-                                token,
-                                modelName
-                              );
-                              if (pinnedCard && Number(pinnedCard.channel_id) === Number(channelId)) {
-                                merchantCardCache.set(modelName.toLowerCase(), { card: pinnedCard, at: Date.now() });
-                              }
-                            } catch {
-                            }
-                          })
-                        );
-                      }
-                    })(),
-                    new Promise((resolve2) => setTimeout(() => resolve2(), 1e4))
-                  ]);
-                } catch {
-                }
-                models = models.map((m) => {
-                  if (m.pinStatus !== "pin_elsewhere" || m.pinTokenMatched !== true) return m;
-                  const entry = merchantCardCache.get(m.model_name.toLowerCase());
-                  const card = entry && Date.now() - entry.at < MERCHANT_CARD_TTL_MS ? entry.card : void 0;
-                  if (card && Number(card.channel_id) === Number(m.pinnedChannelId)) {
-                    const pinnedLog = allLogs.find(
-                      (l) => l.model_name?.toLowerCase() === m.model_name.toLowerCase() && Number(l.channel) === m.pinnedChannelId
-                    );
-                    const pinnedAt = pinnedLog ? Number(pinnedLog.created_at) || 0 : void 0;
-                    return {
-                      ...m,
-                      merchant: card,
-                      pinStatus: "pin_here",
-                      probeStatus: "success",
-                      lastRoutedAt: pinnedAt,
-                      lastRoutedText: pinnedAt ? formatRelativeTime(pinnedAt) : void 0
-                    };
-                  }
-                  return m;
-                });
-              }
-              const recentLogs = allLogs.slice(0, 20);
-              const response = {
-                config: maskConfig(config),
-                balance,
-                models,
-                dshConfiguredModels,
-                recentLogs,
-                pins
-              };
+              const response = await getCachedStateResponse(config, configAccess);
               return sendJson(res, 200, { ok: true, data: response });
             }
             if (pathname === "/config" && req.method === "POST") {
@@ -1993,6 +2038,7 @@ function apply(ctx) {
               if (updated.activeModels.length > 0) {
                 await configAccess.syncModels(updated.baseURL, updated.activeModels);
               }
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, config: maskConfig(updated), balance });
             }
             if (pathname === "/balance" && (req.method === "GET" || req.method === "HEAD")) {
@@ -2018,6 +2064,7 @@ function apply(ctx) {
                 if (result.merchant) {
                   merchantCardCache.set(modelName.toLowerCase(), { card: result.merchant, at: Date.now() });
                 }
+                stateMemo.invalidate();
                 return sendJson(res, 200, { ok: true, result });
               }
               let modelIds = body.modelNames;
@@ -2035,6 +2082,7 @@ function apply(ctx) {
                 }
                 results.push(r);
               }
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, results });
             }
             if (pathname === "/sync-models" && req.method === "POST") {
@@ -2045,6 +2093,7 @@ function apply(ctx) {
               const baseURL = body.baseURL || config.baseURL;
               await configAccess.syncModels(baseURL, modelIds);
               const dshConfiguredModels = await configAccess.getDshConfiguredModels();
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, dshConfiguredModels });
             }
             if (pathname === "/pin" && req.method === "POST") {
@@ -2094,6 +2143,7 @@ function apply(ctx) {
                 at: Date.now()
               });
               const pinList = await fetchMarketplacePins(userId, token);
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, message: `\u5DF2\u56FA\u5B9A ${modelName} \u81F3\u5546\u6237 #${card.channel_id}`, pins: pinList, tokenId });
             }
             if (pathname === "/unpin" && req.method === "POST") {
@@ -2121,6 +2171,7 @@ function apply(ctx) {
                 });
               }
               const pinList = await fetchMarketplacePins(userId, token);
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, message: `\u5DF2\u53D6\u6D88\u56FA\u5B9A ${modelName}`, pins: pinList, tokenId });
             }
             if (pathname === "/disable" && req.method === "POST") {
@@ -2154,6 +2205,7 @@ function apply(ctx) {
                 card: { ...card, user_channel_disabled: true },
                 at: Date.now()
               });
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, message: `\u5DF2\u7981\u7528\u5546\u6237 #${card.channel_id} \u5BF9\u8BE5\u6A21\u578B\u7684\u670D\u52A1` });
             }
             if (pathname === "/restore" && req.method === "POST") {
@@ -2187,6 +2239,7 @@ function apply(ctx) {
                 card: { ...card, user_channel_disabled: false },
                 at: Date.now()
               });
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, message: `\u5DF2\u6062\u590D\u5546\u6237 #${card.channel_id} \u5BF9\u8BE5\u6A21\u578B\u7684\u670D\u52A1` });
             }
             if (pathname === "/price-fluctuation" && (req.method === "GET" || req.method === "HEAD")) {
@@ -2195,8 +2248,11 @@ function apply(ctx) {
               if (!token || !config.userId) {
                 return sendJson(res, 200, { ok: true, data: { pendingCount: 0, unseenCount: 0, totalCount: 0, hasAuth: false, authError: false, updatedAt: Date.now() } });
               }
-              const result = await fetchPriceFluctuation(config.userId, token);
-              const { notices, ...counts } = result;
+              const counts = await priceCountsMemo.get(stateCacheKeyOf(config), async () => {
+                const result = await fetchPriceFluctuation(config.userId, token);
+                const { notices, ...rest } = result;
+                return rest;
+              });
               const hasAuth = !counts.authError;
               return sendJson(res, 200, { ok: true, data: { pendingCount: counts.pendingCount, unseenCount: counts.unseenCount, totalCount: counts.totalCount, hasAuth, authError: Boolean(counts.authError), updatedAt: Date.now() } });
             }

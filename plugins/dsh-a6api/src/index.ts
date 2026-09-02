@@ -2,6 +2,7 @@ import { fetchBalance, fetchTokenModels, fetchRecentLogs, fetchPriceFluctuation,
 import { getKnownMerchantsFromLogs, probeSingleModel } from './server/probe.js';
 import { resolveModelMeta, getCatalog, upsertCatalogEntries, clearCatalog, queryOpenRouter, fetchMarketplaceModels, updateCatalogEntry } from './server/catalog.js';
 import { createConfigAccess } from './server/sync.js';
+import type { ConfigAccess } from './server/sync.js';
 import type { A6ApiConfig, A6ApiStateResponse, MarketplacePin, MerchantChannelInfo, ModelCardData } from './types.js';
 import { validateReasoningEfforts } from './types.js';
 
@@ -164,6 +165,265 @@ function overlayPinsOnModels(models: ModelCardData[], pins: MarketplacePin[], to
   });
 }
 
+// ===== /state 与 /price-fluctuation 的上游短缓存 + 并发去重 =====
+//
+// 客户端每 60s（每个标签页一份定时器）轮询 /state，页面刷新/打开设置面板还会额外触发；
+// 无状态实现下每来一个 /state 都完整重拉上游（余额/令牌模型/日志/固定记录），多标签页各自为政，
+// 上游流量 = 标签页数 × 触发次数。这里把「最近一次组装结果」按凭据短缓存（TTL），
+// 并把并发到达的请求合并到同一份在途构建：上游请求频率从「每 60s × 标签页数」降为「每 TTL 一次」。
+// 数据变更类操作（保存配置/同步模型/探测/固定/取消固定/禁用/恢复）调用 stateMemo.invalidate()
+// 提升代际并清空缓存；变更前已开始的在途构建完成时因代际不符不会写入缓存（仅服务本次请求）。
+
+/** 通用上游记忆：TTL 短缓存 + 同键在途构建合并 + 代际失效 */
+function createUpstreamMemo<T>(ttlMs: number): {
+  get(key: string, fetcher: () => Promise<T>): Promise<T>;
+  invalidate(): void;
+} {
+  let cache = new Map<string, { data: T; at: number; epoch: number }>();
+  const inflight = new Map<string, Promise<T>>();
+  let epoch = 0;
+
+  return {
+    /** 数据变更后调用：旧结果立即不可用；在途构建写缓存前校验代际，不会回填旧数据 */
+    invalidate() {
+      epoch += 1;
+      cache.clear();
+    },
+
+    async get(key, fetcher) {
+      const hit = cache.get(key);
+      if (hit && hit.epoch === epoch && Date.now() - hit.at < ttlMs) return hit.data;
+
+      let pending = inflight.get(key);
+      if (!pending) {
+        const buildEpoch = epoch;
+        const run = Promise.resolve()
+          .then(fetcher)
+          .then((data) => {
+            // 构建期间发生数据变更 → 不写缓存，避免旧结果被 TTL 长期服务
+            if (buildEpoch === epoch) cache.set(key, { data, at: Date.now(), epoch: buildEpoch });
+            return data;
+          })
+          .finally(() => {
+            if (inflight.get(key) === run) inflight.delete(key);
+          });
+        inflight.set(key, run);
+        pending = run;
+      }
+      return pending;
+    },
+  };
+}
+
+/** /state 全量响应缓存 TTL：略大于客户端 60s 轮询周期 → 单标签页稳态上游约每 2 分钟一次，多标签页共享 */
+const stateMemo = createUpstreamMemo<A6ApiStateResponse>(120_000);
+/** 价格波动计数缓存（同一上游价格通知接口的合并窗口） */
+const priceCountsMemo = createUpstreamMemo<{
+  pendingCount: number;
+  unseenCount: number;
+  totalCount: number;
+  authError?: boolean;
+}>(120_000);
+
+/** 缓存键：按节点与凭据隔离；userId / apiKey / accessToken 任一变化 → 键变化 → 自动错过旧缓存 */
+function stateCacheKeyOf(config: A6ApiConfig): string {
+  const fingerprint = (s: string): string => {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  };
+  return `${config.baseURL || ''}|${config.userId || ''}|${fingerprint(config.apiKey || '')}|${fingerprint(config.accessToken || '')}`;
+}
+
+/** /state 入口：短缓存优先；未命中则合并到在途构建（并发 /state 共享同一次上游拉取） */
+async function getCachedStateResponse(config: A6ApiConfig, configAccess: ConfigAccess): Promise<A6ApiStateResponse> {
+  return stateMemo.get(stateCacheKeyOf(config), () => buildStateResponse(config, configAccess));
+}
+
+/** 组装一次完整的 /state 响应（原 /state 路由内联逻辑原样提取：上游拉取 + 商户卡片推导 + 固定叠加） */
+async function buildStateResponse(config: A6ApiConfig, configAccess: ConfigAccess): Promise<A6ApiStateResponse> {
+  const token = config.accessToken || '';
+  // 并行拉取互相独立的上游数据：余额 / 本地配置模型 / 令牌模型列表 / 最近日志 / 平台固定记录。
+  // 原串行 5 次上游 RTT → 1 次，冷路径 3~10s → 约 1~2s（启动预热 + 60s 轮询依赖此提速）。
+  // 错误语义与原先一致：余额/模型列表/日志失败则整体 500，固定记录失败降级为空。
+  const [balance, dshConfiguredModels, modelIdsRaw, allLogs, pins] = await Promise.all([
+    fetchBalance(config.baseURL, config.apiKey, config.userId, token),
+    configAccess.getDshConfiguredModels(),
+    config.apiKey ? fetchTokenModels(config.baseURL, config.apiKey) : Promise.resolve([] as string[]),
+    fetchRecentLogs(config.userId, token, 100),
+    config.userId && token
+      ? fetchMarketplacePins(config.userId, token).catch(() => [] as MarketplacePin[])
+      : Promise.resolve([] as MarketplacePin[]),
+  ]);
+
+  // Auto-persist discovered userId
+  if (balance?.userId && String(balance.userId) !== config.userId) {
+    // 账号变化：旧 tokenId 不再对应当前账号，作废并重置解析缓存
+    tokenResolveCache = null;
+    config.userId = String(balance.userId);
+    await configAccess.writeConfig({ userId: config.userId });
+  }
+
+  // Fallback to DSH-configured / default models if token query returned empty
+  let modelIds = modelIdsRaw;
+  if (modelIds.length === 0) {
+    modelIds = [
+      ...new Set([
+        ...dshConfiguredModels,
+        'gpt-5.6-sol',
+        'gpt-5.6-terra',
+        'gpt-5.6-luna',
+        'claude-fable-5',
+        'claude-opus-5',
+        'grok-4.6',
+      ]),
+    ];
+  }
+
+  // 一次拉取日志(接口实测上限 100 条),同一份数据用于: ①商户卡片预填充 ②路由快照时效映射 ③Account 页最近明细
+  // 防御性排序：依赖“最新在前”，若网关排序变更仍能正确取首条
+  allLogs.sort((a, b) => (Number(b.created_at) || 0) - (Number(a.created_at) || 0));
+
+  // Match known merchant cards from recent logs if not yet in cache (with 10s total timeout to avoid /state hang)
+  if (config.userId || token) {
+    const missing = modelIds.filter((m) => {
+      const entry = merchantCardCache.get(m.toLowerCase());
+      return !entry || Date.now() - entry.at >= MERCHANT_CARD_TTL_MS;
+    });
+    if (missing.length > 0) {
+      let found: Record<string, MerchantChannelInfo> = {};
+      try {
+        found = await Promise.race([
+          getKnownMerchantsFromLogs(config.userId, token, missing, allLogs),
+          new Promise<Record<string, MerchantChannelInfo>>((resolve) => setTimeout(() => resolve({}), 10000)),
+        ]);
+      } catch {
+        found = {};
+      }
+      for (const [mName, card] of Object.entries(found)) {
+        merchantCardCache.set(mName.toLowerCase(), { card, at: Date.now() });
+      }
+    }
+  }
+
+  // 路由快照时效: 每个模型最新一条「带 channel 的调用日志」时间 —— 与预填充卡片商户数据同一条规则(取最新命中商户路由的请求)
+  const lastRoutedMap = new Map<string, number>();
+  for (const log of allLogs) {
+    const mName = log.model_name;
+    const chId = Number(log.channel);
+    const ts = Number(log.created_at) || 0;
+    if (mName && chId > 0 && ts > 0 && !lastRoutedMap.has(mName.toLowerCase())) {
+      lastRoutedMap.set(mName.toLowerCase(), ts);
+    }
+  }
+
+  const dshSet = new Set(dshConfiguredModels);
+  let models: ModelCardData[] = modelIds.map((mId) => {
+    const meta = resolveModelMeta(mId);
+    const cacheEntry = merchantCardCache.get(mId.toLowerCase());
+    const cachedCard =
+      cacheEntry && Date.now() - cacheEntry.at < MERCHANT_CARD_TTL_MS
+        ? cacheEntry.card
+        : undefined;
+    const routedAt = lastRoutedMap.get(mId.toLowerCase());
+    return {
+      model_name: mId,
+      brand: meta.brand,
+      contextWindow: meta.contextWindow,
+      maxTokens: meta.maxTokens,
+      modalities: meta.modalities,
+      hasReasoning: Boolean(meta.reasoningEfforts || meta.thinkingFormat),
+      inDsh: dshSet.has(mId),
+      merchant: cachedCard,
+      probeStatus: cachedCard ? 'success' : 'idle',
+      lastRoutedAt: routedAt,
+      lastRoutedText: routedAt ? formatRelativeTime(routedAt) : undefined,
+    };
+  });
+
+  // 固定状态叠加：pins 已在并行批次拉取（失败降级为空数组），让卡片状态跟随官网
+  // （官网侧解除固定/涨价自动解除都会反映过来）
+  const resolvedTokenId = pins.length > 0 ? await resolveTokenId(config) : null;
+  models = overlayPinsOnModels(models, pins, resolvedTokenId);
+
+  // 固定商家自动接管卡片：模型已固定到「非当前卡片」的商家时（当前令牌的固定），
+  // 拉取该固定商家的渠道详情替换卡片，而不是提示「已固定到其他商家」。
+  // 拉取失败/固定属于其他令牌时保持原卡片并回退到提示徽标。
+  const rePointTargets = models
+    .filter(
+      (m) =>
+        m.pinStatus === 'pin_elsewhere' &&
+        m.pinTokenMatched === true &&
+        m.pinnedChannelId &&
+        m.pinnedChannelId > 0,
+    )
+    .map((m) => ({ modelName: m.model_name, channelId: m.pinnedChannelId as number }));
+  if (rePointTargets.length > 0 && config.userId && token) {
+    try {
+      await Promise.race([
+        (async () => {
+          for (let i = 0; i < rePointTargets.length; i += 4) {
+            const batch = rePointTargets.slice(i, i + 4);
+            await Promise.all(
+              batch.map(async ({ modelName, channelId }) => {
+                try {
+                  const pinnedCard = await fetchChannelDetails(
+                    channelId,
+                    config.userId,
+                    token,
+                    modelName,
+                  );
+                  // 校验返回卡片确实属于目标固定渠道，避免官方搜索返回其他条目污染缓存
+                  if (pinnedCard && Number(pinnedCard.channel_id) === Number(channelId)) {
+                    merchantCardCache.set(modelName.toLowerCase(), { card: pinnedCard, at: Date.now() });
+                  }
+                } catch {}
+              }),
+            );
+          }
+        })(),
+        new Promise<void>((resolve) => setTimeout(() => resolve(), 10000)),
+      ]);
+    } catch {}
+    // 用回填后的缓存重建卡片（固定商家即卡片商家 → 状态升级为 pin_here）
+    models = models.map((m) => {
+      if (m.pinStatus !== 'pin_elsewhere' || m.pinTokenMatched !== true) return m;
+      const entry = merchantCardCache.get(m.model_name.toLowerCase());
+      const card = entry && Date.now() - entry.at < MERCHANT_CARD_TTL_MS ? entry.card : undefined;
+      if (card && Number(card.channel_id) === Number(m.pinnedChannelId)) {
+        // 路由快照口径对齐：取「该商家的该模型」最近一次请求（卡片已切换到固定商家，时间不能再按任意商家取）
+        const pinnedLog = allLogs.find(
+          (l) =>
+            l.model_name?.toLowerCase() === m.model_name.toLowerCase() &&
+            Number(l.channel) === m.pinnedChannelId,
+        );
+        const pinnedAt = pinnedLog ? Number(pinnedLog.created_at) || 0 : undefined;
+        return {
+          ...m,
+          merchant: card,
+          pinStatus: 'pin_here' as const,
+          probeStatus: 'success' as const,
+          lastRoutedAt: pinnedAt,
+          lastRoutedText: pinnedAt ? formatRelativeTime(pinnedAt) : undefined,
+        };
+      }
+      return m;
+    });
+  }
+
+  // Account 页明细保持原有窗口 (20 条)
+  const recentLogs = allLogs.slice(0, 20);
+
+  return {
+    config: maskConfig(config),
+    balance,
+    models,
+    dshConfiguredModels,
+    recentLogs,
+    pins,
+  };
+}
+
 export function apply(ctx: any): void {
   // DSH 原生配置访问器：启动即触发旧配置文件自动迁移（幂等，首次读取会等待其完成）
   const configAccess = createConfigAccess(ctx);
@@ -193,189 +453,11 @@ export function apply(ctx: any): void {
           }
 
           try {
-            // GET /state
+            // GET /state — 短缓存 + 并发去重：TTL 内重复/并发请求共享同一份上游结果，
+            // 多标签页轮询、页面刷新、面板打开与操作后的自动刷新不再各自重复拉取上游
             if (pathname === '/state' && (req.method === 'GET' || req.method === 'HEAD')) {
               const config = await configAccess.readConfig();
-              const token = config.accessToken || '';
-              // 并行拉取互相独立的上游数据：余额 / 本地配置模型 / 令牌模型列表 / 最近日志 / 平台固定记录。
-              // 原串行 5 次上游 RTT → 1 次，冷路径 3~10s → 约 1~2s（启动预热 + 60s 轮询依赖此提速）。
-              // 错误语义与原先一致：余额/模型列表/日志失败则整体 500，固定记录失败降级为空。
-              const [balance, dshConfiguredModels, modelIdsRaw, allLogs, pins] = await Promise.all([
-                fetchBalance(config.baseURL, config.apiKey, config.userId, token),
-                configAccess.getDshConfiguredModels(),
-                config.apiKey ? fetchTokenModels(config.baseURL, config.apiKey) : Promise.resolve([] as string[]),
-                fetchRecentLogs(config.userId, token, 100),
-                config.userId && token
-                  ? fetchMarketplacePins(config.userId, token).catch(() => [] as MarketplacePin[])
-                  : Promise.resolve([] as MarketplacePin[]),
-              ]);
-
-              // Auto-persist discovered userId
-              if (balance?.userId && String(balance.userId) !== config.userId) {
-                // 账号变化：旧 tokenId 不再对应当前账号，作废并重置解析缓存
-                tokenResolveCache = null;
-                config.userId = String(balance.userId);
-                await configAccess.writeConfig({ userId: config.userId });
-              }
-
-              // Fallback to DSH-configured / default models if token query returned empty
-              let modelIds = modelIdsRaw;
-              if (modelIds.length === 0) {
-                modelIds = [
-                  ...new Set([
-                    ...dshConfiguredModels,
-                    'gpt-5.6-sol',
-                    'gpt-5.6-terra',
-                    'gpt-5.6-luna',
-                    'claude-fable-5',
-                    'claude-opus-5',
-                    'grok-4.6',
-                  ]),
-                ];
-              }
-
-              // 一次拉取日志(接口实测上限 100 条),同一份数据用于: ①商户卡片预填充 ②路由快照时效映射 ③Account 页最近明细
-              // 防御性排序：依赖“最新在前”，若网关排序变更仍能正确取首条
-              allLogs.sort((a, b) => (Number(b.created_at) || 0) - (Number(a.created_at) || 0));
-
-              // Match known merchant cards from recent logs if not yet in cache (with 10s total timeout to avoid /state hang)
-              if (config.userId || token) {
-                const missing = modelIds.filter((m) => {
-                  const entry = merchantCardCache.get(m.toLowerCase());
-                  return !entry || Date.now() - entry.at >= MERCHANT_CARD_TTL_MS;
-                });
-                if (missing.length > 0) {
-                  let found: Record<string, MerchantChannelInfo> = {};
-                  try {
-                    found = await Promise.race([
-                      getKnownMerchantsFromLogs(config.userId, token, missing, allLogs),
-                      new Promise<Record<string, MerchantChannelInfo>>((resolve) => setTimeout(() => resolve({}), 10000)),
-                    ]);
-                  } catch {
-                    found = {};
-                  }
-                  for (const [mName, card] of Object.entries(found)) {
-                    merchantCardCache.set(mName.toLowerCase(), { card, at: Date.now() });
-                  }
-                }
-              }
-
-              // 路由快照时效: 每个模型最新一条「带 channel 的调用日志」时间 —— 与预填充卡片商户数据同一条规则(取最新命中商户路由的请求)
-              const lastRoutedMap = new Map<string, number>();
-              for (const log of allLogs) {
-                const mName = log.model_name;
-                const chId = Number(log.channel);
-                const ts = Number(log.created_at) || 0;
-                if (mName && chId > 0 && ts > 0 && !lastRoutedMap.has(mName.toLowerCase())) {
-                  lastRoutedMap.set(mName.toLowerCase(), ts);
-                }
-              }
-
-              const dshSet = new Set(dshConfiguredModels);
-              let models: ModelCardData[] = modelIds.map((mId) => {
-                const meta = resolveModelMeta(mId);
-                const cacheEntry = merchantCardCache.get(mId.toLowerCase());
-                const cachedCard =
-                  cacheEntry && Date.now() - cacheEntry.at < MERCHANT_CARD_TTL_MS
-                    ? cacheEntry.card
-                    : undefined;
-                const routedAt = lastRoutedMap.get(mId.toLowerCase());
-                return {
-                  model_name: mId,
-                  brand: meta.brand,
-                  contextWindow: meta.contextWindow,
-                  maxTokens: meta.maxTokens,
-                  modalities: meta.modalities,
-                  hasReasoning: Boolean(meta.reasoningEfforts || meta.thinkingFormat),
-                  inDsh: dshSet.has(mId),
-                  merchant: cachedCard,
-                  probeStatus: cachedCard ? 'success' : 'idle',
-                  lastRoutedAt: routedAt,
-                  lastRoutedText: routedAt ? formatRelativeTime(routedAt) : undefined,
-                };
-              });
-
-              // 固定状态叠加：pins 已在并行批次拉取（失败降级为空数组），让卡片状态跟随官网
-              // （官网侧解除固定/涨价自动解除都会反映过来）
-              const resolvedTokenId = pins.length > 0 ? await resolveTokenId(config) : null;
-              models = overlayPinsOnModels(models, pins, resolvedTokenId);
-
-              // 固定商家自动接管卡片：模型已固定到「非当前卡片」的商家时（当前令牌的固定），
-              // 拉取该固定商家的渠道详情替换卡片，而不是提示「已固定到其他商家」。
-              // 拉取失败/固定属于其他令牌时保持原卡片并回退到提示徽标。
-              const rePointTargets = models
-                .filter(
-                  (m) =>
-                    m.pinStatus === 'pin_elsewhere' &&
-                    m.pinTokenMatched === true &&
-                    m.pinnedChannelId &&
-                    m.pinnedChannelId > 0,
-                )
-                .map((m) => ({ modelName: m.model_name, channelId: m.pinnedChannelId as number }));
-              if (rePointTargets.length > 0 && config.userId && token) {
-                try {
-                  await Promise.race([
-                    (async () => {
-                      for (let i = 0; i < rePointTargets.length; i += 4) {
-                        const batch = rePointTargets.slice(i, i + 4);
-                        await Promise.all(
-                          batch.map(async ({ modelName, channelId }) => {
-                            try {
-                              const pinnedCard = await fetchChannelDetails(
-                                channelId,
-                                config.userId,
-                                token,
-                                modelName,
-                              );
-                              // 校验返回卡片确实属于目标固定渠道，避免官方搜索返回其他条目污染缓存
-                              if (pinnedCard && Number(pinnedCard.channel_id) === Number(channelId)) {
-                                merchantCardCache.set(modelName.toLowerCase(), { card: pinnedCard, at: Date.now() });
-                              }
-                            } catch {}
-                          }),
-                        );
-                      }
-                    })(),
-                    new Promise<void>((resolve) => setTimeout(() => resolve(), 10000)),
-                  ]);
-                } catch {}
-                // 用回填后的缓存重建卡片（固定商家即卡片商家 → 状态升级为 pin_here）
-                models = models.map((m) => {
-                  if (m.pinStatus !== 'pin_elsewhere' || m.pinTokenMatched !== true) return m;
-                  const entry = merchantCardCache.get(m.model_name.toLowerCase());
-                  const card = entry && Date.now() - entry.at < MERCHANT_CARD_TTL_MS ? entry.card : undefined;
-                  if (card && Number(card.channel_id) === Number(m.pinnedChannelId)) {
-                    // 路由快照口径对齐：取「该商家的该模型」最近一次请求（卡片已切换到固定商家，时间不能再按任意商家取）
-                    const pinnedLog = allLogs.find(
-                      (l) =>
-                        l.model_name?.toLowerCase() === m.model_name.toLowerCase() &&
-                        Number(l.channel) === m.pinnedChannelId,
-                    );
-                    const pinnedAt = pinnedLog ? Number(pinnedLog.created_at) || 0 : undefined;
-                    return {
-                      ...m,
-                      merchant: card,
-                      pinStatus: 'pin_here' as const,
-                      probeStatus: 'success' as const,
-                      lastRoutedAt: pinnedAt,
-                      lastRoutedText: pinnedAt ? formatRelativeTime(pinnedAt) : undefined,
-                    };
-                  }
-                  return m;
-                });
-              }
-
-              // Account 页明细保持原有窗口 (20 条)
-              const recentLogs = allLogs.slice(0, 20);
-
-              const response: A6ApiStateResponse = {
-                config: maskConfig(config),
-                balance,
-                models,
-                dshConfiguredModels,
-                recentLogs,
-                pins,
-              };
+              const response = await getCachedStateResponse(config, configAccess);
               return sendJson(res, 200, { ok: true, data: response });
             }
 
@@ -432,6 +514,8 @@ export function apply(ctx: any): void {
               if (updated.activeModels.length > 0) {
                 await configAccess.syncModels(updated.baseURL, updated.activeModels);
               }
+              // 配置（含凭据/节点/模型列表）已变更：作废 /state 短缓存，下次拉取立即重建
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, config: maskConfig(updated), balance });
             }
 
@@ -464,6 +548,8 @@ export function apply(ctx: any): void {
                 if (result.merchant) {
                   merchantCardCache.set(modelName.toLowerCase(), { card: result.merchant, at: Date.now() });
                 }
+                // 探测会写入路由日志/更新商户卡片：作废 /state 短缓存，让卡片即时反映新探测结果
+                stateMemo.invalidate();
                 return sendJson(res, 200, { ok: true, result });
               }
 
@@ -485,6 +571,8 @@ export function apply(ctx: any): void {
                 results.push(r);
               }
 
+              // 全量探测同样会刷新日志与商户卡片
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, results });
             }
 
@@ -500,6 +588,8 @@ export function apply(ctx: any): void {
               await configAccess.syncModels(baseURL, modelIds);
 
               const dshConfiguredModels = await configAccess.getDshConfiguredModels();
+              // DSH 已启用模型列表已变更（响应含 dshConfiguredModels/回退模型列表）
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, dshConfiguredModels });
             }
 
@@ -554,6 +644,8 @@ export function apply(ctx: any): void {
                 at: Date.now(),
               });
               const pinList = await fetchMarketplacePins(userId, token);
+              // 固定状态已变更：作废 /state 短缓存，随后的 fetchState 立即重建（含新的 pin 叠加）
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, message: `已固定 ${modelName} 至商户 #${card.channel_id}`, pins: pinList, tokenId });
             }
 
@@ -583,6 +675,7 @@ export function apply(ctx: any): void {
                 });
               }
               const pinList = await fetchMarketplacePins(userId, token);
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, message: `已取消固定 ${modelName}`, pins: pinList, tokenId });
             }
 
@@ -618,6 +711,7 @@ export function apply(ctx: any): void {
                 card: { ...card, user_channel_disabled: true },
                 at: Date.now(),
               });
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, message: `已禁用商户 #${card.channel_id} 对该模型的服务` });
             }
 
@@ -652,18 +746,24 @@ export function apply(ctx: any): void {
                 card: { ...card, user_channel_disabled: false },
                 at: Date.now(),
               });
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, message: `已恢复商户 #${card.channel_id} 对该模型的服务` });
             }
 
-            // GET /price-fluctuation — 轻量价格波动条数（待处理 n），仅回传计数
+            // GET /price-fluctuation — 轻量价格波动条数（待处理 n），仅回传计数；
+            // 服务端短缓存 + 并发去重：多标签页/轮询共享同一份价格通知上游结果
             if (pathname === '/price-fluctuation' && (req.method === 'GET' || req.method === 'HEAD')) {
               const config = await configAccess.readConfig();
               const token = config.accessToken || '';
               if (!token || !config.userId) {
                 return sendJson(res, 200, { ok: true, data: { pendingCount: 0, unseenCount: 0, totalCount: 0, hasAuth: false, authError: false, updatedAt: Date.now() } });
               }
-              const result = await fetchPriceFluctuation(config.userId, token);
-              const { notices, ...counts } = result as any;
+              const counts = await priceCountsMemo.get(stateCacheKeyOf(config), async () => {
+                const result = await fetchPriceFluctuation(config.userId, token);
+                // 仅缓存计数（notices 体量大且无跨请求复用价值，不下发也不缓存）
+                const { notices, ...rest } = result as any;
+                return rest as any;
+              });
               // 401/403 时 authError=true，客户端可区分“未配置”与“失效”
               const hasAuth = !counts.authError;
               return sendJson(res, 200, { ok: true, data: { pendingCount: counts.pendingCount, unseenCount: counts.unseenCount, totalCount: counts.totalCount, hasAuth, authError: Boolean(counts.authError), updatedAt: Date.now() } });
