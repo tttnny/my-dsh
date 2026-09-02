@@ -67,3 +67,28 @@ bash patches/matt-presets-bootstrap/matt-presets-bootstrap.sh check <session-id>
 3. **模型路由**：同一份材料下不同模型的纪律执行度差异巨大（参考 `patches/ptc-preset-fusion-checklist/` 的跨模型对比），仍高发就换路由模型复测。
 
 注意：事实前言（"先把事实摆一下"）以散文出现是**允许**的，只有【问题】必须进工具；PTC preset 下提问经 `run_code` 程序内 `tools.ask_user_grilling`，其参数错误的另见 `patches/ptc-preset-fusion-checklist/`。
+
+## 6. 原厂升级流程（DSH 更新后）
+
+三个 matt 组合是从官方文件**确定性派生**的（官方逐字 + banner + MATT-ADD），因此 DSH 升级后不需要手工比对，跑 `upgrade` 子命令即可：
+
+```bash
+# 只读审查：从新版官方组合重新派生，与仓库现有文件 diff（不给目录则自动探测常见安装位置）
+bash patches/matt-presets-bootstrap/matt-presets-bootstrap.sh upgrade
+
+# 审查确认后写回仓库
+bash patches/matt-presets-bootstrap/matt-presets-bootstrap.sh upgrade --apply
+```
+
+流程：
+
+1. **跑 `upgrade`**。脚本从官方 `standard/ptc/cordis` 重新派生三份组合（banner 从仓库现有文件提取，MATT-ADD 锚点重打），并检查 matt-cordis 的两个 cordis 随附技能目录是否与官方同步。
+2. **读 diff**：
+   - `IDENTICAL` —— 官方没变或变化不涉及派生内容，无需动作；
+   - `DIFF` —— 逐条审查官方新增/修改的行：是否与 MATT-ADD 冲突（如官方自己也给 `skill-filesystem` 加了 `customSkillDirs`）、plan-mode section 变化是否影响 grilling 流程；确认无冲突后 `upgrade --apply` 写回；
+   - **锚点报错**（官方改了 `skill-filesystem` 行或 plan-mode 段落结构）——脚本会指明是哪个锚点，按 §2 手工重打并更新脚本内的锚点常量。
+3. **Matt 技能上游更新是另一条线**：`git pull` mattpocock/skills 后整体覆盖 `skills/`，再按 §2 step 4 重打 grilling 的 5 处本地适配（其余技能无本地改动）。
+4. **验证**：`setup` 自检全绿 → 重启 DSH → 跑一个 grilling 会话 → `check` exit 0。
+5. **提交**。
+
+自洽性保证：用当前官方文件跑 `upgrade` 必须三个 `IDENTICAL`——这同时是该子命令的回归自测。

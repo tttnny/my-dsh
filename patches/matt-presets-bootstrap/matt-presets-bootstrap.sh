@@ -9,6 +9,9 @@
 #   check <id|路径>  grilling 会话验收：统计 ask_user_grilling 调用（原生与
 #                  PTC code-dispatch 两种形态）与散文轮失守（Qn./Recommended:
 #                  轮次格式出现在消息文本而当回合未调工具）。
+#   upgrade [官方presets目录] [--apply]
+#                  DSH 升级后：从新版官方组合重新派生三份 matt 组合
+#                  （banner + MATT-ADD 重打），默认只 diff 审查，--apply 写回仓库。
 #
 # 用法
 # ----
@@ -16,6 +19,8 @@
 #   bash matt-presets-bootstrap.sh setup
 #   bash matt-presets-bootstrap.sh check 5ed25954-7a67-4504-a40b-c715194c2903
 #   bash matt-presets-bootstrap.sh check <session.jsonl.zstd 路径>
+#   bash matt-presets-bootstrap.sh upgrade         # 审查官方升级带来的 diff
+#   bash matt-presets-bootstrap.sh upgrade --apply # 审查后写回
 #
 # check 退出码：0=健康（有 grilling 调用且无失守） 1=用法/文件错误
 #               2=散文轮失守  3=无法判定（会话无 grilling 活动）
@@ -32,7 +37,7 @@ PRESETS="matt-standard matt-ptc matt-cordis"
 PLUGIN_PKG="@lynn123411/dsh-ask-user-grilling"
 PLUGIN_DIR_NAME="dsh-ask-user-grilling"
 
-usage() { sed -n '2,25p' "$0"; exit "${1:-0}"; }
+usage() { sed -n '2,30p' "$0"; exit "${1:-0}"; }
 
 # =============================================================================
 # setup
@@ -248,9 +253,129 @@ PYEOF
 }
 
 # =============================================================================
+# upgrade —— DSH 原厂组合升级后的重派生与 diff 审查
+# =============================================================================
+cmd_upgrade() {
+  local OFFICIAL="" APPLY=0
+  for arg in "$@"; do
+    case "$arg" in
+      --apply) APPLY=1 ;;
+      *) [[ -z "$OFFICIAL" ]] && OFFICIAL="$arg" || usage 1 ;;
+    esac
+  done
+  if [[ -z "$OFFICIAL" ]]; then
+    local cand
+    for cand in \
+      "/Applications/DSH Desktop.app/Contents/Resources/app.asar.unpacked/node_modules/@deepseek-ai/dsh-agent-presets/presets" \
+      "$(npm root -g 2>/dev/null || true)/@deepseek-ai/dsh-agent-presets/presets" \
+      ; do
+      [[ -d "$cand/standard" ]] && OFFICIAL="$cand" && break
+    done
+  fi
+  [[ -n "$OFFICIAL" && -d "$OFFICIAL/standard" ]] || { echo "找不到官方 presets 目录，请显式传参：upgrade <官方presets目录>" >&2; exit 1; }
+  echo "官方来源: $OFFICIAL"
+  [[ "$APPLY" -eq 1 ]] && echo "模式: --apply（审查后将写回仓库）" || echo "模式: 只读 diff（加 --apply 才会写回）"
+  echo
+  OFFICIAL="$OFFICIAL" REPO_ROOT="$REPO_ROOT" APPLY="$APPLY" python3 - <<'PYEOF'
+import os, sys, difflib
+
+official = os.environ['OFFICIAL']
+repo = os.environ['REPO_ROOT']
+apply = os.environ['APPLY'] == '1'
+
+PAIRS = [('standard', 'matt-standard'), ('ptc', 'matt-ptc'), ('cordis', 'matt-cordis')]
+
+SKILL_ANCHOR = "- id: skill-filesystem\n  name: '@deepseek-ai/dsh-skill-filesystem'\n"
+SKILL_BLOCK = """  # MATT-ADD: discover the 25 vendored mattpocock skills shipped in ./skills/.
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+"""
+
+PLAN_ANCHOR = 'do not proceed with implementation.\n'
+GRILL_COMMON = """    # MATT-ADD: grilling adaptations (@lynn123411/dsh-ask-user-grilling).
+    # `enter_plan_mode` consumes the realm-isolated `planMode` service, so this
+    # row must live inside the planning group; `ask_user_grilling` consumes
+    # host-plane `userQuestions`/`subagents`, reachable from within the realm.
+"""
+GRILL_PTC_EXTRA = """    # Under mode: ptc both tools are reached as `tools.<name>(...)` inside
+    # `run_code` — see the grilling skill's DSH delivery note.
+"""
+GRILL_ROW = """    - id: tool-ask-user-grilling
+      name: '@lynn123411/dsh-ask-user-grilling'
+"""
+
+fail = 0
+for off, matt in PAIRS:
+    off_path = os.path.join(official, off, 'agent.cordis.yml')
+    repo_path = os.path.join(repo, 'presets', matt, 'agent.cordis.yml')
+    try:
+        off_text = open(off_path).read()
+        repo_text = open(repo_path).read()
+    except OSError as e:
+        print(f"[{matt}] 读取失败: {e}"); fail = 1; continue
+
+    # banner = 仓库文件中官方首行之前的注释前缀（自我描述，保持单处维护）
+    first = off_text.splitlines(keepends=True)[0]
+    if first not in repo_text:
+        print(f"[{matt}] FAIL 仓库文件中找不到官方首行，banner 无法提取"); fail = 1; continue
+    banner = repo_text[:repo_text.index(first)]
+
+    text = off_text
+    # MATT-ADD 1: customSkillDirs（cordis 官方自带则跳过）
+    if 'customSkillDirs' not in text:
+        if text.count(SKILL_ANCHOR) != 1:
+            print(f"[{matt}] FAIL skill-filesystem 锚点不唯一/缺失（官方改了该行结构？按 README §2 手工重打）"); fail = 1; continue
+        text = text.replace(SKILL_ANCHOR, SKILL_ANCHOR + SKILL_BLOCK)
+    # MATT-ADD 2: planning 组内插件行
+    if 'tool-ask-user-grilling' not in text:
+        idx = text.find(PLAN_ANCHOR)
+        if idx < 0:
+            print(f"[{matt}] FAIL plan-mode 段落锚点缺失（官方改了 section 结尾？按 README §2 手工重打）"); fail = 1; continue
+        block = '\n' + GRILL_COMMON + (GRILL_PTC_EXTRA if off == 'ptc' else '') + GRILL_ROW
+        end = idx + len(PLAN_ANCHOR)
+        text = text[:end] + block + text[end:]
+
+    generated = banner + text
+    if generated == repo_text:
+        print(f"[{matt}] IDENTICAL（重派生与仓库逐字节一致；官方无变化或变化不涉及差异行）")
+        continue
+    diff = list(difflib.unified_diff(
+        repo_text.splitlines(), generated.splitlines(),
+        f'repo/{matt}', f'rederived-from-{off}', lineterm=''))
+    # 只显示非 banner/非 MATT-ADD 的差异行（即官方带来的真实变化）
+    print(f"[{matt}] DIFF（-{len([l for l in diff if l.startswith('-') and not l.startswith('---')])} +{len([l for l in diff if l.startswith('+') and not l.startswith('+++')])} 行）:")
+    for line in diff[:80]:
+        print('  ' + line)
+    if len(diff) > 80:
+        print(f"  …（共 {len(diff)} 行 diff，截断显示）")
+    if apply:
+        open(repo_path, 'w').write(generated)
+        print(f"  已写回 {repo_path}")
+
+# matt-cordis 的 cordis 随附技能同步检查
+import filecmp
+for sk in ('cordis-plugin-development', 'editing-cordis-compositions'):
+    a = os.path.join(official, 'cordis', 'skills', sk)
+    b = os.path.join(repo, 'presets', 'matt-cordis', 'skills', sk)
+    if not os.path.isdir(a):
+        continue
+    cmp = filecmp.dircmp(a, b)
+    if cmp.left_only or cmp.right_only or cmp.diff_files:
+        print(f"[skills/{sk}] 与官方不同步（仅官方有: {cmp.left_only or '无'}；仅仓库有: {cmp.right_only or '无'}；内容不同: {cmp.diff_files or '无'}）")
+        print(f"  同步: rsync -a --delete '{a}/' '{b}/'")
+    else:
+        print(f"[skills/{sk}] 与官方一致")
+
+sys.exit(fail)
+PYEOF
+}
+
+# =============================================================================
 case "${1:-setup}" in
   setup) cmd_setup ;;
   check) shift; cmd_check "$@" ;;
+  upgrade) shift; cmd_upgrade "$@" ;;
   -h|--help|help) usage 0 ;;
   *) usage 1 ;;
 esac
