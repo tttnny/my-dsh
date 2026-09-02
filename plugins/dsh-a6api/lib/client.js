@@ -1491,6 +1491,33 @@ var PricePill = ({ pf, hasToken, compact }) => {
   );
 };
 
+// src/client/components/MarketPill.tsx
+var import_jsx_runtime5 = require("react/jsx-runtime");
+var MARKET_URL = "https://a6api.com/models";
+var MarketPill = () => {
+  const onClick = () => {
+    window.open(MARKET_URL, "_blank", "noopener");
+  };
+  const onKeyDown = (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    "div",
+    {
+      className: "dsh-a6-market-pill",
+      onClick,
+      onKeyDown,
+      tabIndex: 0,
+      role: "button",
+      title: "\u524D\u5F80 A6api \u6A21\u578B\u5E02\u573A",
+      children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-market-pill-label", children: "\u6A21\u578B\u5E02\u573A" })
+    }
+  );
+};
+
 // src/client/components/ModelCatalogPanel.tsx
 var import_react4 = require("react");
 
@@ -1528,7 +1555,7 @@ function validateReasoningEfforts(value) {
 }
 
 // src/client/components/ModelCatalogPanel.tsx
-var import_jsx_runtime5 = require("react/jsx-runtime");
+var import_jsx_runtime6 = require("react/jsx-runtime");
 var ModelCatalogPanel = () => {
   const [catalog, setCatalog] = (0, import_react4.useState)(store.getState().catalog);
   const [models, setModels] = (0, import_react4.useState)(store.getState().models);
@@ -1700,10 +1727,10 @@ var ModelCatalogPanel = () => {
   }, [catalog, search, availFilter, paramFilter, availableSet]);
   const filledCount = catalog.filter((e) => e.contextWindow != null || e.maxTokens != null || e.input && e.input.length > 0).length;
   const availCount = catalog.filter((e) => availableSet.has(e.id.toLowerCase())).length;
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-catalog-page", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-section-header", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-catalog-toolbar", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-catalog-page", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-section-header", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-catalog-toolbar", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           "button",
           {
             type: "button",
@@ -1715,7 +1742,7 @@ var ModelCatalogPanel = () => {
             children: busy === "fetch" ? "\u83B7\u53D6\u4E2D..." : "\u4ECE A6API \u83B7\u53D6\u5E02\u573A\u6A21\u578B"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           "button",
           {
             type: "button",
@@ -1727,7 +1754,7 @@ var ModelCatalogPanel = () => {
             children: busy === "query" ? "\u67E5\u8BE2\u4E2D..." : "\u4ECE OpenRouter \u4E00\u952E\u67E5\u8BE2"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           "button",
           {
             type: "button",
@@ -1739,7 +1766,7 @@ var ModelCatalogPanel = () => {
             children: confirmClear ? "\u786E\u8BA4\u6E05\u7A7A\uFF1F" : "\u6E05\u7A7A\u76EE\u5F55"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-catalog-count", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-catalog-count", children: [
           "\u5171 ",
           catalog.length,
           " \u4E2A \xB7 \u53EF\u7528 ",
@@ -1749,9 +1776,9 @@ var ModelCatalogPanel = () => {
           " \u4E2A"
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-catalog-filters", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-filter-group", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-catalog-filters", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-filter-group", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
             "button",
             {
               type: "button",
@@ -1764,7 +1791,7 @@ var ModelCatalogPanel = () => {
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
             "button",
             {
               type: "button",
@@ -1777,7 +1804,7 @@ var ModelCatalogPanel = () => {
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
             "button",
             {
               type: "button",
@@ -1791,8 +1818,8 @@ var ModelCatalogPanel = () => {
             }
           )
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-filter-group", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-filter-group", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
             "button",
             {
               type: "button",
@@ -1801,7 +1828,7 @@ var ModelCatalogPanel = () => {
               children: "\u5168\u90E8\u53C2\u6570"
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
             "button",
             {
               type: "button",
@@ -1814,7 +1841,7 @@ var ModelCatalogPanel = () => {
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
             "button",
             {
               type: "button",
@@ -1828,8 +1855,8 @@ var ModelCatalogPanel = () => {
             }
           )
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-search-wrapper", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-search-wrapper", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
             "input",
             {
               type: "text",
@@ -1839,7 +1866,7 @@ var ModelCatalogPanel = () => {
               onChange: (e) => setSearch(e.target.value)
             }
           ),
-          search && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          search && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
             "button",
             {
               type: "button",
@@ -1852,23 +1879,23 @@ var ModelCatalogPanel = () => {
         ] })
       ] })
     ] }),
-    msg && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: `dsh-a6-catalog-msg ${msg.kind}`, children: msg.text }),
-    catalog.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-empty-state", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A\u3002" }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-side-popup-hint", children: "\u70B9\u51FB\u300C\u4ECE A6API \u83B7\u53D6\u5E02\u573A\u6A21\u578B\u300D\u62C9\u53D6\u5168\u90E8\u652F\u6301\u7684\u6A21\u578B ID\uFF0C\u518D\u7528\u300C\u4ECE OpenRouter \u4E00\u952E\u67E5\u8BE2\u300D\u81EA\u52A8\u586B\u5145\u53C2\u6570\u3002" })
-    ] }) : filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-a6-empty-state", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u5339\u914D\u7684\u6A21\u578B" }) }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-a6-catalog-list", children: filtered.map((entry) => {
+    msg && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: `dsh-a6-catalog-msg ${msg.kind}`, children: msg.text }),
+    catalog.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-empty-state", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A\u3002" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-side-popup-hint", children: "\u70B9\u51FB\u300C\u4ECE A6API \u83B7\u53D6\u5E02\u573A\u6A21\u578B\u300D\u62C9\u53D6\u5168\u90E8\u652F\u6301\u7684\u6A21\u578B ID\uFF0C\u518D\u7528\u300C\u4ECE OpenRouter \u4E00\u952E\u67E5\u8BE2\u300D\u81EA\u52A8\u586B\u5145\u53C2\u6570\u3002" })
+    ] }) : filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-a6-empty-state", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u5339\u914D\u7684\u6A21\u578B" }) }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-a6-catalog-list", children: filtered.map((entry) => {
       const editing = editingId === entry.id;
       const isAvail = availableSet.has(entry.id.toLowerCase());
       const re = entry.reasoningEfforts && typeof entry.reasoningEfforts === "object" ? entry.reasoningEfforts : null;
-      return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: `dsh-a6-catalog-row${editing ? " editing" : ""}`, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-catalog-row-head", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-catalog-id", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("code", { children: entry.id }),
-            isAvail && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-catalog-badge avail", children: "\u53EF\u7528" }),
-            entry.name && entry.name !== entry.id && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-catalog-name", children: entry.name })
+      return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: `dsh-a6-catalog-row${editing ? " editing" : ""}`, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-catalog-row-head", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-catalog-id", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("code", { children: entry.id }),
+            isAvail && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-catalog-badge avail", children: "\u53EF\u7528" }),
+            entry.name && entry.name !== entry.id && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-catalog-name", children: entry.name })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-catalog-row-actions", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-catalog-row-actions", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
               "button",
               {
                 type: "button",
@@ -1879,7 +1906,7 @@ var ModelCatalogPanel = () => {
                 children: queryingId === entry.id ? "\u67E5\u8BE2\u4E2D..." : "\u67E5\u8BE2\u53C2\u6570"
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
               "button",
               {
                 type: "button",
@@ -1890,31 +1917,31 @@ var ModelCatalogPanel = () => {
             )
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-catalog-meta", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: `dsh-a6-catalog-param${entry.contextWindow != null ? "" : " empty"}`, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-catalog-meta", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: `dsh-a6-catalog-param${entry.contextWindow != null ? "" : " empty"}`, children: [
             "\u4E0A\u4E0B\u6587 ",
             entry.contextWindow != null ? entry.contextWindow.toLocaleString() : "\u2014"
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: `dsh-a6-catalog-param${entry.maxTokens != null ? "" : " empty"}`, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: `dsh-a6-catalog-param${entry.maxTokens != null ? "" : " empty"}`, children: [
             "\u8F93\u51FA ",
             entry.maxTokens != null ? entry.maxTokens.toLocaleString() : "\u2014"
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: `dsh-a6-catalog-param${entry.input && entry.input.length > 0 ? "" : " empty"}`, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: `dsh-a6-catalog-param${entry.input && entry.input.length > 0 ? "" : " empty"}`, children: [
             "\u8F93\u5165 ",
             entry.input && entry.input.length > 0 ? entry.input.join("+") : "\u2014"
           ] }),
-          re && Object.keys(re).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "dsh-a6-catalog-param", children: [
+          re && Object.keys(re).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "dsh-a6-catalog-param", children: [
             "\u63A8\u7406 ",
             Object.keys(re).length,
             " \u6863"
           ] }),
-          entry.reasoningEfforts === false && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-catalog-param", children: "\u975E\u63A8\u7406" })
+          entry.reasoningEfforts === false && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-catalog-param", children: "\u975E\u63A8\u7406" })
         ] }),
-        editing && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-catalog-edit", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-edit-grid", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "dsh-a6-edit-field", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-label", children: "\u540D\u79F0 (name)" }),
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        editing && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-catalog-edit", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-edit-grid", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "dsh-a6-edit-field", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-label", children: "\u540D\u79F0 (name)" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
                 "input",
                 {
                   type: "text",
@@ -1925,9 +1952,9 @@ var ModelCatalogPanel = () => {
                 }
               )
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "dsh-a6-edit-field", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-label", children: "\u4E0A\u4E0B\u6587\u7A97\u53E3 (contextWindow)" }),
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "dsh-a6-edit-field", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-label", children: "\u4E0A\u4E0B\u6587\u7A97\u53E3 (contextWindow)" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
                 "input",
                 {
                   type: "number",
@@ -1939,9 +1966,9 @@ var ModelCatalogPanel = () => {
                 }
               )
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "dsh-a6-edit-field", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-label", children: "\u6700\u5927\u8F93\u51FA (maxTokens)" }),
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "dsh-a6-edit-field", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-label", children: "\u6700\u5927\u8F93\u51FA (maxTokens)" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
                 "input",
                 {
                   type: "number",
@@ -1953,11 +1980,11 @@ var ModelCatalogPanel = () => {
                 }
               )
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-edit-field", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-label", children: "\u8F93\u5165\u6A21\u6001 (input)" }),
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-checkbox-group", children: [
-                /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "dsh-a6-checkbox", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-edit-field", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-label", children: "\u8F93\u5165\u6A21\u6001 (input)" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-checkbox-group", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "dsh-a6-checkbox", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
                     "input",
                     {
                       type: "checkbox",
@@ -1965,10 +1992,10 @@ var ModelCatalogPanel = () => {
                       onChange: (e) => setDraft({ ...draft, inputText: e.target.checked })
                     }
                   ),
-                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "text" })
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "text" })
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "dsh-a6-checkbox", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "dsh-a6-checkbox", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
                     "input",
                     {
                       type: "checkbox",
@@ -1976,16 +2003,16 @@ var ModelCatalogPanel = () => {
                       onChange: (e) => setDraft({ ...draft, inputImage: e.target.checked })
                     }
                   ),
-                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "image" })
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "image" })
                 ] })
               ] })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "dsh-a6-edit-field dsh-a6-edit-wide", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "dsh-a6-label", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "dsh-a6-edit-field dsh-a6-edit-wide", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "dsh-a6-label", children: [
                 "\u63A8\u7406\u6863\u4F4D (reasoningEfforts)",
-                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-field-hint", style: { marginLeft: 6 }, children: "\u683C\u5F0F\uFF1Alow: low, medium: medium\uFF1B\u503C\u4E3A\u7A7A\u8868\u793A\u8BE5\u6863\u4F4D\u65E0 wire \u503C" })
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-field-hint", style: { marginLeft: 6 }, children: "\u683C\u5F0F\uFF1Alow: low, medium: medium\uFF1B\u503C\u4E3A\u7A7A\u8868\u793A\u8BE5\u6863\u4F4D\u65E0 wire \u503C" })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
                 "input",
                 {
                   type: "text",
@@ -1997,10 +2024,10 @@ var ModelCatalogPanel = () => {
                 }
               )
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "dsh-a6-edit-field", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-a6-label", children: "\u63A8\u7406\u80FD\u529B" }),
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "dsh-a6-checkbox", children: [
-                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "dsh-a6-edit-field", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-label", children: "\u63A8\u7406\u80FD\u529B" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "dsh-a6-checkbox", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
                   "input",
                   {
                     type: "checkbox",
@@ -2008,12 +2035,12 @@ var ModelCatalogPanel = () => {
                     onChange: (e) => setDraft({ ...draft, reasoningFalse: e.target.checked })
                   }
                 ),
-                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u975E\u63A8\u7406\u6A21\u578B (reasoningEfforts: false)" })
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u975E\u63A8\u7406\u6A21\u578B (reasoningEfforts: false)" })
               ] })
             ] })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-a6-edit-actions", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-edit-actions", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
               "button",
               {
                 type: "button",
@@ -2022,7 +2049,7 @@ var ModelCatalogPanel = () => {
                 children: "\u4FDD\u5B58"
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
               "button",
               {
                 type: "button",
@@ -2039,7 +2066,7 @@ var ModelCatalogPanel = () => {
 };
 
 // src/client/components/A6ApiSettings.tsx
-var import_jsx_runtime6 = require("react/jsx-runtime");
+var import_jsx_runtime7 = require("react/jsx-runtime");
 var A6ApiSettingsPanel = () => {
   const [state, setState] = (0, import_react5.useState)(store.getState());
   const [activeTab, setActiveTab] = (0, import_react5.useState)("models");
@@ -2084,80 +2111,81 @@ var A6ApiSettingsPanel = () => {
     }
     return a.model_name.localeCompare(b.model_name);
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-container", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-main-header", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-header-text", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { className: "dsh-a6-main-title", children: "A6api" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "dsh-a6-main-subtitle", children: "\u805A\u5408\u5168\u7403\u4E3B\u6D41\u4E0E\u9AD8\u6027\u4EF7\u6BD4\u6A21\u578B\uFF0C\u5B9E\u65F6\u76D1\u63A7\u5546\u6237\u6307\u6807\u3001\u4EF7\u683C\u500D\u7387\u4E0E\u8D26\u6237\u8D44\u4EA7\u3002" })
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-container", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-main-header", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-header-text", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("h2", { className: "dsh-a6-main-title", children: "A6api" }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "dsh-a6-main-subtitle", children: "\u805A\u5408\u5168\u7403\u4E3B\u6D41\u4E0E\u9AD8\u6027\u4EF7\u6BD4\u6A21\u578B\uFF0C\u5B9E\u65F6\u76D1\u63A7\u5546\u6237\u6307\u6807\u3001\u4EF7\u683C\u500D\u7387\u4E0E\u8D26\u6237\u8D44\u4EA7\u3002" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-header-badges", children: [
-        state.balance?.hasAccountAuth && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-header-badges", children: [
+        state.balance?.hasAccountAuth && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
           "div",
           {
             className: "dsh-a6-header-balance-badge",
             onClick: () => setActiveTab("account"),
             title: "\u70B9\u51FB\u5207\u6362\u81F3\u300C\u8D26\u6237\u8D44\u4EA7\u300D\u9875\u9762",
             children: [
-              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-hb-label", children: "\u8D26\u6237\u4F59\u989D:" }),
-              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-hb-amount", children: state.balance.accountBalanceFormatted })
+              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-a6-hb-label", children: "\u8D26\u6237\u4F59\u989D:" }),
+              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-a6-hb-amount", children: state.balance.accountBalanceFormatted })
             ]
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(PricePill, { pf: state.priceFluctuation, hasToken: Boolean(state.config?.hasToken) })
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(PricePill, { pf: state.priceFluctuation, hasToken: Boolean(state.config?.hasToken) }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(MarketPill, {})
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-nav-tabs", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-nav-tabs", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
         "button",
         {
           type: "button",
           className: `dsh-a6-nav-tab ${activeTab === "models" ? "active" : ""}`,
           onClick: () => setActiveTab("models"),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u53EF\u7528\u6A21\u578B" }),
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-tab-badge", children: state.models.length })
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u53EF\u7528\u6A21\u578B" }),
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-a6-tab-badge", children: state.models.length })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
         "button",
         {
           type: "button",
           className: `dsh-a6-nav-tab ${activeTab === "catalog" ? "active" : ""}`,
           onClick: () => setActiveTab("catalog"),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6A21\u578B\u76EE\u5F55" }),
-            state.catalog.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-tab-badge", children: state.catalog.length })
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u6A21\u578B\u76EE\u5F55" }),
+            state.catalog.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-a6-tab-badge", children: state.catalog.length })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
         "button",
         {
           type: "button",
           className: `dsh-a6-nav-tab ${activeTab === "account" ? "active" : ""}`,
           onClick: () => setActiveTab("account"),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u8D26\u6237\u8D44\u4EA7" }),
-            state.balance?.hasAccountAuth && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-a6-tab-badge success", children: state.balance.accountBalanceFormatted })
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u8D26\u6237\u8D44\u4EA7" }),
+            state.balance?.hasAccountAuth && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-a6-tab-badge success", children: state.balance.accountBalanceFormatted })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
         "button",
         {
           type: "button",
           className: `dsh-a6-nav-tab ${activeTab === "config" ? "active" : ""}`,
           onClick: () => setActiveTab("config"),
-          children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u57FA\u7840\u914D\u7F6E" })
+          children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u57FA\u7840\u914D\u7F6E" })
         }
       )
     ] }),
-    activeTab === "catalog" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-a6-tab-page catalog-page", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ModelCatalogPanel, {}) }),
-    activeTab === "models" && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-tab-page models-page", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-section-header", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-filter-group", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+    activeTab === "catalog" && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-a6-tab-page catalog-page", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ModelCatalogPanel, {}) }),
+    activeTab === "models" && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-tab-page models-page", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-section-header", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-filter-group", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
             "button",
             {
               type: "button",
@@ -2170,7 +2198,7 @@ var A6ApiSettingsPanel = () => {
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
             "button",
             {
               type: "button",
@@ -2183,7 +2211,7 @@ var A6ApiSettingsPanel = () => {
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
             "button",
             {
               type: "button",
@@ -2197,9 +2225,9 @@ var A6ApiSettingsPanel = () => {
             }
           )
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-toolbar-right", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-search-wrapper", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-toolbar-right", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-search-wrapper", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
               "input",
               {
                 type: "text",
@@ -2209,7 +2237,7 @@ var A6ApiSettingsPanel = () => {
                 onChange: (e) => setSearchQuery(e.target.value)
               }
             ),
-            searchQuery && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+            searchQuery && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
               "button",
               {
                 type: "button",
@@ -2220,7 +2248,7 @@ var A6ApiSettingsPanel = () => {
               }
             )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
             "button",
             {
               type: "button",
@@ -2232,8 +2260,8 @@ var A6ApiSettingsPanel = () => {
               children: refreshing ? "\u5237\u65B0\u4E2D..." : refreshSuccess ? "\u5DF2\u5237\u65B0 \u2713" : "\u5237\u65B0\u5217\u8868"
             }
           ),
-          state.probeAllActive ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+          state.probeAllActive ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
               "button",
               {
                 type: "button",
@@ -2249,7 +2277,7 @@ var A6ApiSettingsPanel = () => {
                 ]
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
               "button",
               {
                 type: "button",
@@ -2260,7 +2288,7 @@ var A6ApiSettingsPanel = () => {
                 children: "\u53D6\u6D88"
               }
             )
-          ] }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
             "button",
             {
               type: "button",
@@ -2274,16 +2302,16 @@ var A6ApiSettingsPanel = () => {
           )
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-a6-cards-list", children: state.loading && state.models.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-a6-empty-state", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-a6-spinner" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6B63\u5728\u8FDE\u63A5 A6API \u805A\u5408\u7AD9\u5E76\u52A0\u8F7D\u6A21\u578B\u884C\u60C5..." })
-      ] }) : sortedModels.length > 0 ? sortedModels.map((m) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(MerchantCard, { model: m }, m.model_name)) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-a6-empty-state", children: searchQuery ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-a6-cards-list", children: state.loading && state.models.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-empty-state", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-a6-spinner" }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u6B63\u5728\u8FDE\u63A5 A6API \u805A\u5408\u7AD9\u5E76\u52A0\u8F7D\u6A21\u578B\u884C\u60C5..." })
+      ] }) : sortedModels.length > 0 ? sortedModels.map((m) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(MerchantCard, { model: m }, m.model_name)) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-a6-empty-state", children: searchQuery ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
         "\u672A\u641C\u7D22\u5230\u5339\u914D\u300C",
         searchQuery,
         "\u300D\u7684\u6A21\u578B"
-      ] }) : filterMode === "enabled" ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5F53\u524D\u5C1A\u672A\u5728 DSH \u4E2D\u542F\u7528\u4EFB\u4F55 A6API \u6A21\u578B\uFF0C\u70B9\u51FB\u6A21\u578B\u5361\u7247\u53F3\u4FA7\u300C\u6DFB\u52A0\u5230 DSH\u300D\u5373\u53EF\u542F\u7528\u3002" }) : filterMode === "probed" ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5C1A\u672A\u63A2\u6D4B\u4EFB\u4F55\u6A21\u578B\u5546\u6237\u7EBF\u8DEF\uFF0C\u70B9\u51FB\u6A21\u578B\u5361\u7247\u4E0A\u7684\u300C\u63A2\u6D4B\u5546\u5BB6\u300D\u6216\u4E0A\u65B9\u300C\u4E00\u952E\u5168\u91CF\u63A2\u6D4B\u300D\u5373\u53EF\u5F00\u59CB\u3002" }) : !state.config.hasApiKey ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u8BF7\u524D\u5F80\u300C\u57FA\u7840\u914D\u7F6E\u300D\u9875\u9762\u586B\u5165\u60A8\u7684 A6API \u4EE4\u724C (API Key) \u5E76\u4FDD\u5B58\uFF0C\u5373\u53EF\u81EA\u52A8\u52A0\u8F7D\u53EF\u7528\u6A21\u578B\u5217\u8868\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5F53\u524D\u4EE4\u724C\u6682\u65E0\u53EF\u7528\u6A21\u578B\uFF0C\u8BF7\u68C0\u67E5 A6API \u63A7\u5236\u53F0\u4E2D\u7684\u4EE4\u724C\u9650\u5236\u8BBE\u7F6E\u3002" }) }) })
+      ] }) : filterMode === "enabled" ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u5F53\u524D\u5C1A\u672A\u5728 DSH \u4E2D\u542F\u7528\u4EFB\u4F55 A6API \u6A21\u578B\uFF0C\u70B9\u51FB\u6A21\u578B\u5361\u7247\u53F3\u4FA7\u300C\u6DFB\u52A0\u5230 DSH\u300D\u5373\u53EF\u542F\u7528\u3002" }) : filterMode === "probed" ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u5C1A\u672A\u63A2\u6D4B\u4EFB\u4F55\u6A21\u578B\u5546\u6237\u7EBF\u8DEF\uFF0C\u70B9\u51FB\u6A21\u578B\u5361\u7247\u4E0A\u7684\u300C\u63A2\u6D4B\u5546\u5BB6\u300D\u6216\u4E0A\u65B9\u300C\u4E00\u952E\u5168\u91CF\u63A2\u6D4B\u300D\u5373\u53EF\u5F00\u59CB\u3002" }) : !state.config.hasApiKey ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u8BF7\u524D\u5F80\u300C\u57FA\u7840\u914D\u7F6E\u300D\u9875\u9762\u586B\u5165\u60A8\u7684 A6API \u4EE4\u724C (API Key) \u5E76\u4FDD\u5B58\uFF0C\u5373\u53EF\u81EA\u52A8\u52A0\u8F7D\u53EF\u7528\u6A21\u578B\u5217\u8868\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u5F53\u524D\u4EE4\u724C\u6682\u65E0\u53EF\u7528\u6A21\u578B\uFF0C\u8BF7\u68C0\u67E5 A6API \u63A7\u5236\u53F0\u4E2D\u7684\u4EE4\u724C\u9650\u5236\u8BBE\u7F6E\u3002" }) }) })
     ] }),
-    activeTab === "account" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-a6-tab-page account-page", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+    activeTab === "account" && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-a6-tab-page account-page", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
       AccountPanel,
       {
         balance: state.balance,
@@ -2292,7 +2320,7 @@ var A6ApiSettingsPanel = () => {
         onNavigateToConfig: () => setActiveTab("config")
       }
     ) }),
-    activeTab === "config" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-a6-tab-page config-page", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+    activeTab === "config" && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-a6-tab-page config-page", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
       ConfigPanel,
       {
         config: state.config,
@@ -2304,7 +2332,7 @@ var A6ApiSettingsPanel = () => {
 
 // src/client/components/A6ApiSidebarCard.tsx
 var import_react6 = require("react");
-var import_jsx_runtime7 = require("react/jsx-runtime");
+var import_jsx_runtime8 = require("react/jsx-runtime");
 var POPUP_MAX_WIDTH = 500;
 var normalizeModelId = (id) => id.replace(/^[^/]+\//, "");
 var A6ApiSidebarCard = ({
@@ -2313,7 +2341,7 @@ var A6ApiSidebarCard = ({
   getModelDirectories
 }) => {
   if (useSessions) {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
       A6ApiSidebarCardInner,
       {
         wide,
@@ -2322,11 +2350,11 @@ var A6ApiSidebarCard = ({
       }
     );
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(A6ApiSidebarCardBody, { wide, getModelDirectories });
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(A6ApiSidebarCardBody, { wide, getModelDirectories });
 };
 var A6ApiSidebarCardInner = ({ wide, useSessions, getModelDirectories }) => {
   const currentId = useSessions((s) => s?.current);
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
     A6ApiSidebarCardBody,
     {
       wide,
@@ -2402,15 +2430,9 @@ var A6ApiSidebarCardBody = ({
   }, []);
   const isA6api = Boolean(selection && selection.provider === "a6api");
   const modelName = normalizeModelId(selection?.model || "");
-  const canOpen = isA6api && Boolean(modelName);
-  const card = canOpen ? state.models.find((m) => m.model_name.toLowerCase() === modelName.toLowerCase()) : void 0;
-  const toggle = () => {
-    if (!canOpen) return;
-    setOpen((v) => !v);
-  };
-  (0, import_react6.useEffect)(() => {
-    if (open && !canOpen) setOpen(false);
-  }, [open, canOpen]);
+  const hasA6apiModel = isA6api && Boolean(modelName);
+  const card = modelName ? state.models.find((m) => m.model_name.toLowerCase() === modelName.toLowerCase()) : void 0;
+  const toggle = () => setOpen((v) => !v);
   (0, import_react6.useEffect)(() => {
     if (!open) {
       setPos(null);
@@ -2485,25 +2507,24 @@ var A6ApiSidebarCardBody = ({
       document.removeEventListener("pointerdown", onPointerDown, true);
     };
   }, [open]);
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
       "span",
       {
         className: `dsh-a6-side-btn-wrap${wide ? "" : " rail"}`,
-        "data-tooltip": !canOpen ? "\u5F53\u524D\u4F1A\u8BDD\u672A\u4F7F\u7528 A6api \u6A21\u578B" : void 0,
-        children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+        "data-tooltip": !hasA6apiModel ? "\u5F53\u524D\u4F1A\u8BDD\u672A\u4F7F\u7528 A6api \u6A21\u578B\uFF0C\u5361\u7247\u5DF2\u7F6E\u7070" : void 0,
+        children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
           "button",
           {
             ref: buttonRef,
             type: "button",
             className: `dsh-a6-side-btn${wide ? "" : " rail"}`,
             onClick: toggle,
-            disabled: !canOpen,
             "aria-expanded": open,
             "aria-label": wide ? void 0 : "A6api",
-            "data-tooltip": canOpen ? open ? "\u6536\u8D77 A6api \u6A21\u578B\u5361\u7247" : "\u67E5\u770B\u5F53\u524D\u4F1A\u8BDD\u7684 A6api \u6A21\u578B\u5361\u7247" : void 0,
+            "data-tooltip": hasA6apiModel ? open ? "\u6536\u8D77 A6api \u6A21\u578B\u5361\u7247" : "\u67E5\u770B\u5F53\u524D\u4F1A\u8BDD\u7684 A6api \u6A21\u578B\u5361\u7247" : void 0,
             children: [
-              /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+              /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
                 "svg",
                 {
                   className: "dsh-a6-side-btn-badge",
@@ -2514,14 +2535,14 @@ var A6ApiSidebarCardBody = ({
                   xmlns: "http://www.w3.org/2000/svg",
                   "aria-hidden": "true",
                   children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "path",
                       {
                         d: "M14.0861 5.51366C13.8717 5.0575 13.588 4.58542 13.2889 4.18108C13.208 4.07172 13.1596 4.04373 13.0243 4.03054C12.4277 3.97255 11.8245 4.05527 11.2269 3.9972C10.7224 3.94816 10.3133 3.71661 10.0115 3.30919C9.66986 2.84777 9.43973 2.31343 9.09824 1.85234C9.01771 1.74365 8.96805 1.71589 8.83354 1.70282C8.29432 1.65044 7.70402 1.65061 7.16656 1.70282C7.03205 1.71589 6.98239 1.74365 6.90186 1.85234C6.56067 2.31303 6.33025 2.84774 5.98855 3.30919C5.68681 3.71661 5.27774 3.94816 4.77317 3.9972C4.17564 4.05527 3.57239 3.97255 2.97585 4.03054C2.84046 4.04373 2.79208 4.07172 2.71115 4.18108C2.41212 4.58542 2.12835 5.0575 1.91403 5.51366C1.85299 5.64359 1.85286 5.7018 1.91403 5.8319C2.14865 6.33077 2.49748 6.76892 2.73237 7.26854C2.9594 7.7515 2.96041 8.24717 2.73338 8.73044C2.49837 9.23061 2.14891 9.66837 1.91403 10.1681C1.85291 10.2982 1.85299 10.3564 1.91403 10.4863C2.12856 10.9429 2.41185 11.4142 2.71115 11.8189C2.79208 11.9283 2.84046 11.9563 2.97585 11.9694C3.57239 12.0274 4.17564 11.9447 4.77317 12.0028C5.27774 12.0518 5.68681 12.2834 5.98855 12.6908C6.33024 13.1522 6.56037 13.6866 6.90186 14.1476C6.98239 14.2563 7.03205 14.2841 7.16656 14.2972C7.70402 14.3494 8.29432 14.3495 8.83354 14.2972C8.96805 14.2841 9.01771 14.2563 9.09824 14.1476C9.43944 13.687 9.66985 13.1522 10.0115 12.6908C10.3133 12.2834 10.7224 12.0518 11.2269 12.0028C11.8244 11.9447 12.4271 12.0275 13.0243 11.9694C13.1596 11.9563 13.208 11.9283 13.2889 11.8189C13.5891 11.4131 13.872 10.942 14.0861 10.4863C14.1471 10.3564 14.1472 10.2982 14.0861 10.1681C13.8513 9.66861 13.5017 9.23061 13.2667 8.73044C13.0397 8.24717 13.0407 7.7515 13.2677 7.26854C13.5026 6.7689 13.8513 6.33106 14.0861 5.8319C14.1472 5.7018 14.1471 5.64359 14.0861 5.51366ZM15.3035 6.40373C15.0685 6.90359 14.7188 7.34119 14.4841 7.84037C14.4231 7.97025 14.423 8.02855 14.4841 8.15861C14.7189 8.65833 15.0685 9.09611 15.3035 9.59626C15.5308 10.0801 15.5308 10.5744 15.3035 11.0582C15.052 11.5933 14.7225 12.1426 14.37 12.6191C14.0685 13.0265 13.6581 13.259 13.1536 13.3081C12.5566 13.366 11.9541 13.2835 11.3573 13.3414C11.2228 13.3545 11.1731 13.3823 11.0926 13.491C10.7511 13.9521 10.521 14.4864 10.1793 14.9478C9.87828 15.3542 9.46719 15.5869 8.96387 15.6358C8.34008 15.6964 7.66194 15.6966 7.03623 15.6358C6.53291 15.5869 6.12182 15.3542 5.82084 14.9478C5.47911 14.4863 5.24878 13.9517 4.90753 13.491C4.82701 13.3823 4.77734 13.3545 4.64284 13.3414C4.04647 13.2835 3.44373 13.366 2.84653 13.3081C2.34201 13.259 1.93164 13.0265 1.63013 12.6191C1.27867 12.144 0.948453 11.5941 0.696621 11.0582C0.469315 10.5744 0.469279 10.0801 0.696621 9.59626C0.931628 9.09613 1.2813 8.65807 1.51597 8.15861C1.57708 8.02855 1.57702 7.97025 1.51597 7.84037C1.28117 7.34095 0.931635 6.9036 0.696621 6.40373C0.469213 5.91992 0.469367 5.42562 0.696621 4.94183C0.948441 4.40587 1.27868 3.85598 1.63013 3.38092C1.93164 2.97349 2.34201 2.74095 2.84653 2.6919C3.44353 2.63397 4.04599 2.71649 4.64284 2.65856C4.77734 2.64549 4.82701 2.61774 4.90753 2.50904C5.24905 2.04792 5.47913 1.51362 5.82084 1.05219C6.12182 0.645806 6.53291 0.413119 7.03623 0.364178C7.66002 0.303556 8.33816 0.303369 8.96387 0.364178C9.46719 0.413119 9.87828 0.645806 10.1793 1.05219C10.521 1.51365 10.7513 2.04828 11.0926 2.50904C11.1731 2.61774 11.2228 2.64549 11.3573 2.65856C11.9541 2.71649 12.5566 2.63397 13.1536 2.6919C13.6581 2.74095 14.0685 2.97349 14.37 3.38092C14.7214 3.85598 15.0517 4.40587 15.3035 4.94183C15.5307 5.42562 15.5309 5.91992 15.3035 6.40373Z",
                         fill: "currentColor"
                       }
                     ),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "path",
                       {
                         d: "M9.13764 7.99999C9.13764 7.3715 8.62855 6.8624 8.00005 6.8624C7.37155 6.8624 6.86246 7.3715 6.86246 7.99999C6.86246 8.62849 7.37155 9.13759 8.00005 9.13759C8.62855 9.13759 9.13764 8.62849 9.13764 7.99999ZM10.4834 7.99999C10.4834 9.37126 9.37132 10.4833 8.00005 10.4833C6.62878 10.4833 5.51674 9.37126 5.51674 7.99999C5.51674 6.62873 6.62878 5.51669 8.00005 5.51669C9.37132 5.51669 10.4834 6.62873 10.4834 7.99999Z",
@@ -2531,13 +2552,13 @@ var A6ApiSidebarCardBody = ({
                   ]
                 }
               ),
-              wide && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-a6-side-btn-label", children: "A6api" })
+              wide && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "dsh-a6-side-btn-label", children: "A6api" })
             ]
           }
         )
       }
     ),
-    open && pos && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+    open && pos && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
       "div",
       {
         ref: popupRef,
@@ -2546,38 +2567,42 @@ var A6ApiSidebarCardBody = ({
         "aria-label": "\u5F53\u524D\u4F1A\u8BDD A6api \u6A21\u578B\u5361\u7247",
         style: { left: pos.left, ...pos.top !== void 0 ? { top: pos.top } : { bottom: pos.bottom } },
         children: [
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-side-pills", children: [
-            state.balance?.hasAccountAuth && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "dsh-a6-side-pills", children: [
+            state.balance?.hasAccountAuth && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
               "div",
               {
                 className: "dsh-a6-header-balance-badge dsh-a6-side-balance-pill",
                 title: "\u8D26\u6237\u4F59\u989D\uFF08\u6BCF 60 \u79D2\u81EA\u52A8\u540C\u6B65\uFF09",
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-a6-hb-label", children: "\u8D26\u6237\u4F59\u989D:" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-a6-hb-amount", children: state.balance.accountBalanceFormatted })
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "dsh-a6-hb-label", children: "\u8D26\u6237\u4F59\u989D:" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "dsh-a6-hb-amount", children: state.balance.accountBalanceFormatted })
                 ]
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
               PricePill,
               {
                 pf: state.priceFluctuation,
                 hasToken: Boolean(state.config?.hasToken),
                 compact: true
               }
-            )
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(MarketPill, {})
           ] }),
-          card ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(MerchantCard, { model: card }) : state.loading && state.models.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-side-popup-empty", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-a6-spinner" }),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "\u6B63\u5728\u52A0\u8F7D A6api \u6570\u636E..." })
-          ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-a6-side-popup-empty", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: hasA6apiModel ? void 0 : "dsh-a6-side-card-dimmed", children: card ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(MerchantCard, { model: card }) : state.loading && state.models.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "dsh-a6-side-popup-empty", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "dsh-a6-spinner" }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "\u6B63\u5728\u52A0\u8F7D A6api \u6570\u636E..." })
+          ] }) : hasA6apiModel ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "dsh-a6-side-popup-empty", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { children: [
               "\u672A\u627E\u5230\u300C",
               modelName,
               "\u300D\u7684\u5546\u6237\u6570\u636E"
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-a6-side-popup-hint", children: "\u53EF\u5728\u300C\u8BBE\u7F6E \u2192 A6api\u300D\u4E2D\u63A2\u6D4B\u8BE5\u6A21\u578B" })
-          ] })
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "dsh-a6-side-popup-hint", children: "\u53EF\u5728\u300C\u8BBE\u7F6E \u2192 A6api\u300D\u4E2D\u63A2\u6D4B\u8BE5\u6A21\u578B" })
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "dsh-a6-side-popup-empty", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "\u5F53\u524D\u4F1A\u8BDD\u672A\u4F7F\u7528 A6api \u6A21\u578B" }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "dsh-a6-side-popup-hint", children: modelName ? `\u300C${modelName}\u300D\u6682\u65E0\u5546\u6237\u6570\u636E` : "\u5207\u6362\u5230 A6api \u6A21\u578B\u540E\u81EA\u52A8\u5C55\u793A\u5546\u6237\u5361\u7247" })
+          ] }) })
         ]
       }
     )
@@ -2741,6 +2766,42 @@ var main_default = `/* A6API Plugin Styles - Clean Professional DSH Native Theme
 
 .dsh-a6-price-pill.disabled .dsh-a6-price-pill-count {
   color: var(--dsw-alias-label-tertiary, #94a3b8);
+}
+
+/* \u300C\u6A21\u578B\u5E02\u573A\u300D\u80F6\u56CA(\u4FA7\u8FB9\u680F\u6D6E\u5C42):\u4E0E\u4F59\u989D / \u4EF7\u683C\u6CE2\u52A8\u80F6\u56CA\u540C\u6B3E\u5916\u89C2,\u70B9\u51FB\u76F4\u8FBE\u5B98\u7F51\u6A21\u578B\u9875 */
+.dsh-a6-market-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--dsw-alias-border-l2, #e2e8f0);
+  background: var(--dsw-alias-bg-layer-2, #ffffff);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s;
+  user-select: none;
+  min-height: 28px;
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-secondary, #64748b);
+}
+
+.dsh-a6-market-pill:hover {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.dsh-a6-market-pill-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary, #64748b);
+}
+
+.dsh-a6-market-pill:hover .dsh-a6-market-pill-label {
+  color: #10b981;
 }
 
 .dsh-a6-hb-amount {
@@ -4402,13 +4463,21 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
   color: var(--dsw-alias-label-tertiary, #94a3b8);
 }
 
+/* \u975E A6api \u4F1A\u8BDD:\u6A21\u578B\u5361\u7247\u533A\u57DF\u6574\u4F53\u7F6E\u7070(\u53BB\u8272 + \u964D\u900F\u660E\u5EA6 + \u7981\u4EA4\u4E92),\u9876\u90E8\u8D26\u6237\u80F6\u56CA\u4E0D\u53D7\u5F71\u54CD */
+.dsh-a6-side-card-dimmed {
+  filter: grayscale(1);
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* \u6D6E\u5C42\u5185\u7981\u7528 CSS \u4F2A\u5143\u7D20 tooltip:JS portal tooltip \u6709 30ms \u5EF6\u8FDF,\u907F\u514D\u53CC\u63D0\u793A\u4E14\u4F2A\u5143\u7D20\u4F1A\u88AB overflow \u88C1\u526A */
 .dsh-a6-side-popup [data-tooltip]::after,
 .dsh-a6-side-popup [data-tooltip]::before {
   display: none;
 }
 
-/* \u6D6E\u5C42\u9876\u90E8\u8D26\u6237\u901F\u89C8\u80F6\u56CA\u884C:\u4E0E\u8BBE\u7F6E\u9875\u5934\u90E8\u540C\u6B3E\u89C6\u89C9,\u7F29\u7A84\u7D27\u51D1\u7248(\u4F59\u989D\u7EAF\u5C55\u793A + \u4EF7\u683C\u6CE2\u52A8\u53EF\u8DF3) */
+/* \u6D6E\u5C42\u9876\u90E8\u8D26\u6237\u901F\u89C8\u80F6\u56CA\u884C:\u4E0E\u8BBE\u7F6E\u9875\u5934\u90E8\u540C\u6B3E\u89C6\u89C9,\u7F29\u7A84\u7D27\u51D1\u7248(\u4F59\u989D\u7EAF\u5C55\u793A + \u4EF7\u683C\u6CE2\u52A8\u53EF\u8DF3 + \u6A21\u578B\u5E02\u573A\u76F4\u8FBE) */
 .dsh-a6-side-pills {
   display: flex;
   align-items: center;
@@ -4420,7 +4489,8 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 }
 
 .dsh-a6-side-pills .dsh-a6-header-balance-badge,
-.dsh-a6-side-pills .dsh-a6-price-pill {
+.dsh-a6-side-pills .dsh-a6-price-pill,
+.dsh-a6-side-pills .dsh-a6-market-pill {
   padding: 3px 10px;
   min-height: 24px;
   font-size: 11px;
@@ -4432,7 +4502,8 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 .dsh-a6-side-pills .dsh-a6-price-pill-count,
 .dsh-a6-side-pills .dsh-a6-price-pill-label,
 .dsh-a6-side-pills .dsh-a6-hb-amount,
-.dsh-a6-side-pills .dsh-a6-hb-label {
+.dsh-a6-side-pills .dsh-a6-hb-label,
+.dsh-a6-side-pills .dsh-a6-market-pill-label {
   font-size: 12px;
   line-height: 1;
 }

@@ -810,11 +810,19 @@ async function fetchPriceFluctuation(userId, accessToken) {
     let unseen = unseenPick.value;
     const total = arr.length;
     if (!pendingPick.present && arr.length > 0) {
-      const counted = arr.filter((n) => {
-        const s = String(n.state || n.status || "").toLowerCase();
-        return s === "open" || s === "pending" || n.pending === true;
-      }).length;
-      const hasState = arr.some((n) => n.state !== void 0 || n.status !== void 0);
+      const isPendingNotice = (n) => {
+        if (n?.pending === true) return true;
+        const rels = Array.isArray(n?.relations) ? n.relations : [];
+        if (rels.length > 0) {
+          return rels.some((r) => String(r?.state ?? "").toLowerCase() === "open");
+        }
+        const s = String(n?.state ?? n?.status ?? "").toLowerCase();
+        return s === "open" || s === "pending" || s === "effective";
+      };
+      const counted = arr.filter(isPendingNotice).length;
+      const hasState = arr.some(
+        (n) => n.state !== void 0 || n.status !== void 0 || Array.isArray(n.relations) && n.relations.length > 0
+      );
       if (hasState) pending = counted;
     }
     if (!unseenPick.present && arr.length > 0) {

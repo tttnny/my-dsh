@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { store } from '../store.js';
 import { MerchantCard } from './MerchantCard.js';
 import { PricePill } from './PricePill.js';
+import { MarketPill } from './MarketPill.js';
 
 const POPUP_MAX_WIDTH = 500;
 
@@ -18,7 +19,8 @@ interface A6ApiSidebarCardProps {
 }
 
 /**
- * 侧边栏左下角「A6api」按钮 + 向上弹出当前会话 A6api 模型的 MerchantCard 浮层。
+ * 侧边栏左下角「A6api」按钮 + 向上弹出浮层(任何会话均可展开):顶部为账户速览胶囊行,
+ * 下方为当前会话模型对应的 MerchantCard;会话未使用 A6api 模型时卡片区域整体置灰不可交互。
  * 与设置页共享 A6ApiStore 单例:探测/轮询/操作结果实时同步。
  *
  * useSessions 是 React hook,不能条件调用:由外层按「壳是否注入」分派到两个固定
@@ -134,21 +136,15 @@ const A6ApiSidebarCardBody: React.FC<A6ApiSidebarCardBodyProps> = ({
 
   const isA6api = Boolean(selection && selection.provider === 'a6api');
   const modelName = normalizeModelId(selection?.model || '');
-  const canOpen = isA6api && Boolean(modelName);
+  // 当前会话是否正在使用 A6api 模型:决定卡片区域正常展示还是整体置灰(浮层本身任何会话都可展开)
+  const hasA6apiModel = isA6api && Boolean(modelName);
 
-  const card = canOpen
+  // 按模型名查商户卡片:非 A6api 会话同样查询(同名模型以置灰态展示,提示其在 A6api 可用)
+  const card = modelName
     ? state.models.find((m) => m.model_name.toLowerCase() === modelName.toLowerCase())
     : undefined;
 
-  const toggle = () => {
-    if (!canOpen) return;
-    setOpen((v) => !v);
-  };
-
-  // 会话切走后(不再可开)自动收起浮层,避免残留空态
-  useEffect(() => {
-    if (open && !canOpen) setOpen(false);
-  }, [open, canOpen]);
+  const toggle = () => setOpen((v) => !v);
 
   // 打开时:定位(锚定按钮向上展开,空间不足/按钮出视口则翻转)+ 惰性加载 /state
   useEffect(() => {
@@ -243,17 +239,16 @@ const A6ApiSidebarCardBody: React.FC<A6ApiSidebarCardBodyProps> = ({
     <>
       <span
         className={`dsh-a6-side-btn-wrap${wide ? '' : ' rail'}`}
-        data-tooltip={!canOpen ? '当前会话未使用 A6api 模型' : undefined}
+        data-tooltip={!hasA6apiModel ? '当前会话未使用 A6api 模型，卡片已置灰' : undefined}
       >
         <button
           ref={buttonRef}
           type="button"
           className={`dsh-a6-side-btn${wide ? '' : ' rail'}`}
           onClick={toggle}
-          disabled={!canOpen}
           aria-expanded={open}
           aria-label={wide ? undefined : 'A6api'}
-          data-tooltip={canOpen ? (open ? '收起 A6api 模型卡片' : '查看当前会话的 A6api 模型卡片') : undefined}
+          data-tooltip={hasA6apiModel ? (open ? '收起 A6api 模型卡片' : '查看当前会话的 A6api 模型卡片') : undefined}
         >
           {/* 与设置按钮同款齿轮图标(currentColor 跟随文字色) */}
           <svg
@@ -287,7 +282,7 @@ const A6ApiSidebarCardBody: React.FC<A6ApiSidebarCardBodyProps> = ({
           style={{ left: pos.left, ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }) }}
         >
           {/* 账户速览胶囊行：账号级数据，与当前模型卡片无关，加载/空态恒显示；
-              余额胶囊纯展示（不可点击），价格波动胶囊可跳官网处理 */}
+              余额胶囊纯展示（不可点击），价格波动胶囊可跳官网处理，模型市场胶囊直达官网模型页 */}
           <div className="dsh-a6-side-pills">
             {state.balance?.hasAccountAuth && (
               <div
@@ -303,20 +298,31 @@ const A6ApiSidebarCardBody: React.FC<A6ApiSidebarCardBodyProps> = ({
               hasToken={Boolean(state.config?.hasToken)}
               compact
             />
+            <MarketPill />
           </div>
-          {card ? (
-            <MerchantCard model={card} />
-          ) : state.loading && state.models.length === 0 ? (
-            <div className="dsh-a6-side-popup-empty">
-              <div className="dsh-a6-spinner" />
-              <span>正在加载 A6api 数据...</span>
-            </div>
-          ) : (
-            <div className="dsh-a6-side-popup-empty">
-              <span>未找到「{modelName}」的商户数据</span>
-              <span className="dsh-a6-side-popup-hint">可在「设置 → A6api」中探测该模型</span>
-            </div>
-          )}
+          {/* 模型卡片区域:非 A6api 会话整体置灰且不可交互(顶部账户胶囊不受影响) */}
+          <div className={hasA6apiModel ? undefined : 'dsh-a6-side-card-dimmed'}>
+            {card ? (
+              <MerchantCard model={card} />
+            ) : state.loading && state.models.length === 0 ? (
+              <div className="dsh-a6-side-popup-empty">
+                <div className="dsh-a6-spinner" />
+                <span>正在加载 A6api 数据...</span>
+              </div>
+            ) : hasA6apiModel ? (
+              <div className="dsh-a6-side-popup-empty">
+                <span>未找到「{modelName}」的商户数据</span>
+                <span className="dsh-a6-side-popup-hint">可在「设置 → A6api」中探测该模型</span>
+              </div>
+            ) : (
+              <div className="dsh-a6-side-popup-empty">
+                <span>当前会话未使用 A6api 模型</span>
+                <span className="dsh-a6-side-popup-hint">
+                  {modelName ? `「${modelName}」暂无商户数据` : '切换到 A6api 模型后自动展示商户卡片'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </>

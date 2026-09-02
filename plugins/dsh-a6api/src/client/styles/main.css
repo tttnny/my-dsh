@@ -156,6 +156,42 @@
   color: var(--dsw-alias-label-tertiary, #94a3b8);
 }
 
+/* 「模型市场」胶囊(侧边栏浮层):与余额 / 价格波动胶囊同款外观,点击直达官网模型页 */
+.dsh-a6-market-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--dsw-alias-border-l2, #e2e8f0);
+  background: var(--dsw-alias-bg-layer-2, #ffffff);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s;
+  user-select: none;
+  min-height: 28px;
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-secondary, #64748b);
+}
+
+.dsh-a6-market-pill:hover {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.dsh-a6-market-pill-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary, #64748b);
+}
+
+.dsh-a6-market-pill:hover .dsh-a6-market-pill-label {
+  color: #10b981;
+}
+
 .dsh-a6-hb-amount {
   font-size: 13px;
   font-weight: 700;
@@ -1815,13 +1851,21 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
   color: var(--dsw-alias-label-tertiary, #94a3b8);
 }
 
+/* 非 A6api 会话:模型卡片区域整体置灰(去色 + 降透明度 + 禁交互),顶部账户胶囊不受影响 */
+.dsh-a6-side-card-dimmed {
+  filter: grayscale(1);
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* 浮层内禁用 CSS 伪元素 tooltip:JS portal tooltip 有 30ms 延迟,避免双提示且伪元素会被 overflow 裁剪 */
 .dsh-a6-side-popup [data-tooltip]::after,
 .dsh-a6-side-popup [data-tooltip]::before {
   display: none;
 }
 
-/* 浮层顶部账户速览胶囊行:与设置页头部同款视觉,缩窄紧凑版(余额纯展示 + 价格波动可跳) */
+/* 浮层顶部账户速览胶囊行:与设置页头部同款视觉,缩窄紧凑版(余额纯展示 + 价格波动可跳 + 模型市场直达) */
 .dsh-a6-side-pills {
   display: flex;
   align-items: center;
@@ -1833,7 +1877,8 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 }
 
 .dsh-a6-side-pills .dsh-a6-header-balance-badge,
-.dsh-a6-side-pills .dsh-a6-price-pill {
+.dsh-a6-side-pills .dsh-a6-price-pill,
+.dsh-a6-side-pills .dsh-a6-market-pill {
   padding: 3px 10px;
   min-height: 24px;
   font-size: 11px;
@@ -1845,7 +1890,8 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 .dsh-a6-side-pills .dsh-a6-price-pill-count,
 .dsh-a6-side-pills .dsh-a6-price-pill-label,
 .dsh-a6-side-pills .dsh-a6-hb-amount,
-.dsh-a6-side-pills .dsh-a6-hb-label {
+.dsh-a6-side-pills .dsh-a6-hb-label,
+.dsh-a6-side-pills .dsh-a6-market-pill-label {
   font-size: 12px;
   line-height: 1;
 }

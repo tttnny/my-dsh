@@ -4,6 +4,7 @@ import { MerchantCard } from './MerchantCard.js';
 import { AccountPanel } from './BalanceCard.js';
 import { ConfigPanel } from './ConfigPanel.js';
 import { PricePill } from './PricePill.js';
+import { MarketPill } from './MarketPill.js';
 import { ModelCatalogPanel } from './ModelCatalogPanel.js';
 
 type TabKey = 'models' | 'catalog' | 'account' | 'config';
@@ -92,6 +93,7 @@ export const A6ApiSettingsPanel: React.FC = () => {
             </div>
           )}
           <PricePill pf={state.priceFluctuation} hasToken={Boolean(state.config?.hasToken)} />
+          <MarketPill />
         </div>
       </div>
 

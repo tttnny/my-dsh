@@ -13,7 +13,7 @@
 | [@lynn123411/dsh-workspace-tree](./plugins/dsh-workspace-tree) | `dsh.bundle` + `dsh.client/web` | **工作区树**：文件系统推导的多级树（文件夹/工作区双模式，环境严格隔离）+ 一键在外部 IDE（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）打开 + 全局重命名与归档/物理删除管理 | `dsh plugin --profile web add @lynn123411/dsh-workspace-tree` |
 | [@lynn123411/dsh-oil-sticky-prompt](./plugins/dsh-oil-sticky-prompt) | `dsh.bundle` + `dsh.client/web` | **对话吸顶提示**：将最近的用户 Prompt 悬浮固定在对话流顶部，点击平滑回滚至对应消息，告别长对话迷路 | `dsh plugin --profile web add @lynn123411/dsh-oil-sticky-prompt` |
 | [@lynn123411/dsh-chat-translate](./plugins/dsh-chat-translate) | `dsh.bundle` + `dsh.client/web` | **聊天翻译**：工具调用与思考摘要自动译中（仅当前会话、正文不翻）：OpenAI 兼容 AI 通道（可配 Base URL/模型，Key 存 `~/.dsh/.credentials.yaml`）+ 免 Key Bing 兜底双通道，内置「聊天翻译」面板 | `dsh plugin --profile web add @lynn123411/dsh-chat-translate` |
-| [@lynn123411/dsh-a6api](./plugins/dsh-a6api) | `dsh.bundle` + `dsh.client/web` | **A6API 接入**：将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，提供多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步、商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比） | `dsh plugin --profile web add @lynn123411/dsh-a6api` |
+| [@lynn123411/dsh-a6api](./plugins/dsh-a6api) | `dsh.bundle` + `dsh.client/web` | **A6API 接入**：将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，提供多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步、商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）、侧边栏快捷模型卡片与账户余额/价格波动/模型市场胶囊行 | `dsh plugin --profile web add @lynn123411/dsh-a6api` |
 | [@lynn123411/dsh-ask-user-grilling](./plugins/dsh-ask-user-grilling) | 普通 Cordis 插件（preset 工具行消费，非 bundle） | **grilling 适配工具**：`ask_user_grilling`（后台子代理闸门 / 强制多选 / 输入框补充（无每问补充选项）/ 轮末补充问题 / 题干引导不硬校验）+ `enter_plan_mode`（grilling 共识后自动进入计划模式）。配合 `matt-standard` 预设使用，不改动任何技能文件 | `dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling` |
 
 ---

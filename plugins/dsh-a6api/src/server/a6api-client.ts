@@ -533,14 +533,28 @@ export async function fetchPriceFluctuation(
 
     // 仅在计数键缺失时才从数组兜底，避免覆盖 API 显式 0
     if (!pendingPick.present && arr.length > 0) {
-      const counted = arr.filter((n: any) => {
-        const s = String(n.state || n.status || '').toLowerCase();
-        return s === 'open' || s === 'pending' || n.pending === true;
-      }).length;
-      // 仅当数组有可识别的 state 时才用 counted，否则保持 0（不猜测）
-      const hasState = arr.some((n: any) => n.state !== undefined || n.status !== undefined);
+      // 上游真实形态：notice.status ∈ effective/superseded（价格事件本身的状态），
+      // 用户对固定渠道的「待处理」信号在 relations[].state === 'open'（obsolete = 已被新通知取代）。
+      // 有 relations 时以 open 为准；无 relations 时退回通知级状态（含 effective）。
+      const isPendingNotice = (n: any): boolean => {
+        if (n?.pending === true) return true;
+        const rels = Array.isArray(n?.relations) ? n.relations : [];
+        if (rels.length > 0) {
+          return rels.some((r: any) => String(r?.state ?? '').toLowerCase() === 'open');
+        }
+        const s = String(n?.state ?? n?.status ?? '').toLowerCase();
+        return s === 'open' || s === 'pending' || s === 'effective';
+      };
+      const counted = arr.filter(isPendingNotice).length;
+      // 仅当数组有可识别的状态信号时才用 counted，否则保持 0（不猜测）
+      const hasState = arr.some(
+        (n: any) =>
+          n.state !== undefined ||
+          n.status !== undefined ||
+          (Array.isArray(n.relations) && n.relations.length > 0),
+      );
       if (hasState) pending = counted;
-      // 若无 state 字段且 pending 缺失，保持 0，不再退化为 total
+      // 若无任何状态信号且 pending 缺失，保持 0，不再退化为 total
     }
     if (!unseenPick.present && arr.length > 0) {
       unseen = arr.filter((n: any) => n.has_unseen === true || n.hasUnseen === true || n.unseen === true || n.is_unread === true).length;
