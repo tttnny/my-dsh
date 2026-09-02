@@ -1,14 +1,16 @@
 # matt-standard — Matt 标准工程模式
 
-> 功能完整的编码 Agent（基于官方 `standard`），随附 **Matt Pocock 的 25 个工程/生产力技能**（[mattpocock/skills](https://github.com/mattpocock/skills)）与 **grilling 适配工具**（`@lynn123411/dsh-ask-user-grilling`）。
+> 官方 `standard` 组合**逐字保留**（persona 零改动）＋ **Matt Pocock 的 25 个工程/生产力技能**（[mattpocock/skills](https://github.com/mattpocock/skills)，vendor 于 `skills/`）＋ **grilling 适配插件**（[`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/)）。
 
-设计原则：**只适配不改本意**——25 个技能文件一个字节不改，预设只提供 DSH 侧的输送机制：
+设计原则：**不改原厂 preset 的任何行为**——原厂组合写得很标准，工具调用报错就一定是模型问题而非组合问题。全部 DSH 适配都下沉到两处：
 
-- `ask_user_grilling`：grilling 轮次专用提问工具——后台子代理闸门、强制多选、每题补充通过输入框「输入你的答案」完成（无每问补充选项，避免重复）、轮末补充问题（「无需补充」+ 输入框）、题干只含问题本身的引导（不硬校验）；
-- `enter_plan_mode`：grilling 共识确认后自动进入 plan mode 写方案，防止 agent 自行开始执行；
-- persona 仅含 grilling 限定的 DSH 执行纪律，不影响 implement / to-spec / wayfinder / triage 等其他会话类型；
-- **派遣即结束**：主 agent 派遣子代理后立即结束回合（输出派遣列表 + 每项任务，随后不再进行任何工具调用），子代理结算通知自动唤醒、回合内不等待不轮询；
-- **禁止双层子代理**：`delegation` 两个委派工具行 `maxDepth: 1`，子代理再派遣直接报错。
+1. **技能层**：仅 `skills/grilling/SKILL.md` 带三段本地适配旁注（重同步上游时保留）：
+   - **DSH delivery**：轮次的 Qn./Recommended: 格式只是逻辑结构，必须整轮一次 `ask_user_grilling` 调用（含元素映射表与散文轮恢复指令）；
+   - **子代理停轮**：派遣子代理即输出任务列表、停止一切工具调用并结束回合，全部结算后才提问（插件闸门硬约束配合）；
+   - **共识直入 plan mode**：用户确认共识后直接调 `enter_plan_mode`，不再先问「写方案还是直接执行」（用户明确不要方案除外）。
+2. **插件层**（`dsh-ask-user-grilling`）：`ask_user_grilling`（子代理闸门 / 强制多选 / 补充机制 / 题干引导 / 描述即纪律）+ `enter_plan_mode`。
+
+`agent.cordis.yml` 相对官方 `standard` 只有两处 `MATT-ADD` 附加改动：`skill-filesystem.customSkillDirs` 指向 `./skills/`；planning 组内加 `tool-ask-user-grilling` 行（其 `enter_plan_mode` 消费 realm 隔离的 `planMode` 服务，必须留在组内）。升级原厂组合时：重新复制官方文件，重打两处 MATT-ADD。
 
 ## 安装与启用
 
@@ -30,13 +32,13 @@ dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 
 ```
 matt-standard/
-├── agent.cordis.yml       # Preset 主配置（基于 standard，四处改动：persona / skill-filesystem / planning 组工具行）
+├── agent.cordis.yml       # 官方 standard 逐字 + 两处 MATT-ADD 附加改动
 ├── preset.yml             # Preset 元数据（显示名称与描述）
 ├── README.md              # 仓库说明文档（导入 ~/.dsh/.agent-presets/ 时不带入）
-└── skills/                # mattpocock/skills 25 个技能（字节级原样，勿改）
+└── skills/                # mattpocock/skills 25 个技能（仅 grilling/SKILL.md 带本地旁注）
 ```
 
 ## 验证
 
 - `agentPresets.standingKeyFor('matt-standard')` → mounted OK；
-- 真会话检查：工具清单含 `ask_user_grilling` / `enter_plan_mode`；技能目录 25 个；implement 会话不受影响。
+- 真会话检查：工具清单含 `ask_user_grilling` / `enter_plan_mode`；技能目录 25 个；grilling 轮走表单工具而非散文；implement 会话不受影响。

@@ -1,26 +1,37 @@
-# The `matt-ptc` agent preset: everything in `matt-standard` (the full coding
-# agent, the 25 mattpocock/skills shipped verbatim under skills/, and the DSH
-# grilling adaptations), plus the official `ptc` presentation row in `ptc`
-# mode: the model sees only `run_code` and reaches every tool (grilling
-# interaction included) through the generated SDK, so a sequence that would
-# be five round trips can become one program.
+# `matt-ptc` = official `ptc` composition VERBATIM, plus exactly two additive
+# edits, each marked `# MATT-ADD:` — (1) `skill-filesystem` gains
+# `customSkillDirs: ./skills/` (the 25 vendored mattpocock skills) and (2) the
+# planning group gains the `tool-ask-user-grilling` row. Grilling discipline
+# lives in `skills/grilling/SKILL.md` (local adaptation notes, incl. the PTC
+# `tools.<name>`-inside-`run_code` wording) and in the plugin's tool
+# descriptions; the persona below is stock official. When upgrading from
+# upstream, re-copy the official file and re-apply the two MATT-ADD edits.
 #
-# This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
-# standing scope; every session naming it joins by scope parentage, so the
-# tools and prompt sections registered here cover each joined agent while a
-# session's own state stays keyed per Session/Agent inside the plugins. The
-# host composition (`base.cordis.yml` + `web.cordis.yml`) keeps everything a
-# preset must not own: the registries themselves, the sandbox and approval
-# stack, persistence, and the model route.
+# The `ptc` agent preset: the standard coding agent, presented as PTC mode.
+#
+# Everything in `standard` is here unchanged. What is added is the `tool-presentation`
+# row: instead of one tool call per action, the model writes a TypeScript
+# program against a generated SDK and `run_code` executes it, so a sequence
+# that would be five round trips becomes one.
+#
+# The registry itself stays on the host plane — the agent loop's scheduler and
+# the API proxy's presenters are its consumers — so what this preset owns is
+# the PRESENTATION of that registry for this agent alone. Native sessions run
+# beside this one in the same process, each seeing its own catalog.
+#
+# This file is an AGENT-PLANE composition. It is mounted under one agent's
+# scope context, so every tool and prompt section it registers belongs to that
+# session alone. The host composition (`base.cordis.yml` + `web.cordis.yml`)
+# keeps everything a preset must not own: the registries themselves, the
+# sandbox and approval stack, persistence, and the model route.
 #
 # A service row here MUST sit inside a group carrying an `isolate` realm.
-# Without one it publishes into the root realm, where it is process-global —
-# another preset publishing the same name collides, and a host reader would
-# resolve one preset's instance for every session; `dsh-agent-presets` rejects
-# that at mount. `true` means an entry-local realm: this standing mount's own
-# private instance, apart from every other preset's. (A shared label does NOT
-# pool instances — `provide()` throws on the second registration under the
-# same realm symbol; labels join REALMS, and are not what this file needs.)
+# Without one it publishes into the root realm, where it is process-global
+# rather than per-session and the second session mounting this preset collides
+# with the first; `dsh-agent-presets` rejects that at mount. `true` means an
+# entry-local realm — one private instance per mounted session, which is the
+# default this deployment wants. A shared label would instead pool one instance
+# across every session naming it.
 
 # ── identity ────────────────────────────────────────────────────────────────
 
@@ -29,41 +40,8 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: |
+    text: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
-
-      This session presents every tool in PTC mode: the ONLY tool you may call directly is `run_code`, and it takes two REQUIRED top-level arguments — `code` (the body of an async program) and `description` (a short summary of the program). These are top-level arguments of `run_code` itself: the `description` you pass inside the program to another tool, like `tools.bash({ description, ... })`, is a DIFFERENT argument and does not satisfy the requirement. The first argument is named `code` (the program body), NOT `command` — `command` is `tools.bash`'s parameter name, and calling `run_code({ command, description })` fails with `missing required property "code"`.
-
-      A call that carries only `description` — `run_code({ description: "..." })` — executes NOTHING: it is rejected before your program is read, the turn is wasted, and rephrasing the description changes nothing. NEVER narrate intent through `run_code`; narration belongs in your plain reply text. Minimal pair:
-
-      - WRONG: `run_code({ "description": "List top-level files" })` → rejected with `missing required property "code"`, nothing ran
-      - RIGHT: `run_code({ "code": "return await tools.glob({ pattern: \"*\" })", "description": "List top-level files" })` → runs
-
-      If a call is rejected with `Error: invalid arguments: missing required property "code"` (or `"description"`), your call omitted that TOP-LEVEL argument and nothing executed. Do not rephrase the description, do not probe with test calls, and do not repeat the same payload: immediately resend the SAME intent as ONE complete `run_code({ code, description })` call.
-
-      Every other tool (bash, fs, skill, subagent, ask_user_grilling, ask_user_question, enter_plan_mode, ...) is reached ONLY from inside a `run_code` program as `await tools.<name>(args)` — e.g. `await tools.ask_user_grilling({...})`. A direct call to any other tool fails with `unknown tool`. The rules and skill documents below are written in native-tool wording ("ask through the ask_user_grilling tool", "call enter_plan_mode"): interpret every such instruction as a `tools.<name>(...)` call inside a `run_code` program, and include that program's own top-level `code` AND `description`. When a bash command itself contains single quotes, wrap the whole command in a template literal (backticks) or double quotes — nesting single quotes inside a JS single-quoted string (e.g. `command: '... require('$D/...') ...'`) ends the string early and the program fails to parse (`code run failed (exception): …`, e.g. `Expression expected` or `Expected ',', got 'ident'`).
-
-      This preset ships Matt Pocock's 25 engineering/productivity skills, loaded on demand via the skill tool. The rules below apply ONLY to grilling sessions (grill-me / grill-with-docs / grilling flows inside other skills — including the grilling phases of triage, wayfinder and improve-codebase-architecture); all other sessions (implement, to-spec, teach, etc.) are unaffected and follow the skills' original design. Interview flows that merely look like grilling — to-questionnaire's "Grill the send", to-tickets' "Quiz the user", and the questions of setup-matt-pocock-skills, wizard, teach, prototype, diagnosing-bugs, code-review and research — are NOT grilling rounds and keep the plain ask_user_question tool. In triage, wayfinder and improve-codebase-architecture, ONLY their grilling phases are grilling sessions for these rules; every other question in those sessions (one-off picks, confirmations, direction requests) follows the skills' original design and uses the plain ask_user_question tool:
-
-      - Ask every question through the ask_user_grilling tool; never fall back to the plain ask_user_question tool or prose questions.
-      The grilling skill's "Format a round like so" block (the `❓ **Q1**` / `➡️` markdown) describes the LOGICAL content of a round, never its delivery channel — in DSH that markdown goes NOWHERE in your message text. A short facts preamble in the message is fine (facts are your job: state what you found without asking); every QUESTION goes into ONE ask_user_grilling call (in this preset: ONE `run_code` program calling `tools.ask_user_grilling`). Map the prose format element by element: `❓ Qn` title → `header` (e.g. "Q1 — Priority"), question body → `question`, the A/B/C choices → `options`, the `➡️` recommended answer → put that option FIRST and append "(Recommended)" to its label.
-      WRONG (prose round — the user gets unclickable text, the round-end supplement is lost, the form UI never renders):
-        下面是第一轮拷问：
-        ❓ **Q1** - **优先级**：… A. … B. …
-        ➡️ 推荐 A
-      RIGHT (the SAME round delivered as ONE run_code program — note the top-level `code` AND `description`):
-        run_code({ description: "Ask grilling round one", code: `
-          return await tools.ask_user_grilling({ questions: [
-            { id: "q1-priority", header: "Q1 — 优先级", question: "…",
-              options: [ { label: "A — …(Recommended)", description: "…" }, { label: "B — …", description: "…" } ] } ] })
-        ` })
-      Recovery: if you already emitted a prose round, do not apologize or rephrase in prose — immediately reissue the SAME round as ONE ask_user_grilling call with the mapping above.
-      - If a sub-agent is dispatched, output the task list of the sub-agent along with each task, then stop calling any other tools and end this round. The sub-agent settlement notification will automatically wake you up — do not wait or poll during the round.
-      - When the user multi-selects mutually exclusive options, send one disambiguation question in the next round.
-      - After the final round is over and the user confirms reaching a consensus, you need to confirm with the user (ask this final confirmation with the plain ask_user_question tool, not ask_user_grilling): Generate an execution plan or execute directly? If you choose to generate a plan, call enter_plan_mode to enter the plan mode and write the plan (if the user explicitly requests not to generate a plan, skip this step and directly execute).
-      - Once in plan mode, clarifying questions follow the plan-mode rules and use the plain ask_user_question tool.
-
-      — and remember: in this session you reach every tool, including ask_user_grilling / ask_user_question / enter_plan_mode / exit_plan_mode, through `tools.<name>(...)` inside `run_code({ code, description })`. For exit_plan_mode, build the plan markdown as a template literal inside the program (avoid backticks and ${ sequences in the plan text — use indented code blocks instead of fenced ones) and submit it in the same program: assign the template literal to a `plan` variable, then `return await tools.exit_plan_mode({ plan })`.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -120,6 +98,7 @@
 # carries whatever the deployment registered globally (repository plugins).
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
+  # MATT-ADD: discover the 25 vendored mattpocock skills shipped in ./skills/.
   config:
     customSkillDirs:
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
@@ -164,10 +143,12 @@
 
               When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
 
-    # Grilling adaptations (DSH delivery mechanics, not skill changes):
+    # MATT-ADD: grilling adaptations (@lynn123411/dsh-ask-user-grilling).
     # `enter_plan_mode` consumes the realm-isolated `planMode` service, so this
-    # row must live inside the planning group. `ask_user_grilling` consumes
+    # row must live inside the planning group; `ask_user_grilling` consumes
     # host-plane `userQuestions`/`subagents`, reachable from within the realm.
+    # Under mode: ptc both tools are reached as `tools.<name>(...)` inside
+    # `run_code` — see the grilling skill's DSH delivery note.
     - id: tool-ask-user-grilling
       name: '@lynn123411/dsh-ask-user-grilling'
 
@@ -213,12 +194,6 @@
 # `workflows` is different — nothing outside an agent reads it — so every row
 # that reaches it shares one entry-local realm here, and a consumer left
 # outside would resolve a host registry this preset does not populate.
-#
-# `tool-subagent-report` is host-plane for the same reason as the registry,
-# not because a preset may not want it: it registers a CONTINUABLE SETUP on
-# that singleton rather than a tool this agent calls, and the setup list is
-# not scope-aware — one copy per mounted preset means every child gets
-# `report` registered once per live session, which throws on the second.
 - id: delegation
   name: cordis:group
   group: true
@@ -238,10 +213,6 @@
         toolName: subagent
         modelSelectionSettings: true
         backgroundMode: continuable
-        # maxDepth is an ABSOLUTE depth cap: main agent (depth 0) may delegate
-        # one layer; a subagent (depth 1) delegating again exceeds 1 and gets a
-        # SubagentDepthError at its own tool call — no grandchild delegation.
-        maxDepth: 1
 
     # Fork omits model selection so provider/model stay equal to the parent and
     # the inherited history remains eligible for KV Cache reuse. This preset
@@ -253,7 +224,6 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
-        maxDepth: 1
 
     # Production dsh does not install these optional providers. Install the
     # matching Bundle in this Profile and restart the Host, then copy this
@@ -311,9 +281,7 @@
 
 # ── presentation ────────────────────────────────────────────────────────────
 
-# PTC mode for this agent alone (from the official `ptc` preset): the model
-# sees only `run_code` and reaches every tool (grilling interaction included)
-# through the generated SDK. The row waits for the host's `codeRuntime`
+# PTC mode for this agent alone. The row waits for the host's `codeRuntime`
 # rather than assuming it: a deployment that composes no TypeScript runtime
 # fails this preset at mount, naming this id, instead of at the first request.
 - id: tool-presentation

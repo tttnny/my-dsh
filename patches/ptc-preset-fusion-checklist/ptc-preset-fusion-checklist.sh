@@ -50,7 +50,7 @@ fi
 [[ -n "$SESSION_FILE" ]] || { echo "找不到会话文件: $INPUT" >&2; exit 1; }
 
 # ---------- 2) 解压到临时文件 ----------
-TMP="$(mktemp /tmp/ptc-check.XXXXXX.jsonl)"
+TMP="$(mktemp -t ptc-check)"
 trap 'rm -f "$TMP"' EXIT
 case "$SESSION_FILE" in
   *.zstd)

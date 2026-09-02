@@ -1,55 +1,33 @@
-# The `matt-cordis` agent preset: everything in `matt-standard` (the full coding
-# agent, the 25 mattpocock/skills shipped verbatim under skills/, and the DSH
-# grilling adaptations), plus the official `cordis` preset's self-modification
-# toolset: `tool-cordis` (cordis_define / cordis_run / ...), the two
-# composition-authoring skills under skills/ (editing-cordis-compositions,
-# cordis-plugin-development), and the two-plane persona guidance appended to
-# the grilling discipline below.
+# `matt-cordis` = official `cordis` composition VERBATIM, plus exactly one
+# additive edit marked `# MATT-ADD:` — the planning group gains the
+# `tool-ask-user-grilling` row (the 25 vendored mattpocock skills merge into
+# ./skills/ beside cordis's own two, discovered via the stock customSkillDirs).
+# Grilling discipline lives in `skills/grilling/SKILL.md` (local adaptation
+# notes) and in the plugin's tool descriptions; the persona below is stock
+# official. When upgrading from upstream, re-copy the official file and
+# re-apply the MATT-ADD edit.
 #
-# This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
-# standing scope; every session naming it joins by scope parentage, so the
-# tools and prompt sections registered here cover each joined agent while a
-# session's own state stays keyed per Session/Agent inside the plugins. The
-# host composition (`base.cordis.yml` + `web.cordis.yml`) keeps everything a
-# preset must not own: the registries themselves, the sandbox and approval
-# stack, persistence, and the model route.
+# The `cordis` agent preset: the standard coding agent, plus the ability to
+# read and write the runtime it is running in.
 #
-# A service row here MUST sit inside a group carrying an `isolate` realm.
-# Without one it publishes into the root realm, where it is process-global —
-# another preset publishing the same name collides, and a host reader would
-# resolve one preset's instance for every session; `dsh-agent-presets` rejects
-# that at mount. `true` means an entry-local realm: this standing mount's own
-# private instance, apart from every other preset's. (A shared label does NOT
-# pool instances — `provide()` throws on the second registration under the
-# same realm symbol; labels join REALMS, and are not what this file needs.)
+# It exists so a person can ask an agent to author another agent. Everything in
+# `standard` is here unchanged; what is added is the self-referential Cordis
+# toolset, a skill that teaches composition authoring, and a persona that says
+# which of the two planes an edit belongs to.
+#
+# TRUST: `cordis_mount` evaluates model-written JavaScript against the live
+# runtime, and a composition this agent writes becomes a preset other sessions
+# mount. Treat a session on this preset as shell access — the toolset's own
+# documentation makes the same statement.
 
-# ── identity ────────────────────────────────────────────────────────────────
 
 # The preset's own persona, shadowing the deployment default for this agent.
 # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: |
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
-
-      This preset ships Matt Pocock's 25 engineering/productivity skills, loaded on demand via the skill tool. The rules below apply ONLY to grilling sessions (grill-me / grill-with-docs / grilling flows inside other skills — including the grilling phases of triage, wayfinder and improve-codebase-architecture); all other sessions (implement, to-spec, teach, etc.) are unaffected and follow the skills' original design. Interview flows that merely look like grilling — to-questionnaire's "Grill the send", to-tickets' "Quiz the user", and the questions of setup-matt-pocock-skills, wizard, teach, prototype, diagnosing-bugs, code-review and research — are NOT grilling rounds and keep the plain ask_user_question tool. In triage, wayfinder and improve-codebase-architecture, ONLY their grilling phases are grilling sessions for these rules; every other question in those sessions (one-off picks, confirmations, direction requests) follows the skills' original design and uses the plain ask_user_question tool:
-
-      - Ask every question through the ask_user_grilling tool; never fall back to the plain ask_user_question tool or prose questions.
-      The grilling skill's "Format a round like so" block (the `❓ **Q1**` / `➡️` markdown) describes the LOGICAL content of a round, never its delivery channel — in DSH that markdown goes NOWHERE in your message text. A short facts preamble in the message is fine (facts are your job: state what you found without asking); every QUESTION goes into ONE ask_user_grilling call. Map the prose format element by element: `❓ Qn` title → `header` (e.g. "Q1 — Priority"), question body → `question`, the A/B/C choices → `options`, the `➡️` recommended answer → put that option FIRST and append "(Recommended)" to its label.
-      WRONG (prose round — the user gets unclickable text, the round-end supplement is lost, the form UI never renders):
-        下面是第一轮拷问：
-        ❓ **Q1** - **优先级**：… A. … B. …
-        ➡️ 推荐 A
-      RIGHT (the SAME round delivered as ONE tool call):
-        ask_user_grilling({ questions: [
-          { id: "q1-priority", header: "Q1 — 优先级", question: "…",
-            options: [ { label: "A — …(Recommended)", description: "…" }, { label: "B — …", description: "…" } ] } ] })
-      Recovery: if you already emitted a prose round, do not apologize or rephrase in prose — immediately reissue the SAME round as ONE ask_user_grilling call with the mapping above.
-      - If a sub-agent is dispatched, output the task list of the sub-agent along with each task, then stop calling any other tools and end this round. The sub-agent settlement notification will automatically wake you up — do not wait or poll during the round.
-      - When the user multi-selects mutually exclusive options, send one disambiguation question in the next round.
-      - After the final round is over and the user confirms reaching a consensus, you need to confirm with the user (ask this final confirmation with the plain ask_user_question tool, not ask_user_grilling): Generate an execution plan or execute directly? If you choose to generate a plan, call enter_plan_mode to enter the plan mode and write the plan (if the user explicitly requests not to generate a plan, skip this step and directly execute).
-      - Once in plan mode, clarifying questions follow the plan-mode rules and use the plain ask_user_question tool.
+    text: |-
+      You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.
 
       You can read and modify the harness you run on. Its composition is Cordis: every capability is a plugin row in a `cordis.yml`, and an agent preset is one such file mounted for a single session.
 
@@ -105,22 +83,6 @@
 - id: tool-jobs
   name: '@deepseek-ai/dsh-tool-jobs'
 
-# ── skills ──────────────────────────────────────────────────────────────────
-
-# The skill REGISTRY lives in the host composition and is layered per scope:
-# these rows register into THIS preset's layer of it, so they need no realm.
-# `skill-filesystem` contributes local-root discovery for agents on this preset, and
-# `tool-skill` gives them the catalog and loader; the merged catalog also
-# carries whatever the deployment registered globally (repository plugins).
-- id: skill-filesystem
-  name: '@deepseek-ai/dsh-skill-filesystem'
-  config:
-    customSkillDirs:
-      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
-
-- id: tool-skill
-  name: '@deepseek-ai/dsh-tool-skill'
-
 # ── goals ───────────────────────────────────────────────────────────────────
 
 # The goal service and session driver stay on the host plane, where the Gateway
@@ -158,9 +120,9 @@
 
               When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
 
-    # Grilling adaptations (DSH delivery mechanics, not skill changes):
+    # MATT-ADD: grilling adaptations (@lynn123411/dsh-ask-user-grilling).
     # `enter_plan_mode` consumes the realm-isolated `planMode` service, so this
-    # row must live inside the planning group. `ask_user_grilling` consumes
+    # row must live inside the planning group; `ask_user_grilling` consumes
     # host-plane `userQuestions`/`subagents`, reachable from within the realm.
     - id: tool-ask-user-grilling
       name: '@lynn123411/dsh-ask-user-grilling'
@@ -232,10 +194,6 @@
         toolName: subagent
         modelSelectionSettings: true
         backgroundMode: continuable
-        # maxDepth is an ABSOLUTE depth cap: main agent (depth 0) may delegate
-        # one layer; a subagent (depth 1) delegating again exceeds 1 and gets a
-        # SubagentDepthError at its own tool call — no grandchild delegation.
-        maxDepth: 1
 
     # Fork omits model selection so provider/model stay equal to the parent and
     # the inherited history remains eligible for KV Cache reuse. This preset
@@ -247,7 +205,6 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
-        maxDepth: 1
 
     # Production dsh does not install these optional providers. Install the
     # matching Bundle in this Profile and restart the Host, then copy this
@@ -305,11 +262,23 @@
 
 # ── self-modification ───────────────────────────────────────────────────────
 
-# From the official `cordis` preset: read the live runtime, define a temporary
-# plugin, run/stop/undefine it. The toolset is a trust boundary, not a sandbox —
-# see the persona above. The inspect providers it registers are NOT idempotent:
-# if another preset that also carries `tool-cordis` (the official `cordis`, or
-# `ptc-cordis`) mounts in the same process, its registration collides. See
-# README.md for the coexistence note and optional patch.
+# Read the live runtime, mount a temporary plugin, unmount it. The toolset is a
+# trust boundary, not a sandbox — see this file's header.
 - id: tool-cordis
   name: '@deepseek-ai/dsh-tool-cordis'
+
+# The composition-authoring skill travels with this preset rather than living
+# in the user's skill root: it documents THIS deployment's two planes, and a
+# preset is the unit that gets copied and edited. `baseUrl` is the preset's
+# own directory, so the root resolves wherever the preset is installed.
+# Both rows register into THIS preset's layer of the host skill registry, so
+# they need no realm; the agent's merged catalog also carries whatever the
+# deployment registered globally (repository plugins).
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'

@@ -1,2 +1,2 @@
 name: Matt 标准
-description: 功能完整的编码 Agent，随附 Matt Pocock 的 25 个工程/生产力技能与 grilling 适配工具（ask_user_grilling / enter_plan_mode）。支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。
+description: 官方 standard 逐字（persona 零改动）＋ Matt Pocock 的 25 个工程/生产力技能（skills/）＋ grilling 适配插件（ask_user_grilling / enter_plan_mode）。grilling 纪律写在 skills/grilling/SKILL.md 本地旁注与插件工具描述里。

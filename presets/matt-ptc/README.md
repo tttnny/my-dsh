@@ -1,19 +1,26 @@
 # matt-ptc — Matt PTC 模式（实验性）
 
-> **matt-standard 全量 ＋ 官方 `ptc` 呈现（`mode: ptc`）**：25 个 Matt Pocock 工程/生产力技能与 grilling 适配工具（`ask_user_grilling` / `enter_plan_mode`）原样保留，但模型只见 `run_code`，一切工具（含 grilling 交互）都通过生成的 SDK 以脚本形式调用。
+> 官方 `ptc` 组合**逐字保留**（persona 零改动，`mode: ptc` 模型只见 `run_code`）＋ **Matt Pocock 的 25 个技能**（vendor 于 `skills/`）＋ **grilling 适配插件**（[`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/)，工具折叠进 SDK 脚本调用）。
 
-> ⚠️ **实验性 preset**：早期版本用 `mode: both`（原生工具与 run_code SDK 并存），实测模型倾向直接调用原生工具、不会主动写脚本，PTC 呈现形同虚设；现改为官方 `ptc` 模式强制脚本化。副作用是 grilling 的多轮交互也必须写成代码通过 SDK 调用，不再有原生交互体验。若你更需要原生 grilling 交互，请改用 [matt-standard](./matt-standard/README.md)；若只想保留 PTC 脚本化能力，这是本 preset 的定位。
+> **注意：实验性 preset**。PTC 模式下 grilling 的多轮交互也必须写成 `run_code` 程序（`await tools.ask_user_grilling({...})`），不再有原生交互体验。若你更需要原生 grilling 交互，请改用 [matt-standard](../matt-standard/README.md)。
+
+设计原则与 matt-standard 相同：**不改原厂 preset 的任何行为**。全部 DSH 适配下沉到：
+
+1. **技能层**：`skills/grilling/SKILL.md` 三段本地旁注（DSH delivery 含 PTC 专用的 `tools.<name>`-inside-`run_code` 措辞 / 子代理停轮 / 共识直入 plan mode）；
+2. **插件层**：`ask_user_grilling` 闸门与表单硬约束 + `enter_plan_mode`。
+
+`agent.cordis.yml` 相对官方 `ptc` 只有两处 `MATT-ADD` 附加改动（`customSkillDirs` + planning 组内插件行），升级原厂组合时重新复制官方文件并重打。
 
 ## 与 matt-standard 的关系
 
 | 项 | matt-standard | matt-ptc |
 | --- | --- | --- |
-| 25 个 Matt 技能 | ✅ 字节级原样 | ✅ 字节级原样 |
-| grilling 适配（ask_user_grilling / enter_plan_mode） | ✅ 原生工具 | ✅ 折叠进 SDK（脚本调用） |
-| 禁止双层子代理（maxDepth: 1） | ✅ | ✅ |
-| PTC 呈现 | ❌（纯原生工具） | ✅ `mode: ptc`（强制 run_code 脚本） |
+| 基底组合 | 官方 `standard` 逐字 | 官方 `ptc` 逐字 |
+| 25 个 Matt 技能 | 有 | 有（仅 grilling/SKILL.md 带本地旁注） |
+| grilling 适配（ask_user_grilling / enter_plan_mode） | 有（原生工具） | 有（折叠进 SDK，脚本调用） |
+| PTC 呈现 | 无（纯原生工具） | 有（`mode: ptc`，强制 run_code 脚本） |
 
-`mode: ptc` 与官方 `ptc` 预设一致：模型只见 `run_code`，所有工具通过 SDK 调用；grilling 交互也因此被折叠进脚本。宿主未组装 TypeScript 代码运行时时本 preset 会在挂载时报错点名 `tool-presentation` 行。
+宿主未组装 TypeScript 代码运行时时本 preset 会在挂载时报错点名 `tool-presentation` 行。PTC 会话的 `run_code` 参数错误排查见 [ptc-preset-fusion-checklist](../../patches/ptc-preset-fusion-checklist/README.md)。
 
 ## 安装与启用
 
@@ -35,13 +42,13 @@ dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 
 ```
 matt-ptc/
-├── agent.cordis.yml       # Preset 主配置（matt-standard 全量 + tool-presentation mode: ptc）
+├── agent.cordis.yml       # 官方 ptc 逐字 + 两处 MATT-ADD 附加改动
 ├── preset.yml             # Preset 元数据（显示名称与描述）
 ├── README.md              # 仓库说明文档（导入 ~/.dsh/.agent-presets/ 时不带入）
-└── skills/                # mattpocock/skills 25 个技能（字节级原样，勿改）
+└── skills/                # mattpocock/skills 25 个技能（仅 grilling/SKILL.md 带本地旁注）
 ```
 
 ## 验证
 
 - `agentPresets.standingKeyFor('matt-ptc')` → mounted OK；
-- 真会话检查：工具清单含 `ask_user_grilling` / `enter_plan_mode` 与 `run_code`；技能目录 25 个。
+- 真会话检查：工具清单含 `run_code`（原生工具仅它可见）；技能目录 25 个；grilling 轮通过 `run_code` 里的 `tools.ask_user_grilling` 走表单。

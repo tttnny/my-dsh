@@ -31,7 +31,7 @@ ptc-cordis/
 
 ## 与官方 cordis 预设共存补丁
 
-> 💡 **仅在同一 DSH 进程中先后使用官方 `cordis` 预设与本预设时需要**（若仅使用本预设则无需打补丁）。
+> **仅在同一 DSH 进程中先后使用官方 `cordis` 预设与本预设时需要**（若仅使用本预设则无需打补丁）。
 
 ### 冲突根因
 `@deepseek-ai/dsh-tool-cordis` 会向全局单例 `ctx.cordisInspect` 注册 Host inspect provider。由于该注册表未做幂等处理，同一进程先后加载两个包含 `dsh-tool-cordis` 的预设时会触发 `already registered` 异常。

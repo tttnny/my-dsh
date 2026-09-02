@@ -1,6 +1,13 @@
-# The `matt-standard` agent preset: the full coding agent (from `standard`),
-# plus the 25 mattpocock/skills shipped verbatim under skills/, and the DSH
-# grilling adaptations (ask_user_grilling + enter_plan_mode tools).
+# `matt-standard` = official `standard` composition VERBATIM, plus exactly two
+# additive edits, each marked `# MATT-ADD:` — (1) `skill-filesystem` gains
+# `customSkillDirs: ./skills/` (the 25 vendored mattpocock skills) and (2) the
+# planning group gains the `tool-ask-user-grilling` row. Grilling discipline
+# lives in `skills/grilling/SKILL.md` (local adaptation notes) and in the
+# plugin's tool descriptions; the persona below is stock official. When
+# upgrading from upstream, re-copy the official file and re-apply the two
+# MATT-ADD edits.
+#
+# The `standard` agent preset: the full coding agent, mounted once per process.
 #
 # This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
 # standing scope; every session naming it joins by scope parentage, so the
@@ -26,26 +33,8 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: |
+    text: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
-
-      This preset ships Matt Pocock's 25 engineering/productivity skills, loaded on demand via the skill tool. The rules below apply ONLY to grilling sessions (grill-me / grill-with-docs / grilling flows inside other skills — including the grilling phases of triage, wayfinder and improve-codebase-architecture); all other sessions (implement, to-spec, teach, etc.) are unaffected and follow the skills' original design. Interview flows that merely look like grilling — to-questionnaire's "Grill the send", to-tickets' "Quiz the user", and the questions of setup-matt-pocock-skills, wizard, teach, prototype, diagnosing-bugs, code-review and research — are NOT grilling rounds and keep the plain ask_user_question tool. In triage, wayfinder and improve-codebase-architecture, ONLY their grilling phases are grilling sessions for these rules; every other question in those sessions (one-off picks, confirmations, direction requests) follows the skills' original design and uses the plain ask_user_question tool:
-
-      - Ask every question through the ask_user_grilling tool; never fall back to the plain ask_user_question tool or prose questions.
-      The grilling skill's "Format a round like so" block (the `❓ **Q1**` / `➡️` markdown) describes the LOGICAL content of a round, never its delivery channel — in DSH that markdown goes NOWHERE in your message text. A short facts preamble in the message is fine (facts are your job: state what you found without asking); every QUESTION goes into ONE ask_user_grilling call. Map the prose format element by element: `❓ Qn` title → `header` (e.g. "Q1 — Priority"), question body → `question`, the A/B/C choices → `options`, the `➡️` recommended answer → put that option FIRST and append "(Recommended)" to its label.
-      WRONG (prose round — the user gets unclickable text, the round-end supplement is lost, the form UI never renders):
-        下面是第一轮拷问：
-        ❓ **Q1** - **优先级**：… A. … B. …
-        ➡️ 推荐 A
-      RIGHT (the SAME round delivered as ONE tool call):
-        ask_user_grilling({ questions: [
-          { id: "q1-priority", header: "Q1 — 优先级", question: "…",
-            options: [ { label: "A — …(Recommended)", description: "…" }, { label: "B — …", description: "…" } ] } ] })
-      Recovery: if you already emitted a prose round, do not apologize or rephrase in prose — immediately reissue the SAME round as ONE ask_user_grilling call with the mapping above.
-      - If a sub-agent is dispatched, output the task list of the sub-agent along with each task, then stop calling any other tools and end this round. The sub-agent settlement notification will automatically wake you up — do not wait or poll during the round.
-      - When the user multi-selects mutually exclusive options, send one disambiguation question in the next round.
-      - After the final round is over and the user confirms reaching a consensus, you need to confirm with the user (ask this final confirmation with the plain ask_user_question tool, not ask_user_grilling): Generate an execution plan or execute directly? If you choose to generate a plan, call enter_plan_mode to enter the plan mode and write the plan (if the user explicitly requests not to generate a plan, skip this step and directly execute).
-      - Once in plan mode, clarifying questions follow the plan-mode rules and use the plain ask_user_question tool.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -102,6 +91,7 @@
 # carries whatever the deployment registered globally (repository plugins).
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
+  # MATT-ADD: discover the 25 vendored mattpocock skills shipped in ./skills/.
   config:
     customSkillDirs:
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
@@ -146,9 +136,9 @@
 
               When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
 
-    # Grilling adaptations (DSH delivery mechanics, not skill changes):
+    # MATT-ADD: grilling adaptations (@lynn123411/dsh-ask-user-grilling).
     # `enter_plan_mode` consumes the realm-isolated `planMode` service, so this
-    # row must live inside the planning group. `ask_user_grilling` consumes
+    # row must live inside the planning group; `ask_user_grilling` consumes
     # host-plane `userQuestions`/`subagents`, reachable from within the realm.
     - id: tool-ask-user-grilling
       name: '@lynn123411/dsh-ask-user-grilling'
@@ -220,10 +210,6 @@
         toolName: subagent
         modelSelectionSettings: true
         backgroundMode: continuable
-        # maxDepth is an ABSOLUTE depth cap: main agent (depth 0) may delegate
-        # one layer; a subagent (depth 1) delegating again exceeds 1 and gets a
-        # SubagentDepthError at its own tool call — no grandchild delegation.
-        maxDepth: 1
 
     # Fork omits model selection so provider/model stay equal to the parent and
     # the inherited history remains eligible for KV Cache reuse. This preset
@@ -235,7 +221,6 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
-        maxDepth: 1
 
     # Production dsh does not install these optional providers. Install the
     # matching Bundle in this Profile and restart the Host, then copy this
