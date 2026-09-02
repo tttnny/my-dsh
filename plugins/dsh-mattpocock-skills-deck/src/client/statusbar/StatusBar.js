@@ -247,6 +247,9 @@ export const StatusBar = (props) => {
   const _gateActive = _isOtherSBGate || _isGatePending
   // BUG2 修复（2026-08-28）：后端未确定（无 selection 或 backendId 为空）时只显示门控条——
   //   链快照（wf.chain）常早于选择回填到达，若此刻开放 setup/skills 黄条判定，
+  // 用户在侧边栏手动切换隐藏底栏时，整块区域彻底不渲染（含胶囊与横幅）
+  if (s.statusbarHidden) return null
+
   //   全新工作区会「尚未初始化/技能缺失」黄条一闪而过，再跳到正确的 gate 蓝条。
   //   后端确定后才走依赖链引导（ghcli → ghauth → setup → skills）。
   const _backendUndecided = !(_selSBGate && _selSBGate.backendId)

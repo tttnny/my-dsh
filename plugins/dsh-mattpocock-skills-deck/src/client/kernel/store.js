@@ -307,6 +307,7 @@
       noRepoCard: { expanded: false, name: '', visibility: 'private', loading: false, error: '', errorKind: '', errorRepoUrl: '' },
       switchConfirm: null,
       gateModalOpen: false, gateSelected: null, gateLoading: false, gateError: '',
+      statusbarHidden: false,
     })
     export const shared = makeStore()
     export const stores = {}

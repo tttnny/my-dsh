@@ -68,6 +68,9 @@
         // issue #100：定位图钉 pin —— 状态栏 issuePath 胶囊（替代 emoji 📌），复用 Icon pin 的图钉形态
         case 'pin': return h('svg', common, [h('path', { d: 'M12 21s-6-5.1-6-10a6 6 0 1112 0c0 4.9-6 10-6 10z' }), h('circle', { cx: 12, cy: 11, r: 2.2, fill: 'currentColor', stroke: 'none' })])
         case 'prototype': return h('svg', common, [h('rect', { x: 3, y: 8.5, width: 13, height: 9, rx: 2, opacity: 0.52 }), h('rect', { x: 7.8, y: 3.8, width: 13, height: 9, rx: 2 })])
+        // 显隐底栏（胶囊状态栏）切换图标
+        case 'eye': return h('svg', common, [h('path', { d: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z' }), h('circle', { cx: 12, cy: 12, r: 3 })])
+        case 'eye-off': return h('svg', common, [h('path', { d: 'M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24' }), h('line', { x1: 1, y1: 1, x2: 23, y2: 23 })])
         default: return null
       }
     }

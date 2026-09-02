@@ -262,6 +262,16 @@ export     const OverlayPanel = (props) => {
           // #191 · 仓库名右侧切换按钮（与 Dock 镜像 · pending 灰置 · _isOther 隐藏）
           (function(){ if(_isOther2) return null; var _sel=s.selection||(s.snapshot&&s.snapshot.selection)||null, _bid=_sel?_sel.backendId:null; if(_bid==null) return null; var _pend=!!(_sel&&_sel.pending), _col=(typeof backendColorOf==='function'?backendColorOf(_bid):'#6e7681'); return h(Tip, { content: _pend ? '切换后端 · 探测中不可用' : '切换后端' }, h('button',{'data-repo-switch':1,type:'button','aria-label':'切换后端','aria-disabled':_pend?'true':'false',disabled:_pend,onClick:function(e){try{if(e&&e.preventDefault)e.preventDefault();if(e&&e.stopPropagation)e.stopPropagation()}catch(_){};if(_pend)return;try{openSwitchConfirm(s,null)}catch(_){}},style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:4,flex:'none',border:'1px solid '+_col,color:_col,background:'transparent',cursor:_pend?'not-allowed':'pointer',opacity:_pend?0.45:1,fontSize:10,lineHeight:1,padding:0,colorScheme:'light dark'}},Ic({n:'swap',size:10}))) })(),
           h('span', { style: { flex: 1 } }),
+          // 输入框底栏显隐切换按钮（运行时状态，单会话隔离）
+          h(Tip, { content: s.statusbarHidden ? tr('panel.showStatusbar') : tr('panel.hideStatusbar') }, h('button', {
+            className: 'dsws-btn ghost',
+            'aria-label': s.statusbarHidden ? tr('panel.showStatusbar') : tr('panel.hideStatusbar'),
+            onClick: function () {
+              s.statusbarHidden = !s.statusbarHidden
+              emit(s)
+            },
+            style: { display: 'inline-flex', alignItems: 'center', padding: '2px 6px', fontSize: 11, color: s.statusbarHidden ? '#8b8b95' : 'inherit' }
+          }, Ic({ n: s.statusbarHidden ? 'eye-off' : 'eye', size: 12 }))),
           h(Tip, { content: tr('panel.closeTitle') }, h('button', { className: 'dsws-btn ghost', 'aria-label': tr('panel.closeTitle'), onClick: function () { s.open = false; emit(s) }, style: { display: 'inline-flex', alignItems: 'center' } }, Ic({ n: 'x', size: 12 }))),
         ]),
                 (_isPending2 || _isOther2) ? null : h('div', { className: 'dsws-tabs', ref: tabsRef, style: { display: 'flex', alignItems: 'center', gap: 4 } }, tabs.items),
