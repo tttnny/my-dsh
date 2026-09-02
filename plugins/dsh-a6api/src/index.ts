@@ -174,8 +174,11 @@ function overlayPinsOnModels(models: ModelCardData[], pins: MarketplacePin[], to
 // 数据变更类操作（保存配置/同步模型/探测/固定/取消固定/禁用/恢复）调用 stateMemo.invalidate()
 // 提升代际并清空缓存；变更前已开始的在途构建完成时因代际不符不会写入缓存（仅服务本次请求）。
 
-/** 通用上游记忆：TTL 短缓存 + 同键在途构建合并 + 代际失效 */
-function createUpstreamMemo<T>(ttlMs: number): {
+/**
+ * 通用上游记忆：TTL 短缓存 + 同键在途构建合并 + 代际失效。
+ * shouldCache 可选：对不应被缓存的结果（如鉴权失败态）返回 false，该结果仅服务本次请求。
+ */
+function createUpstreamMemo<T>(ttlMs: number, shouldCache?: (value: T) => boolean): {
   get(key: string, fetcher: () => Promise<T>): Promise<T>;
   invalidate(): void;
 } {
@@ -184,10 +187,15 @@ function createUpstreamMemo<T>(ttlMs: number): {
   let epoch = 0;
 
   return {
-    /** 数据变更后调用：旧结果立即不可用；在途构建写缓存前校验代际，不会回填旧数据 */
+    /**
+     * 数据变更后调用：旧结果立即不可用。
+     * 同时清空在途构建表：变更完成后才到达的请求不会「加入」变更前已开始的旧构建
+     * （旧构建的写缓存仍有代际校验兜底），而是必然发起一次新构建拿到最新数据。
+     */
     invalidate() {
       epoch += 1;
       cache.clear();
+      inflight.clear();
     },
 
     async get(key, fetcher) {
@@ -200,8 +208,10 @@ function createUpstreamMemo<T>(ttlMs: number): {
         const run = Promise.resolve()
           .then(fetcher)
           .then((data) => {
-            // 构建期间发生数据变更 → 不写缓存，避免旧结果被 TTL 长期服务
-            if (buildEpoch === epoch) cache.set(key, { data, at: Date.now(), epoch: buildEpoch });
+            // 构建期间发生数据变更 → 不写缓存；shouldCache 拒绝（如 authError）→ 不写缓存
+            if (buildEpoch === epoch && (!shouldCache || shouldCache(data))) {
+              cache.set(key, { data, at: Date.now(), epoch: buildEpoch });
+            }
             return data;
           })
           .finally(() => {
@@ -217,13 +227,13 @@ function createUpstreamMemo<T>(ttlMs: number): {
 
 /** /state 全量响应缓存 TTL：略大于客户端 60s 轮询周期 → 单标签页稳态上游约每 2 分钟一次，多标签页共享 */
 const stateMemo = createUpstreamMemo<A6ApiStateResponse>(120_000);
-/** 价格波动计数缓存（同一上游价格通知接口的合并窗口） */
+/** 价格波动计数缓存（同一上游价格通知接口的合并窗口）；鉴权失败态不缓存，保证失效信号即时可见 */
 const priceCountsMemo = createUpstreamMemo<{
   pendingCount: number;
   unseenCount: number;
   totalCount: number;
   authError?: boolean;
-}>(120_000);
+}>(120_000, (counts) => !counts.authError);
 
 /** 缓存键：按节点与凭据隔离；userId / apiKey / accessToken 任一变化 → 键变化 → 自动错过旧缓存 */
 function stateCacheKeyOf(config: A6ApiConfig): string {
@@ -514,8 +524,10 @@ export function apply(ctx: any): void {
               if (updated.activeModels.length > 0) {
                 await configAccess.syncModels(updated.baseURL, updated.activeModels);
               }
-              // 配置（含凭据/节点/模型列表）已变更：作废 /state 短缓存，下次拉取立即重建
+              // 配置（含凭据/节点/模型列表）已变更：作废 /state 短缓存，下次拉取立即重建；
+              // 价格波动缓存同样按凭据键控，一并作废（避免旧计数/旧鉴权失败态残留）
               stateMemo.invalidate();
+              priceCountsMemo.invalidate();
               return sendJson(res, 200, { ok: true, config: maskConfig(updated), balance });
             }
 
@@ -609,14 +621,18 @@ export function apply(ctx: any): void {
               let tokenId = await resolveTokenId(config);
               // 卡片缺失或令牌未解析时，用一次探测同时回填两者（探测请求本身会写路由日志）
               if ((!card || !tokenId) && config.apiKey) {
+                let probedOk = false;
                 try {
                   const probe = await probeSingleModel(config.baseURL, config.apiKey, userId, token, modelName);
+                  probedOk = Boolean(probe && probe.success);
                   if (!tokenId && probe.tokenId && Number(probe.tokenId) > 0) tokenId = Number(probe.tokenId);
                   if (!card && probe.merchant) {
                     card = probe.merchant;
                     merchantCardCache.set(modelName.toLowerCase(), { card, at: Date.now() });
                   }
                 } catch {}
+                // 探测已写路由日志/可能更新商户卡片：即使主操作随后失败也先失效，避免旧卡片被缓存长期服务
+                if (probedOk) stateMemo.invalidate();
               }
               if (!card) {
                 return sendJson(res, 400, { ok: false, error: '该模型暂无商家数据，请先「探测商家」' });
@@ -688,13 +704,17 @@ export function apply(ctx: any): void {
               let card = cachedMerchantOf(modelName);
               // 卡片缓存过期时用一次探测回填（与 /pin 一致，避免「按钮可用但接口 400」）
               if (!card && config.apiKey) {
+                let probedOk = false;
                 try {
                   const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName);
+                  probedOk = Boolean(probe && probe.success);
                   if (probe.merchant) {
                     card = probe.merchant;
                     merchantCardCache.set(modelName.toLowerCase(), { card, at: Date.now() });
                   }
                 } catch {}
+                // 探测已写路由日志/可能更新商户卡片：即使主操作随后失败也先失效
+                if (probedOk) stateMemo.invalidate();
               }
               if (!card || !card.channel_id) {
                 return sendJson(res, 400, { ok: false, error: '该模型暂无商家数据，请先「探测商家」' });
@@ -723,13 +743,17 @@ export function apply(ctx: any): void {
               if (!modelName) return sendJson(res, 400, { ok: false, error: '缺少模型名称' });
               let card = cachedMerchantOf(modelName);
               if (!card && config.apiKey) {
+                let probedOk = false;
                 try {
                   const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName);
+                  probedOk = Boolean(probe && probe.success);
                   if (probe.merchant) {
                     card = probe.merchant;
                     merchantCardCache.set(modelName.toLowerCase(), { card, at: Date.now() });
                   }
                 } catch {}
+                // 探测已写路由日志/可能更新商户卡片：即使主操作随后失败也先失效
+                if (probedOk) stateMemo.invalidate();
               }
               if (!card || !card.channel_id) {
                 return sendJson(res, 400, { ok: false, error: '该模型暂无商家数据，请先「探测商家」' });
@@ -793,6 +817,8 @@ export function apply(ctx: any): void {
             // POST /catalog/clear — 清空模型目录（重新拉取/填充前使用；settings.yaml 已启用条目不受影响）
             if (pathname === '/catalog/clear' && req.method === 'POST') {
               await clearCatalog();
+              // 目录品牌/参数参与 /state 卡片元数据（resolveModelMeta）：作废短缓存
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true });
             }
 
@@ -818,6 +844,8 @@ export function apply(ctx: any): void {
               await upsertCatalogEntries(
                 models.map((m) => ({ id: m.id, brand: m.brand, reasoningEfforts: m.reasoningEfforts })),
               );
+              // 目录品牌参与 /state 卡片元数据：作废短缓存
+              stateMemo.invalidate();
               return sendJson(res, 200, {
                 ok: true,
                 total: models.length,
@@ -839,6 +867,8 @@ export function apply(ctx: any): void {
                 return sendJson(res, 400, { ok: false, error: '目录为空，请先「从 A6API 获取市场模型」' });
               }
               const result = await queryOpenRouter(modelIds);
+              // contextWindow/maxTokens 等目录字段参与 /state 卡片元数据：作废短缓存
+              stateMemo.invalidate();
               return sendJson(res, 200, {
                 ok: true,
                 updated: result.updated.length,
@@ -909,6 +939,8 @@ export function apply(ctx: any): void {
               } catch (err: any) {
                 console.warn('[dsh-a6api] catalog update: resync settings failed:', err?.message || err);
               }
+              // 目录条目已变更（卡片元数据/已启用模型参数均受影响）：作废短缓存
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, entry });
             }
 

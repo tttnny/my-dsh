@@ -1799,15 +1799,20 @@ function overlayPinsOnModels(models, pins, tokenId) {
     };
   });
 }
-function createUpstreamMemo(ttlMs) {
+function createUpstreamMemo(ttlMs, shouldCache) {
   let cache = /* @__PURE__ */ new Map();
   const inflight = /* @__PURE__ */ new Map();
   let epoch = 0;
   return {
-    /** 数据变更后调用：旧结果立即不可用；在途构建写缓存前校验代际，不会回填旧数据 */
+    /**
+     * 数据变更后调用：旧结果立即不可用。
+     * 同时清空在途构建表：变更完成后才到达的请求不会「加入」变更前已开始的旧构建
+     * （旧构建的写缓存仍有代际校验兜底），而是必然发起一次新构建拿到最新数据。
+     */
     invalidate() {
       epoch += 1;
       cache.clear();
+      inflight.clear();
     },
     async get(key, fetcher) {
       const hit = cache.get(key);
@@ -1816,7 +1821,9 @@ function createUpstreamMemo(ttlMs) {
       if (!pending) {
         const buildEpoch = epoch;
         const run = Promise.resolve().then(fetcher).then((data) => {
-          if (buildEpoch === epoch) cache.set(key, { data, at: Date.now(), epoch: buildEpoch });
+          if (buildEpoch === epoch && (!shouldCache || shouldCache(data))) {
+            cache.set(key, { data, at: Date.now(), epoch: buildEpoch });
+          }
           return data;
         }).finally(() => {
           if (inflight.get(key) === run) inflight.delete(key);
@@ -1829,7 +1836,7 @@ function createUpstreamMemo(ttlMs) {
   };
 }
 var stateMemo = createUpstreamMemo(12e4);
-var priceCountsMemo = createUpstreamMemo(12e4);
+var priceCountsMemo = createUpstreamMemo(12e4, (counts) => !counts.authError);
 function stateCacheKeyOf(config) {
   const fingerprint = (s) => {
     let h = 0;
@@ -2039,6 +2046,7 @@ function apply(ctx) {
                 await configAccess.syncModels(updated.baseURL, updated.activeModels);
               }
               stateMemo.invalidate();
+              priceCountsMemo.invalidate();
               return sendJson(res, 200, { ok: true, config: maskConfig(updated), balance });
             }
             if (pathname === "/balance" && (req.method === "GET" || req.method === "HEAD")) {
@@ -2108,8 +2116,10 @@ function apply(ctx) {
               let card = cachedMerchantOf(modelName);
               let tokenId = await resolveTokenId(config);
               if ((!card || !tokenId) && config.apiKey) {
+                let probedOk = false;
                 try {
                   const probe = await probeSingleModel(config.baseURL, config.apiKey, userId, token, modelName);
+                  probedOk = Boolean(probe && probe.success);
                   if (!tokenId && probe.tokenId && Number(probe.tokenId) > 0) tokenId = Number(probe.tokenId);
                   if (!card && probe.merchant) {
                     card = probe.merchant;
@@ -2117,6 +2127,7 @@ function apply(ctx) {
                   }
                 } catch {
                 }
+                if (probedOk) stateMemo.invalidate();
               }
               if (!card) {
                 return sendJson(res, 400, { ok: false, error: "\u8BE5\u6A21\u578B\u6682\u65E0\u5546\u5BB6\u6570\u636E\uFF0C\u8BF7\u5148\u300C\u63A2\u6D4B\u5546\u5BB6\u300D" });
@@ -2181,14 +2192,17 @@ function apply(ctx) {
               if (!modelName) return sendJson(res, 400, { ok: false, error: "\u7F3A\u5C11\u6A21\u578B\u540D\u79F0" });
               let card = cachedMerchantOf(modelName);
               if (!card && config.apiKey) {
+                let probedOk = false;
                 try {
                   const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || "", modelName);
+                  probedOk = Boolean(probe && probe.success);
                   if (probe.merchant) {
                     card = probe.merchant;
                     merchantCardCache.set(modelName.toLowerCase(), { card, at: Date.now() });
                   }
                 } catch {
                 }
+                if (probedOk) stateMemo.invalidate();
               }
               if (!card || !card.channel_id) {
                 return sendJson(res, 400, { ok: false, error: "\u8BE5\u6A21\u578B\u6682\u65E0\u5546\u5BB6\u6570\u636E\uFF0C\u8BF7\u5148\u300C\u63A2\u6D4B\u5546\u5BB6\u300D" });
@@ -2215,14 +2229,17 @@ function apply(ctx) {
               if (!modelName) return sendJson(res, 400, { ok: false, error: "\u7F3A\u5C11\u6A21\u578B\u540D\u79F0" });
               let card = cachedMerchantOf(modelName);
               if (!card && config.apiKey) {
+                let probedOk = false;
                 try {
                   const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || "", modelName);
+                  probedOk = Boolean(probe && probe.success);
                   if (probe.merchant) {
                     card = probe.merchant;
                     merchantCardCache.set(modelName.toLowerCase(), { card, at: Date.now() });
                   }
                 } catch {
                 }
+                if (probedOk) stateMemo.invalidate();
               }
               if (!card || !card.channel_id) {
                 return sendJson(res, 400, { ok: false, error: "\u8BE5\u6A21\u578B\u6682\u65E0\u5546\u5BB6\u6570\u636E\uFF0C\u8BF7\u5148\u300C\u63A2\u6D4B\u5546\u5BB6\u300D" });
@@ -2275,6 +2292,7 @@ function apply(ctx) {
             }
             if (pathname === "/catalog/clear" && req.method === "POST") {
               await clearCatalog();
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true });
             }
             if (pathname === "/catalog/fetch-models" && req.method === "POST") {
@@ -2295,6 +2313,7 @@ function apply(ctx) {
               await upsertCatalogEntries(
                 models.map((m) => ({ id: m.id, brand: m.brand, reasoningEfforts: m.reasoningEfforts }))
               );
+              stateMemo.invalidate();
               return sendJson(res, 200, {
                 ok: true,
                 total: models.length,
@@ -2310,6 +2329,7 @@ function apply(ctx) {
                 return sendJson(res, 400, { ok: false, error: "\u76EE\u5F55\u4E3A\u7A7A\uFF0C\u8BF7\u5148\u300C\u4ECE A6API \u83B7\u53D6\u5E02\u573A\u6A21\u578B\u300D" });
               }
               const result = await queryOpenRouter(modelIds);
+              stateMemo.invalidate();
               return sendJson(res, 200, {
                 ok: true,
                 updated: result.updated.length,
@@ -2372,6 +2392,7 @@ function apply(ctx) {
               } catch (err) {
                 console.warn("[dsh-a6api] catalog update: resync settings failed:", err?.message || err);
               }
+              stateMemo.invalidate();
               return sendJson(res, 200, { ok: true, entry });
             }
             return sendJson(res, 404, { ok: false, error: "Not found" });
