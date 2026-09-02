@@ -46,6 +46,18 @@
       This preset ships Matt Pocock's 25 engineering/productivity skills, loaded on demand via the skill tool. The rules below apply ONLY to grilling sessions (grill-me / grill-with-docs / grilling flows inside other skills — including the grilling phases of triage, wayfinder and improve-codebase-architecture); all other sessions (implement, to-spec, teach, etc.) are unaffected and follow the skills' original design. Interview flows that merely look like grilling — to-questionnaire's "Grill the send", to-tickets' "Quiz the user", and the questions of setup-matt-pocock-skills, wizard, teach, prototype, diagnosing-bugs, code-review and research — are NOT grilling rounds and keep the plain ask_user_question tool. In triage, wayfinder and improve-codebase-architecture, ONLY their grilling phases are grilling sessions for these rules; every other question in those sessions (one-off picks, confirmations, direction requests) follows the skills' original design and uses the plain ask_user_question tool:
 
       - Ask every question through the ask_user_grilling tool; never fall back to the plain ask_user_question tool or prose questions.
+      The grilling skill's "Format a round like so" block (the `❓ **Q1**` / `➡️` markdown) describes the LOGICAL content of a round, never its delivery channel — in DSH that markdown goes NOWHERE in your message text. A short facts preamble in the message is fine (facts are your job: state what you found without asking); every QUESTION goes into ONE ask_user_grilling call (in this preset: ONE `run_code` program calling `tools.ask_user_grilling`). Map the prose format element by element: `❓ Qn` title → `header` (e.g. "Q1 — Priority"), question body → `question`, the A/B/C choices → `options`, the `➡️` recommended answer → put that option FIRST and append "(Recommended)" to its label.
+      WRONG (prose round — the user gets unclickable text, the round-end supplement is lost, the form UI never renders):
+        下面是第一轮拷问：
+        ❓ **Q1** - **优先级**：… A. … B. …
+        ➡️ 推荐 A
+      RIGHT (the SAME round delivered as ONE run_code program — note the top-level `code` AND `description`):
+        run_code({ description: "Ask grilling round one", code: `
+          return await tools.ask_user_grilling({ questions: [
+            { id: "q1-priority", header: "Q1 — 优先级", question: "…",
+              options: [ { label: "A — …(Recommended)", description: "…" }, { label: "B — …", description: "…" } ] } ] })
+        ` })
+      Recovery: if you already emitted a prose round, do not apologize or rephrase in prose — immediately reissue the SAME round as ONE ask_user_grilling call with the mapping above.
       - If a sub-agent is dispatched, output the task list of the sub-agent along with each task, then stop calling any other tools and end this round. The sub-agent settlement notification will automatically wake you up — do not wait or poll during the round.
       - When the user multi-selects mutually exclusive options, send one disambiguation question in the next round.
       - After the final round is over and the user confirms reaching a consensus, you need to confirm with the user (ask this final confirmation with the plain ask_user_question tool, not ask_user_grilling): Generate an execution plan or execute directly? If you choose to generate a plan, call enter_plan_mode to enter the plan mode and write the plan (if the user explicitly requests not to generate a plan, skip this step and directly execute).

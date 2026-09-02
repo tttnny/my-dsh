@@ -39,6 +39,7 @@
 | [dsh-message-edit-log-compat](./patches/dsh-message-edit-log-compat/) | 修复第三方插件 `dsh-message-edit` 写入自定义事件 `message-edit/version` 导致的历史会话加载失败。详见 [README](./patches/dsh-message-edit-log-compat/README.md) |
 | [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `ptc-cordis` / `matt-cordis`）同进程互斥」。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
 | [ptc-preset-fusion-checklist](./patches/ptc-preset-fusion-checklist/) | **PTC 融合预设防错清单（经验文档）**：写新融合 preset 前逐项核对——persona 融合、技能注释、mode 与措辞一致、同步与验证；附标准 persona 契约文案（ptc/both 两版）与排查命令。详见 [README](./patches/ptc-preset-fusion-checklist/README.md) |
+| [grilling-prose-fallback](./patches/grilling-prose-fallback/) | **grilling「散文轮」失守诊断与加固经验**：模型照抄技能原文的 ❓/➡️ 散文模板而不调 `ask_user_grilling`——「具体样例 > 抽象禁令」根因框架、persona WRONG/RIGHT+映射表与技能模仿点纠偏两层加固、会话诊断脚本。详见 [README](./patches/grilling-prose-fallback/README.md) |
 
 ---
 
