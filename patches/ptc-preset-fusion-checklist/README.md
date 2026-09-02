@@ -127,6 +127,13 @@ EOF
   预设、不可修改——这正是**融合版预设要自带 persona 契约**的原因。
 - 本次修复已落地：`presets/ptc-cordis/`（persona + 两个 Cordis 技能头部注释）、
   `presets/matt-ptc/`（persona，含 grilling 工具点名），均已同步本地安装。
+- `presets/matt-cordis/` **不适用本清单的 persona 契约**（2026-09 复查确认）：它是
+  §4 ① 中的 `native` 融合——无 `tool-presentation` 行、无 `run_code`，全部工具
+  （含 `cordis_define` 等）直接原生调用，`missing required property` / `unknown tool`
+  两类错误在该预设下不可能发生；给它注入 PTC 契约反而违反 §4 ④。两个 Cordis 技能
+  保持原生措辞（头部注释自我标注「仅 ptc-cordis 预设」）属正确状态。其余修复项
+  （preset.yml 引号、command-goal、modelSelectionSettings、stale 预设名）经复查
+  matt-cordis 均已具备，仓库与 `~/.dsh/.agent-presets/` 同步一致。
 - 实测效果：修复后新建的 ptc-cordis 会话，`missing required property` 从约 50%
   调用失败降到个位数（一次会话 22 步仅 5 次报错）；其中「外层漏 description」已
   归零，剩余为 `code↔command` 混淆与程序体引号嵌套（§5 第二轮文案针对性覆盖）。
