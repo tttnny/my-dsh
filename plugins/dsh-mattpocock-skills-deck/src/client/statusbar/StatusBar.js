@@ -10,6 +10,8 @@ export const StatusBar = (props) => {
   const summaryCwd = props.useSessions(function (x) {
     return (sid && x.byId && x.byId[sid]) ? x.byId[sid].cwd : undefined
   })
+  // 注（2026-09-02 用户定版）：切换会话 preset 后链结果按「刷新页面」重估——曾实现过 preset 订阅秒级重算，
+  //   用户复核后要求回退（不需要秒显示），此处保持原状：挂载时 loadChain，缓存命中即秒显旧结果。
   const consumedDraftRef = React.useRef(null)
   React.useEffect(function () {
     if (props && props.inputActions && typeof props.inputActions.setDraft === 'function') {
@@ -248,7 +250,14 @@ export const StatusBar = (props) => {
   //   全新工作区会「尚未初始化/技能缺失」黄条一闪而过，再跳到正确的 gate 蓝条。
   //   后端确定后才走依赖链引导（ghcli → ghauth → setup → skills）。
   const _backendUndecided = !(_selSBGate && _selSBGate.backendId)
-  const firstBlock = (_gateActive || _backendUndecided) ? 'gate' : ghCliBad ? 'ghcli' : ghAuthBad ? 'ghauth' : amber ? 'setup' : skillsBad ? 'skills' : null
+  // 环境未全部通过时，输入框上方整行不出现（用户要求 2026-09-02 两次拍板）——
+  //   状态栏「环境」显示如 7/10，说明链上存在未通过项（gh CLI / gh 登录 / 初始化 / 技能缺失）。
+  //   ① 四条补齐环境的黄色横幅一律不渲染：横幅本意是催促补齐，决定暂不补齐的人不该被持续打扰；
+  //   ② 胶囊状态栏（MattSkills / 可接 / BUG / 环境 X/Y 那一行）同样不渲染；
+  //      面板入口不受影响——宿主右侧 details 列仍注册着本插件（dsws-details），随时可打开。
+  //   后端未确定时的蓝色选择门控条（gate）保留，它不属于环境检查项，且是新工作区唯一引导入口。
+  const _envAllDone = n >= 0 && envTotal(s) > 0 && n === envTotal(s)
+  const firstBlock = (_gateActive || _backendUndecided) ? 'gate' : !_envAllDone ? null : ghCliBad ? 'ghcli' : ghAuthBad ? 'ghauth' : amber ? 'setup' : skillsBad ? 'skills' : null
   const normMods = function(r){
     let ms=null
     if(r&&r.ok&&r.value&&Array.isArray(r.value.modules)) ms=r.value.modules
@@ -316,7 +325,8 @@ export const StatusBar = (props) => {
     ])
   })() : null
   if (!firstBlock) {
-    // 优化3：胶囊任何情况下不隐藏（#187 的 display:none 分支已移除）——无 banner 时即纯胶囊
+    // 环境未全部通过时整行不渲染（黄条与胶囊同进退，用户要求 2026-09-02）；#187 的「胶囊恒显示」规约自此让位于该条件
+    if (!_envAllDone) return null
     return h('div', { style: { display: 'flex', flex: 'none', justifyContent: 'center', width: '100%', boxSizing: 'border-box', padding: '3px 8px 0', overflow: RDOM ? 'hidden' : 'visible' } }, [capsule])
   }
   const bann = function (text, btnLabel, onBtn) {
@@ -342,7 +352,8 @@ export const StatusBar = (props) => {
               setupPickCard,
             ])
           : bann(tr('banner.skills', { list: (skillsCheck && skillsCheck.show && (skillsCheck.show.fallback || skillsCheck.show.desc || '')) || '' }), tr('banner.skillsBtn'), function () { inject(s, promptText('installSkills', installSkillsParams())) }),
-    capsule,
+    // 胶囊与横幅同进退：环境未全部通过时不显示（gate 蓝条单独出现时也不带胶囊）
+    _envAllDone ? capsule : null,
     (s.gateModalOpen && s.gateModalSource==='status' ? h('div', { onClick:function(e){ if(e.target===e.currentTarget) closeGate() }, style:{ position:'absolute', inset:0, background:'rgba(0,0,0,.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10, borderRadius:8, padding:12 } }, [
       h('div', { style:{ background:'var(--dsw-alias-bg-layer-2,#16181d)', border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:12, padding:14, width:'92%', maxWidth:380, boxShadow:'0 8px 24px rgba(0,0,0,.5)' } }, [
         h('div', { style:{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6, marginBottom:6 } }, [Ic({n:'compass',size:14}), h('span', null, tr('switch.pleaseSelectTracker'))]),

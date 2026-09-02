@@ -1,5 +1,12 @@
 # dsh-mattpocock-skills-deck 变更历史
 
+## 2026-09-02 · v1.8.0 未发布增量：环境检查未全部通过时，输入框上方整行（黄条 + 胶囊状态栏）不再显示
+
+- **背景（用户两次拍板）**：状态栏「环境」显示如 7/10（存在未通过项）时，输入框上方先是持续出现黄色横幅催促安装技能 / 执行初始化 / 安装 gh CLI / 登录 gh；第一次改动只去掉黄条、保留胶囊后，用户进一步要求「不符合条件的，这个（胶囊状态栏）也不用显示了」。决定暂不补齐环境的用户希望输入框上方完全安静。
+- **改动**：`src/client/statusbar/StatusBar.js` 新增 `_envAllDone`（链快照非待定步数 > 0 且全部通过，即状态栏环境满格）。环境未全部通过时：① 四条补齐环境黄条（ghcli / ghauth / setup / skills）不渲染；② 胶囊状态栏（MattSkills / 可接 / BUG / 诊断 / 沉淀 / 交接 / 环境 X/Y / 更新）同样不渲染，整个组件返回空。面板入口不受影响——better-sidebar 标签与宿主右侧 details 列（`dsws-details` 注册）仍随时可打开。后端未确定时的蓝色选择门控条（gate）保留（新工作区唯一引导入口，且不属于环境检查项），但它出现时若环境未全部通过也不再带胶囊。
+- **测试契约更新**：`tests/smoke-render.test.js` 的 `chain` 端点桩改为返回全绿链快照（新规约下空链不再渲染胶囊，「渲染含 dsws-capsule」断言自此真正依赖环境满格）；`#187 胶囊任何情况下不隐藏` 旧规约让位于本条件（代码注释已标注）。
+- **验证**：`node scripts/build.mjs` OK，双产物 `client.js / package/lib/client.js` 同源并已自动同步到 `~/.dsh/profiles/web/node_modules/@lynn123411/dsh-mattpocock-skills-deck`（hash 校验通过）；`npm run verify`（2102 PASS）与 `npm run test:smoke` 全部通过。
+
 ## 2026-09-02 · v1.7.12 发布：悬浮体系收口（44 处 title 迁移为 Tip500 薄预设 + 单例互斥 + 门禁成型）
 
 - **薄预设与门禁定版（T1 #403）**：新增 `src/client/views/primitives/Tip.js` 与 `Tip500` 薄封装（`pending 500ms + 薄样式 padding 7px 12px`），并落地 `tests/verify-no-title.js` 轻量门禁（一源两物：注释/字符串去误报、// 截断修复、白名单 PREVIEW_VALUES 豁免）；该门禁与 `verify-t3-locale` 等并入 `npm run verify` 全绿（对应提交 a96ebef）。

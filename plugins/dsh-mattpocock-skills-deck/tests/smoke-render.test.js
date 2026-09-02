@@ -59,7 +59,20 @@ const slots = {
 }
 const services = {
   slots,
-  connection: { rpc: { call: async () => ({ ok: true, value: { ok: true, maps: [], checks: [], ready: 0, total: 0 } }) } },
+  // 2026-09-02 新规约：环境检查未全部通过（链快照缺失或存在未通过项）时，输入框上方整行（黄条 + 胶囊）不渲染。
+  //   因此 chain 端点回一条全绿链快照（分子=分母），胶囊才会出现——这同时把新规约钉进冒烟：空链不再渲染胶囊。
+  connection: { rpc: { call: async (ns, endpoint) => {
+    if (endpoint === 'chain') return { ok: true, value: { ok: true, fullSnapshot: { steps: [
+      { id: 'gh:remote', status: 'done' },
+      { id: 'gh:installed', status: 'done' },
+      { id: 'gh:authed', status: 'done' },
+      { id: 'tracker:initialized', status: 'done' },
+      { id: 'skill:wayfinder', status: 'done' },
+      { id: 'skill:setup-matt-pocock-skills', status: 'done' },
+      { id: 'skill:ask-matt', status: 'done' },
+    ] } } }
+    return { ok: true, value: { ok: true, maps: [], checks: [], ready: 0, total: 0 } }
+  } } },
   locale: { register: (ns, d) => { Object.assign(dict, d.zh || {}, d.en || {}); return () => {} }, bind: () => trFn },
   workspaces: { list: async () => [] },
   sessions: { list: async () => [] },
