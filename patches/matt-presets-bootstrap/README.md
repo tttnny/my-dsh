@@ -8,7 +8,7 @@
 
 | 材料 | 来源 | 作用 |
 |---|---|---|
-| 原厂组合 `standard` / `ptc` / `cordis` | DSH 安装自带（macOS：`/Applications/DSH Desktop.app/Contents/Resources/app.asar.unpacked/node_modules/@deepseek-ai/dsh-agent-presets/presets/`） | 基底。原厂写得标准，**persona 一行不改**——工具调用报错即模型问题，不怀疑组合 |
+| 原厂组合 `standard` / `ptc` / `cordis` | DSH 安装自带，位于其 `node_modules/@deepseek-ai/dsh-agent-presets/presets/` 下（具体前缀随安装方式而异） | 基底。原厂写得标准，**persona 一行不改**——工具调用报错即模型问题，不怀疑组合 |
 | Matt 的 25 个技能 | [mattpocock/skills](https://github.com/mattpocock/skills) | 工程/生产力技能库，vendor 进各 preset 的 `skills/`（matt-cordis 再并入 cordis 自带 2 个，共 27 个） |
 | `@lynn123411/dsh-ask-user-grilling` | npm / 本仓库 `plugins/dsh-ask-user-grilling/` | grilling 输送层：`ask_user_grilling`（子代理闸门/强制多选/补充机制）+ `enter_plan_mode` |
 | grilling 本地适配 | 本仓库 `presets/*/skills/grilling/SKILL.md`（三份逐字节相同） | grilling 纪律载体之一（另一处是插件工具描述）：强制 `ask_user_grilling`（含映射表）、子代理停轮、共识后直入 plan mode |
@@ -18,7 +18,7 @@
 ## 2. 从零推导（理解用；有仓库克隆则不必手工做）
 
 1. **下载 Matt 技能**：`git clone --depth 1 https://github.com/mattpocock/skills`，取其 `skills/` 下 25 个目录。
-2. **复制原厂组合**：从 DSH 安装目录取 `standard/agent.cordis.yml` 等三份，作为三个 preset 的基底。
+2. **复制原厂组合**：从 DSH 安装的 `node_modules/@deepseek-ai/dsh-agent-presets/presets/` 取 `standard/agent.cordis.yml` 等三份，作为三个 preset 的基底。
 3. **打 MATT-ADD 附加改动**（每个文件头部注释有完整指引；官方行零删除）：
    - `skill-filesystem` 行加 `config.customSkillDirs` 指向 `./skills/`（cordis 自带，跳过）；
    - `planning` 组内（`isolate: planMode`）追加工具行 `- id: tool-ask-user-grilling` / `name: '@lynn123411/dsh-ask-user-grilling'`——必须留在组内，因为 `enter_plan_mode` 消费 realm 隔离的 `planMode` 服务。
