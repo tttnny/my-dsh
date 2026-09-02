@@ -7,6 +7,8 @@
 > - **事故二**（matt-ptc + gemini-3.7-flash-high）：persona 已融合到位，模型仍 **78%** 调用报 `missing required property "code"` —— 根因是模型把「意图叙述」当调用发出（只发 `description`），加上 `exit_plan_mode` 大文档提交在 PTC 下的天然摩擦。
 >
 > 两次事故的共同结论：**composition 行级融合只是入场券，persona 契约融合与模型路由才决定失败率。**
+>
+> **适用范围**（v3 重构后）：失败形态（§1）、根因分层（§2）、模型路由教训（§4⑤）与诊断脚本（§6）适用于**一切 PTC 会话**（`ptc-cordis`、`matt-ptc`、官方 `ptc` 及未来融合）；§5 的 persona 契约文案当前仅 `ptc-cordis` 在用（`matt-ptc` 自 v3 起 persona 回归官方逐字，纪律改由技能旁注+插件描述承载，见 `patches/matt-presets-bootstrap/`），但它仍是新写 PTC 融合 preset 的推荐起点。
 
 ---
 
