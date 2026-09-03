@@ -70,6 +70,9 @@ PTC 模式下 `run_code` 是唯一可直接调用的工具，其参数校验（`
 | ptc-cordis | aliyun/qwen3.8-flash | 53 | 3 | 6% | 语义级（引号嵌套、edit 前未 read 等），可自愈 |
 | ptc-cordis | aliyun/qwen3.8-flash | 152 | 13 | 9% | 同上 |
 | matt-ptc | antigravity-tools/gemini-3.7-flash-high | 45 | 35 | **78%** | 机械级，同一形态重复 35 次 |
+| matt-ptc | opencode-go-responses/muse-spark-1.3-contributor | 106 | 0 | 0% | 运行时错误 8 次（程序体语法/工具内错误），参数错误归零 |
+| ptc | opencode-go-responses/muse-spark-1.3-contributor | 41 | 0 | 0% | 运行时错误 3 次，参数错误归零 |
+| ptc-cordis | opencode-go-responses/muse-spark-1.3-contributor | 454 | 0 | 0% | 运行时错误 8 次，参数错误归零 |
 
 ## 4. 融合检查清单（新融合 preset 逐项过）
 
@@ -205,6 +208,11 @@ persona 补译（§5 已做）；根治候选是宿主补丁——在参数校�
     插件工具描述，见 `patches/matt-presets-bootstrap/`）；`presets/ptc-cordis/`
     不在该次重构范围，v2 文案继续保留。本节 §5 的契约文案仍是新写 PTC 融合
     preset 时的推荐起点。
+  - **v4**（2026-09-04 校准）：`muse-spark-1.3-contributor` 在 `ptc` / `matt-ptc` /
+    `ptc-cordis` 七个会话共 601 次 `run_code` 调用中参数错误 0 次（运行时错误
+    19 次，属模型写作能力），延续 muse-spark 的 0% 记录，见 §3 对比表新增三行；
+    `~/.dsh/.agent-presets/ptc-cordis/` 与仓库重新对齐（补 9-03 的
+    `enter_plan_mode` 提及删除——当前宿主 plan 包仅提供 `exit_plan_mode`）。
 - `presets/matt-cordis/` **不适用本清单的 persona 契约**（2026-09 复查确认）：它是
   §4 ① 中的 `native` 融合——无 `tool-presentation` 行、无 `run_code`，全部工具
   （含 `cordis_define` 等）直接原生调用，`missing required property` / `unknown tool`

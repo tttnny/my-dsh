@@ -4,6 +4,12 @@
 
 改动只发生在两类文件上：`agent.cordis.yml`（官方正文上加两处 MATT-ADD）与 `skills/grilling/SKILL.md`（本地适配，改动内容为中文）。`matt-standard` 与 `matt-cordis` 的 `grilling/SKILL.md` 完全相同；`matt-ptc` 的投递纪律整段按 PTC 形态表述（`run_code` 程序内 `tools.ask_user_grilling`，见 §二 示例二），PTC 措辞不进入非 PTC preset。persona 一行不改——grilling 纪律不写进 persona，而是下沉到技能正文的投递纪律段与插件工具描述（模型读到技能/工具时正好看到，比 system prompt 里的抽象禁令有效）。
 
+## 零、当前基线
+
+- 基底：DSH 2.0.5 / `@deepseek-ai/dsh-agent-presets` 0.1.2-rc.1（2026-09-04 重打：`presets/matt-*/agent.cordis.yml` 与官方正文逐字一致，差异仅两处 MATT-ADD）。
+- 本次同步掉的官方变化：`ptc` 头注释改写；`ptc` 的 `tool-workflow` 改为 `disabled: true`（引擎留给 `ralph`，PTC 下不再另 publish 一个模型编排面）；fork 注释改写（issue #2124 表述）；`standard`/`ptc` 注释里的 `tool-subagent-report` 说明段与 plan-mode 尾句以官方正文为准。
+- 标记补齐：两处 MATT-ADD 均带 `# MATT-ADD:` 标记行（`customSkillDirs` 块首行、`tool-ask-user-grilling` 行上三行注释）——升级 diff 时只应看到这两个块，多一行都是官方漂移。
+
 ## 一、`agent.cordis.yml`：两处 MATT-ADD
 
 结构：官方正文逐字，加两处 MATT-ADD 插入块。
