@@ -1,16 +1,16 @@
 # @lynn123411/dsh-ask-user-grilling
 
-DSH 侧的 grilling 适配层（输送机制）：把 Matt Pocock 的 grilling 流程在 DSH 里的提问环节做成工具级硬约束。分工：本插件负责「在 DSH 里怎么问」的工具与报错层；grilling 纪律文案（强制走 `ask_user_grilling`、子代理停轮、共识后直入 plan mode）写在 matt-* 预设 vendor 的 `skills/grilling/SKILL.md` 的三段本地适配旁注里（重同步上游技能时需保留），preset persona 保持原厂逐字不做任何修改。
+DSH 侧的 grilling 适配层（输送机制）：把 Matt Pocock 的 grilling 流程在 DSH 里的提问环节做成工具级硬约束。本插件只提供 `ask_user_grilling`，不提供任何 plan-mode 工具——共识达成后不自动进入 plan mode，交还用户决定下一步。分工：本插件负责「在 DSH 里怎么问」的工具与报错层；grilling 纪律文案（强制走 `ask_user_grilling`、子代理停轮）写在工具描述与 matt-* 预设 vendor 的 `skills/grilling/SKILL.md` 本地适配旁注（DSH delivery、Sub-agent rounds，重同步上游技能时需保留）里，preset persona 保持原厂逐字不做任何修改。
 
 ## 特性
 
 - **ask_user_grilling**：grilling 轮次专用提问工具。
   - **子代理闸门**：后台有子代理运行时会拒绝提问，返回「阻塞 + 运行中名单」——agent 应**结束当前回合**，子代理结算通知自动唤醒后再调用，不在回合内反复重试；
-  - **强制多选**：所有问题一律多选（schema 不提供关闭开关）；
-  - **补充机制**：每题的补充通过内置输入框「输入你的答案」完成，不再单独追加「补充」选项（避免与输入框重复）；仅在每轮末尾追加一道轮级补充问题——单选「无需补充」+ 输入框补充（原先每题的补充复选框 + 轮末「有补充」选项与输入框重复，已移除）；
+  - **强制多选**：所有问题一律多选（schema 不提供关闭开关；此行为刻意**不写入工具描述**——模型若知道只能多选，会为避免互斥选项而影响出题质量，见「描述即纪律」）；
+  - **补充机制**：每题末尾的补充输入框由 UI 自动渲染、轮末补充题由代码自动追加，两者都不依赖模型也不写入描述（模型自加补充项只会与它们重复）；仅当轮末补充输入非空时才应再开一轮；
   - **题干引导**：要求题干只含问题本身、不重复选项文本（仅模型侧引导，不做硬校验——避免误伤自然提及选项名称的题干）；
-  - **描述即纪律**：工具描述内置「Qn./Recommended: 格式只是逻辑结构、必须走本工具、散文轮立即重发」与「共识确认后直接调 enter_plan_mode」的指引，不依赖 persona。
-- **enter_plan_mode**：为当前 agent 激活 DSH 计划模式。grilling 最后一轮答完、用户确认共识后**直接调用**（不再先问「写方案还是直接执行」；仅当用户明确不要方案时跳过），让 agent 写方案供审阅而不是直接开始执行；可通过 `exit_plan_mode` 或 `/plan off` 退出。
+  - **描述即纪律**：工具描述保持精简，只承载「grilling 轮次专用（其余用 ask_user_question）、先散文预告同一轮、再以一次调用投递表单、字段映射、勿自加收尾题、子代理运行中返回 blocked」等工具必知项；投递协议细节（散文预告与表单一一对应、PTC 形态）由技能旁注（DSH delivery / Sub-agent rounds）承载，不与工具描述重复。
+- 轮次收尾不自动进入 plan mode：grilling 达成共识后由用户决定继续方式（直接执行、或需要方案时自行 `/plan on`）。
 
 ## 安装
 

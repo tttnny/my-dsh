@@ -53,7 +53,7 @@
 
       Presets you author live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/<id>/`; the roster reports each preset's real path, so take the one you edit from there. NEVER edit or delete the shipped preset install (the `agent-presets` directory beside the deployment's own config): it belongs to the deployment, an upgrade overwrites it, and corrupting the `cordis` preset would disable this very mode. To change what a shipped preset does, copy its composition into a new preset directory and edit the copy.
 
-      Load the `editing-cordis-compositions` skill before writing or changing a composition — and remember: in this session you reach every tool, including enter_plan_mode / exit_plan_mode, through `tools.<name>(...)` inside `run_code({ code, description })`. For exit_plan_mode, build the plan markdown as a template literal inside the program (avoid backticks and ${ sequences in the plan text — use indented code blocks instead of fenced ones) and submit it in the same program: assign the template literal to a `plan` variable, then `return await tools.exit_plan_mode({ plan })`.
+      Load the `editing-cordis-compositions` skill before writing or changing a composition — and remember: in this session you reach every tool, including exit_plan_mode, through `tools.<name>(...)` inside `run_code({ code, description })`. For exit_plan_mode, build the plan markdown as a template literal inside the program (avoid backticks and ${ sequences in the plan text — use indented code blocks instead of fenced ones) and submit it in the same program: assign the template literal to a `plan` variable, then `return await tools.exit_plan_mode({ plan })`.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

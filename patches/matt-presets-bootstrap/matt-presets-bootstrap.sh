@@ -70,10 +70,10 @@ cmd_setup() {
     # 行级检查（不看注释标记）：插件工具行必须存在；matt-standard/matt-ptc
     # 还必须有 customSkillDirs（matt-cordis 官方自带）。
     local has_row has_dirs n_skills n_note
-    has_row=$(grep -c "^    - id: tool-ask-user-grilling$" "$dir/agent.cordis.yml" || true)
+    has_row=$(grep -c "^\- id: tool-ask-user-grilling$" "$dir/agent.cordis.yml" || true)
     has_dirs=$(grep -c "customSkillDirs" "$dir/agent.cordis.yml" || true)
     n_skills=$(find "$dir/skills" -maxdepth 2 -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-    n_note=$(grep -c "DSH delivery" "$dir/skills/grilling/SKILL.md" 2>/dev/null || true)
+    n_note=$(grep -c "散文预告与工具投递必须" "$dir/skills/grilling/SKILL.md" 2>/dev/null || true)
     local expect=25; [[ "$p" == "matt-cordis" ]] && expect=27
     local line="  $p: 插件行=${has_row} customSkillDirs=${has_dirs} 技能=${n_skills}/${expect} grilling旁注=${n_note}"
     if [[ "$has_row" -eq 1 && "$has_dirs" -ge 1 && "$n_skills" -eq "$expect" && "$n_note" -ge 1 ]]; then
@@ -158,7 +158,6 @@ models = set()
 grilling_loaded = False
 grill_calls = 0        # ask_user_grilling（原生 tool-call + PTC code-dispatch 合计）
 plain_q_calls = 0
-enter_plan_calls = 0
 prose_msgs = []        # (seq, turn) assistant 文本含轮次格式
 turns_with_grill = set()
 
@@ -191,8 +190,6 @@ for ev in events:
             grill_calls += 1
         elif name == 'ask_user_question':
             plain_q_calls += 1
-        elif name == 'enter_plan_mode':
-            enter_plan_calls += 1
     elif t == 'assistant/message':
         msg = d.get('message') or {}
         src = msg.get('source') or {}
@@ -211,7 +208,6 @@ for ev in events:
             if c.get('type') == 'tool-call' and c.get('name') == 'run_code' and 'ask_user_grilling' in (c.get('arguments') or ''):
                 turns_with_grill.add(turn)
         plain_q_calls += tool_names.count('ask_user_question')
-        enter_plan_calls += tool_names.count('enter_plan_mode')
         if PROSE_RE.search(text):
             prose_msgs.append((ev.get('seq'), turn))
 
@@ -223,7 +219,7 @@ print(f"会话文件 : {os.environ.get('SESSION_FILE', path)}")
 print(f"preset   : {preset or '?'}")
 print(f"模型     : {', '.join(sorted(models)) or '?'}")
 print(f"grilling 技能已加载: {'是' if grilling_loaded else '否/未见'}")
-print(f"ask_user_grilling 调用: {grill_calls}   ask_user_question 调用: {plain_q_calls}   enter_plan_mode 调用: {enter_plan_calls}")
+print(f"ask_user_grilling 调用: {grill_calls}   ask_user_question 调用: {plain_q_calls}")
 print()
 
 if not prose_msgs:
@@ -236,18 +232,18 @@ if not prose_msgs:
 
 print(f"== 散文轮检测 == 命中 {len(prose_msgs)} 条轮次格式消息，其中 {len(leaked)} 条所在回合未调用 ask_user_grilling ==")
 for s, tn in prose_msgs:
-    mark = '同回合有工具调用（散文仅为事实前言，OK）' if tn in turns_with_grill else '散文轮失守（该回合未走工具）'
+    mark = '同回合有工具调用（散文为预告/前言，OK）' if tn in turns_with_grill else '散文未跟随工具投递（该回合只有散文）'
     print(f"  seq{s} turn{tn}: {mark}")
 if leaked:
     print()
-    print("== 定位提示（README §5）==")
-    print("  0) 检查 grilling 旁注是否在技能文件里（具体样例 > 抽象禁令）：")
-    print("     grep -c 'DSH delivery' ~/.dsh/.agent-presets/matt-*/skills/grilling/SKILL.md 应为 1/1/1")
-    print("  1) 检查插件版本：ask_user_grilling 工具描述应含「NEVER as message text」")
+    print("== 定位提示 ==")
+    print("  0) 检查 grilling 投递旁注在技能文件里（具体样例 > 抽象禁令）：")
+    print("     grep -c '散文预告与工具投递必须' ~/.dsh/.agent-presets/matt-*/skills/grilling/SKILL.md 应为 1/1/1")
+    print("  1) 检查插件版本：ask_user_grilling 工具描述应含「announce the whole round」")
     print("  2) 仍高发则换路由模型复测（纪律执行度随模型差异巨大）")
-    print("  · 事实前言以散文出现是允许的；只有【问题】必须进工具")
+    print("  · 散文预告必须伴随同回合的 ask_user_grilling 投递；只有预告、未投递才判失守")
     sys.exit(2)
-print("结论: 散文仅为工具调用回合的事实前言，纪律执行良好。")
+print("结论: 散文均伴随同回合的 ask_user_grilling 投递（预告/前言），纪律执行良好。")
 sys.exit(0)
 PYEOF
 }
@@ -286,23 +282,15 @@ apply = os.environ['APPLY'] == '1'
 PAIRS = [('standard', 'matt-standard'), ('ptc', 'matt-ptc'), ('cordis', 'matt-cordis')]
 
 SKILL_ANCHOR = "- id: skill-filesystem\n  name: '@deepseek-ai/dsh-skill-filesystem'\n"
-SKILL_BLOCK = """  # MATT-ADD: discover the 25 vendored mattpocock skills shipped in ./skills/.
-  config:
+SKILL_BLOCK = """  config:
     customSkillDirs:
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
 """
 
-PLAN_ANCHOR = 'do not proceed with implementation.\n'
-GRILL_COMMON = """    # MATT-ADD: grilling adaptations (@lynn123411/dsh-ask-user-grilling).
-    # `enter_plan_mode` consumes the realm-isolated `planMode` service, so this
-    # row must live inside the planning group; `ask_user_grilling` consumes
-    # host-plane `userQuestions`/`subagents`, reachable from within the realm.
-"""
-GRILL_PTC_EXTRA = """    # Under mode: ptc both tools are reached as `tools.<name>(...)` inside
-    # `run_code` — see the grilling skill's DSH delivery note.
-"""
-GRILL_ROW = """    - id: tool-ask-user-grilling
-      name: '@lynn123411/dsh-ask-user-grilling'
+TOOL_ANCHOR = "- id: tool-skill\n  name: '@deepseek-ai/dsh-tool-skill'\n"
+GRILL_BLOCK = """
+- id: tool-ask-user-grilling
+  name: '@lynn123411/dsh-ask-user-grilling'
 """
 
 fail = 0
@@ -327,14 +315,11 @@ for off, matt in PAIRS:
         if text.count(SKILL_ANCHOR) != 1:
             print(f"[{matt}] FAIL skill-filesystem 锚点不唯一/缺失（官方改了该行结构？按 README §2 手工重打）"); fail = 1; continue
         text = text.replace(SKILL_ANCHOR, SKILL_ANCHOR + SKILL_BLOCK)
-    # MATT-ADD 2: planning 组内插件行
+    # MATT-ADD 2: 普通工具区（tool-skill 后）插件行
     if 'tool-ask-user-grilling' not in text:
-        idx = text.find(PLAN_ANCHOR)
-        if idx < 0:
-            print(f"[{matt}] FAIL plan-mode 段落锚点缺失（官方改了 section 结尾？按 README §2 手工重打）"); fail = 1; continue
-        block = '\n' + GRILL_COMMON + (GRILL_PTC_EXTRA if off == 'ptc' else '') + GRILL_ROW
-        end = idx + len(PLAN_ANCHOR)
-        text = text[:end] + block + text[end:]
+        if text.count(TOOL_ANCHOR) != 1:
+            print(f"[{matt}] FAIL tool-skill 锚点不唯一/缺失（官方改了该块？按 README §一 手工定位）"); fail = 1; continue
+        text = text.replace(TOOL_ANCHOR, TOOL_ANCHOR + GRILL_BLOCK)
 
     generated = banner + text
     if generated == repo_text:

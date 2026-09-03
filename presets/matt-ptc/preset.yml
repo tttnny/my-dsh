@@ -1,2 +1,2 @@
 name: Matt PTC 模式
-description: 官方 ptc 逐字（persona 零改动，模型只见 run_code）＋ Matt Pocock 的 25 个技能（skills/）＋ grilling 适配插件。grilling 纪律写在技能旁注（含 tools.<name> 走 run_code 的措辞）与插件工具描述里。
+description: 官方 ptc 组合（persona 零改动，模型只见 run_code）＋ Matt Pocock 的 25 个技能（skills/）＋ grilling 投递插件。grilling 轮次经 run_code 内的 tools.ask_user_grilling 投递；达成共识后不自动进入 plan mode。

@@ -1,12 +1,3 @@
-# `matt-cordis` = official `cordis` composition VERBATIM, plus exactly one
-# additive edit marked `# MATT-ADD:` — the planning group gains the
-# `tool-ask-user-grilling` row (the 25 vendored mattpocock skills merge into
-# ./skills/ beside cordis's own two, discovered via the stock customSkillDirs).
-# Grilling discipline lives in `skills/grilling/SKILL.md` (local adaptation
-# notes) and in the plugin's tool descriptions; the persona below is stock
-# official. When upgrading from upstream, re-copy the official file and
-# re-apply the MATT-ADD edit.
-#
 # The `cordis` agent preset: the standard coding agent, plus the ability to
 # read and write the runtime it is running in.
 #
@@ -118,14 +109,7 @@
 
               Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
 
-              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
-
-    # MATT-ADD: grilling adaptations (@lynn123411/dsh-ask-user-grilling).
-    # `enter_plan_mode` consumes the realm-isolated `planMode` service, so this
-    # row must live inside the planning group; `ask_user_grilling` consumes
-    # host-plane `userQuestions`/`subagents`, reachable from within the realm.
-    - id: tool-ask-user-grilling
-      name: '@lynn123411/dsh-ask-user-grilling'
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question.               If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
 
 # ── compaction ──────────────────────────────────────────────────────────────
 
@@ -282,3 +266,6 @@
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
+
+- id: tool-ask-user-grilling
+  name: '@lynn123411/dsh-ask-user-grilling'

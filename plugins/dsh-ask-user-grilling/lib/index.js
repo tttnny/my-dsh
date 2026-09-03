@@ -15,9 +15,6 @@ import "@deepseek-ai/dsh-user-questions";
  *     field (see image.png issue: checkbox + input were redundant)
  *   - stem/option separation is guidance only — never rejects stems (R4
  *     relaxed: substring checks false-positive on legitimate stems)
- *
- * enter_plan_mode:
- *   - activates DSH plan mode for the current agent (planMode.set)
  */
 const name = "tool-ask-user-grilling";
 const inject = ["tools", "userQuestions"];
@@ -39,7 +36,7 @@ function displayName(entry) {
 function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
-    description: "Ask the user one ROUND of grilling questions (decision-tree interview) as a form. Use ONLY for grilling rounds: the grilling skill (incl. grill-me / grill-with-docs wrappers) and the grilling phases of triage, wayfinder, improve-codebase-architecture — send ALL frontier questions of the current round in ONE call (round/frontier/numbering/recommended-answer/session-end protocol is defined by the grilling skill; follow it). Everything else keeps the plain ask_user_question tool. The grilling skill's Qn./Recommended: round format is the round's LOGICAL structure only — it is delivered through THIS tool as structured fields, NEVER as message text (a prose round loses the form UI and the round-end supplement; if you already emitted one, immediately reissue the SAME round through this tool). For every question, put your recommended option first and append \"(Recommended)\" to its label; if your recommendation is not an option, state it briefly in the question text. Form details: forced multi-select only surfaces the built-in custom input (\"Type your answer\" / \"输入你的答案\") for per-question supplements — design each question single- or multi-choice per content, never add your own \"Supplement\"/\"补充\" option; conflicting multi-selections get one disambiguation question in the next round. A round-end supplement question (\"这轮还有什么要补充或调整的吗？\") with a single \"无需补充\" option is appended automatically — never add your own catch-all/\"anything else?\" question; non-empty supplement input is user input that reshapes the tree (ask a further round), and the session is final only when the supplement is empty AND the user has confirmed shared understanding (grilling skill: frontier empty + user confirmation). The moment the user confirms shared understanding, call enter_plan_mode DIRECTLY — do not ask a separate plan-or-execute question (the only exception: the user explicitly requested direct execution without a plan). If background subagents are running, this tool returns blocked — do NOT retry within the same turn: end your turn and wait; the settlement notice will wake you automatically, then call again. (While the gate is closed, this overrides the grilling skill's \"ask the rest of the frontier now\" guidance.) Stems: keep the stem to the question itself, option text belongs in options (guidance only — never rejected).",
+    description: "Deliver one ROUND of grilling questions as a form. Use it only when the grilling skill (grill-me / grill-with-docs, or the grilling phases of triage / wayfinder / improve-codebase-architecture) directs a round: first announce the whole round in the message text (title, options and your recommendation, per the skill's template), then deliver the SAME round as ONE call here — the prose and the form must match one-to-one. Map each question to the fields below (title → header, body → question, the A/B/C choices → options; put your recommendation first in options with \"(Recommended)\"; if your recommendation is not an option, state it briefly in the question text). Each question needs a stable id that does not start with __grill_ (reserved for the auto-appended round-end supplement question — never add your own catch-all/\"anything else?\" question; a non-empty supplement input reshapes the tree: ask a further round, and stop asking once the user confirms shared understanding). If background subagents are still running, this tool returns blocked: end your turn and wait for the settlement notice, do not retry within the same turn. For any non-grilling question use the plain ask_user_question tool.",
     parameters: {
       questions: {
         type: "array",
@@ -57,7 +54,7 @@ function apply(ctx) {
             question: {
               type: "string",
               required: true,
-              description: "The question stem — option text belongs in options (style guidance, not enforced; stems may carry the multi-paragraph context the question needs).",
+              description: "The question stem — write only the question. The A/B/C choices belong in options, never in the stem.",
             },
             header: {
               type: "string",
@@ -133,7 +130,7 @@ function apply(ctx) {
                 },
                 custom: {
                   type: "string",
-                  description: "Free text the user typed in the built-in custom input, if any.",
+                  description: "User-typed free text for this question, if any.",
                 },
               },
             },
@@ -223,35 +220,6 @@ function apply(ctx) {
           ...(entry.custom !== undefined ? { custom: entry.custom } : {}),
         })),
       };
-    },
-  }));
-
-  ctx.tools.register(defineTool({
-    name: "enter_plan_mode",
-    description: "Enter DSH plan mode for the current agent (ends via exit_plan_mode or /plan off). In a grilling session, call IMMEDIATELY once the user confirms shared understanding after the final round — do not ask a separate plan-or-execute question first, and do not start executing (the only exception: the user explicitly requested direct execution without a plan). Never mid-grilling or outside a grilling session.",
-    parameters: {},
-    output: {
-      schema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          ok: { type: "boolean" },
-          result: { type: "string" },
-          error: { type: "string" },
-        },
-      },
-      render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }],
-    },
-    async execute(_args, exec) {
-      const planMode = ctx.get("planMode");
-      if (planMode === undefined) return { ok: false, error: "planMode service unavailable" };
-      const agent = exec.agent;
-      if (agent === undefined) return { ok: false, error: "current agent unavailable" };
-      const outcome = planMode.set(agent, true);
-      // cancelled = an opposite pending selection was cleared and the logged
-      // state already matches the requested active state — plan mode IS active.
-      const ok = outcome === "committed" || outcome === "queued" || outcome === "cancelled" || outcome === "noop";
-      return { ok, result: `plan mode ${outcome}` };
     },
   }));
 }

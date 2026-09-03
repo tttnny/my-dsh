@@ -80,7 +80,7 @@ PTC 模式下 `run_code` 是唯一可直接调用的工具，其参数校验（`
       ≠ 仓库版本」的隐患）。
 - [ ] **② persona 融合，不是照搬**：开篇（身份句之后）声明 PTC 契约，用 §5 的
       **v2 标准文案**（含 WRONG/RIGHT 对照、报错恢复指令）；**点名本预设专属工具**
-      （如 grilling 的 `ask_user_grilling` / `ask_user_question` / `enter_plan_mode`，
+      （如 grilling 的 `ask_user_grilling` / `ask_user_question`，
       cordis 的 `cordis_define` / `cordis_inspect_*`），告诉模型它们同样只能经
       `tools.x()` 到达。
 - [ ] **③ 技能注释策略**：核心工具集技能（如 cordis 的两个）在文件头部加一段
@@ -131,7 +131,7 @@ Every other tool (bash, fs, skill, subagent, <本预设专属工具>, ...) is re
 末尾再补一句总提醒（含事故二的 exit_plan_mode 指引）：
 
 ```text
-— and remember: in this session you reach every tool, including <本预设专属工具> / enter_plan_mode / exit_plan_mode, through `tools.<name>(...)` inside `run_code({ code, description })`. For exit_plan_mode, build the plan markdown as a template literal inside the program (avoid backticks and ${ sequences in the plan text — use indented code blocks instead of fenced ones) and submit it in the same program: assign the template literal to a `plan` variable, then `return await tools.exit_plan_mode({ plan })`.
+— and remember: in this session you reach every tool, including <本预设专属工具> / exit_plan_mode, through `tools.<name>(...)` inside `run_code({ code, description })`. For exit_plan_mode, build the plan markdown as a template literal inside the program (avoid backticks and ${ sequences in the plan text — use indented code blocks instead of fenced ones) and submit it in the same program: assign the template literal to a `plan` variable, then `return await tools.exit_plan_mode({ plan })`.
 ```
 
 **both 版**（原生调用照常，所以措辞不同；恢复指令同样适用）：
