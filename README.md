@@ -16,6 +16,7 @@
 | [@lynn123411/dsh-a6api](./plugins/dsh-a6api) | `dsh.bundle` + `dsh.client/web` | **A6API 接入**：将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，提供多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步、商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）、侧边栏快捷模型卡片与账户余额/价格波动/模型市场胶囊行 | `dsh plugin --profile web add @lynn123411/dsh-a6api` |
 | [@lynn123411/dsh-ask-user-grilling](./plugins/dsh-ask-user-grilling) | 普通 Cordis 插件（preset 工具行消费，非 bundle） | **grilling 适配工具**：`ask_user_grilling`（后台子代理闸门 / 强制多选 / 输入框补充（无每问补充选项）/ 轮末补充问题 / 题干引导不硬校验 / 描述内置纪律）+ `enter_plan_mode`（grilling 共识确认后直接进入计划模式）。配合 `matt-*` 预设使用；grilling 纪律文案在预设 vendor 的 `skills/grilling/SKILL.md` 本地旁注里 | `dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling` |
 | [@lynn123411/dsh-mattpocock-skills-deck](./plugins/dsh-mattpocock-skills-deck) | `dsh.bundle` + `dsh.client/web`（上游分叉） | **Matt 技能控制面板（Deck）**：wayfinder 地图/票务/进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）。分叉改点：技能判装识别 `~/.dsh/.agent-presets/<id>/skills/` 根并**按当前会话生效 preset 门控**（没选 Matt preset 不虚报「环境 10/10」；选了不误报缺失）；移除上游随包全局技能 provider | `dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck` |
+| [@lynn123411/dsh-llm-agentrouter](./plugins/dsh-llm-agentrouter) | `dsh.bundle` + `dsh.client/web`（上游分叉） | **AgentRouter 中转聚合**：单 pi-ai 路由承载多模型 + 国内/国际端点设置卡一键切换 + 出站 User-Agent/402 配额围栏。分叉改点：适配 alpha.5 新 settings（`ctx.settings.installSection`）与 slots（`settings.plugins.tab`）API，沿用 `llm-agentrouter` 命名空间 | `dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter` |
 
 ---
 

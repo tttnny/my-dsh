@@ -1,0 +1,15 @@
+node_modules/
+.DS_Store
+*.log
+
+# secrets & local credentials
+.env
+.env.*
+!.env.example
+.credentials.yaml
+**/.credentials.yaml
+secrets.yaml
+*.pem
+*.key
+*.p12
+*.pfx

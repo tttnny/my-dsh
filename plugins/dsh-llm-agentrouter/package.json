@@ -1,0 +1,69 @@
+{
+  "name": "@lynn123411/dsh-llm-agentrouter",
+  "version": "0.2.0",
+  "description": "AgentRouter 中转聚合：一条 pi-ai 路由承载多模型 + 国内/国际端点一键切换（设置卡片）+ 出站请求 User-Agent/403-配额改写围栏。aqiu817/dsh-llm-agentrouter 的 alpha.5 兼容分叉。",
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "cordis",
+    "llm",
+    "agentrouter"
+  ],
+  "homepage": "https://github.com/tttnny/my-dsh#readme",
+  "bugs": "https://github.com/tttnny/my-dsh/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tttnny/my-dsh.git",
+    "directory": "plugins/dsh-llm-agentrouter"
+  },
+  "license": "MIT",
+  "author": "lynn123411",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib/",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "js-yaml": "^5.4.1",
+    "react": "18.3.1",
+    "react-test-renderer": "18.3.1"
+  }
+}
