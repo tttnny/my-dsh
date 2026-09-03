@@ -1,6 +1,6 @@
 # @lynn123411/dsh-ask-user-grilling
 
-DSH 侧的 grilling 适配层（输送机制）：把 Matt Pocock 的 grilling 流程在 DSH 里的提问环节做成工具级硬约束。本插件只提供 `ask_user_grilling`，不提供任何 plan-mode 工具——共识达成后不自动进入 plan mode，交还用户决定下一步。分工：本插件负责「在 DSH 里怎么问」的工具与报错层；grilling 纪律文案（强制走 `ask_user_grilling`、子代理停轮）写在工具描述与 matt-* 预设 vendor 的 `skills/grilling/SKILL.md` 本地适配旁注（DSH delivery、Sub-agent rounds，重同步上游技能时需保留）里，preset persona 保持原厂逐字不做任何修改。
+DSH 侧的 grilling 适配层（输送机制）：把 Matt Pocock 的 grilling 流程在 DSH 里的提问环节做成工具级硬约束。本插件只提供 `ask_user_grilling`，不提供任何 plan-mode 工具——共识达成后不自动进入 plan mode，交还用户决定下一步。分工：本插件负责「在 DSH 里怎么问」的工具与报错层；grilling 纪律文案（散文预告 + 表单投递、子代理停轮）写在工具描述与 matt-* 预设 vendor 的 `skills/grilling/SKILL.md` 里（`matt-ptc` 另含 PTC 投递指引），preset persona 保持原厂原样不做任何修改。
 
 ## 特性
 

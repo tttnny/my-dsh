@@ -36,7 +36,7 @@ function displayName(entry) {
 function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
-    description: "Deliver one ROUND of grilling questions as a form. Use it only when the grilling skill (grill-me / grill-with-docs, or the grilling phases of triage / wayfinder / improve-codebase-architecture) directs a round: first announce the whole round in the message text (title, options and your recommendation, per the skill's template), then deliver the SAME round as ONE call here — the prose and the form must match one-to-one. Map each question to the fields below (title → header, body → question, the A/B/C choices → options; put your recommendation first in options with \"(Recommended)\"; if your recommendation is not an option, state it briefly in the question text). Each question needs a stable id that does not start with __grill_ (reserved for the auto-appended round-end supplement question — never add your own catch-all/\"anything else?\" question; a non-empty supplement input reshapes the tree: ask a further round, and stop asking once the user confirms shared understanding). If background subagents are still running, this tool returns blocked: end your turn and wait for the settlement notice, do not retry within the same turn. For any non-grilling question use the plain ask_user_question tool.",
+    description: "Deliver one ROUND of grilling questions as a form. Use it only when the grilling skill (grill-me / grill-with-docs, or the grilling phases of triage / wayfinder / improve-codebase-architecture) directs a round: first announce the whole round in the message text (title, options and your recommendation, per the skill's template), then deliver the SAME round as ONE call here — the prose and the form must match one-to-one. Map each question to the fields below (title → header, body → question, the A/B/C choices → options; mark your recommended option with \"(Recommended)\" (it need not be listed first); if your recommendation is not an option, state it briefly in the question text). Each question needs a stable id that does not start with __grill_ (reserved for the auto-appended round-end supplement question — never add your own catch-all/\"anything else?\" question; a non-empty supplement input reshapes the tree: ask a further round, and stop asking once the user confirms shared understanding). If background subagents are still running, this tool returns blocked: end your turn and wait for the settlement notice, do not retry within the same turn. For any non-grilling question use the plain ask_user_question tool.",
     parameters: {
       questions: {
         type: "array",
@@ -62,7 +62,7 @@ function apply(ctx) {
             },
             options: {
               type: "array",
-              description: "Choices to show the user. Put your recommended option first and append \"(Recommended)\" to its label.",
+              description: "Choices to show the user. Mark your recommended option by appending \"(Recommended)\" to its label; any list position is fine.",
               items: {
                 type: "object",
                 additionalProperties: true,
