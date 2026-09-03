@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-ask-user-grilling",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DSH delivery adaptations for grilling rounds: ask_user_grilling (subagent gate / forced multi-select / round-end supplement / stem guidance). Does not modify any skill file.",
   "type": "module",
   "main": "lib/index.js",
