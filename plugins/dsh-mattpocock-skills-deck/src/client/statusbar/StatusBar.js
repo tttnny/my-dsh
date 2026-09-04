@@ -1,6 +1,16 @@
 /**
  * statusbar/StatusBar.js — 输入区状态栏（5.2）
  * 契约：模块真源（ESM 导出）；scripts/build.mjs 构建时剥行首 export 拼回 src/client/index.js（spliced）。
+ *
+ * 2026-09-04 用户拍板（grilling 定稿）——输入框上方只保留胶囊一行：
+ *   ① 横幅整族代码级移除、任何状态永不渲染：gate 蓝条（后端未选）/「正在探测后端」/
+ *      gh CLI 缺失 / gh 未登录 / 未初始化(setup) / 技能缺失黄条，连同 setupPick 卡片与本组件
+ *      status 源 gate 弹窗。后端选择 / 环境补齐引导一律走右侧面板（Checks / Settings 页；
+ *      Dock / Overlay 各自保留独立 gate 弹窗，source='dock'）。
+ *   ② 胶囊出厂默认隐藏（store makeStore 默认 statusbarHidden=true），仅面板眼睛按钮在当前
+ *      会话内切换显隐；刷新 / 新会话回默认隐藏，不做持久化。
+ *   ③ dock 槽位保持注册挂载（本组件 effects 照跑）：inputActions.setDraft 注入器 /
+ *      pendingDraft 消费 / chain·快照加载 / cwd 探测零损失——预填输入框与交接两击不受影响。
  */
 export const StatusBar = (props) => {
   const sid = props && props.sessionId
@@ -58,6 +68,7 @@ export const StatusBar = (props) => {
   const csx = checksumsOf(s)
   const { fr, bugN, triageN, n, timeStr, setup, amber, skillsCheck, skillsBad, ghCliBad, ghAuthBad } = csx
   // 2026-08-28 优化3：胶囊状态栏任何情况下都不隐藏（#187「未选后端隐藏整条」门控退休，仅留导航引导）。
+  //   → 2026-09-04 用户拍板修订：默认隐藏（store 默认 statusbarHidden=true），眼睛按钮会话内切换。
   // _isOtherSBGate 仍用于 go()：未选后端（backendId=null 且非 pending）时点击面板分段 → 设置页引导。
   // Guard: interval transient with empty cwd should not hide capsule (prevent forced empty)
   const _selSBGate = s.selection || (s.snapshot && s.snapshot.selection) || null
@@ -242,133 +253,11 @@ export const StatusBar = (props) => {
     h(Tip, { content: tr('nav.refreshTitle') }, h('span', { className: 'dsws-timebtn', onClick: function (e) { e.stopPropagation(); refreshAll(s) }, 'aria-label': tr('nav.refreshTitle') }, [h('span', { className: 'dsws-rficon' + (s.refreshing ? ' dsws-spin' : '') }, [Ic({ n: 'refresh', size: 11 })]), h('span', { 'data-fold-priority': 4 }, tr('nav.refresh')), h('span', { 'data-fold-priority': 9 }, ' ' + timeStr)])),
     h(SkillFloatList, { s: s }),
   ])
-  // #196 · 状态栏胶囊移除 backend segment 后不再在此处挂 SwitchConfirmModal（仍由 Dock/Overlay 挂载，状态机保留）
-  const _isGatePending = !!(_selSBGate && _selSBGate.pending && !!s.cwd)
-  const _gateActive = _isOtherSBGate || _isGatePending
-  // BUG2 修复（2026-08-28）：后端未确定（无 selection 或 backendId 为空）时只显示门控条——
-  //   链快照（wf.chain）常早于选择回填到达，若此刻开放 setup/skills 黄条判定，
-  // 用户在侧边栏手动切换隐藏底栏时，整块区域彻底不渲染（含胶囊与横幅）
+  // 2026-09-04 用户拍板：横幅整族与 status 源 gate 弹窗已整体移除（本文件头注释①）——
+  //   环境未全部通过时输入框上方零渲染（连胶囊也不出，沿用 2026-09-02「胶囊与横幅同进退」口径）；
+  //   后端选择 / 环境补齐引导走右侧面板（Checks / Settings 页）。statusbarHidden 只管胶囊显隐。
   if (s.statusbarHidden) return null
-
-  //   全新工作区会「尚未初始化/技能缺失」黄条一闪而过，再跳到正确的 gate 蓝条。
-  //   后端确定后才走依赖链引导（ghcli → ghauth → setup → skills）。
-  const _backendUndecided = !(_selSBGate && _selSBGate.backendId)
-  // 环境未全部通过时，输入框上方整行不出现（用户要求 2026-09-02 两次拍板）——
-  //   状态栏「环境」显示如 7/10，说明链上存在未通过项（gh CLI / gh 登录 / 初始化 / 技能缺失）。
-  //   ① 四条补齐环境的黄色横幅一律不渲染：横幅本意是催促补齐，决定暂不补齐的人不该被持续打扰；
-  //   ② 胶囊状态栏（MattSkills / 可接 / BUG / 环境 X/Y 那一行）同样不渲染；
-  //      面板入口不受影响——宿主右侧 details 列仍注册着本插件（dsws-details），随时可打开。
-  //   后端未确定时的蓝色选择门控条（gate）保留，它不属于环境检查项，且是新工作区唯一引导入口。
   const _envAllDone = n >= 0 && envTotal(s) > 0 && n === envTotal(s)
-  const firstBlock = (_gateActive || _backendUndecided) ? 'gate' : !_envAllDone ? null : ghCliBad ? 'ghcli' : ghAuthBad ? 'ghauth' : amber ? 'setup' : skillsBad ? 'skills' : null
-  const normMods = function(r){
-    let ms=null
-    if(r&&r.ok&&r.value&&Array.isArray(r.value.modules)) ms=r.value.modules
-    else if(r&&r.ok&&Array.isArray(r.modules)) ms=r.modules
-    else if(r&&r.modules&&Array.isArray(r.modules)) ms=r.modules
-    if(!Array.isArray(ms)) return null
-    const f=ms.filter(function(m){return String(m.id).toLowerCase()!=='other'})
-    return f.length?f:null
-  }
-  const ensureSetupPickModules = function(cb){
-    if(s.setupPickModules&&s.setupPickModules.length){cb(s.setupPickModules);return}
-    if(typeof host==='undefined'||typeof host.call!=='function'){s.setupPickModules=[];cb(s.setupPickModules);return}
-    s.setupPickLoading=true;emit(s)
-    host.call('wf.registry',{cwd:s.cwd||''}).then(function(r){
-      s.setupPickLoading=false
-      const ms=normMods(r)
-      if(ms){s.setupPickModules=ms;const cur=s.selection&&s.selection.backendId!=null?s.selection.backendId:firstBackendIdOf(null);s.setupPickRecommended=cur;if(!s.setupPickSelected)s.setupPickSelected=cur;emit(s);cb(ms);return}
-      s.setupPickErr=String(r&&(r.error||r.message)||'unknown').slice(0,120);emit(s);cb([])
-    }).catch(function(e){s.setupPickLoading=false;s.setupPickErr=String(e).slice(0,120);emit(s);cb([])})
-  }
-  const openSetupPick = function(){s.setupPickOpen=true;if(!s.setupPickSelected){const cur=s.selection&&s.selection.backendId!=null?s.selection.backendId:firstBackendIdOf(null);s.setupPickSelected=cur;s.setupPickRecommended=cur}ensureSetupPickModules(function(){emit(s)});emit(s)}
-  const closeSetupPick = function(){s.setupPickOpen=false;s.setupPickErr='';emit(s)}
-  const cancelSetupPick = function(){closeSetupPick()}
-  const confirmSetupPick = function(){
-    const id=s.setupPickSelected||s.setupPickRecommended||firstBackendIdOf(null)
-    const prev=s.selection
-    s.selection={backendId:id,source:'explicit',ref:(s.repository||(s.snapshot&&s.snapshot.repository)||null)}
-    try{if(s.cwd)setCachedSelection(s.cwd,s.selection)}catch{}
-    emit(s);closeSetupPick()
-    if(typeof host!=='undefined'&&host.call)host.call('wf.bind',{cwd:s.cwd||'',backendId:id}).then(function(res){const ok=res&&(res.ok||(res.value&&res.value.ok));if(ok){try{flash(s,'已选择 '+(typeof labelOf==='function'?labelOf(id):id),'ok')}catch{};loadSnapshot(s,true,true)}else{s.selection=prev;emit(s);try{flash(s,tr('switch.bindFail',{err:String(res&&(res.error||res.message)||'unknown')}),'warn')}catch{}}}).catch(function(){s.selection=prev;emit(s)})
-    try{inject(s,setupRunPrompt(s,id))}catch(e){} // #230（D10）：占位符由后端描述数据填充
-  }
-  const onSetupInit = function(){
-    const id=s.selection && s.selection.backendId!=null ? s.selection.backendId : (s.setupPickSelected||s.setupPickRecommended||firstBackendIdOf(null));
-    try{s.setupPickOpen=false;emit(s);}catch(e){}
-    try{inject(s,setupRunPrompt(s,id))}catch(e){} // #230（D10）：占位符由后端描述数据填充
-  }
-  const openGate = function(){
-    s.gateModalOpen=true;s.gateModalSource='status';if(!s.gateSelected)s.gateSelected=firstBackendIdOf(null);s.gateError='';emit(s);
-    if(typeof host!=='undefined'&&host.call){s.gateLoading=true;emit(s);host.call('wf.registry',{cwd:s.cwd||''}).then(function(r){s.gateLoading=false;let m=null;if(r&&r.ok&&Array.isArray(r.modules))m=r.modules;else if(r&&Array.isArray(r.modules))m=r.modules;else if(r&&r.value&&Array.isArray(r.value.modules))m=r.value.modules;if(Array.isArray(m)&&m.length){const f=m.filter(function(x){return String(x.id).toLowerCase()!=='other'});const fin=f.length?f:m;if(fin.length){s.backendModules=m;try{if(typeof setPresentationMap==='function')setPresentationMap(m)}catch(e){}const ids=fin.map(function(x){return x.id});if(!s.gateSelected||ids.indexOf(s.gateSelected)<0)s.gateSelected=fin[0].id}}emit(s)}).catch(function(){s.gateLoading=false;emit(s)});}
-  }
-  const closeGate = function(){ s.gateModalOpen=false; s.gateModalSource=null; s.gateError=''; emit(s); };
-  const confirmGateStatus = function(){ const id=s.gateSelected||firstBackendIdOf(null); if(String(id).toLowerCase()==='other'){ s.gateError=tr('switch.gateOtherErr'); emit(s); return; } const prev=s.selection; const repoRef=s.repository||(s.snapshot&&s.snapshot.repository)||null; const nxt={backendId:id,source:'explicit',ref:repoRef}; s.selection=nxt; try{ if(s.cwd)setCachedSelection(s.cwd,nxt) }catch(e){} s.gateModalOpen=false; s.gateModalSource=null; emit(s); if(typeof host!=='undefined'&&host.call){ host.call('wf.bind',{cwd:s.cwd||'',backendId:id}).then(function(res){ const ok=res&&(res.ok===true||(res.value&&res.value.ok===true)||res.ok); if(ok){ s.tab='list'; emit(s); try{ flash(s,tr('switch.bindOk',{label:(typeof labelOf==='function'?labelOf(id):String(id))}),'ok') }catch(e){} try{ const tt=(typeof setupRunPrompt==='function'?setupRunPrompt(s,id):''); if(tt) try{ inject(s,tt) }catch(e){} }catch(e){} loadSnapshot(s,true,true); } else { s.selection=prev; try{ if(s.cwd)setCachedSelection(s.cwd,prev) }catch(e){} emit(s); try{ flash(s,tr('switch.bindFail',{err:String(res&&(res.error||res.message)||'unknown')}),'warn') }catch(e){} } }).catch(function(){ s.selection=prev; try{ if(s.cwd)setCachedSelection(s.cwd,prev) }catch(e){} emit(s); }); } };
-  const setupPickCard = s.setupPickOpen ? (function(){
-    const mods=s.setupPickModules||[];const rec=s.setupPickRecommended||firstBackendIdOf(null);const sel=s.setupPickSelected||rec
-    return h('div', { style:{ width:'100%', maxWidth:560, border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:10, background:'var(--dsw-alias-bg-layer-2,#16181d)', padding:10, boxShadow:'0 8px 24px rgba(0,0,0,.35)' } }, [
-      h('div', { style:{ fontSize:12, fontWeight:700, display:'flex', alignItems:'center', gap:6, marginBottom:8 } }, [Ic({n:'compass',size:12}), h('span', null, tr('banner.setupPickTitle')), s.setupPickLoading ? h('span', {style:{fontSize:10,color:'#8b8b95'}}, tr('list.loading')) : null]),
-      h('div', { style:{ fontSize:11, color:'#f59e0b', background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.25)', borderRadius:6, padding:'6px 8px', marginBottom:8 } }, tr('gate.wipNotice')),
-      s.setupPickErr ? h('div', {style:{fontSize:11,color:'#f87171', marginBottom:6}}, s.setupPickErr) : null,
-      h('div', { style:{ display:'flex', flexDirection:'column', gap:6 } }, (mods.length?mods:supportedBackendViews()).map(function(m){
-        const isRec=rec===m.id;const isSel=sel===m.id;const col=typeof backendColorOf==='function'?backendColorOf(m.id):''
-        return h('label', { key:m.id, style:{ display:'flex', alignItems:'center', gap:8, padding:'7px 9px', borderRadius:8, border: isSel ? '1px solid '+col : '1px solid var(--dsw-alias-border-l1,#2a2d35)', background: isSel ? 'rgba(88,166,255,.08)' : 'transparent', cursor:'pointer' } }, [
-          h('input', { type:'radio', name:'setup-pick', checked: isSel, onChange: function(){ s.setupPickSelected=m.id; emit(s) } }),
-          h('span', { style:{ width:8, height:8, borderRadius:'50%', background: col, flex:'none' } }),
-          h('span', { style:{ fontSize:12, fontWeight:600 } }, m.label),
-          h('span', { style:{ fontSize:10, color:'#8b8b95' } }, m.id),
-          h('span', { style:{ flex:1 } }),
-          isRec ? h('span', { style:{ fontSize:10, color:'#4ade80', border:'1px solid #4ade80', borderRadius:4, padding:'0 4px', lineHeight:1.6 } }, tr('banner.setupPickRecommended')) : null,
-        ])
-      })),
-      h('div', { style:{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:10 } }, [
-        h('button', { className:'dsws-btn ghost', onClick: cancelSetupPick, style:{ fontSize:12 } }, tr('banner.setupPickCancel')),
-        h('button', { className:'dsws-btn', style:{ background:'#58a6ff', borderColor:'#58a6ff', color:'#0b1220', fontWeight:700 }, onClick: confirmSetupPick }, tr('banner.setupPickConfirm')),
-      ]),
-    ])
-  })() : null
-  if (!firstBlock) {
-    // 环境未全部通过时整行不渲染（黄条与胶囊同进退，用户要求 2026-09-02）；#187 的「胶囊恒显示」规约自此让位于该条件
-    if (!_envAllDone) return null
-    return h('div', { style: { display: 'flex', flex: 'none', justifyContent: 'center', width: '100%', boxSizing: 'border-box', padding: '3px 8px 0', overflow: RDOM ? 'hidden' : 'visible' } }, [capsule])
-  }
-  const bann = function (text, btnLabel, onBtn) {
-    return h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: 560, cursor: 'default' } }, [
-      Ic({ n: 'alert', size: 13 }),
-      h('span', { style: { flex: 1 } }, text),
-      h('button', { className: 'dsws-btn', style: { borderColor: 'rgba(245,158,11,.6)' }, onClick: onBtn }, btnLabel),
-    ])
-  }
-  return h('div', { style: { display: 'flex', flex: 'none', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '3px 8px 0', position:'relative' } }, [
-    firstBlock === 'gate'
-      ? (_isGatePending
-          ? h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: 560, background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.35)', color:'#f59e0b', display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8 } }, [ h('span', { className:'dsws-spinner', style:{ width:12, height:12, borderWidth:2, display:'inline-block' } }), h('span', { style:{ flex:1, fontSize:12 } }, '正在探测后端'), h('button', { className:'dsws-btn', style:{ borderColor:'rgba(245,158,11,.6)', fontSize:11 }, onClick:function(){ loadSnapshot(s,true,true) } }, '重试') ])
-          : h('div', { className: 'dsws-banner', style: { margin: 0, maxWidth: 560, background:'rgba(56,139,253,.10)', border:'1px solid rgba(56,139,253,.35)', color:'#58a6ff', display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8 } }, [ Ic({ n:'compass', size:13, color:'#58a6ff' }), h('span', { style:{ flex:1, fontSize:12 } }, tr('banner.gate')), h('button', { className:'dsws-btn', style:{ borderColor:'rgba(56,139,253,.6)', color:'#58a6ff', fontSize:11 }, onClick: openGate }, tr('banner.gateBtn')) ]))
-      : firstBlock === 'ghcli'
-      // #195 修复(第二轮)：hint 直接为后端提供的完整 prompt（多态），UI 直接 inject；移除副按钮
-      ? bann(tr('banner.ghcli'), tr('banner.ghcliBtn'), function () { var c = chainStep(s, 'gh:installed'); var h = (c && c.show && c.show.hint) || ''; if (h) inject(s, h) })
-      : firstBlock === 'ghauth'
-        ? bann(tr('banner.ghauth'), tr('banner.ghauthBtn'), function () { var _bid=(s.selection&&s.selection.backendId!=null)?s.selection.backendId:null; var _mm=(typeof moduleMetaOf==='function'&&_bid!=null)?moduleMetaOf(s,_bid):null; var _pp=_mm&&_mm.prompts&&_mm.prompts.ghAuthLogin; var _lg=(typeof promptLang==='function')?promptLang():'zh'; var _t=_pp?((_lg==='en'&&_pp.en)?String(_pp.en):String(_pp.zh||'')):(typeof promptText==='function'?promptText('ghAuthLogin'):''); if(_t) inject(s,_t) })
-        : firstBlock === 'setup'
-          ? h('div', { style:{ display:'flex', flexDirection:'column', alignItems:'center', gap:6, width:'100%' } }, [
-              bann(tr('banner.setup'), tr('banner.setupBtn'), onSetupInit),
-              setupPickCard,
-            ])
-          : bann(tr('banner.skills', { list: (skillsCheck && skillsCheck.show && (skillsCheck.show.fallback || skillsCheck.show.desc || '')) || '' }), tr('banner.skillsBtn'), function () { inject(s, promptText('installSkills', installSkillsParams())) }),
-    // 胶囊与横幅同进退：环境未全部通过时不显示（gate 蓝条单独出现时也不带胶囊）
-    _envAllDone ? capsule : null,
-    (s.gateModalOpen && s.gateModalSource==='status' ? h('div', { onClick:function(e){ if(e.target===e.currentTarget) closeGate() }, style:{ position:'absolute', inset:0, background:'rgba(0,0,0,.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10, borderRadius:8, padding:12 } }, [
-      h('div', { style:{ background:'var(--dsw-alias-bg-layer-2,#16181d)', border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:12, padding:14, width:'92%', maxWidth:380, boxShadow:'0 8px 24px rgba(0,0,0,.5)' } }, [
-        h('div', { style:{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6, marginBottom:6 } }, [Ic({n:'compass',size:14}), h('span', null, tr('switch.pleaseSelectTracker'))]),
-        h('div', { style:{ fontSize:11, color:'#8b8b95', marginBottom:10, lineHeight:1.5 } }, tr('switch.gateIntro')),
-        h('div', { style:{ fontSize:11, color:'#f59e0b', background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.25)', borderRadius:6, padding:'6px 8px', marginBottom:10 } }, tr('gate.wipNotice')),
-        s.gateLoading ? h('div', { style:{ fontSize:11, color:'#8b8b95', padding:'6px 0' } }, tr('panel.loadingShort')) : h('div', { style:{ display:'flex', flexDirection:'column', gap:6 } }, otherFiltered(s.backendModules).map(function(m){
-          const isSel=s.gateSelected===m.id; const col=(typeof backendColorOf==='function'?backendColorOf(m.id):'#6e7681'); const isRec=(s.backendModules||[])[0] && (s.backendModules||[])[0].id===m.id;
-          return h('label', { key:m.id, style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8, border:isSel?'1px solid '+col:'1px solid var(--dsw-alias-border-l1,#2a2d35)', background:isSel?'rgba(88,166,255,.08)':'transparent', cursor:'pointer' } }, [ h('input',{type:'radio',checked:isSel,onChange:function(){s.gateSelected=m.id;emit(s)}}), h('span',{style:{width:8,height:8,borderRadius:'50%',background:col,flex:'none'}}), h('span',{style:{fontSize:12,fontWeight:600}},m.label), h('span',{style:{fontSize:10,color:'#8b8b95'}},m.id), h('span',{style:{flex:1}}), isRec?h('span',{style:{fontSize:10,color:'#4ade80',border:'1px solid #4ade80',borderRadius:4,padding:'0 4px'}},'推荐'):null ])
-        })),
-        s.gateError ? h('div', { style:{ fontSize:11, color:'#f87171', marginTop:8 } }, s.gateError) : null,
-        h('div', { style:{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:12 } }, [ h('button',{className:'dsws-btn ghost',onClick:closeGate,style:{fontSize:12}},'取消'), h('button',{className:'dsws-btn',style:{background:'#58a6ff',borderColor:'#58a6ff',color:'#0b1220',fontWeight:700,fontSize:12},onClick:confirmGateStatus},'确认并继续') ])
-      ])
-    ]) : null),
-  ])
+  if (!_envAllDone) return null
+  return h('div', { style: { display: 'flex', flex: 'none', justifyContent: 'center', width: '100%', boxSizing: 'border-box', padding: '3px 8px 0', overflow: RDOM ? 'hidden' : 'visible' } }, [capsule])
 }

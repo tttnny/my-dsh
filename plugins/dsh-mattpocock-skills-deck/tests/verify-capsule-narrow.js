@@ -83,8 +83,10 @@ const statChecks = function (src, tag) {
   ok('R9 · ResizeObserver 监听 foldRef 及其 parent（可用宽变化即折叠）', /new ResizeObserver\(function\s*\(\)\s*\{\s*applyFold\(\)\s*\}\)[\s\S]{0,300}roFold\.observe\(foldRef\.current\)/.test(src) && /roParent\.observe/.test(src))
   ok('R9 · useEffect 清理断开 roFold/roParent（防泄漏）', /roFold\.disconnect\(\)[\s\S]{0,120}roParent\.disconnect\(\)/.test(src))
   ok('R9 · 轮询兜底保留（字体/宿主重排）', /setInterval\(applyAll, 2000\)/.test(src))
-  ok('R12 · !firstBlock 分支 wrapper 含 flex:\'none\'（防 flex-shrink 压矮）', /display:\s*'flex',\s*flex:\s*'none',\s*justifyContent:\s*'center'/.test(src))
-  ok('R12 · firstBlock 分支 wrapper 含 flex:\'none\'（横幅 + 胶囊列布局同样防压缩）', /display:\s*'flex',\s*flex:\s*'none',\s*flexDirection:\s*'column'/.test(src))
+  ok('R12 · 胶囊 wrapper 含 flex:\'none\'（防 flex-shrink 压矮）', /display:\s*'flex',\s*flex:\s*'none',\s*justifyContent:\s*'center'/.test(src))
+  // 2026-09-04 用户拍板：输入框上方横幅整族移除，StatusBar 仅剩胶囊单行 wrapper——
+  //   旧「firstBlock 分支 wrapper（横幅+胶囊列布局）」断言随之退役；且输入框上方不得再出现任何列布局横幅容器。
+  ok('2026-09-04 · 横幅列布局 wrapper 已移除（不再有 flexDirection:column 的横幅容器）', !/display:\s*'flex',\s*flex:\s*'none',\s*flexDirection:\s*'column'/.test(src))
   ok('R6b · !firstBlock 分支 wrapper 不再含 alignItems:\'stretch\'', !/display:\s*'flex',\s*justifyContent:\s*'center'[\s\S]{0,200}alignItems:\s*'stretch'/.test(src))
 
   // 期望 4：点击事件契约

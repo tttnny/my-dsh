@@ -9,6 +9,7 @@
 - **按会话 preset 门控**（`#preset-session-gating`）：preset 技能只有随**当前会话所选 preset** 分发时才算「已安装」——会话没选 Matt 相关 preset（如内置 `standard`、`ptc-cordis`）时，环境检查如实显示技能未装，不再虚报「环境 10/10」。生效 preset 经 `agentPreset` 会话投影（创建 header 兜底）解析；解析不到会话上下文时回退「枚举全部 preset 目录」的宽松口径（宁绿勿误报）。
 - **链缓存按会话隔离**：服务端与客户端的环境检查链缓存键均加入 preset / 会话维度，同一工作区里不同 preset 的会话不互串链结果。
 - **不随包捆绑技能（与上游差异）**：移除上游 v1.7.12 新增的 `package/bundled-skills` 及向宿主 `skills` 服务全局注册的兜底 provider——它会让所有会话恒判「技能已装」，与按 preset 分发、按会话门控的模型冲突。
+- **输入框上方只留胶囊、默认隐藏（与上游差异 · 用户拍板 2026-09-04）**：`conversation.input.dock` 槽位的横幅整族（后端未选 gate 蓝条 / 正在探测后端 / gh CLI 缺失 / gh 未登录 / 未初始化 / 技能缺失黄条，连同 setupPick 卡片与 status 源 gate 弹窗）代码级移除、任何状态永不渲染；胶囊状态栏出厂默认隐藏（`statusbarHidden` 默认 `true`），仅面板眼睛按钮在**当前会话内**切换显隐，刷新 / 新会话回默认隐藏、不做持久化。后端选择 / 环境补齐引导一律走右侧面板（Checks / Settings 页）；dock 槽位保持挂载，预填输入框与交接两击等注入链路零损失。
 - **完整上游工程链路**：`src/`（真源）→ `node scripts/build.mjs` 双形态产物（dev `client.js`/`host.js` + 发布物 `package/lib/`）、`npm run verify` 40+ 门禁、`npm run test:smoke`；构建末尾自动同步发布物到本机 `~/.dsh/profiles/web/node_modules/@lynn123411/dsh-mattpocock-skills-deck/` 并做 hash 校验。
 
 ## 安装

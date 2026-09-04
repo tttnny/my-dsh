@@ -307,7 +307,9 @@
       noRepoCard: { expanded: false, name: '', visibility: 'private', loading: false, error: '', errorKind: '', errorRepoUrl: '' },
       switchConfirm: null,
       gateModalOpen: false, gateSelected: null, gateLoading: false, gateError: '',
-      statusbarHidden: false,
+      // 2026-09-04 用户拍板（grilling 定稿）：胶囊状态栏出厂默认隐藏——输入框上方默认零渲染；
+      //   仅面板眼睛按钮在当前会话内切换显隐，刷新/新会话回默认隐藏，不做任何持久化（覆盖旧「默认显示」语义）。
+      statusbarHidden: true,
     })
     export const shared = makeStore()
     export const stores = {}

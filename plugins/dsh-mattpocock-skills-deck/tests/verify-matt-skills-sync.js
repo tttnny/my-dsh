@@ -87,9 +87,10 @@ if (existsSync(INST_CLIENT)) {
   const installMatch = t.match(/"installSkills":\s*\{[\s\S]*?placeholders:\s*\[([^\]]+)\]/)
   check(!!installMatch && /['"]probeList['"]/.test(installMatch[1]) && /['"]probeCount['"]/.test(installMatch[1]), 'installed installSkills prompt 声明 placeholders: [probeList, probeCount]')
   check(/installSkillsParams\s*=\s*function/.test(t), 'installed 定义 installSkillsParams() helper')
-  // Both callers pass installSkillsParams()
+  // 2026-09-04 用户拍板：状态栏「技能缺失」横幅整族移除（输入框上方只留胶囊），
+  //   原 StatusBar 的调用点随之删除，installSkills 唯一 UI 调用点 = SettingsPage 技能页「复制安装 prompt」。
   const callerHits = (t.match(/promptText\('installSkills',\s*installSkillsParams\(\)\)/g) || []).length
-  check(callerHits >= 2, `installed 两处 installSkills 调用都传 installSkillsParams()（命中 ${callerHits}/2）`)
+  check(callerHits >= 1, `installed installSkills 调用传 installSkillsParams()（现状唯一调用点 SettingsPage；命中 ${callerHits}/1）`)
 }
 
 // --- 5. ensureSidebarTab 只注册一个 tab id ---

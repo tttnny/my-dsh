@@ -106,7 +106,9 @@ const checksTab = file('src/client/views/ChecksTab.js')
 check(checksTab.includes('hintTextOf') && checksTab.includes('resolvePrompt'), 'ChecksTab 走通用 hint 解析（不再硬编码 ghAuthLogin，承接 fixContract）')
 check(!checksTab.includes("openUrl('https://cli.github.com/manual/gh_auth_login')") , 'ChecksTab 已删除 gh_auth_login openUrl 硬编码')
 const statusBar = file('src/client/statusbar/StatusBar.js')
-check(statusBar.includes("promptText('ghAuthLogin')") || statusBar.includes('ghAuthLogin') || statusBar.includes('hintTextOf'), 'StatusBar 含 ghAuthLogin 或通用 hint（兼容）')
+// 2026-09-04 用户拍板：输入框上方横幅整族移除（含 gh 登录黄条），StatusBar 不再承载 ghAuthLogin 引导；
+//   gh 登录指引唯一入口 = ChecksTab 通用 hint 解析（上方 106 行断言）。
+check(!statusBar.includes('ghAuthLogin') && !statusBar.includes('hintTextOf'), 'StatusBar 不再含 ghAuthLogin/hintTextOf（横幅移除；引导只走 ChecksTab）')
 check(!statusBar.includes("openUrl('https://cli.github.com/manual/gh_auth_login')"), 'StatusBar 已删除 openUrl 硬编码')
 const ghBackend = file('src/host/tracker/backends/github/index.js')
 check(ghBackend.includes('ghAuthLogin'), 'github 后端 fixes 含 ghAuthLogin（bc72e16 迁移真源）')

@@ -146,7 +146,10 @@ const DetailsDockComp = byName['details']
 const OverlayComp = byName['shell.overlay']
 const SettingsComp = byName['settings.plugins.tab']
 
-// ---- StatusBar 渲染（关键路径：capsule / seg / 状态段）----
+// ---- StatusBar 渲染（关键路径）----
+// 2026-09-04 用户拍板：输入框上方横幅整族移除 + 胶囊出厂默认隐藏（store 默认 statusbarHidden=true）。
+//   默认渲染契约 = 零输出：无任何 dsws-banner、无 dsws-capsule；胶囊 runtime 渲染属
+//   「眼睛按钮打开 + 环境全绿」组合态，其结构契约由 verify-capsule-narrow（双源静态）覆盖。
 if (StatusBarComp) {
   const statusBarProps = {
     sessionId: 'test-sid',
@@ -154,9 +157,25 @@ if (StatusBarComp) {
     useSessions: () => null,
     inputActions: null,
   }
-  await renderAndCheck(StatusBarComp, statusBarProps, ['dsws-capsule'], 'StatusBar')
-  // 额外校验：seg 是否出现在渲染输出（状态段未因空数据崩溃即视为通过）
-  // 不强制 dsws-seg 因空 snapshot 可能无 seg，但 capsule 必须在
+  const container = window.document.createElement('div')
+  window.document.body.appendChild(container)
+  let root = null
+  try {
+    await act(async () => {
+      root = ReactDOMClient.createRoot(container)
+      root.render(React.createElement(StatusBarComp, statusBarProps))
+      await new Promise(r => setTimeout(r, 20))
+    })
+    const html = container.innerHTML
+    check(html.indexOf('dsws-banner') < 0, 'StatusBar 默认渲染不含任何横幅（dsws-banner 整族移除）')
+    check(html.indexOf('dsws-capsule') < 0, 'StatusBar 默认渲染不含胶囊（statusbarHidden 默认 true）')
+    check(html.replace(/\s/g, '') === '', 'StatusBar 默认渲染输出为空（输入框上方零渲染）')
+  } catch (e) {
+    check(false, 'StatusBar 渲染异常: ' + (e && e.message))
+  } finally {
+    try { if (root) root.unmount() } catch (e) {}
+    try { if (container.parentNode) container.parentNode.removeChild(container) } catch (e) {}
+  }
 } else {
   check(false, 'StatusBar 组件未捕获')
 }
