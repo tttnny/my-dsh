@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-chat-translate",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Tool-call & think-summary translation with dual AI (OpenAI-compatible) + Bing channels for the DeepSeek Harness Web UI",
   "license": "MIT",
   "author": "lynn123411",

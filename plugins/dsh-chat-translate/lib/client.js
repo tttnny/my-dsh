@@ -1434,7 +1434,8 @@ function setupSettingsUi(ctx) {
         {
           name: "settings.section",
           id: "dsh-chat-translate",
-          order: 5,
+          // 约定：自有插件设置项 order 从 110 起步进 10（原生最大 100=桌面设置），保证排在所有原生项之下
+          order: 110,
           label: () => "\u804A\u5929\u7FFB\u8BD1"
         },
         TidySettingsPanel

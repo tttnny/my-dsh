@@ -4929,7 +4929,8 @@ function apply(ctx) {
         {
           name: "settings.section",
           id: "dsh-a6api",
-          order: 11,
+          // 约定：自有插件设置项 order 从 110 起步进 10（原生最大 100=桌面设置），保证排在所有原生项之下
+          order: 120,
           label: () => "A6api"
         },
         A6ApiSettingsPanel
