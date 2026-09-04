@@ -31,6 +31,32 @@ export function formatCnyPrice(micros: number, exchangeRate = 6.7209): string {
   return `¥${cny.toFixed(3)}`;
 }
 
+/** 混合价估算常数：输出 token 占总 token 比例固定 0.35%（与官网模型市场 ¥/100M 标注口径一致） */
+const BLENDED_OUT_SHARE = 0.0035;
+
+/**
+ * 混合价估算（¥ / 1亿 tokens，供模型卡片徽标展示，换算与口径同官网标注脚本）：
+ * 输入类 token 占 99.65%，按 24h 实测缓存命中率分为「命中 × 缓存读价」与「未命中 × 输入价」，
+ * 输出固定占 0.35% × 输出价。单价按 micros/1e6 × 汇率折算为 ¥/1M；
+ * 三类单价全为 0（按次计费等无 token 单价）时返回 undefined，前端不展示。
+ */
+export function computeBlendedPrice100m(
+  inMicros: number,
+  cacheReadMicros: number,
+  outMicros: number,
+  cacheHitRatePct: number,
+  exchangeRate: number,
+): number | undefined {
+  const inY = (inMicros / 1_000_000) * exchangeRate; // 未命中（输入）价 ¥/1M
+  const hitY = (cacheReadMicros / 1_000_000) * exchangeRate; // 命中（缓存读）价 ¥/1M
+  const outY = (outMicros / 1_000_000) * exchangeRate; // 输出价 ¥/1M
+  if (inY <= 0 && hitY <= 0 && outY <= 0) return undefined;
+  const h = Math.min(1, Math.max(0, cacheHitRatePct / 100));
+  const inShare = 1 - BLENDED_OUT_SHARE; // 输入类 token 占比 99.65%
+  const per1M = h * inShare * hitY + (1 - h) * inShare * inY + BLENDED_OUT_SHARE * outY;
+  return per1M * 100;
+}
+
 export function buildWebHeaders(userId?: string, accessToken?: string): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -354,6 +380,8 @@ export async function fetchChannelDetails(
           item.cache_hit_rate_24h !== undefined ? Number(item.cache_hit_rate_24h) / 100 : 72.0;
         const lastSuccessAt = Number(item.last_success_at || item.last_test_time || 0);
 
+        const blended100m = computeBlendedPrice100m(inMicros, cacheReadMicros, outMicros, cacheHitRate, rate);
+
         const ratioCny = Number(item.realtime_ratio_cny || (inMicros / 1000000) * rate || 0.0341);
         const ratioFormatted = ratioCny.toFixed(4);
 
@@ -393,6 +421,7 @@ export async function fetchChannelDetails(
           p50_ttft_ms: Number(item.p50_ttft_ms || 2273),
           recent_p50_ms: Number(item.recent_p50_ms || item.last_test_response_ms || 2340),
           cache_hit_rate_pct: cacheHitRate,
+          blended_price_100m_cny: blended100m,
           labels,
           last_success_at: lastSuccessAt,
           last_success_text: formatRelativeTime(lastSuccessAt),
@@ -468,6 +497,7 @@ export async function fetchChannelDetails(
       recent_p50_ms: Number(logSnapshot.use_time ? logSnapshot.use_time * 1000 : 2340),
       p50_ttft_ms: 2273,
       cache_hit_rate_pct: 72.0,
+      blended_price_100m_cny: computeBlendedPrice100m(inMicros, cacheReadMicros, outMicros, 72.0, rate),
       labels: ['稳定', '低价', '高速', '高质'],
       last_success_at: Math.floor(Date.now() / 1000),
       last_success_text: '刚刚',

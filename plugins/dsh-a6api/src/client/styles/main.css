@@ -485,6 +485,20 @@
   white-space: nowrap;
 }
 
+/* 混合价胶囊（≈¥x/亿 tokens，按 24h 缓存命中率估算） */
+.dsh-a6-blend-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #0a8f5b;
+  border: 1px solid rgba(10, 143, 91, 0.35);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
 /* Uptime / Health Col (实时 / 24h / 7d) */
 .dsh-a6-bar-uptime {
   display: flex;

@@ -161,6 +161,8 @@ export interface MerchantChannelInfo {
   p50_ttft_ms?: number;
   recent_p50_ms: number;
   cache_hit_rate_pct: number;
+  /** 混合价估算（¥ / 1亿 tokens）：输入类 99.65% 按 24h 缓存命中率分为命中（缓存读价）/未命中（输入价），输出固定占 0.35%；无 token 单价时缺省不展示 */
+  blended_price_100m_cny?: number;
   labels: string[];
   last_success_at: number;
   last_success_text: string;

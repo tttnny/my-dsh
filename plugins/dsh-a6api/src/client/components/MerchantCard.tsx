@@ -12,6 +12,14 @@ const formatAbsolute = (tsSec: number) => {
   return y !== nowY ? `${y}-${md}` : md;
 };
 
+/** 3 位有效数字；千位以上加千分符（与官网模型市场标注脚本 fmtSig 口径一致） */
+const fmtSig = (n: number) => {
+  if (!Number.isFinite(n)) return '—';
+  const s = Number(n.toPrecision(3));
+  if (Math.abs(s) >= 1000) return s.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return String(s);
+};
+
 export const MerchantCard: React.FC<{
   model: ModelCardData;
 }> = ({ model }) => {
@@ -160,6 +168,25 @@ export const MerchantCard: React.FC<{
       : '2.34s';
   const cacheHitPct = merchant ? merchant.cache_hit_rate_pct : 72.0;
 
+  // 混合价估算（¥/1亿 tokens）：服务端按 24h 缓存命中率 + 输出占比 0.35% 预计算，客户端仅格式化与解释
+  const blend100m = merchant?.blended_price_100m_cny;
+  const blend100mValid = blend100m !== undefined && Number.isFinite(blend100m);
+  const blendTitle = blend100mValid
+    ? (() => {
+        const h = Math.min(100, Math.max(0, merchant!.cache_hit_rate_pct)) / 100;
+        const inShare = 99.65; // 输入类 token 占比 %（输出固定 0.35%）
+        const hSharePct = Math.round(h * inShare * 10) / 10;
+        const mSharePct = Math.round((1 - h) * inShare * 10) / 10;
+        const per1m = blend100m! / 100;
+        return (
+          '混合价估算（¥ / 1亿 tokens，输出占比固定 0.35%）\n' +
+          `命中 ${hSharePct}% × 缓存读价 + 未命中 ${mSharePct}% × 输入价 + 输出 0.35% × 输出价\n` +
+          `= ¥${Number(per1m.toPrecision(4))} /1M ≈ ¥${fmtSig(blend100m!)} /1亿 tokens\n` +
+          '命中率取卡片 24h 实测缓存命中率'
+        );
+      })()
+    : undefined;
+
   return (
     <div className={`dsh-a6-official-card ${model.inDsh ? 'in-dsh' : ''}`}>
       {/* 1. Main Top Row */}
@@ -230,6 +257,11 @@ export const MerchantCard: React.FC<{
                 {merchant.cache_write_price_cny}
               </span>
             </div>
+            {blend100mValid && (
+              <div className="dsh-a6-blend-pill" title={blendTitle}>
+                ≈ ¥{fmtSig(blend100m!)}/亿
+              </div>
+            )}
             <div className="dsh-a6-ratio-pill" title="实时倍率比官方价">
               {ratioText}
             </div>

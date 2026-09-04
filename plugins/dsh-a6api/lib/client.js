@@ -630,6 +630,12 @@ var formatAbsolute = (tsSec) => {
   const md = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   return y !== nowY ? `${y}-${md}` : md;
 };
+var fmtSig = (n) => {
+  if (!Number.isFinite(n)) return "\u2014";
+  const s = Number(n.toPrecision(3));
+  if (Math.abs(s) >= 1e3) return s.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  return String(s);
+};
 var MerchantCard = ({ model }) => {
   const [expanded, setExpanded] = (0, import_react.useState)(false);
   const [pinConfirmOpen, setPinConfirmOpen] = (0, import_react.useState)(false);
@@ -744,6 +750,19 @@ var MerchantCard = ({ model }) => {
   const ratioText = merchant?.realtime_ratio_formatted || "0.0341";
   const latencySec = merchant ? ((merchant.p50_ttft_ms || merchant.recent_p50_ms || 2340) / 1e3).toFixed(2) + "s" : model.probeLatencyMs ? (model.probeLatencyMs / 1e3).toFixed(2) + "s" : "2.34s";
   const cacheHitPct = merchant ? merchant.cache_hit_rate_pct : 72;
+  const blend100m = merchant?.blended_price_100m_cny;
+  const blend100mValid = blend100m !== void 0 && Number.isFinite(blend100m);
+  const blendTitle = blend100mValid ? (() => {
+    const h = Math.min(100, Math.max(0, merchant.cache_hit_rate_pct)) / 100;
+    const inShare = 99.65;
+    const hSharePct = Math.round(h * inShare * 10) / 10;
+    const mSharePct = Math.round((1 - h) * inShare * 10) / 10;
+    const per1m = blend100m / 100;
+    return `\u6DF7\u5408\u4EF7\u4F30\u7B97\uFF08\xA5 / 1\u4EBF tokens\uFF0C\u8F93\u51FA\u5360\u6BD4\u56FA\u5B9A 0.35%\uFF09
+\u547D\u4E2D ${hSharePct}% \xD7 \u7F13\u5B58\u8BFB\u4EF7 + \u672A\u547D\u4E2D ${mSharePct}% \xD7 \u8F93\u5165\u4EF7 + \u8F93\u51FA 0.35% \xD7 \u8F93\u51FA\u4EF7
+= \xA5${Number(per1m.toPrecision(4))} /1M \u2248 \xA5${fmtSig(blend100m)} /1\u4EBF tokens
+\u547D\u4E2D\u7387\u53D6\u5361\u7247 24h \u5B9E\u6D4B\u7F13\u5B58\u547D\u4E2D\u7387`;
+  })() : void 0;
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: `dsh-a6-official-card ${model.inDsh ? "in-dsh" : ""}`, children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-card-main-bar", onClick: () => setExpanded(!expanded), children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-identity", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-title-col", children: [
@@ -786,6 +805,11 @@ var MerchantCard = ({ model }) => {
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-price-col", children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-top", title: "\u8F93\u51FA\u4EF7 (1M)", children: merchant.output_price_cny }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-btm", title: "\u7F13\u5B58\u5199 (1M)", children: merchant.cache_write_price_cny })
+        ] }),
+        blend100mValid && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-blend-pill", title: blendTitle, children: [
+          "\u2248 \xA5",
+          fmtSig(blend100m),
+          "/\u4EBF"
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-ratio-pill", title: "\u5B9E\u65F6\u500D\u7387\u6BD4\u5B98\u65B9\u4EF7", children: ratioText })
       ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-pricing unprobed", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -3095,6 +3119,20 @@ var main_default = `/* A6API Plugin Styles - Clean Professional DSH Native Theme
   color: #0d9488;
   border: 1px solid #99f6e4;
   white-space: nowrap;
+}
+
+/* \u6DF7\u5408\u4EF7\u80F6\u56CA\uFF08\u2248\xA5x/\u4EBF tokens\uFF0C\u6309 24h \u7F13\u5B58\u547D\u4E2D\u7387\u4F30\u7B97\uFF09 */
+.dsh-a6-blend-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #0a8f5b;
+  border: 1px solid rgba(10, 143, 91, 0.35);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
 }
 
 /* Uptime / Health Col (\u5B9E\u65F6 / 24h / 7d) */

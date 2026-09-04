@@ -386,6 +386,17 @@ function formatCnyPrice(micros, exchangeRate = 6.7209) {
   if (cny < 1) return `\xA5${cny.toFixed(4)}`;
   return `\xA5${cny.toFixed(3)}`;
 }
+var BLENDED_OUT_SHARE = 35e-4;
+function computeBlendedPrice100m(inMicros, cacheReadMicros, outMicros, cacheHitRatePct, exchangeRate) {
+  const inY = inMicros / 1e6 * exchangeRate;
+  const hitY = cacheReadMicros / 1e6 * exchangeRate;
+  const outY = outMicros / 1e6 * exchangeRate;
+  if (inY <= 0 && hitY <= 0 && outY <= 0) return void 0;
+  const h = Math.min(1, Math.max(0, cacheHitRatePct / 100));
+  const inShare = 1 - BLENDED_OUT_SHARE;
+  const per1M = h * inShare * hitY + (1 - h) * inShare * inY + BLENDED_OUT_SHARE * outY;
+  return per1M * 100;
+}
 function buildWebHeaders2(userId, accessToken) {
   const headers = {
     Accept: "application/json",
@@ -648,6 +659,7 @@ async function fetchChannelDetails(channelId, userId, accessToken, targetModelNa
         const recentSuccessRate = item.recent_success_rate !== void 0 ? Number(item.recent_success_rate) / 100 : 100;
         const cacheHitRate = item.cache_hit_rate_24h !== void 0 ? Number(item.cache_hit_rate_24h) / 100 : 72;
         const lastSuccessAt = Number(item.last_success_at || item.last_test_time || 0);
+        const blended100m = computeBlendedPrice100m(inMicros, cacheReadMicros, outMicros, cacheHitRate, rate);
         const ratioCny = Number(item.realtime_ratio_cny || inMicros / 1e6 * rate || 0.0341);
         const ratioFormatted = ratioCny.toFixed(4);
         return {
@@ -686,6 +698,7 @@ async function fetchChannelDetails(channelId, userId, accessToken, targetModelNa
           p50_ttft_ms: Number(item.p50_ttft_ms || 2273),
           recent_p50_ms: Number(item.recent_p50_ms || item.last_test_response_ms || 2340),
           cache_hit_rate_pct: cacheHitRate,
+          blended_price_100m_cny: blended100m,
           labels,
           last_success_at: lastSuccessAt,
           last_success_text: formatRelativeTime(lastSuccessAt),
@@ -756,6 +769,7 @@ async function fetchChannelDetails(channelId, userId, accessToken, targetModelNa
       recent_p50_ms: Number(logSnapshot.use_time ? logSnapshot.use_time * 1e3 : 2340),
       p50_ttft_ms: 2273,
       cache_hit_rate_pct: 72,
+      blended_price_100m_cny: computeBlendedPrice100m(inMicros, cacheReadMicros, outMicros, 72, rate),
       labels: ["\u7A33\u5B9A", "\u4F4E\u4EF7", "\u9AD8\u901F", "\u9AD8\u8D28"],
       last_success_at: Math.floor(Date.now() / 1e3),
       last_success_text: "\u521A\u521A",
