@@ -17,6 +17,7 @@
 | [@lynn123411/dsh-ask-user-grilling](./plugins/dsh-ask-user-grilling) | 普通 Cordis 插件（preset 工具行消费，非 bundle） | **grilling 投递工具**：`ask_user_grilling`（后台子代理闸门 / 强制多选 / 轮末补充 / 题干引导不硬校验 / 描述内置纪律）。配合 `matt-*` 预设使用：grilling 轮次先散文预告、再以一次工具投递表单作答；达成共识后不自动进入 plan mode | `dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling` |
 | [@lynn123411/dsh-mattpocock-skills-deck](./plugins/dsh-mattpocock-skills-deck) | `dsh.bundle` + `dsh.client/web`（上游分叉） | **Matt 技能控制面板（Deck）**：wayfinder 地图/票务/进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）。分叉改点：技能判装识别 `~/.dsh/.agent-presets/<id>/skills/` 根并**按当前会话生效 preset 门控**（没选 Matt preset 不虚报「环境 10/10」；选了不误报缺失）；移除上游随包全局技能 provider | `dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck` |
 | [@lynn123411/dsh-llm-agentrouter](./plugins/dsh-llm-agentrouter) | `dsh.bundle` + `dsh.client/web`（上游分叉） | **AgentRouter 中转聚合**：单 pi-ai 路由承载多模型 + 国内/国际端点设置卡一键切换 + 出站 User-Agent/402 配额围栏。分叉改点：适配 alpha.5 新 settings（`ctx.settings.installSection`）与 slots（`settings.plugins.tab`）API，沿用 `llm-agentrouter` 命名空间 | `dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter` |
+| [@lynn123411/dsh-qr-access](./plugins/dsh-qr-access) | `dsh.bundle` + `dsh.client/web` | **扫码访问**：设置页分区实时生成局域网 HTTPS 访问地址与本地 CA 证书二维码，手机扫码直连免复制粘贴；地址现取当前 Desktop 宿主代（token 随重启轮换自动跟随，30s 轮询 + 刷新按钮），手动点选地址、证书按主机配对、局域网状态徽标直读桌面设置 | `dsh plugin --profile web add @lynn123411/dsh-qr-access` |
 
 ---
 

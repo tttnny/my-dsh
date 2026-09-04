@@ -1,0 +1,15 @@
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 构建产物
+dist/
+*.tgz
+
+# 日志与临时
+*.log
+.DS_Store
+Thumbs.db
+
+# 诊断/临时脚本
+debug-*.cjs
