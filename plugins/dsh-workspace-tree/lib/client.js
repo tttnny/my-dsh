@@ -35,6 +35,10 @@ window.__ModuleLoader__.load({
     const LS_DIRS = "dsh-workspace-tree.dirs";
     const LS_GROUPS = "dsh-workspace-tree.groups";
     const LS_CONFIG = "dsh-workspace-tree.config";
+    /** 旧 localStorage 配置已迁移到 Host settings 的一次性标记（防迁移回环）。 */
+    const LS_MIGRATED = "dsh-workspace-tree.migrated";
+    /** 本插件在 DSH settings 服务中的命名空间（与 Host CONFIG_SCHEMA 共用）。 */
+    const SETTINGS_NS = "dsh-workspace-tree";
     /** 永久删除会话的墓碑集合（localStorage 持久化，跨刷新/跨标签页生效）。 */
     const LS_DELETED = "dswt-workspace-tree.deleted";
     /** 被「移除显示」的工作区 ID 集合（仅 UI 隐藏，注册与会话归属不变）。 */
@@ -74,12 +78,117 @@ window.__ModuleLoader__.load({
       configListeners.add(fn);
       return () => { configListeners.delete(fn); };
     }
+
+    // ══════════════ Host 设置（DSH settings 服务，持久化到 ~/.dsh/settings.yaml） ══════════════
+    // 用户偏好（默认 IDE 等）按 DSH 规范走 Host 持久化：localStorage 按源（含端口）
+    // 隔离，重启换端口即丢失；settings 穿透重启/端口/浏览器。UI 瞬态（展开/隐藏/
+    // 墓碑/当前模式）仍留 localStorage。settingsScope 运行时探测（同 uiWorkspace
+    // 的旧版兼容策略）：缺席时回退纯 localStorage 行为。
+    let settingsScopeCtx = null;
+    function resolveSettingsScope() {
+      try {
+        const svc = settingsScopeCtx ? settingsScopeCtx.get("settingsScope") : null;
+        if (svc) return svc;
+      } catch { /* ignore */ }
+      try { return (settingsScopeCtx && settingsScopeCtx.settingsScope) || null; } catch { return null; }
+    }
+    function safeScopeSnapshot(scope) {
+      try {
+        const snap = scope ? scope.getSnapshot() : null;
+        if (snap && snap.status === "ready" && snap.value && typeof snap.value === "object") return snap;
+      } catch { /* ignore */ }
+      return null;
+    }
+    function scopeValueToConfig(value) {
+      return Object.assign({}, DEFAULT_CONFIG, value || {});
+    }
+    /** 有效配置：settings 就绪即以 Host 值为准，否则回退 localStorage。 */
+    function getEffectiveConfig() {
+      const snap = safeScopeSnapshot(resolveSettingsScope());
+      if (snap) return scopeValueToConfig(snap.value);
+      return getConfig();
+    }
+    /** 写透：Host 可写即逐字段 set（失败回退 LS），否则写 LS；同时同步 LS 缓存。 */
+    function setEffectiveConfig(patch) {
+      const scope = resolveSettingsScope();
+      const snap = safeScopeSnapshot(scope);
+      const patchObj = patch || {};
+      if (scope && snap && snap.writable !== false) {
+        try {
+          for (const [k, v] of Object.entries(patchObj)) {
+            if (Object.prototype.hasOwnProperty.call(DEFAULT_CONFIG, k)) {
+              try {
+                const p = scope.set(k, v);
+                if (p && typeof p.catch === "function") p.catch(() => { /* 队列写入失败静默：快照订阅会纠正显示 */ });
+              } catch { /* 单字段失败不阻断其余 */ }
+            }
+          }
+        } catch { setConfig(patchObj); return; }
+        // 同步 LS 缓存：降级（极旧 DSH）时仍有新鲜值；迁移标记防回环。
+        setConfig(patchObj);
+        return;
+      }
+      setConfig(patchObj);
+    }
+    /** Host 重置：逐字段 unset 回到继承（schema 默认），LS 同步恢复默认。 */
+    function resetEffectiveConfig() {
+      const scope = resolveSettingsScope();
+      const snap = safeScopeSnapshot(scope);
+      if (scope && snap && snap.writable !== false) {
+        try {
+          for (const k of Object.keys(DEFAULT_CONFIG)) {
+            try {
+              const p = scope.unset(k);
+              if (p && typeof p.catch === "function") p.catch(() => { /* ignore */ });
+            } catch { /* ignore */ }
+          }
+        } catch { /* ignore */ }
+      }
+      setConfig(Object.assign({}, DEFAULT_CONFIG));
+    }
+    /**
+     * 旧 localStorage 配置一次性迁移到 Host：仅当 Host 尚无用户层、本地确有
+     * 旧值且与默认值不同、且本机尚未标记迁移时，逐字段 set；无论是否迁移都
+     * 打标记，避免用户主动 unset 回默认后被本地缓存重新污染。
+     */
+    function maybeMigrateLegacyConfig() {
+      let scope = null;
+      try { scope = resolveSettingsScope(); } catch { return; }
+      const snap = safeScopeSnapshot(scope);
+      if (!scope || !snap) return;
+      try {
+        if (localStorage.getItem(LS_MIGRATED)) return;
+      } catch { return; }
+      try {
+        const user = snap.user;
+        const hasUserLayer = user && typeof user === "object" && Object.keys(user).length > 0;
+        if (!hasUserLayer) {
+          let legacy = null;
+          try {
+            const raw = localStorage.getItem(LS_CONFIG);
+            if (raw) legacy = JSON.parse(raw);
+          } catch { legacy = null; }
+          if (legacy && typeof legacy === "object") {
+            for (const k of Object.keys(DEFAULT_CONFIG)) {
+              const v = legacy[k];
+              if (v !== void 0 && JSON.stringify(v) !== JSON.stringify(DEFAULT_CONFIG[k])) {
+                try {
+                  const p = scope.set(k, v);
+                  if (p && typeof p.catch === "function") p.catch(() => { /* ignore */ });
+                } catch { /* 单字段失败不阻断其余 */ }
+              }
+            }
+          }
+        }
+      } catch { /* 迁移失败静默：下次以标记为准不再重试 */ }
+      try { localStorage.setItem(LS_MIGRATED, "1"); } catch { /* ignore */ }
+    }
     function initialMode() {
       try {
         const m = localStorage.getItem(LS_MODE);
         if (m === "folder" || m === "workspace") return m;
       } catch { /* ignore */ }
-      return getConfig().defaultMode === "folder" ? "folder" : "workspace";
+      return getEffectiveConfig().defaultMode === "folder" ? "folder" : "workspace";
     }
 
     // ══════════════ 跨标签页心跳（空白草稿回收的全局占用判定） ══════════════
@@ -944,7 +1053,7 @@ window.__ModuleLoader__.load({
       const [alertInfo, setAlertInfo] = useState(null);
       const [hardDeleted, setHardDeleted] = useState(() => loadSet(LS_DELETED));
       const [hiddenWs, setHiddenWs] = useState(() => loadSet(LS_HIDDEN_WS));
-      const [cfg, setCfg] = useState(getConfig);
+      const [cfg, setCfg] = useState(getEffectiveConfig);
 
       const showAlert = useCallback((desc, title = "提示") => {
         setAlertInfo({ title, desc: String(desc || "") });
@@ -952,8 +1061,43 @@ window.__ModuleLoader__.load({
       const groupsInited = useRef(false);
       const now = Date.now();
 
-      // 配置订阅：设置页修改后本组件实时刷新
-      useEffect(() => subscribeConfig(setCfg), []);
+      // 配置订阅：LS 修改（回退路径/缓存同步）与 Host settings 修改实时刷新；
+      // Host 就绪时以 Host 值为准。scope 可能晚于组件挂载出现，故每轮 render
+      // 比对身份，变化时手动重订阅（本 effect 恒返回 undefined，释放由 ref 管理，
+      // 避免无依赖 effect 的自动 cleanup 误杀订阅）；迁移由标记保证只跑一次。
+      const boundScopeRef = useRef(null);
+      const scopeUnsubRef = useRef(null);
+      useEffect(() => subscribeConfig((next) => {
+        const snap = safeScopeSnapshot(resolveSettingsScope());
+        if (snap) setCfg(scopeValueToConfig(snap.value));
+        else setCfg(next);
+      }), []);
+      useEffect(() => () => {
+        if (scopeUnsubRef.current) {
+          try { scopeUnsubRef.current(); } catch { /* ignore */ }
+          scopeUnsubRef.current = null;
+        }
+      }, []);
+      useEffect(() => {
+        maybeMigrateLegacyConfig();
+        let scope = null;
+        try { scope = resolveSettingsScope(); } catch { scope = null; }
+        if (scope === boundScopeRef.current) return;
+        if (scopeUnsubRef.current) {
+          try { scopeUnsubRef.current(); } catch { /* ignore */ }
+          scopeUnsubRef.current = null;
+        }
+        boundScopeRef.current = scope;
+        if (!scope || typeof scope.subscribe !== "function") return;
+        const snap = safeScopeSnapshot(scope);
+        if (snap) setCfg(scopeValueToConfig(snap.value));
+        try {
+          scopeUnsubRef.current = scope.subscribe(() => {
+            const s = safeScopeSnapshot(scope);
+            if (s) setCfg(scopeValueToConfig(s.value));
+          });
+        } catch { scopeUnsubRef.current = null; }
+      });
 
       /**
        * 永久删除会话的墓碑机制：已删会话仍会被官方 sessions 列表继续返回
@@ -1250,11 +1394,11 @@ window.__ModuleLoader__.load({
       const openInIde = useCallback(async (dirPath) => {
         if (!dirPath) return;
         try {
-          const currentCfg = getConfig();
+          // 用组件态 cfg（已合并 Host settings），而非直读 LS，确保设置页刚改即生效。
           const res = await apiPost("/open-ide", {
             path: dirPath,
-            ide: currentCfg.defaultIde || "vscode",
-            customCommand: currentCfg.customIdeCommand || ""
+            ide: cfg.defaultIde || "vscode",
+            customCommand: cfg.customIdeCommand || ""
           });
           if (!res || res.ok !== true) {
             showAlert("打开 IDE 失败: " + (res?.error || "未知错误"), "打开 IDE 失败");
@@ -1262,7 +1406,7 @@ window.__ModuleLoader__.load({
         } catch (error) {
           showAlert("打开 IDE 失败: " + String(error?.message || error), "打开 IDE 失败");
         }
-      }, [showAlert]);
+      }, [showAlert, cfg]);
 
       const commitNewDir = useCallback(async (parentPath, name) => {
         try {
@@ -1649,9 +1793,9 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 设置面板 ══════════════
-    function ConfigToggle({ checked, onChange, label }) {
+    function ConfigToggle({ checked, onChange, label, disabled }) {
       return h("label", { className: "dswt-switch" }, [
-        h("input", { type: "checkbox", checked: !!checked, onChange: (e) => onChange(e.target.checked) }),
+        h("input", { type: "checkbox", checked: !!checked, disabled: !!disabled, onChange: (e) => onChange(e.target.checked) }),
         h("span", { className: "dswt-switchTrack" }),
         h("span", { className: "dswt-switchText" }, label)
       ]);
@@ -1680,20 +1824,51 @@ window.__ModuleLoader__.load({
     ];
 
     function ConfigPanel() {
-      const [cfg, setCfgState] = useState(getConfig);
-      useEffect(() => subscribeConfig(setCfgState), []);
-      const upd = (patch) => setConfig(patch);
+      const [lsCfg, setLsCfg] = useState(getConfig);
+      const [, forceScope] = useState(0);
+      useEffect(() => subscribeConfig((next) => {
+        const snap = safeScopeSnapshot(resolveSettingsScope());
+        if (snap) setLsCfg(scopeValueToConfig(snap.value));
+        else setLsCfg(next);
+      }), []);
+      useEffect(() => {
+        maybeMigrateLegacyConfig();
+        let scope = null;
+        try { scope = resolveSettingsScope(); } catch { scope = null; }
+        if (!scope || typeof scope.subscribe !== "function") return;
+        const snap = safeScopeSnapshot(scope);
+        if (snap) setLsCfg(scopeValueToConfig(snap.value));
+        return scope.subscribe(() => {
+          const s = safeScopeSnapshot(scope);
+          if (s) setLsCfg(scopeValueToConfig(s.value));
+          forceScope((x) => x + 1);
+        });
+      }, []);
+      // Host 快照（每轮 render 重读：scope 可能晚于挂载出现）
+      let hostSnap = null;
+      try { hostSnap = safeScopeSnapshot(resolveSettingsScope()); } catch { hostSnap = null; }
+      const useHost = !!hostSnap;
+      const cfg = useHost ? scopeValueToConfig(hostSnap.value) : lsCfg;
+      const readOnly = !!(useHost && hostSnap.writable === false);
+      const upd = (patch) => { if (!readOnly) setEffectiveConfig(patch); };
       const select = (value, options, onPick) => h("select", {
         className: "dswt-configSelect",
         value,
+        disabled: readOnly,
         onChange: (e) => onPick(e.target.value)
       }, options.map(([v, l]) => h("option", { key: v, value: v }, l)));
       return h("div", { className: "dswt-config" }, [
         h("div", { className: "dswt-configCard" }, [
           h("div", { className: "dswt-configTitle" }, "工作区树"),
           h("div", { className: "dswt-configDesc" }, "文件系统双模式工作区浏览器：文件夹模式按目录浏览与新建（环境隔离），工作区模式管理会话。"),
+          h("div", {
+            className: "dswt-configDesc",
+            style: { marginTop: "4px", color: "var(--dsw-alias-label-tertiary)", fontSize: "12px" }
+          }, useHost
+            ? (readOnly ? "配置由 Host 托管（~/.dsh/settings.yaml › " + SETTINGS_NS + "），当前只读。" : "配置由 Host 托管（~/.dsh/settings.yaml › " + SETTINGS_NS + "），重启/换端口不丢失。")
+            : "Host 设置服务不可用（旧版 DSH），配置暂存浏览器本地。"),
           h(ConfigRow, { label: "启用插件", hint: "关闭后回退官方工作区浏览器（注册级，刷新页面生效）" },
-            h(ConfigToggle, { checked: cfg.enabled, onChange: (v) => upd({ enabled: v }), label: "启用" })),
+            h(ConfigToggle, { checked: cfg.enabled, disabled: readOnly, onChange: (v) => upd({ enabled: v }), label: "启用" })),
           h(ConfigRow, { label: "层级缩进", hint: "树中每一级的缩进宽度" },
             select(cfg.indent, [[8, "紧凑（8px）"], [16, "标准（16px）"], [24, "宽松（24px）"]], (v) => upd({ indent: Number(v) }))),
           h(ConfigRow, { label: "默认模式", hint: "打开侧栏时优先显示的模式（手动切换后会记住）" },
@@ -1733,6 +1908,7 @@ window.__ModuleLoader__.load({
               },
               placeholder: "例如: /Applications/CodeBuddy CN.app/Contents/Resources/app/bin/code",
               value: cfg.customIdeCommand || "",
+              disabled: readOnly,
               onChange: (e) => upd({ customIdeCommand: e.target.value })
             }),
             h("div", {
@@ -1754,11 +1930,11 @@ window.__ModuleLoader__.load({
             ])
           ]),
           h(ConfigRow, { label: "状态向上透传", hint: "目录/组头显示子树内会话的聚合状态点（运行/等待/完成）" },
-            h(ConfigToggle, { checked: cfg.showAgg, onChange: (v) => upd({ showAgg: v }), label: "显示" })),
+            h(ConfigToggle, { checked: cfg.showAgg, disabled: readOnly, onChange: (v) => upd({ showAgg: v }), label: "显示" })),
           h(ConfigRow, { label: "会话计数角标", hint: "文件夹模式工作区节点旁的会话数" },
-            h(ConfigToggle, { checked: cfg.showCount, onChange: (v) => upd({ showCount: v }), label: "显示" })),
+            h(ConfigToggle, { checked: cfg.showCount, disabled: readOnly, onChange: (v) => upd({ showCount: v }), label: "显示" })),
           h("div", { className: "dswt-configActions" }, [
-            h("button", { type: "button", className: "dswt-configBtn", onClick: () => setConfig(Object.assign({}, DEFAULT_CONFIG)) }, "恢复默认"),
+            h("button", { type: "button", className: "dswt-configBtn", disabled: readOnly, onClick: () => { if (!readOnly) resetEffectiveConfig(); } }, "恢复默认"),
             h("span", { className: "dswt-configSaved" }, "修改即时生效（启用开关除外）")
           ])
         ])
@@ -1824,6 +2000,9 @@ window.__ModuleLoader__.load({
 
     // ══════════════ 注册 ══════════════
     function apply(ctx) {
+      // 记住 ctx 供配置读写运行时探测 settingsScope（不声明硬依赖，旧版 DSH 回退 LS）。
+      settingsScopeCtx = ctx;
+      ctx.effect(() => () => { settingsScopeCtx = null; }, "dsh-workspace-tree: scope ctx");
       const styleEl = document.createElement("style");
       styleEl.setAttribute("data-workspace-tree", "true");
       document.head.appendChild(styleEl);
@@ -1892,7 +2071,10 @@ window.__ModuleLoader__.load({
         if (typeof ctx.workspaces.project === "function") ctx.workspaces.project = patchedProject;
       }
 
-      if (!getConfig().enabled) return;
+      // 启用开关走有效配置（Host 就绪即读 settings，否则回退 LS）。
+      // 注意：apply 时刻 scope 可能仍在 loading，此处是启动快照；运行中关闭
+      // 仍需刷新页面回退官方栏（设置页有同等提示）。
+      if (!getEffectiveConfig().enabled) return;
 
       // 归档会话只读接管：通过 conversation.composer chain slot 替换输入框为只读条
       ctx.slots.inject("conversation.composer", () => ctx.slots.register({
