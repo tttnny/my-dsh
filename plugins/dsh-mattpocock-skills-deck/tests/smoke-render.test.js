@@ -102,7 +102,7 @@ check(typeof mod.apply === 'function', 'apply 为函数（render smoke）')
 
 try { mod.apply(ctx) } catch (e) { console.log('  WARN apply threw:', e.message) }
 
-check(registrations.length === 6, `slots.register 捕获 6 个插槽（实际 ${registrations.length}）`)
+check(registrations.length === 5, `slots.register 捕获 5 个插槽（实际 ${registrations.length}）`)
 const slotNames = registrations.map(r => r.meta && r.meta.name).join(', ')
 check(slotNames.includes('conversation.input.dock'), `statusbar 插槽已注册（${slotNames}）`)
 check(slotNames.includes('details'), `panel 插槽已注册（${slotNames}）`)

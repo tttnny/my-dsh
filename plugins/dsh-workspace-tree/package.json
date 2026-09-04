@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-workspace-tree",
-  "version": "1.4.7",
+  "version": "1.5.0",
   "description": "DSH 工作区树：把左侧栏工作区从「工作区→会话」单层结构升级为多级文件夹树——文件夹任意嵌套、会话可归入任意文件夹，附带新建/重命名/删除/移动管理。",
   "type": "module",
   "main": "./lib/index.js",
@@ -33,6 +33,9 @@
     "sidebar"
   ],
   "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

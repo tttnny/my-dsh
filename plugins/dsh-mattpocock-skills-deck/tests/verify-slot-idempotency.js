@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// verify-slot-idempotency.js — #298 幂等回归：6 槽位仅注入一次，二次 apply 不增生
+// verify-slot-idempotency.js — #298 幂等回归：5 槽位仅注入一次，二次 apply 不增生
+//   2026-09-04 收敛：只留 settings.plugins.tab，移除 settings.section（双入口重复）→ 6→5
 const fs = require('fs')
 const path = require('path')
 let failed = false
@@ -9,7 +10,7 @@ const src = fs.readFileSync(path.resolve('src/client/index.js'), 'utf8')
 const dev = fs.readFileSync(path.resolve('client.js'), 'utf8')
 const pkg = fs.readFileSync(path.resolve('package/lib/client.js'), 'utf8')
 
-const slots = ['shell.overlay','conversation.input.dock','tool.view.cordis','settings.plugins.tab','settings.section','details']
+const slots = ['shell.overlay','conversation.input.dock','tool.view.cordis','settings.plugins.tab','details']
 
 console.log('-- src/client/index.js 静态幂等门禁 --')
 check(src.includes('const __slotOnce = {}'), 'src 含 __slotOnce 闸')
@@ -68,12 +69,12 @@ console.log('\n-- 行为模拟：二次注入不增生 --')
     } catch(e){ __slotOnce[slotName]=false; __slotDisposers[slotName]=null; throw e }
     fakeCtx.effect(function(){ return function(){ __slotOnce[slotName]=false; try{ const d=__slotDisposers[slotName]; if(d) d() }catch(e){} __slotDisposers[slotName]=null } }, 'dsws: slot '+slotName)
   }
-  // 首次注入 6 槽位
+  // 首次注入 5 槽位
   slots.forEach(name => __injectOnceMock(name, () => fakeSlots.register({name, id:'test'}, {})))
-  check(injected.length===6, '首次注入 6 次，实得 '+injected.length)
+  check(injected.length===5, '首次注入 5 次，实得 '+injected.length)
   // 二次 apply（模拟 HMR 重入）—— 应被闸门拦截，注入数不变
   slots.forEach(name => __injectOnceMock(name, () => fakeSlots.register({name, id:'test'}, {})))
-  check(injected.length===6, '二次注入仍为 6 次（幂等），实得 '+injected.length)
+  check(injected.length===5, '二次注入仍为 5 次（幂等），实得 '+injected.length)
   // 校验 factory 错误时闸门复位（允许重试）
   let errGate = false
   const errSlot = 'details'

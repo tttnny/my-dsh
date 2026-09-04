@@ -20,11 +20,29 @@ import { existsSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { zstdDecompressSync } from "node:zlib";
+import z from "@deepseek-ai/schemastery";
 
 /** Cordis 插件名（patch 行 id）。 */
 const name = "@lynn123411/dsh-workspace-tree";
-/** 依赖的服务。 */
-const inject = ["webServer", "storageDomain"];
+/** 依赖的服务。settings 为 DSH 官方用户设置服务：本插件的用户偏好
+ * （默认 IDE 等）注册为命名空间后持久化到 ~/.dsh/settings.yaml，
+ * 跨重启/跨端口/跨浏览器一致（localStorage 仅按源隔离，不可用）。 */
+const inject = ["webServer", "storageDomain", "settings"];
+
+/** 本插件在 settings 服务中的命名空间（小写连字符文法）。 */
+const SETTINGS_NS = "dsh-workspace-tree";
+
+/** 用户偏好 schema：默认值与浏览器半区 DEFAULT_CONFIG 保持一致。
+ * UI 瞬态（展开/隐藏/墓碑/当前模式）仍留 localStorage，不进设置。 */
+const CONFIG_SCHEMA = z.object({
+  enabled: z.boolean().default(true),
+  indent: z.number().min(8).max(32).default(16),
+  defaultMode: z.string().default("workspace"),
+  showAgg: z.boolean().default(true),
+  showCount: z.boolean().default(true),
+  defaultIde: z.string().default("vscode"),
+  customIdeCommand: z.string().default("")
+});
 
 /** Host 路由前缀（避开 /plugins/ 的 client bundle 保留空间）。 */
 const PREFIX = "/api/dsh-workspace-tree";
@@ -1003,6 +1021,14 @@ async function handleClaimList(req, res) {
 }
 
 function apply(ctx) {
+  // 注册用户偏好命名空间：解析值 = schema 默认 ← 组合 base ← settings.yaml 用户层。
+  // 旧版 localStorage 配置由浏览器半区一次性迁移上来，Host 不读浏览器存储。
+  // 注册失败（存量分节被 schema 拒绝）也不应拖垮路由挂载，故隔离 try。
+  try {
+    ctx.settings.register(SETTINGS_NS, CONFIG_SCHEMA);
+  } catch (err) {
+    console.warn("[dsh-workspace-tree] settings 注册失败，配置回退为浏览器本地模式:", err?.message || err);
+  }
   ctx.effect(() => ctx.webServer.register({
     kind: "prefix",
     path: PREFIX,
