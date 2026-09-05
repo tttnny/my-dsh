@@ -871,6 +871,20 @@ export function apply(ctx: any): void {
                 return sendJson(res, 400, { ok: false, error: '目录为空，请先「从 A6API 获取市场模型」' });
               }
               const result = await queryOpenRouter(modelIds);
+              // 已启用模型参数可能被本次查询填充：与 /catalog/update 同一数据流（目录 → settings.yaml），
+              // 命中已启用模型时立即重写 settings.yaml，参数即时生效
+              if (result.updated.length > 0) {
+                try {
+                  const config = await configAccess.readConfig();
+                  const dshModels = await configAccess.getDshConfiguredModels();
+                  const dshSet = new Set(dshModels.map((m) => m.toLowerCase()));
+                  if (config.activeModels.length > 0 && result.updated.some((u) => dshSet.has(u.id.toLowerCase()))) {
+                    await configAccess.syncModels(config.baseURL, config.activeModels);
+                  }
+                } catch (err: any) {
+                  console.warn('[dsh-a6api] query-openrouter: resync settings failed:', err?.message || err);
+                }
+              }
               // contextWindow/maxTokens 等目录字段参与 /state 卡片元数据：作废短缓存
               stateMemo.invalidate();
               return sendJson(res, 200, {

@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-a6api",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "description": "A6API 多模型聚合站接入插件：原生 LLM 提供商注册、账户实时余额与价格波动监控、Token 白名单同步、商户线路探测与全景指标卡片",
   "license": "MIT",
   "author": "lynn123411",

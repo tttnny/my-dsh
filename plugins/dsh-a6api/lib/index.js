@@ -2344,6 +2344,18 @@ function apply(ctx) {
                 return sendJson(res, 400, { ok: false, error: "\u76EE\u5F55\u4E3A\u7A7A\uFF0C\u8BF7\u5148\u300C\u4ECE A6API \u83B7\u53D6\u5E02\u573A\u6A21\u578B\u300D" });
               }
               const result = await queryOpenRouter(modelIds);
+              if (result.updated.length > 0) {
+                try {
+                  const config = await configAccess.readConfig();
+                  const dshModels = await configAccess.getDshConfiguredModels();
+                  const dshSet = new Set(dshModels.map((m) => m.toLowerCase()));
+                  if (config.activeModels.length > 0 && result.updated.some((u) => dshSet.has(u.id.toLowerCase()))) {
+                    await configAccess.syncModels(config.baseURL, config.activeModels);
+                  }
+                } catch (err) {
+                  console.warn("[dsh-a6api] query-openrouter: resync settings failed:", err?.message || err);
+                }
+              }
               stateMemo.invalidate();
               return sendJson(res, 200, {
                 ok: true,
