@@ -224,7 +224,9 @@ export interface ModelCardData {
   pinnedChannelId?: number;
   pinnedSupplierName?: string;
   pinnedFallback?: boolean;
-  /** 该模型对应的固定记录是否属于当前 API Key 令牌（false 时仅作参考展示） */
+  /** 该模型对应的固定记录归属（相对当前 API Key 令牌）：
+   * true = 属于当前令牌；false = 属于其他令牌（仅供参考，不可在此取消）；
+   * undefined = 当前令牌未能解析（归属未知，仅供参考但不禁用操作） */
   pinTokenMatched?: boolean;
 }
 

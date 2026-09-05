@@ -37,6 +37,14 @@ export const MerchantCard: React.FC<{
   const hasMerchant = Boolean(merchant?.channel_id);
   const isPinnedHere = model.pinStatus === 'pin_here';
   const isPinnedElsewhere = model.pinStatus === 'pin_elsewhere';
+  const hasPin = isPinnedHere || isPinnedElsewhere;
+  const isPinMismatch = hasPin && model.pinTokenMatched === false;
+  const isPinUnknown = hasPin && model.pinTokenMatched === undefined;
+  const pinTokenNote = isPinMismatch
+    ? '；该固定属于其他令牌，仅供参考'
+    : isPinUnknown
+      ? '；未能确认是否属于当前令牌，仅供参考'
+      : '';
   const isChannelDisabled = Boolean(merchant?.user_channel_disabled);
 
   const flashActionError = (msg: string) => {
@@ -208,7 +216,7 @@ export const MerchantCard: React.FC<{
                 <span
                   className="dsh-a6-pin-badge here"
                   data-tooltip={
-                    `该模型已固定到当前商家${model.pinnedFallback === false ? '（严格固定）' : '，异常时自动切换智能优选'}${model.pinTokenMatched === false ? '；该固定属于其他令牌，仅供参考' : ''}`
+                    `该模型已固定到当前商家${model.pinnedFallback === false ? '（严格固定）' : '，异常时自动切换智能优选'}${pinTokenNote}`
                   }
                   data-tooltip-pos="down"
                 >
@@ -219,11 +227,13 @@ export const MerchantCard: React.FC<{
                 <span
                   className="dsh-a6-pin-badge elsewhere"
                   data-tooltip={
-                    `该模型已固定到${model.pinnedChannelId ? `商户 #${model.pinnedChannelId}` : '其他商家'}${model.pinnedSupplierName ? `（${model.pinnedSupplierName}）` : ''}${model.pinTokenMatched === false ? '；该固定属于其他令牌，仅供参考' : ''}`
+                    `该模型已固定到${model.pinnedChannelId ? `商户 #${model.pinnedChannelId}` : '其他商家'}${model.pinnedSupplierName ? `（${model.pinnedSupplierName}）` : ''}${!hasMerchant ? '；当前暂无商家数据' : ''}${pinTokenNote}`
                   }
                   data-tooltip-pos="down"
                 >
-                  已固定到其他商家
+                  {!hasMerchant && model.pinnedChannelId
+                    ? `已固定到商户 #${model.pinnedChannelId}`
+                    : '已固定到其他商家'}
                 </span>
               )}
               {isChannelDisabled && (
@@ -381,9 +391,11 @@ export const MerchantCard: React.FC<{
                     ? '探测完成后再取消固定'
                     : model.pinTokenMatched === false
                       ? '该固定属于其他令牌，无法在此取消；如需取消请到官网或先为当前令牌固定此商家'
-                      : canWebAction
-                        ? '取消固定后恢复智能优选路由，可重新探测后再决定是否固定'
-                        : '需先在「基础配置」配置系统访问令牌/会话'
+                      : !canWebAction
+                        ? '需先在「基础配置」配置系统访问令牌/会话'
+                        : model.pinTokenMatched === undefined
+                          ? '未能确认该固定是否属于当前令牌，点击后将自动解析并尝试取消；也可先探测一次后重试'
+                          : '取消固定后恢复智能优选路由，可重新探测后再决定是否固定'
                 }
               >
                 {isBusy ? '处理中...' : '取消固定'}

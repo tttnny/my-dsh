@@ -1796,10 +1796,12 @@ function overlayPinsOnModels(models, pins, tokenId) {
     if (list) list.push(p);
     else byModel.set(key, [p]);
   }
+  const latestFirst = (list) => [...list].sort((a, b) => (Number(b.created_at) || 0) - (Number(a.created_at) || 0));
   return models.map((m) => {
     const list = byModel.get(m.model_name.toLowerCase());
     if (!list || list.length === 0) return m;
-    const pick = (tokenId ? list.find((p) => Number(p.token_id) === tokenId) : void 0) || list[0];
+    const sorted = latestFirst(list);
+    const pick = (tokenId ? sorted.find((p) => Number(p.token_id) === tokenId) : void 0) || sorted[0];
     const cardChannel = m.merchant?.channel_id;
     const pinChannel = pick.channel_id;
     return {
@@ -1809,7 +1811,8 @@ function overlayPinsOnModels(models, pins, tokenId) {
       pinnedChannelId: pinChannel,
       pinnedSupplierName: pick.supplier_nickname || pick.supplier_name,
       pinnedFallback: pick.fallback_to_smart_routing,
-      pinTokenMatched: Boolean(tokenId && Number(pick.token_id) === tokenId)
+      // 三态：true=属于当前令牌，false=属于其他令牌，undefined=当前令牌未解析（未知）
+      pinTokenMatched: tokenId ? Number(pick.token_id) === tokenId : void 0
     };
   });
 }
@@ -2183,7 +2186,7 @@ function apply(ctx) {
               }
               const tokenId = await resolveTokenId(config);
               if (!tokenId) {
-                return sendJson(res, 400, { ok: false, error: "\u65E0\u6CD5\u89E3\u6790 API Key \u5BF9\u5E94\u7684\u4EE4\u724C ID\uFF0C\u8BF7\u68C0\u67E5\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C\u662F\u5426\u6709\u6548" });
+                return sendJson(res, 400, { ok: false, error: "\u65E0\u6CD5\u89E3\u6790 API Key \u5BF9\u5E94\u7684\u4EE4\u724C ID\uFF08\u591A\u4EE4\u724C\u8D26\u53F7\u9700\u4FDD\u8BC1\u4EE4\u724C\u5217\u8868\u53EF\u8BFB\uFF09\uFF1B\u53EF\u5148\u300C\u63A2\u6D4B\u5546\u5BB6\u300D\u4E00\u6B21\u540E\u91CD\u8BD5\uFF0C\u6216\u5230\u5B98\u7F51\u624B\u52A8\u53D6\u6D88" });
               }
               const unpinResult = await marketplaceUnpin(userId, token, { token_id: tokenId, model_name: modelName });
               if (!unpinResult.ok) {

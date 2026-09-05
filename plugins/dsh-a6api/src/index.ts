@@ -141,12 +141,17 @@ function overlayPinsOnModels(models: ModelCardData[], pins: MarketplacePin[], to
     if (list) list.push(p);
     else byModel.set(key, [p]);
   }
+  // 同一模型被多个令牌固定时按创建时间倒序，保证展示确定性（最新一条优先）
+  const latestFirst = (list: MarketplacePin[]): MarketplacePin[] =>
+    [...list].sort((a, b) => (Number(b.created_at) || 0) - (Number(a.created_at) || 0));
   return models.map((m) => {
     const list = byModel.get(m.model_name.toLowerCase());
     if (!list || list.length === 0) return m;
-    // 优先取当前令牌的固定记录；解析不出令牌时退而取任意一条（标注未匹配）
+    const sorted = latestFirst(list);
+    // 优先取当前令牌的固定记录；解析不出令牌时取最新一条并标记归属未知（undefined），
+    // 调用方不得将其与「属于其他令牌（false）」混为一谈
     const pick =
-      (tokenId ? list.find((p) => Number(p.token_id) === tokenId) : undefined) || list[0];
+      (tokenId ? sorted.find((p) => Number(p.token_id) === tokenId) : undefined) || sorted[0];
     const cardChannel = m.merchant?.channel_id;
     const pinChannel = pick.channel_id;
     return {
@@ -160,7 +165,8 @@ function overlayPinsOnModels(models: ModelCardData[], pins: MarketplacePin[], to
       pinnedChannelId: pinChannel,
       pinnedSupplierName: pick.supplier_nickname || pick.supplier_name,
       pinnedFallback: pick.fallback_to_smart_routing,
-      pinTokenMatched: Boolean(tokenId && Number(pick.token_id) === tokenId),
+      // 三态：true=属于当前令牌，false=属于其他令牌，undefined=当前令牌未解析（未知）
+      pinTokenMatched: tokenId ? Number(pick.token_id) === tokenId : undefined,
     };
   });
 }
@@ -360,7 +366,7 @@ async function buildStateResponse(config: A6ApiConfig, configAccess: ConfigAcces
 
   // 固定商家自动接管卡片：模型已固定到「非当前卡片」的商家时（当前令牌的固定），
   // 拉取该固定商家的渠道详情替换卡片，而不是提示「已固定到其他商家」。
-  // 拉取失败/固定属于其他令牌时保持原卡片并回退到提示徽标。
+  // 拉取失败 / 固定属于其他令牌 / 归属未知时保持原卡片并回退到提示徽标。
   const rePointTargets = models
     .filter(
       (m) =>
@@ -681,7 +687,7 @@ export function apply(ctx: any): void {
               }
               const tokenId = await resolveTokenId(config);
               if (!tokenId) {
-                return sendJson(res, 400, { ok: false, error: '无法解析 API Key 对应的令牌 ID，请检查系统访问令牌是否有效' });
+                return sendJson(res, 400, { ok: false, error: '无法解析 API Key 对应的令牌 ID（多令牌账号需保证令牌列表可读）；可先「探测商家」一次后重试，或到官网手动取消' });
               }
               const unpinResult = await marketplaceUnpin(userId, token, { token_id: tokenId, model_name: modelName });
               if (!unpinResult.ok) {

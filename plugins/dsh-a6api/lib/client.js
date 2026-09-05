@@ -649,6 +649,10 @@ var MerchantCard = ({ model }) => {
   const hasMerchant = Boolean(merchant?.channel_id);
   const isPinnedHere = model.pinStatus === "pin_here";
   const isPinnedElsewhere = model.pinStatus === "pin_elsewhere";
+  const hasPin = isPinnedHere || isPinnedElsewhere;
+  const isPinMismatch = hasPin && model.pinTokenMatched === false;
+  const isPinUnknown = hasPin && model.pinTokenMatched === void 0;
+  const pinTokenNote = isPinMismatch ? "\uFF1B\u8BE5\u56FA\u5B9A\u5C5E\u4E8E\u5176\u4ED6\u4EE4\u724C\uFF0C\u4EC5\u4F9B\u53C2\u8003" : isPinUnknown ? "\uFF1B\u672A\u80FD\u786E\u8BA4\u662F\u5426\u5C5E\u4E8E\u5F53\u524D\u4EE4\u724C\uFF0C\u4EC5\u4F9B\u53C2\u8003" : "";
   const isChannelDisabled = Boolean(merchant?.user_channel_disabled);
   const flashActionError = (msg) => {
     if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
@@ -779,7 +783,7 @@ var MerchantCard = ({ model }) => {
             "span",
             {
               className: "dsh-a6-pin-badge here",
-              "data-tooltip": `\u8BE5\u6A21\u578B\u5DF2\u56FA\u5B9A\u5230\u5F53\u524D\u5546\u5BB6${model.pinnedFallback === false ? "\uFF08\u4E25\u683C\u56FA\u5B9A\uFF09" : "\uFF0C\u5F02\u5E38\u65F6\u81EA\u52A8\u5207\u6362\u667A\u80FD\u4F18\u9009"}${model.pinTokenMatched === false ? "\uFF1B\u8BE5\u56FA\u5B9A\u5C5E\u4E8E\u5176\u4ED6\u4EE4\u724C\uFF0C\u4EC5\u4F9B\u53C2\u8003" : ""}`,
+              "data-tooltip": `\u8BE5\u6A21\u578B\u5DF2\u56FA\u5B9A\u5230\u5F53\u524D\u5546\u5BB6${model.pinnedFallback === false ? "\uFF08\u4E25\u683C\u56FA\u5B9A\uFF09" : "\uFF0C\u5F02\u5E38\u65F6\u81EA\u52A8\u5207\u6362\u667A\u80FD\u4F18\u9009"}${pinTokenNote}`,
               "data-tooltip-pos": "down",
               children: "\u5DF2\u56FA\u5B9A"
             }
@@ -788,9 +792,9 @@ var MerchantCard = ({ model }) => {
             "span",
             {
               className: "dsh-a6-pin-badge elsewhere",
-              "data-tooltip": `\u8BE5\u6A21\u578B\u5DF2\u56FA\u5B9A\u5230${model.pinnedChannelId ? `\u5546\u6237 #${model.pinnedChannelId}` : "\u5176\u4ED6\u5546\u5BB6"}${model.pinnedSupplierName ? `\uFF08${model.pinnedSupplierName}\uFF09` : ""}${model.pinTokenMatched === false ? "\uFF1B\u8BE5\u56FA\u5B9A\u5C5E\u4E8E\u5176\u4ED6\u4EE4\u724C\uFF0C\u4EC5\u4F9B\u53C2\u8003" : ""}`,
+              "data-tooltip": `\u8BE5\u6A21\u578B\u5DF2\u56FA\u5B9A\u5230${model.pinnedChannelId ? `\u5546\u6237 #${model.pinnedChannelId}` : "\u5176\u4ED6\u5546\u5BB6"}${model.pinnedSupplierName ? `\uFF08${model.pinnedSupplierName}\uFF09` : ""}${!hasMerchant ? "\uFF1B\u5F53\u524D\u6682\u65E0\u5546\u5BB6\u6570\u636E" : ""}${pinTokenNote}`,
               "data-tooltip-pos": "down",
-              children: "\u5DF2\u56FA\u5B9A\u5230\u5176\u4ED6\u5546\u5BB6"
+              children: !hasMerchant && model.pinnedChannelId ? `\u5DF2\u56FA\u5B9A\u5230\u5546\u6237 #${model.pinnedChannelId}` : "\u5DF2\u56FA\u5B9A\u5230\u5176\u4ED6\u5546\u5BB6"
             }
           ),
           isChannelDisabled && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-badge disabled", "data-tooltip": "\u5F53\u524D\u5546\u5BB6\u5DF2\u5BF9\u8BE5\u6A21\u578B\u7981\u7528\uFF0C\u8DEF\u7531\u4E0D\u4F1A\u547D\u4E2D\u6B64\u6E20\u9053", "data-tooltip-pos": "down", children: "\u5DF2\u7981\u7528" })
@@ -898,7 +902,7 @@ var MerchantCard = ({ model }) => {
             className: "dsh-a6-btn dsh-a6-btn-danger dsh-a6-btn-sm",
             onClick: handleUnpin,
             disabled: isBusy || !canWebAction || model.pinTokenMatched === false || isProbing || isQueued,
-            "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u53D6\u6D88\u56FA\u5B9A" : model.pinTokenMatched === false ? "\u8BE5\u56FA\u5B9A\u5C5E\u4E8E\u5176\u4ED6\u4EE4\u724C\uFF0C\u65E0\u6CD5\u5728\u6B64\u53D6\u6D88\uFF1B\u5982\u9700\u53D6\u6D88\u8BF7\u5230\u5B98\u7F51\u6216\u5148\u4E3A\u5F53\u524D\u4EE4\u724C\u56FA\u5B9A\u6B64\u5546\u5BB6" : canWebAction ? "\u53D6\u6D88\u56FA\u5B9A\u540E\u6062\u590D\u667A\u80FD\u4F18\u9009\u8DEF\u7531\uFF0C\u53EF\u91CD\u65B0\u63A2\u6D4B\u540E\u518D\u51B3\u5B9A\u662F\u5426\u56FA\u5B9A" : "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD",
+            "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u53D6\u6D88\u56FA\u5B9A" : model.pinTokenMatched === false ? "\u8BE5\u56FA\u5B9A\u5C5E\u4E8E\u5176\u4ED6\u4EE4\u724C\uFF0C\u65E0\u6CD5\u5728\u6B64\u53D6\u6D88\uFF1B\u5982\u9700\u53D6\u6D88\u8BF7\u5230\u5B98\u7F51\u6216\u5148\u4E3A\u5F53\u524D\u4EE4\u724C\u56FA\u5B9A\u6B64\u5546\u5BB6" : !canWebAction ? "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD" : model.pinTokenMatched === void 0 ? "\u672A\u80FD\u786E\u8BA4\u8BE5\u56FA\u5B9A\u662F\u5426\u5C5E\u4E8E\u5F53\u524D\u4EE4\u724C\uFF0C\u70B9\u51FB\u540E\u5C06\u81EA\u52A8\u89E3\u6790\u5E76\u5C1D\u8BD5\u53D6\u6D88\uFF1B\u4E5F\u53EF\u5148\u63A2\u6D4B\u4E00\u6B21\u540E\u91CD\u8BD5" : "\u53D6\u6D88\u56FA\u5B9A\u540E\u6062\u590D\u667A\u80FD\u4F18\u9009\u8DEF\u7531\uFF0C\u53EF\u91CD\u65B0\u63A2\u6D4B\u540E\u518D\u51B3\u5B9A\u662F\u5426\u56FA\u5B9A",
             children: isBusy ? "\u5904\u7406\u4E2D..." : "\u53D6\u6D88\u56FA\u5B9A"
           }
         ) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
