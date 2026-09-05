@@ -37,7 +37,8 @@ export const A6ApiSettingsPanel: React.FC = () => {
 
   const handleRefreshState = async () => {
     setRefreshing(true);
-    await store.fetchState();
+    // 手动刷新 = 强制刷新：服务端绕过 /state 短缓存，立即向 A6API 重建最新数据
+    await store.fetchState(true);
     setRefreshing(false);
     setRefreshSuccess(true);
     setTimeout(() => setRefreshSuccess(false), 2000);

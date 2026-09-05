@@ -1828,8 +1828,8 @@ function createUpstreamMemo(ttlMs, shouldCache) {
       cache.clear();
       inflight.clear();
     },
-    async get(key, fetcher) {
-      const hit = cache.get(key);
+    async get(key, fetcher, opts) {
+      const hit = opts?.force ? void 0 : cache.get(key);
       if (hit && hit.epoch === epoch && Date.now() - hit.at < ttlMs) return hit.data;
       let pending = inflight.get(key);
       if (!pending) {
@@ -1859,8 +1859,8 @@ function stateCacheKeyOf(config) {
   };
   return `${config.baseURL || ""}|${config.userId || ""}|${fingerprint(config.apiKey || "")}|${fingerprint(config.accessToken || "")}`;
 }
-async function getCachedStateResponse(config, configAccess) {
-  return stateMemo.get(stateCacheKeyOf(config), () => buildStateResponse(config, configAccess));
+async function getCachedStateResponse(config, configAccess, force = false) {
+  return stateMemo.get(stateCacheKeyOf(config), () => buildStateResponse(config, configAccess), { force });
 }
 async function buildStateResponse(config, configAccess) {
   const token = config.accessToken || "";
@@ -2026,7 +2026,8 @@ function apply(ctx) {
           try {
             if (pathname === "/state" && (req.method === "GET" || req.method === "HEAD")) {
               const config = await configAccess.readConfig();
-              const response = await getCachedStateResponse(config, configAccess);
+              const force = url.searchParams.get("force") === "1";
+              const response = await getCachedStateResponse(config, configAccess, force);
               return sendJson(res, 200, { ok: true, data: response });
             }
             if (pathname === "/config" && req.method === "POST") {

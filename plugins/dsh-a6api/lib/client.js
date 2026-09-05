@@ -106,11 +106,11 @@ var A6ApiStore = class {
   getState() {
     return this.state;
   }
-  async fetchState() {
+  async fetchState(force = false) {
     this.state.loading = true;
     this.notify();
     try {
-      const res = await fetch("/api/dsh-a6api/state");
+      const res = await fetch("/api/dsh-a6api/state" + (force ? "?force=1" : ""));
       if (res.ok) {
         const json = await res.json();
         if (json?.data) {
@@ -2113,7 +2113,7 @@ var A6ApiSettingsPanel = () => {
   };
   const handleRefreshState = async () => {
     setRefreshing(true);
-    await store.fetchState();
+    await store.fetchState(true);
     setRefreshing(false);
     setRefreshSuccess(true);
     setTimeout(() => setRefreshSuccess(false), 2e3);

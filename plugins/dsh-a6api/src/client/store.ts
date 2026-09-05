@@ -111,11 +111,13 @@ class A6ApiStore {
     return this.state;
   }
 
-  public async fetchState(): Promise<void> {
+  public async fetchState(force = false): Promise<void> {
     this.state.loading = true;
     this.notify();
     try {
-      const res = await fetch('/api/dsh-a6api/state');
+      // force=true（仅手动「刷新列表」）：服务端绕过 120s 短缓存立即重建返回最新上游数据；
+      // 后台轮询/预热/操作后刷新不带 force，继续吃短缓存以省上游流量
+      const res = await fetch('/api/dsh-a6api/state' + (force ? '?force=1' : ''));
       if (res.ok) {
         const json = await res.json();
         if (json?.data) {

@@ -179,7 +179,7 @@ function overlayPinsOnModels(models: ModelCardData[], pins: MarketplacePin[], to
  * shouldCache 可选：对不应被缓存的结果（如鉴权失败态）返回 false，该结果仅服务本次请求。
  */
 function createUpstreamMemo<T>(ttlMs: number, shouldCache?: (value: T) => boolean): {
-  get(key: string, fetcher: () => Promise<T>): Promise<T>;
+  get(key: string, fetcher: () => Promise<T>, opts?: { force?: boolean }): Promise<T>;
   invalidate(): void;
 } {
   let cache = new Map<string, { data: T; at: number; epoch: number }>();
@@ -198,8 +198,10 @@ function createUpstreamMemo<T>(ttlMs: number, shouldCache?: (value: T) => boolea
       inflight.clear();
     },
 
-    async get(key, fetcher) {
-      const hit = cache.get(key);
+    async get(key, fetcher, opts?: { force?: boolean }) {
+      // force（手动「刷新列表」）：跳过 TTL 缓存读取，加入/发起新构建拿最新上游数据；
+      // 在途构建本身就是新拉取，加入它同样新鲜且避免并发重复打上游
+      const hit = opts?.force ? undefined : cache.get(key);
       if (hit && hit.epoch === epoch && Date.now() - hit.at < ttlMs) return hit.data;
 
       let pending = inflight.get(key);
@@ -245,9 +247,9 @@ function stateCacheKeyOf(config: A6ApiConfig): string {
   return `${config.baseURL || ''}|${config.userId || ''}|${fingerprint(config.apiKey || '')}|${fingerprint(config.accessToken || '')}`;
 }
 
-/** /state 入口：短缓存优先；未命中则合并到在途构建（并发 /state 共享同一次上游拉取） */
-async function getCachedStateResponse(config: A6ApiConfig, configAccess: ConfigAccess): Promise<A6ApiStateResponse> {
-  return stateMemo.get(stateCacheKeyOf(config), () => buildStateResponse(config, configAccess));
+/** /state 入口：短缓存优先（force=true 绕过 TTL 直接重建）；未命中则合并到在途构建（并发 /state 共享同一次上游拉取） */
+async function getCachedStateResponse(config: A6ApiConfig, configAccess: ConfigAccess, force = false): Promise<A6ApiStateResponse> {
+  return stateMemo.get(stateCacheKeyOf(config), () => buildStateResponse(config, configAccess), { force });
 }
 
 /** 组装一次完整的 /state 响应（原 /state 路由内联逻辑原样提取：上游拉取 + 商户卡片推导 + 固定叠加） */
@@ -467,7 +469,9 @@ export function apply(ctx: any): void {
             // 多标签页轮询、页面刷新、面板打开与操作后的自动刷新不再各自重复拉取上游
             if (pathname === '/state' && (req.method === 'GET' || req.method === 'HEAD')) {
               const config = await configAccess.readConfig();
-              const response = await getCachedStateResponse(config, configAccess);
+              // 「刷新列表」按钮带 force=1：绕过 120s 短缓存立即重建（后台轮询不带参数，继续吃缓存）
+              const force = url.searchParams.get('force') === '1';
+              const response = await getCachedStateResponse(config, configAccess, force);
               return sendJson(res, 200, { ok: true, data: response });
             }
 
