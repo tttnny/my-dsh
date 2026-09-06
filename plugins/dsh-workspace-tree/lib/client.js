@@ -59,11 +59,25 @@ window.__ModuleLoader__.load({
     };
     let configState = null;
     const configListeners = new Set();
+    function sanitizeConfig(input) {
+      const out = Object.assign({}, DEFAULT_CONFIG);
+      if (!input || typeof input !== "object" || Array.isArray(input)) return out;
+      if (typeof input.enabled === "boolean") out.enabled = input.enabled;
+      if (typeof input.indent === "number" && Number.isFinite(input.indent)) {
+        out.indent = Math.min(Math.max(Math.round(input.indent), 8), 32);
+      }
+      if (input.defaultMode === "folder" || input.defaultMode === "workspace") out.defaultMode = input.defaultMode;
+      if (typeof input.showAgg === "boolean") out.showAgg = input.showAgg;
+      if (typeof input.showCount === "boolean") out.showCount = input.showCount;
+      if (typeof input.defaultIde === "string" && input.defaultIde) out.defaultIde = input.defaultIde;
+      if (typeof input.customIdeCommand === "string") out.customIdeCommand = input.customIdeCommand;
+      return out;
+    }
     function getConfig() {
       if (configState === null) {
         try {
           const raw = localStorage.getItem(LS_CONFIG);
-          configState = Object.assign({}, DEFAULT_CONFIG, raw ? JSON.parse(raw) : {});
+          configState = sanitizeConfig(raw ? JSON.parse(raw) : null);
         } catch { configState = Object.assign({}, DEFAULT_CONFIG); }
       }
       return configState;
@@ -85,12 +99,22 @@ window.__ModuleLoader__.load({
     // 墓碑/当前模式）仍留 localStorage。settingsScope 运行时探测（同 uiWorkspace
     // 的旧版兼容策略）：缺席时回退纯 localStorage 行为。
     let settingsScopeCtx = null;
+    // 按命名空间绑定的 scope（官方契约：ctx.settingsScope 只是工厂，必须 bind 才有
+    // getSnapshot/set/subscribe；此前直传工厂导致全线静默降级为 LS，见审计）。
+    let boundSettingsScope = null;
     function resolveSettingsScope() {
+      if (boundSettingsScope) return boundSettingsScope;
       try {
-        const svc = settingsScopeCtx ? settingsScopeCtx.get("settingsScope") : null;
-        if (svc) return svc;
-      } catch { /* ignore */ }
+        const factory = settingsScopeCtx ? settingsScopeCtx.get("settingsScope") : null;
+        if (factory && typeof factory.bind === "function") {
+          boundSettingsScope = factory.bind({ namespace: SETTINGS_NS });
+          return boundSettingsScope;
+        }
+      } catch { /* ignore：旧版 DSH 无此服务，回退 LS */ }
       try { return (settingsScopeCtx && settingsScopeCtx.settingsScope) || null; } catch { return null; }
+    }
+    function releaseSettingsScope() {
+      boundSettingsScope = null;
     }
     function safeScopeSnapshot(scope) {
       try {
@@ -100,7 +124,9 @@ window.__ModuleLoader__.load({
       return null;
     }
     function scopeValueToConfig(value) {
-      return Object.assign({}, DEFAULT_CONFIG, value || {});
+      // 经 sanitizeConfig 收敛：Host schema 对 defaultMode/defaultIde 是裸 string，
+      // 脏值（手写 settings.yaml）不能直接进 UI，否则 indent 非法会算出 NaNpx。
+      return sanitizeConfig(value || {});
     }
     /** 有效配置：settings 就绪即以 Host 值为准，否则回退 localStorage。 */
     function getEffectiveConfig() {
@@ -202,6 +228,7 @@ window.__ModuleLoader__.load({
     const HB_GC_MS = 30 * 60 * 1000;
 
     /** 本标签页的稳定 ID（sessionStorage 按标签页隔离，天然每标签页唯一）。 */
+    let memTabId = null;
     function heartbeatTabId() {
       try {
         let id = sessionStorage.getItem("dswt-workspace-tree.tabId");
@@ -210,7 +237,13 @@ window.__ModuleLoader__.load({
           sessionStorage.setItem("dswt-workspace-tree.tabId", id);
         }
         return id;
-      } catch { return "t-local"; }
+      } catch {
+        // sessionStorage 不可用（隐私模式/存储被禁）时用内存随机 ID：
+        // 绝不能回退固定值，否则同源所有标签页共用一个心跳 key 互相覆盖、
+        // 跨标签保护整体失效。内存 ID 标签页存活期内稳定、页签间唯一。
+        if (!memTabId) memTabId = "t-local-" + Math.random().toString(36).slice(2, 10);
+        return memTabId;
+      }
     }
 
     /** 写入本标签页心跳，并顺带回收明显已死标签页的心跳 key（防无限泄漏）。 */
@@ -282,6 +315,121 @@ window.__ModuleLoader__.load({
     }
     function saveSet(key, set) {
       try { localStorage.setItem(key, JSON.stringify([...set])); } catch { /* ignore */ }
+    }
+
+    /**
+     * 墓碑时间戳（与 LS_DELETED 集合配套持久化，key 为会话 id，值为删除时刻毫秒）。
+     * 用途：Host 删除失败时（活会话删不掉、磁盘删除失败、迟到写入复活），会话会
+     * 永远留在官方列表里，裸墓碑将永久误杀它；带上时间戳后，超过 TOMBSTONE_HEAL_MS
+     * 仍删不掉即判定失败并自愈摘碑、让会话重新可见。无戳条目视为远古遗留，下次
+     * 评估直接自愈（顺带兼容升级前的裸数组格式）。
+     */
+    const LS_DELETED_AT = "dswt-workspace-tree.deletedAt";
+    const TOMBSTONE_HEAL_MS = 5 * 60 * 1000;
+    function loadStamps() {
+      try {
+        const raw = localStorage.getItem(LS_DELETED_AT);
+        const obj = raw ? JSON.parse(raw) : {};
+        if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+          const out = {};
+          for (const [k, v] of Object.entries(obj)) {
+            if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+          }
+          return out;
+        }
+      } catch { /* ignore */ }
+      return {};
+    }
+    function saveStamps(obj) {
+      try { localStorage.setItem(LS_DELETED_AT, JSON.stringify(obj || {})); } catch { /* ignore */ }
+    }
+
+    // ══════════════ 一键诊断（设置页入口；树头不再放按钮） ══════════════
+    // 直接读 ctx 快照 + localStorage，不依赖任何组件 props，因此设置面板
+    // （独立 slot，无 sessions 传参）与侧栏树可共用同一份采集逻辑。
+    function collectDiagnostics() {
+      let sessions = null;
+      let workspaces = null;
+      try {
+        const c = settingsScopeCtx;
+        if (c && c.sessions && c.sessions.list && typeof c.sessions.list.getSnapshot === "function") {
+          sessions = c.sessions.list.getSnapshot();
+        }
+        if (c && c.workspaces && c.workspaces.list && typeof c.workspaces.list.getSnapshot === "function") {
+          workspaces = c.workspaces.list.getSnapshot();
+        }
+      } catch { sessions = null; workspaces = null; }
+      // 快照缺席时明确标注 warning，避免“空诊断”被误读为“真空”
+      const noSnap = !sessions && !workspaces;
+      const byId = (sessions && sessions.byId) || {};
+      const archivedIds = (workspaces && Array.isArray(workspaces.archivedSessionIds))
+        ? workspaces.archivedSessionIds
+        : [];
+      const archived = new Set(archivedIds.map(String));
+      const hardDeleted = loadSet(LS_DELETED);
+      let defaultMode = null;
+      try { defaultMode = initialMode(); } catch { defaultMode = null; }
+      // 注意：此处 defaultMode 是持久化偏好（initialMode），不是侧栏树的 live mode
+      // （live mode 可为 archive 且不持久化，设置页拿不到它）
+      return {
+        // 注意：此处版本号为手写常量，发版改 package.json 时同步改这里
+        plugin: "dsh-workspace-tree@1.7.1",
+        t: new Date().toISOString(),
+        ...(noSnap ? { warning: "snapshots unavailable（ctx 未就绪或已释放）" } : {}),
+        defaultMode,
+        sessions: {
+          phase: sessions ? (sessions.phase || null) : null,
+          idsCount: sessions && Array.isArray(sessions.ids) ? sessions.ids.length : 0,
+          current: sessions ? (sessions.current ?? null) : null,
+          rowsTruncated: !!(sessions && Array.isArray(sessions.ids) && sessions.ids.length > 60),
+          rows: (sessions && Array.isArray(sessions.ids) ? sessions.ids : []).slice(0, 60).map((sid) => {
+            const row = byId[sid] || null;
+            return {
+              sid: String(sid),
+              present: !!row,
+              blank: row ? !!row.blank : null,
+              running: row ? !!row.running : null,
+              origin: row ? (row.origin || null) : null,
+              title: row && row.displayTitle ? String(row.displayTitle).slice(0, 24) : null
+            };
+          })
+        },
+        workspaces: {
+          phase: workspaces ? (workspaces.phase || null) : null,
+          items: (workspaces && Array.isArray(workspaces.items) ? workspaces.items : []).map((w) => ({
+            id: String(w.workspaceId),
+            title: w.title || null,
+            path: w.path || null,
+            regCount: Array.isArray(w.sessionIds) ? w.sessionIds.length : 0,
+            visibleCount: visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted).length
+          }))
+        },
+        archivedCount: archived.size,
+        hardDeleted: [...hardDeleted],
+        // 墓碑时间戳一并采集：解读墓碑年龄（自愈倒计时）用
+        deletedAt: loadStamps(),
+        hiddenWs: [...loadSet(LS_HIDDEN_WS)],
+        expandedGroups: [...loadSet(LS_GROUPS)]
+      };
+    }
+    async function copyTextToClipboard(text) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+        throw new Error("clipboard unavailable");
+      } catch {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          return !!ok;
+        } catch { return false; }
+      }
     }
 
     // ══════════════ Modal Scroll Lock 计数器 ══════════════
@@ -703,8 +851,8 @@ window.__ModuleLoader__.load({
             if (hasChildren) toggleDir(node.path);
           }
         }, [
-          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" + (node.aggRunning ? " dswt-folderActive" : "") }, [
-            h(Icon, { name: folderIconFor(open, node.aggHasSessions), size: 16, className: "dswt-folderSvg" }),
+          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" + ((showAgg && node.aggRunning) ? " dswt-folderActive" : "") }, [
+            h(Icon, { name: folderIconFor(open, !!(showAgg && node.aggHasSessions)), size: 16, className: "dswt-folderSvg" }),
             hasChildren && h("span", { className: "dswt-chevronOverlay" + (open ? " dswt-arrowOpen" : ""), onClick: (e) => { e.stopPropagation(); toggleDir(node.path); } }, h(Icon, { name: "chevron", size: 12 }))
           ]),
           h("span", { key: "nm", className: "dswt-title dswt-dirTitle", title: node.path }, node.name),
@@ -846,7 +994,7 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 归档视图：会话行 ══════════════
-    function ArchiveSessionRow({ sid, sessions, onOpen, onRestore, onDelete }) {
+    function ArchiveSessionRow({ sid, sessions, onOpen, onRestore, onDelete, busy }) {
       const row = (sessions && sessions.byId) ? sessions.byId[sid] : null;
       if (!row) return null;
       const selected = sessions && sessions.current === sid;
@@ -855,14 +1003,14 @@ window.__ModuleLoader__.load({
         role: "treeitem",
         "aria-selected": selected,
         title: row.displayTitle,
-        onClick: () => onOpen && onOpen(sid)
+        onClick: () => { if (!busy && onOpen) onOpen(sid); }
       }, [
         h("span", { key: "st", className: "dswt-slot" }, h(StatusDot, { state: sessionState(row, selected) })),
         h("span", { key: "ti", className: "dswt-title", title: row.displayTitle }, row.displayTitle),
         h("span", { key: "tm", className: "dswt-time" }, timeLabel(row.updatedAt, Date.now())),
         h("span", { key: "ac", className: "dswt-rowActions", onClick: (e) => e.stopPropagation() }, [
-          h("button", { key: "rs", type: "button", className: "dswt-iconButton", title: "恢复", onClick: () => onRestore(sid) }, h(Icon, { name: "restore", size: 14 })),
-          h("button", { key: "del", type: "button", className: "dswt-iconButton dswt-danger", title: "永久删除", onClick: () => onDelete(sid) }, h(Icon, { name: "trash", size: 14 }))
+          h("button", { key: "rs", type: "button", className: "dswt-iconButton", title: "恢复", disabled: !!busy, onClick: () => { if (!busy) onRestore(sid); } }, h(Icon, { name: "restore", size: 14 })),
+          h("button", { key: "del", type: "button", className: "dswt-iconButton dswt-danger", title: "永久删除", disabled: !!busy, onClick: () => { if (!busy) onDelete(sid); } }, h(Icon, { name: "trash", size: 14 }))
         ])
       ]);
     }
@@ -931,7 +1079,7 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 归档视图：按工作区分组（深度递归收集，全量展示） ══════════════
-    function ArchiveView({ sessions, wsForest, archived, hardDeleted, onOpen, onRestoreOne, onDeleteOne, onRestoreGroup, onDeleteGroup, onRestoreAll, onDeleteAll, onPruneStale, busy }) {
+    function ArchiveView({ sessions, wsForest, archived, hardDeleted, onOpen, onRestoreOne, onDeleteOne, onRestoreGroup, onDeleteGroup, onRestoreAll, onDeleteAll, onPruneStale, onPruneWorkspaceGhosts, busy }) {
       const byId = (sessions && sessions.byId) || {};
 
       const allGroups = [];
@@ -953,17 +1101,41 @@ window.__ModuleLoader__.load({
 
       // 幽灵归档：仍在全局归档列表里、但 host 会话列表（sessions.ids）已不再返回的 ID
       // （会话日志已被物理删除的历史残留），UI 无法展示/打开，可一键从归档列表清除。
-      const idSet = new Set((sessions.ids || []).map(String));
-      const ghosts = (archived ? [...archived] : []).filter((id) => !idSet.has(id));
+      // loading 阶段 ids 为空，未就绪时不计算，避免把全部归档误判为幽灵而闪现。
+      const idSet = new Set(((sessions && sessions.ids) || []).map(String));
+      const ghosts = (sessions && sessions.phase === "ready" && archived ? [...archived] : []).filter((id) => !idSet.has(id));
+
+      // 工作区幽灵会话：各工作区 sessionIds 里、但 host 会话列表已不再返回的 ID
+      // （日志与缓存均已不存在，仅注册表残留引用）。只在会话列表就绪后计算，
+      // 避免 loading 阶段 ids 为空时误报全部为幽灵。
+      const wsGhosts = (() => {
+        if (!sessions || sessions.phase !== "ready") return [];
+        const out = [];
+        const seen = new Set();
+        (function traverse(forest) {
+          for (const node of forest || []) {
+            for (const sid of (node.w.sessionIds || [])) {
+              const id = String(sid);
+              if (!idSet.has(id) && !seen.has(id)) { seen.add(id); out.push(id); }
+            }
+            if (node.children && node.children.length > 0) traverse(node.children);
+          }
+        })(wsForest);
+        return out;
+      })();
 
       return h("div", { className: "dswt-archiveRoot" }, [
         h("div", { key: "tb", className: "dswt-archiveToolbar" }, [
           h("div", { key: "top", className: "dswt-archiveToolbarTop" }, [
-            h("span", { key: "ct", className: "dswt-archiveCount" }, hasAny ? "共 " + total + " 条归档" : "暂无归档会话")
+            h("span", { key: "ct", className: "dswt-archiveCount" }, hasAny ? ("共 " + total + " 条有效归档" + (ghosts.length > 0 ? "（另有 " + ghosts.length + " 条已失效）" : "")) : (ghosts.length > 0 ? "暂无有效归档" : "暂无归档会话"))
           ]),
           ghosts.length > 0 && h("div", { key: "ghosts", className: "dswt-ghostRow" }, [
             h("span", { key: "gt", className: "dswt-archiveCount" }, ghosts.length + " 条归档记录已失效（会话日志已删除）"),
             h("button", { key: "gc", type: "button", className: "dswt-miniBtn", disabled: !!busy, title: "从归档列表中清除这些失效 ID", onClick: () => onPruneStale && onPruneStale() }, "清理")
+          ]),
+          wsGhosts.length > 0 && h("div", { key: "wsghosts", className: "dswt-ghostRow" }, [
+            h("span", { key: "gt", className: "dswt-archiveCount" }, wsGhosts.length + " 条工作区会话记录已失效（注册表残留，日志已不存在）"),
+            h("button", { key: "gc", type: "button", className: "dswt-miniBtn", disabled: !!busy, title: "从工作区注册表中清除这些失效 ID（不碰物理文件）", onClick: () => onPruneWorkspaceGhosts && onPruneWorkspaceGhosts() }, "清理")
           ]),
           hasAny && h("div", { key: "actions", className: "dswt-archiveToolbarActions" }, [
             h("button", { key: "ra", type: "button", className: "dswt-archiveBtn dswt-archiveBtnSecondary", disabled: !!busy, title: "一键恢复所有", onClick: onRestoreAll }, "一键恢复所有"),
@@ -980,7 +1152,7 @@ window.__ModuleLoader__.load({
               h("button", { key: "dl", type: "button", className: "dswt-iconButton dswt-danger", title: "永久删除该工作区全部", disabled: !!busy, onClick: () => onDeleteGroup(node.w.workspaceId) }, h(Icon, { name: "trash", size: 14 }))
             ])
           ]),
-          h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": "16px" } }, sids.map((sid) => h(ArchiveSessionRow, { key: sid, sid, sessions, onOpen, onRestore: onRestoreOne, onDelete: onDeleteOne })))
+          h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": "16px" } }, sids.map((sid) => h(ArchiveSessionRow, { key: sid, sid, sessions, busy, onOpen, onRestore: onRestoreOne, onDelete: onDeleteOne })))
         ]))
       ]);
     }
@@ -1005,8 +1177,8 @@ window.__ModuleLoader__.load({
           "aria-expanded": groupOpen,
           onClick: () => toggleGroup(gkey)
         }, [
-          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" + (node.aggRunning ? " dswt-folderActive" : "") }, [
-            h(Icon, { name: folderIconFor(groupOpen, node.aggHasSessions), size: 16, className: "dswt-folderSvg" }),
+          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" + ((showAgg && node.aggRunning) ? " dswt-folderActive" : "") }, [
+            h(Icon, { name: folderIconFor(groupOpen, !!(showAgg && node.aggHasSessions)), size: 16, className: "dswt-folderSvg" }),
             hasContent && h("span", { className: "dswt-chevronOverlay" + (groupOpen ? " dswt-arrowOpen" : "") }, h(Icon, { name: "chevron", size: 12 }))
           ]),
           h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, w.title || baseName(w.path))),
@@ -1047,6 +1219,9 @@ window.__ModuleLoader__.load({
       const [renameTarget, setRenameTarget] = useState(null);
       const [renameDraft, setRenameDraft] = useState("");
       const [renameBusy, setRenameBusy] = useState(false);
+      // 同 tick 重入锁（state 更新异步，连续两次调用之间读不到最新 busy）
+      const renameLockRef = useRef(false);
+      const archiveLockRef = useRef(false);
       const [archiveConfirm, setArchiveConfirm] = useState(null);
       const [archiveBusy, setArchiveBusy] = useState(false);
       const [deleteWsConfirm, setDeleteWsConfirm] = useState(null);
@@ -1104,29 +1279,78 @@ window.__ModuleLoader__.load({
        * （会话仍被 host 持有/打开、或磁盘文件删除失败/被迟到的写入重建），
        * 而本插件已同步将其移出工作区注册与归档，于是官方投影会把它们当作
        * “未分组会话”复现。墓碑集合持久化到 localStorage，任何会话一旦删除
-       * 便在任何标签页/刷新后都不可见；仅当官方列表 phase=ready 且已确认
-       * 不再包含该 id（Host 列表已收敛）时才清除墓碑（uuid 不复用，故安全）。
+       * 便在任何标签页/刷新后都不可见；官方列表 phase=ready 后：
+       * - 列表已不再包含该 id（Host 收敛成功）→ 清墓碑；
+       * - 列表长期（TOMBSTONE_HEAL_MS）仍包含该 id → 判定 Host 删除失败，
+       *   自愈摘碑、让会话重新可见（否则活会话会被永久误杀且无处恢复）。
+       * （uuid 不复用，故摘碑安全。）
        */
+      const tombstoneAtRef = useRef(null);
+      const getStamps = () => {
+        if (!tombstoneAtRef.current) tombstoneAtRef.current = loadStamps();
+        return tombstoneAtRef.current;
+      };
       useEffect(() => {
-        if (sessions.phase !== "ready" || hardDeleted.size === 0) return;
-        setHardDeleted((prev) => {
-          if (prev.size === 0) return prev;
-          const listed = sessions.ids || [];
-          const next = new Set(prev);
-          for (const sid of prev) {
-            if (!listed.includes(sid)) next.delete(sid);
+        if (!sessions || sessions.phase !== "ready" || hardDeleted.size === 0) return;
+        const listed = new Set((sessions.ids || []).map(String));
+        const stamps = getStamps();
+        const now = Date.now();
+        const next = new Set();
+        const nextStamps = {};
+        for (const sid of hardDeleted) {
+          const id = String(sid);
+          if (!listed.has(id)) continue; // 收敛成功：官方列表已不再返回 → 清墓碑
+          const ts = typeof stamps[id] === "number" ? stamps[id] : 0;
+          if (now - ts > TOMBSTONE_HEAL_MS) {
+            // 自愈：Host 长时间仍返回该会话 → 删除失败，摘碑恢复显示
+            try { console.warn("[workspace-tree] 墓碑自愈：Host 仍返回该会话，判定删除失败，恢复显示:", id); } catch { /* ignore */ }
+            continue;
           }
-          if (next.size === prev.size) return prev;
-          saveSet(LS_DELETED, next);
-          return next;
-        });
+          next.add(id);
+          if (typeof stamps[id] === "number") nextStamps[id] = stamps[id];
+        }
+        const stampsChanged = JSON.stringify(nextStamps) !== JSON.stringify(stamps);
+        if (next.size === hardDeleted.size && !stampsChanged) return;
+        tombstoneAtRef.current = nextStamps;
+        saveStamps(nextStamps);
+        saveSet(LS_DELETED, next);
+        setHardDeleted(next);
       }, [sessions.ids, sessions.phase, hardDeleted]);
 
-      /** 记录已永久删除的会话 id（本地持久化，跨刷新生效）。 */
+      /** 记录已永久删除的会话 id（本地持久化，跨刷新生效；同时打删除时间戳供失败自愈用）。 */
       const rememberDeleted = useCallback((ids) => {
+        const now = Date.now();
+        try {
+          const stamps = loadStamps();
+          for (const id of ids || []) stamps[String(id)] = now;
+          saveStamps(stamps);
+        } catch { /* ignore */ }
+        // 同步内存 ref，避免与清理 effect 的读写竞态（effect 下次运行会回填/对齐）
+        try { tombstoneAtRef.current = loadStamps(); } catch { /* ignore */ }
         setHardDeleted((prev) => {
           const next = new Set(prev);
           for (const id of ids || []) next.add(String(id));
+          saveSet(LS_DELETED, next);
+          return next;
+        });
+      }, []);
+
+      /**
+       * 恢复成功后同步清除墓碑（含时间戳）：否则被删方标签页内最长隐藏 5 分钟
+       * （等墓碑自愈），恢复与删除两端可见性分裂。
+       */
+      const forgetDeleted = useCallback((ids) => {
+        const gone = new Set((ids || []).map(String));
+        if (gone.size === 0) return;
+        try {
+          const stamps = loadStamps();
+          for (const id of gone) delete stamps[id];
+          saveStamps(stamps);
+          tombstoneAtRef.current = stamps;
+        } catch { /* ignore */ }
+        setHardDeleted((prev) => {
+          const next = new Set([...prev].filter((id) => !gone.has(String(id))));
+          if (next.size === prev.size) return prev;
           saveSet(LS_DELETED, next);
           return next;
         });
@@ -1257,6 +1481,9 @@ window.__ModuleLoader__.load({
         }
       }, [createWorkspace, showAlert, unhideWorkspace]);
 
+      // 归档集合（提前声明：收编/回收 effect 的依赖需要它；放后面会触发 TDZ）
+      const archived = useMemo(() => new Set((workspaces.archivedSessionIds || []).map(String)), [workspaces.archivedSessionIds]);
+
       /**
        * 自动收编（后台、静默）：会话没有工作区归属时（如 DSH 升级重置注册表、
        * 或经官方入口在任意 cwd 新建的会话），将其 cwd 注册为工作区（Host 侧按 path 幂等），
@@ -1272,6 +1499,8 @@ window.__ModuleLoader__.load({
           const id = String(sid);
           if (accounted.has(id)) continue;
           if (hardDeleted.has(id)) continue;
+          // 已归档会话不收编：归档态与工作区归属正交，收编会把它重新挂回注册表
+          if (archived.has(id)) continue;
           const row = sessions.byId ? sessions.byId[id] : null;
           // 严密过滤空白草稿会话，杜绝将未发消息的空白草稿持久化挂载到工作区
           if (!row || row.blank) continue;
@@ -1293,7 +1522,7 @@ window.__ModuleLoader__.load({
             }
           })();
         }
-      }, [sessions.ids, sessions.byId, sessions.phase, workspaces.items, workspaces.phase, hardDeleted, createWorkspace, adoptSession]);
+      }, [sessions.ids, sessions.byId, sessions.phase, workspaces.items, workspaces.phase, hardDeleted, archived, createWorkspace, adoptSession]);
 
       // 跨标签页心跳：声明本标签页当前打开的会话（current 变化立即写 + 3 秒定期刷新），
       // 供空白草稿回收做全局占用判定，防止其他标签页误删正在使用的草稿。
@@ -1329,6 +1558,8 @@ window.__ModuleLoader__.load({
           // 当前处于打开交互中的空白草稿保留
           if (cur && id === cur) continue;
           if (hardDeleted.has(id)) continue;
+          // 已归档的空白草稿不回收：归档是保护性操作，归谁都不该悄悄物理删除
+          if (archived.has(id)) continue;
           // 保护刚刚在 15 秒内新建中的会话，避免与创建过程发生竞态
           const age = now - (row.updatedAt || row.createdAt || 0);
           if (age < 15000) continue;
@@ -1373,7 +1604,7 @@ window.__ModuleLoader__.load({
           }
         })();
         return () => { cancelled = true; };
-      }, [sessions.ids, sessions.byId, sessions.phase, sessions.current, hardDeleted]);
+      }, [sessions.ids, sessions.byId, sessions.phase, sessions.current, hardDeleted, archived]);
 
       // 清理「移除显示」集合中已不存在的工作区 ID（注册被外部删除后避免残留）。
       // 必须等 workspaces.phase === "ready" 再清理：加载初期 items 为空数组，
@@ -1446,12 +1677,15 @@ window.__ModuleLoader__.load({
 
       const onConfirmRename = useCallback(async () => {
         if (!renameTarget) return;
+        // ref 锁：同 tick 双击/双 Enter 在 setRenameBusy 重渲染前可重入，state 守卫拦不住
+        if (renameLockRef.current) return;
         const trimmed = (renameDraft || "").trim();
         const initialTrim = (renameTarget.initial || "").trim();
         if (!trimmed || trimmed === initialTrim) {
           if (trimmed === initialTrim) setRenameTarget(null);
           return;
         }
+        renameLockRef.current = true;
         setRenameBusy(true);
         try {
           if (renameTarget.kind === "workspace") {
@@ -1463,17 +1697,17 @@ window.__ModuleLoader__.load({
         } catch (error) {
           showAlert(String((error && error.message) || error), "重命名失败");
         } finally {
+          renameLockRef.current = false;
           setRenameBusy(false);
         }
       }, [renameTarget, renameDraft, renameWorkspace, renameSession, showAlert]);
 
-      /** 移除工作区显示（不删除注册、不动会话归属）：仅记入本地 hiddenWs 集合。 */
+      /** 移除工作区显示（同步本地记忆，无异步过程，不设 busy）。 */
       const onHideWs = useCallback((w) => {
-        setDeleteWsConfirm({ ws: w, busy: false });
+        setDeleteWsConfirm({ ws: w });
       }, []);
 
       const onCancelHideWs = useCallback(() => {
-        if (deleteWsConfirm?.busy) return;
         setDeleteWsConfirm(null);
       }, [deleteWsConfirm]);
 
@@ -1490,12 +1724,18 @@ window.__ModuleLoader__.load({
       }, [deleteWsConfirm]);
 
       const onArchiveSession = useCallback((sessionId) => {
+        // 空白草稿不允许归档：归档后双视图都不可见（工作区视图排 archvied、归档视图排 blank），
+        // 用户将找不到它，而回收器还会物理删除——等于“归档即销毁”。空草稿离场后本就会自动回收。
+        // 注意：byId 缺行时无法判断 blank，按非 blank 放行并交由 Host 报错（fail-open，见审计）。
+        const row = sessions && sessions.byId ? sessions.byId[sessionId] : null;
+        if (row && row.blank) {
+          showAlert("空白草稿无需归档：切换会话后会自动清理", "无需归档");
+          return;
+        }
         archiveSession(sessionId).catch((error) => {
           showAlert(String((error && error.message) || error), "归档会话失败");
         });
-      }, [archiveSession, showAlert]);
-
-      const archived = useMemo(() => new Set((workspaces.archivedSessionIds || []).map(String)), [workspaces.archivedSessionIds]);
+      }, [archiveSession, showAlert, sessions]);
 
       const isCurrentArchived = useMemo(() => {
         if (!sessions || !sessions.current) return false;
@@ -1518,11 +1758,12 @@ window.__ModuleLoader__.load({
         try {
           const r = await apiPost("/archive/unarchive", { sessionId: sid });
           if (!r.ok) throw new Error(r.error || "恢复失败");
+          forgetDeleted([sid]);
           refreshSessions();
         } catch (error) {
           showAlert(String((error && error.message) || error), "恢复失败");
         }
-      }, [refreshSessions, showAlert]);
+      }, [refreshSessions, showAlert, forgetDeleted]);
       const onDeleteOne = useCallback((sid) => {
         const t = (sessions.byId[sid] && sessions.byId[sid].displayTitle) || sid;
         setArchiveConfirm({ kind: "deleteOne", sessionId: sid, title: t });
@@ -1549,18 +1790,41 @@ window.__ModuleLoader__.load({
       const onDeleteAll = useCallback(() => setArchiveConfirm({ kind: "deleteAll" }), []);
       /** 清理「幽灵归档」：host 会话列表中已不存在的归档 ID（日志已被物理删除的残留）。 */
       const onPruneStale = useCallback(async () => {
+        if (archiveBusy) return;
+        setArchiveBusy(true);
         try {
           const r = await apiPost("/archive/pruneStale", { aliveIds: (sessions.ids || []).map(String) });
           if (!r.ok) throw new Error(r.error || "清理失败");
           refreshSessions();
         } catch (error) {
           showAlert(String((error && error.message) || error), "清理失效归档失败");
+        } finally {
+          setArchiveBusy(false);
         }
-      }, [sessions.ids, refreshSessions, showAlert]);
+      }, [sessions.ids, refreshSessions, showAlert, archiveBusy]);
+      /** 清理「工作区幽灵会话」：各工作区 sessionIds 中 host 会话列表已不再返回的残留 ID（只动注册表，不碰物理文件）。 */
+      const onPruneWorkspaceGhosts = useCallback(async () => {
+        if (archiveBusy) return;
+        setArchiveBusy(true);
+        try {
+          const r = await apiPost("/workspace/pruneGhosts", { aliveIds: (sessions.ids || []).map(String) });
+          if (!r.ok) throw new Error(r.error || "清理失败");
+          const n = typeof r.prunedCount === "number" ? r.prunedCount : 0;
+          refreshSessions();
+          showAlert("已从工作区注册表中清除 " + n + " 条失效会话记录", "清理完成");
+        } catch (error) {
+          showAlert(String((error && error.message) || error), "清理幽灵会话失败");
+        } finally {
+          setArchiveBusy(false);
+        }
+      }, [sessions.ids, refreshSessions, showAlert, archiveBusy]);
+      /** 一键诊断：把本客户端看到的工作区/会话列表状态复制到剪贴板，用于排查“某端显示为空”。 */
       const onCancelArchiveConfirm = useCallback(() => { if (archiveBusy) return; setArchiveConfirm(null); }, [archiveBusy]);
 
       const onConfirmArchiveConfirm = useCallback(async () => {
         if (!archiveConfirm) return;
+        if (archiveLockRef.current) return;
+        archiveLockRef.current = true;
         setArchiveBusy(true);
         try {
           const k = archiveConfirm.kind;
@@ -1594,34 +1858,42 @@ window.__ModuleLoader__.load({
           } else if (k === "restoreGroup") {
             const r = await apiPost("/archive/unarchiveAll", { workspaceId: archiveConfirm.workspaceId });
             if (!r.ok) throw new Error(r.error || "恢复失败");
+            if (Array.isArray(r.restored)) forgetDeleted(r.restored);
             refreshSessions();
           } else if (k === "deleteGroup") {
             const r = await apiPost("/archive/deleteAll", { workspaceId: archiveConfirm.workspaceId });
             if (!r.ok) throw new Error(r.error || "删除失败");
-            const deleted = Array.isArray(r.deleted) && r.deleted.length ? r.deleted : toDelete;
-            rememberDeleted(deleted);
+            // 服务端为准：r.deleted 为数组即采用（即使为空），仅旧版 Host 无字段时回退本地集
+            const deleted = Array.isArray(r.deleted) ? r.deleted : toDelete;
+            if (deleted.length > 0) rememberDeleted(deleted);
+            const skippedG = Array.isArray(r.skipped) ? r.skipped : [];
             if (sessions && sessions.current && deleted.some((id) => String(id) === String(sessions.current))) {
               startSession();
             }
             refreshSessions();
+            if (skippedG.length > 0) showAlert("其中 " + skippedG.length + " 条因正在运行/被占用已跳过，仍保留在归档中", "部分跳过");
           } else if (k === "restoreAll") {
             const r = await apiPost("/archive/unarchiveAll", {});
             if (!r.ok) throw new Error(r.error || "恢复失败");
+            if (Array.isArray(r.restored)) forgetDeleted(r.restored);
             refreshSessions();
           } else if (k === "deleteAll") {
             const r = await apiPost("/archive/deleteAll", {});
             if (!r.ok) throw new Error(r.error || "删除失败");
-            const deleted = Array.isArray(r.deleted) && r.deleted.length ? r.deleted : toDelete;
-            rememberDeleted(deleted);
+            const deleted = Array.isArray(r.deleted) ? r.deleted : toDelete;
+            if (deleted.length > 0) rememberDeleted(deleted);
+            const skippedA = Array.isArray(r.skipped) ? r.skipped : [];
             if (sessions && sessions.current && deleted.some((id) => String(id) === String(sessions.current))) {
               startSession();
             }
             refreshSessions();
+            if (skippedA.length > 0) showAlert("其中 " + skippedA.length + " 条因正在运行/被占用已跳过，仍保留在归档中", "部分跳过");
           }
           setArchiveConfirm(null);
         } catch (error) {
           showAlert(String((error && error.message) || error), "操作失败");
         } finally {
+          archiveLockRef.current = false;
           setArchiveBusy(false);
         }
       }, [archiveConfirm, archived, workspaces, sessions, rememberDeleted, refreshSessions, showAlert]);
@@ -1646,13 +1918,18 @@ window.__ModuleLoader__.load({
       const aggCtx = useMemo(() => {
         const dirForest = buildDirTree(visibleItems);
         const wsForest = buildWorkspaceForest(visibleItems);
+        // 归档用全量森林：被“移除显示”的工作区的归档会话也必须可见可恢复，
+        // 否则隐藏即永久失联（与“仅移除显示、归属不变”的承诺冲突）
+        const archiveForest = buildWorkspaceForest(items);
         for (const n of dirForest) decorateAgg(n, (x) => x.ws, (x) => x.children, sessions, archived, hardDeleted);
         for (const n of wsForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted);
-        return { dirForest, wsForest };
-      }, [visibleItems, sessions, archived, hardDeleted]);
+        for (const n of archiveForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted);
+        return { dirForest, wsForest, archiveForest };
+      }, [visibleItems, items, sessions, archived, hardDeleted]);
 
       const dirForest = aggCtx.dirForest;
       const wsForest = aggCtx.wsForest;
+      const archiveForest = aggCtx.archiveForest;
 
       // rail 模式：窄图标列
       if (!wide) {
@@ -1707,7 +1984,7 @@ window.__ModuleLoader__.load({
           h(ArchiveView, {
             key: "av",
             sessions,
-            wsForest,
+            wsForest: archiveForest,
             archived,
             hardDeleted,
             onOpen: open,
@@ -1718,6 +1995,7 @@ window.__ModuleLoader__.load({
             onRestoreAll,
             onDeleteAll,
             onPruneStale,
+            onPruneWorkspaceGhosts,
             busy: archiveBusy
           })
         ]);
@@ -1767,7 +2045,7 @@ window.__ModuleLoader__.load({
           desc: deleteWsConfirm && deleteWsConfirm.ws ? ("确定将工作区 “" + (deleteWsConfirm.ws.title || baseName(deleteWsConfirm.ws.path)) + "” 从侧栏移除吗？\n\n仅移除显示：不删除工作区注册，目录文件、会话日志与会话归属均不受影响；之后重新添加该目录时，工作区连同其会话一起恢复显示。") : "",
           confirmText: "移除",
           danger: false,
-          busy: deleteWsConfirm ? deleteWsConfirm.busy : false,
+          busy: false,
           onCancel: onCancelHideWs,
           onConfirm: onConfirmHideWs
         }),
@@ -1826,6 +2104,7 @@ window.__ModuleLoader__.load({
     function ConfigPanel() {
       const [lsCfg, setLsCfg] = useState(getConfig);
       const [, forceScope] = useState(0);
+      const [diagMsg, setDiagMsg] = useState("");
       useEffect(() => subscribeConfig((next) => {
         const snap = safeScopeSnapshot(resolveSettingsScope());
         if (snap) setLsCfg(scopeValueToConfig(snap.value));
@@ -1851,6 +2130,25 @@ window.__ModuleLoader__.load({
       const cfg = useHost ? scopeValueToConfig(hostSnap.value) : lsCfg;
       const readOnly = !!(useHost && hostSnap.writable === false);
       const upd = (patch) => { if (!readOnly) setEffectiveConfig(patch); };
+      const copyLockRef = useRef(false);
+      const onCopyDiag = async () => {
+        if (copyLockRef.current) return;
+        copyLockRef.current = true;
+        try {
+          setDiagMsg("采集中…");
+          const diag = collectDiagnostics();
+          const text = JSON.stringify(diag);
+          const ok = await copyTextToClipboard(text);
+          try { console.log("[workspace-tree] diagnostics:", diag); } catch { /* ignore */ }
+          setDiagMsg(ok
+            ? "已复制（共 " + text.length + " 字符），请粘贴给开发者"
+            : "剪贴板写入失败，完整诊断已输出到控制台（F12 查看），请手动复制");
+        } catch (e) {
+          setDiagMsg("采集失败：" + String((e && e.message) || e));
+        } finally {
+          copyLockRef.current = false;
+        }
+      };
       const select = (value, options, onPick) => h("select", {
         className: "dswt-configSelect",
         value,
@@ -1933,6 +2231,11 @@ window.__ModuleLoader__.load({
             h(ConfigToggle, { checked: cfg.showAgg, disabled: readOnly, onChange: (v) => upd({ showAgg: v }), label: "显示" })),
           h(ConfigRow, { label: "会话计数角标", hint: "文件夹模式工作区节点旁的会话数" },
             h(ConfigToggle, { checked: cfg.showCount, disabled: readOnly, onChange: (v) => upd({ showCount: v }), label: "显示" })),
+          h(ConfigRow, { label: "诊断信息", hint: "排查侧栏显示问题时，把本机工作区/会话状态复制发给开发者（仅元数据，无消息正文）" },
+            h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [
+              h("button", { type: "button", className: "dswt-configBtn", onClick: onCopyDiag }, "复制诊断信息"),
+              diagMsg && h("span", { className: "dswt-configSaved" }, diagMsg)
+            ])),
           h("div", { className: "dswt-configActions" }, [
             h("button", { type: "button", className: "dswt-configBtn", disabled: readOnly, onClick: () => { if (!readOnly) resetEffectiveConfig(); } }, "恢复默认"),
             h("span", { className: "dswt-configSaved" }, "修改即时生效（启用开关除外）")
@@ -1974,6 +2277,14 @@ window.__ModuleLoader__.load({
         try {
           const r = await apiPost("/archive/unarchive", { sessionId: sid });
           if (!r.ok) throw new Error(r.error || "恢复失败");
+          // 同步清除本地删除墓碑：否则本页 5 分钟内仍隐藏刚恢复的会话
+          try {
+            const stamps = loadStamps();
+            delete stamps[String(sid)];
+            saveStamps(stamps);
+            const cur = loadSet(LS_DELETED);
+            if (cur.delete(String(sid))) saveSet(LS_DELETED, cur);
+          } catch { /* ignore */ }
           if (ctx && ctx.sessions && typeof ctx.sessions.refresh === "function") {
             ctx.sessions.refresh();
           }
@@ -2002,7 +2313,7 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       // 记住 ctx 供配置读写运行时探测 settingsScope（不声明硬依赖，旧版 DSH 回退 LS）。
       settingsScopeCtx = ctx;
-      ctx.effect(() => () => { settingsScopeCtx = null; }, "dsh-workspace-tree: scope ctx");
+      ctx.effect(() => () => { settingsScopeCtx = null; releaseSettingsScope(); }, "dsh-workspace-tree: scope ctx");
       const styleEl = document.createElement("style");
       styleEl.setAttribute("data-workspace-tree", "true");
       document.head.appendChild(styleEl);
@@ -2157,15 +2468,20 @@ window.__ModuleLoader__.load({
             renameWorkspace: async (workspaceId, title) => {
               if (ctx.workspaces && typeof ctx.workspaces.rename === "function") {
                 await ctx.workspaces.rename(workspaceId, title);
+                return;
               }
+              throw new Error("工作区重命名服务不可用（当前 DSH 版本不支持）");
             },
             archiveSession: async (sessionId) => {
               const uiWs = resolveUiWorkspace();
               if (uiWs && typeof uiWs.archiveSession === "function") {
                 await uiWs.archiveSession(sessionId);
+                return;
               } else if (ctx.workspaces && typeof ctx.workspaces.archiveSession === "function") {
                 await ctx.workspaces.archiveSession(sessionId);
+                return;
               }
+              throw new Error("会话归档服务不可用（当前 DSH 版本不支持）");
             },
             createWorkspace: (input) => {
               if (ctx.workspaces && typeof ctx.workspaces.create === "function") {

@@ -13,6 +13,8 @@
  *  - POST /archive/cleanOrphans 一键扫描并清理孤儿 Subagents 与孤儿 projcache 缓存
  *  - POST /archive/cleanProjcache 一键扫描并清理孤儿 projcache 投影元数据缓存
  *  - POST /archive/pruneStale   清理 host 会话列表中已不存在的「幽灵归档」ID 及孤儿 projcache 缓存
+ *  - POST /workspace/pruneGhosts 清理各工作区 sessionIds 中 host 会话列表已不再返回的
+ *    「幽灵会话」ID（日志/缓存均已不存在、但注册表文件仍残留引用的历史残留）及孤儿 projcache 缓存
  */
 import { mkdir, open, readdir, rm, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -31,6 +33,18 @@ const inject = ["webServer", "storageDomain", "settings"];
 
 /** 本插件在 settings 服务中的命名空间（小写连字符文法）。 */
 const SETTINGS_NS = "dsh-workspace-tree";
+
+/** settings scope 句柄（apply 注册成功后持有，供 handleOpenIde 读取服务端 custom 命令）。 */
+let settingsScope = null;
+
+/** IDE 白名单：未知 ideKey 直接拒绝，不透传给 spawn（见 handleOpenIde）。 */
+const KNOWN_IDE_KEYS = new Set([
+  "vscode", "codebuddy", "cursor", "windsurf", "trae",
+  "webstorm", "idea", "pycharm", "zed", "sublime", "custom"
+]);
+
+/** Windows cmd 元字符：targetPath/可执行名含这些字符时拒绝执行（shell:true 下会被解释）。 */
+const WIN_CMD_METACHARS = /[&|<>\^;%!`$"'\r\n]/;
 
 /** 用户偏好 schema：默认值与浏览器半区 DEFAULT_CONFIG 保持一致。
  * UI 瞬态（展开/隐藏/墓碑/当前模式）仍留 localStorage，不进设置。 */
@@ -100,7 +114,22 @@ function encodeSegment(raw) {
   return out;
 }
 
-/** 调试：输出工作区注册表（path/title/id），用于诊断文件系统树。 */
+/** encodeSegment 的逆操作（严格版）：整串必须能逐段解析（普通字符或 ~XXXX），
+ * 否则返回 null。注意含 ~002E 字面量的普通名会被误解为 '.'，因此结果仅用于
+ * header 缺失时的展示/统计，绝不单独作为删除匹配依据。 */
+function tryDecodeSegment(encoded) {
+  if (!encoded || typeof encoded !== "string") return null;
+  if (!encoded.includes("~")) return encoded;
+  if (!/^(?:[^~]|~[0-9A-Fa-f]{4})*$/.test(encoded)) return null;
+  try {
+    return encoded.replace(/~([0-9A-Fa-f]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  } catch {
+    return null;
+  }
+}
+
+/** 调试：输出工作区注册表（path/title/id），用于诊断文件系统树。
+ * 注意：本端点无鉴权，仅假定 webServer 监听回环地址；不要在公网暴露 DSH 端口。 */
 async function handleDebug(ctx, req, res) {
   const registry = ctx.get("workspaceRegistry");
   if (!registry || typeof registry.list !== "function") {
@@ -133,6 +162,12 @@ async function handleMkdir(req, res) {
   
   if (nameRaw === "." || nameRaw === ".." || /[\\\\/:*?"<>|\x00-\x1F]/.test(nameRaw)) {
     return sendJson(res, 200, { ok: false, error: "文件夹名包含非法字符或路径遍历片段" });
+  }
+
+  // Windows 语义下 shell 元字符与尾随空格/点会导致 open-ide 侧注入或建出不可管理目录
+  // （与 open-ide 的 WIN_CMD_METACHARS 对齐，另加单引号）
+  if (process.platform === "win32" && (/[&;`$()^!%~']/.test(nameRaw) || /[ .]$/.test(nameRaw))) {
+    return sendJson(res, 200, { ok: false, error: "文件夹名包含 Windows 下的非法字符" });
   }
 
   // 必须对原始输入校验绝对路径：resolve() 总是返回绝对路径（相对输入会被静默解析到
@@ -365,8 +400,33 @@ async function handleOpenIde(req, res) {
   }
 
   const ide = typeof raw.ide === "string" ? raw.ide.trim() : "vscode";
-  const customCommand = typeof raw.customCommand === "string" ? raw.customCommand.trim() : "";
+  if (!KNOWN_IDE_KEYS.has(ide)) {
+    // 逃生舱：白名单之外的绝对路径且文件存在时放行（如手写 settings 配的 nvim 等），
+    // 其余一律拒绝（ previously 任意字符串直达 spawn）。注意本接口假定调用方
+    // 为本机可信页面（回环），白名单主防误配与混淆而非权限边界。
+    if (!(isAbsolute(ide) && existsSync(ide))) {
+      return sendJson(res, 200, { ok: false, error: `未知的 IDE 类型: ${ide}（可用列表见设置页，或改用绝对路径）` });
+    }
+  }
+  // custom 命令只信任服务端 settings（用户在设置页配置的值），忽略请求体，
+  // 防止任意调用方借本接口让 host spawn 任意命令。
+  let customCommand = "";
+  if (ide === "custom") {
+    try {
+      const cfg = settingsScope && typeof settingsScope.get === "function" ? settingsScope.get() : null;
+      customCommand = cfg && typeof cfg.customIdeCommand === "string" ? cfg.customIdeCommand.trim() : "";
+    } catch { customCommand = ""; }
+    if (!customCommand) {
+      return sendJson(res, 200, { ok: false, error: "未配置自定义 IDE 命令，请先在设置中填写" });
+    }
+  }
   const executable = resolveExecutable(ide, customCommand);
+
+  // Windows 下 .cmd/.bat 必须走 shell:true（见 launchEditor），此时路径中的
+  // cmd 元字符会被解释执行；含元字符直接拒绝（POSIX 下 shell:false，不受影响）。
+  if (process.platform === "win32" && (WIN_CMD_METACHARS.test(executable) || WIN_CMD_METACHARS.test(targetPath))) {
+    return sendJson(res, 200, { ok: false, error: "路径含 Windows shell 元字符，拒绝执行（请重命名目录或更换 IDE 命令）" });
+  }
 
   try {
     await launchEditor(executable, targetPath);
@@ -399,17 +459,43 @@ async function mutateWorkspaceState(ctx, mutator) {
     return await registry.enqueueOperation(async () => {
       const g = registry.global || domain.global;
       const table = registry.table || domain.table("workspaces");
-      const currentState = typeof registry.requireState === "function" ? registry.requireState() : g.get();
-      const result = await mutator(currentState, table, g);
-      if (registry.state) registry.state = g.get();
-      if (typeof registry.rebuildEntities === "function") registry.rebuildEntities();
-      return result;
+      const syncMemory = () => {
+        try {
+          if (registry.state) registry.state = g.get();
+        } catch (err) {
+          console.warn("[dsh-workspace-tree] 工作区内存状态同步失败:", err?.message || err);
+        }
+        try {
+          if (typeof registry.rebuildEntities === "function") registry.rebuildEntities();
+        } catch (err) {
+          console.warn("[dsh-workspace-tree] 工作区实体重建失败:", err?.message || err);
+        }
+      };
+      try {
+        const currentState = typeof registry.requireState === "function" ? registry.requireState() : g.get();
+        return await mutator(currentState, table, g);
+      } finally {
+        // 无论 mutator 成功与否都把内存权威状态对齐到落盘值：
+        // 异常导致半写时，内存若停留在旧快照，下一次读-改-写会把已落盘的剔除写回（回滚）。
+        syncMemory();
+      }
     });
   } else {
     const g = domain.global;
     const table = domain.table("workspaces");
-    const currentState = g.get();
-    return await mutator(currentState, table, g);
+    const syncMemory = () => {
+      try {
+        const registry2 = ctx.get("workspaceRegistry");
+        if (registry2 && registry2.state) registry2.state = g.get();
+        if (registry2 && typeof registry2.rebuildEntities === "function") registry2.rebuildEntities();
+      } catch { /* ignore */ }
+    };
+    try {
+      const currentState = g.get();
+      return await mutator(currentState, table, g);
+    } finally {
+      syncMemory();
+    }
   }
 }
 
@@ -430,7 +516,8 @@ async function readSessionHeaderFast(logFilePath) {
       try {
         const decompressed = zstdDecompressSync(buf.subarray(0, bytesRead));
         text = decompressed.toString("utf8");
-      } catch {
+      } catch (err) {
+        console.warn(`[dsh-workspace-tree] 会话头解压失败（跳过该会话的拓扑分析）: ${logFilePath}: ${err?.message || err}`);
         return null;
       }
     } else {
@@ -439,12 +526,18 @@ async function readSessionHeaderFast(logFilePath) {
 
     const firstLine = text.split("\n")[0]?.trim();
     if (!firstLine) return null;
-    const parsed = JSON.parse(firstLine);
+    let parsed = null;
+    try {
+      parsed = JSON.parse(firstLine);
+    } catch (err) {
+      console.warn(`[dsh-workspace-tree] 会话头解析失败（跳过该会话的拓扑分析）: ${logFilePath}: ${err?.message || err}`);
+      return null;
+    }
     if (parsed && typeof parsed === "object" && parsed.type === "session") {
       return parsed;
     }
-  } catch {
-    // 读取或解析失败时静默忽略
+  } catch (err) {
+    console.warn(`[dsh-workspace-tree] 会话头读取失败（跳过该会话的拓扑分析）: ${logFilePath}: ${err?.message || err}`);
   } finally {
     if (fd) {
       try { await fd.close(); } catch {}
@@ -497,7 +590,11 @@ async function scanSessionTopology() {
 
         if (!logFile) continue;
         const header = await readSessionHeaderFast(logFile);
-        const sid = (header && typeof header.id === "string" && header.id) ? header.id : sDir.name;
+        // header 缺失时回退：目录名是 encodeSegment 后的编码形，先逆解码，
+        // 解不出才用目录名原文（此时仅用于展示/统计，不用于精确删除匹配）。
+        const sid = (header && typeof header.id === "string" && header.id)
+          ? header.id
+          : (tryDecodeSegment(sDir.name) || sDir.name);
 
         const info = {
           id: sid,
@@ -636,7 +733,12 @@ async function stripSessionIdsFromRegistry(ctx, sessionIds) {
     const archived = (state.archivedSessionIds || []).map(String);
     const nextArchived = archived.filter((id) => !stripSet.has(id));
     if (nextArchived.length !== archived.length) {
-      try { await g.set({ ...state, archivedSessionIds: nextArchived }); } catch {}
+      try {
+        await g.set({ ...state, archivedSessionIds: nextArchived });
+      } catch (err) {
+        console.warn("[dsh-workspace-tree] 归档列表剔除落盘失败:", err?.message || err);
+        throw err; // 向上传递进 mutate 的 finally 保底同步，避免内存/落盘分叉后被旧快照回滚
+      }
     }
   });
 
@@ -686,9 +788,13 @@ async function deleteSessionCascade(ctx, targetSessionId) {
   const { childrenMap } = await scanSessionTopology();
   const allToDelete = collectDescendantSessionIds(sid, childrenMap);
 
-  const activeSessionId = process.env.DSH_SESSION_ID;
-  if (activeSessionId && allToDelete.includes(activeSessionId)) {
-    throw new Error("无法删除当前正在运行的活跃会话");
+  // 服务端权威活跃保护（运行中 ∪ 占用声明 ∪ env 补充）：目标闭包内含受保护
+  // 会话则整单阻断。注意 process.env.DSH_SESSION_ID 在 host 进程通常取不到，
+  // 不可做唯一依据，见 protectedSessionIds。
+  const safe = await protectedSessionIds(ctx);
+  const hit = allToDelete.find((id) => safe.has(String(id)));
+  if (hit !== undefined) {
+    throw new Error(`无法删除当前正在运行/被占用的活跃会话: ${hit}`);
   }
 
   await stripSessionIdsFromRegistry(ctx, allToDelete);
@@ -706,12 +812,17 @@ async function deleteSessionListCascade(ctx, sessionIds) {
   if (targets.length === 0) return [];
 
   const { childrenMap } = await scanSessionTopology();
-  const activeSessionId = process.env.DSH_SESSION_ID;
+  const safe = await protectedSessionIds(ctx);
   const allToDelete = new Set();
+  const skippedActive = [];
   for (const target of targets) {
     const cascade = collectDescendantSessionIds(target, childrenMap);
-    if (activeSessionId && cascade.includes(activeSessionId)) continue;
+    const hit = cascade.find((id) => safe.has(String(id)));
+    if (hit !== undefined) { skippedActive.push(target); continue; }
     for (const id of cascade) allToDelete.add(id);
+  }
+  if (skippedActive.length > 0) {
+    console.warn(`[dsh-workspace-tree] 批量删除跳过含活跃会话的目标: ${skippedActive.join(", ")}`);
   }
   if (allToDelete.size === 0) return [];
 
@@ -722,23 +833,28 @@ async function deleteSessionListCascade(ctx, sessionIds) {
 }
 
 /**
- * 孤儿 Subagents 清理引擎。
+ * 孤儿 Subagents 清理引擎（循环到不动点：父被删后子在下一轮变孤儿，最多 5 轮）。
+ * 无进展即停：删不掉的孤儿不再重复计入 cleanedIds/freedBytes（避免响应撒谎）。
  */
 async function cleanOrphanSubagents(ctx) {
-  const { orphanList } = await scanSessionTopology();
-  if (orphanList.length === 0) {
-    return { cleanedCount: 0, cleanedIds: [], freedBytes: 0 };
+  const cleanedIds = [];
+  const seen = new Set();
+  let freedBytes = 0;
+  const MAX_ROUNDS = 5;
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const { orphanList } = await scanSessionTopology();
+    if (orphanList.length === 0) break;
+    const safe = await protectedSessionIds(ctx);
+    const validOrphans = orphanList.filter((o) => !safe.has(String(o.id)) && !seen.has(String(o.id)));
+    if (validOrphans.length === 0) break;
+    const orphanIds = validOrphans.map((o) => o.id);
+    freedBytes += validOrphans.reduce((sum, o) => sum + (o.sizeBytes || 0), 0);
+    await stripSessionIdsFromRegistry(ctx, orphanIds);
+    await removeSessionsPhysically(ctx, orphanIds);
+    for (const id of orphanIds) seen.add(String(id));
+    cleanedIds.push(...orphanIds);
   }
-
-  const activeSessionId = process.env.DSH_SESSION_ID;
-  const validOrphans = orphanList.filter((o) => o.id !== activeSessionId);
-  const orphanIds = validOrphans.map((o) => o.id);
-  const freedBytes = validOrphans.reduce((sum, o) => sum + (o.sizeBytes || 0), 0);
-
-  await stripSessionIdsFromRegistry(ctx, orphanIds);
-  await removeSessionsPhysically(ctx, orphanIds);
-
-  return { cleanedCount: orphanIds.length, cleanedIds: orphanIds, freedBytes };
+  return { cleanedCount: cleanedIds.length, cleanedIds, freedBytes };
 }
 
 /**
@@ -756,7 +872,7 @@ async function cleanOrphanProjcache(ctx) {
   }
 
   const sessionsRoot = resolve(join(dshHome(), "sessions"));
-  const activeSessionId = process.env.DSH_SESSION_ID;
+  const safe = await protectedSessionIds(ctx);
 
   // 收集磁盘上真实存在的物理会话目录集合（同时包含原始名称与 URL 安全编码名称）
   const existingSessionDirs = new Set();
@@ -784,8 +900,9 @@ async function cleanOrphanProjcache(ctx) {
     const sid = entry.name.slice(0, -5);
     const encodedId = encodeSegment(sid);
 
-    // 当前活跃会话严格保护
-    if (activeSessionId && (sid === activeSessionId || encodedId === activeSessionId)) continue;
+    // 当前活跃/被占用会话严格保护：原始 ID 查一次，编码形再查一次做兜底
+    // （标准会话 ID 编码前后恒等，第二查主要覆盖非标准 ID 的目录形态）
+    if (safe.has(sid) || safe.has(encodedId)) continue;
 
     // 检查磁盘上是否存在对应的物理会话目录
     const existsPhysically = existingSessionDirs.has(sid) || existingSessionDirs.has(encodedId);
@@ -885,29 +1002,47 @@ async function handleDeleteAll(ctx, req, res) {
   const raw = await parseJsonBody(req);
   const workspaceId = raw.workspaceId === undefined ? undefined : raw.workspaceId;
 
+  // 先在单事务内按最新归档快照认领待删集合并移出归档：并发的 unarchiveAll
+  // 在其事务内看到的是认领后的集合，不会把刚恢复的会话纳入删除；反向交错
+  // （先恢复后认领）认领时也会看到最新归档而排除已恢复者。两方向都安全。
+  // 注意：认领排除受保护会话（运行中/被占用），它们留在归档里不动；
+  // 认领后若物理删除失败，已认领者会回到可见态（fail-visible），可重试。
   let toRemove = [];
-  const domain = getWorkspaceDomain(ctx);
-  const state = domain ? domain.global.get() : {};
-  const table = domain ? domain.table("workspaces") : new Map();
-  const archived = (state.archivedSessionIds || []).map(String);
-
-  if (workspaceId === undefined) {
-    toRemove = [...archived];
-  } else if (workspaceId === null) {
-    toRemove = ungroupedArchived(archived, table);
-  } else {
-    const rec = table.get(String(workspaceId));
-    if (!rec) return sendJson(res, 200, { ok: false, error: "workspace 不存在: " + workspaceId });
-    toRemove = archivedForWorkspace(archived, rec);
+  let skipped = [];
+  try {
+    const safe = await protectedSessionIds(ctx);
+    const res = await mutateWorkspaceState(ctx, async (state, table, g) => {
+      const archived = (state.archivedSessionIds || []).map(String);
+      let claimed;
+      if (workspaceId === undefined) {
+        claimed = [...archived];
+      } else if (workspaceId === null) {
+        claimed = ungroupedArchived(archived, table);
+      } else {
+        const rec = table.get(String(workspaceId));
+        if (!rec) throw new Error("workspace 不存在: " + workspaceId);
+        claimed = archivedForWorkspace(archived, rec);
+      }
+      const skippedHere = claimed.filter((id) => safe.has(String(id)));
+      claimed = claimed.filter((id) => !safe.has(String(id)));
+      if (claimed.length === 0) return { claimed, skipped: skippedHere };
+      const next = archived.filter((id) => !claimed.includes(id));
+      await g.set({ ...state, archivedSessionIds: next });
+      return { claimed, skipped: skippedHere };
+    });
+    toRemove = res.claimed;
+    skipped = res.skipped;
+  } catch (err) {
+    return sendJson(res, 200, { ok: false, error: err.message || String(err) });
   }
 
   if (toRemove.length === 0) {
-    return sendJson(res, 200, { ok: true, deleted: [] });
+    return sendJson(res, 200, { ok: true, deleted: [], skipped });
   }
 
   try {
     const deleted = await deleteSessionListCascade(ctx, toRemove);
-    sendJson(res, 200, { ok: true, deleted });
+    sendJson(res, 200, { ok: true, deleted, skipped });
   } catch (err) {
     sendJson(res, 200, { ok: false, error: err.message || String(err) });
   }
@@ -942,6 +1077,69 @@ async function handleCleanProjcache(ctx, req, res) {
 }
 
 /**
+ * 从 sessionController.list() 结果提取可信存活 ID 集。
+ * 注意信封形状：host 的 list() 返回 { items: [...] }（见 dsh-api-session-controller），
+ * 不是裸数组；两种形状都兼容，缺 id 的项直接丢弃。
+ * 形状校验：空数组/全缺 id 视为不可信，返回 null（调用方必须拒绝执行，
+ * 不能把“未知”当成“全死了”——否则一次畸形返回会清空全工作区归属）。
+ */
+function aliveIdsFromList(r) {
+  const items = Array.isArray(r) ? r : (r && Array.isArray(r.items) ? r.items : null);
+  if (!items || items.length === 0) return null;
+  const out = new Set();
+  for (const it of items) {
+    const id = it && (it.sessionId || it.id);
+    if (typeof id === "string" && id) out.add(id);
+  }
+  return out.size > 0 ? out : null;
+}
+
+/** 取 host 会话列表（自动解 { items } 信封；失败返回 null）。 */
+async function listSessionItems(ctx) {
+  try {
+    const sc = ctx.get("sessionController");
+    if (!sc || typeof sc.list !== "function") return null;
+    const r = await sc.list();
+    const items = Array.isArray(r) ? r : (r && Array.isArray(r.items) ? r.items : null);
+    return items;
+  } catch {
+    return null;
+  }
+}
+
+/** 读取服务端权威的“正运行中”会话 ID 集（删除引擎的 fail-closed 依据之一）。 */
+async function runningSessionIds(ctx) {
+  const items = await listSessionItems(ctx);
+  const out = new Set();
+  // items 为 null 表示读不到列表：返回空集，但删除引擎另有 claims/env 交叉，
+  // 且 deleteCascade 对受保护目标采取抛错/整组跳过而非强行删除（见各调用处）。
+  for (const it of items || []) {
+    if (it && it.running) {
+      const id = it.sessionId || it.id;
+      if (typeof id === "string" && id) out.add(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * 服务端删除保护集 = 运行中 ∪ 跨客户端占用声明 ∪ 进程 env（补充信号）。
+ * 说明：process.env.DSH_SESSION_ID 只在模型 shell 子进程中有值，host 服务进程
+ * 通常取不到，只能做补充，不能做唯一依据——权威依据永远是前两者。
+ */
+async function protectedSessionIds(ctx) {
+  const out = await runningSessionIds(ctx);
+  try {
+    sweepClaims();
+    for (const v of claims.values()) {
+      if (v && typeof v.sid === "string" && v.sid) out.add(v.sid);
+    }
+  } catch { /* ignore */ }
+  if (process.env.DSH_SESSION_ID) out.add(String(process.env.DSH_SESSION_ID));
+  return out;
+}
+
+/**
  * 清理失效归档（幽灵归档）：
  * 会话日志已被物理删除（如历史级联删除、DSH 升级）后，其 ID 仍残留在全局归档列表里，
  * 但 host 会话列表已不再返回它们，任何 UI 都无法再展示/打开。
@@ -956,19 +1154,20 @@ async function handlePruneStaleArchives(ctx, req, res) {
   try {
     const sc = ctx.get("sessionController");
     if (sc && typeof sc.list === "function") {
-      const items = await sc.list();
-      alive = new Set((items || []).map((it) => String((it && (it.sessionId || it.id)) || "")));
-      if (alive.size === 0) alive = null;
+      alive = aliveIdsFromList(await sc.list());
     }
-  } catch { /* fallback below */ }
+  } catch { alive = null; /* fallback below */ }
   if (!alive) {
     if (Array.isArray(raw.aliveIds)) {
-      alive = new Set(raw.aliveIds.map(String).filter(Boolean));
+      const fb = new Set(raw.aliveIds.map(String).filter(Boolean));
+      alive = fb.size > 0 ? fb : null;
     }
   }
-  if (!alive || alive.size === 0) {
-    return sendJson(res, 200, { ok: false, error: "无法读取 host 会话列表" });
+  if (!alive) {
+    return sendJson(res, 200, { ok: false, error: "无法读取 host 会话列表（存活集不可信，拒绝执行）" });
   }
+  // 运行中/被占用的会话不视为失效（与 pruneGhosts 对齐）
+  for (const id of await protectedSessionIds(ctx)) alive.add(id);
   let pruned = [];
   await mutateWorkspaceState(ctx, async (state, table, g) => {
     const archived = (state.archivedSessionIds || []).map(String);
@@ -980,6 +1179,61 @@ async function handlePruneStaleArchives(ctx, req, res) {
   });
   const orphanProjcache = await cleanOrphanProjcache(ctx);
   sendJson(res, 200, { ok: true, pruned, orphanProjcache });
+}
+
+/**
+ * 清理工作区幽灵会话：
+ * 各工作区 sessionIds 中 host 会话列表已不再返回的 ID——其会话日志与投影缓存均已
+ * 不存在（如经 DSH 原生入口删除、历史级联删除、DSH 升级），仅注册表文件残留引用。
+ * 与归档幽灵（handlePruneStaleArchives）对仗：同样以权威 host 会话列表
+ * （sessionController.list）为存活基准，body.aliveIds 仅作 fallback。
+ * 安全规则：存活集为空时拒绝执行；当前活跃会话永远豁免；只从注册表剔除 ID，
+ * 不碰物理目录（幽灵本就没有物理目录；若某 ID 尚有物理目录残留，仅解除归属，
+ * 后续自动收编会按需重新挂载，绝不误删）。
+ * body.aliveIds 仅作 fallback（sessionController 不可用时）。
+ */
+async function handlePruneWorkspaceGhosts(ctx, req, res) {
+  // 无条件消费请求体（未读取的 body 会阻碍连接复用），aliveIds 仅作 fallback 用
+  const raw = await parseJsonBody(req);
+  let alive = null;
+  try {
+    const sc = ctx.get("sessionController");
+    if (sc && typeof sc.list === "function") {
+      alive = aliveIdsFromList(await sc.list());
+    }
+  } catch { alive = null; /* fallback below */ }
+  if (!alive) {
+    if (Array.isArray(raw.aliveIds)) {
+      const fb = new Set(raw.aliveIds.map(String).filter(Boolean));
+      alive = fb.size > 0 ? fb : null;
+    }
+  }
+  if (!alive) {
+    return sendJson(res, 200, { ok: false, error: "无法读取 host 会话列表（存活集不可信，拒绝执行）" });
+  }
+  // 运行中/被占用的会话严格保护：即使 host 列表瞬时缺席也不剔除
+  // （注意：process.env.DSH_SESSION_ID 只在 shell 子进程中有值，host 内通常取不到，
+  // 权威依据是运行中集合与跨客户端占用声明，见 protectedSessionIds）
+  for (const id of await protectedSessionIds(ctx)) alive.add(id);
+  const pruned = {};
+  let prunedCount = 0;
+  await mutateWorkspaceState(ctx, async (state, table, g) => {
+    for (const [wid, rec] of table.entries()) {
+      const curIds = (rec.sessionIds || []).map(String);
+      const ghosts = curIds.filter((id) => !alive.has(id));
+      if (ghosts.length === 0) continue;
+      pruned[String(wid)] = ghosts;
+      prunedCount += ghosts.length;
+      const kept = (rec.sessionIds || []).filter((id) => alive.has(String(id)));
+      await table.update(wid, (cur) => ({
+        ...cur,
+        sessionIds: kept,
+        updatedAt: new Date().toISOString()
+      }));
+    }
+  });
+  const orphanProjcache = await cleanOrphanProjcache(ctx);
+  sendJson(res, 200, { ok: true, pruned, prunedCount, orphanProjcache });
 }
 
 /**
@@ -1005,7 +1259,21 @@ async function handleClaimHeartbeat(req, res) {
   const tabId = typeof raw.tabId === "string" ? raw.tabId.trim().slice(0, 128) : "";
   if (!tabId) return sendJson(res, 200, { ok: false, error: "tabId 必填" });
   sweepClaims();
-  claims.set(tabId, { sid: raw.sid ? String(raw.sid) : null, t: Date.now() });
+  if (!raw.sid) {
+    // sid 为空 = 该标签页当前没打开会话：直接删键释放占用，不占位
+    // （空占位会被计入上限且无任何保护作用）
+    claims.delete(tabId);
+  } else {
+    // delete 后 set：刷新插入序，逐出时最旧者先走（近似 LRU，避免活跃声明被挤掉）
+    claims.delete(tabId);
+    claims.set(tabId, { sid: String(raw.sid), t: Date.now() });
+  }
+  // 无界增长防护：tabId 可任意枚举，超限逐出最旧（Map 保持插入序）
+  while (claims.size > 5000) {
+    const oldest = claims.keys().next();
+    if (oldest.done) break;
+    claims.delete(oldest.value);
+  }
   sendJson(res, 200, { ok: true });
 }
 
@@ -1025,8 +1293,9 @@ function apply(ctx) {
   // 旧版 localStorage 配置由浏览器半区一次性迁移上来，Host 不读浏览器存储。
   // 注册失败（存量分节被 schema 拒绝）也不应拖垮路由挂载，故隔离 try。
   try {
-    ctx.settings.register(SETTINGS_NS, CONFIG_SCHEMA);
+    settingsScope = ctx.settings.register(SETTINGS_NS, CONFIG_SCHEMA);
   } catch (err) {
+    settingsScope = null;
     console.warn("[dsh-workspace-tree] settings 注册失败，配置回退为浏览器本地模式:", err?.message || err);
   }
   ctx.effect(() => ctx.webServer.register({
@@ -1058,6 +1327,10 @@ function apply(ctx) {
           if (sub === "cleanOrphans") return await handleCleanOrphans(ctx, req, res);
           if (sub === "cleanProjcache") return await handleCleanProjcache(ctx, req, res);
           if (sub === "pruneStale") return await handlePruneStaleArchives(ctx, req, res);
+        }
+        if (head === "workspace" && req.method === "POST") {
+          const sub = rest[1];
+          if (sub === "pruneGhosts") return await handlePruneWorkspaceGhosts(ctx, req, res);
         }
         sendJson(res, 404, { ok: false, error: "not found" });
       } catch (error) {
