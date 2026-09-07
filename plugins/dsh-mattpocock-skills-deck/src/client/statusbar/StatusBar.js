@@ -136,25 +136,11 @@ export const StatusBar = (props) => {
   //   后端确定后才走依赖链引导（ghcli → ghauth → setup → skills）。
   const _backendUndecided = !(_selSBGate && _selSBGate.backendId)
   const firstBlock = (_gateActive || _backendUndecided) ? 'gate' : ghCliBad ? 'ghcli' : ghAuthBad ? 'ghauth' : amber ? 'setup' : skillsBad ? 'skills' : null
-  // #422 · 收起整个功能区：横幅上的叉收起横幅与胶囊状态栏（打破胶囊永不隐藏旧规）；分叉默认隐藏，展开后按工作区记住。
+  // 分叉：展开/收起总开关已搬进右侧 Deck 面板头部；dock 零按钮——收起后输入框上方无任何输出，恢复入口只在面板。
   // 分叉报错穿透：异常快照（snapMode==='err'）不受收起影响，横幅照常展示。
   const deckErr = !!(s && s.snapMode === 'err')
   const deckFolded = isBannerFolded(s.cwd) && !deckErr
-  const foldBanner = function () { try { setBannerFolded(s.cwd, true) } catch (e) {} }
-  const expandBanner = function () { try { setBannerFolded(s.cwd, false) } catch (e) {} }
-  // 收放按钮：胶囊最右侧的“∨”图标（无文字，技能入口之后）；收起态为带文字的小按钮（悬停与无障碍文案保留全称）。
-  const capsuleToggle = h(Tip, { content: tr('banner.foldDeck') }, h('span', { className: 'dsws-fold-toggle', onClick: function (e) { e.stopPropagation(); foldBanner() }, 'aria-label': tr('banner.foldDeck'), style: { display: 'inline-flex', alignItems: 'center', padding: '2px 2px', borderRadius: 6, color: 'var(--dsw-alias-label-caption,#8b8b95)', cursor: 'pointer', flex: 'none' } }, [
-    Ic({ n: 'chev-down', size: 12 }),
-  ]))
-  if (deckFolded) {
-    // 收起态：只留一颗带文字的小按钮（点即恢复横幅与状态栏；设置页工作区行是另一条恢复路径）
-    return h('div', { style: { display: 'flex', flex: 'none', justifyContent: 'center', padding: '0 8px' } }, [
-      h(Tip, { content: tr('banner.folded') }, h('button', { className: 'dsws-btn ghost', 'aria-label': tr('banner.expandDeck'), onClick: expandBanner, style: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '0 8px', lineHeight: 1.2, border: 'none', borderRadius: 99, color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, [
-        Ic({ n: 'chev-up', size: 10 }),
-        h('span', null, tr('banner.expandDeck')),
-      ])),
-    ])
-  }
+  if (deckFolded) return null
   // #522：调试开关关闭时小灰点不挂载（胶囊里不留空位）；开时常驻；开关切换经已有的日志开关广播刷新各会话界面，此处只读开关不另加广播。
   let logDotOn = false
   try { logDotOn = !!(typeof logSwitch !== 'undefined' && logSwitch && logSwitch.enabled === true) } catch (eLogDot) {}
@@ -190,7 +176,6 @@ export const StatusBar = (props) => {
     h(Tip, { content: tr('nav.refreshTitle') }, h('span', { className: 'dsws-timebtn', onClick: function (e) { e.stopPropagation(); refreshAll(s) }, 'aria-label': tr('nav.refreshTitle') }, [h('span', { className: 'dsws-rficon' + (s.refreshing ? ' dsws-spin' : '') }, [Ic({ n: 'refresh', size: 11 })]), h('span', { 'data-fold-priority': 4 }, tr('nav.refresh')), h('span', { 'data-fold-priority': 9 }, ' ' + timeStr)])),
     h(SkillFloatList, { s: s }),
     logDotOn ? h(StatusLogDot, { s: s }) : null,
-    capsuleToggle,
   ])
   // 状态栏后端选择与门控动作已搬 StatusBackend.js（B1 #460，纯结构；同闭包拼回直调）。
   // 以后改状态栏后端选择（setup 黄条与 gate 蓝条）的人改 StatusBackend.js，本处只留转调包装。
@@ -224,7 +209,7 @@ export const StatusBar = (props) => {
     ])
   })() : null
   if (!firstBlock) {
-    // 无 banner 时为胶囊 + 常驻收起按钮（#422：收起即整个功能区消失）
+    // 无 banner 时只渲染胶囊（分叉：收起按钮已搬进面板，dock 不挂任何显隐按钮）
     return h('div', { style: { display: 'flex', flex: 'none', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%', boxSizing: 'border-box', padding: '3px 8px 0', overflow: RDOM ? 'hidden' : 'visible' } }, [capsule])
   }
   const bann = function (text, btnLabel, onBtn, foldable) {
@@ -232,15 +217,14 @@ export const StatusBar = (props) => {
       Ic({ n: 'alert', size: 13 }),
       h('span', { style: { flex: 1 } }, text),
       h('button', { className: 'dsws-btn', style: { borderColor: 'rgba(245,158,11,.6)' }, onClick: onBtn }, btnLabel),
-      foldable ? h(Tip, { content: tr('banner.foldDeck') }, h('button', { className: 'dsws-btn ghost dsws-banner-fold-x', 'aria-label': tr('banner.foldDeck'), onClick: foldBanner, style: { borderColor: 'rgba(245,158,11,.6)', padding: '1px 6px', display: 'inline-flex', alignItems: 'center' } }, Ic({ n: 'x', size: 11 }))) : null,
     ])
   }
   return h('div', { style: { display: 'flex', flex: 'none', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '3px 8px 0', position:'relative' } }, [
 
     firstBlock === 'gate'
       ? (_isGatePending
-          ? h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: 560, background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.35)', color:'#f59e0b', display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8 } }, [ h('span', { className:'dsws-spinner', style:{ width:12, height:12, borderWidth:2, display:'inline-block' } }), h('span', { style:{ flex:1, fontSize:12 } }, '正在探测后端'), h('button', { className:'dsws-btn', style:{ borderColor:'rgba(245,158,11,.6)', fontSize:11 }, onClick:function(){ loadSnapshot(s,true,true) } }, '重试'), h(Tip, { content: tr('banner.foldDeck') }, h('button', { className:'dsws-btn ghost dsws-banner-fold-x', 'aria-label': tr('banner.foldDeck'), style:{ borderColor:'rgba(245,158,11,.6)', color:'#f59e0b', padding:'1px 6px', display:'inline-flex', alignItems:'center' }, onClick: foldBanner }, Ic({ n:'x', size:11 }))) ])
-          : h('div', { className: 'dsws-banner', style: { margin: 0, maxWidth: 560, background:'rgba(56,139,253,.10)', border:'1px solid rgba(56,139,253,.35)', color:'#58a6ff', display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8 } }, [ Ic({ n:'compass', size:13, color:'#58a6ff' }), h('span', { style:{ flex:1, fontSize:12 } }, tr('banner.gate')), h('button', { className:'dsws-btn', style:{ borderColor:'rgba(56,139,253,.6)', color:'#58a6ff', fontSize:11 }, onClick: openGate }, tr('banner.gateBtn')), h(Tip, { content: tr('banner.foldDeck') }, h('button', { className:'dsws-btn ghost dsws-banner-fold-x', 'aria-label': tr('banner.foldDeck'), style:{ borderColor:'rgba(56,139,253,.6)', color:'#58a6ff', padding:'1px 6px', display:'inline-flex', alignItems:'center' }, onClick: foldBanner }, Ic({ n:'x', size:11 }))) ]))
+          ? h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: 560, background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.35)', color:'#f59e0b', display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8 } }, [ h('span', { className:'dsws-spinner', style:{ width:12, height:12, borderWidth:2, display:'inline-block' } }), h('span', { style:{ flex:1, fontSize:12 } }, '正在探测后端'), h('button', { className:'dsws-btn', style:{ borderColor:'rgba(245,158,11,.6)', fontSize:11 }, onClick:function(){ loadSnapshot(s,true,true) } }, '重试') ])
+          : h('div', { className: 'dsws-banner', style: { margin: 0, maxWidth: 560, background:'rgba(56,139,253,.10)', border:'1px solid rgba(56,139,253,.35)', color:'#58a6ff', display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8 } }, [ Ic({ n:'compass', size:13, color:'#58a6ff' }), h('span', { style:{ flex:1, fontSize:12 } }, tr('banner.gate')), h('button', { className:'dsws-btn', style:{ borderColor:'rgba(56,139,253,.6)', color:'#58a6ff', fontSize:11 }, onClick: openGate }, tr('banner.gateBtn')) ]))
       : firstBlock === 'ghcli'
       // #195 修复(第二轮)：hint 直接为后端提供的完整 prompt（多态），UI 直接 inject；移除副按钮
       ? bann(tr('banner.ghcli'), tr('banner.ghcliBtn'), function () { var c = chainStep(s, 'gh:installed'); var h = (c && c.show && c.show.hint) || ''; if (h) inject(s, h) }, true)

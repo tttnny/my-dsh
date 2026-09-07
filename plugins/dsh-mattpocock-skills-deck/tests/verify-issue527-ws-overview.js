@@ -29,9 +29,11 @@ check(wsFile.indexOf('<details') >= 0 || wsFile.indexOf("'details'") >= 0, '总�
 check(wsFile.indexOf('wsToggleHint') >= 0, '总览顶部保留点击展开或收起的提示')
 check(wsFile.indexOf('wsRefresh') >= 0, '总览顶部的刷新入口不受影响')
 
-// 判据 3：横幅上的折叠和展开功能不受影响。
+// 判据 3：横幅上的折叠和展开功能不受影响（分叉：开关已搬进右侧面板头部；读在 StatusBar，写在 Dock）。
 check(prefsFile.indexOf('isBannerFolded') >= 0 && prefsFile.indexOf('setBannerFolded') >= 0, '横幅折叠的读写函数仍在偏好存储里')
-check(statusFile.indexOf('setBannerFolded') >= 0 && statusFile.indexOf('isBannerFolded') >= 0, '状态栏横幅仍在使用折叠读写函数')
+check(statusFile.indexOf('isBannerFolded') >= 0, '状态栏仍在读取折叠状态（收起后零输出）')
+const dockFile = fs.readFileSync(path.join(root, 'src/client/panel/Dock.js'), 'utf8')
+check(dockFile.indexOf('setBannerFolded') >= 0 && dockFile.indexOf('isBannerFolded') >= 0, '面板头部承载折叠写入函数（收起后唯一恢复入口）')
 
 console.log(failed ? '\n[issue527-ws-overview] FAIL (' + passed + ' passed)' : '\n全部通过 · 总览行内无收起按钮门禁生效 (' + passed + ')')
 process.exit(failed ? 1 : 0)
