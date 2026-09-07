@@ -2,7 +2,7 @@
 // 以后谁改它：改探测编排或检查链快照的人。预估约260行，超 350 打回。
 // 接线：由 index.js 动态 import 加载；harness 注册留守 index，处理器体经 handleDetect/handleChain 供给；本文件不引用其他新文件。
 export function createDetectChain(deps) {
-  const { canonicalKey, DEFAULT_CWD, resetGhCache, getDetectionService, getPlatform, getTrackerRegistry, getRepoKey, runGh, timer, probeSkill, resolvePresetCtx, listPresetIds, mdParseOkPredicate, getChainCache, setChainCache, logCtx } = deps
+  const { canonicalKey, DEFAULT_CWD, resetGhCache, getDetectionService, getPlatform, getTrackerRegistry, getRepoKey, runGh, timer, probeSkill, resolvePresetCtx, listPresetIds, probeReason, presetGateMod, mdParseOkPredicate, getChainCache, setChainCache, logCtx } = deps
   // #491 房外埋点 helpers：hash8 只记散列；P1 外层先判开关（采样/节流/按事件），字段函数只在守卫内求值。
   function hash8(s) { try { const t = String(s || ''); let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h + t.charCodeAt(i)) >>> 0); return ('0000000' + h.toString(16)).slice(-8) } catch (e) { return '00000000' } }
   let chainSampleN = 0
@@ -79,7 +79,23 @@ export function createDetectChain(deps) {
         const expConsistent = (selConsistent && selConsistent.backendId)
           ? selConsistent.backendId
           : ((selMod && selMod.explicit && selMod.explicit.parsed && selMod.explicit.parsed.explicitBackendId) || null)
-        const ctx = { platform: platform, backendId: backendId || null, cwd: cwd, lang: chainLang, selection: selConsistent, explicitBackendId: expConsistent, skillProbe: async function (skillName) { try { return await probeSkill(skillName, chainLang, cwd, _presetCtx) } catch (e) { return { ok: false, level: 'pending', detail: String((e && e.message) || e), hint: 'pending:skills-unavailable' } } } }
+        const ctx = { platform: platform, backendId: backendId || null, cwd: cwd, lang: chainLang, selection: selConsistent, explicitBackendId: expConsistent, skillProbe: async function (skillName) { try { return await probeSkillGated(skillName) } catch (e) { return { ok: false, level: 'pending', detail: String((e && e.message) || e), hint: 'pending:skills-unavailable' } } } }
+        // 分叉 preset 门控（注册表通道）：known 且本次命中归属他人 preset 目录 → 注册表命中作废，转纯盘上结论；
+        // 防宿主 skills 服务全局索引穿透会话门控（标准根与本会话 preset 目录的命中保留；未知会话保持旧行为）。
+        async function probeSkillGated(skillName) {
+          const r = await probeSkill(skillName, chainLang, cwd, _presetCtx)
+          try {
+            if (r && r.level === 'ok' && _presetCtx && _presetCtx.known && r.sourcePath && typeof probeReason === 'function' && typeof presetGateMod === 'function') {
+              const gp = await presetGateMod()
+              const owner = (gp && typeof gp.attributePresetPath === 'function') ? await gp.attributePresetPath(r.sourcePath) : null
+              if (owner && owner !== (_presetCtx.presetId || null) && typeof probeReason === 'function' && gp && typeof gp.verdictFromReason === 'function') {
+                const reason = await probeReason(skillName, chainLang, cwd, _presetCtx)
+                return gp.verdictFromReason(reason, chainLang, owner)
+              }
+            }
+          } catch (eG) {}
+          return r
+        }
         // #284：后端谓词注册（host 既有探测包装；未注册者由 registry 诚实 pending，不猜不误报）
         try { registry.register('backend:github:repoRemote', async function (check, pctx) {
           try {

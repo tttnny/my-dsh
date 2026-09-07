@@ -45,5 +45,39 @@ export function createPresetGate(deps) {
       return { known: false, presetId: null }
     } catch { return { known: false, presetId: null } }
   }
-  return { resolveSessionPresetCtx, listPresetIds }
+  // 归因注册表命中路径所属 preset：返回 preset id；标准根/他处/无法归属返回 null。
+  // 只做字符串归一比对（win32 折叠大小写），不触盘。
+  async function attributePresetPath(foundPath) {
+    try {
+      const platform = await getPlatform()
+      const home = await platform.getHome()
+      if (!home || !foundPath) return null
+      const norm = function (s) { try { let r = platform.path.normalize(String(s)); if (platform.os === 'win32') r = r.toLowerCase(); return r } catch { return String(s || '') } }
+      const ph = norm(platform.path.join(home, '.dsh', '.agent-presets'))
+      const p = norm(foundPath)
+      if (p === ph) return null
+      if (p.startsWith(ph + '/') || p.startsWith(ph + '\\')) {
+        const rel = p.slice(ph.length + 1).split(/[\\/]/).filter(Boolean)
+        if (rel.length) return rel[0]
+      }
+    } catch {}
+    return null
+  }
+  // 他人 preset 注册表命中作废后的纯盘上结论（与 skillProbe 盘上分支同形：来源行 + 注册表未收录注记 + 门控注记）。
+  function verdictFromReason(reason, lang, owner) {
+    const note = (lang === 'en')
+      ? ' (registry hit from another preset "' + owner + '" ignored by session gating)'
+      : '（注册表命中来自他人 preset“' + owner + '”，已按会话门控忽略）'
+    const ch = [{ channel: 'registry', root: 'preset:' + owner, result: 'gated', detail: '' }].concat((reason && reason.channels) || [])
+    if (reason && reason.kind === 'ok') {
+      const srcLine = reason.sourcePath ? ((lang === 'en') ? ' (source: ' + reason.sourcePath + ')' : '（来源：' + reason.sourcePath + '）') : ''
+      const regNote = (lang === 'en') ? ' (DSH catalog miss; judged by disk facts)' : '（DSH 技能清单未收录，按盘上事实判定）'
+      return { ok: true, level: 'ok', detail: reason.detail + srcLine + regNote + note, hint: '', sourcePath: reason.sourcePath || undefined, repo: null, via: reason.via, channels: ch }
+    }
+    if (reason && reason.kind === 'invalid') {
+      return { ok: false, level: 'bad', detail: reason.detail + note, hint: reason.hint, repo: null, reason: 'invalid', channels: ch }
+    }
+    return { ok: false, level: 'bad', detail: ((reason && reason.detail) || ((lang === 'en') ? 'Not installed' : '未安装')) + note, hint: (reason && reason.hint) || 'prompt:installSkills', repo: null, reason: 'missing', channels: ch }
+  }
+  return { resolveSessionPresetCtx, listPresetIds, attributePresetPath, verdictFromReason }
 }

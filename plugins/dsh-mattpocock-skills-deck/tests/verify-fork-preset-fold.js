@@ -26,6 +26,7 @@ if (fs.existsSync(path.join(ROOT, 'src/host/presetGate.js'))) {
 const dc = read('src/host/detectChain.js')
 check(dc.includes('|p'), 'detectChain.js 链缓存键含 preset/会话维度')
 check(dc.includes('sessionId'), 'detectChain.js 消费 args.sessionId')
+check(dc.includes('probeSkillGated') && dc.includes('verdictFromReason') && dc.includes('attributePresetPath'), 'detectChain.js 注册表通道同样受门控（他人 preset 命中作废转盘上）')
 const pc = read('src/client/kernel/probe-chain.js')
 check(/sessionId/.test(pc) && /wf\.chain/.test(pc), 'probe-chain.js 向 wf.chain 透传 sessionId')
 const ss = read('src/client/kernel/store-snapshot.js')
