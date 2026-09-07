@@ -15,20 +15,23 @@ function reducedMotion(): boolean {
     && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function textOf(row: HTMLElement): string {
-  const root = row.querySelector("[data-time-hover-root]");
-  const stack = root?.querySelector(":scope > div");
-  const bubble = stack?.lastElementChild;
-  return flattenPromptText(bubble?.textContent ?? "");
-}
-
 function bubbleOf(row: HTMLElement): HTMLElement {
+  // 现行 DSH：UserStyleBubble 的 userStack > bubble（CSS-module 哈希类名，仅以后缀匹配）。
+  // querySelector 按文档序返回，命中 bubble 本体先于其内部嵌套块，可直接取用。
+  const stack = row.querySelector<HTMLElement>("[class*=userstack i]");
+  const bubble = stack?.querySelector<HTMLElement>("[class*=bubble i]") ?? null;
+  if (bubble !== null) return bubble;
+  // 旧版 DSH：[data-time-hover-root] > div > :last-child。
   const root = row.querySelector("[data-time-hover-root]");
-  const stack = root?.querySelector(":scope > div");
-  const bubble = stack?.lastElementChild;
-  if (bubble instanceof HTMLElement) return bubble;
+  const legacy = root?.querySelector(":scope > div")?.lastElementChild;
+  if (legacy instanceof HTMLElement) return legacy;
+  if (stack !== null) return stack;
   if (root instanceof HTMLElement) return root;
   return row;
+}
+
+function textOf(row: HTMLElement): string {
+  return flattenPromptText(bubbleOf(row).textContent ?? "");
 }
 
 function boxesOf(scroller: HTMLElement): { key: string; top: number; row: HTMLElement }[] {
@@ -185,11 +188,15 @@ export function installStickyUserRows(): () => void {
 
   document.addEventListener("scroll", onScroll, { capture: true, passive: true });
   window.addEventListener("resize", onMutate);
+  // 流式输出与 SPA 切会话不一定触发 scroll/resize：观察子树增删并经 rAF 合并刷新。
+  const observer = new MutationObserver(() => { onMutate(); });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
   onMutate();
 
   return () => {
     document.removeEventListener("scroll", onScroll, true);
     window.removeEventListener("resize", onMutate);
+    observer.disconnect();
     if (frame !== 0) window.cancelAnimationFrame(frame);
     for (const host of document.querySelectorAll("[data-oil-sticky-host]")) host.remove();
   };

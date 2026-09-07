@@ -1,6 +1,9 @@
-import type { ClientContext } from "@deepseek-ai/dsh-client-runtime/client";
-
 import { installStickyUserRows } from "./installSticky.ts";
+
+/** 浏览器端最小上下文：只用 effect 挂载/卸载副作用，不再依赖旧版 dsh-client-runtime。 */
+interface ClientContext {
+  effect(factory: () => void | (() => void), label: string): void;
+}
 
 const STYLE_ID = "dsh-oil-sticky-prompt";
 const STYLES = `
@@ -64,6 +67,10 @@ const STYLES = `
 }
 `;
 
+/** 浏览器插件名（与 cordis.patch.yml 的 insert id 一致）。 */
+export const name = "dsh-oil-sticky-prompt";
+
+/** 无硬依赖的纯 DOM 观察插件：不等待任何服务，immediately 由 package.json 声明。 */
 export const inject: string[] = [];
 
 export function apply(ctx: ClientContext): void {

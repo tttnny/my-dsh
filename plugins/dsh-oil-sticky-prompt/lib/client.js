@@ -41,16 +41,19 @@ window.__ModuleLoader__.load({
 		function reducedMotion() {
 			return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 		}
-		function textOf(row) {
-			const bubble = (row.querySelector("[data-time-hover-root]")?.querySelector(":scope > div"))?.lastElementChild;
-			return flattenPromptText(bubble?.textContent ?? "");
-		}
 		function bubbleOf(row) {
+			const stack = row.querySelector("[class*=userstack i]");
+			const bubble = stack?.querySelector("[class*=bubble i]") ?? null;
+			if (bubble !== null) return bubble;
 			const root = row.querySelector("[data-time-hover-root]");
-			const bubble = (root?.querySelector(":scope > div"))?.lastElementChild;
-			if (bubble instanceof HTMLElement) return bubble;
+			const legacy = root?.querySelector(":scope > div")?.lastElementChild;
+			if (legacy instanceof HTMLElement) return legacy;
+			if (stack !== null) return stack;
 			if (root instanceof HTMLElement) return root;
 			return row;
+		}
+		function textOf(row) {
+			return flattenPromptText(bubbleOf(row).textContent ?? "");
 		}
 		function boxesOf(scroller) {
 			const rows = [];
@@ -182,10 +185,18 @@ window.__ModuleLoader__.load({
 				passive: true
 			});
 			window.addEventListener("resize", onMutate);
+			const observer = new MutationObserver(() => {
+				onMutate();
+			});
+			observer.observe(document.documentElement, {
+				childList: true,
+				subtree: true
+			});
 			onMutate();
 			return () => {
 				document.removeEventListener("scroll", onScroll, true);
 				window.removeEventListener("resize", onMutate);
+				observer.disconnect();
 				if (frame !== 0) window.cancelAnimationFrame(frame);
 				for (const host of document.querySelectorAll("[data-oil-sticky-host]")) host.remove();
 			};
@@ -253,6 +264,9 @@ window.__ModuleLoader__.load({
   .oilStickyPrompt{transition:none}
 }
 `;
+		/** 浏览器插件名（与 cordis.patch.yml 的 insert id 一致）。 */
+		const name = "dsh-oil-sticky-prompt";
+		/** 无硬依赖的纯 DOM 观察插件：不等待任何服务，immediately 由 package.json 声明。 */
 		const inject = [];
 		function apply(ctx) {
 			ctx.effect(() => {
@@ -271,6 +285,7 @@ window.__ModuleLoader__.load({
 		//#endregion
 		exports.apply = apply;
 		exports.inject = inject;
+		exports.name = name;
 		return module.exports;
 	}
 });
