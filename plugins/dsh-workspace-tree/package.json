@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-workspace-tree",
   "version": "1.9.0",
-  "description": "DSH 工作区树：把左侧栏工作区从「工作区→会话」单层结构升级为多级文件夹树——文件夹任意嵌套、会话可归入任意文件夹，附带新建/重命名/删除/移动管理。",
+  "description": "DSH 工作区树：文件系统双模式工作区浏览器——文件夹任意嵌套、会话归入工作区；安全归档区（进区必可删、删除零守卫 fail-loud），附带新建/重命名/IDE 打开等管理。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {

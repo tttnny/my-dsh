@@ -238,7 +238,7 @@ window.__ModuleLoader__.load({
       const n = failed.length;
       if (n === 0) return "";
       const lines = failed.slice(0, 3).map((d) => {
-        if (!d || !d.sessionId) return "第 " + (d && d.error ? d.error : "未知原因") + "";
+        if (!d || !d.sessionId) return d && d.error ? d.error : "未知原因";
         const why = d.error || "未知原因";
         return "会话 " + d.sessionId + "： " + why;
       });
@@ -1507,7 +1507,8 @@ window.__ModuleLoader__.load({
        * 工作区是否被会话"占用"：名下有可见会话（含当前打开的空白草稿）或有效归档会话。
        * 只统计自身直属的 sessionIds——路径嵌套的子工作区是独立注册记录，父被真删后
        * 会自动升级为顶层继续显示，不参与本判定；byId 无行的幽灵 ID（host 已不再返回）
-       * 与未打开的空白草稿不算占用（前者是待清理残留，后者很快会被自动回收）。
+       * 与未打开的空白草稿不算占用（前者是待清理残留，后者按官方语义仅视图层隐藏、
+       * 不占工作区）。
        */
       const workspaceOccupied = useCallback((w) => {
         if (!w) return true;
@@ -1587,12 +1588,12 @@ window.__ModuleLoader__.load({
       }, [deleteWsConfirm, deleteWorkspace, showAlert]);
 
       const onArchiveSession = useCallback((sessionId) => {
-        // 空白草稿不允许归档：归档后双视图都不可见（工作区视图排 archvied、归档视图排 blank），
-        // 用户将找不到它，而回收器还会物理删除——等于“归档即销毁”。空草稿离场后本就会自动回收。
+        // 空白草稿不允许归档：归档后双视图都不可见（工作区视图排 archived、归档视图排 blank），
+        // 用户将找不到它。按官方语义空白草稿仅视图层隐藏、不会自动物理删除。
         // 注意：byId 缺行时无法判断 blank，按非 blank 放行并交由 Host 报错（fail-open，见审计）。
         const row = sessions && sessions.byId ? sessions.byId[sessionId] : null;
         if (row && row.blank) {
-          showAlert("空白草稿无需归档：切换会话后会自动清理", "无需归档");
+          showAlert("空白草稿无需归档：切换到其他会话后即隐藏", "无需归档");
           return;
         }
         archiveSession(sessionId).catch((error) => {

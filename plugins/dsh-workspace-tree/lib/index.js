@@ -792,23 +792,23 @@ async function stripSessionIdsFromRegistry(ctx, sessionIds) {
 
 /**
  * 归档会话永久删除核心引擎（零守卫）：
- * 1. 扫描拓扑，收集 targetSessionId 及其所有的派生子孙 Subagent ID（仅 Subagent，
- *    fork 出的独立会话不在其列，见 isSubagentChildHeader）；
+ * 1. 依据已扫描的拓扑图，收集 targetSessionId 及其所有的派生子孙 Subagent ID
+ *    （仅 Subagent，fork 出的独立会话不在其列，见 isSubagentChildHeader）；
  * 2. 逐条物理删除 —— fail-loud：目标目录存在但删不掉即为真实失败，此时**不**剔除
  *    注册表/归档，会话留在归档区、前端报错、可幂等重试（已删掉的部分重试时按
  *    「目录不存在 = 幂等成功」继续）；目录本不存在视为成功；
  * 3. 物理删净后单事务剔除注册表/归档 + 内存与缓存联动。
  *
+ * @param childrenMap 由 scanSessionTopology() 得到的父子拓扑（批量删除只扫一次）
  * @returns {string[]} 实际删除的会话 ID 列表（含 Subagent 子孙闭包）
  */
-async function deleteSessionCascade(ctx, targetSessionId) {
+async function deleteSessionCascade(ctx, targetSessionId, childrenMap) {
   if (!targetSessionId || typeof targetSessionId !== "string" || !targetSessionId.trim()) {
     throw new Error("sessionId 必填且必须为字符串");
   }
   const sid = targetSessionId.trim();
 
-  const { childrenMap } = await scanSessionTopology();
-  const allToDelete = collectDescendantSessionIds(sid, childrenMap);
+  const allToDelete = collectDescendantSessionIds(sid, childrenMap || (await scanSessionTopology()).childrenMap);
 
   // 零守卫：不再有「运行中 / 被占用」检查——进了归档区就必须删得掉（浏览器半区
   // 已在归档门槛上把关运行态，见 SessionRow 的归档按钮置灰）。
@@ -825,19 +825,20 @@ async function deleteSessionCascade(ctx, targetSessionId) {
 }
 
 /**
- * 批量永久删除归档会话（零守卫）：逐条执行 deleteSessionCascade，
+ * 批量永久删除归档会话（零守卫）：只扫描一次拓扑，逐条执行 deleteSessionCascade，
  * 能删的删掉（含其 Subagent 闭包），删不掉的留在归档区并逐条返回原因。
  *
  * @returns {{ deleted: string[], failed: Array<{sessionId: string, error: string}> }}
  */
 async function deleteSessionList(ctx, sessionIds) {
   const targets = [...new Set((sessionIds || []).map((s) => String(s).trim()).filter(Boolean))];
+  const { childrenMap } = await scanSessionTopology();
   const deleted = [];
   const failed = [];
   for (const sid of targets) {
     if (deleted.includes(sid)) continue; // 已随前一条的级联闭包删掉
     try {
-      const casc = await deleteSessionCascade(ctx, sid);
+      const casc = await deleteSessionCascade(ctx, sid, childrenMap);
       deleted.push(...casc);
     } catch (err) {
       failed.push({ sessionId: sid, error: (err && err.message) || String(err) });
@@ -860,6 +861,21 @@ function ungroupedArchived(archivedIds, table) {
   return archivedIds.filter((id) => !accounted.has(String(id)));
 }
 
+/**
+ * 按 workspaceId 从归档快照计算待操作目标 ID 集合：
+ * undefined = 全部归档；null = 未分组归档（不在任何工作区 sessionIds 内）；
+ * 具体 id = 该工作区名下已归档的会话（未知工作区抛错）。
+ * 删除与恢复（handleDeleteAll / handleUnarchiveAll）共用同一口径。
+ */
+function archivedTargets(state, table, workspaceId) {
+  const archived = (state.archivedSessionIds || []).map(String);
+  if (workspaceId === undefined) return [...archived];
+  if (workspaceId === null) return ungroupedArchived(archived, table);
+  const rec = table.get(String(workspaceId));
+  if (!rec) throw new Error("workspace 不存在: " + workspaceId);
+  return archivedForWorkspace(archived, rec);
+}
+
 /** 读取当前归档列表并按 workspaceId 过滤出待操作目标（只读快照，不写状态）。 */
 async function readArchivedTargeting(ctx, workspaceId) {
   const domain = getWorkspaceDomain(ctx);
@@ -867,12 +883,7 @@ async function readArchivedTargeting(ctx, workspaceId) {
   const registry = ctx.get("workspaceRegistry");
   const state = (registry && typeof registry.requireState === "function") ? registry.requireState() : domain.global.get();
   const table = (registry && registry.table) || domain.table("workspaces");
-  const archived = (state.archivedSessionIds || []).map(String);
-  if (workspaceId === undefined) return [...archived];
-  if (workspaceId === null) return ungroupedArchived(archived, table);
-  const rec = table.get(String(workspaceId));
-  if (!rec) throw new Error("workspace 不存在: " + workspaceId);
-  return archivedForWorkspace(archived, rec);
+  return archivedTargets(state, table, workspaceId);
 }
 
 async function handleUnarchive(ctx, req, res) {
@@ -897,20 +908,10 @@ async function handleUnarchiveAll(ctx, req, res) {
 
   let restored = [];
   await mutateWorkspaceState(ctx, async (state, table, g) => {
-    const archived = (state.archivedSessionIds || []).map(String);
-    let toRemove;
-    if (workspaceId === undefined) {
-      toRemove = new Set(archived);
-    } else if (workspaceId === null) {
-      toRemove = new Set(ungroupedArchived(archived, table));
-    } else {
-      const rec = table.get(String(workspaceId));
-      if (!rec) throw new Error("workspace 不存在: " + workspaceId);
-      toRemove = new Set(archivedForWorkspace(archived, rec));
-    }
+    const toRemove = new Set(archivedTargets(state, table, workspaceId));
     if (toRemove.size === 0) return;
     restored = [...toRemove];
-    const next = { ...state, archivedSessionIds: archived.filter((id) => !toRemove.has(id)) };
+    const next = { ...state, archivedSessionIds: (state.archivedSessionIds || []).filter((id) => !toRemove.has(String(id))) };
     await g.set(next);
   });
 
