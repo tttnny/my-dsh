@@ -6,8 +6,10 @@
  *    工作区模式显示活跃会话、归档区显示已归档会话。
  *  - 无「未分组」：会话失去工作区归属（如 DSH 升级重置注册表）时后台自动收编
  *    ——将其 cwd 注册为工作区（幂等）并挂载会话，未分组区块不再存在。
- *  - 工作区管理为「移除显示」而非「删除注册」：仅隐藏工作区节点（localStorage 记忆），
+ *  - 工作区管理默认「移除显示」而非「删除注册」：仅隐藏工作区节点（localStorage 记忆），
  *    注册与会话归属不变；重新添加同一目录后工作区连同会话一起恢复显示。
+ *    例外：名下已无任何可见会话与归档会话的空工作区，移除时自动走官方 workspace/delete
+ *    RPC 真注销注册表记录（同样不删磁盘目录与会话文件）。
  *  - 永久删除会话采用持久化墓碑（localStorage）：官方列表仍返回的已删会话
  *    无论刷新/跨标签页都不可见，官方列表收敛后墓碑自动清除。
  */
@@ -1206,7 +1208,7 @@ window.__ModuleLoader__.load({
 
     // ══════════════ 主组件 ══════════════
     function WorkspaceTreeBrowser(props) {
-      const { wide, useSessions, useWorkspaces, startSession, connectWorkspace, open, clearSession, renameSession, renameWorkspace, archiveSession, createWorkspace, pickDirectory, refreshSessions, adoptSession } = props;
+      const { wide, useSessions, useWorkspaces, startSession, connectWorkspace, open, clearSession, renameSession, renameWorkspace, archiveSession, createWorkspace, deleteWorkspace, pickDirectory, refreshSessions, adoptSession } = props;
       const sessions = useSessions((s) => s);
       const workspaces = useWorkspaces((s) => s);
 
@@ -1225,6 +1227,8 @@ window.__ModuleLoader__.load({
       const [archiveConfirm, setArchiveConfirm] = useState(null);
       const [archiveBusy, setArchiveBusy] = useState(false);
       const [deleteWsConfirm, setDeleteWsConfirm] = useState(null);
+      const [hideWsBusy, setHideWsBusy] = useState(false);
+      const hideWsLockRef = useRef(false);
       const [alertInfo, setAlertInfo] = useState(null);
       const [hardDeleted, setHardDeleted] = useState(() => loadSet(LS_DELETED));
       const [hiddenWs, setHiddenWs] = useState(() => loadSet(LS_HIDDEN_WS));
@@ -1702,26 +1706,88 @@ window.__ModuleLoader__.load({
         }
       }, [renameTarget, renameDraft, renameWorkspace, renameSession, showAlert]);
 
-      /** 移除工作区显示（同步本地记忆，无异步过程，不设 busy）。 */
+      /**
+       * 工作区是否被会话"占用"：名下有可见会话（含当前打开的空白草稿）或有效归档会话。
+       * 只统计自身直属的 sessionIds——路径嵌套的子工作区是独立注册记录，父被真删后
+       * 会自动升级为顶层继续显示，不参与本判定；byId 无行的幽灵 ID（host 已不再返回）
+       * 与未打开的空白草稿不算占用（前者是待清理残留，后者很快会被自动回收）。
+       */
+      const workspaceOccupied = useCallback((w) => {
+        if (!w) return true;
+        if ((w.sessionIds || []).length === 0) return false; // 注册表本就没挂任何会话
+        // 保守守卫：会话列表尚未收敛（loading/error）时 byId 缺行，
+        // 若照常判定会把真有会话的工作区误判为空 → 永久注销，故一律按占用处理。
+        if (!sessions || sessions.phase !== "ready") return true;
+        const byId = (sessions && sessions.byId) || {};
+        const cur = sessions ? sessions.current : null;
+        for (const raw of w.sessionIds || []) {
+          const id = String(raw);
+          const row = byId[id] || null;
+          if (row && isSubagentRow(row)) continue;
+          if (archivedSessionVisible(row, archived, hardDeleted)) return true;
+          if (sessionVisible(row, cur, archived, hardDeleted)) return true;
+        }
+        return false;
+      }, [sessions, archived, hardDeleted]);
+
+      /** 移除工作区显示：名下已无任何会话/归档 → 真注销；否则维持「仅隐藏」。 */
       const onHideWs = useCallback((w) => {
-        setDeleteWsConfirm({ ws: w });
-      }, []);
+        setDeleteWsConfirm({ ws: w, hardRemove: !workspaceOccupied(w) });
+      }, [workspaceOccupied]);
 
       const onCancelHideWs = useCallback(() => {
+        if (hideWsLockRef.current) return;
         setDeleteWsConfirm(null);
-      }, [deleteWsConfirm]);
+      }, []);
 
-      const onConfirmHideWs = useCallback(() => {
+      const onConfirmHideWs = useCallback(async () => {
         if (!deleteWsConfirm || !deleteWsConfirm.ws) return;
         const wid = String(deleteWsConfirm.ws.workspaceId);
-        setDeleteWsConfirm(null);
-        setHiddenWs((prev) => {
-          const next = new Set(prev);
-          next.add(wid);
-          saveSet(LS_HIDDEN_WS, next);
-          return next;
-        });
-      }, [deleteWsConfirm]);
+        const hideOnly = () => {
+          setHiddenWs((prev) => {
+            const next = new Set(prev);
+            next.add(wid);
+            saveSet(LS_HIDDEN_WS, next);
+            return next;
+          });
+        };
+        if (!deleteWsConfirm.hardRemove) {
+          setDeleteWsConfirm(null);
+          hideOnly();
+          return;
+        }
+        // 真注销：走官方 workspace/delete RPC（仅删注册表记录，不碰磁盘目录与会话文件）。
+        if (hideWsLockRef.current) return;
+        hideWsLockRef.current = true;
+        setHideWsBusy(true);
+        try {
+          await deleteWorkspace(wid);
+          setDeleteWsConfirm(null);
+          // 注销后顺手清掉该 ID 的本地记忆（隐藏集还有 phase=ready 后的对账 effect 兜底）。
+          setHiddenWs((prev) => {
+            if (!prev.has(wid)) return prev;
+            const next = new Set(prev);
+            next.delete(wid);
+            saveSet(LS_HIDDEN_WS, next);
+            return next;
+          });
+          setExpandedGroups((prev) => {
+            if (!prev.has(wid)) return prev;
+            const next = new Set(prev);
+            next.delete(wid);
+            saveSet(LS_GROUPS, next);
+            return next;
+          });
+        } catch (error) {
+          // 失败（或旧版 DSH 无 delete 服务）：降级为仅隐藏，不让用户的点击丢失。
+          setDeleteWsConfirm(null);
+          hideOnly();
+          showAlert("工作区注销失败，已先仅隐藏移除：" + String(error && error.message || error), "移除失败");
+        } finally {
+          hideWsLockRef.current = false;
+          setHideWsBusy(false);
+        }
+      }, [deleteWsConfirm, deleteWorkspace, showAlert]);
 
       const onArchiveSession = useCallback((sessionId) => {
         // 空白草稿不允许归档：归档后双视图都不可见（工作区视图排 archvied、归档视图排 blank），
@@ -2041,11 +2107,13 @@ window.__ModuleLoader__.load({
         h(ConfirmModal, {
           key: "hideWsConfirmModal",
           open: deleteWsConfirm !== null,
-          title: "移除工作区显示",
-          desc: deleteWsConfirm && deleteWsConfirm.ws ? ("确定将工作区 “" + (deleteWsConfirm.ws.title || baseName(deleteWsConfirm.ws.path)) + "” 从侧栏移除吗？\n\n仅移除显示：不删除工作区注册，目录文件、会话日志与会话归属均不受影响；之后重新添加该目录时，工作区连同其会话一起恢复显示。") : "",
+          title: deleteWsConfirm && deleteWsConfirm.hardRemove ? "彻底移除空工作区" : "移除工作区显示",
+          desc: deleteWsConfirm && deleteWsConfirm.ws ? (deleteWsConfirm.hardRemove
+            ? ("工作区 “" + (deleteWsConfirm.ws.title || baseName(deleteWsConfirm.ws.path)) + "” 名下已没有任何会话与归档记录，将直接从工作区注册表中注销该工作区。\n\n仅注销注册：不删除磁盘目录与会话文件（本就没有其会话）；之后重新添加该目录时会以新的注册记录出现。")
+            : ("确定将工作区 “" + (deleteWsConfirm.ws.title || baseName(deleteWsConfirm.ws.path)) + "” 从侧栏移除吗？\n\n仅移除显示：不删除工作区注册，目录文件、会话日志与会话归属均不受影响；之后重新添加该目录时，工作区连同其会话一起恢复显示。")) : "",
           confirmText: "移除",
-          danger: false,
-          busy: false,
+          danger: deleteWsConfirm ? deleteWsConfirm.hardRemove === true : false,
+          busy: hideWsBusy,
           onCancel: onCancelHideWs,
           onConfirm: onConfirmHideWs
         }),
@@ -2488,6 +2556,14 @@ window.__ModuleLoader__.load({
                 return ctx.workspaces.create(input);
               }
               return Promise.reject(new Error("工作区服务不可用"));
+            },
+            // 官方 RPC workspace/delete：仅注销注册表记录，不删磁盘目录与会话文件
+            // （旧版 DSH 无此方法时抛错，调用方降级为仅隐藏）。
+            deleteWorkspace: (workspaceId) => {
+              if (ctx.workspaces && typeof ctx.workspaces.delete === "function") {
+                return ctx.workspaces.delete(workspaceId);
+              }
+              return Promise.reject(new Error("工作区注销服务不可用（当前 DSH 版本不支持）"));
             },
             adoptSession: (sessionId, workspaceId) => {
               if (ctx.sessions && typeof ctx.sessions.create === "function") {
