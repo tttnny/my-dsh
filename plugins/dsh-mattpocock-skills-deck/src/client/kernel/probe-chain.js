@@ -70,7 +70,9 @@
       //   此前只传 cwd，host 回退到 detect 自产的 selection（默认 github），导致 markdown 工作区出现 GitHub 检查行。
       // #529：附带当前语言（host 明细按语言双语产出，不传则恒为中文）
       // 分叉 preset 门控：附带 sessionId，host 据此判定本会话所选 preset 是否含 Matt 技能
-      const args = Object.assign({}, st.cwd ? { cwd: st.cwd } : {}, (st.selection && st.selection.backendId) ? { backendId: st.selection.backendId } : {}, force ? { force:true } : {}, { lang: _langForChain }, st.sessionId ? { sessionId: st.sessionId } : {})
+      // 客户端直传 preset（与 PTC 门控同源读法）：host 优先采信，读不到时 host 自行解析或回退
+      const _presetForChain = (typeof readSessionPreset === 'function' ? readSessionPreset(st.sessionId) : undefined)
+      const args = Object.assign({}, st.cwd ? { cwd: st.cwd } : {}, (st.selection && st.selection.backendId) ? { backendId: st.selection.backendId } : {}, force ? { force:true } : {}, { lang: _langForChain }, st.sessionId ? { sessionId: st.sessionId } : {}, (_presetForChain === undefined ? {} : { preset: _presetForChain }))
       const chainT0 = Date.now()
       const p = host.call('wf.chain', args).then(function(res){
         try { if (res && res.ok) log('info', 'host.call', { method: 'wf.chain', latencyMs: Date.now() - chainT0, ok: true, kind: 'chain' }); else log('warn', 'host.call.fail', { method: 'wf.chain', kind: 'chain', errorHash: dswsLogHash(dswsLogTrunc(String((res && res.error) || 'chain-not-ok'), 120, 'error')) }) } catch (eL) {}

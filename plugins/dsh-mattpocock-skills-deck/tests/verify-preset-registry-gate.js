@@ -62,7 +62,7 @@ async function main() {
     sourcePath: '/fake/home/.dsh/.agent-presets/matt-standard/skills/ask-matt/SKILL.md',
     repo: null, channels: [],
   }
-  const runChain = async (presetId) => {
+  const runChain = async (presetId, extraArgs) => {
     const h = dcMod.createDetectChain({
       canonicalKey: async (cwd) => cwd,
       DEFAULT_CWD: '/tmp',
@@ -83,7 +83,7 @@ async function main() {
       setChainCache: () => {},
       logCtx: null,
     })
-    return h.handleChain({ cwd: '/tmp/ws1', lang: 'zh', sessionId: 'sid-1' })
+    return h.handleChain(Object.assign({ cwd: '/tmp/ws1', lang: 'zh', sessionId: 'sid-1' }, extraArgs || {}))
   }
   const skillSteps = (res) => {
     const snap = res && (res.fullSnapshot || res.snapshot)
@@ -98,6 +98,17 @@ async function main() {
   const rOwn = await runChain('matt-standard')
   const stepsOwn = skillSteps(rOwn)
   check(stepsOwn.length > 0 && stepsOwn.every((s) => s.status === 'done'), '本 preset：注册表命中保留，技能项绿')
+  // ---- 5. 客户端直传 preset 优先：宿主解析未知时，直传 standard 仍变红、直传 matt-standard 仍绿 ----
+  const rExplicitRed = await runChain(null, { preset: 'standard' })
+  const stepsExplicitRed = skillSteps(rExplicitRed)
+  check(stepsExplicitRed.length > 0 && stepsExplicitRed.every((s) => s.status !== 'done'), '直传 standard：宿主解析未知也变红')
+  const rExplicitGreen = await runChain(null, { preset: 'matt-standard' })
+  const stepsExplicitGreen = skillSteps(rExplicitGreen)
+  check(stepsExplicitGreen.length > 0 && stepsExplicitGreen.every((s) => s.status === 'done'), '直传 matt-standard：保持绿')
+  // ---- 6. 结论缀 preset 可观测标记（文本落在 show.desc，兼查 detail） ----
+  const stepText = (s) => String((s && s.detail) || (s && s.show && s.show.desc) || '');
+  check(stepsOther.some((s) => stepText(s).includes('preset：')), '红项明细缀 preset 标记')
+  check(stepsOwn.some((s) => stepText(s).includes('preset：')), '绿项明细缀 preset 标记')
 
   console.log(failed ? `\n存在失败（${total} 项）` : `\n全部通过（${total} 项）`)
   process.exit(failed ? 1 : 0)

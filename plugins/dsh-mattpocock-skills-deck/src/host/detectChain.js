@@ -35,6 +35,12 @@ export function createDetectChain(deps) {
       // 分叉 preset 门控：技能判装按「本会话当前生效 preset」门控；链缓存键必须含 preset 维度，
       // 同一工作区不同 preset 会话的链结果不得互串。无会话上下文时回退枚举全部 preset 目录。
       const _presetBase = (typeof resolvePresetCtx === 'function') ? resolvePresetCtx(args && args.sessionId) : { known: false, presetId: null }
+      // 分叉：客户端直传 preset 优先采信（与 PTC 门控同源读法，不赌宿主侧会话形状）；缺席时沿用宿主解析或回退。
+      if (args && Object.prototype.hasOwnProperty.call(args, 'preset')) {
+        const _ep = args.preset
+        if (typeof _ep === 'string' && _ep) { _presetBase.known = true; _presetBase.presetId = _ep }
+        else if (_ep === null) { _presetBase.known = true; _presetBase.presetId = null }
+      }
       let _presetIds = null
       if (!_presetBase.known && typeof listPresetIds === 'function') { try { _presetIds = await listPresetIds() } catch {} }
       const _presetCtx = _presetBase.known ? _presetBase : { known: false, presetId: null, ids: _presetIds || [] }
@@ -84,13 +90,15 @@ export function createDetectChain(deps) {
         // 防宿主 skills 服务全局索引穿透会话门控（标准根与本会话 preset 目录的命中保留；未知会话保持旧行为）。
         async function probeSkillGated(skillName) {
           const r = await probeSkill(skillName, chainLang, cwd, _presetCtx)
+          // 分叉可观测：结论缀门控看到的 preset（未知即回退口径；定位 standard 误绿类问题时直接看行尾）
+          try { if (r && typeof r.detail === 'string' && r.detail && r.detail.indexOf('preset：') < 0 && r.detail.indexOf('[preset:') < 0 && r.detail.indexOf('会话门控') < 0) r.detail += (chainLang === 'en' ? ' [preset: ' + (_presetCtx.known ? String(_presetCtx.presetId || 'none') : 'unknown') + ']' : '（preset：' + (_presetCtx.known ? String(_presetCtx.presetId || '无') : '未知') + '）') } catch (eT) {}
           try {
             if (r && r.level === 'ok' && _presetCtx && _presetCtx.known && r.sourcePath && typeof probeReason === 'function' && typeof presetGateMod === 'function') {
               const gp = await presetGateMod()
               const owner = (gp && typeof gp.attributePresetPath === 'function') ? await gp.attributePresetPath(r.sourcePath) : null
               if (owner && owner !== (_presetCtx.presetId || null) && typeof probeReason === 'function' && gp && typeof gp.verdictFromReason === 'function') {
                 const reason = await probeReason(skillName, chainLang, cwd, _presetCtx)
-                return gp.verdictFromReason(reason, chainLang, owner)
+                return gp.verdictFromReason(reason, chainLang, owner, _presetCtx.presetId)
               }
             }
           } catch (eG) {}

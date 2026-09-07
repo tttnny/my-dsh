@@ -63,21 +63,24 @@ export function createPresetGate(deps) {
     } catch {}
     return null
   }
-  // 他人 preset 注册表命中作废后的纯盘上结论（与 skillProbe 盘上分支同形：来源行 + 注册表未收录注记 + 门控注记）。
-  function verdictFromReason(reason, lang, owner) {
+  // 他人 preset 注册表命中作废后的纯盘上结论（与 skillProbe 盘上分支同形：来源行 + 注册表未收录注记 + 门控注记 + 会话 preset 标记）。
+  function verdictFromReason(reason, lang, owner, sessPreset) {
     const note = (lang === 'en')
       ? ' (registry hit from another preset "' + owner + '" ignored by session gating)'
       : '（注册表命中来自他人 preset“' + owner + '”，已按会话门控忽略）'
+    const sessTag = (lang === 'en')
+      ? ' [preset: ' + (sessPreset === undefined ? 'unknown' : String(sessPreset || 'none')) + ']'
+      : '（preset：' + (sessPreset === undefined ? '未知' : String(sessPreset || '无')) + '）'
     const ch = [{ channel: 'registry', root: 'preset:' + owner, result: 'gated', detail: '' }].concat((reason && reason.channels) || [])
     if (reason && reason.kind === 'ok') {
       const srcLine = reason.sourcePath ? ((lang === 'en') ? ' (source: ' + reason.sourcePath + ')' : '（来源：' + reason.sourcePath + '）') : ''
       const regNote = (lang === 'en') ? ' (DSH catalog miss; judged by disk facts)' : '（DSH 技能清单未收录，按盘上事实判定）'
-      return { ok: true, level: 'ok', detail: reason.detail + srcLine + regNote + note, hint: '', sourcePath: reason.sourcePath || undefined, repo: null, via: reason.via, channels: ch }
+      return { ok: true, level: 'ok', detail: reason.detail + srcLine + regNote + note + sessTag, hint: '', sourcePath: reason.sourcePath || undefined, repo: null, via: reason.via, channels: ch }
     }
     if (reason && reason.kind === 'invalid') {
-      return { ok: false, level: 'bad', detail: reason.detail + note, hint: reason.hint, repo: null, reason: 'invalid', channels: ch }
+      return { ok: false, level: 'bad', detail: reason.detail + note + sessTag, hint: reason.hint, repo: null, reason: 'invalid', channels: ch }
     }
-    return { ok: false, level: 'bad', detail: ((reason && reason.detail) || ((lang === 'en') ? 'Not installed' : '未安装')) + note, hint: (reason && reason.hint) || 'prompt:installSkills', repo: null, reason: 'missing', channels: ch }
+    return { ok: false, level: 'bad', detail: ((reason && reason.detail) || ((lang === 'en') ? 'Not installed' : '未安装')) + note + sessTag, hint: (reason && reason.hint) || 'prompt:installSkills', repo: null, reason: 'missing', channels: ch }
   }
   return { resolveSessionPresetCtx, listPresetIds, attributePresetPath, verdictFromReason }
 }

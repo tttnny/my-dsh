@@ -271,6 +271,45 @@
       } catch (e) { /* 忽略 */ }
       return ''
     }
+    // 分叉 preset 门控：读当前会话生效 preset（与 getCwdSync 同形，先活对象后快照行）。
+    // 返回 string（已知）/ null（明确无 preset）/ undefined（未知→宿主自行解析或回退）。
+    export const readSessionPreset = function (sid) {
+      try {
+        if (!sid) return undefined
+        const sessions = ctx.get('sessions')
+        if (!sessions) return undefined
+        let seenNull = false
+        const pick = function (v) { if (typeof v === 'string' && v) return v; if (v === null) seenNull = true; return null }
+        try {
+          if (typeof sessions.get === 'function') {
+            const s = sessions.get(sid)
+            if (s) {
+              const hit = pick(s.agentPreset) || pick(s.preset)
+              if (hit) return hit
+              try { const pv = s.projections && s.projections.values && s.projections.values.agentPreset; const h2 = pick(pv); if (h2) return h2 } catch (eP) {}
+              try { const h3 = pick(s.projectionValues && s.projectionValues.agentPreset); if (h3) return h3 } catch (eP2) {}
+              const header = s.header || s.meta
+              const hp = pick(header && header.agentPreset)
+              if (hp) return hp
+            }
+          }
+        } catch (e3) {}
+        try {
+          if (sessions.list && typeof sessions.list.getSnapshot === 'function') {
+            const snap = sessions.list.getSnapshot()
+            const row = snap && snap.byId && snap.byId[sid]
+            if (row) {
+              if (typeof getRowPreset === 'function') { const p = getRowPreset(row); if (p) return p }
+              else {
+                const rp = pick(row.projectionValues && row.projectionValues.agentPreset) || pick((row.header || row.meta) && (row.header || row.meta).agentPreset)
+                if (rp) return rp
+              }
+            }
+          }
+        } catch (e5) {}
+        return seenNull ? null : undefined
+      } catch (e) { return undefined }
+    }
     export const storeOf = (sid) => {
       if (!sid) { return shared }
       let st = stores[sid]
