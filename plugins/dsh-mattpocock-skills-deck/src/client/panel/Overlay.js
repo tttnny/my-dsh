@@ -13,6 +13,11 @@ export     const OverlayPanel = (props) => {
       const tabsRef = React.useRef(null)
       const headRef = React.useRef(null)
       const tabs = useTabsRow(s, tabsRef)
+      // #506 无能力回列表（同 Dock，只读能力位；钩子须在 early-return 之前）。
+      const showPrTab2 = (typeof prTabVisible === 'function') ? prTabVisible(s) : false
+      React.useEffect(function () {
+        if (s.tab === 'pr' && !showPrTab2) { s.tab = 'list'; emit(s) }
+      }, [s.tab, showPrTab2])
       React.useEffect(function () {
         const applyFold = function () {
           const t = tabsRef.current
@@ -113,71 +118,11 @@ export     const OverlayPanel = (props) => {
       // Overlay 与 Dock 共享同一 store gate 状态（同一工作区同一 modal）
       const _gateOpen2 = !!s.gateModalOpen
       const _gateModules2 = otherFiltered(s.backendModules)
-      const _openGateModal2 = function(){
-        s.gateModalOpen = true
-        if (!s.gateSelected) {
-          const first = (_gateModules2 && _gateModules2[0]) ? _gateModules2[0].id : firstBackendIdOf(null)
-          s.gateSelected = first
-        }
-        s.gateError = ''
-        emit(s)
-        if (typeof host !== 'undefined' && host.call) {
-          s.gateLoading = true; emit(s)
-          host.call('wf.registry', { cwd: s.cwd || '' }).then(function(r){
-            s.gateLoading = false
-            let mods = null
-            if (r && r.ok && Array.isArray(r.modules)) mods = r.modules
-            else if (r && Array.isArray(r.modules)) mods = r.modules
-            else if (r && r.value && Array.isArray(r.value.modules)) mods = r.value.modules
-            if (Array.isArray(mods) && mods.length) {
-              const filtered = mods.filter(function(m){ return String(m.id).toLowerCase()!=='other' })
-              const fin = filtered.length ? filtered : mods.filter(function(m){ return String(m.id).toLowerCase()!=='other' })
-              if (fin.length) {
-                s.backendModules = mods
-                try{ if (typeof setPresentationMap==='function') setPresentationMap(mods) }catch(e){}
-                const ids = fin.map(function(x){ return x.id })
-                if (!s.gateSelected || ids.indexOf(s.gateSelected)<0) s.gateSelected = fin[0].id
-              }
-            }
-            emit(s)
-          }).catch(function(){ s.gateLoading=false; emit(s) })
-        }
-      }
-      const _closeGateModal2 = function(){ s.gateModalOpen=false; s.gateError=''; emit(s) }
-      const _confirmGate2 = function(){
-        const id = s.gateSelected || ((_gateModules2[0] && _gateModules2[0].id)) || firstBackendIdOf(_gateModules2)
-        if (String(id).toLowerCase()==='other') { s.gateError=tr('switch.gateOtherErr'); emit(s); return }
-        const prev = s.selection
-        const repoRef = s.repository || (s.snapshot && s.snapshot.repository) || null
-        const next = { backendId: id, source: 'explicit', ref: repoRef }
-        s.selection = next
-        try{ if(s.cwd) setCachedSelection(s.cwd,next) }catch(e){}
-        s.gateModalOpen=false
-        emit(s)
-        if(typeof host!=='undefined' && host.call){
-          host.call('wf.bind', { cwd: s.cwd||'', backendId: id }).then(function(res){
-            const ok = res && (res.ok===true || (res.value && res.value.ok===true) || res.ok)
-            if(ok){
-              s.tab='list'
-              emit(s)
-              try{ flash(s, tr('switch.bindOk', { label: (typeof labelOf==='function'?labelOf(id):String(id)) }), 'ok') }catch(e){}
-              try{
-                // #230（D10）：占位符由后端描述数据填充，UI 不再拼装
-                const txt = (typeof setupRunPrompt==='function'? setupRunPrompt(s, id) : '')
-                if (txt) { try{ inject(s, txt) }catch(e){} }
-              }catch(e){}
-              loadSnapshot(s,true,true)
-            } else {
-              s.selection=prev; try{ if(s.cwd) setCachedSelection(s.cwd,prev) }catch(e){}; emit(s)
-              try{ flash(s, tr('switch.bindFail',{err:String((res&&(res.error||res.message))||'unknown').slice(0,120)}), 'warn') }catch(e){}
-            }
-          }).catch(function(e){
-            s.selection=prev; try{ if(s.cwd) setCachedSelection(s.cwd,prev) }catch(e2){}; emit(s)
-            try{ flash(s, '绑定失败:'+String(e && e.message || e).slice(0,120), 'warn') }catch(e3){}
-          })
-        }
-      }
-      const pickBackend2 = function(id){ s.gateSelected=id; emit(s); _confirmGate2() }
+      // 门控动作已搬 OverlayGate.js（open/close/confirm/pick），此处留同名包装供渲染直调（同闭包拼回）
+      const _openGateModal2 = function(){ openOverlayGate(s, _gateModules2) }
+      const _closeGateModal2 = function(){ closeOverlayGate(s) }
+      const _confirmGate2 = function(){ confirmOverlayGate(s, _gateModules2) }
+      const pickBackend2 = function(id){ pickOverlayBackend(s, _gateModules2, id) }
 
       const startDrag = function (e) {
         if (typeof document === 'undefined' || typeof window === 'undefined') return
@@ -262,16 +207,6 @@ export     const OverlayPanel = (props) => {
           // #191 · 仓库名右侧切换按钮（与 Dock 镜像 · pending 灰置 · _isOther 隐藏）
           (function(){ if(_isOther2) return null; var _sel=s.selection||(s.snapshot&&s.snapshot.selection)||null, _bid=_sel?_sel.backendId:null; if(_bid==null) return null; var _pend=!!(_sel&&_sel.pending), _col=(typeof backendColorOf==='function'?backendColorOf(_bid):'#6e7681'); return h(Tip, { content: _pend ? '切换后端 · 探测中不可用' : '切换后端' }, h('button',{'data-repo-switch':1,type:'button','aria-label':'切换后端','aria-disabled':_pend?'true':'false',disabled:_pend,onClick:function(e){try{if(e&&e.preventDefault)e.preventDefault();if(e&&e.stopPropagation)e.stopPropagation()}catch(_){};if(_pend)return;try{openSwitchConfirm(s,null)}catch(_){}},style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:4,flex:'none',border:'1px solid '+_col,color:_col,background:'transparent',cursor:_pend?'not-allowed':'pointer',opacity:_pend?0.45:1,fontSize:10,lineHeight:1,padding:0,colorScheme:'light dark'}},Ic({n:'swap',size:10}))) })(),
           h('span', { style: { flex: 1 } }),
-          // 输入框底栏显隐切换按钮（运行时状态，单会话隔离）
-          h(Tip, { content: s.statusbarHidden ? tr('panel.showStatusbar') : tr('panel.hideStatusbar') }, h('button', {
-            className: 'dsws-btn ghost',
-            'aria-label': s.statusbarHidden ? tr('panel.showStatusbar') : tr('panel.hideStatusbar'),
-            onClick: function () {
-              s.statusbarHidden = !s.statusbarHidden
-              emit(s)
-            },
-            style: { display: 'inline-flex', alignItems: 'center', padding: '2px 6px', fontSize: 11, color: s.statusbarHidden ? '#8b8b95' : 'inherit' }
-          }, Ic({ n: s.statusbarHidden ? 'eye-off' : 'eye', size: 12 }))),
           h(Tip, { content: tr('panel.closeTitle') }, h('button', { className: 'dsws-btn ghost', 'aria-label': tr('panel.closeTitle'), onClick: function () { s.open = false; emit(s) }, style: { display: 'inline-flex', alignItems: 'center' } }, Ic({ n: 'x', size: 12 }))),
         ]),
                 (_isPending2 || _isOther2) ? null : h('div', { className: 'dsws-tabs', ref: tabsRef, style: { display: 'flex', alignItems: 'center', gap: 4 } }, tabs.items),
@@ -322,6 +257,7 @@ export     const OverlayPanel = (props) => {
           ]) : null,
         ]) : h('div', { className: 'dsws-body', onMouseDown: onBodyDown }, [
           s.tab === 'list' ? (active ? h(MapDetail, { st: s, g: active }) : h(ListTab, { st: s, narrow: narrow })) : null,
+          s.tab === 'pr' ? (showPrTab2 ? h(PrTab, { st: s, narrow: narrow }) : h(ListTab, { st: s, narrow: narrow })) : null,
           s.tab === 'skills' ? h(SkillsTab, { st: s }) : null,
           s.tab === 'checks' ? h(ChecksTab, { st: s }) : null,
         ]),

@@ -1,17 +1,10 @@
 /**
  * statusbar/StatusBar.js — 输入区状态栏（5.2）
  * 契约：模块真源（ESM 导出）；scripts/build.mjs 构建时剥行首 export 拼回 src/client/index.js（spliced）。
- *
- * 2026-09-04 用户拍板（grilling 定稿）——输入框上方只保留胶囊一行：
- *   ① 横幅整族代码级移除、任何状态永不渲染：gate 蓝条（后端未选）/「正在探测后端」/
- *      gh CLI 缺失 / gh 未登录 / 未初始化(setup) / 技能缺失黄条，连同 setupPick 卡片与本组件
- *      status 源 gate 弹窗。后端选择 / 环境补齐引导一律走右侧面板（Checks / Settings 页；
- *      Dock / Overlay 各自保留独立 gate 弹窗，source='dock'）。
- *   ② 胶囊出厂默认隐藏（store makeStore 默认 statusbarHidden=true），仅面板眼睛按钮在当前
- *      会话内切换显隐；刷新 / 新会话回默认隐藏，不做持久化。
- *   ③ dock 槽位保持注册挂载（本组件 effects 照跑）：inputActions.setDraft 注入器 /
- *      pendingDraft 消费 / chain·快照加载 / cwd 探测零损失——预填输入框与交接两击不受影响。
  */
+// #491 房外埋点：模块级计数（组件外一次，避免每渲染重置；只记枚举与计数，不记路径原文）。
+const dswsStatusHydN = { n: 0 }
+const dswsStatusFbLast = { reason: '' }
 export const StatusBar = (props) => {
   const sid = props && props.sessionId
   const cx = React.useContext(DswsCtx)
@@ -20,8 +13,6 @@ export const StatusBar = (props) => {
   const summaryCwd = props.useSessions(function (x) {
     return (sid && x.byId && x.byId[sid]) ? x.byId[sid].cwd : undefined
   })
-  // 注（2026-09-02 用户定版）：切换会话 preset 后链结果按「刷新页面」重估——曾实现过 preset 订阅秒级重算，
-  //   用户复核后要求回退（不需要秒显示），此处保持原状：挂载时 loadChain，缓存命中即秒显旧结果。
   const consumedDraftRef = React.useRef(null)
   React.useEffect(function () {
     if (props && props.inputActions && typeof props.inputActions.setDraft === 'function') {
@@ -46,8 +37,9 @@ export const StatusBar = (props) => {
     probeHandoffReady(s)
   }, [])
   React.useEffect(function () {
-    const apply = function (cwd) {
+    const apply = function (cwd, src) {
       if (cwd && cwd !== s.cwd) {
+        try { dswsStatusHydN.n += 1; if (isEnabled('debug') && dswsStatusHydN.n % 100 === 0) log('debug', 'statusbar.hydrate', { cwdSource: String(src || 'unknown') }) } catch (eL) {}
         s.cwd = cwd
         const hydrated = hydrateFromCache(s)
         emit(s)
@@ -55,20 +47,20 @@ export const StatusBar = (props) => {
         if (!hydrated || !snapFresh(s)) loadSnapshot(s, false, !!hydrated)
       }
     }
-    if (summaryCwd) { apply(summaryCwd); return }
+    if (summaryCwd) { apply(summaryCwd, 'summary'); return }
     const cwd0 = detectCwd(props && props.session)
-    if (cwd0) { apply(cwd0); return }
+    if (cwd0) { apply(cwd0, 'session'); return }
     if (sid && typeof host !== 'undefined' && typeof host.call === 'function') {
       host.call('wf.cwd', { sessionId: sid }).then(function (res) {
-        if (res && res.ok && res.cwd) apply(res.cwd)
+        if (res && res.ok && res.cwd) apply(res.cwd, 'wf.cwd')
       }).catch(function () {})
     }
   }, [sid, summaryCwd])
   React.useEffect(function () { loadChain(s, false); if (!snapFresh(s)) loadSnapshot(s, false, true) }, [])
+  React.useEffect(function () { try { const r = !s.snapshot ? 'no-snapshot' : (!s.cwd ? 'no-cwd' : (s.snapMode === 'err' ? 'snap-error' : '')); if (r !== dswsStatusFbLast.reason) { dswsStatusFbLast.reason = r; if (r) log('info', 'statusbar.fallback', { reason: r }) } } catch (eL) {} }, [s.snapshot, s.cwd, s.snapMode])
   const csx = checksumsOf(s)
   const { fr, bugN, triageN, n, timeStr, setup, amber, skillsCheck, skillsBad, ghCliBad, ghAuthBad } = csx
   // 2026-08-28 优化3：胶囊状态栏任何情况下都不隐藏（#187「未选后端隐藏整条」门控退休，仅留导航引导）。
-  //   → 2026-09-04 用户拍板修订：默认隐藏（store 默认 statusbarHidden=true），眼睛按钮会话内切换。
   // _isOtherSBGate 仍用于 go()：未选后端（backendId=null 且非 pending）时点击面板分段 → 设置页引导。
   // Guard: interval transient with empty cwd should not hide capsule (prevent forced empty)
   const _selSBGate = s.selection || (s.snapshot && s.snapshot.selection) || null
@@ -83,100 +75,14 @@ export const StatusBar = (props) => {
   const bugCloseRef = React.useRef(null)
   const backendAnchorRef = React.useRef(null)
   const backendCloseRef = React.useRef(null)
-  const placeOverlay = function (el, align) {
-    if (!el || typeof window === 'undefined') return null
-    const r = el.getBoundingClientRect()
-    if (!r || (!r.width && !r.height)) return null
-    const p = { bottom: Math.max(0, Math.round(window.innerHeight - r.top)) }
-    if (align === 'right') p.right = Math.max(0, Math.round(window.innerWidth - r.right))
-    else p.left = Math.max(0, Math.round(r.left))
-    return p
-  }
-  const placeBugMenu = function () {
-    const p = placeOverlay(bugAnchorRef.current, 'left')
-    if (!p) return false
-    const old = s.bugMenuPos
-    if (old && old.left === p.left && old.bottom === p.bottom) return false
-    s.bugMenuPos = p
-    return true
-  }
-  const clearClose = function (ref) {
-    if (ref.current !== null) { clearTimeout(ref.current); ref.current = null }
-  }
-  const closeBugMenu = function () {
-    clearClose(bugCloseRef)
-    if (!s.bugMenuOpen && !s.bugMenuPos && !s.bugMenuHover) return
-    s.bugMenuOpen = false; s.bugMenuHover = false; s.bugMenuPos = null; emit(s)
-  }
-  const scheduleClose = function (ref, fn) {
-    clearClose(ref)
-    ref.current = setTimeout(function () { ref.current = null; fn() }, 160)
-  }
-  const showBugMenu = function () {
-    clearClose(bugCloseRef)
-    let changed = false
-    if (s.skillsOpen || s.skillPopPos || s.skillHover || s.skillTip) { s.skillsOpen = false; s.skillHover = null; s.skillTip = null; s.skillPopPos = null; changed = true }
-    if (!s.bugMenuOpen) { s.bugMenuOpen = true; changed = true }
-    if (placeBugMenu()) changed = true
-    if (changed) emit(s)
-  }
-  const placeBackendMenu = function () {
-    const p = placeOverlay(backendAnchorRef.current, 'left')
-    if (!p) return false
-    const old = s.backendMenuPos
-    if (old && old.left === p.left && old.bottom === p.bottom) return false
-    s.backendMenuPos = p
-    return true
-  }
-  const closeBackendMenu = function () {
-    clearClose(backendCloseRef)
-    if (!s.backendMenuOpen && !s.backendMenuPos) return
-    s.backendMenuOpen = false; s.backendMenuPos = null; emit(s)
-  }
-  const showBackendMenu = function () {
-    clearClose(backendCloseRef); clearClose(bugCloseRef)
-    let changed = false
-    if (s.bugMenuOpen || s.bugMenuPos || s.bugMenuHover) { s.bugMenuOpen = false; s.bugMenuHover = false; s.bugMenuPos = null; changed = true }
-    if (s.skillsOpen || s.skillPopPos || s.skillHover || s.skillTip) { s.skillsOpen = false; s.skillHover = null; s.skillTip = null; s.skillPopPos = null; changed = true }
-    if (!s.backendMenuOpen) { s.backendMenuOpen = true; changed = true }
-    if (placeBackendMenu()) changed = true
-    if (changed) emit(s)
-  }
-  React.useEffect(function () {
-    if (!s.bugMenuOpen && !s.backendMenuOpen) return undefined
-    let raf = null
-    let disposed = false
-    const reposition = function () {
-      if (disposed || raf !== null) return
-      const run = function () {
-        raf = null
-        if (disposed) return
-        let changed = false
-        if (s.bugMenuOpen && placeBugMenu()) changed = true
-        if (s.backendMenuOpen && placeBackendMenu()) changed = true
-        if (changed) emit(s)
-      }
-      if (typeof requestAnimationFrame === 'function') raf = requestAnimationFrame(run)
-      else raf = setTimeout(run, 0)
-    }
-    document.addEventListener('scroll', reposition, { capture: true, passive: true })
-    window.addEventListener('resize', reposition)
-    const ro = new ResizeObserver(reposition)
-    if (bugAnchorRef.current) ro.observe(bugAnchorRef.current)
-    if (backendAnchorRef.current) ro.observe(backendAnchorRef.current)
-    reposition()
-    return function () {
-      disposed = true
-      ro.disconnect()
-      if (raf !== null) {
-        if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(raf)
-        else clearTimeout(raf)
-      }
-      document.removeEventListener('scroll', reposition, true)
-      window.removeEventListener('resize', reposition)
-      clearClose(bugCloseRef); clearClose(backendCloseRef)
-    }
-  }, [s.bugMenuOpen, s.backendMenuOpen])
+  // 状态栏悬浮菜单定位与开关已搬 StatusMenus.js（B1 #460，纯结构；同闭包拼回直调）。
+  // 以后改悬浮菜单跟随定位与开关的人改 StatusMenus.js，本处只留转调包装。
+  const clearClose = function(ref){ clearStatusClose(ref) }
+  const scheduleClose = function(ref, fn){ scheduleStatusClose(ref, fn) }
+  const closeBugMenu = function(){ closeStatusBugMenu(s, bugCloseRef) }
+  const showBugMenu = function(){ showStatusBugMenu(s, bugAnchorRef, bugCloseRef) }
+  // 菜单重定位副作用已搬 StatusMenus.js 的 useStatusMenus（B1 #460，同闭包拼回），此处单调供装配。
+  useStatusMenus(s, { bugAnchorRef: bugAnchorRef, backendAnchorRef: backendAnchorRef, bugCloseRef: bugCloseRef, backendCloseRef: backendCloseRef })
   const applyFold = function () {
     const cap = foldRef.current
     if (!cap) return
@@ -213,7 +119,7 @@ export const StatusBar = (props) => {
     }
     window.addEventListener('resize', applyAll)
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(applyFold)
-    const poll = setInterval(applyAll, 2000)
+    const poll = setInterval(applyAll, 2000); try { if (isEnabled('debug')) log('debug', 'timer.schedule', { name: 'statusbar-poll', intervalMs: 2000 }) } catch (eL) {}
     return function () {
       try { roFold.disconnect() } catch (e) {}
       try { roParent.disconnect() } catch(e){}
@@ -221,6 +127,37 @@ export const StatusBar = (props) => {
       clearInterval(poll)
     }
   }, [])
+  // #196 · 状态栏胶囊移除 backend segment 后不再在此处挂 SwitchConfirmModal（仍由 Dock/Overlay 挂载，状态机保留）
+  const _isGatePending = !!(_selSBGate && _selSBGate.pending && !!s.cwd)
+  const _gateActive = _isOtherSBGate || _isGatePending
+  // BUG2 修复（2026-08-28）：后端未确定（无 selection 或 backendId 为空）时只显示门控条——
+  //   链快照（wf.chain）常早于选择回填到达，若此刻开放 setup/skills 黄条判定，
+  //   全新工作区会「尚未初始化/技能缺失」黄条一闪而过，再跳到正确的 gate 蓝条。
+  //   后端确定后才走依赖链引导（ghcli → ghauth → setup → skills）。
+  const _backendUndecided = !(_selSBGate && _selSBGate.backendId)
+  const firstBlock = (_gateActive || _backendUndecided) ? 'gate' : ghCliBad ? 'ghcli' : ghAuthBad ? 'ghauth' : amber ? 'setup' : skillsBad ? 'skills' : null
+  // #422 · 收起整个功能区：横幅上的叉收起横幅与胶囊状态栏（打破胶囊永不隐藏旧规）；分叉默认隐藏，展开后按工作区记住。
+  // 分叉报错穿透：异常快照（snapMode==='err'）不受收起影响，横幅照常展示。
+  const deckErr = !!(s && s.snapMode === 'err')
+  const deckFolded = isBannerFolded(s.cwd) && !deckErr
+  const foldBanner = function () { try { setBannerFolded(s.cwd, true) } catch (e) {} }
+  const expandBanner = function () { try { setBannerFolded(s.cwd, false) } catch (e) {} }
+  // 收放按钮：胶囊最右侧的“∨”图标（无文字，技能入口之后）；收起态为带文字的小按钮（悬停与无障碍文案保留全称）。
+  const capsuleToggle = h(Tip, { content: tr('banner.foldDeck') }, h('span', { className: 'dsws-fold-toggle', onClick: function (e) { e.stopPropagation(); foldBanner() }, 'aria-label': tr('banner.foldDeck'), style: { display: 'inline-flex', alignItems: 'center', padding: '2px 2px', borderRadius: 6, color: 'var(--dsw-alias-label-caption,#8b8b95)', cursor: 'pointer', flex: 'none' } }, [
+    Ic({ n: 'chev-down', size: 12 }),
+  ]))
+  if (deckFolded) {
+    // 收起态：只留一颗带文字的小按钮（点即恢复横幅与状态栏；设置页工作区行是另一条恢复路径）
+    return h('div', { style: { display: 'flex', flex: 'none', justifyContent: 'center', padding: '0 8px' } }, [
+      h(Tip, { content: tr('banner.folded') }, h('button', { className: 'dsws-btn ghost', 'aria-label': tr('banner.expandDeck'), onClick: expandBanner, style: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '0 8px', lineHeight: 1.2, border: 'none', borderRadius: 99, color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, [
+        Ic({ n: 'chev-up', size: 10 }),
+        h('span', null, tr('banner.expandDeck')),
+      ])),
+    ])
+  }
+  // #522：调试开关关闭时小灰点不挂载（胶囊里不留空位）；开时常驻；开关切换经已有的日志开关广播刷新各会话界面，此处只读开关不另加广播。
+  let logDotOn = false
+  try { logDotOn = !!(typeof logSwitch !== 'undefined' && logSwitch && logSwitch.enabled === true) } catch (eLogDot) {}
   // 优化3：胶囊恒渲染（任何情况下不隐藏）；未选后端时其上方叠加 gate 蓝条引导入口
   const capsule = h('div', { className: 'dsws-capsule', ref: foldRef, onClick: function () { openPanel(s) }, style: { position: 'relative', width: '100%', boxSizing: 'border-box' } }, [
     h('span', { className: 'dsws-capsule-word', onClick: function (e) { e.stopPropagation(); togglePanel(s) } }, [
@@ -252,12 +189,82 @@ export const StatusBar = (props) => {
     h(Tip, { content: tr('nav.envTitle', { n: n < 0 ? '?' : String(n), t: String(envTotal(s)) }) }, seg('dot', [h('span', { 'data-fold-priority': 8 }, tr('nav.env')), num(envLabel(s))], n < 0 ? '#f87171' : n === envTotal(s) ? '#4ade80' : '#f59e0b', function () { go('checks') })),
     h(Tip, { content: tr('nav.refreshTitle') }, h('span', { className: 'dsws-timebtn', onClick: function (e) { e.stopPropagation(); refreshAll(s) }, 'aria-label': tr('nav.refreshTitle') }, [h('span', { className: 'dsws-rficon' + (s.refreshing ? ' dsws-spin' : '') }, [Ic({ n: 'refresh', size: 11 })]), h('span', { 'data-fold-priority': 4 }, tr('nav.refresh')), h('span', { 'data-fold-priority': 9 }, ' ' + timeStr)])),
     h(SkillFloatList, { s: s }),
+    logDotOn ? h(StatusLogDot, { s: s }) : null,
+    capsuleToggle,
   ])
-  // 2026-09-04 用户拍板：横幅整族与 status 源 gate 弹窗已整体移除（本文件头注释①）——
-  //   环境未全部通过时输入框上方零渲染（连胶囊也不出，沿用 2026-09-02「胶囊与横幅同进退」口径）；
-  //   后端选择 / 环境补齐引导走右侧面板（Checks / Settings 页）。statusbarHidden 只管胶囊显隐。
-  if (s.statusbarHidden) return null
-  const _envAllDone = n >= 0 && envTotal(s) > 0 && n === envTotal(s)
-  if (!_envAllDone) return null
-  return h('div', { style: { display: 'flex', flex: 'none', justifyContent: 'center', width: '100%', boxSizing: 'border-box', padding: '3px 8px 0', overflow: RDOM ? 'hidden' : 'visible' } }, [capsule])
+  // 状态栏后端选择与门控动作已搬 StatusBackend.js（B1 #460，纯结构；同闭包拼回直调）。
+  // 以后改状态栏后端选择（setup 黄条与 gate 蓝条）的人改 StatusBackend.js，本处只留转调包装。
+  const cancelSetupPick = function(){ cancelStatusSetupPick(s) }
+  const confirmSetupPick = function(){ confirmStatusSetupPick(s) }
+  const onSetupInit = function(){ onStatusSetupInit(s) }
+  const openGate = function(){ openStatusGate(s) }
+  const closeGate = function(){ closeStatusGate(s) }
+  const confirmGateStatus = function(){ confirmStatusGate(s) }
+  const setupPickCard = s.setupPickOpen ? (function(){
+    const mods=s.setupPickModules||[];const rec=s.setupPickRecommended||firstBackendIdOf(null);const sel=s.setupPickSelected||rec
+    return h('div', { style:{ width:'100%', maxWidth:560, border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:10, background:'var(--dsw-alias-bg-layer-2,#16181d)', padding:10, boxShadow:'0 8px 24px rgba(0,0,0,.35)' } }, [
+      h('div', { style:{ fontSize:12, fontWeight:700, display:'flex', alignItems:'center', gap:6, marginBottom:8 } }, [Ic({n:'compass',size:12}), h('span', null, tr('banner.setupPickTitle')), s.setupPickLoading ? h('span', {style:{fontSize:10,color:'#8b8b95'}}, tr('list.loading')) : null]),
+      h('div', { style:{ fontSize:11, color:'#f59e0b', background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.25)', borderRadius:6, padding:'6px 8px', marginBottom:8 } }, tr('gate.wipNotice')),
+      s.setupPickErr ? h('div', {style:{fontSize:11,color:'#f87171', marginBottom:6}}, s.setupPickErr) : null,
+      h('div', { style:{ display:'flex', flexDirection:'column', gap:6 } }, (mods.length?mods:supportedBackendViews()).map(function(m){
+        const isRec=rec===m.id;const isSel=sel===m.id;const col=typeof backendColorOf==='function'?backendColorOf(m.id):''
+        return h('label', { key:m.id, style:{ display:'flex', alignItems:'center', gap:8, padding:'7px 9px', borderRadius:8, border: isSel ? '1px solid '+col : '1px solid var(--dsw-alias-border-l1,#2a2d35)', background: isSel ? 'rgba(88,166,255,.08)' : 'transparent', cursor:'pointer' } }, [
+          h('input', { type:'radio', name:'setup-pick', checked: isSel, onChange: function(){ s.setupPickSelected=m.id; emit(s) } }),
+          h('span', { style:{ width:8, height:8, borderRadius:'50%', background: col, flex:'none' } }),
+          h('span', { style:{ fontSize:12, fontWeight:600 } }, m.label),
+          h('span', { style:{ fontSize:10, color:'#8b8b95' } }, m.id),
+          h('span', { style:{ flex:1 } }),
+          isRec ? h('span', { style:{ fontSize:10, color:'#4ade80', border:'1px solid #4ade80', borderRadius:4, padding:'0 4px', lineHeight:1.6 } }, tr('banner.setupPickRecommended')) : null,
+        ])
+      })),
+      h('div', { style:{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:10 } }, [
+        h('button', { className:'dsws-btn ghost', onClick: cancelSetupPick, style:{ fontSize:12 } }, tr('banner.setupPickCancel')),
+        h('button', { className:'dsws-btn', style:{ background:'#58a6ff', borderColor:'#58a6ff', color:'#0b1220', fontWeight:700 }, onClick: confirmSetupPick }, tr('banner.setupPickConfirm')),
+      ]),
+    ])
+  })() : null
+  if (!firstBlock) {
+    // 无 banner 时为胶囊 + 常驻收起按钮（#422：收起即整个功能区消失）
+    return h('div', { style: { display: 'flex', flex: 'none', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%', boxSizing: 'border-box', padding: '3px 8px 0', overflow: RDOM ? 'hidden' : 'visible' } }, [capsule])
+  }
+  const bann = function (text, btnLabel, onBtn, foldable) {
+    return h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: 560, cursor: 'default' } }, [
+      Ic({ n: 'alert', size: 13 }),
+      h('span', { style: { flex: 1 } }, text),
+      h('button', { className: 'dsws-btn', style: { borderColor: 'rgba(245,158,11,.6)' }, onClick: onBtn }, btnLabel),
+      foldable ? h(Tip, { content: tr('banner.foldDeck') }, h('button', { className: 'dsws-btn ghost dsws-banner-fold-x', 'aria-label': tr('banner.foldDeck'), onClick: foldBanner, style: { borderColor: 'rgba(245,158,11,.6)', padding: '1px 6px', display: 'inline-flex', alignItems: 'center' } }, Ic({ n: 'x', size: 11 }))) : null,
+    ])
+  }
+  return h('div', { style: { display: 'flex', flex: 'none', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '3px 8px 0', position:'relative' } }, [
+
+    firstBlock === 'gate'
+      ? (_isGatePending
+          ? h('div', { className: 'dsws-banner warn', style: { margin: 0, maxWidth: 560, background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.35)', color:'#f59e0b', display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8 } }, [ h('span', { className:'dsws-spinner', style:{ width:12, height:12, borderWidth:2, display:'inline-block' } }), h('span', { style:{ flex:1, fontSize:12 } }, '正在探测后端'), h('button', { className:'dsws-btn', style:{ borderColor:'rgba(245,158,11,.6)', fontSize:11 }, onClick:function(){ loadSnapshot(s,true,true) } }, '重试'), h(Tip, { content: tr('banner.foldDeck') }, h('button', { className:'dsws-btn ghost dsws-banner-fold-x', 'aria-label': tr('banner.foldDeck'), style:{ borderColor:'rgba(245,158,11,.6)', color:'#f59e0b', padding:'1px 6px', display:'inline-flex', alignItems:'center' }, onClick: foldBanner }, Ic({ n:'x', size:11 }))) ])
+          : h('div', { className: 'dsws-banner', style: { margin: 0, maxWidth: 560, background:'rgba(56,139,253,.10)', border:'1px solid rgba(56,139,253,.35)', color:'#58a6ff', display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8 } }, [ Ic({ n:'compass', size:13, color:'#58a6ff' }), h('span', { style:{ flex:1, fontSize:12 } }, tr('banner.gate')), h('button', { className:'dsws-btn', style:{ borderColor:'rgba(56,139,253,.6)', color:'#58a6ff', fontSize:11 }, onClick: openGate }, tr('banner.gateBtn')), h(Tip, { content: tr('banner.foldDeck') }, h('button', { className:'dsws-btn ghost dsws-banner-fold-x', 'aria-label': tr('banner.foldDeck'), style:{ borderColor:'rgba(56,139,253,.6)', color:'#58a6ff', padding:'1px 6px', display:'inline-flex', alignItems:'center' }, onClick: foldBanner }, Ic({ n:'x', size:11 }))) ]))
+      : firstBlock === 'ghcli'
+      // #195 修复(第二轮)：hint 直接为后端提供的完整 prompt（多态），UI 直接 inject；移除副按钮
+      ? bann(tr('banner.ghcli'), tr('banner.ghcliBtn'), function () { var c = chainStep(s, 'gh:installed'); var h = (c && c.show && c.show.hint) || ''; if (h) inject(s, h) }, true)
+      : firstBlock === 'ghauth'
+        ? bann(tr('banner.ghauth'), tr('banner.ghauthBtn'), function () { var _bid=(s.selection&&s.selection.backendId!=null)?s.selection.backendId:null; var _mm=(typeof moduleMetaOf==='function'&&_bid!=null)?moduleMetaOf(s,_bid):null; var _pp=_mm&&_mm.prompts&&_mm.prompts.ghAuthLogin; var _lg=(typeof promptLang==='function')?promptLang():'zh'; var _t=_pp?((_lg==='en'&&_pp.en)?String(_pp.en):String(_pp.zh||'')):(typeof promptText==='function'?promptText('ghAuthLogin'):''); if(_t) inject(s,_t) }, true)
+        : firstBlock === 'setup'
+          ? h('div', { style:{ display:'flex', flexDirection:'column', alignItems:'center', gap:6, width:'100%' } }, [
+              bann(tr('banner.setup'), tr('banner.setupBtn'), onSetupInit, true),
+              setupPickCard,
+            ])
+          : bann(tr('banner.skills', { list: (checkShowTitle(skillsCheck && skillsCheck.show, '') || (skillsCheck && skillsCheck.show && skillsCheck.show.desc) || '') }), tr('banner.skillsBtn'), function () { inject(s, promptText('installSkills', installSkillsParams())) }, true),
+    capsule,
+    (s.gateModalOpen && s.gateModalSource==='status' ? h('div', { onClick:function(e){ if(e.target===e.currentTarget) closeGate() }, style:{ position:'absolute', inset:0, background:'rgba(0,0,0,.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10, borderRadius:8, padding:12 } }, [
+      h('div', { style:{ background:'var(--dsw-alias-bg-layer-2,#16181d)', border:'1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius:12, padding:14, width:'92%', maxWidth:380, boxShadow:'0 8px 24px rgba(0,0,0,.5)' } }, [
+        h('div', { style:{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6, marginBottom:6 } }, [Ic({n:'compass',size:14}), h('span', null, tr('switch.pleaseSelectTracker'))]),
+        h('div', { style:{ fontSize:11, color:'#8b8b95', marginBottom:10, lineHeight:1.5 } }, tr('switch.gateIntro')),
+        h('div', { style:{ fontSize:11, color:'#f59e0b', background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.25)', borderRadius:6, padding:'6px 8px', marginBottom:10 } }, tr('gate.wipNotice')),
+        s.gateLoading ? h('div', { style:{ fontSize:11, color:'#8b8b95', padding:'6px 0' } }, tr('panel.loadingShort')) : h('div', { style:{ display:'flex', flexDirection:'column', gap:6 } }, otherFiltered(s.backendModules).map(function(m){
+          const isSel=s.gateSelected===m.id; const col=(typeof backendColorOf==='function'?backendColorOf(m.id):'#6e7681'); const isRec=(s.backendModules||[])[0] && (s.backendModules||[])[0].id===m.id;
+          return h('label', { key:m.id, style:{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8, border:isSel?'1px solid '+col:'1px solid var(--dsw-alias-border-l1,#2a2d35)', background:isSel?'rgba(88,166,255,.08)':'transparent', cursor:'pointer' } }, [ h('input',{type:'radio',checked:isSel,onChange:function(){s.gateSelected=m.id;emit(s)}}), h('span',{style:{width:8,height:8,borderRadius:'50%',background:col,flex:'none'}}), h('span',{style:{fontSize:12,fontWeight:600}},m.label), h('span',{style:{fontSize:10,color:'#8b8b95'}},m.id), h('span',{style:{flex:1}}), isRec?h('span',{style:{fontSize:10,color:'#4ade80',border:'1px solid #4ade80',borderRadius:4,padding:'0 4px'}},'推荐'):null ])
+        })),
+        s.gateError ? h('div', { style:{ fontSize:11, color:'#f87171', marginTop:8 } }, s.gateError) : null,
+        h('div', { style:{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:12 } }, [ h('button',{className:'dsws-btn ghost',onClick:closeGate,style:{fontSize:12}},'取消'), h('button',{className:'dsws-btn',style:{background:'#58a6ff',borderColor:'#58a6ff',color:'#0b1220',fontWeight:700,fontSize:12},onClick:confirmGateStatus},'确认并继续') ])
+      ])
+    ]) : null),
+  ])
 }

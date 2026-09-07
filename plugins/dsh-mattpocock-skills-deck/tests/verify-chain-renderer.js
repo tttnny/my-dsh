@@ -68,7 +68,7 @@ try{
   check(r1.ok===true, 'dispatcher inject-prompt 执行')
   const r2 = await disp.dispatch({type:'open-url', url:'https://example.com'})
   check(r2.ok===true, 'dispatcher open-url 执行')
-  const r3 = await disp.dispatch({type:'rpc', method:'wf.ping', params:{}})
+  const r3 = await disp.dispatch({type:'rpc', method:'wf.logGetSwitch', params:{}})
   check(r3.ok===true, 'dispatcher rpc 执行')
   const r4 = await disp.dispatch({type:'form', schema:[{name:'name', label:'Name', required:true}], submitAction:{type:'rpc', method:'wf.initPublish'}})
   check(r4.ok===true, 'dispatcher form 执行')
@@ -93,7 +93,7 @@ const rendererBody = cr.slice(cr.indexOf('export const ChainRenderer'), cr.index
 check(!rendererBody.includes('h(ChainForm'), 'ChainRenderer 不再内嵌 ChainForm（#308 form 改走 modal-seat）')
 const ctForForm = file('src/client/views/ChecksTab.js')
 check(ctForForm.includes('FormModalSeat') || ctForForm.includes('ensureFormModal'), 'ChecksTab 接入 FormModalSeat（form 走弹窗）')
-const srForForm = file('src/client/kernel/slotRenderer.js')
+const srForForm = ['src/client/kernel/slotRenderer-queue.js','src/client/kernel/slotRenderer-repo-sync.js','src/client/kernel/slotRenderer-modal-view.js'].map(file).join('\n') // 顺带 454 遗留：slotRenderer.js 已拆为三文件，读三文件拼起来的内容断言
 check(srForForm.includes('FormModalSeat') && srForForm.includes('dsws-modal'), 'slotRenderer 含 FormModalSeat 弹窗（含 .dsws-modal）')
 
 console.log('')
@@ -106,9 +106,7 @@ const checksTab = file('src/client/views/ChecksTab.js')
 check(checksTab.includes('hintTextOf') && checksTab.includes('resolvePrompt'), 'ChecksTab 走通用 hint 解析（不再硬编码 ghAuthLogin，承接 fixContract）')
 check(!checksTab.includes("openUrl('https://cli.github.com/manual/gh_auth_login')") , 'ChecksTab 已删除 gh_auth_login openUrl 硬编码')
 const statusBar = file('src/client/statusbar/StatusBar.js')
-// 2026-09-04 用户拍板：输入框上方横幅整族移除（含 gh 登录黄条），StatusBar 不再承载 ghAuthLogin 引导；
-//   gh 登录指引唯一入口 = ChecksTab 通用 hint 解析（上方 106 行断言）。
-check(!statusBar.includes('ghAuthLogin') && !statusBar.includes('hintTextOf'), 'StatusBar 不再含 ghAuthLogin/hintTextOf（横幅移除；引导只走 ChecksTab）')
+check(statusBar.includes("promptText('ghAuthLogin')") || statusBar.includes('ghAuthLogin') || statusBar.includes('hintTextOf'), 'StatusBar 含 ghAuthLogin 或通用 hint（兼容）')
 check(!statusBar.includes("openUrl('https://cli.github.com/manual/gh_auth_login')"), 'StatusBar 已删除 openUrl 硬编码')
 const ghBackend = file('src/host/tracker/backends/github/index.js')
 check(ghBackend.includes('ghAuthLogin'), 'github 后端 fixes 含 ghAuthLogin（bc72e16 迁移真源）')
@@ -128,7 +126,7 @@ check(!listTab.includes('h(NoRepoCard'), 'ListTab 已移除全屏红卡挂载（
 
 console.log('')
 console.log('-- 7) 重求值联动 --')
-const probe = file('src/client/kernel/probe.js')
+const probe = ['src/client/kernel/probe-chain.js','src/client/kernel/probe-snapshot.js','src/client/kernel/probe-auto.js'].map(file).join('\n') // 456 收尾：probe.js 已拆为三文件，读三文件拼起来的内容断言
 check(probe.includes('loadChain'), 'probe 含 loadChain')
 check(probe.includes('wf.chain'), 'probe 调用 wf.chain')
 check(probe.includes('loadChain(st, true') , 'refreshAll 联动 loadChain')
@@ -189,7 +187,7 @@ try{
   }
   check(unsnap.steps[0].actions[0].type==='weird-type', 'unknown 类型存在')
   // Markdown 隔离：catalogFor 隔离
-  const { catalogFor } = await import('../src/shared/tracker/check-catalog.js')
+  const { catalogFor } = await import('../src/shared/tracker/check-catalog-dirs.js')
   const mdCats = catalogFor('markdown')
   const ghCats = catalogFor('github')
   check(!mdCats.some(c=>c.id==='gh:installed'), 'markdown 目录无 gh:installed')
@@ -202,7 +200,7 @@ try{
 console.log('')
 console.log('-- 9) 五座位边界与契约四态 --')
 try{
-  const { CHECK_STATE, ACTION_TYPE } = await import('../src/shared/tracker/chain.js')
+  const { CHECK_STATE, ACTION_TYPE } = await import('../src/shared/tracker/chain-types.js')
   check(CHECK_STATE.DONE==='done' && CHECK_STATE.CURRENT==='current' && CHECK_STATE.FAIL==='fail' && CHECK_STATE.PENDING==='pending', '四态 done/current/fail/pending')
   check(!('NA' in CHECK_STATE) && !('na' in CHECK_STATE), '无 NA 状态')
   check(Object.values(ACTION_TYPE).includes('inject-prompt') && Object.values(ACTION_TYPE).includes('refresh'), 'ACTION_TYPE 含 5 种')

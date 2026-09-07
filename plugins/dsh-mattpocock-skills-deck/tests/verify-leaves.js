@@ -21,22 +21,31 @@ const LEAVES = [
   { file: 'src/client/views/shared/Tabs.js', exports: ['useTabsRow'], components: [] },
   { file: 'src/client/views/TicketRow.js', exports: ['TicketRow'], components: ['TicketRow'] },
   { file: 'src/client/views/MapDetail.js', exports: ['MapDetail'], components: ['MapDetail'] },
+  { file: 'src/client/views/IssueDetailComments.js', exports: ['renderIssueDetailComments'], components: [] }, // V3 #463 由 IssueDetail.js 拆出：评论区（无组件，纯函数）
   { file: 'src/client/views/IssueDetail.js', exports: ['IssueDetail'], components: ['IssueDetail'] },
   { file: 'src/client/views/NoRepoCard.js', exports: ['NoRepoCard'], components: ['NoRepoCard'] },
+  { file: 'src/client/views/ListTabRow.js', exports: ['listIssueRow'], components: [] }, // V3 #463 由 ListTab.js 拆出：单行渲染（无组件，纯函数）
   { file: 'src/client/views/ListTab.js', exports: ['ListTab'], components: ['ListTab'] },
   { file: 'src/client/views/RingSkills.js', exports: ['RingSkills'], components: ['RingSkills'] },
   { file: 'src/client/views/SkillsTab.js', exports: ['SkillsTab'], components: ['SkillsTab'] },
   { file: 'src/client/views/ChecksTab.js', exports: ['ChecksTab'], components: ['ChecksTab'] },
-  { file: 'src/client/views/SettingsPage.js', exports: ['TPL_NAMES', 'TPL_DESC', 'TPL_EDIT_IDS', 'PREVIEW_VALUES', 'SettingsPage'], components: ['SettingsPage'] },
+  { file: 'src/client/views/SettingsWorkspaces.js', exports: ['useWsOverview', 'renderWsOverview'], components: [] }, // V3 #463 由 SettingsPage.js 拆出：后端总览（数据钩子 + 分组渲染）
+  { file: 'src/client/views/SettingsPage.js', exports: ['SettingsPage'], components: ['SettingsPage'] }, // #519 落地 A：模板编辑入口整组删除，TPL_NAMES/TPL_DESC/TPL_EDIT_IDS/PREVIEW_VALUES 四个导出随之移除
   { file: 'src/client/views/RunPanel.js', exports: ['RunPanel'], components: ['RunPanel'] },
+  { file: 'src/client/panel/DockSync.js', exports: ['useDockSync'], components: [] }, // V4 #464 由 Dock.js 拆出：工作区跟随（会话信号加同步加自愈钩子，无组件，纯函数）
   { file: 'src/client/panel/Dock.js', exports: ['DetailsDock'], components: ['DetailsDock'] },
   { file: 'src/client/panel/NamingFailBanner.js', exports: ['NamingFailBanner'], components: ['NamingFailBanner'] },
+  { file: 'src/client/panel/OverlayGate.js', exports: ['openOverlayGate', 'closeOverlayGate', 'confirmOverlayGate', 'pickOverlayBackend'], components: [] }, // V4 #464 由 Overlay.js 拆出：门控旅程（打开关闭确认直选，无组件，纯函数）
   { file: 'src/client/panel/Overlay.js', exports: ['OverlayPanel'], components: ['OverlayPanel'] },
   { file: 'src/client/statusbar/Seg.js', exports: ['num', 'seg'], components: [] },
   { file: 'src/client/statusbar/checksums.js', exports: ['checksumsOf'], components: [] },
+  { file: 'src/client/statusbar/StatusMenus.js', exports: ['placeStatusOverlay', 'clearStatusClose', 'scheduleStatusClose', 'placeStatusBugMenu', 'closeStatusBugMenu', 'showStatusBugMenu', 'placeStatusBackendMenu', 'closeStatusBackendMenu', 'showStatusBackendMenu', 'useStatusMenus'], components: [] }, // B1 #460 由 StatusBar.js 拆出：悬浮菜单定位与开关（锚点测算加开关加重的定位钩子，无组件，纯函数）
+  { file: 'src/client/statusbar/StatusBackend.js', exports: ['normStatusMods', 'ensureStatusSetupPick', 'openStatusSetupPick', 'closeStatusSetupPick', 'cancelStatusSetupPick', 'confirmStatusSetupPick', 'onStatusSetupInit', 'openStatusGate', 'closeStatusGate', 'confirmStatusGate'], components: [] }, // B1 #460 由 StatusBar.js 拆出：后端选择与门控动作（选后端拉清单确认绑定，无组件，纯函数）
   { file: 'src/client/statusbar/StatusBar.js', exports: ['StatusBar'], components: ['StatusBar'] },
   { file: 'src/client/floating/SkillFloatList.js', exports: ['SkillFloatList'], components: ['SkillFloatList'] },
   { file: 'src/client/floating/Pop.js', exports: ['showPop'], components: [] },
+  { file: 'src/client/hostShim.js', exports: ['timer', 'h'], components: [] }, // #459 由 index.js 拆出：宿主适配垫片（timer 兜底加旧标签迁移，无组件，纯函数）
+  { file: 'src/client/panelAssembly.js', exports: ['apiCall', 'cx', 'withCx'], components: [] }, // #459 由 index.js 拆出：面板装配（Ctx 装配加插槽注册加启动收尾，无组件，纯函数）
 ]
 const SOURCES = [
   'src/client/index.js', 'scripts/build.mjs', 'package/package.json',
@@ -68,7 +77,7 @@ function main() {
     if (!fs.existsSync(file)) { check(false, file + ' 缺失'); continue }
     const src = fs.readFileSync(file, 'utf8')
     const lines = src.split(/\r?\n/).length
-    const limit = file.includes('StatusBar') ? 450 : 350
+    const limit = 350 // B1 #460：StatusBar 已拆分达标，例外已删，全员 350
     check(lines <= limit, file + ' ≤' + limit + ' 行（G4 · 实际 ' + lines + '）')
     for (const ex of l.exports) {
       const ok = new RegExp('export\\s+(const|let|function|var)\\s+' + ex + '\\b').test(src)

@@ -12,16 +12,20 @@ const cli = fs.readFileSync('client.js', 'utf8')
 const pcli = fs.readFileSync('package/lib/client.js', 'utf8')
 const host = fs.readFileSync('host.js', 'utf8')
 const phost = fs.readFileSync('package/lib/index.js', 'utf8')
-const detailSrc = fs.readFileSync('src/client/views/IssueDetail.js', 'utf8')
-const apiSrc = fs.readFileSync('src/client/kernel/api.js', 'utf8')
-const probeSrc = fs.readFileSync('src/client/kernel/probe.js', 'utf8')
-const localeSrc = fs.readFileSync('src/client/kernel/locale.js', 'utf8')
+const hostComments = fs.readFileSync('src/host/commentThreads.js', 'utf8') // H5 #449：评论通路搬到评论电话文件，拼合断言意图不变
+const hostSide = host + hostComments
+const phostComments = fs.readFileSync('package/lib/commentThreads.js', 'utf8')
+const phostSide = phost + phostComments
+const detailSrc = ['src/client/views/IssueDetail.js', 'src/client/views/IssueDetailComments.js'].map((f) => fs.readFileSync(f, 'utf8')).join('\n') // V3 #463：评论区搬到评论文件，拼合断言意图不变（输入区与提交逻辑在评论文件）
+const apiSrc = ['src/client/kernel/api-naming.js', 'src/client/kernel/api-new-session.js', 'src/client/kernel/api-io.js'].map((f) => fs.readFileSync(f, 'utf8')).join('\n') // 原 api.js 已消除，读三文件拼合断言（评论提交在输入输出文件）
+const probeSrc = ['src/client/kernel/probe-chain.js','src/client/kernel/probe-snapshot.js','src/client/kernel/probe-auto.js'].map((f) => fs.readFileSync(f, 'utf8')).join('\n') // 456 收尾：probe.js 已拆为三文件，读三文件拼起来的内容断言（本变量仅作源存在性 tripwire，行为断言走构建产物）
+const localeSrc = ['src/client/kernel/locale-panel.js', 'src/client/kernel/locale-flow.js', 'src/client/kernel/locale-word.js', 'src/client/kernel/locale.js'].map((f) => fs.readFileSync(f, 'utf8')).join('\n') // 原 locale.js 已瘦身为合并器（无键仅合并逻辑），读四文件拼合断言（评论键在流程文案文件）
 
 // ============ host 透传存在性（唯一宿主改动）============
 check(host.includes("harness.handle('wf.commentIssue'"), 'host 含 wf.commentIssue handle')
 check(phost.includes("wf.commentIssue"), 'package host 镜像含 wf.commentIssue')
-check(host.includes('.comment(repoRef'), 'host 经 tracker.comment（契约 op）转发，不走私 gh 直调')
-check(/r.ok[sS]{0,80}cache = { ts: 0, snapshot: null/.test(phost.replace(/\n/g, ' ')) || phost.includes('#213 同语义') || phost.includes('#213 白名单同语义'), '成功路径含面板快照缓存失效（#213 同语义）')
+check(hostSide.includes('.comment(repoRef'), 'host 经 tracker.comment（契约 op）转发，不走私 gh 直调')
+check(/r.ok[sS]{0,80}cache = { ts: 0, snapshot: null/.test(phostSide.replace(/\n/g, ' ')) || phostSide.includes('#213 同语义') || phostSide.includes('#213 白名单同语义'), '成功路径含面板快照缓存失效（#213 同语义）')
 
 // ============ client api 层 ============
 check(apiSrc.includes("host.call('wf.commentIssue'"), 'api.submitIssueComment 调 wf.commentIssue')
@@ -110,10 +114,9 @@ check(diffBehavior !== false, '内容同版本异 → 空差异（不误闪）')
 check(shortCircuit, '同版本短路 skipped=true（304 零扰动语义保留）')
 
 // ============ locale 双语完整门禁 ============
-const zhIdx = localeSrc.indexOf('zh: {'); const enIdx = localeSrc.indexOf('en: {')
-const zhBlock = localeSrc.slice(zhIdx, enIdx); const enBlock = localeSrc.slice(enIdx)
 ;['detail.cmtPlaceholder', 'detail.cmtSend', 'detail.cmtSending', 'detail.cmtAuthFail', 'detail.cmtRateLimit', 'detail.cmtGeneric'].forEach(k => {
-  check(zhBlock.includes("'" + k + "'") && enBlock.includes("'" + k + "'"), 'locale 键双语齐全 ' + k)
+  const hits = localeSrc.split("'" + k + "'").length - 1
+  check(hits >= 2, 'locale 键双语齐全 ' + k + '（拼合出现 ' + hits + ' 次，中英各一）')
 })
 
 // ============ 双产物一致性 ============

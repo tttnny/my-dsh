@@ -44,7 +44,9 @@ if (!existsSync(SRC_SHARED)) {
 if (existsSync(SRC_HOST)) {
   const t = readFileSync(SRC_HOST, 'utf8')
   check(!/const SKILL_PROBE_NAMES\s*=\s*\['ask-matt'/.test(t), 'src/host/index.js 不再内联 SKILL_PROBE_NAMES 字面量')
-  check(/await import\(['"]\.\.\/shared\/matt-skills\.js['"]\)/.test(t), 'src/host/index.js 经 await import 读 shared/matt-skills.js')
+  // H1 #445：该 await import 已原样搬到 src/host/bootstrap.js，断言跟随代码位置，意图不变。
+  const tb = existsSync(path.join(ROOT, 'src/host/bootstrap.js')) ? readFileSync(path.join(ROOT, 'src/host/bootstrap.js'), 'utf8') : ''
+  check(/await import\(['"]\.\.\/shared\/matt-skills\.js['"]\)/.test(t) || /await import\(['"]\.\.\/shared\/matt-skills\.js['"]\)/.test(tb), 'src/host/index.js 经 await import 读 shared/matt-skills.js')
   check(/getMattSkillProbeNames\s*\(/.test(t), 'src/host/index.js 暴露 getMattSkillProbeNames() 惰性加载器')
 }
 
@@ -87,10 +89,9 @@ if (existsSync(INST_CLIENT)) {
   const installMatch = t.match(/"installSkills":\s*\{[\s\S]*?placeholders:\s*\[([^\]]+)\]/)
   check(!!installMatch && /['"]probeList['"]/.test(installMatch[1]) && /['"]probeCount['"]/.test(installMatch[1]), 'installed installSkills prompt 声明 placeholders: [probeList, probeCount]')
   check(/installSkillsParams\s*=\s*function/.test(t), 'installed 定义 installSkillsParams() helper')
-  // 2026-09-04 用户拍板：状态栏「技能缺失」横幅整族移除（输入框上方只留胶囊），
-  //   原 StatusBar 的调用点随之删除，installSkills 唯一 UI 调用点 = SettingsPage 技能页「复制安装 prompt」。
+  // Both callers pass installSkillsParams()
   const callerHits = (t.match(/promptText\('installSkills',\s*installSkillsParams\(\)\)/g) || []).length
-  check(callerHits >= 1, `installed installSkills 调用传 installSkillsParams()（现状唯一调用点 SettingsPage；命中 ${callerHits}/1）`)
+  check(callerHits >= 2, `installed 两处 installSkills 调用都传 installSkillsParams()（命中 ${callerHits}/2）`)
 }
 
 // --- 5. ensureSidebarTab 只注册一个 tab id ---
@@ -115,11 +116,12 @@ if (existsSync(INST_SHARED)) {
   console.log('[note] installed shared/matt-skills.js 缺失；host 将回退到 inline fallback（不阻断，但建议 pnpm install 重生成）')
 }
 
-// --- 7. bundled-skills 与单源一致性（#386 G1 / #387 G2 · 空目录期跳过） ---
+// --- 7. bundled-skills（分叉移除：不随包捆绑技能，技能由 agent-preset 分发；本节整体跳过） ---
 const BUNDLED_DIR = path.join(ROOT, 'package/bundled-skills')
 const BUNDLED_VERSION = 'v1.2.3'
-if (!existsSync(BUNDLED_DIR)) {
-  console.log('[note] package/bundled-skills 不存在，跳过 bundled 一致性校验（早期分支容忍）')
+check(!existsSync(BUNDLED_DIR), '分叉不随包捆绑：package/bundled-skills 不存在')
+if (true) {
+  console.log('[note] 分叉移除 bundled，跳过 bundled 一致性校验')
 } else {
   const { readdirSync: _readdirSync } = require('node:fs')
   // a) 25 目录数与集合双向差集 0（真源 = MATT_SKILL_PROBE_NAMES）

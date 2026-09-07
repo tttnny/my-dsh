@@ -7,6 +7,10 @@ const cli = fs.readFileSync('client.js','utf8')
 const pcli = fs.readFileSync('package/lib/client.js','utf8')
 const host = fs.readFileSync('host.js','utf8')
 const phost = fs.readFileSync('package/lib/index.js','utf8')
+// H2 #446：详情实现搬到 issueDetail.js（行为零变化）；双通道存在性断言跟随位置，意图不变。
+const hostDetail = fs.readFileSync('src/host/issueDetail.js','utf8')
+const hostComments = fs.readFileSync('src/host/commentThreads.js','utf8') // H5 #449：评论通路搬到评论电话文件，拼合断言意图不变
+const hostSide = host + hostDetail + hostComments
 const mdCli = (()=>{ const i=cli.indexOf('const MD_LINK_RE'); const e=cli.indexOf('// ============================================================', i+10); return e>i?cli.slice(i,e):cli.slice(i,i+9000) })()
 
 // —— host 双通道存在性
@@ -15,25 +19,25 @@ check(phost.includes("harness.handle('wf.issueDetail'") || phost.includes("wf.is
 check(host.includes('async function fetchIssueDetail('), 'host 含 fetchIssueDetail')
 check(host.includes('async function fetchIssueDetailREST('), 'host 含 fetchIssueDetailREST')
 check(host.includes("harness.handle('wf.issueComments'"), 'host 含 wf.issueComments handle')
-check(host.includes('async function fetchIssueComments('), 'host 含 fetchIssueComments')
-check(host.includes('async function fetchIssueCommentsREST('), 'host 含 fetchIssueCommentsREST')
-check(host.includes("comments(first:50){nodes{author{login}"), 'host GraphQL 含 comments(first:50) with author')
-check(host.includes("pageInfo{hasNextPage endCursor}"), 'host GraphQL 含 pageInfo{hasNextPage endCursor}')
-check(host.includes("labels(first:20){nodes{name color}}"), 'host GraphQL 含 labels color')
-check(host.includes("blockedBy(first:20){nodes{number title state}}"), 'host GraphQL 含 blockedBy')
+check(hostSide.includes('async function fetchIssueComments('), 'host 含 fetchIssueComments')
+check(hostSide.includes('async function fetchIssueCommentsREST('), 'host 含 fetchIssueCommentsREST')
+check(hostSide.includes("comments(first:50){nodes{author{login}"), 'host GraphQL 含 comments(first:50) with author')
+check(hostSide.includes("pageInfo{hasNextPage endCursor}"), 'host GraphQL 含 pageInfo{hasNextPage endCursor}')
+check(hostSide.includes("labels(first:20){nodes{name color}}"), 'host GraphQL 含 labels color')
+check(hostSide.includes("blockedBy(first:20){nodes{number title state}}"), 'host GraphQL 含 blockedBy')
 
 // —— REST 降级逐请求容错
-check(host.includes("repos/' + repo.owner + '/' + repo.name + '/issues/' + n") || host.includes("repos/' + repo.owner"), 'host REST 含 issues/{n} 路径')
-check(host.includes("/comments?per_page=50"), 'host REST 含 comments per_page 50')
-check(host.includes("/sub_issues?per_page=50"), 'host REST 含 sub_issues')
-check(host.includes("/dependencies/blocked_by"), 'host REST 含 blocked_by')
+check(hostSide.includes("repos/' + repo.owner + '/' + repo.name + '/issues/' + n") || hostSide.includes("repos/' + repo.owner"), 'host REST 含 issues/{n} 路径')
+check(hostSide.includes("/comments?per_page=50"), 'host REST 含 comments per_page 50')
+check(hostSide.includes("/sub_issues?per_page=50"), 'host REST 含 sub_issues')
+check(hostSide.includes("/dependencies/blocked_by"), 'host REST 含 blocked_by')
 
 // —— 错误形状 7 档
 const kinds = ['env','parse','graphql','network','rateLimit','notFound','404']
 kinds.forEach(k=> check(host.includes(k) || cli.includes(k), '错误 kind 含 '+k))
 
 // —— client store 形状
-const storeCli = fs.readFileSync('src/client/kernel/store.js','utf8')
+const storeCli = ['src/client/kernel/store-prefs.js', 'src/client/kernel/store-switch.js', 'src/client/kernel/store-snapshot.js', 'src/client/kernel/store-derived.js'].map((f) => fs.readFileSync(f, 'utf8')).join('\n') // 原 store.js 已消除，读四文件拼合断言（缓存形状在 snapshot，互斥语义在 prefs）
 check(storeCli.includes('issueCache'), 'store 含 issueCache')
 check(storeCli.includes('ISSUE_CACHE_TTL'), 'store 含 ISSUE_CACHE_TTL')
 check(storeCli.includes('60000'), 'store TTL 60000')
@@ -43,7 +47,7 @@ check(storeCli.includes('issueCommentsMoreLoading'), 'store 含 issueCommentsMor
 check(storeCli.includes('issueCommentsFailCount') || storeCli.includes('issueCommentsHasMore'), 'store 含 issueCommentsFailCount/hasMore')
 
 // —— client api 形状
-const apiCli = fs.readFileSync('src/client/kernel/api.js','utf8')
+const apiCli = ['src/client/kernel/api-naming.js', 'src/client/kernel/api-new-session.js', 'src/client/kernel/api-io.js'].map((f) => fs.readFileSync(f, 'utf8')).join('\n') // 原 api.js 已消除，读三文件拼合断言（详情数据通路在输入输出文件）
 check(apiCli.includes('fetchIssueDetail'), 'api 含 fetchIssueDetail')
 check(apiCli.includes('fetchIssueComments'), 'api 含 fetchIssueComments')
 check(apiCli.includes("host.call('wf.issueDetail'"), 'api 调 wf.issueDetail')
@@ -52,7 +56,7 @@ check(apiCli.includes('ISSUE_CACHE_TTL'), 'api 复用 ISSUE_CACHE_TTL')
 check(apiCli.includes('issueCache'), 'api 操作 issueCache')
 
 // —— IssueDetail 视图分支
-const detailCli = fs.readFileSync('src/client/views/IssueDetail.js','utf8')
+const detailCli = ['src/client/views/IssueDetail.js', 'src/client/views/IssueDetailComments.js'].map((f) => fs.readFileSync(f, 'utf8')).join('\n') // V3 #463：评论区搬到评论文件，拼合断言意图不变
 check(detailCli.includes('fetchIssueDetail'), 'IssueDetail 调 fetchIssueDetail')
 check(detailCli.includes('issueMode'), 'IssueDetail 读 issueMode')
 check(detailCli.includes('issueError'), 'IssueDetail 读 issueError')

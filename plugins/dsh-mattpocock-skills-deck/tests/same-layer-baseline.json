@@ -1,0 +1,529 @@
+{
+  "version": 1,
+  "recordedAt": "2026-09-03",
+  "note": "存量豁免清单：只许减不许增；拆分票消掉一条边就同票删一条。backends 三房间不在此清单（仍由老门禁管同房间放行）。",
+  "entries": [
+    {
+      "file": "src/host/index.js",
+      "spec": "./remotePredicates.js",
+      "resolved": "src/host/remotePredicates.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-3/6 #447",
+      "note": "H3 接线：index 动态加载远端谓词模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./skillProbe.js",
+      "resolved": "src/host/skillProbe.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-3/6 #447",
+      "note": "H3 接线：index 动态加载技能探测模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./detectChain.js",
+      "resolved": "src/host/detectChain.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-3/6 #447",
+      "note": "H3 接线：index 动态加载探测编排模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./presetGate.js",
+      "resolved": "src/host/presetGate.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "分叉·preset-gating（my-dsh 1.8.3）",
+      "note": "分叉接线：index 动态加载 preset 门控模块（装配扇入；会话 preset 解析 + preset 根枚举，与 skillProbe/detectChain 同模式）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./sessionLifecycle.js",
+      "resolved": "src/host/sessionLifecycle.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-4/6 #448",
+      "note": "H4 接线：index 动态加载会话启停模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./sessionSnapshot.js",
+      "resolved": "src/host/sessionSnapshot.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-4/6 #448",
+      "note": "H4 接线：index 动态加载会话快照模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./sessionRefresh.js",
+      "resolved": "src/host/sessionRefresh.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-4/6 #448",
+      "note": "H4 接线：index 动态加载会话刷新模块（装配扇入）"
+    },
+    {
+      "file": "src/host/detectChain.js",
+      "spec": "./tracker/generic.js",
+      "resolved": "src/host/tracker/generic.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-3/6 #447",
+      "note": "H3 搬迁：通用检查链装配随函数搬入本文件"
+    },
+    {
+      "file": "src/host/detectChain.js",
+      "spec": "./tracker/fixContract.js",
+      "resolved": "src/host/tracker/fixContract.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-3/6 #447",
+      "note": "H3 搬迁：修复契约装配随函数搬入本文件"
+    },
+    {
+      "file": "src/host/sessionSnapshot.js",
+      "spec": "./tracker/snapshot.js",
+      "resolved": "src/host/tracker/snapshot.js",
+      "layer": "host",
+      "count": 2,
+      "owner": "二批·host-4/6 #448",
+      "note": "H4 搬迁：快照编排器装配随函数搬入本文件"
+    },
+    {
+      "file": "src/host/sessionRefresh.js",
+      "spec": "./tracker/snapshot.js",
+      "resolved": "src/host/tracker/snapshot.js",
+      "layer": "host",
+      "count": 2,
+      "owner": "二批·host-4/6 #448",
+      "note": "H4 搬迁：快照编排器装配随函数搬入本文件"
+    },
+    {
+      "file": "src/host/tracker/index.js",
+      "spec": "./contract.js",
+      "resolved": "src/host/tracker/contract.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host域拆分票（tracker 装配链，随 host 拆分消边）",
+      "note": "tracker 聚合出口重出契约定义"
+    },
+    {
+      "file": "src/host/tracker/index.js",
+      "spec": "./capability.js",
+      "resolved": "src/host/tracker/capability.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host域拆分票（tracker 装配链，随 host 拆分消边）",
+      "note": "tracker 聚合出口重出能力诊断"
+    },
+    {
+      "file": "src/host/tracker/index.js",
+      "spec": "./preflight.js",
+      "resolved": "src/host/tracker/preflight.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host域拆分票（tracker 装配链，随 host 拆分消边）",
+      "note": "tracker 聚合出口重出预检"
+    },
+    {
+      "file": "src/host/tracker/index.js",
+      "spec": "./snapshot.js",
+      "resolved": "src/host/tracker/snapshot.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host域拆分票（tracker 装配链，随 host 拆分消边）",
+      "note": "tracker 聚合出口重出快照编排器"
+    },
+    {
+      "file": "src/host/tracker/detection/detectionService.js",
+      "spec": "./explicitDetector.js",
+      "resolved": "src/host/tracker/detection/explicitDetector.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host域拆分票（tracker 装配链，随 host 拆分消边）",
+      "note": "探测服务调用显式探测器"
+    },
+    {
+      "file": "src/host/tracker/detection/detectionService.js",
+      "spec": "../../workspaceKey.js",
+      "resolved": "src/host/workspaceKey.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host域拆分票（tracker 装配链，随 host 拆分消边）",
+      "note": "探测服务读取宿主工作区键"
+    },
+    {
+      "file": "src/host/tracker/detection/explicitDetector.js",
+      "spec": "./parseIssueTracker.js",
+      "resolved": "src/host/tracker/detection/parseIssueTracker.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host域拆分票（tracker 装配链，随 host 拆分消边）",
+      "note": "显式探测器调用解析器"
+    },
+    {
+      "file": "src/host/platform/index.js",
+      "spec": "./darwin/index.js",
+      "resolved": "src/host/platform/darwin/index.js",
+      "layer": "platform",
+      "count": 1,
+      "owner": "二批·host域拆分票（platform 装配扇出）",
+      "note": "平台入口按系统分发苹果实现"
+    },
+    {
+      "file": "src/host/platform/index.js",
+      "spec": "./win32/index.js",
+      "resolved": "src/host/platform/win32/index.js",
+      "layer": "platform",
+      "count": 1,
+      "owner": "二批·host域拆分票（platform 装配扇出）",
+      "note": "平台入口按系统分发视窗实现"
+    },
+    {
+      "file": "src/host/platform/index.js",
+      "spec": "./linux/index.js",
+      "resolved": "src/host/platform/linux/index.js",
+      "layer": "platform",
+      "count": 1,
+      "owner": "二批·host域拆分票（platform 装配扇出）",
+      "note": "平台入口按系统分发 Linux 实现"
+    },
+    {
+      "file": "src/shared/tracker/deck-derive.js",
+      "spec": "./constants.js",
+      "resolved": "src/shared/tracker/constants.js",
+      "layer": "shared",
+      "count": 1,
+      "owner": "二批·shared拆分票（待开，须先修门禁对照表）",
+      "note": "看板派生引用状态常量"
+    },
+    {
+      "file": "src/shared/tracker/shape.js",
+      "spec": "./constants.js",
+      "resolved": "src/shared/tracker/constants.js",
+      "layer": "shared",
+      "count": 1,
+      "owner": "二批·shared拆分票（待开，须先修门禁对照表）",
+      "note": "数据形状引用状态与类型常量"
+    },
+    {
+      "file": "src/seam/index.js",
+      "spec": "./runtime.js",
+      "resolved": "src/seam/runtime.js",
+      "layer": "seam",
+      "count": 1,
+      "owner": "二批·seam拆分票（待开，聚合出口）",
+      "note": "接缝聚合出口重出运行时绑定"
+    },
+    {
+      "file": "src/seam/index.js",
+      "spec": "./rpc.js",
+      "resolved": "src/seam/rpc.js",
+      "layer": "seam",
+      "count": 1,
+      "owner": "二批·seam拆分票（待开，聚合出口）",
+      "note": "接缝聚合出口重出远程调用绑定"
+    },
+    {
+      "file": "src/seam/index.js",
+      "spec": "./style.js",
+      "resolved": "src/seam/style.js",
+      "layer": "seam",
+      "count": 1,
+      "owner": "二批·seam拆分票（待开，聚合出口）",
+      "note": "接缝聚合出口重出样式绑定"
+    },
+    {
+      "file": "src/seam/index.js",
+      "spec": "./timer.js",
+      "resolved": "src/seam/timer.js",
+      "layer": "seam",
+      "count": 1,
+      "owner": "二批·seam拆分票（待开，聚合出口）",
+      "note": "接缝聚合出口重出定时器绑定"
+    },
+    {
+      "file": "src/seam/index.js",
+      "spec": "./editor.js",
+      "resolved": "src/seam/editor.js",
+      "layer": "seam",
+      "count": 1,
+      "owner": "二批·seam拆分票（待开，聚合出口）",
+      "note": "接缝聚合出口重出编辑器绑定"
+    },
+    {
+      "file": "src/seam/index.js",
+      "spec": "./sidebar.js",
+      "resolved": "src/seam/sidebar.js",
+      "layer": "seam",
+      "count": 1,
+      "owner": "二批·seam拆分票（待开，聚合出口）",
+      "note": "接缝聚合出口重出侧边栏绑定"
+    },
+    {
+      "file": "src/seam/index.js",
+      "spec": "./gate.js",
+      "resolved": "src/seam/gate.js",
+      "layer": "seam",
+      "count": 1,
+      "owner": "二批·seam拆分票（待开，聚合出口）",
+      "note": "接缝聚合出口重出门禁绑定"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./bootstrap.js",
+      "resolved": "src/host/bootstrap.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-1/6 #445",
+      "note": "H1 接线：index 动态加载启动模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./platformChannel.js",
+      "resolved": "src/host/platformChannel.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-1/6 #445",
+      "note": "H1 接线：index 动态加载平台通道模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./repoKeys.js",
+      "resolved": "src/host/repoKeys.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-1/6 #445",
+      "note": "H1 接线：index 动态加载仓库钥匙模块（装配扇入）"
+    },
+    {
+      "file": "src/host/platformChannel.js",
+      "spec": "./tracker/detection/workspaceStore.js",
+      "resolved": "src/host/tracker/detection/workspaceStore.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-1/6 #445",
+      "note": "H1 搬迁：工作区存储装配随函数搬入本文件"
+    },
+    {
+      "file": "src/host/platformChannel.js",
+      "spec": "./tracker/detection/detectionService.js",
+      "resolved": "src/host/tracker/detection/detectionService.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-1/6 #445",
+      "note": "H1 搬迁：探测服务装配随函数搬入本文件"
+    },
+    {
+      "file": "src/host/platformChannel.js",
+      "spec": "./tracker/detection/explicitDetector.js",
+      "resolved": "src/host/tracker/detection/explicitDetector.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-1/6 #445",
+      "note": "H1 搬迁：兜底探测器装配随函数搬入本文件"
+    },
+    {
+      "file": "src/host/repoKeys.js",
+      "spec": "./workspaceKey.js",
+      "resolved": "src/host/workspaceKey.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-1/6 #445",
+      "note": "H1 搬迁：工作区钥匙装配随函数搬入本文件"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./mapBody.js",
+      "resolved": "src/host/mapBody.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-2/6 #446",
+      "note": "H2 接线：index 动态加载正文解析模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./issueList.js",
+      "resolved": "src/host/issueList.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-2/6 #446",
+      "note": "H2 接线：index 动态加载列表拉取模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./issueDetail.js",
+      "resolved": "src/host/issueDetail.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-2/6 #446",
+      "note": "H2 接线：index 动态加载详情快照模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./workspaceCwd.js",
+      "resolved": "src/host/workspaceCwd.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-5/6 #449",
+      "note": "H5 接线：index 动态加载工作区归一模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./commentThreads.js",
+      "resolved": "src/host/commentThreads.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-5/6 #449",
+      "note": "H5 接线：index 动态加载评论线程模块（装配扇入）"
+    },
+    {
+      "file": "src/host/platformChannel.js",
+      "spec": "./tracker/registryCore.js",
+      "resolved": "src/host/tracker/registryCore.js",
+      "layer": "host",
+      "count": 2,
+      "owner": "二批·320-host #461",
+      "note": "V1 调用方改路径：平台通道装配改指注册表新装配入口"
+    },
+    {
+      "file": "src/host/tracker/index.js",
+      "spec": "./registryCore.js",
+      "resolved": "src/host/tracker/registryCore.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·320-host #461",
+      "note": "V1 聚合出口改指注册表主体"
+    },
+    {
+      "file": "src/host/tracker/index.js",
+      "spec": "./registryShape.js",
+      "resolved": "src/host/tracker/registryShape.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·320-host #461",
+      "note": "V1 聚合出口改指形状文件（错误类与迁移键）"
+    },
+    {
+      "file": "src/host/tracker/registryCore.js",
+      "spec": "./registryShape.js",
+      "resolved": "src/host/tracker/registryShape.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·320-host #461",
+      "note": "V1 拆分：主体引用形状校验与包桩"
+    },
+    {
+      "file": "src/host/tracker/registryCore.js",
+      "spec": "./registryViews.js",
+      "resolved": "src/host/tracker/registryViews.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·320-host #461",
+      "note": "V1 拆分：主体引用只读视图"
+    },
+    {
+      "file": "src/host/tracker/registryShape.js",
+      "spec": "./contract.js",
+      "resolved": "src/host/tracker/contract.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·320-host #461",
+      "note": "V1 拆分：形状文件引用契约操作表（包桩用）"
+    },
+    {
+      "file": "src/host/detectChain.js",
+      "spec": "./tracker/predicateCore.js",
+      "resolved": "src/host/tracker/predicateCore.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·320-host #461",
+      "note": "V1 调用方改路径：探测编排改指谓词新装配入口"
+    },
+    {
+      "file": "src/host/tracker/generic.js",
+      "spec": "./predicateCore.js",
+      "resolved": "src/host/tracker/predicateCore.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·320-host #461",
+      "note": "V1 调用方改路径：通用链改指谓词新装配入口"
+    },
+    {
+      "file": "src/host/tracker/predicateCore.js",
+      "spec": "./predicatePrimitives.js",
+      "resolved": "src/host/tracker/predicatePrimitives.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·320-host #461",
+      "note": "V1 拆分：注册表机制引用原语执行器"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./handoffClaim.js",
+      "resolved": "src/host/handoffClaim.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-6/6 #450",
+      "note": "H6 接线：index 动态加载交接认领模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./namingGuardian.js",
+      "resolved": "src/host/namingGuardian.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-6/6 #450",
+      "note": "H6 接线：index 动态加载命名守护模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./publishFlow.js",
+      "resolved": "src/host/publishFlow.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-6/6 #450",
+      "note": "H6 接线：index 动态加载建仓发布模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./pickerShell.js",
+      "resolved": "src/host/pickerShell.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-6/6 #450",
+      "note": "H6 接线：index 动态加载选择器外壳模块（装配扇入）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./ticketGrouping.js",
+      "resolved": "src/host/ticketGrouping.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "二批·host-6/6 #450",
+      "note": "H6 接线：index 动态加载分组纯函数模块（装配扇入，用户定夺追加第 5 件）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./logStore.js",
+      "resolved": "src/host/logStore.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "日志底座·host #490",
+      "note": "#490 接线：index 动态加载宿主日志库（装配扇入，设计 #335 第 1、2、4 章 host 部分）"
+    },
+    {
+      "file": "src/host/index.js",
+      "spec": "./dispatchMeta.js",
+      "resolved": "src/host/dispatchMeta.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "收敛·host-7/7 #515",
+      "note": "H7 接线：index 动态加载分发异常纯函数模块（装配扇入，入参散列与错误归类逐行原样搬出）"
+    }
+  ]
+}

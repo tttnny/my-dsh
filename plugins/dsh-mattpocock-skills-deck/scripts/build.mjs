@@ -196,24 +196,45 @@ const KERNEL_MODULES = [
   { name: 'link', file: 'src/client/kernel/link.js' },
   { name: 'styles', file: 'src/client/kernel/styles.js' },
   { name: 'portal', file: 'src/client/kernel/portal.js' },
+  { name: 'localePanel', file: 'src/client/kernel/locale-panel.js' },
+  { name: 'localeFlow', file: 'src/client/kernel/locale-flow.js' },
+  { name: 'localeWord', file: 'src/client/kernel/locale-word.js' },
   { name: 'locale', file: 'src/client/kernel/locale.js' },
   { name: 'icons', file: 'src/client/kernel/icons.js' },
   { name: 'prompts', file: 'src/client/kernel/prompts.js' },
   { name: 'config', file: 'src/client/kernel/config.js' },
-  { name: 'store', file: 'src/client/kernel/store.js' },
-  { name: 'api', file: 'src/client/kernel/api.js' },
+  { name: 'log', file: 'src/client/kernel/log.js' },
+  { name: 'storePrefs', file: 'src/client/kernel/store-prefs.js' },
+  { name: 'storeSwitch', file: 'src/client/kernel/store-switch.js' },
+  { name: 'storeSnapshot', file: 'src/client/kernel/store-snapshot.js' },
+  { name: 'storeDerived', file: 'src/client/kernel/store-derived.js' },
+  { name: 'apiNaming', file: 'src/client/kernel/api-naming.js' },
+  { name: 'apiPresetGuard', file: 'src/client/kernel/api-preset-guard.js' },
+  { name: 'apiNewSession', file: 'src/client/kernel/api-new-session.js' },
+  { name: 'apiIo', file: 'src/client/kernel/api-io.js' },
   { name: 'actions', file: 'src/client/kernel/actions.js' },
   { name: 'slots', file: 'src/client/kernel/slots.js' },
-  { name: 'slotRenderer', file: 'src/client/kernel/slotRenderer.js' },
-  { name: 'probe', file: 'src/client/kernel/probe.js' },
+  { name: 'slotRendererQueue', file: 'src/client/kernel/slotRenderer-queue.js' },
+  { name: 'slotRendererRepoSync', file: 'src/client/kernel/slotRenderer-repo-sync.js' },
+  { name: 'slotRendererModalView', file: 'src/client/kernel/slotRenderer-modal-view.js' },
+  { name: 'probeChain', file: 'src/client/kernel/probe-chain.js' },
+  { name: 'probeSnapshot', file: 'src/client/kernel/probe-snapshot.js' },
+  { name: 'probeAuto', file: 'src/client/kernel/probe-auto.js' },
   { name: 'router', file: 'src/client/kernel/router.js' },
 ]
 
 // ---------- 共享核心拼装（一源两物 · #265）----------
 /** 共享纯函数模块（src/shared/*）：host 半运行时 import()；client 半按与 kernel 同模式的
- *  标记拼回闭包 —— 原文零复制（去行首 export），两半共用同一份实现文本，无第二处命名真源。 */
+ *  标记拼回闭包 —— 原文零复制（去行首 export），两半共用同一份实现文本，无第二处命名真源。
+ *  shared-0（#443）接线结论：下面各项与 src/client/index.js 里拼接标记一一对应，已经对齐；
+ *  chain 系与 check-catalog 系只被 host 半在运行时引用，client 半没有运行时引用，
+ *  所以不进拼接清单，S1/S3 拆分时不新设拼接标记；naming-guardian.js（498 行）两半都要用，
+ *  S2（#452）已拆成标题、跟踪、归属 3 个文件，此处记 3 个拼接项与 3 个标记位（做法见 #443 票内接线图）。
+ *  跟踪与归属文件内复刻的标题小函数改了名前缀，拼回同一个界面闭包时不与标题文件重名。 */
 const SHARED_SPLICE = [
-  { marker: '// ==== shared:namingGuardian (spliced by build) ====', file: 'src/shared/naming-guardian.js' },
+  { marker: '// ==== shared:namingTitles (spliced by build) ====', file: 'src/shared/naming-titles.js' },
+  { marker: '// ==== shared:namingTracking (spliced by build) ====', file: 'src/shared/naming-tracking.js' },
+  { marker: '// ==== shared:namingAttribution (spliced by build) ====', file: 'src/shared/naming-attribution.js' },
   { marker: '// ==== shared:trackerSync (spliced by build) ====', file: 'src/shared/tracker/sync.js' },
   { marker: '// ==== shared:slots (spliced by build) ====', file: 'src/shared/ui/slots.js' },
   { marker: '// ==== shared:mattSkills (spliced by build) ====', file: 'src/shared/matt-skills.js' },
@@ -237,23 +258,34 @@ const LEAF_MODULES = [
   { id: 'tabs', file: 'src/client/views/shared/Tabs.js' },
   { id: 'ticketRow', file: 'src/client/views/TicketRow.js' },
   { id: 'mapDetail', file: 'src/client/views/MapDetail.js' },
+  { id: 'IssueDetailComments', file: 'src/client/views/IssueDetailComments.js' },
   { id: 'IssueDetail', file: 'src/client/views/IssueDetail.js' },
   { id: 'noRepoCard', file: 'src/client/views/NoRepoCard.js' },
+  { id: 'ListTabRow', file: 'src/client/views/ListTabRow.js' },
   { id: 'listTab', file: 'src/client/views/ListTab.js' },
+  { id: 'prTab', file: 'src/client/views/PrTab.js' },
   { id: 'ringSkills', file: 'src/client/views/RingSkills.js' },
   { id: 'skillsTab', file: 'src/client/views/SkillsTab.js' },
   { id: 'checksTab', file: 'src/client/views/ChecksTab.js' },
+  { id: 'SettingsWorkspaces', file: 'src/client/views/SettingsWorkspaces.js' },
   { id: 'settingsPage', file: 'src/client/views/SettingsPage.js' },
   { id: 'runPanel', file: 'src/client/views/RunPanel.js' },
+  { id: 'DockSync', file: 'src/client/panel/DockSync.js' },
   { id: 'dock', file: 'src/client/panel/Dock.js' },
   { id: 'namingFailBanner', file: 'src/client/panel/NamingFailBanner.js' },
+  { id: 'OverlayGate', file: 'src/client/panel/OverlayGate.js' },
   { id: 'overlay', file: 'src/client/panel/Overlay.js' },
   { id: 'seg', file: 'src/client/statusbar/Seg.js' },
   { id: 'checksums', file: 'src/client/statusbar/checksums.js' },
+  { id: 'StatusMenus', file: 'src/client/statusbar/StatusMenus.js' },
+  { id: 'StatusBackend', file: 'src/client/statusbar/StatusBackend.js' },
+  { id: 'StatusLogMenu', file: 'src/client/statusbar/StatusLogMenu.js' },
   { id: 'statusBar', file: 'src/client/statusbar/StatusBar.js' },
   { id: 'chainRenderer', file: 'src/client/views/shared/ChainRenderer.js' },
   { id: 'skillFloatList', file: 'src/client/floating/SkillFloatList.js' },
   { id: 'pop', file: 'src/client/floating/Pop.js' },
+  { id: 'hostShim', file: 'src/client/hostShim.js' }, // #459 由 index.js 拆出：宿主适配垫片（timer 兜底加旧标签迁移）
+  { id: 'panelAssembly', file: 'src/client/panelAssembly.js' }, // #459 由 index.js 拆出：面板装配（Ctx 装配加插槽注册加启动收尾）
 ]
 function extractModuleBlock(file) {
   return read(file).split('\n').map((l) => l.replace(/^(\s*)export\s+/, '$1')).join('\n').trim()
@@ -469,11 +501,6 @@ function gateBuildArtifacts() {
   }
 }
 
-// ---------- 捆绑技能检查（分叉调整）----------
-// 本分叉不随包捆绑 Matt 技能（上游 #388/#389 的 package/bundled-skills 与宿主全局 provider 已移除）：
-// 技能由 my-dsh 合集的 agent-preset 分发（presets/matt-*/skills/），插件判装按「会话当前生效 preset」门控。
-function ensureBundledSkills() {}
-
 // ---------- main ----------
 
 const args = process.argv.slice(2)
@@ -486,7 +513,6 @@ console.log(`[build] DSW_REPO_URL=${repoUrl} (package/package.json repository)`)
 
 // A 自检（build 前）：若产物存在但无横幅，给 warn（不阻断，防旧产物）
 gateBuildArtifacts()
-ensureBundledSkills()
 
 const out = {}
 if (!pkgOnly) out.clientDev = (await buildClient({ version, repoUrl })).devCode

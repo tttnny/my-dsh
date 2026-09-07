@@ -60,9 +60,8 @@ let failures = 0
 const check = (ok, msg) => { console.log((ok ? '  PASS ' : '  FAIL ') + msg); if (!ok) failures++ }
 
 check(!!loaded, 'ModuleLoader.load 被调用')
-// 注册 id 单一真源 = package/package.json 的 name（分叉改名 @lynn123411/... 后，
-// 宿主按该包名向 client-modules 校验注册，写死旧名会误报）
-const EXPECTED_CLIENT_ID = JSON.parse(readFileSync(new URL('../package/package.json', import.meta.url), 'utf8')).name
+// 注册 id 单一真源 = package/package.json 的 name（分叉包名动态化；与 smoke-render 同口径）
+const EXPECTED_CLIENT_ID = JSON.parse(readFileSync('package/package.json', 'utf8')).name
 check(loaded && loaded.id === EXPECTED_CLIENT_ID, `id = ${loaded && loaded.id}（期望 ${EXPECTED_CLIENT_ID}）`)
 
 const mod = loaded.factory((m) => {

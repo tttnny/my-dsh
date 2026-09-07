@@ -108,13 +108,13 @@ async function main() {
     check(pollChunk.includes('Promise.race') && pollChunk.includes('3500'), '重求值带 3.5s 竞速护栏（面包屑轮询不被拖死）')
     check(pollChunk.includes('dirtyCwds: dirtyCwds'), '响应回执 dirtyCwds 字段')
   }
-  const storeSrc = readSrc('src/client/kernel/store.js').replace(/\r\n/g, '\n')
+  const storeSrc = ['src/client/kernel/store-prefs.js', 'src/client/kernel/store-switch.js', 'src/client/kernel/store-snapshot.js', 'src/client/kernel/store-derived.js'].map(readSrc).join('\n').replace(/\r\n/g, '\n') // #455 K2：store.js 已拆为四文件，此处读四文件拼起来的内容断言（SYNC.ISSUE_CACHE_TTL 在 prefs，delete s2.status 在 snapshot）
   check(!storeSrc.includes("host.call('wf.issuePathPoll'"), 'client poll 通道已随 #345 彻底移除（不再上报可见 cwd 列表）')
   check(!storeSrc.includes('pollIssuePathHost'), 'client 轮询函数 pollIssuePathHost 已随 #345 移除（视线门控随通道一并退役）')
   check(!storeSrc.includes('needProbeSource(ev.source)'), '探针触发源判定已随面包屑通道移除（#345）；needProbeSource 纯函数保留于契约层供单测')
   check(!storeSrc.includes("ev.source === 'gh-create'"), '旧三源字面量判定已移除（第二真源清零）')
   check(!storeSrc.includes('scheduleDirtyProbe') && !storeSrc.includes('dirtyCwds'), 'dirtyCwds 回执消费已随 #345 移除（宿主侧缓存失效由 runGh 白名单与 wf.probe 承担）')
-  const probeSrc = readSrc('src/client/kernel/probe.js').replace(/\r\n/g, '\n')
+  const probeSrc = ['src/client/kernel/probe-chain.js', 'src/client/kernel/probe-snapshot.js', 'src/client/kernel/probe-auto.js'].map(readSrc).join('\n').replace(/\r\n/g, '\n') // #456 K3：probe.js 已拆为三文件，此处读三文件拼起来的内容断言（chain 含 loadChain/链派生，snapshot 含 loadSnapshot/diff，auto 含节拍/probeNow/refreshAll）
   check(!probeSrc.includes('scheduleDirtyProbe') && !probeSrc.includes('DIRTY_PROBE_DEBOUNCE_MS'), '内核短窗探针 scheduleDirtyProbe 已随 #345 移除（唯一触发源 dirtyCwds 回执不复存在）')
   check(probeSrc.includes('export const scheduleActionProbe'), '#213 动作长窗原样保留（零回归）')
 

@@ -137,8 +137,8 @@
 </style>
 </head>
 <body>
-<h2>waystation 配置面板 · 修复后（v1.3.3）· 双场景对照</h2>
-<p class="note">修复内容：preview 去 max-height 全展开 · textarea 自适应高度（auto-grow）→ 配置面板内零内层滚动，滚动只发生在最外层（DSH settings options）。红框 = 内层滚动容器（预期 0）。</p>
+<h2>waystation 配置面板 · 落地 C 文案收尾后 · 双场景对照</h2>
+<p class="note">落地 C 后：只改两处文字（打开位置旁常驻小字“点选即已保存，无需再点保存”，标题说明改人话），其余不动。红框 = 内层滚动容器（预期 0）。</p>
 <div class="scene">
   <h3>场景 A · DSH settings 弹窗（真实宿主布局 · 最外层可滑动）</h3>
   <div class="dsh-settings">
@@ -160,85 +160,53 @@
   <div id="cfgB" style="max-width:760px;padding:0 24px 24px"></div>
 </div>
 <script>
-  const PANEL_HEIGHT_LABELS = { quarter: '1/4', half: '1/2', twothirds: '2/3' };
-  const TPL_EDIT_IDS = ['diagnose', 'fix', 'discuss', 'handoff1', 'handoff2', 'fixate'];
-  const TPL_DEFAULT = {
-    diagnose: '/triage\n{url}\n\n请诊断该 issue 并分流建议：\n1. 复现 / 现象 / 影响范围\n2. 根因推断（多个候选）\n3. 分流建议（修复 / 关闭 / 重设计 / 等）\n\n从第一性原理出发完成任务，并对抗式审查。',
-    fix: '/wayfinder\n{url}\n\n请修复该 bug：\n1. 先复现\n2. 定位根因\n3. 实施修复\n4. 加测试\n5. 对抗式审查\n\n从第一性原理出发完成任务，并对抗式审查。',
-    discuss: '/wayfinder\n{url}\n\n请与我就该 issue 进行讨论（grill）：\n1. 目标 / 边界\n2. 风险 / 假设\n3. 选项 / 权衡\n4. 决策\n\n从第一性原理出发完成任务，并对抗式审查。',
-    execute: '/wayfinder\n{url}\n\n请执行该 issue：\n1. 读 Description / Notes / 阻塞关系\n2. 制定方案\n3. 实施\n4. 验收\n\n从第一性原理出发完成任务，并对抗式审查。',
-    handoff1: '/handoff 把当前会话生成交接文档，写到 .scratch/handoff/{ts}-<短标题>.md（相对当前工作目录）。<短标题> 是你给这次交接起的一个简短标题（中文 ≤10 字 / 英文 ≤20 字符，跟随当前会话语言，用连字符或下划线代替空格），让人一眼认出这是哪件事的交接。\n\n交接文档是给一个没有本次会话记忆的 agent 接手的——请站在它的视角，确保它能凭文档无缝继续，而不是靠猜或回翻本次会话。从第一性原理出发。',
-    handoff2: '请阅读 {path}（上一会话生成的交接文档），复述你的理解后再继续推进：\n## 复述理解\n- [ ] 结论：本会话已确认的决定与成果\n- [ ] 未完成事项：下一步要继续的事\n- [ ] 建议 skill：新会话接手时应加载的技能\n- [ ] 把以上三点复述给我；若有遗漏或不确定 → 先问我确认，不猜\n## 继续推进\n- [ ] 从第一性原理出发，继续完成未完成事项',
-    fixate: '告一段落。暂停推进，执行「思维对齐 · 成果沉淀」，从第一性原理出发：\n## 沉淀\n- [ ] 全量复述：把我从会话开始到现在、我问过你并得到明确回答的内容，按五类逐条列出（每条 = 我问的问题 → 你的回答）：目的地 / 约束与偏好 / 已确认的决定 / 待决问题 / 雾区（隐约可见但还不清晰）\n- [ ] 不压缩、不合并——宁可啰嗦不可省略；一次全部列完，不分批\n- [ ] 每条标注出处：我的问题（短句）+ 你的原话关键短句（≤50 字，超出以省略号截断）+ 上下文提示（如主题/轮次），让我知道它来自哪\n- [ ] 单列一节「可疑遗漏」：我问过、你已回答、但我未纳入上面清单的（第一优先级——防我漏记你已答的内容），以及你提过、但我判断与主线无关 / 太模糊 / 属执行细节而未纳入的；每条写明我当时的判断理由，由你裁决纳入或放弃\n- [ ] 列完（含「可疑遗漏」）后停下，等我逐条核对；我确认或修正后，你再执行落盘',
-  };
-  const autoGrowTa = function (el) {
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = (el.scrollHeight + 2) + 'px'
-  };
-  function card(id, preview) {
-    const d = document.createElement('div');
-    d.className = 'dsws-cfg-card';
-    const name = document.createElement('div'); name.className = 'dsws-cfg-card-name'; name.textContent = id;
-    const head = document.createElement('div'); head.className = 'dsws-cfg-card-head';
-    head.appendChild(name);
-    const flex = document.createElement('span'); flex.style.flex = '1'; head.appendChild(flex);
-    const btn = document.createElement('button'); btn.className = 'dsws-cfg-btn'; btn.textContent = '重置'; head.appendChild(btn);
-    const desc = document.createElement('div'); desc.className = 'dsws-cfg-card-desc'; desc.textContent = '模板描述';
-    const chips = document.createElement('div'); chips.className = 'dsws-cfg-chips';
-    const chipEl = document.createElement('span'); chipEl.className = 'dsws-cfg-chip req'; chipEl.innerHTML = '{url}<span class="must">必填</span>'; chips.appendChild(chipEl);
-    const ta = document.createElement('textarea'); ta.className = 'dsws-cfg-ta'; ta.placeholder = TPL_DEFAULT[id] || ''; ta.value = preview;
-    ta.addEventListener('input', function () { autoGrowTa(ta) });
-    const pv = document.createElement('div'); pv.className = 'dsws-cfg-preview';
-    const pvl = document.createElement('span'); pvl.className = 'pv-label'; pvl.textContent = '预览';
-    pv.appendChild(pvl); pv.appendChild(document.createTextNode(preview));
-    d.append(head, desc, chips, ta, pv);
-    return d;
-  }
+  // 落地 B 后样板：标题（含两图标） + 打开位置 + 总览占位 + 调试占位 + 底部 4 行新区。
+  const MORE_ROWS = [
+    ['dsh-mattpocock-skills-deck', '本面板自己：装好就有 25 个工程技能在右侧直接用'],
+    ['dsh-opencode-palette', '34 款长时间编程护眼配色，一键换上'],
+    ['dsh-prompt', '24 条常用提示模板随手点，不用来回复制粘贴'],
+    ['dsh-im-companion', '聊天机器人的伴侣插件：扫码或填凭据就把飞书、微信等 9 路聊天接进来'],
+  ];
   function renderPanel(host) {
     host.innerHTML = '';
     const root = document.createElement('div');
     root.className = 'dsws-cfg';
-    const head = document.createElement('div'); head.className = 'dsws-cfg-head';
-    const t = document.createElement('span'); t.className = 't'; t.textContent = 'DSH-Waystation';
-    const s = document.createElement('span'); s.className = 's'; s.textContent = '已保存';
-    head.append(t, s);
-    const sub = document.createElement('div'); sub.className = 'dsws-cfg-sub'; sub.textContent = '配置面板说明文字';
+    const head = document.createElement('div'); head.className = 'dsws-cfg-head'; head.style.flexWrap = 'wrap';
+    const t = document.createElement('span'); t.className = 't'; t.textContent = 'MattSkills';
+    const s = document.createElement('span'); s.className = 's';
+    s.innerHTML = '配置 <a href="https://github.com/FeatherHunter/dsh-mattpocock-skills-deck" target="_blank" style="font-size:11px;color:#8b8b95;text-decoration:none">1.7.14</a><!-- 快照：发版后同步更新 -->';
+    const icons = document.createElement('span');
+    icons.style.cssText = 'display:inline-flex;align-items:center;gap:4px';
+    icons.innerHTML = '<span title="去 GitHub 点 Star">🌟</span><span title="反馈问题">💬</span>';
+    head.append(t, s, icons);
+    const sub = document.createElement('div'); sub.className = 'dsws-cfg-sub'; sub.textContent = '这是本插件的配置页：打开位置点选即保存，工作区绑定是只读总览，底部是作者的其他插件。';
     root.append(head, sub);
     const g1 = document.createElement('div'); g1.className = 'dsws-cfg-group';
-    g1.innerHTML = '<div class="dsws-cfg-gtitle">面板默认高度</div><div class="dsws-cfg-gdesc">选择默认高度</div>';
+    g1.innerHTML = '<div class="dsws-cfg-gtitle">打开位置</div><div class="dsws-cfg-gdesc">面板在哪个区域打开</div>';
     const g1r = document.createElement('div'); g1r.className = 'dsws-cfg-row';
-    const lbl = document.createElement('span'); lbl.className = 'dsws-cfg-label'; lbl.textContent = '默认高度';
+    const lbl = document.createElement('span'); lbl.className = 'dsws-cfg-label'; lbl.textContent = '打开位置';
     const seg = document.createElement('div'); seg.className = 'dsws-cfg-seg';
-    Object.keys(PANEL_HEIGHT_LABELS).forEach(k => { const b = document.createElement('button'); if (k==='half') b.className='on'; b.textContent = PANEL_HEIGHT_LABELS[k]; seg.appendChild(b); });
-    g1r.append(lbl, seg); g1.appendChild(g1r); root.appendChild(g1);
+    ['停靠列', '侧边栏'].forEach(k => { const b = document.createElement('button'); if (k === '停靠列') b.className = 'on'; b.textContent = k; seg.appendChild(b); });
+    const saved = document.createElement('div'); saved.style.cssText = 'font-size:11px;color:#8b8b95'; saved.textContent = '点选即已保存，无需再点保存';
+    g1r.append(lbl, seg, saved); g1.appendChild(g1r); root.appendChild(g1);
     const g2 = document.createElement('div'); g2.className = 'dsws-cfg-group';
-    g2.innerHTML = '<div class="dsws-cfg-gtitle">开始模板（execute）</div><div class="dsws-cfg-gdesc">描述</div>' +
-      '<div class="dsws-cfg-row"><label class="dsws-cfg-sw"><input type="checkbox" checked><span class="tr"></span><span>带 /wayfinder 前缀</span></label></div>';
-    const ta2 = document.createElement('textarea'); ta2.className = 'dsws-cfg-ta'; ta2.value = TPL_DEFAULT.execute;
-    ta2.addEventListener('input', function () { autoGrowTa(ta2) });
-    const pv2 = document.createElement('div'); pv2.className = 'dsws-cfg-preview';
-    const pv2l = document.createElement('span'); pv2l.className = 'pv-label'; pv2l.textContent = '预览';
-    pv2.appendChild(pv2l); pv2.appendChild(document.createTextNode(TPL_DEFAULT.execute));
-    g2.append(ta2, pv2); root.appendChild(g2);
-    const g3 = document.createElement('details'); g3.open = true;
-    g3.className = 'dsws-cfg-group dsws-cfg-details';
-    const sum = document.createElement('summary');
-    sum.style.cssText = 'display:flex;align-items:center;gap:7px;font-size:13px;font-weight:650;margin-bottom:4px;cursor:pointer;list-style:none';
-    sum.textContent = '动作模板编辑器';
-    const g3d = document.createElement('div'); g3d.className = 'dsws-cfg-gdesc'; g3d.textContent = '其余 6 个动作的模板';
-    g3.append(sum, g3d);
-    TPL_EDIT_IDS.forEach(id => { const c = card(id, TPL_DEFAULT[id]); g3.appendChild(c); });
+    g2.innerHTML = '<div class="dsws-cfg-gtitle">工作区后端总览</div><div class="dsws-cfg-gdesc">各工作区的 Tracker 后端绑定总览（只读，显式覆盖在右侧面板完成）</div><!-- 总览行只读：后端名加来源徽标，行内无收起按钮 -->';
+    root.appendChild(g2);
+    const g3 = document.createElement('div'); g3.className = 'dsws-cfg-group';
+    g3.innerHTML = '<div class="dsws-cfg-gtitle">调试 / 诊断日志</div><div class="dsws-cfg-gdesc">默认关闭，沉底</div>';
     root.appendChild(g3);
-    const foot = document.createElement('div');
-    foot.style.cssText = 'display:flex;align-items:center;gap:10px;align-self:flex-end';
-    const b1 = document.createElement('button'); b1.className = 'dsws-cfg-btn'; b1.textContent = '恢复默认';
-    const b2 = document.createElement('button'); b2.className = 'dsws-cfg-save'; b2.textContent = '保存全部';
-    foot.append(b1, b2);
-    root.appendChild(foot);
+    const g4 = document.createElement('div'); g4.className = 'dsws-cfg-group';
+    g4.innerHTML = '<div class="dsws-cfg-gtitle">作者其他插件</div>';
+    MORE_ROWS.forEach(r => {
+      const a = document.createElement('div');
+      a.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 4px';
+      const nm = document.createElement('span'); nm.style.cssText = 'font-size:12px;font-weight:650;flex:none'; nm.textContent = r[0];
+      const ds = document.createElement('span'); ds.style.cssText = 'flex:1;min-width:0;font-size:11.5px;color:#a1a1aa'; ds.textContent = r[1];
+      const ar = document.createElement('span'); ar.textContent = '↗';
+      a.append(nm, ds, ar); g4.appendChild(a);
+    });
+    root.appendChild(g4);
     host.appendChild(root);
-    // 初始 auto-grow
-    host.querySelectorAll('textarea.dsws-cfg-ta').forEach(autoGrowTa);
   }
   renderPanel(document.getElementById('cfgA'));
   renderPanel(document.getElementById('cfgB'));

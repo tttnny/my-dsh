@@ -15,7 +15,7 @@ console.log('== #344 修复验证 ==');
 // 1. client probe 自动重求值存在
 console.log('\n— client 链自动重求值 —');
 try{
-  const probeSrc = readFileSync('src/client/kernel/probe.js','utf8');
+  const probeSrc = ['src/client/kernel/probe-chain.js','src/client/kernel/probe-snapshot.js','src/client/kernel/probe-auto.js'].map((f) => readFileSync(f,'utf8')).join('\n'); // 456 收尾：probe.js 已拆为三文件，读三文件拼起来的内容断言
   check(probeSrc.includes('CHAIN_AUTO_POLL_MS'), 'probe.js 定义 CHAIN_AUTO_POLL_MS');
   check(probeSrc.includes('scheduleChainAutoRefresh'), 'probe.js 导出 scheduleChainAutoRefresh');
   check(probeSrc.includes('cancelChainAutoRefresh'), 'probe.js 导出 cancelChainAutoRefresh');
@@ -31,18 +31,23 @@ try{
 // 2. host 探测加固
 console.log('\n— host 探测加固 —');
 try{
-  const predSrc = readFileSync('src/host/tracker/predicateRegistry.js','utf8');
-  check(predSrc.includes('#344 加固'), 'predicateRegistry.js 含 #344 加固注释');
-  check(predSrc.includes("import('node:fs/promises')"), 'predicateRegistry.js 含直读兜底 import');
-  check(predSrc.includes('absDirect') || predSrc.includes('directOk'), 'predicateRegistry.js 有直读路径分支');
+  const predSrc = readFileSync('src/host/tracker/predicatePrimitives.js','utf8'); // V1 #461：#344 加固随原语执行器搬出
+  check(predSrc.includes('#344 加固'), 'predicatePrimitives.js 含 #344 加固注释');
+  check(predSrc.includes("import('node:fs/promises')"), 'predicatePrimitives.js 含直读兜底 import');
+  check(predSrc.includes('absDirect') || predSrc.includes('directOk'), 'predicatePrimitives.js 有直读路径分支');
   const hostBuilt = readFileSync('host.js','utf8');
-  check(hostBuilt.includes('344') || hostBuilt.includes('directOk') || hostBuilt.includes('absDirect'), '构建产物 host.js 含加固（或等价）');
+  // 构建为分包形态：加固住在 package/lib/tracker/predicatePrimitives.js，host.js 以运行时 import 挂载（非内联），故断言指向真实发货产物而非 bundle 文本
+  const shippedPred = readFileSync('package/lib/tracker/predicatePrimitives.js','utf8'); // V1 #461：发货路径随拆分
+  check(shippedPred.includes('directOk') && shippedPred.includes('absDirect'), '发货产物 tracker/predicatePrimitives.js 含加固（directOk/absDirect）');
+  // V1 #461 修正：dev host.js 包内零 tracker/ 字串（分包形态下 tracker 经 package/lib 运行时挂载），挂载边断言指到真实位置
+  const pkgDetect = readFileSync('package/lib/detectChain.js','utf8');
+  check(pkgDetect.includes('./tracker/predicateCore.js'), '发货 detectChain 保留谓词装配入口挂载边（./tracker/predicateCore.js）');
 }catch(e){ check(false, '读取 host 相关文件', String(e.message)); }
 
 // 3. 功能性：FILE_EXISTS 直读兜底在 mock 平台失效时仍能 pass
 console.log('\n— 功能性：mock 平台失效时直读兜底 —');
 try{
-  const { createPredicateRegistry } = await import('../src/host/tracker/predicateRegistry.js');
+  const { createPredicateRegistry } = await import('../src/host/tracker/predicateCore.js'); // V1 #461：predicateRegistry.js 已拆为两块
   const pathMod = await import('node:path');
   const fsMod = await import('node:fs/promises');
   const osMod = await import('node:os');

@@ -9,7 +9,7 @@ const targets = files.length ? files : ['client.js', 'package/lib/client.js']
 let failed = false
 const check = function (file) {
   const src = fs.readFileSync(file, 'utf8')
-  const dictStart = src.indexOf('const L = {')
+  const dictStart = src.indexOf('const L_PANEL = {') >= 0 ? src.indexOf('const L_PANEL = {') : src.indexOf('const L = {') // #458 K5：locale.js 已拆为三片段加合并器，产物中字典真源为 L_PANEL/L_FLOW/L_WORD 三块加 L 合并器，此处从首片段切到装配点才能含全键（单切 L 合并器仅含 Object.assign 无键）
   if (dictStart < 0) { console.log('  FAIL', file, '无 L 字典'); failed = true; return }
   const dictEnd = src.indexOf('const localeSvc = ctx.get', dictStart)
   const dictBlock = src.slice(dictStart, dictEnd)
@@ -44,7 +44,7 @@ const check = function (file) {
   })
   // T0（#93）一源出两物后：pkg 由规范源（动态版）构建，tool.view.cordis 不再缺失 —— 两产物注册数一致。
   // v26 移除 sidebar.footer.action 后：shell.overlay / conversation.input.dock / tool.view.cordis / settings.plugins.tab / details = 5。
-  // 2026-09-04 收敛：移除 settings.section 双入口（6→5）。
+  // 分叉收敛：移除 settings.section 双入口（6→5）。
   // #298 幂等：5 槽位经 __injectOnce 注入，底层 slots.inject 仅剩 helper 内 1 处（变量式调用，不计入字面量 ' 统计）；此处校验幂等注册数
   const nOnce = (src.match(/__injectOnce\s*\('/g) || []).length
   const nRaw = (src.match(/slots\.inject\('/g) || []).length

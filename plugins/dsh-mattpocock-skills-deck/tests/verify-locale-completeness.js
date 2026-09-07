@@ -17,7 +17,8 @@ const ok = function (name) { passed++; console.log('  PASS', name) }
 const bad = function (name) { failed = true; console.log('  FAIL', name) }
 
 // ---------- A. locale 键集合 ----------
-const locSrc = fs.readFileSync(path.join(root, 'src', 'client', 'kernel', 'locale.js'), 'utf8')
+const LOCALE_SRC_FILES = ['src/client/kernel/locale-panel.js', 'src/client/kernel/locale-flow.js', 'src/client/kernel/locale-word.js', 'src/client/kernel/locale.js'] // #458 K5：locale.js 已拆为三片段加合并器，此处读四文件拼起来的内容断言（panel 含导航面板横幅环境引导，flow 含动作类型列表配置详情地图提示，word 含技能检查浮层命名切换进度错误模板运行描述，合并器含 L 合并逻辑）
+const locSrc = LOCALE_SRC_FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n')
 function sliceAfter(buf, marker) { const i = buf.indexOf(marker); return i < 0 ? '' : buf.slice(i) }
 function keysOf(seg) {
   const re = /'([a-zA-Z0-9_.]+)':\s*'((?:[^'\\]|\\.)*)'/g
@@ -53,6 +54,7 @@ const REQUIRED = [
   'setup.gitlab.trackerLine', 'setup.gitlab.labelReqs',
   'setup.default.trackerLine', 'setup.default.labelReqs',
   'panel.labelsStepTitle', 'panel.labelsStepDesc',
+  'check.selection.pass', 'check.tracker.initialized.pass', 'env.diagTitle', 'env.actRun', 'env.chainDone',
 ]
 for (const k of REQUIRED) {
   if (k in allKeys) ok('B. 键在 ' + k)
@@ -61,21 +63,29 @@ for (const k of REQUIRED) {
 
 // ---------- C. 硬编码中文基线封顶 ----------
 const BASELINE = {
-  'index.js': 26,
+  'index.js': 25, // #459 由 index.js 拆出装配：主文件留 25 串（合计 26，与原持平）
+  'panelAssembly.js': 1, // #459 由 index.js 拆出：装配分得 1 串（host.call 不可用透传文案）
   'kernel/icons.js': 8,
   'kernel/router.js': 1,
-  'kernel/store.js': 6, // 2026-08-29 二次实测：v1.7.3 后提交使残留 4→6，按封顶章程重登记（只许缩小不许增大）
+  'kernel/store-switch.js': 5, // #455 K2 由 store.js 拆出：切换确认分得 5 串（合计 6，与原持平，注释已剥离不计）
+  'kernel/store-snapshot.js': 1, // #455 K2 由 store.js 拆出：存储核分得 1 串（makeStore 外观词）
   'kernel/actions.js': 1, // 2026-08-28 #317 wizard 队列与提交闭环：RPC 业务失败透传文案，按封顶章程登记（0→1）
-  'kernel/slotRenderer.js': 46, // 2026-08-28 #308 modal-seat 落地 + wizard 扩展：向导步进条/上下步/合并提交/目录选择/队列提示等文案，按封顶章程登记（24→41→46 #317 队列与失败回跳细化）
+  'kernel/slotRenderer-queue.js': 6, // #454 K1 由 slotRenderer.js 拆出：打开入口与守门分得 6 串（合计 44，较原 46 缩小，注释已剥离不计）
+  'kernel/slotRenderer-repo-sync.js': 2, // #454 K1 由 slotRenderer.js 拆出：同步流程分得 2 串
+  'kernel/slotRenderer-modal-view.js': 36, // #454 K1 由 slotRenderer.js 拆出：弹窗本体分得 36 串
   'panel/Dock.js': 21,
-  'panel/Overlay.js': 17,
-  'statusbar/StatusBar.js': 17,
-  'views/ChecksTab.js': 16, // 2026-08-28 顺序队列与目录选择器：ChecksTab 仅保留 openFormModal 注释，残留 14→16，按封顶章程重登记
-  'views/IssueDetail.js': 29,
+  'panel/Overlay.js': 16, // V4 #464 由 Overlay.js 拆出门控：主文件留 16 串（合计 17，与原持平）
+  'panel/OverlayGate.js': 1, // V4 #464 由 Overlay.js 拆出：门控分得 1 串（绑定失败透传文案）
+  'statusbar/StatusBar.js': 16, // B1 #460 由 StatusBar.js 拆出选后端：主文件留 16 串（合计 17，与原持平）
+  'statusbar/StatusBackend.js': 1, // B1 #460 由 StatusBar.js 拆出：选后端确认分得 1 串（已选择透传文案）
+  'views/ChecksTab.js': 0, // #529 环境检查标题诊断卡动作全部改走中英文词条：文件中不再留中文字符串，基线收紧到 0 防回退
+  'views/IssueDetail.js': 16, // #463 V3 由 IssueDetail.js 拆出评论区：主文件留 16 串（合计 29，与原持平）
+  'views/IssueDetailComments.js': 13, // #463 V3 由 IssueDetail.js 拆出：评论区分得 13 串
   'views/NoRepoCard.js': 15,
-  'views/SettingsPage.js': 41,
+  'views/SettingsPage.js': 12, // #463 V3 由 SettingsPage.js 拆出后端总览：主文件留 12 串
+  'views/SettingsWorkspaces.js': 0, // #528 总览文案全部改走中英文词条：文件中不再留中文字符串，基线收紧到 0 防回退
   'views/shared/BackendSelector.js': 10,
-  'views/shared/ChainRenderer.js': 17,
+  'views/shared/ChainRenderer.js': 0, // #529 链标题按钮表单全部改走中英文词条：文件中不再留中文字符串，基线收紧到 0 防回退
   'views/shared/SwitchConfirmModal.js': 5,
 }
 function stripComments(buf) { return buf.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '') }
@@ -90,7 +100,7 @@ const seen = {}
 })(SRC_CLIENT)
 function inspect(file) {
   const rel = path.relative(SRC_CLIENT, file).replace(/\\/g, '/')
-  if (rel === 'kernel/locale.js' || rel === 'kernel/prompts.js') return
+  if (rel === 'kernel/locale.js' || rel === 'kernel/locale-panel.js' || rel === 'kernel/locale-flow.js' || rel === 'kernel/locale-word.js' || rel === 'kernel/prompts.js') return // #458 K5：三片段与合并器均为双语定义本体，不入清单（与原 locale.js 同口径）
   const buf = stripComments(fs.readFileSync(file, 'utf8'))
   let count = 0
   const strRe = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"/g

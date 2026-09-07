@@ -19,15 +19,16 @@ const ARROW = String.fromCharCode(0x2192)   // →
 const EMDASH = String.fromCharCode(0x2014)  // —
 
 // ---- 金样：#230 前 prompts.js 三函数返回值求值后的字符串（行为契约历史定格；与源码侧 \u 转义写法无关）----
+// #512 收敛注记：GitHub 后端说明金样已同步到 #496 落地的先建仓说法（中文向用户确认仓库名与可见性、英文 confirm the repo name and visibility），只改门禁期望值，不改生产文案与流程。
 const G = {
   zh: {
-    github: { trackerLine: '本仓库为 GitHub ' + ARROW + ' 提议 GitHub Issues', trackerChoice: 'GitHub Issues', backendNote: '\n\n本次已选后端：GitHub ' + EMDASH + ' 请按 GitHub 模板生成 docs/agents/issue-tracker.md' },
+    github: { trackerLine: '本仓库为 GitHub ' + ARROW + ' 提议 GitHub Issues', trackerChoice: 'GitHub Issues', backendNote: '\n\n本次已选后端：GitHub ' + EMDASH + ' 若此目录还没有关联 GitHub 远端，先停下：向用户确认仓库名与可见性（公开还是私有），然后自己用建仓命令建好并推送（等价 gh repo create <name> --public/--private --source=. --push，非 Git 目录先 git init），或请用户在面板环境检查中点「创建并发布」向导完成；建仓成功并重查变绿后，再按 GitHub 模板生成 docs/agents/issue-tracker.md' },
     markdown: { trackerLine: '本仓库为本地文件 ' + ARROW + ' 提议 Local markdown', trackerChoice: 'Local markdown', backendNote: '\n\n本次已选后端：Markdown ' + EMDASH + ' 请按本地 Markdown 模板生成 docs/agents/issue-tracker.md（.scratch 结构）' },
     gitlab: { trackerLine: '本仓库为 GitLab ' + ARROW + ' 提议 GitLab Issues', trackerChoice: 'GitLab Issues', backendNote: '\n\n本次已选后端：GitLab ' + EMDASH + ' 请按 GitLab 模板生成 docs/agents/issue-tracker.md' },
     default: { trackerLine: '本仓库为 GitHub ' + ARROW + ' 提议 GitHub Issues', trackerChoice: 'GitHub Issues', backendNote: '\n\n本次未指定后端，已按默认 GitHub 初始化；可在设置页随时切换' },
   },
   en: {
-    github: { trackerLine: 'this repo is on GitHub ' + ARROW + ' propose GitHub Issues', trackerChoice: 'GitHub Issues', backendNote: '\n\nSelected backend: GitHub ' + EMDASH + ' please generate docs/agents/issue-tracker.md from the GitHub template.' },
+    github: { trackerLine: 'this repo is on GitHub ' + ARROW + ' propose GitHub Issues', trackerChoice: 'GitHub Issues', backendNote: '\n\nSelected backend: GitHub ' + EMDASH + ' if this directory is not linked to a GitHub remote yet, stop: confirm the repo name and visibility (public/private) with the user, then create and push it yourself (equivalent to gh repo create <name> --public/--private --source=. --push; git init first outside a Git repo), or ask the user to finish the "Create & publish" wizard in the panel environment checks; only after the repo rows turn green on re-check, generate docs/agents/issue-tracker.md from the GitHub template.' },
     markdown: { trackerLine: 'this repo uses local files ' + ARROW + ' propose Local markdown', trackerChoice: 'Local markdown', backendNote: '\n\nSelected backend: Markdown ' + EMDASH + ' please generate docs/agents/issue-tracker.md from the local Markdown template (.scratch structure).' },
     gitlab: { trackerLine: 'this repo is on GitLab ' + ARROW + ' propose GitLab Issues', trackerChoice: 'GitLab Issues', backendNote: '\n\nSelected backend: GitLab ' + EMDASH + ' please generate docs/agents/issue-tracker.md from the GitLab template.' },
     default: { trackerLine: 'this repo is on GitHub ' + ARROW + ' propose GitHub Issues', trackerChoice: 'GitHub Issues', backendNote: '\n\nNo backend explicitly selected, defaulting to GitHub; you can switch anytime in Settings ' + ARROW + ' Backend.' },
@@ -55,11 +56,13 @@ const fill = (frame, prm) => String(frame).replace(/\{(\w+)\}/g, function (mm, n
 async function main() {
   const root = process.cwd()
   console.log('== #230 · setup 提示词后端描述数据化（键入 locale）==')
-  const localeSrc = fs.readFileSync(path.join(root, 'src/client/kernel/locale.js'), 'utf8')
+  const localeSrc = ['src/client/kernel/locale-panel.js', 'src/client/kernel/locale-flow.js', 'src/client/kernel/locale-word.js', 'src/client/kernel/locale.js'].map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n') // #458 K5：locale.js 已拆为三片段加合并器，src 侧读四文件拼合（panel 含 setup 全家，合并器无键仅合并逻辑）
 
   const P = await import(pathToFileURL(path.join(root, 'src/client/kernel/prompts.js')).href)
-  const LOCALE = await import(pathToFileURL(path.join(root, 'src/client/kernel/locale.js')).href)
-  const L = LOCALE.L
+  const LOCALE_PANEL = await import(pathToFileURL(path.join(root, 'src/client/kernel/locale-panel.js')).href) // #458 K5：合并器在构建闭包内才可见三片段，单文件 import 拿不到 L，故此处直引三片段按合并器同逻辑拼出 L
+  const LOCALE_FLOW = await import(pathToFileURL(path.join(root, 'src/client/kernel/locale-flow.js')).href)
+  const LOCALE_WORD = await import(pathToFileURL(path.join(root, 'src/client/kernel/locale-word.js')).href)
+  const L = { zh: Object.assign({}, LOCALE_PANEL.L_PANEL.zh, LOCALE_FLOW.L_FLOW.zh, LOCALE_WORD.L_WORD.zh), en: Object.assign({}, LOCALE_PANEL.L_PANEL.en, LOCALE_FLOW.L_FLOW.en, LOCALE_WORD.L_WORD.en) }
 
   // ---- 后端声明提取 ----
   const BACKENDS = ['github', 'markdown', 'gitlab']
@@ -85,8 +88,8 @@ async function main() {
     }
     stubs.push({ id: b, setupPrompt: keys })
   }
-  // host wf.registry 转发
-  const hostSrc = fs.readFileSync(path.join(root, 'src/host/index.js'), 'utf8')
+  // host wf.registry 转发（H5 #449：转发体随 handleRegistry 搬入 workspaceCwd.js，断言跟随代码，意图不变）
+  const hostSrc = fs.readFileSync(path.join(root, 'src/host/workspaceCwd.js'), 'utf8')
   check(hostSrc.indexOf('m.setupPrompt ? { setupPrompt: m.setupPrompt }') >= 0, 'host wf.registry 转发 setupPrompt')
   // 快照镜像：locale 双语键一一成对存在（防单一语言漂移）
   const keyList = []

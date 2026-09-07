@@ -48,7 +48,7 @@ else {
 
 // 全库仅一份归一实现：除 workspaceKey.js 外，不应再出现 toLowerCase + replace(\)
 console.log('\n2) 归一函数全库仅一份（重复定义清零）')
-const kernelFiles = ['src/client/kernel/store.js','src/client/kernel/probe.js','src/client/kernel/api.js','src/client/panel/Dock.js']
+const kernelFiles = ['src/client/kernel/store-prefs.js', 'src/client/kernel/store-switch.js', 'src/client/kernel/store-snapshot.js', 'src/client/kernel/store-derived.js','src/client/kernel/probe-chain.js','src/client/kernel/probe-snapshot.js','src/client/kernel/probe-auto.js','src/client/kernel/api-naming.js','src/client/kernel/api-new-session.js','src/client/kernel/api-io.js','src/client/panel/Dock.js'] // #457 K4：api.js 已拆为三文件，逐文件扫描
 const dupPattern = /\.toLowerCase\(\)\.replace\(.*\\\\/
 let dupCount = 0
 for (const rel of kernelFiles) {
@@ -72,7 +72,7 @@ else bad('发现 '+dupCount+' 处重复归一实现（应仅 workspaceKey.js 有
 
 // 检查旧的 normKeyClient / normCwdClientProbe 定义已移除
 console.log('\n3) 旧归一别名已移除')
-for (const rel of ['src/client/kernel/store.js','src/client/kernel/probe.js']) {
+for (const rel of ['src/client/kernel/store-prefs.js', 'src/client/kernel/store-switch.js', 'src/client/kernel/store-snapshot.js', 'src/client/kernel/store-derived.js','src/client/kernel/probe-chain.js','src/client/kernel/probe-snapshot.js','src/client/kernel/probe-auto.js']) { // #456 K3：probe.js 已拆为三文件，逐文件断言
   const txt = read(rel)
   if (/export const normKeyClient/.test(txt)) bad(rel+' 仍含 normKeyClient 定义（应删除）')
   else ok(rel+' 无 normKeyClient')
@@ -83,17 +83,17 @@ for (const rel of ['src/client/kernel/store.js','src/client/kernel/probe.js']) {
 // 4) 抽屉全部按归一键
 console.log('\n4) 全部工作区抽屉按归一键')
 const checks = [
-  ['src/client/kernel/store.js', /getCachedSnapshot/, 'getCachedSnapshot 按 keyOf'],
-  ['src/client/kernel/store.js', /setCachedSnapshot/, 'setCachedSnapshot 按 keyOf'],
-  ['src/client/kernel/store.js', /getCachedSelection.*keyOf/, 'getCachedSelection 按 keyOf'],
-  ['src/client/kernel/store.js', /setCachedSelection.*keyOf/, 'setCachedSelection 按 keyOf'],
-  ['src/client/kernel/store.js', /getCachedRepository.*keyOf/, 'getCachedRepository 按 keyOf'],
-  ['src/client/kernel/store.js', /getCachedChain.*keyOf|getChainCacheKey/, 'getCachedChain 存在且按 keyOf'],
-  ['src/client/kernel/store.js', /chainByCwd/, 'chainByCwd 共享缓存存在'],
-  ['src/client/kernel/probe.js', /pendingSnapshotByCwd.*keyOf|keyOf.*pendingSnapshotByCwd/, 'pendingSnapshotByCwd 按 keyOf'],
-  ['src/client/kernel/probe.js', /_chainInflightByCwd.*keyOf|getChainCacheKey/, '_chainInflightByCwd 按 keyOf+backendId'],
-  ['src/client/kernel/probe.js', /keyOf.*cwd.*\|.*backendId|getChainCacheKey/, '链键含 backendId'],
-  ['src/client/kernel/store.js', /snapshotByCwd/, 'snapshotByCwd 存在'],
+  ['src/client/kernel/store-snapshot.js', /getCachedSnapshot/, 'getCachedSnapshot 按 keyOf'],
+  ['src/client/kernel/store-snapshot.js', /setCachedSnapshot/, 'setCachedSnapshot 按 keyOf'],
+  ['src/client/kernel/store-prefs.js', /getCachedSelection.*keyOf/, 'getCachedSelection 按 keyOf'],
+  ['src/client/kernel/store-prefs.js', /setCachedSelection.*keyOf/, 'setCachedSelection 按 keyOf'],
+  ['src/client/kernel/store-prefs.js', /getCachedRepository.*keyOf/, 'getCachedRepository 按 keyOf'],
+  ['src/client/kernel/store-snapshot.js', /getCachedChain.*keyOf|getChainCacheKey/, 'getCachedChain 存在且按 keyOf'],
+  ['src/client/kernel/store-snapshot.js', /chainByCwd/, 'chainByCwd 共享缓存存在'],
+  ['src/client/kernel/probe-snapshot.js', /pendingSnapshotByCwd.*keyOf|keyOf.*pendingSnapshotByCwd/, 'pendingSnapshotByCwd 按 keyOf'],
+  ['src/client/kernel/probe-chain.js', /_chainInflightByCwd.*keyOf|getChainCacheKey/, '_chainInflightByCwd 按 keyOf+backendId'],
+  ['src/client/kernel/probe-chain.js', /keyOf.*cwd.*\|.*backendId|getChainCacheKey/, '链键含 backendId'],
+  ['src/client/kernel/store-snapshot.js', /snapshotByCwd/, 'snapshotByCwd 存在'],
 ]
 for (const [rel, re, msg] of checks) {
   if (has(rel, re)) ok(msg+' @'+rel)
@@ -102,19 +102,19 @@ for (const [rel, re, msg] of checks) {
 
 // 5) 扇出分组按归一键
 console.log('\n5) 探针扇出按归一键分组')
-if (has('src/client/kernel/probe.js', /keyOf\(shared\.cwd/) && has('src/client/kernel/probe.js', /keyOf\(st\.cwd/) && has('src/client/kernel/probe.js', /keyOf\(cwd\)/)) {
+if (has('src/client/kernel/probe-auto.js', /keyOf\(shared\.cwd/) && has('src/client/kernel/probe-auto.js', /keyOf\(st\.cwd/) && has('src/client/kernel/probe-auto.js', /keyOf\(cwd\)/)) {
   ok('refreshGroup 与 cwds 去重均使用 keyOf')
 } else bad('refreshGroup 未完全按 keyOf 分组')
-if (has('src/client/kernel/probe.js', /cwdsByNorm/)) ok('cwds 按归一键去重（cwdsByNorm）')
+if (has('src/client/kernel/probe-auto.js', /cwdsByNorm/)) ok('cwds 按归一键去重（cwdsByNorm）')
 else bad('cwds 去重未按归一键')
-if (read('src/client/kernel/probe.js').includes('shared.cwd === cwd') && !read('src/client/kernel/probe.js').includes('keyOf(shared.cwd)')) {
+if (read('src/client/kernel/probe-auto.js').includes('shared.cwd === cwd') && !read('src/client/kernel/probe-auto.js').includes('keyOf(shared.cwd)')) {
   // 若仍存在直接 === 且无 keyOf，则为旧缺陷
   bad('仍存在 shared.cwd === cwd 直接比较（应为 keyOf 相等）')
 } else ok('无直接 shared.cwd === cwd 严格相等分组缺陷')
 
 // 6) 新会话秒显
 console.log('\n6) 新会话秒显共享缓存')
-const apiTxt = read('src/client/kernel/api.js')
+const apiTxt = ['src/client/kernel/api-naming.js','src/client/kernel/api-new-session.js','src/client/kernel/api-io.js'].map(read).join('\n') // #457 K4：api.js 已拆为三文件，读三文件拼合断言（openText/hydrate 在 new-session）
 if (/ns\.snapshot\s*=\s*st\.snapshot/.test(apiTxt)) {
   // 检查是否已被改造为带 hydrate 兜底的版本（允许在 hydrate 失败兜底时出现，但不应是直接继承）
   const directInherit = /if \(ns && st\.snapshot\) \{ ns\.snapshot = st\.snapshot/.test(apiTxt)
@@ -123,16 +123,16 @@ if (/ns\.snapshot\s*=\s*st\.snapshot/.test(apiTxt)) {
 } else ok('openTextInNewSession 无直接继承 ns.snapshot = st.snapshot')
 if (/hydrateFromCache/.test(apiTxt)) ok('openTextInNewSession 调用 hydrateFromCache')
 else bad('openTextInNewSession 未调用 hydrateFromCache')
-if (has('src/client/kernel/store.js', /hydrateFromCache/)) ok('storeOf 经 hydrateFromCache 水合')
+if (has('src/client/kernel/store-snapshot.js', /hydrateFromCache/)) ok('storeOf 经 hydrateFromCache 水合')
 else bad('hydrateFromCache 缺失')
-if (read('src/client/kernel/store.js').includes('chainByCwd') && read('src/client/kernel/store.js').includes('getCachedChain')) ok('hydrateFromCache 含链快照水合')
+if (read('src/client/kernel/store-snapshot.js').includes('chainByCwd') && read('src/client/kernel/store-snapshot.js').includes('getCachedChain')) ok('hydrateFromCache 含链快照水合')
 else bad('hydrateFromCache 未含链水合')
 
 // 7) chain 共享键含 backendId
 console.log('\n7) 链共享键含后端 id')
-if (has('src/client/kernel/store.js', /getChainCacheKey.*backendId/)) ok('getChainCacheKey 含 backendId')
+if (has('src/client/kernel/store-snapshot.js', /getChainCacheKey.*backendId/)) ok('getChainCacheKey 含 backendId')
 else bad('getChainCacheKey 未含 backendId')
-if (has('src/client/kernel/store.js', /chainByCwd.*Map/)) ok('chainByCwd Map 存在')
+if (has('src/client/kernel/store-snapshot.js', /chainByCwd.*Map/)) ok('chainByCwd Map 存在')
 else bad('chainByCwd 缺失')
 
 // 8) 双产物一致性
@@ -216,7 +216,7 @@ testDedup()
 console.log('\n10) 加载态治理（缓存优先、静默刷新）')
 if (has('src/client/kernel/router.js', /getCachedSnapshot/)) ok('router 使用 getCachedSnapshot 判定 hasCache')
 else bad('router 未使用 getCachedSnapshot')
-if (has('src/client/kernel/probe.js', /hasCache.*silent|silent.*hasCache/) || read('src/client/kernel/probe.js').includes("if (force && !silent && !hasCache)")) ok('loadSnapshot 仅无缓存时可见 loading（hasCache 则静默）')
+if (has('src/client/kernel/probe-snapshot.js', /hasCache.*silent|silent.*hasCache/) || read('src/client/kernel/probe-snapshot.js').includes("if (force && !silent && !hasCache)")) ok('loadSnapshot 仅无缓存时可见 loading（hasCache 则静默）')
 else bad('loadSnapshot 加载态判定缺失')
 
 console.log('\n=== 汇总 ===')

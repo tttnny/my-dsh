@@ -30,88 +30,8 @@ export     const DetailsDock = (props) => {
         ro.observe(el)
         return function () { try { ro.disconnect() } catch (e) { /* 忽略 */ } }
       }, [])
-      // #179 加固：响应式工作区同步（对齐 StatusBar）+ 回切自愈（同 sid 切工作区亦触发）
-      React.useEffect(function () {
-        const apply = function (cwd) {
-          if (!cwd) return false
-          const norm = (typeof keyOf==='function'?keyOf(cwd):String(cwd).replace(/\\/g,'/').replace(/\/+$/,''))
-          const cur = (typeof keyOf==='function'?keyOf(s.cwd||''):String(s.cwd||'').replace(/\\/g,'/').replace(/\/+$/,''))
-          const need = norm !== cur
-          // 每次 cwd 变更都强制刷新（即使 hydrate 命中），避免“回切仍为旧快照/没有仓库”空白
-          if (need) {
-            s.cwd = cwd
-            const hydrated = hydrateFromCache(s)
-            emit(s)
-            loadChain(s, false)
-            // 回切必刷：cwd 变了就重拉快照（不依赖 snapFresh），确保仓库名与后端跟随
-            loadSnapshot(s, false, !!hydrated)
-            return true
-          }
-          // 同 cwd 但快照污染（repoRoot 前缀不匹配）也必刷
-          const snap = s.snapshot
-          let polluted = false
-          if (snap && snap.repoRoot) {
-            const rr = (typeof keyOf==='function'?keyOf(snap.repoRoot):String(snap.repoRoot).replace(/\\/g,'/').replace(/\/+$/,''))
-            if (norm !== rr && !norm.startsWith(rr + '/') && !rr.startsWith(norm + '/')) polluted = true
-          } else if (snap && snap.repository && snap.repository.name) {
-            const n = String(snap.repository.name)
-            if (!n.includes(':\\') && !n.includes(':/')) {
-              const base = cwdBasename(cwd)
-              const rn = n.split('/').pop().toLowerCase()
-              if (base && rn && base.toLowerCase() !== rn) polluted = true
-            }
-          } else if (snap && snap.repo && snap.repo.name) {
-            const base = cwdBasename(cwd)
-            if (base && snap.repo.name !== base) polluted = true
-          }
-          if (polluted) { loadSnapshot(s, false, true); loadChain(s, false); return true }
-          return false
-        }
-        if (summaryCwd) { if(apply(summaryCwd)) return }
-        const cwd0 = detectCwd(props && props.session)
-        if (cwd0) { if(apply(cwd0)) return }
-        const sync = getCwdSync(sid)
-        if (sync) { if(apply(sync)) return }
-        if (sid && typeof host !== 'undefined' && typeof host.call === 'function') {
-          host.call('wf.cwd', { sessionId: sid }).then(function (res) {
-            if (res && res.ok && res.cwd) apply(res.cwd)
-          }).catch(function () {})
-        }
-      }, [sid, summaryCwd])
-      // 初始/污染自愈：随 sid 变化重跑（修复空 deps），并额外监听 summaryCwd/s.cwd 变化以覆盖“同 sid 切工作区”场景
-      React.useEffect(function () {
-        if (!s.cwd) {
-          const sync = getCwdSync(sid)
-          if (sync) { s.cwd = sync; hydrateFromCache(s) }
-        } else { hydrateFromCache(s) }
-        // 污染自愈：若当前 store 的 snapshot 仍是之前工作区串台残留（repoRoot 与 cwd 前缀不匹配，或 repo/repository 名与 cwd 尾段不一致），强制后台刷新
-        const isPolluted = (function(){
-          if (!s.snapshot || !s.cwd) return false
-          const snap = s.snapshot
-          if (snap.repoRoot) {
-            const rr = (typeof keyOf==='function'?keyOf(snap.repoRoot):String(snap.repoRoot).replace(/\\/g,'/').replace(/\/+$/,''))
-            const cw = (typeof keyOf==='function'?keyOf(s.cwd):String(s.cwd).replace(/\\/g,'/').replace(/\/+$/,''))
-            if (cw === rr) return false
-            if (cw.startsWith(rr + '/')) return false
-            if (rr.startsWith(cw + '/')) return false
-            return true
-          }
-          if (snap.repository && snap.repository.name) {
-            const n = String(snap.repository.name)
-            // 文件路径形态（D:\...）不参与 basename 误判；仅 owner/name 形态参与
-            if (n.includes(':\\') || n.includes(':/')) return false
-            const base = cwdBasename(s.cwd)
-            if (base && n.split('/').pop().toLowerCase() !== base.toLowerCase()) return true
-          }
-          if (snap.repo && snap.repo.name) {
-            const base = cwdBasename(s.cwd)
-            if (base && snap.repo.name !== base) return true
-          }
-          return false
-        })()
-        if (isPolluted) { loadSnapshot(s, false); loadChain(s, false); return }
-        if (!snapFresh(s)) loadSnapshot(s, false); loadChain(s, false)
-      }, [sid, summaryCwd, s.cwd, s.snapshot && s.snapshot.repoRoot, s.snapshot && s.snapshot.repository && s.snapshot.repository.name, s.snapshot && s.snapshot.repo && s.snapshot.repo.name])
+      // #179 加固与污染自愈已搬 DockSync.js（useDockSync），此处单调供装配（同闭包拼回）
+      useDockSync(s, sid, summaryCwd, props)
       const closeDock = function () {
         if (props && typeof props.closeDetails === 'function') props.closeDetails()
         else if (layoutSvc && typeof layoutSvc.closeDetails === 'function') layoutSvc.closeDetails()
@@ -120,13 +40,19 @@ export     const DetailsDock = (props) => {
       const active = s.activeMap !== null ? groups.find(function (x) { return x.m.number === s.activeMap }) : null
       const hasIssueDetail = s.activeIssue !== null && s.activeIssue !== undefined
       const narrow = dw < 380
+      // #506 无能力回列表：正停在拉取请求页时切到无能力后端，自动回到列表页（只读能力位）。
+      const showPrTab = (typeof prTabVisible === 'function') ? prTabVisible(s) : false
+      React.useEffect(function () {
+        if (s.tab === 'pr' && !showPrTab) { s.tab = 'list'; emit(s) }
+      }, [s.tab, showPrTab])
       // #187 Banner→Modal 门控（承接 #184 定版：Banner 点→Modal 动态三选，不含 Other，取消/确认 + 整条隐藏+容器不挂载 + pending/isOther 两态 + 动态多态）
       const _sel = s.selection || (s.snapshot && s.snapshot.selection) || null
       const _isPending = !!(_sel && _sel.pending && !!s.cwd && s.snapMode==='real' && !!s.snapshot)
       const _isOtherRaw = !!(_sel && _sel.backendId===null && !_sel.pending)
       const _isOther = _isOtherRaw && !!s.cwd && s.snapMode==='real' && !!s.snapshot
       const _showBackendFullscreen = _isPending || _isOther
-      const _gateOpen=!!s.gateModalOpen && (s.gateModalSource==='dock' || !s.gateModalSource);const _gateModules=otherFiltered(s.backendModules);const _openGateModal=function(){s.gateModalOpen=true;s.gateModalSource='dock';if(!s.gateSelected)s.gateSelected=firstBackendIdOf(_gateModules);s.gateError='';emit(s);if(typeof host!=='undefined'&&host.call){s.gateLoading=true;emit(s);host.call('wf.registry',{cwd:s.cwd||''}).then(function(r){s.gateLoading=false;let m=null;if(r&&r.ok&&Array.isArray(r.modules))m=r.modules;else if(r&&Array.isArray(r.modules))m=r.modules;else if(r&&r.value&&Array.isArray(r.value.modules))m=r.value.modules;if(Array.isArray(m)&&m.length){const f=m.filter(x=>String(x.id).toLowerCase()!=='other');const fin=f.length?f:m.filter(x=>String(x.id).toLowerCase()!=='other');if(fin.length){s.backendModules=m;try{if(typeof setPresentationMap==='function')setPresentationMap(m)}catch(e){}const ids=fin.map(x=>x.id);if(!s.gateSelected||ids.indexOf(s.gateSelected)<0)s.gateSelected=fin[0].id}}emit(s)}).catch(function(){s.gateLoading=false;emit(s)})}};const _closeGateModal=function(){s.gateModalOpen=false;s.gateModalSource=null;s.gateError='';emit(s)};const _confirmGate=function(){const id=s.gateSelected||firstBackendIdOf(_gateModules);if(String(id).toLowerCase()==='other'){s.gateError=tr('switch.gateOtherErr');emit(s);return}const prev=s.selection;const repoRef=s.repository||(s.snapshot&&s.snapshot.repository)||null;const nxt={backendId:id,source:'explicit',ref:repoRef};s.selection=nxt;try{if(s.cwd)setCachedSelection(s.cwd,nxt)}catch(e){}s.gateModalOpen=false;s.gateModalSource=null;emit(s);if(typeof host!=='undefined'&&host.call){host.call('wf.bind',{cwd:s.cwd||'',backendId:id}).then(function(res){const ok=res&&(res.ok===true||(res.value&&res.value.ok===true)||res.ok);if(ok){s.tab='list';emit(s);try{flash(s,tr('switch.bindOk',{label:(typeof labelOf==='function'?labelOf(id):String(id))}),'ok')}catch(e){}try{const tt=(typeof setupRunPrompt==='function'?setupRunPrompt(s,id):'');if(tt)try{inject(s,tt)}catch(e){}}catch(e){}loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e){};emit(s);try{flash(s,tr('switch.bindFail',{err:String((res&&(res.error||res.message))||'unknown').slice(0,120)}),'warn')}catch(e){}}}).catch(function(e){s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e2){};emit(s);try{flash(s,tr('switch.bindFail',{err:String(e&&e.message||e).slice(0,120)}),'warn')}catch(e3){}})}};const pickBackend=function(id){s.gateSelected=id;emit(s);_confirmGate()}
+      const _gateOpen=!!s.gateModalOpen && (s.gateModalSource==='dock' || !s.gateModalSource);const _gateModules=otherFiltered(s.backendModules);const _openGateModal=function(){s.gateModalOpen=true;s.gateModalSource='dock';if(!s.gateSelected)s.gateSelected=firstBackendIdOf(_gateModules);s.gateError='';emit(s);if(typeof host!=='undefined'&&host.call){s.gateLoading=true;emit(s);host.call('wf.registry',{cwd:s.cwd||''}).then(function(r){s.gateLoading=false;let m=null;if(r&&r.ok&&Array.isArray(r.modules))m=r.modules;else if(r&&Array.isArray(r.modules))m=r.modules;else if(r&&r.value&&Array.isArray(r.value.modules))m=r.value.modules;if(Array.isArray(m)&&m.length){const f=m.filter(x=>String(x.id).toLowerCase()!=='other');const fin=f.length?f:m.filter(x=>String(x.id).toLowerCase()!=='other');if(fin.length){s.backendModules=m;try{if(typeof setPresentationMap==='function')setPresentationMap(m)}catch(e){}const ids=fin.map(x=>x.id);if(!s.gateSelected||ids.indexOf(s.gateSelected)<0)s.gateSelected=fin[0].id}}emit(s)}).catch(function(){s.gateLoading=false;emit(s)})}};const _closeGateModal=function(){s.gateModalOpen=false;s.gateModalSource=null;s.gateError='';emit(s)};const _confirmGate=function(){const id=s.gateSelected||firstBackendIdOf(_gateModules);if(String(id).toLowerCase()==='other'){s.gateError=tr('switch.gateOtherErr');emit(s);return}const prev=s.selection;const repoRef=s.repository||(s.snapshot&&s.snapshot.repository)||null;const nxt={backendId:id,source:'explicit',ref:repoRef};s.selection=nxt;try{if(s.cwd)setCachedSelection(s.cwd,nxt)}catch(e){}s.gateModalOpen=false;s.gateModalSource=null;emit(s);if(typeof host!=='undefined'&&host.call){host.call('wf.bind',{cwd:s.cwd||'',backendId:id}).then(function(res){const ok=res&&(res.ok===true||(res.value&&res.value.ok===true)||res.ok);if(ok){s.tab='list';emit(s);try{flash(s,tr('switch.bindOk',{label:(typeof labelOf==='function'?labelOf(id):String(id))}),'ok')}catch(e){}try{ injectSetupDecision(s,id) }catch(e){} // #496 Q2
+loadSnapshot(s,true,true)}else{s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e){};emit(s);try{flash(s,tr('switch.bindFail',{err:String((res&&(res.error||res.message))||'unknown').slice(0,120)}),'warn')}catch(e){}}}).catch(function(e){s.selection=prev;try{if(s.cwd)setCachedSelection(s.cwd,prev)}catch(e2){};emit(s);try{flash(s,tr('switch.bindFail',{err:String(e&&e.message||e).slice(0,120)}),'warn')}catch(e3){}})}};const pickBackend=function(id){s.gateSelected=id;emit(s);_confirmGate()}
       const tabsRef = React.useRef(null)
       const tabs = useTabsRow(s, tabsRef)
       const headRef = React.useRef(null)
@@ -260,16 +186,6 @@ export     const DetailsDock = (props) => {
           // #191 · 仓库名右侧切换按钮（已选态常驻 · pending 灰置 · _isOther 隐藏）
           (function(){ if(_isOther) return null; var _sel=s.selection||(s.snapshot&&s.snapshot.selection)||null, _bid=_sel?_sel.backendId:null; if(_bid==null) return null; var _pend=!!(_sel&&_sel.pending), _col=(typeof backendColorOf==='function'?backendColorOf(_bid):'#6e7681'); return h(Tip, { content: _pend ? '切换后端 · 探测中不可用' : '切换后端' }, h('button',{'data-repo-switch':1,type:'button','aria-label':'切换后端','aria-disabled':_pend?'true':'false',disabled:_pend,onClick:function(e){try{if(e&&e.preventDefault)e.preventDefault();if(e&&e.stopPropagation)e.stopPropagation()}catch(_){};if(_pend)return;try{openSwitchConfirm(s,null)}catch(_){}},style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:4,flex:'none',border:'1px solid '+_col,color:_col,background:'transparent',cursor:_pend?'not-allowed':'pointer',opacity:_pend?0.45:1,fontSize:10,lineHeight:1,padding:0,colorScheme:'light dark'}},Ic({n:'swap',size:10}))) })(),
           h('span', { style: { flex: 1 } }),
-          // 输入框底栏显隐切换按钮（运行时状态，单会话隔离）
-          h(Tip, { content: s.statusbarHidden ? tr('panel.showStatusbar') : tr('panel.hideStatusbar') }, h('button', {
-            className: 'dsws-btn ghost',
-            'aria-label': s.statusbarHidden ? tr('panel.showStatusbar') : tr('panel.hideStatusbar'),
-            onClick: function () {
-              s.statusbarHidden = !s.statusbarHidden
-              emit(s)
-            },
-            style: { display: 'inline-flex', alignItems: 'center', padding: '2px 6px', fontSize: 11, color: s.statusbarHidden ? '#8b8b95' : 'inherit' }
-          }, Ic({ n: s.statusbarHidden ? 'eye-off' : 'eye', size: 12 }))),
           h(Tip, { content: tr('panel.closeTitle') }, h('button', { className: 'dsws-btn ghost', 'aria-label': tr('panel.closeTitle'), onClick: closeDock, style: { display: 'inline-flex', alignItems: 'center', padding: '2px 6px', fontSize: 11 } }, Ic({ n: 'x', size: 12 }))),
         ]),
         // #155 Q5：Pending / MultiHit 黄条（提示不阻断）
@@ -345,6 +261,7 @@ export     const DetailsDock = (props) => {
           ]) : null,
         ]) : h('div', { className: 'dsws-body', style: { flex: 1, overflowY: 'auto', padding: '10px 12px' } }, [
           s.tab === 'list' ? (active ? h(MapDetail, { st: s, g: active }) : hasIssueDetail ? h(IssueDetail, { st: s }) : h(ListTab, { st: s, narrow: narrow })) : null,
+          s.tab === 'pr' ? (showPrTab ? (hasIssueDetail ? h(IssueDetail, { st: s }) : h(PrTab, { st: s, narrow: narrow })) : h(ListTab, { st: s, narrow: narrow })) : null,
           s.tab === 'skills' ? h(SkillsTab, { st: s }) : null,
           s.tab === 'checks' ? h(ChecksTab, { st: s }) : null,
         ]),

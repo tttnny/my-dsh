@@ -17,13 +17,19 @@ function check(ok, msg, detail) {
 }
 const eq = (a, b, msg) => check(a === b, msg, 'expected ' + JSON.stringify(b) + ', got ' + JSON.stringify(a))
 
-console.log('== 命名守护核心 naming-guardian.js（#265）==')
+console.log('== 命名守护核心 naming-titles/tracking/attribution.js（#265 · S2 #452 三文件合并）==')
 
 let m
 try {
-  m = await import('../src/shared/naming-guardian.js')
+  // S2（#452）：命名共享核心已拆为 3 个文件，此处同时引用再合并（与宿主半同做法）。
+  const [titlesMod, trackingMod, attributionMod] = await Promise.all([
+    import('../src/shared/naming-titles.js'),
+    import('../src/shared/naming-tracking.js'),
+    import('../src/shared/naming-attribution.js'),
+  ])
+  m = Object.assign({}, titlesMod, trackingMod, attributionMod)
 } catch (e) {
-  console.log('  FAIL import src/shared/naming-guardian.js — ' + String((e && e.message) || e))
+  console.log('  FAIL import naming-titles/tracking/attribution — ' + String((e && e.message) || e))
   process.exit(1)
 }
 
@@ -135,8 +141,8 @@ console.log('\n— 跟踪态 / 状态机 / 计划单 —')
 // ---------- 7) 单一真源守卫（防 e98f636 式静默删除 / 第二处实现回流）----------
 console.log('\n— 单一真源守卫 —')
 {
-  const hostSrc = readFileSync(join(ROOT, 'src/host/index.js'), 'utf8')
-  check(hostSrc.includes("import('../shared/naming-guardian.js')"), 'host 半运行时引用共享核心')
+  const hostSrc = ['index.js', 'namingGuardian.js'].map((f) => readFileSync(join(ROOT, 'src/host', f), 'utf8')).join('\n') // #450 H6：命名 host 半已搬入 namingGuardian.js，此处读两文件拼合断言（注册仍在 index，体在新模块）
+  check(hostSrc.includes("import('../shared/naming-titles.js')") && hostSrc.includes("import('../shared/naming-tracking.js')") && hostSrc.includes("import('../shared/naming-attribution.js')"), 'host 半运行时引用共享核心三文件（引用合并）')
   for (const op of ['wf.namingRegister', 'wf.namingSignal', 'wf.namingPlan', 'wf.namingResult']) {
     check(hostSrc.includes("'" + op + "'"), 'host 注册操作 ' + op)
   }
@@ -151,24 +157,24 @@ console.log('\n— 单一真源守卫 —')
   check(hostSrc.includes('startNamingGuardianLoop()'), 'host 常驻轻量任务随 apply 启动')
 
   const buildSrc = readFileSync(join(ROOT, 'scripts/build.mjs'), 'utf8')
-  check(buildSrc.includes("'src/shared/naming-guardian.js'"), '构建登记 shared splice（client 半同源注入）')
-  const clientIdx = readFileSync(join(ROOT, 'src/client/index.js'), 'utf8')
-  check(clientIdx.includes('// ==== shared:namingGuardian (spliced by build) ===='), 'client 闭包挂共享核心拼接标记')
+  check(buildSrc.includes("'src/shared/naming-titles.js'") && buildSrc.includes("'src/shared/naming-tracking.js'") && buildSrc.includes("'src/shared/naming-attribution.js'"), '构建登记 shared splice 三文件（client 半同源注入）')
+  const clientIdx = ['src/client/index.js', 'src/client/panelAssembly.js'].map((f) => readFileSync(join(ROOT, f), 'utf8')).join('\n') // #459：index.js 已拆出装配，此处读两文件拼起来的内容断言
+  check(clientIdx.includes('// ==== shared:namingTitles (spliced by build) ====') && clientIdx.includes('// ==== shared:namingTracking (spliced by build) ====') && clientIdx.includes('// ==== shared:namingAttribution (spliced by build) ===='), 'client 闭包挂共享核心三拼接标记')
   check(clientIdx.includes('startNamingGuardianPoll()'), 'client apply 启动常驻渲染钩子拉询')
 
-  const apiSrc = readFileSync(join(ROOT, 'src/client/kernel/api.js'), 'utf8')
+  const apiSrc = ['api-naming.js', 'api-new-session.js', 'api-io.js'].map((f) => readFileSync(join(ROOT, 'src/client/kernel', f), 'utf8')).join('\n') // #457 K4：api.js 已拆为三文件，此处读三文件拼起来的内容断言（naming 含命名守护全家与工厂，new-session 含 openTextInNewSession，io 含 openInNewSession/inject）
   // （namingSignal 的 client 发送点在 store.js recordIssuePath，下一节单独断言）
   for (const needle of ["host.call('wf.namingPlan'", "host.call('wf.registerNewSessionWatcher'", "host.call('wf.cancelNewSessionWatcher'", "host.call('wf.namingResult'", 'executeNamingOrder(', 'evaluateRenameLock(', 'composeDraftTitle(', 'newSessionTitle(', "o.kind === 'numbered'"]) {
     check(apiSrc.includes(needle), '界面渲染钩子链存在：' + needle.replace(/^\s+/, ''))
   }
-  const storeSrc0 = readFileSync(join(ROOT, 'src/client/kernel/store.js'), 'utf8')
+  const storeSrc0 = ['store-prefs.js', 'store-switch.js', 'store-snapshot.js', 'store-derived.js'].map((f) => readFileSync(join(ROOT, 'src/client/kernel', f), 'utf8')).join('\n') // #455 K2：store.js 已拆为四文件，此处读四文件拼起来的内容断言
   check(!storeSrc0.includes("host.call('wf.awaitCreatedIssue'") && !storeSrc0.includes('pollIssuePathHost'), '认领/推送 nudge 的面包屑通道已随 issuePath 彻底移除（#345）；host 侧 wf.awaitCreatedIssue 仍由索引差值驱动')
   check(!apiSrc.includes('pendingNewSessions') && !apiSrc.includes('startNewSessionRenamePoll') && !apiSrc.includes('tryAutoRename'), '旧 #211 内存双通道簿记（pending map/轮询/自动改名）全库清除')
 
   const routerSrc = readFileSync(join(ROOT, 'src/client/kernel/router.js'), 'utf8')
   check(!/(export\s+)?(const|function)\s+(SESSION_TITLE_MAX_BYTES|SESSION_TITLE_RE_ALLOW_BARE|SESSION_TITLE_PREFIX|cleanTitleText|utf8Bytes|truncateTitleUtf8|newSessionTitle|isNewPlaceholderTitle|newSessionTitleNew|composeDraftTitle)\b/.test(routerSrc), 'router.js 无第二处命名真源声明')
 
-  const storeSrc = readFileSync(join(ROOT, 'src/client/kernel/store.js'), 'utf8')
+  const storeSrc = ['store-prefs.js', 'store-switch.js', 'store-snapshot.js', 'store-derived.js'].map((f) => readFileSync(join(ROOT, 'src/client/kernel', f), 'utf8')).join('\n') // #455 K2：同上
   check(!storeSrc.includes("host.call('wf.namingSignal'") && !storeSrc.includes('recordIssuePath'), '面包屑线索信号已随 issuePath 彻底移除（#345）；host 侧 wf.namingSignal 仍保留供其余线索源使用')
   const allClient = routerSrc + apiSrc + storeSrc + clientIdx
   check(!allClient.includes('userRenamed'), 'userRenamed 死代码全库清除（client 半）')
@@ -304,7 +310,7 @@ console.log('\n— 失败可见性与有限重试（#267）—')
 // ---------- 11) 守卫断言随迁（#267 · F4 · 防 e98f636 式静默删除）----------
 console.log('\n— #267 守卫断言 —')
 {
-  const hostG = readFileSync(join(ROOT, 'src/host/index.js'), 'utf8')
+  const hostG = ['index.js', 'namingGuardian.js'].map((f) => readFileSync(join(ROOT, 'src/host', f), 'utf8')).join('\n') // #450 H6：同上（namingResult/failures 体随命名模块搬迁）
   check(hostG.includes("outcome === 'failed'"), 'host namingResult 收 failed 回报')
   check(hostG.includes("{ type: 'renameFailed', error: args.error }"), 'host failed 走共享核心 renameFailed 入账（单一真源）')
   check(hostG.includes('core.namingFailureInfo(s)'), 'host 定败画像取自共享核心纯函数')
@@ -313,7 +319,7 @@ console.log('\n— #267 守卫断言 —')
   // 预算常量只活在共享核心（两半均不得私藏第二份预算实现）
   check(!hostG.includes('NAMING_RETRY_MAX') && !hostG.includes('NAMING_RETRY_COOLDOWN_MS'), 'host 半无私藏重试预算常量')
 
-  const apiG = readFileSync(join(ROOT, 'src/client/kernel/api.js'), 'utf8')
+  const apiG = ['api-naming.js', 'api-new-session.js', 'api-io.js'].map((f) => readFileSync(join(ROOT, 'src/client/kernel', f), 'utf8')).join('\n') // #457 K4：同上（reconcile/apply 在 naming，拉询链跨三文件）
   check(apiG.includes('function reconcileNamingFailure'), '界面半协商化解函数存在（只读探测绝不盲写）')
   check(apiG.includes('function applyNamingFailurePanel'), '面板级同步函数存在（共享 store 落账）')
   check(apiG.includes('Array.isArray(res.failures)') && apiG.includes('reconcileNamingFailure(fails[i])') && apiG.includes('applyNamingFailurePanel(fails)'), '渲染钩子拉询链消费 failures 清单')
@@ -328,12 +334,12 @@ console.log('\n— #267 守卫断言 —')
   check(bannerG.includes("'data-naming-fail-banner': '1'"), '面板级定败横幅节点存在（非目标会话内 toast）')
   check(bannerG.includes("tr('naming.failTitle')") && bannerG.includes("tr('naming.failHint')") && bannerG.includes("tr('naming.stageDraft')"), '横幅文案经 locale（双语跟随）')
 
-  const locG = readFileSync(join(ROOT, 'src/client/kernel/locale.js'), 'utf8')
+  const locG = ['locale-panel.js', 'locale-flow.js', 'locale-word.js', 'locale.js'].map((f) => readFileSync(join(ROOT, 'src/client/kernel', f), 'utf8')).join('\n') // #458 K5：locale.js 已拆为三片段加合并器，此处读四文件拼合断言（naming 三键在 word 片段）
   for (const k of ['naming.failTitle', 'naming.failHint', 'naming.stageDraft']) {
     check(locG.split("'" + k + "':").length - 1 === 2, 'locale 双语配对键：' + k)
   }
 
-  const coreG = readFileSync(join(ROOT, 'src/shared/naming-guardian.js'), 'utf8')
+  const coreG = ['naming-titles.js', 'naming-tracking.js', 'naming-attribution.js'].map((f) => readFileSync(join(ROOT, 'src/shared', f), 'utf8')).join('\n') // S2（#452）：三文件拼合断言
   check(coreG.includes('export const NAMING_RETRY_MAX') && coreG.includes('export const NAMING_RETRY_COOLDOWN_MS'), '重试预算常量单一真源在共享核心')
   check(coreG.includes("kind: state.stage === NAMING_STAGES.NUMBERED ? 'numbered' : 'draft'"), '定败画像档位形态判定在核心')
 }

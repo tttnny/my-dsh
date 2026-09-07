@@ -2,7 +2,7 @@
  * client/kernel/actions.js — 动作分发器（UI 层执行器，契约层形状的唯一消费者）。
  *
  * 第一性原理（#217 定版）：
- *  - 契约层定义「动作是什么」（type+payload 形状，见 src/shared/tracker/chain.js ACTION_TYPE）；
+ *  - 契约层定义「动作是什么」（type+payload 形状，见 src/shared/tracker/chain-types.js ACTION_TYPE）；
  *    UI 层定义「动作怎么做」（本文件的 dispatcher）；
  *    后端层声明「这个检查项挂哪个动作」（检查项 onPass/onFail.actions）。
  *  - 执行器归属 UI：inject() / window.open / host.call / 表单渲染均为 client 能力（UI 明确知道自己有哪些功能）。
@@ -10,7 +10,7 @@
  *    动作不承诺修复，检查才判定状态——动作回调不直接改链状态，必须走重求值（refresh）。
  */
 
-// 动作类型闭包常量（与 src/shared/tracker/chain.js 的 ACTION_TYPE 同值；本文件为 UI 执行器，
+// 动作类型闭包常量（与 src/shared/tracker/chain-types.js 的 ACTION_TYPE 同值；本文件为 UI 执行器，
 // 遵守「零 import 语法」约定——防 D7 dev host vm.Script 阻塞；枚举若变更须同步（契约校验兜底））
 const ACTION_TYPE = Object.freeze({ INJECT_PROMPT: 'inject-prompt', OPEN_URL: 'open-url', RPC: 'rpc', FORM: 'form', REFRESH: 'refresh', WIZARD: 'wizard' })
 
@@ -19,19 +19,19 @@ const ACTION_TYPE = Object.freeze({ INJECT_PROMPT: 'inject-prompt', OPEN_URL: 'o
  * @property {(text:string, opts?:Object)=>void} inject 注入提示词到输入框（宿主或编辑器）
  * @property {(url:string, target?:string)=>void} openUrl 打开链接
  * @property {(method:string, params?:unknown)=>Promise<any>} hostCall host RPC（wf.*）
- * @property {(schema:import('../../shared/tracker/chain.js').FieldSchema[], onSubmit:(values:Record<string,unknown>)=>void)=>void} renderForm 表单渲染器（由调用方提供 UI）
+ * @property {(schema:import('../../shared/tracker/chain-types.js').FieldSchema[], onSubmit:(values:Record<string,unknown>)=>void)=>void} renderForm 表单渲染器（由调用方提供 UI）
  * @property {()=>void} refresh 触发链重求值（通常为 host 侧 loadSnapshot / refreshAll）
  * @property {(key:string, params?:Record<string,string>)=>string} [tr] i18n（可选）
  */
 
 /**
- * @typedef {{ok: true, action: import('../../shared/tracker/chain.js').Action} | {ok:false, error:{kind:string, message:string}, action: import('../../shared/tracker/chain.js').Action}} ActionResult
+ * @typedef {{ok: true, action: import('../../shared/tracker/chain-types.js').Action} | {ok:false, error:{kind:string, message:string}, action: import('../../shared/tracker/chain-types.js').Action}} ActionResult
  */
 
 /**
  * 创建动作分发器。
  * @param {ActionContext} ctx
- * @returns {{dispatch:(action: import('../../shared/tracker/chain.js').Action)=>Promise<ActionResult>, dispatchAll:(actions: import('../../shared/tracker/chain.js').Action[])=>Promise<ActionResult[]>}}
+ * @returns {{dispatch:(action: import('../../shared/tracker/chain-types.js').Action)=>Promise<ActionResult>, dispatchAll:(actions: import('../../shared/tracker/chain-types.js').Action[])=>Promise<ActionResult[]>}}
  */
 export function createActionDispatcher(ctx) {
   if (!ctx || typeof ctx !== 'object') throw new Error('ActionContext required')
@@ -92,12 +92,19 @@ export function createActionDispatcher(ctx) {
           const msg = res.error ? (typeof res.error === 'string' ? res.error : (res.error.message || String(res.error))) : (res.message || 'RPC 业务失败：' + method)
           const err = new Error(String(msg).slice(0,600))
           err.code = kind; err.kind = kind; err.errorKind = kind
-          // 保留 repoUrl 等上下文供上层展示（如已存在时“去查看”链接）
+          // #420/#426：保留 repoUrl/repo/halfCreated 上下文供上层展示（半成功链接、重试入口）——绝不静默
           if (res.repoUrl) err.repoUrl = res.repoUrl
+          if (res.repo) err.repo = res.repo
+          if (res.halfCreated) err.halfCreated = true
           if (res.error && res.error.repoUrl) err.repoUrl = res.error.repoUrl
-          return { ok: false, error: { kind: kind, message: String(msg).slice(0,600) }, action }
+          const failure = { kind: kind, message: String(msg).slice(0,600) }
+          if (res.repoUrl) failure.repoUrl = res.repoUrl
+          if (res.repo) failure.repo = res.repo
+          if (res.halfCreated) failure.halfCreated = true
+          return { ok: false, error: failure, action }
         }
-        return { ok: true, action }
+        // #419/#425：成功结果透传给上层（向导成功弹窗需 repo:{owner,name} 拼真值链接）
+        return { ok: true, action, data: (res && typeof res === 'object' && res.ok === true) ? res : undefined }
       }
       if (t === ACTION_TYPE.FORM) {
         if (!Array.isArray(action.schema)) {
@@ -131,7 +138,9 @@ export function createActionDispatcher(ctx) {
           }
           const res = await dispatch(merged)
           // 显式透传失败（防静默吞，保留 kind 供上层回跳）
-          if (!res.ok) { const err = new Error(res.error.message); err.code = res.error.kind; err.kind = res.error.kind; err.errorKind = res.error.kind; throw err }
+          if (!res.ok) { const err = new Error(res.error.message); err.code = res.error.kind; err.kind = res.error.kind; err.errorKind = res.error.kind; if (res.error.repoUrl) err.repoUrl = res.error.repoUrl; if (res.error.repo) err.repo = res.error.repo; if (res.error.halfCreated) err.halfCreated = true; throw err }
+          // #419/#425：成功返回透传（含 data:{ok,repo}），弹窗层据此展示成功弹窗与真值链接
+          return res
         })
         return { ok: true, action }
       }
@@ -170,7 +179,9 @@ export function createActionDispatcher(ctx) {
             }
           }
           const res = await dispatch(merged)
-          if (!res.ok) { const err = new Error(res.error.message); err.code = res.error.kind; err.kind = res.error.kind; err.errorKind = res.error.kind; throw err }
+          if (!res.ok) { const err = new Error(res.error.message); err.code = res.error.kind; err.kind = res.error.kind; err.errorKind = res.error.kind; if (res.error.repoUrl) err.repoUrl = res.error.repoUrl; if (res.error.repo) err.repo = res.error.repo; if (res.error.halfCreated) err.halfCreated = true; throw err }
+          // #419/#425：成功返回透传（含 data:{ok,repo}），弹窗层据此展示成功弹窗与真值链接
+          return res
         })
         return { ok: true, action }
       }

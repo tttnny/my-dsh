@@ -10,6 +10,12 @@ export const ChecksTab = ({ st }) => {
   const cx = React.useContext(DswsCtx)
   const h = cx ? cx.h : React.createElement
   React.useEffect(function () { loadChain(st, false) }, [])
+  // #529：语言切换即时重取——快照内说明行按取回时语言 baked（标题走词条自动翻）；
+  //   快照语言与当前不一致时 force 重取，说明行也翻；重取前标题已先翻，无闪烁回退。
+  const curLang = (typeof promptLang === 'function' ? promptLang() : 'zh')
+  React.useEffect(function () {
+    try { if (st.chainSnapshot && st.chainLangLoaded && st.chainLangLoaded !== curLang) loadChain(st, true) } catch (e) {}
+  }, [curLang])
   // B 方案（2026-08-28 用户定版）：链未全绿时每 20s 静默重查一次——修复（在对话/终端完成）后面板自动变绿，
   //   无需手动点「重新检查」；host 侧对未全绿快照不写 30s 缓存，poll 每次真探测；链全部通过后定时器停止（零开销）。
   React.useEffect(function () {
@@ -21,7 +27,7 @@ export const ChecksTab = ({ st }) => {
         if (st.refreshing) return
         loadChain(st, false)
       } catch (e) {}
-    }, 20000)
+    }, 20000); try { if (isEnabled('debug')) log('debug', 'timer.schedule', { name: 'checks-poll', intervalMs: 20000 }) } catch (eL) {}
     return function () { try { clearInterval(pollTimer) } catch (e) {} }
   }, [])
   // #284：单一口径 = 链快照步骤（pending = 诚实未知/未接入，置灰展示，不计入 ready/total）
@@ -47,7 +53,7 @@ export const ChecksTab = ({ st }) => {
                   // 单步 wizard 当单页表单：复用 modal-seat，向导感知渲染会在弹窗内分页（1 步即单页）；label 空时由 slotRenderer 回落“向导”，避免 ChecksTab 硬编码中文越 baseline
                   openFormModal(st, { type: 'wizard', steps: schema.steps, label: schema.label || '', submitAction: schema.submitAction || null }, onSubmit)
                 } else {
-                  openFormModal(st, { type: 'form', schema: schema, label: '填写表单' }, onSubmit)
+                  openFormModal(st, { type: 'form', schema: schema, label: tr('env.actFillForm') }, onSubmit)
                 }
               } else if (typeof ensureFormModal === 'function') {
                 // 兜底：旧 API（理论不可达，仅防产物不同步）
@@ -64,7 +70,7 @@ export const ChecksTab = ({ st }) => {
                   m.open = true
                   m.schema = Array.isArray(schema) ? schema : []
                   m.onSubmit = typeof onSubmit === 'function' ? onSubmit : null
-                  m.label = '填写表单'
+                  m.label = tr('env.actFillForm')
                   m.pending = false
                 }
                 try { if (typeof emit === 'function') emit(st) } catch (e2) { try { st.tick = (st.tick||0)+1 } catch(_) {} }
@@ -98,21 +104,22 @@ export const ChecksTab = ({ st }) => {
   }
   // 修复契约（2026-08-28）：hint = 修复指引文案（host 由后端 fixes 解析；'prompt:' 前缀经 resolvePrompt 解出，UI 零派生）；
   //   动作按钮 = 检查失败时的可执行修复入口（inject-prompt / open-url / rpc / form / refresh），执行后走既有重求值闭环。
+  // #529 动作按钮文案走词条（英文界面显示英文；中文与原写死一字不差；host 下发的 label 优先保留）
   const miniActionLabel = function (a) {
     const t = a && a.type
-    if (t === 'inject-prompt') return (a && a.label) || '执行'
-    if (t === 'open-url') return '打开链接'
-    if (t === 'rpc') return (a && (a.method || a.endpoint)) || '执行'
-    if (t === 'form') return (a && a.label) || '填写表单'
+    if (t === 'inject-prompt') return (a && a.label) || tr('env.actRun')
+    if (t === 'open-url') return tr('env.actOpenUrl')
+    if (t === 'rpc') return (a && (a.method || a.endpoint)) || tr('env.actRun')
+    if (t === 'form') return (a && a.label) || tr('env.actFillForm')
     if (t === 'wizard') return (a && a.label) || 'Wizard'
-    if (t === 'refresh') return '重查'
+    if (t === 'refresh') return tr('env.actRefresh')
     return 'unsupported: ' + String(t || 'unknown')
   }
   const runAction = async function (a) {
     if (!chainDispatcher) return
     try {
       const res = await chainDispatcher.dispatch(a)
-      if (!res || !res.ok) { try { flash(st, String((res && res.error && res.error.message) || '动作失败'), 'warn') } catch (e) {} }
+      if (!res || !res.ok) { try { flash(st, String((res && res.error && res.error.message) || tr('env.actFailed')), 'warn') } catch (e) {} }
     } catch (e) { try { flash(st, String((e && e.message) || e).slice(0, 200), 'warn') } catch (e2) {} }
   }
   const hintTextOf = function (s) {
@@ -128,14 +135,15 @@ export const ChecksTab = ({ st }) => {
   }
   const stepRows = steps.length ? steps.map(function (s, i) {
     const meta = statusMeta(s)
-    const label = (s.show && (s.show.fallback || s.show.title || s.show.i18nKey)) || s.id
+    // #529 标题经 checkShowTitle 取当前语言（英文界面显示英文词条，中文与原 fallback 一字不差）
+    const label = checkShowTitle(s.show, s.id)
     const desc = (s.show && (s.show.desc || '')) || ''
     // #284 修订（对抗式审查 2026-08-28）：pending 分两种——被前置阻塞（blockedBy 指明前置步）与诚实探测中；
     //   阻塞必须在 UI 明示，避免把「尚未轮到」误读为「探测中/未接入」（正是 #276 反对的不诚实状态）。
     let blockedNote = ''
     if (s.status === 'pending' && s.blockedBy) {
       const blocker = steps.find(function (x) { return String(x.id) === String(s.blockedBy) }) || null
-      const blockerName = (blocker && blocker.show && (blocker.show.fallback || blocker.show.title)) || s.blockedBy
+      const blockerName = checkShowTitle(blocker && blocker.show, s.blockedBy)
       blockedNote = tr('env.waitingBlocked', { by: String(blockerName) })
     }
     const finalDesc = blockedNote ? (desc ? desc + ' \u00b7 ' + blockedNote : blockedNote) : desc
@@ -144,9 +152,11 @@ export const ChecksTab = ({ st }) => {
     //   其次 inject-prompt/rpc），按钮置于行右侧；refresh 不再单独成按钮（顶部已有「重新检查」）。
     const fixActions = (s.status === 'fail' || s.status === 'current') ? (Array.isArray(s.actions) ? s.actions : []) : []
     const primaryAction = (chainDispatcher && fixActions.length) ? (fixActions.find(function (a) { return a && (a.type === 'form' || a.type === 'wizard') }) || fixActions.find(function (a) { return a && (a.type === 'inject-prompt' || a.type === 'rpc') }) || null) : null
+    // #419/#425 同步守卫：成功同步态/超时未确认态下禁用创建按钮（仓库已确认创建，防重复提交）
+    const repoSync = st.repoSync || null
     const primaryBtn = primaryAction ? (function () {
       const alabel = miniActionLabel(primaryAction)
-      return h('button', { key: 'fix-primary', className: 'dsws-btn primary', tabIndex: 0, onClick: function () { runAction(primaryAction) }, style: { fontSize: 12, padding: '6px 14px', flex: 'none', whiteSpace: 'nowrap' } }, alabel)
+      return h('button', { key: 'fix-primary', className: 'dsws-btn primary', tabIndex: 0, disabled: !!repoSync, onClick: function () { runAction(primaryAction) }, style: { fontSize: 12, padding: '6px 14px', flex: 'none', whiteSpace: 'nowrap' } }, alabel)
     })() : null
     return h('div', { key: s.id || i, className: 'dsws-ccard', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, padding: primaryBtn ? '10px 12px' : undefined, border: primaryBtn ? '1px solid var(--dsw-alias-border-l1,#2a2d35)' : undefined, borderRadius: 10, background: primaryBtn ? 'var(--dsw-alias-bg-layer-1,#10131a)' : undefined } }, [
       h('span', { style: { width: 16, height: 16, borderRadius: '50%', background: meta.dot, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flex: 'none' } }, meta.label),
@@ -178,6 +188,20 @@ export const ChecksTab = ({ st }) => {
     ]),
     // B Timeline 定版（2026-08-28）：无 no-repo 弱化卡/恢复卡——远端未关联由行内红卡（gh:remote FAIL 行）表达；
     //   dismiss 状态机保留在 store（向后兼容），不再在检查页顶部占用空间
+    // #419/#425 同步过渡态与 30s 超时未确认态（含「点此重新检查」；此态下不恢复创建按钮）
+    (function () {
+      const rs = st.repoSync || null
+      if (!rs) return null
+      if (rs.phase === 'syncing') return h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #2b3a2b', background: 'rgba(74,222,128,.06)', borderRadius: 8, fontSize: 12, color: 'var(--dsw-alias-state-success-primary,#4ade80)', marginBottom: 6 } }, [
+        h('span', { className: 'dsws-rficon dsws-spin' }, [Ic({ n: 'refresh', size: 11 })]),
+        h('span', null, tr('panel.repoSync.syncing')),
+        h('span', { style: { fontSize: 10, color: 'var(--dsw-alias-label-caption,#8b8b95)', marginLeft: 2 } }, '（' + tr('panel.repoSync.guardHint') + '）'),
+      ])
+      return h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #5a4a1f', background: 'rgba(251,191,36,.07)', borderRadius: 8, fontSize: 12, color: 'var(--dsw-alias-state-warning-primary,#fbbf24)', marginBottom: 6, flexWrap: 'wrap' } }, [
+        h('span', null, tr('panel.repoSync.timeout')),
+        h('button', { className: 'dsws-btn', onClick: function () { try { if (typeof retryRepoSync === 'function') retryRepoSync(st) } catch (e) {} }, style: { fontSize: 11, padding: '2px 8px' } }, tr('env.recheck')),
+      ])
+    })(),
     stepRows,
     // #155 Q7：能力诊断折叠卡（默认收起，不进渲染分支；G5 能力视图仅诊断不驱动隐藏）
     (function () {
@@ -204,16 +228,16 @@ export const ChecksTab = ({ st }) => {
       return h('details', { style: { marginTop: 8, border: '1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius: 6, padding: '6px 8px', background: 'rgba(255,255,255,.02)' } }, [
         h('summary', { style: { fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 } }, [
           Ic({ n: 'note', size: 11 }),
-          h('span', null, '能力诊断（折叠，默认收起）'),
+          h('span', null, tr('env.diagTitle')),
           h('span', { style: { fontSize: 10, color: '#8b8b95', marginLeft: 6 } }, 'present ' + counts.present + ' / empty ' + counts.empty + ' / missing ' + counts.missing),
         ]),
         h('div', { style: { fontSize: 11, color: '#8b8b95', marginTop: 6, lineHeight: 1.6 } }, [
-          h('div', null, '当前后端: ' + (sel && sel.backendId ? sel.backendId : '\u2014') + (sel && sel.source ? ' (' + sel.source + ')' : '') + (sel && sel.pending ? ' \u23F3 pending' : '') + (sel && sel.multiHit ? ' \u26A0 multiHit:' + sel.multiHit.join(',') : '')),
-          repoRef ? h('div', null, '仓库: ' + repoRef.name + (repoRef.url ? ' \u2014 ' + repoRef.url : ' (本地)')) : null,
-          h('div', null, '字段 presence: present=' + counts.present + ' \u00b7 empty=' + counts.empty + ' \u00b7 missing=' + counts.missing),
-          h('div', { style: { fontSize: 10, color: '#6b7280', marginTop: 4 } }, '诊断双轨：host 记每字段填/空，client 记渲染/隐藏；G5 能力视图不进任何 if(capability) 隐藏分支。'),
+          h('div', null, tr('env.diagBackend') + ': ' + (sel && sel.backendId ? sel.backendId : '\u2014') + (sel && sel.source ? ' (' + sel.source + ')' : '') + (sel && sel.pending ? ' \u23F3 pending' : '') + (sel && sel.multiHit ? ' \u26A0 multiHit:' + sel.multiHit.join(',') : '')),
+          repoRef ? h('div', null, tr('env.diagRepo') + ': ' + repoRef.name + (repoRef.url ? ' \u2014 ' + repoRef.url : ' ' + tr('env.diagLocal'))) : null,
+          h('div', null, tr('env.diagFields') + ': present=' + counts.present + ' \u00b7 empty=' + counts.empty + ' \u00b7 missing=' + counts.missing),
+          h('div', { style: { fontSize: 10, color: '#6b7280', marginTop: 4 } }, tr('env.diagNote')),
           h('div', { style: { marginTop: 6 } }, [
-            h('button', { className: 'dsws-btn ghost', onClick: function () { try { console.log('[dsws] capabilities', counts, 'selection', sel, 'repo', repoRef) } catch {}; flash(st, '能力诊断已输出到控制台', 'info') }, style: { fontSize: 10, padding: '2px 6px' } }, '查看日志'),
+            h('button', { className: 'dsws-btn ghost', onClick: function () { try { console.log('[dsws] capabilities', counts, 'selection', sel, 'repo', repoRef) } catch {}; flash(st, tr('env.diagLogged'), 'info') }, style: { fontSize: 10, padding: '2px 6px' } }, tr('env.diagViewLog')),
           ]),
         ]),
       ])

@@ -52,42 +52,7 @@ export default {
   apply(ctx) {
     const slots = ctx.get('slots')
     if (slots === undefined) return
-    // 2026-08-28 实机修复：timer 服务在部分宿主上下文（better-sidebar tab / Web 壳）可能未注入、
-    //   或仅提供 setTimeout 而无 timeout 方法——曾出现「Cannot read properties of undefined (reading 'timeout')」
-    //   整面板红条（better-sidebar RenderBoundary 捕获）。
-    //   根治：timer 恒为非空包装对象——timeout 优先走原服务；缺失时降级原服务的 setTimeout；再缺失用全局 setTimeout。
-    const _timerRaw = ctx.get('timer')
-    const timer = {
-      timeout: function (fn, ms) {
-        try {
-          if (_timerRaw && typeof _timerRaw.timeout === 'function') return _timerRaw.timeout(fn, ms)
-          if (_timerRaw && typeof _timerRaw.setTimeout === 'function') return _timerRaw.setTimeout(fn, ms)
-          return setTimeout(fn, ms)
-        } catch (e) { try { return setTimeout(fn, ms) } catch (e2) { return null } }
-      },
-      setTimeout: function (fn, ms) {
-        return timer.timeout(fn, ms)
-      },
-    }
-    const h = React.createElement
-    // #fix-two-sliders：一次性迁移旧会话中存的 waystation:map 打开记录 → deck:map
-    //   仅在 better-sidebar 提供持久化 API 时执行；best-effort，失败不抛（仅 console.warn）
-    try {
-      const bs0 = ctx.get && ctx.get('betterSidebar')
-      if (bs0 && typeof bs0.migrateLegacyTabIds === 'function') {
-        try { bs0.migrateLegacyTabIds({ 'waystation:map': 'deck:map' }) } catch (e) { try { console.warn('[MattSkillsDeck] migrateLegacyTabIds failed:', e && e.message) } catch {} }
-      } else if (bs0 && typeof bs0.listOpenTabs === 'function') {
-        // 退化路径：扫描打开列表 → 替换 → 持久化
-        try {
-          const open = bs0.listOpenTabs() || []
-          const rename = open.filter(function (t) { return t && t.id === 'waystation:map' })
-          for (let i = 0; i < rename.length; i++) {
-            try { if (typeof bs0.closeTab === 'function') bs0.closeTab('waystation:map') } catch {}
-            try { if (typeof bs0.openTab === 'function') bs0.openTab({ type: 'deck:map', path: 'deck:map' }, rename[i].scope) } catch {}
-          }
-        } catch (e) { try { console.warn('[MattSkillsDeck] legacy migrate fallback failed:', e && e.message) } catch {} }
-      }
-    } catch {}
+    // ==== leaf:hostShim (spliced by build) ====
     // ==== kernel:portal (spliced by build) ====
     // v1.3.3：面板版本号（tabs 行最右侧显示，便于核对已更新）
     const DSW_VERSION = __DSW_VERSION__
@@ -111,6 +76,9 @@ export default {
     // v1.5：全部 prompt（GUIDE_LINE/MAP_EXECUTE/COMPLETE/FIXATE/TPL_DEFAULT/setup/newWayfinder/mapHead）
     //   集中为 L 字典 prompt.*（zh/en 双语跟随 DSH 语言），审阅与优化见 docs/prompts-review.md。
     // ============================================================
+    // ==== kernel:localePanel (spliced by build) ====
+    // ==== kernel:localeFlow (spliced by build) ====
+    // ==== kernel:localeWord (spliced by build) ====
     // ==== kernel:locale (spliced by build) ====
     const localeSvc = ctx.get('locale')
     if (localeSvc && typeof localeSvc.register === 'function') {
@@ -155,7 +123,7 @@ export default {
     // ============================================================
     // 2. 外观方案（图标 + 动作词，可切换）
     // ============================================================
-    // ==== shared:namingGuardian (spliced by build) ====
+    // ==== shared:namingTitles (spliced by build) ==== // ==== shared:namingTracking (spliced by build) ==== // ==== shared:namingAttribution (spliced by build) ====
     // ==== shared:trackerSync (spliced by build) ====
     // ==== shared:slots (spliced by build) ====
     // ==== kernel:icons (spliced by build) ====
@@ -173,6 +141,7 @@ export default {
     // ============================================================
     // ==== kernel:prompts (spliced by build) ====
     // ==== kernel:config (spliced by build) ====
+    // ==== kernel:log (spliced by build) ====
 
     // ============================================================
     // 3. store（v14：按会话隔离；无 sid 时用 shared）
@@ -180,11 +149,16 @@ export default {
     // v24-48：面板默认高度 = 屏幕约 1/2
     // v1.5 T3：面板默认高度固定 1/2（用户拍板彻底移除 panelHeight 配置 —— details 列高度与它无关，配置不生效）
     // ==== shared:workspaceKey (spliced by build) ====
-    // ==== kernel:store (spliced by build) ====
+    // ==== kernel:storePrefs (spliced by build) ====
+    // ==== kernel:storeSwitch (spliced by build) ====
+    // ==== kernel:storeSnapshot (spliced by build) ====
+    // ==== kernel:storeDerived (spliced by build) ====
 
     // ---- 环境检查链（#228/#284 · host.call('wf.chain')；通用链 + 后端链全链快照）----
     // #284：九格目录视图（wf.status/checks）退役，读数点位全部改从链快照派生
-    // ==== kernel:probe (spliced by build) ====
+    // ==== kernel:probeChain (spliced by build) ====
+    // ==== kernel:probeSnapshot (spliced by build) ====
+    // ==== kernel:probeAuto (spliced by build) ====
     // 打开形式（#373 用户拍板 2026-08-14）：仅右侧 details 列（停靠）一种形式。
     //   已移除：① Document PiP 独立小窗（Electron 无法创建 PiP 窗口、曾致桌面卡死 —— 代码不再含 pip 形态）；
     //   ② 停靠/悬浮双模式记忆（PANEL_MODE_KEY）；③ 状态栏「停靠」seg 与右栏「悬浮」按钮。
@@ -192,11 +166,16 @@ export default {
     // ==== kernel:router (spliced by build) ====
 
     // v10：沉淀 = 会话级动作 —— 注入「零丢失快照」prompt（默认文本见 §2.5 FIXATE_PROMPT，T2b 可编辑）
-    // ==== kernel:api (spliced by build) ====
+    // ==== kernel:apiNaming (spliced by build) ====
+    // ==== kernel:apiPresetGuard (spliced by build) ====
+    // ==== kernel:apiNewSession (spliced by build) ====
+    // ==== kernel:apiIo (spliced by build) ====
 
     // ==== kernel:actions (spliced by build) ====
     // ==== kernel:slots (spliced by build) ====
-    // ==== kernel:slotRenderer (spliced by build) ====
+    // ==== kernel:slotRendererQueue (spliced by build) ====
+    // ==== kernel:slotRendererRepoSync (spliced by build) ====
+    // ==== kernel:slotRendererModalView (spliced by build) ====
 
     // ==== leaf:chips (spliced by build) ====
     // ==== leaf:hoverTip (spliced by build) ====
@@ -210,7 +189,7 @@ export default {
     // ==== leaf:skillFloatList (spliced by build) ====
     // ==== leaf:tabs (spliced by build) ====
 
-    // ==== leaf:statusBar (spliced by build) ====
+    // ==== leaf:StatusMenus (spliced by build) ==== // ==== leaf:StatusBackend (spliced by build) ==== // ==== leaf:StatusLogMenu (spliced by build) ==== // ==== leaf:statusBar (spliced by build) ====
 
     // ==== leaf:md (spliced by build) ====
     // ==== leaf:ticket (spliced by build) ====
@@ -219,12 +198,14 @@ export default {
 
     // ==== leaf:mapDetail (spliced by build) ====
 
-    // ==== leaf:IssueDetail (spliced by build) ====
+    // ==== leaf:IssueDetailComments (spliced by build) ==== // ==== leaf:IssueDetail (spliced by build) ====
 
     // ==== leaf:tagsFit (spliced by build) ====
     // ==== leaf:pop (spliced by build) ====
     // ==== leaf:noRepoCard (spliced by build) ====
-    // ==== leaf:listTab (spliced by build) ====
+    // ==== leaf:ListTabRow (spliced by build) ==== // ==== leaf:listTab (spliced by build) ====
+
+    // ==== leaf:prTab (spliced by build) ====
 
     // ==== leaf:ringSkills (spliced by build) ====
 
@@ -257,122 +238,14 @@ export default {
     }
     // ==== leaf:namingFailBanner (spliced by build) ====
 
-    // ==== leaf:dock (spliced by build) ====
+    // ==== leaf:DockSync (spliced by build) ==== // ==== leaf:dock (spliced by build) ====
 
-    // ==== leaf:overlay (spliced by build) ====
+    // ==== leaf:OverlayGate (spliced by build) ==== // ==== leaf:overlay (spliced by build) ====
 
-    // ==== leaf:settingsPage (spliced by build) ====
+    // ==== leaf:SettingsWorkspaces (spliced by build) ==== // ==== leaf:settingsPage (spliced by build) ====
 
     // ==== leaf:runPanel (spliced by build) ====
 
-    // ============================================================
-    // 5.11 Ctx 接线（阶段 2 步骤 1 · #95）：建 cx 单例 + Provider 包住渲染树（行为零变化）
-    // ============================================================
-    // DswsCtx / createCx 由构建从 src/client/kernel/ctx.js 注入本闭包顶部（双产物同构 · seam 同模式）。
-    // cx = { ctx, h, rdom, storeSvc, localeSvc, timer, api, router }（G3 冻结清单 8 字段 · #91 拍板）。
-    // 宿主 slots 无全局 wrapper API（实查 dsh-client-ui-slots 0.1.0-rc.7 仅 register/inject），
-    // 故 Provider 包在每个插槽组件注册处（渲染树顶层 = 组件根）；T4（#97）后叶子组件经
-    // React.useContext(DswsCtx) 消费 cx（h/storeSvc 等），渲染输出与接线前一致（verify-* 全绿证明）。
-    const apiCall = function (endpoint, args) {
-      if (typeof host === 'undefined' || typeof host.call !== 'function') {
-        return Promise.reject(new Error('host.call 不可用（Host 半未加载）'))
-      }
-      return host.call(endpoint, args)
-    }
-    const cx = createCx({
-      ctx: ctx,
-      h: h,
-      rdom: RDOM,
-      storeSvc: { shared: shared, stores: stores, makeStore: makeStore, storeOf: storeOf, emit: emit, sub: sub, useStore: useStore },
-      localeSvc: localeSvc,
-      timer: timer,
-      api: { call: apiCall },
-      router: { open: openPanel, toggle: togglePanel },
-    })
-    // Provider 包装器：任意深度组件都可 useContext(DswsCtx) 取 cx；props 原样透传
-    const withCx = function (Comp) {
-      return function (props) {
-        return h(DswsCtx.Provider, { value: cx }, h(Comp, props))
-      }
-    }
-
-    // ============================================================
-    // 6. 插槽注册（#298 幂等：与 ensureSidebarTab 同构，二次 apply/HMR 不增生）
-    // ============================================================
-    // 模块级闸门：每个槽位仅注入一次；卸载时经 ctx.effect 复位，允许重装后重注
-    const __slotOnce = {}
-    const __slotDisposers = {}
-    const __injectOnce = function (slotName, factory) {
-      if (__slotOnce[slotName]) return
-      __slotOnce[slotName] = true
-      let disp = null
-      try {
-        slots.inject(slotName, function () {
-          try {
-            disp = factory()
-          } catch (e) {
-            __slotOnce[slotName] = false
-            throw e
-          }
-          __slotDisposers[slotName] = disp
-          return function () {
-            try { if (disp) disp() } catch (e) { /* 忽略 */ }
-            __slotDisposers[slotName] = null
-          }
-        })
-      } catch (e) {
-        __slotOnce[slotName] = false
-        __slotDisposers[slotName] = null
-        throw e
-      }
-      ctx.effect(function () {
-        return function () {
-          __slotOnce[slotName] = false
-          try { const d = __slotDisposers[slotName]; if (d) d() } catch (e) { /* 忽略 */ }
-          __slotDisposers[slotName] = null
-        }
-      }, 'dsws: slot ' + slotName)
-    }
-    __injectOnce('shell.overlay', function () {
-      return slots.register({ name: 'shell.overlay', id: 'dsws-overlay-v5', order: 10 }, withCx(OverlayPanel))
-    })
-    __injectOnce('conversation.input.dock', function () {
-      return slots.register({ name: 'conversation.input.dock', id: 'dsh-mattpocock-skills-deck', order: 40 }, withCx(StatusBar))
-    })
-    __injectOnce('tool.view.cordis', function () {
-      return slots.register({ name: 'tool.view.cordis', key: 'self' }, withCx(RunPanel))
-    })
-    // v25-50：配置页（设置 → 插件 → MattSkills；与 opencode 主题同模式）
-    //   2026-09-04 收敛：只留插件页内 Tab，移除左侧 settings.section 直达（双入口重复）
-    __injectOnce('settings.plugins.tab', function () {
-      return slots.register({ name: 'settings.plugins.tab', id: 'dsws-settings', order: 40, label: function () { return tr('panel.title') } }, withCx(SettingsPage))
-    })
-    // 原型：右侧停靠（details 槽位 · 替换内置工具详情面板；single 槽动态注册优先级低 → 胜出）
-    // priority: -1 低于内置详情面板的默认 0 → 无冲突且「低者胜出」替换内置面板
-    __injectOnce('details', function () {
-      return slots.register({ name: 'details', id: 'dsws-details', order: 10, priority: -1 }, withCx(DetailsDock))
-    })
-
-    // v1.4.1：apply 时尽力注册 better-sidebar tab（MattSkillsDeck）；better-sidebar 服务未就绪（加载晚于本模块）→ 定时重试（最多 10 次）
-    //   卸载（HMR / 插件禁用）时清理 disposer + 重试定时器
-    if (!ensureSidebarTab()) {
-      let tries = 0
-      sidebarTabRetry = setInterval(function () {
-        tries++
-        if (ensureSidebarTab() || tries >= 10) { clearInterval(sidebarTabRetry); sidebarTabRetry = null }
-      }, 1000)
-    }
-    ctx.effect(function () {
-      return function () {
-        try { if (sidebarTabDisposer) sidebarTabDisposer() } catch (e) { /* 忽略 */ }
-        sidebarTabDisposer = null
-        if (sidebarTabRetry) { clearInterval(sidebarTabRetry); sidebarTabRetry = null }
-      }
-    }, 'dsh-mattpocock-skills-deck: better-sidebar tab')
-
-    // #347：加载真数据快照（repo 链接 + 前置检测兜底），失败静默
-    loadSnapshot(shared, false)
-    // #265：命名守护常驻渲染钩子（面板未开也续跑；计划单经 wf.namingPlan 拉取后代执行改名）
-    startNamingGuardianPoll()
+    // ==== leaf:panelAssembly (spliced by build) ====
   },
 }

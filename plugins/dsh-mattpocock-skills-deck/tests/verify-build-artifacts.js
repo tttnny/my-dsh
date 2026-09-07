@@ -104,7 +104,7 @@ function sha256(file) { return crypto.createHash('sha256').update(fs.readFileSyn
   check(hasPlatform, 'package/lib 含 platform/ 目录及入口')
   check(hasTracker, 'package/lib 含 tracker/ 目录及入口')
 }
-// 4b) package/shared 4 文件一一对应
+// 4b) package/shared 15 文件一一对应（shared-0 #443 已核：5 个进 client 拼接 + 8 个只走 host 复制，见 #443 接线图；S1 #451 拆 chain 为 3 文件，总数 13→15）
 {
   const srcSharedFiles = collect(path.resolve('src/shared'))
   const pkgSharedFiles = collect(path.resolve('package/shared'))
@@ -128,8 +128,11 @@ function sha256(file) { return crypto.createHash('sha256').update(fs.readFileSyn
   // #308 起新增 ui/slots.js（五座位声明，host import + client splice 双消费）
   // #fix-banner 新增 matt-skills.js（Matt 技能套件 25 项真源，host import + client splice 双消费）→ 共享真源 13 文件
   // #324 起新增 workspaceKey.js（工作区键单源，#301 / #324 规格，host 包装 + client 共享）→ 共享真源 13 文件
-  check(srcSharedFiles.length === 13, `src/shared 13 文件（实得 ${srcSharedFiles.length}）`)
-  check(pkgSharedFiles.length === 13, `package/shared 13 文件（实得 ${pkgSharedFiles.length}）`)
+  // shared-0（#443）接线：S1 拆 chain（682 行拆成 3 个文件，总数 +2）、S2 拆 naming-guardian（498 行拆成 3 个文件，总数 +2）、
+  // S3 拆 check-catalog（356 行拆成 2 个文件，总数 +1）；每张拆分票合入时同票把下面两行的计数改成新总数并重跑 verify。
+  // S2（#452）：S1 后 15、S3 后 16，本票 1 个文件拆成 3 个、总数 +2 到 18。
+  check(srcSharedFiles.length === 18, `src/shared 18 文件（实得 ${srcSharedFiles.length}）`)
+  check(pkgSharedFiles.length === 18, `package/shared 18 文件（实得 ${pkgSharedFiles.length}）`)
 }
 // 4c) import 卫生：显式 .js（相对 import 必须带 .js 扩展，避免 Node ESM 裸 specifier）
 {

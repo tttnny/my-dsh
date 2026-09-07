@@ -79,7 +79,9 @@ export const OPERATIONS = Object.freeze([
  * @property {Object} fs DSH 沙箱 fs（受栅栏约束，不可直通 node:fs）
  * @property {(cmd: string, args: string[], opts?: {cwd?: string, timeout?: number, signal?: AbortSignal}) => Promise<{stdout: string, stderr: string, code: number}>} exec
  * @property {{setTimeout: typeof setTimeout, clearTimeout: typeof clearTimeout}} timers
- * @property {Object} log Logger（info/warn/error；诊断二分走这里）
+ * @property {Object} [log] 已退役（#494 O1：backend.diagnostic 不再产生；房内旧文本调用已清零，残留调用自动静默；新埋点只走 logEvent）
+ * @property {(level: string, event: string, fields: Object) => void} logEvent 房内结构化日志（防火即发；事件名与字段按 #489 附录第 1 节白名单，#491 房内票用）
+ * @property {(level: string) => boolean} isEnabled 开关同步判断（P1 外层判断用；权威仍是库体内兜底）
  */
 
 /**
@@ -157,6 +159,7 @@ export const OPERATIONS = Object.freeze([
  * @property {'open'|'closed'} [state]
  * @property {string|null} [parentKey] null=根票；省略=全部
  * @property {string[]} [keys] 批量
+ * @property {boolean} [isPullRequest] true=只取拉取请求（#506 界面过滤分界：前端 prFilterForList 登记，后端 github 房已实现）。
  */
 
 /** get 选项（评论分页）。 */
