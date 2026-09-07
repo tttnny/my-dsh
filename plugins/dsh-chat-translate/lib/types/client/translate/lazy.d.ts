@@ -3,7 +3,7 @@ declare class LazyTranslationQueue {
     private viewportObserver;
     constructor();
     setEnabled(enabled: boolean): void;
-    observe(element: HTMLElement, text: string, immediate?: boolean, isThink?: boolean): void;
+    observe(element: HTMLElement, text: string, immediate?: boolean): void;
     private handleVisibleBatch;
     private applyTranslation;
     disconnect(): void;

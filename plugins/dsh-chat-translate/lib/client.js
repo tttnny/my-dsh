@@ -205,7 +205,6 @@ var NonDestructiveTranslationMount = class {
     if (transWrapper && origWrapper) {
       transWrapper.textContent = translated;
       element.dataset.tidyTranslated = "true";
-      if (options.isThink) element.dataset.tidyThink = "true";
       if (options.originalText) element.dataset.original = options.originalText;
       return;
     }
@@ -242,9 +241,6 @@ var NonDestructiveTranslationMount = class {
     element.appendChild(origWrapper);
     element.dataset.tidyTranslated = "true";
     element.dataset.original = originalText;
-    if (options.isThink) {
-      element.dataset.tidyThink = "true";
-    }
   }
   /**
    * Unmounts translation and restores original DOM nodes completely.
@@ -269,7 +265,6 @@ var NonDestructiveTranslationMount = class {
     }
     delete element.dataset.tidyTranslated;
     delete element.dataset.original;
-    delete element.dataset.tidyThink;
   }
   /**
    * Checks if an element has non-destructive translation mounted.
@@ -331,11 +326,9 @@ var StreamDebounceViewportObserver = class {
             const el = entry.target;
             this.intersectionObserver?.unobserve(el);
             const text = el.dataset.tidyPendingText || el.textContent?.trim() || "";
-            const isThink = el.dataset.tidyPendingThink === "true";
             if (text) {
               delete el.dataset.tidyPendingText;
-              delete el.dataset.tidyPendingThink;
-              this.enqueueBatch(el, text, isThink);
+              this.enqueueBatch(el, text);
             }
           }
         }
@@ -352,7 +345,7 @@ var StreamDebounceViewportObserver = class {
    * Observe an element with streaming debounce.
    * If streaming updates characterData repeatedly within debounceMs, the timer resets.
    */
-  observeWithDebounce(element, text, immediate = false, isThink = false) {
+  observeWithDebounce(element, text, immediate = false) {
     if (!element || !text) return;
     const existingTimer = this.streamingTimers.get(element);
     if (existingTimer !== void 0) {
@@ -360,30 +353,29 @@ var StreamDebounceViewportObserver = class {
       this.streamingTimers.delete(element);
     }
     if (immediate || this.options.debounceMs <= 0) {
-      this.registerForViewport(element, text, isThink);
+      this.registerForViewport(element, text);
       return;
     }
     const timer = window.setTimeout(() => {
       this.streamingTimers.delete(element);
       if (element.isConnected) {
         const latestText = element.textContent?.trim() || text;
-        this.registerForViewport(element, latestText, isThink);
+        this.registerForViewport(element, latestText);
       }
     }, this.options.debounceMs);
     this.streamingTimers.set(element, timer);
   }
-  registerForViewport(element, text, isThink = false) {
+  registerForViewport(element, text) {
     if (!element.isConnected) return;
     if (!this.intersectionObserver) {
-      this.enqueueBatch(element, text, isThink);
+      this.enqueueBatch(element, text);
       return;
     }
     element.dataset.tidyPendingText = text;
-    if (isThink) element.dataset.tidyPendingThink = "true";
     this.intersectionObserver.observe(element);
   }
-  enqueueBatch(element, text, isThink = false) {
-    this.pendingQueue.push({ element, text, isThink });
+  enqueueBatch(element, text) {
+    this.pendingQueue.push({ element, text });
     if (this.batchFlushTimer === null && typeof window !== "undefined") {
       this.batchFlushTimer = window.setTimeout(() => {
         this.batchFlushTimer = null;
@@ -404,7 +396,6 @@ var StreamDebounceViewportObserver = class {
       this.streamingTimers.delete(element);
     }
     delete element.dataset.tidyPendingText;
-    delete element.dataset.tidyPendingThink;
     if (this.intersectionObserver) {
       this.intersectionObserver.unobserve(element);
     }
@@ -439,14 +430,14 @@ var LazyTranslationQueue = class {
       this.viewportObserver.disconnect();
     }
   }
-  observe(element, text, immediate = false, isThink = false) {
+  observe(element, text, immediate = false) {
     if (!this.enabled || !element.isConnected) return;
     const cached = clientCache.get(text);
     if (cached) {
-      this.applyTranslation(element, cached, text, isThink);
+      this.applyTranslation(element, cached, text);
       return;
     }
-    this.viewportObserver.observeWithDebounce(element, text, immediate, isThink);
+    this.viewportObserver.observeWithDebounce(element, text, immediate);
   }
   async handleVisibleBatch(items) {
     if (!this.enabled || items.length === 0) return;
@@ -460,11 +451,11 @@ var LazyTranslationQueue = class {
       if (!item.element.isConnected) continue;
       const cached = clientCache.get(item.text);
       if (cached) {
-        this.applyTranslation(item.element, cached, item.text, item.isThink);
+        this.applyTranslation(item.element, cached, item.text);
         continue;
       }
       const list = textMap.get(item.text) || [];
-      list.push({ element: item.element, isThink: item.isThink });
+      list.push(item.element);
       textMap.set(item.text, list);
     }
     const uniqueTexts = Array.from(textMap.keys());
@@ -475,8 +466,8 @@ var LazyTranslationQueue = class {
         clientCache.set(res.original, res.translated);
         const entries = textMap.get(res.original) || [];
         for (const entry of entries) {
-          if (entry.element.isConnected && this.enabled) {
-            this.applyTranslation(entry.element, res.translated, res.original, entry.isThink);
+          if (entry.isConnected && this.enabled) {
+            this.applyTranslation(entry, res.translated, res.original);
           }
         }
       } else if (res.channel === "fallback" || res.channel === "fallback-client") {
@@ -484,11 +475,10 @@ var LazyTranslationQueue = class {
       }
     }
   }
-  applyTranslation(element, translated, original, isThink) {
+  applyTranslation(element, translated, original) {
     if (!element.isConnected || !this.enabled) return;
     NonDestructiveTranslationMount.mount(element, translated, {
-      originalText: original,
-      isThink: isThink || element.dataset.tidyThink === "true"
+      originalText: original
     });
   }
   disconnect() {
@@ -498,13 +488,13 @@ var LazyTranslationQueue = class {
 var lazyQueue = new LazyTranslationQueue();
 
 // src/client/translate/observer.ts
-var TOOL_TITLE_SELECTOR = '[class*="summary"]';
+var TOOL_TITLE_SELECTOR = '[class*="summary" i]';
 var SESSION_ROOT_SELECTOR = "[data-conversation-scroll], [data-chat-flow]";
 var ROOT_CHECK_INTERVAL_MS = 3e3;
 function isToolSummarySpan(span) {
   if (!span || span.nodeType !== 1) return false;
   if (span.hasAttribute("aria-hidden")) return false;
-  if (span.querySelector?.('[class*="title"], [class*="leading"], [class*="chevron"], [class*="sep"], [class*="summary"]')) {
+  if (span.querySelector?.('[class*="title"], [class*="leading"], [class*="chevron"], [class*="sep"], [class*="summary" i]')) {
     return false;
   }
   const cls = span.className || "";
@@ -523,6 +513,10 @@ function isToolSummarySpan(span) {
     return true;
   }
   return false;
+}
+function thinkBlockStillRunning(span) {
+  const thinkRoot = span.closest('[data-variant="think"]');
+  return !!thinkRoot && thinkRoot.dataset.state === "running";
 }
 var ChatTranslateObserver = class {
   observer = null;
@@ -671,6 +665,7 @@ var ChatTranslateObserver = class {
     });
   }
   processSpan(span) {
+    if (thinkBlockStillRunning(span)) return;
     if (NonDestructiveTranslationMount.isMounted(span)) {
       const original = NonDestructiveTranslationMount.getOriginal(span);
       if (original) {
@@ -1250,7 +1245,7 @@ function TidySettingsPanel() {
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-tidy-desc", children: [
         "\u81EA\u52A8\u5C06\u5F53\u524D\u4F1A\u8BDD\u4E2D\u5DE5\u5177\u8C03\u7528\u6807\u9898\u4E0E\u601D\u8003\u6298\u53E0\u6458\u8981\uFF08\u5982 ",
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: "Locate DSH home directory structure" }),
-        "\uFF09\u7FFB\u8BD1\u4E3A\u4E2D\u6587\uFF0C \u70B9\u51FB\u8BD1\u6587\u53EF\u539F\u5730\u5207\u6362\u539F\u6587/\u8BD1\u6587\u3002\u4EC5\u4F5C\u7528\u4E8E\u5F53\u524D\u67E5\u770B\u7684\u4F1A\u8BDD\uFF0C\u5BF9\u8BDD\u6B63\u6587\u6C38\u4E0D\u7FFB\u8BD1\u3002"
+        "\uFF09\u7FFB\u8BD1\u4E3A\u4E2D\u6587\uFF0C \u70B9\u51FB\u8BD1\u6587\u53EF\u539F\u5730\u5207\u6362\u539F\u6587/\u8BD1\u6587\u3002\u601D\u8003\u6298\u53E0\u6458\u8981\u4EC5\u5728\u601D\u8003\u5B8C\u5168\u7ED3\u675F\u540E\u624D\u7FFB\u8BD1\uFF08\u4E0D\u7FFB\u8BD1\u6D41\u5F0F\u4E2D\u95F4\u6001\uFF09\u3002 \u4EC5\u4F5C\u7528\u4E8E\u5F53\u524D\u67E5\u770B\u7684\u4F1A\u8BDD\uFF0C\u5BF9\u8BDD\u6B63\u6587\u6C38\u4E0D\u7FFB\u8BD1\u3002"
       ] })
     ] }),
     state.enabled && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [

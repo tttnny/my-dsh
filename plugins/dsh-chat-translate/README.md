@@ -4,7 +4,7 @@ DeepSeek Harness Web 界面的工具调用与思考摘要智能翻译插件。�
 
 ## 特性
 
-- **工具调用与思考摘要自动翻译**：仅在渲染层将工具调用动作描述（如 `Locate DSH home directory structure`）与思考折叠摘要自动翻译为中文，对话正文永不翻译，保持思考正文原生不干扰。
+- **工具调用与思考摘要自动翻译**：仅在渲染层将工具调用动作描述（如 `Locate DSH home directory structure`）与思考折叠摘要自动翻译为中文，对话正文永不翻译，保持思考正文原生不干扰。思考折叠摘要只在思考**完全结束**后才翻译，绝不翻译思考过程中的流式中间态。
 - **AI 翻译通道（OpenAI 兼容协议）**：对接任意 OpenAI 兼容的 `chat/completions` 服务（OpenAI、DeepSeek、通义、Ollama 等），Base URL 与模型可在设置面板配置；API Key 经 DSH 凭据服务读写 `~/.dsh/.credentials.yaml` 的 `TRANSLATE_API_KEY`，填写后立即生效。
 - **Bing 免 Key 兜底通道**：内置微软 Bing 网页翻译（免 Key、国内直连），AI 未配置或请求失败时自动兜底；双通道均有独立开关，同时关闭则不翻译。
 - **非侵入式 DOM 挂载与双语对照**：非侵入式包装保留原始 DOM 节点与 React Fiber 事件系统；点击译文可原地在原文与中文之间切换。

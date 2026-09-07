@@ -2,7 +2,12 @@ import { clientCache } from './client-cache.ts';
 import { lazyQueue } from './lazy.ts';
 import { NonDestructiveTranslationMount } from './mount.ts';
 
-const TOOL_TITLE_SELECTOR = '[class*="summary"]';
+// Case-insensitive match: DSH builds vary the summary class casing across
+// versions — lowercase "summary" for tool-call rows (MISisG_summary /
+// _48RFeq_summary) vs camelCase "thinkSummary" for the Think card row.
+// Attribute values are matched case-sensitively by default in HTML, which is
+// why the old lowercase-only selector silently missed think summaries.
+const TOOL_TITLE_SELECTOR = '[class*="summary" i]';
 
 /**
  * Current-session scroll container (the conversation layout re-renders this
@@ -19,7 +24,7 @@ function isToolSummarySpan(span: HTMLElement): boolean {
   if (span.hasAttribute('aria-hidden')) return false;
 
   // Never match parent rows or containers that contain title, leading icon, chevron or nested summary
-  if (span.querySelector?.('[class*="title"], [class*="leading"], [class*="chevron"], [class*="sep"], [class*="summary"]')) {
+  if (span.querySelector?.('[class*="title"], [class*="leading"], [class*="chevron"], [class*="sep"], [class*="summary" i]')) {
     return false;
   }
 
@@ -52,6 +57,20 @@ function isToolSummarySpan(span: HTMLElement): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * DSH's Think card (ReasoningRow) carries `data-state="running"` on its root
+ * while the reasoning block is still streaming and flips it to `"ok"` once it
+ * has finished. While running, the collapsed summary follows the live tail of
+ * the reasoning text (`.summary[data-follow-end]`), so translating it would
+ * capture an intermediate line that is replaced by the stable first-line
+ * summary when the block ends. Defer instead: the observed `data-state`
+ * mutation re-scans this span, at which point the final summary is processed.
+ */
+function thinkBlockStillRunning(span: HTMLElement): boolean {
+  const thinkRoot = span.closest<HTMLElement>('[data-variant="think"]');
+  return !!thinkRoot && thinkRoot.dataset.state === 'running';
 }
 
 export class ChatTranslateObserver {
@@ -237,6 +256,13 @@ export class ChatTranslateObserver {
   }
 
   private processSpan(span: HTMLElement): void {
+    // Think summaries are translated only after the reasoning block has fully
+    // finished streaming — never while `data-state="running"` (the summary is
+    // then a live tail line that would be replaced moments later). The
+    // transition to "ok" triggers a re-scan via the observed data-state
+    // attribute, which is when this span becomes processable.
+    if (thinkBlockStillRunning(span)) return;
+
     if (NonDestructiveTranslationMount.isMounted(span)) {
       const original = NonDestructiveTranslationMount.getOriginal(span);
       if (original) {

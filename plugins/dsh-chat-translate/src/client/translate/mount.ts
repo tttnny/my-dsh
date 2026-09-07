@@ -15,7 +15,6 @@ export const CLASS_TRANSLATED_BLOCK = 'dsh-tidy-translated-block';
 
 export interface MountOptions {
   originalText?: string;
-  isThink?: boolean;
   interactive?: boolean;
 }
 
@@ -41,7 +40,6 @@ export class NonDestructiveTranslationMount {
       // Update existing translation
       transWrapper.textContent = translated;
       element.dataset.tidyTranslated = 'true';
-      if (options.isThink) element.dataset.tidyThink = 'true';
       if (options.originalText) element.dataset.original = options.originalText;
       return;
     }
@@ -93,9 +91,6 @@ export class NonDestructiveTranslationMount {
 
     element.dataset.tidyTranslated = 'true';
     element.dataset.original = originalText;
-    if (options.isThink) {
-      element.dataset.tidyThink = 'true';
-    }
   }
 
   /**
@@ -128,7 +123,6 @@ export class NonDestructiveTranslationMount {
 
     delete element.dataset.tidyTranslated;
     delete element.dataset.original;
-    delete element.dataset.tidyThink;
   }
 
   /**

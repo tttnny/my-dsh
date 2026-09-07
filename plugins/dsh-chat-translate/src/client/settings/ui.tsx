@@ -82,7 +82,8 @@ export function TidySettingsPanel(): React.ReactElement {
         </div>
         <div className="dsh-tidy-desc">
           自动将当前会话中工具调用标题与思考折叠摘要（如 <code>Locate DSH home directory structure</code>）翻译为中文，
-          点击译文可原地切换原文/译文。仅作用于当前查看的会话，对话正文永不翻译。
+          点击译文可原地切换原文/译文。思考折叠摘要仅在思考完全结束后才翻译（不翻译流式中间态）。
+          仅作用于当前查看的会话，对话正文永不翻译。
         </div>
       </div>
 

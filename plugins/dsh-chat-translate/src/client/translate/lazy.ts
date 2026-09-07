@@ -6,7 +6,6 @@ import { StreamDebounceViewportObserver } from './viewport-observer.ts';
 type TranslateTask = {
   element: HTMLElement;
   text: string;
-  isThink?: boolean;
 };
 
 class LazyTranslationQueue {
@@ -28,18 +27,18 @@ class LazyTranslationQueue {
     }
   }
 
-  observe(element: HTMLElement, text: string, immediate = false, isThink = false): void {
+  observe(element: HTMLElement, text: string, immediate = false): void {
     if (!this.enabled || !element.isConnected) return;
 
     // 1. If cached, apply immediately non-destructively
     const cached = clientCache.get(text);
     if (cached) {
-      this.applyTranslation(element, cached, text, isThink);
+      this.applyTranslation(element, cached, text);
       return;
     }
 
     // 2. Delegate to streaming-debounced viewport observer
-    this.viewportObserver.observeWithDebounce(element, text, immediate, isThink);
+    this.viewportObserver.observeWithDebounce(element, text, immediate);
   }
 
   private async handleVisibleBatch(items: TranslateTask[]): Promise<void> {
@@ -54,18 +53,18 @@ class LazyTranslationQueue {
     });
 
     // Group elements by text to deduplicate API requests
-    const textMap = new Map<string, Array<{ element: HTMLElement; isThink?: boolean }>>();
+    const textMap = new Map<string, HTMLElement[]>();
     for (const item of sorted) {
       if (!item.element.isConnected) continue;
 
       const cached = clientCache.get(item.text);
       if (cached) {
-        this.applyTranslation(item.element, cached, item.text, item.isThink);
+        this.applyTranslation(item.element, cached, item.text);
         continue;
       }
 
       const list = textMap.get(item.text) || [];
-      list.push({ element: item.element, isThink: item.isThink });
+      list.push(item.element);
       textMap.set(item.text, list);
     }
 
@@ -85,8 +84,8 @@ class LazyTranslationQueue {
         clientCache.set(res.original, res.translated);
         const entries = textMap.get(res.original) || [];
         for (const entry of entries) {
-          if (entry.element.isConnected && this.enabled) {
-            this.applyTranslation(entry.element, res.translated, res.original, entry.isThink);
+          if (entry.isConnected && this.enabled) {
+            this.applyTranslation(entry, res.translated, res.original);
           }
         }
       } else if (res.channel === 'fallback' || res.channel === 'fallback-client') {
@@ -95,11 +94,10 @@ class LazyTranslationQueue {
     }
   }
 
-  private applyTranslation(element: HTMLElement, translated: string, original: string, isThink?: boolean): void {
+  private applyTranslation(element: HTMLElement, translated: string, original: string): void {
     if (!element.isConnected || !this.enabled) return;
     NonDestructiveTranslationMount.mount(element, translated, {
       originalText: original,
-      isThink: isThink || element.dataset.tidyThink === 'true',
     });
   }
 

@@ -13,7 +13,6 @@ export declare const CLASS_ORIGINAL_SHOWN = "dsh-tidy-original-shown";
 export declare const CLASS_TRANSLATED_BLOCK = "dsh-tidy-translated-block";
 export interface MountOptions {
     originalText?: string;
-    isThink?: boolean;
     interactive?: boolean;
 }
 export declare class NonDestructiveTranslationMount {

@@ -10,13 +10,13 @@
 export interface ViewportObserverOptions {
   rootMargin?: string;
   debounceMs?: number;
-  onVisibleBatch: (items: Array<{ element: HTMLElement; text: string; isThink?: boolean }>) => void;
+  onVisibleBatch: (items: Array<{ element: HTMLElement; text: string }>) => void;
 }
 
 export class StreamDebounceViewportObserver {
   private intersectionObserver: IntersectionObserver | null = null;
   private streamingTimers = new WeakMap<HTMLElement, number>();
-  private pendingQueue: Array<{ element: HTMLElement; text: string; isThink?: boolean }> = [];
+  private pendingQueue: Array<{ element: HTMLElement; text: string }> = [];
   private batchFlushTimer: number | null = null;
   private options: Required<Omit<ViewportObserverOptions, 'onVisibleBatch'>> & {
     onVisibleBatch: ViewportObserverOptions['onVisibleBatch'];
@@ -44,11 +44,9 @@ export class StreamDebounceViewportObserver {
             // Stop observing once it enters viewport and is queued
             this.intersectionObserver?.unobserve(el);
             const text = el.dataset.tidyPendingText || el.textContent?.trim() || '';
-            const isThink = el.dataset.tidyPendingThink === 'true';
             if (text) {
               delete el.dataset.tidyPendingText;
-              delete el.dataset.tidyPendingThink;
-              this.enqueueBatch(el, text, isThink);
+              this.enqueueBatch(el, text);
             }
           }
         }
@@ -65,7 +63,7 @@ export class StreamDebounceViewportObserver {
    * Observe an element with streaming debounce.
    * If streaming updates characterData repeatedly within debounceMs, the timer resets.
    */
-  observeWithDebounce(element: HTMLElement, text: string, immediate = false, isThink = false): void {
+  observeWithDebounce(element: HTMLElement, text: string, immediate = false): void {
     if (!element || !text) return;
 
     // Clear any active streaming timer for this element
@@ -76,7 +74,7 @@ export class StreamDebounceViewportObserver {
     }
 
     if (immediate || this.options.debounceMs <= 0) {
-      this.registerForViewport(element, text, isThink);
+      this.registerForViewport(element, text);
       return;
     }
 
@@ -85,29 +83,28 @@ export class StreamDebounceViewportObserver {
       if (element.isConnected) {
         // Read latest text content after streaming settles
         const latestText = element.textContent?.trim() || text;
-        this.registerForViewport(element, latestText, isThink);
+        this.registerForViewport(element, latestText);
       }
     }, this.options.debounceMs);
 
     this.streamingTimers.set(element, timer);
   }
 
-  private registerForViewport(element: HTMLElement, text: string, isThink = false): void {
+  private registerForViewport(element: HTMLElement, text: string): void {
     if (!element.isConnected) return;
 
     if (!this.intersectionObserver) {
       // Fallback if IntersectionObserver is unsupported: enqueue immediately
-      this.enqueueBatch(element, text, isThink);
+      this.enqueueBatch(element, text);
       return;
     }
 
     element.dataset.tidyPendingText = text;
-    if (isThink) element.dataset.tidyPendingThink = 'true';
     this.intersectionObserver.observe(element);
   }
 
-  private enqueueBatch(element: HTMLElement, text: string, isThink = false): void {
-    this.pendingQueue.push({ element, text, isThink });
+  private enqueueBatch(element: HTMLElement, text: string): void {
+    this.pendingQueue.push({ element, text });
     if (this.batchFlushTimer === null && typeof window !== 'undefined') {
       this.batchFlushTimer = window.setTimeout(() => {
         this.batchFlushTimer = null;
@@ -130,7 +127,6 @@ export class StreamDebounceViewportObserver {
       this.streamingTimers.delete(element);
     }
     delete element.dataset.tidyPendingText;
-    delete element.dataset.tidyPendingThink;
     if (this.intersectionObserver) {
       this.intersectionObserver.unobserve(element);
     }

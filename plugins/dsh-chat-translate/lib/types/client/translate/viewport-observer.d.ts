@@ -12,7 +12,6 @@ export interface ViewportObserverOptions {
     onVisibleBatch: (items: Array<{
         element: HTMLElement;
         text: string;
-        isThink?: boolean;
     }>) => void;
 }
 export declare class StreamDebounceViewportObserver {
@@ -27,7 +26,7 @@ export declare class StreamDebounceViewportObserver {
      * Observe an element with streaming debounce.
      * If streaming updates characterData repeatedly within debounceMs, the timer resets.
      */
-    observeWithDebounce(element: HTMLElement, text: string, immediate?: boolean, isThink?: boolean): void;
+    observeWithDebounce(element: HTMLElement, text: string, immediate?: boolean): void;
     private registerForViewport;
     private enqueueBatch;
     private flushQueue;
