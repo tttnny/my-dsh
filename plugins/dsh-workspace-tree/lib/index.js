@@ -555,7 +555,11 @@ async function readSessionHeaderFast(logFilePath) {
  * ——header 不变式里 origin 合法值只有 "subagent"，delegationDepth 也只在
  * dsh-subagent 里递增。按 parentSession 无差别建边会把用户的 fork 会话算进
  * 「级联待删闭包」：fork 活跃时整单删除被误报成"目标会话正在运行"（其实目标空闲），
- * fork 空闲时更会被连带物理删除（数据丢失）。与浏览器半区 isSubagentRow 同判据。
+ * fork 空闲时更会被连带物理删除（数据丢失）。与浏览器半区 isSubagentRow 同源判据，
+ * 但服务端更宽一档：客户端只认 origin === "subagent"，此处另以 delegationDepth > 0
+ * 兜底（正常不变式下二者同真，属纵深防御，不改变任何真实 Subagent 的归类）。
+ * 边角：若存在 origin 与 delegationDepth 双缺的历史 Subagent header，它将不再进入
+ * 级联闭包（父删后子文件残留、且不满足孤儿判据）——依赖 header 不变式成立，接受。
  */
 function isSubagentChildHeader(header) {
   if (!header || typeof header.parentSession !== "string" || !header.parentSession) return false;
@@ -1029,6 +1033,8 @@ async function handleDeleteAll(ctx, req, res) {
   // （先恢复后认领）认领时也会看到最新归档而排除已恢复者。两方向都安全。
   // 注意：认领阶段排除受保护会话（运行中/被别的客户端打开），它们留在归档里不动；
   // 认领后若物理删除失败，已认领者会回到可见态（fail-visible），可重试。
+  // 第二遍守卫跳过的目标会回写进归档（被挡条目应「留在归档、稍后重试」，而不是
+  // 悄悄回到工作区树逼用户重新归档）；仅回写失败时才降级为可见态并打 phase 标注。
   // skipped 保持「ID 数组」的旧形状（前端按条数播报），细节走 skipDetails。
   let toRemove = [];
   let skipDetails = [];
@@ -1072,7 +1078,28 @@ async function handleDeleteAll(ctx, req, res) {
     // 二次守卫：认领与物理删除之间该会话可能刚被打开/开跑，仍受保护者本轮跳过，
     // 并入同一份 skipDetails（此前这批目标被静默吞掉，前端只会「莫名少删几条」）。
     const pass2 = await deleteSessionListCascade(ctx, toRemove, selfTabId);
-    const details = skipDetails.concat(pass2.skipped || []);
+    let details = skipDetails.concat(pass2.skipped || []);
+    // 被二次守卫挡下的目标此前已被认领出归档：回写归档，兑现「跳过 = 留在归档
+    // 稍后重试」的语义；并发场景（如另一路删除/恢复刚动过列表）按去重合并处理。
+    const repost = (pass2.skipped || []).map((d) => String(d.sessionId)).filter(Boolean);
+    if (repost.length > 0) {
+      try {
+        await mutateWorkspaceState(ctx, async (state, table, g) => {
+          const archived = (state.archivedSessionIds || []).map(String);
+          const seen = new Set(archived);
+          const next = archived.concat(repost.filter((id) => !seen.has(id)));
+          if (next.length === archived.length) return { unchanged: true };
+          await g.set({ ...state, archivedSessionIds: next });
+          return { reposted: next.length - archived.length };
+        });
+      } catch (err) {
+        // 回写失败：这些条目会以可见态回到工作区树（fail-visible，不丢数据），
+        // 打 phase 标注让前端如实播报「已退回可见列表」而不是「保留在归档中」。
+        console.warn("[dsh-workspace-tree] 跳过目标回写归档失败（降级为可见态，可重新归档）:", err?.message || err);
+        const ids = new Set(repost);
+        details = details.map((d) => (d && ids.has(String(d.sessionId)) ? { ...d, phase: "post-claim-visible" } : d));
+      }
+    }
     sendJson(res, 200, {
       ok: true,
       deleted: pass2.deleted,
@@ -1233,7 +1260,9 @@ function describeDeleteBlock(targetId, hitId, guards, closureSize) {
     : `它的 Subagent 后代 ${hit} ${label}（级联闭包共 ${closureSize} 条，整单中止）`;
   const hint = guards.running.has(hit)
     ? "；等它跑完（或先中断该会话）再删"
-    : "；关掉打开它的那个标签页（或等 5 分钟心跳过期）再删";
+    : guards.env.has(hit)
+      ? "；这是宿主会话列表暂时不可读时启用的进程兜底保护，待列表恢复后重试即可"
+      : "；关掉打开它的那个标签页（或等 5 分钟心跳过期）再删";
   return `无法删除：${what}${hint}`;
 }
 

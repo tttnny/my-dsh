@@ -334,17 +334,25 @@ window.__ModuleLoader__.load({
       if (n === 0) return "";
       const details = Array.isArray(r && r.skipDetails) ? r.skipDetails : [];
       if (details.length === 0) return "其中 " + n + " 条因正在运行/被占用已跳过，仍保留在归档中";
+      let visibleFallback = 0;
       const lines = details.slice(0, 3).map((d, i) => {
         if (!d || !d.sessionId) return "第 " + (i + 1) + " 条：守卫未说明原因";
         const why = d.blockedBy === "running"
           ? "正在运行（含停在等待回复/审批的回合）"
           : d.blockedBy === "occupied" ? "正被某个标签页打开（关掉或等 5 分钟后再删）"
-          : "被宿主进程声明为当前会话";
+          : "被宿主进程声明为当前会话（宿主会话列表暂不可读时的兜底，恢复后即可删）";
+        // phase=post-claim-visible：服务端回写归档失败，该条已回到工作区可见列表。
+        const tail = d.phase === "post-claim-visible"
+          ? "（已退回工作区可见列表，重新归档后可再删）" : "";
+        if (tail) visibleFallback++;
         return d.self
-          ? "会话 " + d.sessionId + " —— " + why
-          : "会话 " + d.sessionId + " —— 它的 Subagent 后代 " + d.blockedById + " " + why;
+          ? "会话 " + d.sessionId + " —— " + why + tail
+          : "会话 " + d.sessionId + " —— 它的 Subagent 后代 " + d.blockedById + " " + why + tail;
       });
-      return "其中 " + n + " 条已跳过并保留在归档中：" + lines.join("；")
+      const lead = visibleFallback > 0
+        ? "其中 " + n + " 条已跳过（均未删除）："
+        : "其中 " + n + " 条已跳过并保留在归档中：";
+      return lead + lines.join("；")
         + (n > 3 ? "；另有 " + (n - 3) + " 条同类" : "");
     }
 
@@ -427,7 +435,7 @@ window.__ModuleLoader__.load({
       // （live mode 可为 archive 且不持久化，设置页拿不到它）
       return {
         // 注意：此处版本号为手写常量，发版改 package.json 时同步改这里
-        plugin: "dsh-workspace-tree@1.8.1",
+        plugin: "dsh-workspace-tree@1.8.2",
         t: new Date().toISOString(),
         ...(noSnap ? { warning: "snapshots unavailable（ctx 未就绪或已释放）" } : {}),
         defaultMode,
