@@ -296,6 +296,58 @@ window.__ModuleLoader__.load({
       apiPost("/claims/heartbeat", { tabId: heartbeatTabId(), sid: sid ? String(sid) : null }).catch(() => { /* ignore */ });
     }
 
+    /**
+     * 页面真正卸载时主动释放本标签页的占用声明（keepalive 保证请求能在卸载中发出）。
+     * 不释放的话，关掉标签页后该会话最长 5 分钟（CLAIM_TTL）内仍算「被占用」，
+     * 用户删它就会被挡下——旧版文案还会播报成「会话正在运行」，看着就是天大的误报。
+     * bfcache 暂存（persisted=true）不释放：页会被原样恢复，恢复后 3 秒心跳继续续期。
+     */
+    function releaseClaimHeartbeat() {
+      try {
+        localStorage.removeItem(HB_PREFIX + heartbeatTabId());
+      } catch { /* ignore */ }
+      try {
+        fetch(API + "/claims/heartbeat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ tabId: heartbeatTabId(), sid: null }),
+          keepalive: true
+        }).catch(() => { /* ignore */ });
+      } catch { /* ignore */ }
+    }
+    try {
+      // 只挂 pagehide：beforeunload 会影响部分浏览器的 bfcache 命中，而 pagehide
+      // 在真正卸载与进入 bfcache 时都会触发，足够覆盖（后者按 persisted 跳过）。
+      window.addEventListener("pagehide", (event) => {
+        if (!event || event.persisted !== true) releaseClaimHeartbeat();
+      });
+    } catch { /* ignore */ }
+
+    /**
+     * 批量删除被挡时的人话说明。优先用服务端 skipDetails——它会点名「到底是哪一条
+     * 在挡、是运行中还是被某个标签页打开、挡的是目标本身还是目标的 Subagent 后代」；
+     * 旧版 Host 没有该字段时退回按条数播报（此时只能说"正在运行/被占用"这种模糊话）。
+     */
+    function describeSkips(r) {
+      const ids = Array.isArray(r && r.skipped) ? r.skipped.map(String) : [];
+      const n = ids.length;
+      if (n === 0) return "";
+      const details = Array.isArray(r && r.skipDetails) ? r.skipDetails : [];
+      if (details.length === 0) return "其中 " + n + " 条因正在运行/被占用已跳过，仍保留在归档中";
+      const lines = details.slice(0, 3).map((d, i) => {
+        if (!d || !d.sessionId) return "第 " + (i + 1) + " 条：守卫未说明原因";
+        const why = d.blockedBy === "running"
+          ? "正在运行（含停在等待回复/审批的回合）"
+          : d.blockedBy === "occupied" ? "正被某个标签页打开（关掉或等 5 分钟后再删）"
+          : "被宿主进程声明为当前会话";
+        return d.self
+          ? "会话 " + d.sessionId + " —— " + why
+          : "会话 " + d.sessionId + " —— 它的 Subagent 后代 " + d.blockedById + " " + why;
+      });
+      return "其中 " + n + " 条已跳过并保留在归档中：" + lines.join("；")
+        + (n > 3 ? "；另有 " + (n - 3) + " 条同类" : "");
+    }
+
     // ══════════════ Host API ══════════════
     async function apiPost(path, body) {
       const res = await fetch(API + path, {
@@ -375,7 +427,7 @@ window.__ModuleLoader__.load({
       // （live mode 可为 archive 且不持久化，设置页拿不到它）
       return {
         // 注意：此处版本号为手写常量，发版改 package.json 时同步改这里
-        plugin: "dsh-workspace-tree@1.7.1",
+        plugin: "dsh-workspace-tree@1.8.1",
         t: new Date().toISOString(),
         ...(noSnap ? { warning: "snapshots unavailable（ctx 未就绪或已释放）" } : {}),
         defaultMode,
@@ -1913,7 +1965,9 @@ window.__ModuleLoader__.load({
           }
 
           if (k === "deleteOne") {
-            const r = await apiPost("/archive/delete", { sessionId: archiveConfirm.sessionId });
+            // tabId：让 Host 豁免本标签页自身的占用声明——正在阅览这条归档会话
+            // 不应该成为删不掉它的理由（删完当前会话会 startSession() 兜底）。
+            const r = await apiPost("/archive/delete", { sessionId: archiveConfirm.sessionId, tabId: heartbeatTabId() });
             if (!r.ok) throw new Error(r.error || "删除失败");
             const deleted = Array.isArray(r.deleted) && r.deleted.length ? r.deleted : toDelete;
             rememberDeleted(deleted);
@@ -1927,7 +1981,7 @@ window.__ModuleLoader__.load({
             if (Array.isArray(r.restored)) forgetDeleted(r.restored);
             refreshSessions();
           } else if (k === "deleteGroup") {
-            const r = await apiPost("/archive/deleteAll", { workspaceId: archiveConfirm.workspaceId });
+            const r = await apiPost("/archive/deleteAll", { workspaceId: archiveConfirm.workspaceId, tabId: heartbeatTabId() });
             if (!r.ok) throw new Error(r.error || "删除失败");
             // 服务端为准：r.deleted 为数组即采用（即使为空），仅旧版 Host 无字段时回退本地集
             const deleted = Array.isArray(r.deleted) ? r.deleted : toDelete;
@@ -1937,14 +1991,14 @@ window.__ModuleLoader__.load({
               startSession();
             }
             refreshSessions();
-            if (skippedG.length > 0) showAlert("其中 " + skippedG.length + " 条因正在运行/被占用已跳过，仍保留在归档中", "部分跳过");
+            if (skippedG.length > 0) showAlert(describeSkips(r), "部分跳过");
           } else if (k === "restoreAll") {
             const r = await apiPost("/archive/unarchiveAll", {});
             if (!r.ok) throw new Error(r.error || "恢复失败");
             if (Array.isArray(r.restored)) forgetDeleted(r.restored);
             refreshSessions();
           } else if (k === "deleteAll") {
-            const r = await apiPost("/archive/deleteAll", {});
+            const r = await apiPost("/archive/deleteAll", { tabId: heartbeatTabId() });
             if (!r.ok) throw new Error(r.error || "删除失败");
             const deleted = Array.isArray(r.deleted) ? r.deleted : toDelete;
             if (deleted.length > 0) rememberDeleted(deleted);
@@ -1953,7 +2007,7 @@ window.__ModuleLoader__.load({
               startSession();
             }
             refreshSessions();
-            if (skippedA.length > 0) showAlert("其中 " + skippedA.length + " 条因正在运行/被占用已跳过，仍保留在归档中", "部分跳过");
+            if (skippedA.length > 0) showAlert(describeSkips(r), "部分跳过");
           }
           setArchiveConfirm(null);
         } catch (error) {

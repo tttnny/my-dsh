@@ -547,6 +547,23 @@ async function readSessionHeaderFast(logFilePath) {
 }
 
 /**
+ * 该 header 是否是「真正的 Subagent 子会话」（有父 + Subagent 身份）。
+ *
+ * 判据必须是 origin（或 delegationDepth），**不能只看 parentSession**：宿主 fork
+ * 也会把 meta.parentSession 写到源会话上（见 @deepseek-ai/dsh-api-session-controller
+ * 的 fork 命令：parentSession: source.header.id），但 fork 出来的仍是普通用户会话
+ * ——header 不变式里 origin 合法值只有 "subagent"，delegationDepth 也只在
+ * dsh-subagent 里递增。按 parentSession 无差别建边会把用户的 fork 会话算进
+ * 「级联待删闭包」：fork 活跃时整单删除被误报成"目标会话正在运行"（其实目标空闲），
+ * fork 空闲时更会被连带物理删除（数据丢失）。与浏览器半区 isSubagentRow 同判据。
+ */
+function isSubagentChildHeader(header) {
+  if (!header || typeof header.parentSession !== "string" || !header.parentSession) return false;
+  return header.origin === "subagent"
+    || (typeof header.delegationDepth === "number" && header.delegationDepth > 0);
+}
+
+/**
  * 扫描 ~/.dsh/sessions/ 目录下的所有会话元数据并构建拓扑关系图。
  */
 async function scanSessionTopology() {
@@ -607,7 +624,7 @@ async function scanSessionTopology() {
         };
         sessionMap.set(sid, info);
 
-        if (header && typeof header.parentSession === "string" && header.parentSession) {
+        if (isSubagentChildHeader(header)) {
           const pid = header.parentSession;
           const list = childrenMap.get(pid) || [];
           list.push(sid);
@@ -775,11 +792,13 @@ async function removeSessionsPhysically(ctx, sessionIds) {
 
 /**
  * 级联物理删除核心引擎：
- * 1. 扫描拓扑，收集 targetSessionId 及其所有的派生子孙 Subagent ID；
- * 2. 活跃会话防护：若包含当前进程会话则强阻断；
+ * 1. 扫描拓扑，收集 targetSessionId 及其所有的派生子孙 Subagent ID（仅 Subagent，
+ *    fork 出的独立会话不在其列，见 isSubagentChildHeader）；
+ * 2. 活跃保护：闭包内含运行中/被其他客户端打开的会话则整单阻断，
+ *    并点名到底哪一条在挡、为什么、该等什么（见 deletionGuards/describeDeleteBlock）；
  * 3. 单事务剔除注册表/归档 + 物理删除 + 内存清理。
  */
-async function deleteSessionCascade(ctx, targetSessionId) {
+async function deleteSessionCascade(ctx, targetSessionId, selfTabId) {
   if (!targetSessionId || typeof targetSessionId !== "string") {
     throw new Error("sessionId 必填且必须为字符串");
   }
@@ -788,13 +807,12 @@ async function deleteSessionCascade(ctx, targetSessionId) {
   const { childrenMap } = await scanSessionTopology();
   const allToDelete = collectDescendantSessionIds(sid, childrenMap);
 
-  // 服务端权威活跃保护（运行中 ∪ 占用声明 ∪ env 补充）：目标闭包内含受保护
-  // 会话则整单阻断。注意 process.env.DSH_SESSION_ID 在 host 进程通常取不到，
-  // 不可做唯一依据，见 protectedSessionIds。
-  const safe = await protectedSessionIds(ctx);
-  const hit = allToDelete.find((id) => safe.has(String(id)));
+  // 服务端权威活跃保护：目标闭包内含受保护会话则整单阻断，并按守卫来源点名
+  // 「哪一条在挡、为什么、该等什么」（闭包只含 Subagent 后代，见 isSubagentChildHeader）。
+  const guards = await deletionGuards(ctx, selfTabId);
+  const hit = allToDelete.find((id) => guards.all.has(String(id)));
   if (hit !== undefined) {
-    throw new Error(`无法删除当前正在运行/被占用的活跃会话: ${hit}`);
+    throw new Error(describeDeleteBlock(sid, hit, guards, allToDelete.length));
   }
 
   await stripSessionIdsFromRegistry(ctx, allToDelete);
@@ -807,29 +825,30 @@ async function deleteSessionCascade(ctx, targetSessionId) {
  * 批量级联物理删除一组会话：只扫描一次拓扑，逐目标收集子孙闭包
  * （含活跃会话的目标整组跳过，与单删语义一致），随后单事务统一剔除并批量落盘删除。
  */
-async function deleteSessionListCascade(ctx, sessionIds) {
+async function deleteSessionListCascade(ctx, sessionIds, selfTabId) {
   const targets = [...new Set((sessionIds || []).map((s) => String(s).trim()).filter(Boolean))];
-  if (targets.length === 0) return [];
+  if (targets.length === 0) return { deleted: [], skipped: [] };
 
   const { childrenMap } = await scanSessionTopology();
-  const safe = await protectedSessionIds(ctx);
+  const guards = await deletionGuards(ctx, selfTabId);
   const allToDelete = new Set();
-  const skippedActive = [];
+  const skipped = [];
   for (const target of targets) {
     const cascade = collectDescendantSessionIds(target, childrenMap);
-    const hit = cascade.find((id) => safe.has(String(id)));
-    if (hit !== undefined) { skippedActive.push(target); continue; }
+    const hit = cascade.find((id) => guards.all.has(String(id)));
+    if (hit !== undefined) { skipped.push(deleteBlockDetail(target, hit, guards)); continue; }
     for (const id of cascade) allToDelete.add(id);
   }
-  if (skippedActive.length > 0) {
-    console.warn(`[dsh-workspace-tree] 批量删除跳过含活跃会话的目标: ${skippedActive.join(", ")}`);
+  if (skipped.length > 0) {
+    console.warn("[dsh-workspace-tree] 批量删除跳过含活跃会话的目标: "
+      + skipped.map((s) => `${s.sessionId}(${s.blockedBy}:${s.blockedById})`).join(", "));
   }
-  if (allToDelete.size === 0) return [];
+  if (allToDelete.size === 0) return { deleted: [], skipped };
 
   const ids = [...allToDelete];
   await stripSessionIdsFromRegistry(ctx, ids);
   await removeSessionsPhysically(ctx, ids);
-  return ids;
+  return { deleted: ids, skipped };
 }
 
 /**
@@ -988,9 +1007,11 @@ async function handleDeleteSession(ctx, req, res) {
   const raw = await parseJsonBody(req);
   const sessionId = typeof raw.sessionId === "string" ? raw.sessionId.trim() : "";
   if (!sessionId) return sendJson(res, 200, { ok: false, error: "sessionId 必填" });
+  // tabId 可选：发起方标签页自身的占用声明不参与阻断（见 deletionGuards）。
+  const selfTabId = typeof raw.tabId === "string" ? raw.tabId : "";
 
   try {
-    const deleted = await deleteSessionCascade(ctx, sessionId);
+    const deleted = await deleteSessionCascade(ctx, sessionId, selfTabId);
     sendJson(res, 200, { ok: true, deleted });
   } catch (err) {
     sendJson(res, 200, { ok: false, error: err.message || String(err) });
@@ -1001,17 +1022,19 @@ async function handleDeleteSession(ctx, req, res) {
 async function handleDeleteAll(ctx, req, res) {
   const raw = await parseJsonBody(req);
   const workspaceId = raw.workspaceId === undefined ? undefined : raw.workspaceId;
+  const selfTabId = typeof raw.tabId === "string" ? raw.tabId : "";
 
   // 先在单事务内按最新归档快照认领待删集合并移出归档：并发的 unarchiveAll
   // 在其事务内看到的是认领后的集合，不会把刚恢复的会话纳入删除；反向交错
   // （先恢复后认领）认领时也会看到最新归档而排除已恢复者。两方向都安全。
-  // 注意：认领排除受保护会话（运行中/被占用），它们留在归档里不动；
+  // 注意：认领阶段排除受保护会话（运行中/被别的客户端打开），它们留在归档里不动；
   // 认领后若物理删除失败，已认领者会回到可见态（fail-visible），可重试。
+  // skipped 保持「ID 数组」的旧形状（前端按条数播报），细节走 skipDetails。
   let toRemove = [];
-  let skipped = [];
+  let skipDetails = [];
   try {
-    const safe = await protectedSessionIds(ctx);
-    const res = await mutateWorkspaceState(ctx, async (state, table, g) => {
+    const guards = await deletionGuards(ctx, selfTabId);
+    const claim = await mutateWorkspaceState(ctx, async (state, table, g) => {
       const archived = (state.archivedSessionIds || []).map(String);
       let claimed;
       if (workspaceId === undefined) {
@@ -1023,26 +1046,39 @@ async function handleDeleteAll(ctx, req, res) {
         if (!rec) throw new Error("workspace 不存在: " + workspaceId);
         claimed = archivedForWorkspace(archived, rec);
       }
-      const skippedHere = claimed.filter((id) => safe.has(String(id)));
-      claimed = claimed.filter((id) => !safe.has(String(id)));
+      const skippedHere = claimed.filter((id) => guards.all.has(String(id)));
+      claimed = claimed.filter((id) => !guards.all.has(String(id)));
       if (claimed.length === 0) return { claimed, skipped: skippedHere };
       const next = archived.filter((id) => !claimed.includes(id));
       await g.set({ ...state, archivedSessionIds: next });
       return { claimed, skipped: skippedHere };
     });
-    toRemove = res.claimed;
-    skipped = res.skipped;
+    toRemove = claim.claimed;
+    skipDetails = claim.skipped.map((id) => deleteBlockDetail(id, id, guards));
   } catch (err) {
     return sendJson(res, 200, { ok: false, error: err.message || String(err) });
   }
 
   if (toRemove.length === 0) {
-    return sendJson(res, 200, { ok: true, deleted: [], skipped });
+    return sendJson(res, 200, {
+      ok: true,
+      deleted: [],
+      skipped: skipDetails.map((d) => d.sessionId),
+      skipDetails
+    });
   }
 
   try {
-    const deleted = await deleteSessionListCascade(ctx, toRemove);
-    sendJson(res, 200, { ok: true, deleted, skipped });
+    // 二次守卫：认领与物理删除之间该会话可能刚被打开/开跑，仍受保护者本轮跳过，
+    // 并入同一份 skipDetails（此前这批目标被静默吞掉，前端只会「莫名少删几条」）。
+    const pass2 = await deleteSessionListCascade(ctx, toRemove, selfTabId);
+    const details = skipDetails.concat(pass2.skipped || []);
+    sendJson(res, 200, {
+      ok: true,
+      deleted: pass2.deleted,
+      skipped: details.map((d) => d.sessionId),
+      skipDetails: details
+    });
   } catch (err) {
     sendJson(res, 200, { ok: false, error: err.message || String(err) });
   }
@@ -1107,25 +1143,35 @@ async function listSessionItems(ctx) {
   }
 }
 
-/** 读取服务端权威的“正运行中”会话 ID 集（删除引擎的 fail-closed 依据之一）。 */
-async function runningSessionIds(ctx) {
+/**
+ * 从 host 会话列表提取「正运行中」ID 集与列表可读性。
+ * items 为 null 表示读不到列表：返回空集 + listOk=false（调用方据此决定是否
+ * 启用 env 兜底）；删除引擎对受保护目标始终采取抛错/整组跳过而非强行删除。
+ */
+async function runningIdsFromHost(ctx) {
   const items = await listSessionItems(ctx);
-  const out = new Set();
-  // items 为 null 表示读不到列表：返回空集，但删除引擎另有 claims/env 交叉，
-  // 且 deleteCascade 对受保护目标采取抛错/整组跳过而非强行删除（见各调用处）。
+  const running = new Set();
   for (const it of items || []) {
     if (it && it.running) {
       const id = it.sessionId || it.id;
-      if (typeof id === "string" && id) out.add(id);
+      if (typeof id === "string" && id) running.add(id);
     }
   }
-  return out;
+  return { running, listOk: Array.isArray(items) };
+}
+
+/** 读取服务端权威的“正运行中”会话 ID 集（fail-closed 依据之一）。 */
+async function runningSessionIds(ctx) {
+  return (await runningIdsFromHost(ctx)).running;
 }
 
 /**
- * 服务端删除保护集 = 运行中 ∪ 跨客户端占用声明 ∪ 进程 env（补充信号）。
+ * 清理/巡检类保护集 = 运行中 ∪ 跨客户端占用声明 ∪ 进程 env（补充信号）。
  * 说明：process.env.DSH_SESSION_ID 只在模型 shell 子进程中有值，host 服务进程
  * 通常取不到，只能做补充，不能做唯一依据——权威依据永远是前两者。
+ * 仅用于孤儿清理与幽灵巡检这类「宁可不删」的豁免集；**删除引擎改用
+ * deletionGuards**（区分运行中/被打开、豁免发起方自身、env 只在列表不可读时兜底），
+ * 否则清理类误删的风险会变成用户面前的「正在运行」误报。
  */
 async function protectedSessionIds(ctx) {
   const out = await runningSessionIds(ctx);
@@ -1137,6 +1183,71 @@ async function protectedSessionIds(ctx) {
   } catch { /* ignore */ }
   if (process.env.DSH_SESSION_ID) out.add(String(process.env.DSH_SESSION_ID));
   return out;
+}
+
+/**
+ * 删除引擎专用守卫集：把「运行中」与「被其他客户端打开（占用声明）」分开返回。
+ *
+ * 历史版本把两者并进一个集合、再统一播报「正在运行/被占用」，于是出现两类误报：
+ *  1. 级联闭包里的后代（旧版连 fork 会话也算后代）活跃时，被挡的是**目标会话**，
+ *     用户看到的却是「目标会话正在运行」——目标明明空闲；
+ *  2. 只是某个标签页打开着它（含发起删除的这一页），也被播报成「正在运行」。
+ * 现在按来源分别记账，拒绝时能点名「哪一条、为什么、该等什么」。
+ *
+ * selfTabId：发起方的声明不算占用。同一标签页里「正在阅览」一条归档会话不应
+ * 阻止删它——浏览器半区本就准备了「删掉当前会话就 startSession()」的兜底。
+ * env：只在 host 列表读不到时兜底。host 进程若从某个会话的 shell 里启动
+ * （例如在 Agent 里跑 dev server / 从会话内 open 应用），process.env.DSH_SESSION_ID
+ * 会是一个早就结束的会话 ID，无条件参与保护就把那条会话永久判成「正在运行」。
+ */
+async function deletionGuards(ctx, selfTabId) {
+  const { running, listOk } = await runningIdsFromHost(ctx);
+  const occupied = new Set();
+  const self = typeof selfTabId === "string" ? selfTabId.trim() : "";
+  try {
+    sweepClaims();
+    for (const [tabId, v] of claims) {
+      if (self && String(tabId) === self) continue;
+      if (v && typeof v.sid === "string" && v.sid) occupied.add(v.sid);
+    }
+  } catch { /* ignore */ }
+  const env = new Set();
+  if (!listOk && process.env.DSH_SESSION_ID) env.add(String(process.env.DSH_SESSION_ID));
+  const all = new Set([...running, ...occupied, ...env]);
+  return { running, occupied, env, all, listOk };
+}
+
+/** 守卫来源 → 人话。 */
+function guardSourceLabel(hitId, guards) {
+  if (guards.running.has(hitId)) return "正在运行（含停在等待你回复/审批的回合）";
+  if (guards.occupied.has(hitId)) return "正被某个客户端标签页打开（心跳占用未过期）";
+  return "被宿主进程声明为当前会话";
+}
+
+/** 把「哪一条、为什么、该等什么」说清楚的删除拒绝文案。 */
+function describeDeleteBlock(targetId, hitId, guards, closureSize) {
+  const hit = String(hitId);
+  const label = guardSourceLabel(hit, guards);
+  const what = hit === String(targetId)
+    ? `会话 ${hit} ${label}`
+    : `它的 Subagent 后代 ${hit} ${label}（级联闭包共 ${closureSize} 条，整单中止）`;
+  const hint = guards.running.has(hit)
+    ? "；等它跑完（或先中断该会话）再删"
+    : "；关掉打开它的那个标签页（或等 5 分钟心跳过期）再删";
+  return `无法删除：${what}${hint}`;
+}
+
+/** 批量删除里给前端的结构化跳过原因（与 describeDeleteBlock 同源判据）。 */
+function deleteBlockDetail(targetId, hitId, guards) {
+  const hit = String(hitId);
+  const blockedBy = guards.running.has(hit) ? "running" : guards.occupied.has(hit) ? "occupied" : "env";
+  return {
+    sessionId: String(targetId),
+    blockedById: hit,
+    blockedBy,
+    self: hit === String(targetId),
+    reason: guardSourceLabel(hit, guards)
+  };
 }
 
 /**
