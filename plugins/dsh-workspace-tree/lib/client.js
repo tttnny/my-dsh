@@ -1,5 +1,5 @@
 /**
- * dsh-workspace-tree — browser half (v1.4 全量展示与隐藏式工作区管理)。
+ * dsh-workspace-tree — browser half (v1.9.0 归档删除零守卫简化版)。
  *
  * 核心设计（第一性原理对齐）：
  *  - 会话空间归属与归档状态正交；官方列表返回的会话一律可见（含空白草稿），
@@ -10,8 +10,12 @@
  *    注册与会话归属不变；重新添加同一目录后工作区连同会话一起恢复显示。
  *    例外：名下已无任何可见会话与归档会话的空工作区，移除时自动走官方 workspace/delete
  *    RPC 真注销注册表记录（同样不删磁盘目录与会话文件）。
- *  - 永久删除会话采用持久化墓碑（localStorage）：官方列表仍返回的已删会话
- *    无论刷新/跨标签页都不可见，官方列表收敛后墓碑自动清除。
+ *  - 归档门槛：运行中/等待回复的会话不允许归档（按钮置灰），归档动作沿用官方
+ *    workspace/archiveSession RPC；凡进入归档区的会话删除零守卫、必定可删。
+ *  - 永久删除会话采用持久化墓碑（localStorage）：官方列表仍返回的已删会话无论
+ *    刷新/跨标签页都不可见，官方列表收敛后墓碑自动清除（无定时自愈：服务端删除
+ *    fail-loud，物理删净才剔除注册表，删除失败会如实报错并保留在归档区）。
+ *  - 空白草稿跟随官方语义：不自动回收、仅视图层隐藏（官方从不物理删除会话文件）。
  */
 window.__ModuleLoader__.load({
   id: "@lynn123411/dsh-workspace-tree",
@@ -219,141 +223,28 @@ window.__ModuleLoader__.load({
       return getEffectiveConfig().defaultMode === "folder" ? "folder" : "workspace";
     }
 
-    // ══════════════ 跨标签页心跳（空白草稿回收的全局占用判定） ══════════════
-    // sessions.current 是每个浏览器标签页各自的内存状态（宿主无全局"会话正被打开"记录），
-    // 空白草稿回收若只看本标签页 current，会误删其他标签页正在使用的草稿（物理删除、不可撤销）。
-    // 方案：每个标签页向 localStorage 写 { sid, t } 心跳声明当前会话，回收前检查任一
-    // 存活心跳是否占用该草稿。阈值取 5 分钟：后台标签页定时器被浏览器节流（可达分钟级），
-    // 3 秒心跳在节流下实际间隔约 1 分钟，5 分钟阈值足够安全。
-    const HB_PREFIX = "dswt-workspace-tree.hb.";
-    const HB_STALE_MS = 5 * 60 * 1000;
-    const HB_GC_MS = 30 * 60 * 1000;
-
-    /** 本标签页的稳定 ID（sessionStorage 按标签页隔离，天然每标签页唯一）。 */
-    let memTabId = null;
-    function heartbeatTabId() {
-      try {
-        let id = sessionStorage.getItem("dswt-workspace-tree.tabId");
-        if (!id) {
-          id = "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-          sessionStorage.setItem("dswt-workspace-tree.tabId", id);
-        }
-        return id;
-      } catch {
-        // sessionStorage 不可用（隐私模式/存储被禁）时用内存随机 ID：
-        // 绝不能回退固定值，否则同源所有标签页共用一个心跳 key 互相覆盖、
-        // 跨标签保护整体失效。内存 ID 标签页存活期内稳定、页签间唯一。
-        if (!memTabId) memTabId = "t-local-" + Math.random().toString(36).slice(2, 10);
-        return memTabId;
-      }
-    }
-
-    /** 写入本标签页心跳，并顺带回收明显已死标签页的心跳 key（防无限泄漏）。 */
-    function writeHeartbeat(currentSid) {
-      try {
-        const self = HB_PREFIX + heartbeatTabId();
-        localStorage.setItem(self, JSON.stringify({ sid: currentSid ? String(currentSid) : null, t: Date.now() }));
-        const gcCutoff = Date.now() - HB_GC_MS;
-        const staleKeys = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (!k || !k.startsWith(HB_PREFIX) || k === self) continue;
-          try {
-            const v = JSON.parse(localStorage.getItem(k) || "null");
-            if (!v || typeof v.t !== "number" || v.t < gcCutoff) staleKeys.push(k);
-          } catch { staleKeys.push(k); }
-        }
-        for (const k of staleKeys) {
-          try { localStorage.removeItem(k); } catch { /* ignore */ }
-        }
-      } catch { /* ignore */ }
-    }
-
-    /** 其他标签页是否正打开指定会话（心跳未过期即视为占用中）。 */
-    function claimedByOtherTab(sid) {
-      const target = String(sid);
-      const self = HB_PREFIX + heartbeatTabId();
-      const cutoff = Date.now() - HB_STALE_MS;
-      try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (!k || !k.startsWith(HB_PREFIX) || k === self) continue;
-          try {
-            const v = JSON.parse(localStorage.getItem(k) || "null");
-            if (v && typeof v.t === "number" && v.t >= cutoff && v.sid === target) return true;
-          } catch { /* ignore */ }
-        }
-      } catch { /* ignore */ }
-      return false;
-    }
+    // ══════════════ 空白草稿的官方语义 ══════════════
+    // v1.9.0：空白草稿跟随官方——官方从不自动清理（懒物化、仅视图层隐藏），
+    // 因此移除了旧版的自动回收与 claims/heartbeat 占用注册表（host /claims/*
+    // 端点、localStorage 心跳、pagehide 释放等整套机制一并删除）。
+    // 渲染层维持现状：非当前打开的 blank 行在树中隐藏（sessionVisible）。
 
     /**
-     * 跨客户端占用声明（host 内存注册表）：localStorage 心跳只在同一浏览器档案内
-     * 互通，桌面端/浏览器/不同 Chrome Profile 之间互不可见；host 声明全局可见，
-     * 是空白草稿回收的全局占用判定的权威来源。失败静默（回收端按失败安全处理）。
+     * 批量删除失败项的人话说明。服务端删除零守卫后失败只剩真实原因
+     * （文件被锁/权限等），逐条列出失败项与会话 ID。
      */
-    function claimHeartbeat(sid) {
-      apiPost("/claims/heartbeat", { tabId: heartbeatTabId(), sid: sid ? String(sid) : null }).catch(() => { /* ignore */ });
-    }
-
-    /**
-     * 页面真正卸载时主动释放本标签页的占用声明（keepalive 保证请求能在卸载中发出）。
-     * 不释放的话，关掉标签页后该会话最长 5 分钟（CLAIM_TTL）内仍算「被占用」，
-     * 用户删它就会被挡下——旧版文案还会播报成「会话正在运行」，看着就是天大的误报。
-     * bfcache 暂存（persisted=true）不释放：页会被原样恢复，恢复后 3 秒心跳继续续期。
-     */
-    function releaseClaimHeartbeat() {
-      try {
-        localStorage.removeItem(HB_PREFIX + heartbeatTabId());
-      } catch { /* ignore */ }
-      try {
-        fetch(API + "/claims/heartbeat", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ tabId: heartbeatTabId(), sid: null }),
-          keepalive: true
-        }).catch(() => { /* ignore */ });
-      } catch { /* ignore */ }
-    }
-    try {
-      // 只挂 pagehide：beforeunload 会影响部分浏览器的 bfcache 命中，而 pagehide
-      // 在真正卸载与进入 bfcache 时都会触发，足够覆盖（后者按 persisted 跳过）。
-      window.addEventListener("pagehide", (event) => {
-        if (!event || event.persisted !== true) releaseClaimHeartbeat();
-      });
-    } catch { /* ignore */ }
-
-    /**
-     * 批量删除被挡时的人话说明。优先用服务端 skipDetails——它会点名「到底是哪一条
-     * 在挡、是运行中还是被某个标签页打开、挡的是目标本身还是目标的 Subagent 后代」；
-     * 旧版 Host 没有该字段时退回按条数播报（此时只能说"正在运行/被占用"这种模糊话）。
-     */
-    function describeSkips(r) {
-      const ids = Array.isArray(r && r.skipped) ? r.skipped.map(String) : [];
-      const n = ids.length;
+    function describeDeleteFailures(r) {
+      const failed = Array.isArray(r && r.failed) ? r.failed : [];
+      const n = failed.length;
       if (n === 0) return "";
-      const details = Array.isArray(r && r.skipDetails) ? r.skipDetails : [];
-      if (details.length === 0) return "其中 " + n + " 条因正在运行/被占用已跳过，仍保留在归档中";
-      let visibleFallback = 0;
-      const lines = details.slice(0, 3).map((d, i) => {
-        if (!d || !d.sessionId) return "第 " + (i + 1) + " 条：守卫未说明原因";
-        const why = d.blockedBy === "running"
-          ? "正在运行（含停在等待回复/审批的回合）"
-          : d.blockedBy === "occupied" ? "正被某个标签页打开（关掉或等 5 分钟后再删）"
-          : "被宿主进程声明为当前会话（宿主会话列表暂不可读时的兜底，恢复后即可删）";
-        // phase=post-claim-visible：服务端回写归档失败，该条已回到工作区可见列表。
-        const tail = d.phase === "post-claim-visible"
-          ? "（已退回工作区可见列表，重新归档后可再删）" : "";
-        if (tail) visibleFallback++;
-        return d.self
-          ? "会话 " + d.sessionId + " —— " + why + tail
-          : "会话 " + d.sessionId + " —— 它的 Subagent 后代 " + d.blockedById + " " + why + tail;
+      const lines = failed.slice(0, 3).map((d) => {
+        if (!d || !d.sessionId) return "第 " + (d && d.error ? d.error : "未知原因") + "";
+        const why = d.error || "未知原因";
+        return "会话 " + d.sessionId + "： " + why;
       });
-      const lead = visibleFallback > 0
-        ? "其中 " + n + " 条已跳过（均未删除）："
-        : "其中 " + n + " 条已跳过并保留在归档中：";
-      return lead + lines.join("；")
-        + (n > 3 ? "；另有 " + (n - 3) + " 条同类" : "");
+      return "其中 " + n + " 条删除失败，已保留在归档区："
+        + lines.join("；")
+        + (n > 3 ? "；另有 " + (n - 3) + " 条同类失败" : "");
     }
 
     // ══════════════ Host API ══════════════
@@ -380,31 +271,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 墓碑时间戳（与 LS_DELETED 集合配套持久化，key 为会话 id，值为删除时刻毫秒）。
-     * 用途：Host 删除失败时（活会话删不掉、磁盘删除失败、迟到写入复活），会话会
-     * 永远留在官方列表里，裸墓碑将永久误杀它；带上时间戳后，超过 TOMBSTONE_HEAL_MS
-     * 仍删不掉即判定失败并自愈摘碑、让会话重新可见。无戳条目视为远古遗留，下次
-     * 评估直接自愈（顺带兼容升级前的裸数组格式）。
+     * 墓碑集合（localStorage 持久化）：v1.9.0 起无时间戳、无定时自愈——
+     * 服务端删除 fail-loud（物理删净才剔除注册表，失败会如实报错），因此
+     * 墓碑只承担「官方列表收敛前的残留期隐藏」，官方列表不再返回该 id 即摘碑。
      */
-    const LS_DELETED_AT = "dswt-workspace-tree.deletedAt";
-    const TOMBSTONE_HEAL_MS = 5 * 60 * 1000;
-    function loadStamps() {
-      try {
-        const raw = localStorage.getItem(LS_DELETED_AT);
-        const obj = raw ? JSON.parse(raw) : {};
-        if (obj && typeof obj === "object" && !Array.isArray(obj)) {
-          const out = {};
-          for (const [k, v] of Object.entries(obj)) {
-            if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
-          }
-          return out;
-        }
-      } catch { /* ignore */ }
-      return {};
-    }
-    function saveStamps(obj) {
-      try { localStorage.setItem(LS_DELETED_AT, JSON.stringify(obj || {})); } catch { /* ignore */ }
-    }
 
     // ══════════════ 一键诊断（设置页入口；树头不再放按钮） ══════════════
     // 直接读 ctx 快照 + localStorage，不依赖任何组件 props，因此设置面板
@@ -435,7 +305,7 @@ window.__ModuleLoader__.load({
       // （live mode 可为 archive 且不持久化，设置页拿不到它）
       return {
         // 注意：此处版本号为手写常量，发版改 package.json 时同步改这里
-        plugin: "dsh-workspace-tree@1.8.2",
+        plugin: "dsh-workspace-tree@1.9.0",
         t: new Date().toISOString(),
         ...(noSnap ? { warning: "snapshots unavailable（ctx 未就绪或已释放）" } : {}),
         defaultMode,
@@ -468,8 +338,6 @@ window.__ModuleLoader__.load({
         },
         archivedCount: archived.size,
         hardDeleted: [...hardDeleted],
-        // 墓碑时间戳一并采集：解读墓碑年龄（自愈倒计时）用
-        deletedAt: loadStamps(),
         hiddenWs: [...loadSet(LS_HIDDEN_WS)],
         expandedGroups: [...loadSet(LS_GROUPS)]
       };
@@ -974,6 +842,9 @@ window.__ModuleLoader__.load({
       if (!row) return null;
       const selected = sid === sessions.current;
       const dotState = sessionState(row, selected);
+      // v1.9.0 归档门槛：运行中/等待回复审批的会话不允许归档（进区后才可能删不掉的历史
+      // 守卫已整体移除；归档区删除零守卫，因此门槛只需保证「运行态不进区」）。
+      const canArchive = !row.running && !row.pendingInteraction;
       return h("div", {
         className: "dswt-session" + (selected ? " dswt-selected" : ""),
         style: { paddingLeft: 8 + depth * indent },
@@ -987,7 +858,14 @@ window.__ModuleLoader__.load({
         h("span", { key: "tm", className: "dswt-time" }, timeLabel(row.updatedAt, now)),
         h("span", { key: "ac", className: "dswt-rowActions", onClick: (e) => e.stopPropagation() }, [
           h("button", { key: "rn", type: "button", className: "dswt-iconButton", title: "重命名", onClick: () => onRename(sid, row.displayTitle) }, h(Icon, { name: "edit", size: 14 })),
-          h("button", { key: "ar", type: "button", className: "dswt-iconButton", title: "移至归档", onClick: () => onArchive(sid) }, h(Icon, { name: "archive", size: 14 }))
+          h("button", {
+            key: "ar",
+            type: "button",
+            className: "dswt-iconButton",
+            title: canArchive ? "移至归档" : "会话运行中（或等待回复/审批），结束后才能归档",
+            disabled: !canArchive,
+            onClick: () => canArchive && onArchive(sid)
+          }, h(Icon, { name: "archive", size: 14 }))
         ])
       ]);
     }
@@ -1141,7 +1019,7 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 归档视图：按工作区分组（深度递归收集，全量展示） ══════════════
-    function ArchiveView({ sessions, wsForest, archived, hardDeleted, onOpen, onRestoreOne, onDeleteOne, onRestoreGroup, onDeleteGroup, onRestoreAll, onDeleteAll, onPruneStale, onPruneWorkspaceGhosts, busy }) {
+    function ArchiveView({ sessions, wsForest, archived, hardDeleted, onOpen, onRestoreOne, onDeleteOne, onRestoreGroup, onDeleteGroup, onRestoreAll, onDeleteAll, busy }) {
       const byId = (sessions && sessions.byId) || {};
 
       const allGroups = [];
@@ -1161,43 +1039,14 @@ window.__ModuleLoader__.load({
       const total = allGroups.reduce((acc, g) => acc + g.sids.length, 0);
       const hasAny = total > 0;
 
-      // 幽灵归档：仍在全局归档列表里、但 host 会话列表（sessions.ids）已不再返回的 ID
-      // （会话日志已被物理删除的历史残留），UI 无法展示/打开，可一键从归档列表清除。
-      // loading 阶段 ids 为空，未就绪时不计算，避免把全部归档误判为幽灵而闪现。
-      const idSet = new Set(((sessions && sessions.ids) || []).map(String));
-      const ghosts = (sessions && sessions.phase === "ready" && archived ? [...archived] : []).filter((id) => !idSet.has(id));
-
-      // 工作区幽灵会话：各工作区 sessionIds 里、但 host 会话列表已不再返回的 ID
-      // （日志与缓存均已不存在，仅注册表残留引用）。只在会话列表就绪后计算，
-      // 避免 loading 阶段 ids 为空时误报全部为幽灵。
-      const wsGhosts = (() => {
-        if (!sessions || sessions.phase !== "ready") return [];
-        const out = [];
-        const seen = new Set();
-        (function traverse(forest) {
-          for (const node of forest || []) {
-            for (const sid of (node.w.sessionIds || [])) {
-              const id = String(sid);
-              if (!idSet.has(id) && !seen.has(id)) { seen.add(id); out.push(id); }
-            }
-            if (node.children && node.children.length > 0) traverse(node.children);
-          }
-        })(wsForest);
-        return out;
-      })();
+      // v1.9.0：无幽灵/失效提示行——失效归档（官方列表已不再返回的 ID）由主组件
+      // 进入归档区时自动调用 /archive/pruneStale 静默清理（见 WorkspaceTreeBrowser），
+      // 工作区幽灵由官方注册表的 header 校验在启动时自动收敛。
 
       return h("div", { className: "dswt-archiveRoot" }, [
         h("div", { key: "tb", className: "dswt-archiveToolbar" }, [
           h("div", { key: "top", className: "dswt-archiveToolbarTop" }, [
-            h("span", { key: "ct", className: "dswt-archiveCount" }, hasAny ? ("共 " + total + " 条有效归档" + (ghosts.length > 0 ? "（另有 " + ghosts.length + " 条已失效）" : "")) : (ghosts.length > 0 ? "暂无有效归档" : "暂无归档会话"))
-          ]),
-          ghosts.length > 0 && h("div", { key: "ghosts", className: "dswt-ghostRow" }, [
-            h("span", { key: "gt", className: "dswt-archiveCount" }, ghosts.length + " 条归档记录已失效（会话日志已删除）"),
-            h("button", { key: "gc", type: "button", className: "dswt-miniBtn", disabled: !!busy, title: "从归档列表中清除这些失效 ID", onClick: () => onPruneStale && onPruneStale() }, "清理")
-          ]),
-          wsGhosts.length > 0 && h("div", { key: "wsghosts", className: "dswt-ghostRow" }, [
-            h("span", { key: "gt", className: "dswt-archiveCount" }, wsGhosts.length + " 条工作区会话记录已失效（注册表残留，日志已不存在）"),
-            h("button", { key: "gc", type: "button", className: "dswt-miniBtn", disabled: !!busy, title: "从工作区注册表中清除这些失效 ID（不碰物理文件）", onClick: () => onPruneWorkspaceGhosts && onPruneWorkspaceGhosts() }, "清理")
+            h("span", { key: "ct", className: "dswt-archiveCount" }, hasAny ? ("共 " + total + " 条有效归档") : "暂无归档会话")
           ]),
           hasAny && h("div", { key: "actions", className: "dswt-archiveToolbarActions" }, [
             h("button", { key: "ra", type: "button", className: "dswt-archiveBtn dswt-archiveBtnSecondary", disabled: !!busy, title: "一键恢复所有", onClick: onRestoreAll }, "一键恢复所有"),
@@ -1340,57 +1189,29 @@ window.__ModuleLoader__.load({
 
       /**
        * 永久删除会话的墓碑机制：已删会话仍会被官方 sessions 列表继续返回
-       * （会话仍被 host 持有/打开、或磁盘文件删除失败/被迟到的写入重建），
-       * 而本插件已同步将其移出工作区注册与归档，于是官方投影会把它们当作
-       * “未分组会话”复现。墓碑集合持久化到 localStorage，任何会话一旦删除
-       * 便在任何标签页/刷新后都不可见；官方列表 phase=ready 后：
+       * （官方索引收敛有延迟、会话仍被 host 内存持有），而本插件已将其移出
+       * 工作区注册与归档，于是官方投影会把它们当作“未分组会话”复现。
+       * 墓碑集合持久化到 localStorage，任何会话一旦删除便在任何标签页/刷新后
+       * 都不可见；官方列表 phase=ready 后：
        * - 列表已不再包含该 id（Host 收敛成功）→ 清墓碑；
-       * - 列表长期（TOMBSTONE_HEAL_MS）仍包含该 id → 判定 Host 删除失败，
-       *   自愈摘碑、让会话重新可见（否则活会话会被永久误杀且无处恢复）。
-       * （uuid 不复用，故摘碑安全。）
+       * - 列表仍包含该 id → 继续隐藏。无定时自愈：服务端删除 fail-loud，
+       *   删除失败会如实报错并保留在归档区（不会走到写墓碑），因此「列表长期
+       *   仍返回」只可能是收敛竞态，等列表收敛即摘碑。
        */
-      const tombstoneAtRef = useRef(null);
-      const getStamps = () => {
-        if (!tombstoneAtRef.current) tombstoneAtRef.current = loadStamps();
-        return tombstoneAtRef.current;
-      };
       useEffect(() => {
         if (!sessions || sessions.phase !== "ready" || hardDeleted.size === 0) return;
         const listed = new Set((sessions.ids || []).map(String));
-        const stamps = getStamps();
-        const now = Date.now();
         const next = new Set();
-        const nextStamps = {};
         for (const sid of hardDeleted) {
-          const id = String(sid);
-          if (!listed.has(id)) continue; // 收敛成功：官方列表已不再返回 → 清墓碑
-          const ts = typeof stamps[id] === "number" ? stamps[id] : 0;
-          if (now - ts > TOMBSTONE_HEAL_MS) {
-            // 自愈：Host 长时间仍返回该会话 → 删除失败，摘碑恢复显示
-            try { console.warn("[workspace-tree] 墓碑自愈：Host 仍返回该会话，判定删除失败，恢复显示:", id); } catch { /* ignore */ }
-            continue;
-          }
-          next.add(id);
-          if (typeof stamps[id] === "number") nextStamps[id] = stamps[id];
+          if (listed.has(String(sid))) next.add(sid); // 列表仍返回 → 继续隐藏
         }
-        const stampsChanged = JSON.stringify(nextStamps) !== JSON.stringify(stamps);
-        if (next.size === hardDeleted.size && !stampsChanged) return;
-        tombstoneAtRef.current = nextStamps;
-        saveStamps(nextStamps);
+        if (next.size === hardDeleted.size) return;
         saveSet(LS_DELETED, next);
         setHardDeleted(next);
       }, [sessions.ids, sessions.phase, hardDeleted]);
 
-      /** 记录已永久删除的会话 id（本地持久化，跨刷新生效；同时打删除时间戳供失败自愈用）。 */
+      /** 记录已永久删除的会话 id（本地持久化，跨刷新/跨标签页生效）。 */
       const rememberDeleted = useCallback((ids) => {
-        const now = Date.now();
-        try {
-          const stamps = loadStamps();
-          for (const id of ids || []) stamps[String(id)] = now;
-          saveStamps(stamps);
-        } catch { /* ignore */ }
-        // 同步内存 ref，避免与清理 effect 的读写竞态（effect 下次运行会回填/对齐）
-        try { tombstoneAtRef.current = loadStamps(); } catch { /* ignore */ }
         setHardDeleted((prev) => {
           const next = new Set(prev);
           for (const id of ids || []) next.add(String(id));
@@ -1400,18 +1221,12 @@ window.__ModuleLoader__.load({
       }, []);
 
       /**
-       * 恢复成功后同步清除墓碑（含时间戳）：否则被删方标签页内最长隐藏 5 分钟
-       * （等墓碑自愈），恢复与删除两端可见性分裂。
+       * 恢复成功后同步清除墓碑：否则被删方标签页内该会话会一直隐藏
+       * （列表不再返回时才会摘碑），恢复与删除两端可见性分裂。
        */
       const forgetDeleted = useCallback((ids) => {
         const gone = new Set((ids || []).map(String));
         if (gone.size === 0) return;
-        try {
-          const stamps = loadStamps();
-          for (const id of gone) delete stamps[id];
-          saveStamps(stamps);
-          tombstoneAtRef.current = stamps;
-        } catch { /* ignore */ }
         setHardDeleted((prev) => {
           const next = new Set([...prev].filter((id) => !gone.has(String(id))));
           if (next.size === prev.size) return prev;
@@ -1588,87 +1403,9 @@ window.__ModuleLoader__.load({
         }
       }, [sessions.ids, sessions.byId, sessions.phase, workspaces.items, workspaces.phase, hardDeleted, archived, createWorkspace, adoptSession]);
 
-      // 跨标签页心跳：声明本标签页当前打开的会话（current 变化立即写 + 3 秒定期刷新），
-      // 供空白草稿回收做全局占用判定，防止其他标签页误删正在使用的草稿。
-      const heartbeatSid = sessions ? sessions.current : null;
-      useEffect(() => {
-        writeHeartbeat(heartbeatSid);
-        claimHeartbeat(heartbeatSid);
-        const timer = setInterval(() => {
-          writeHeartbeat(heartbeatSid);
-          claimHeartbeat(heartbeatSid);
-        }, 3000);
-        return () => clearInterval(timer);
-      }, [heartbeatSid]);
-
-      // 自动清理离场未发送任何消息的历史空白草稿会话（物理删除与注册表清理，避免磁盘残留）
-      // 全局占用判定走 host 声明注册表（跨浏览器档案可见）；拿不到占用表时整轮放弃
-      // 删除（失败安全）。「双检」规则：候选首次通过全部守卫只打戳，≥10s 后下一轮
-      // 仍无占用才删除——覆盖 host 重启后各客户端尚未重新声明的竞态窗口。
-      const cleanBlankInFlight = useRef(new Set());
-      const unclaimedSince = useRef(new Map());
-      useEffect(() => {
-        if (!sessions || sessions.phase !== "ready") return;
-        const cur = sessions.current ? String(sessions.current) : null;
-        const byId = sessions.byId || {};
-        const now = Date.now();
-        const candidates = [];
-        for (const sid of sessions.ids || []) {
-          const id = String(sid);
-          const row = byId[id];
-          if (!row || !row.blank) continue;
-          // subagent 子会话由宿主 subagent 路由管理，不由本插件回收
-          if (isSubagentRow(row)) continue;
-          // 当前处于打开交互中的空白草稿保留
-          if (cur && id === cur) continue;
-          if (hardDeleted.has(id)) continue;
-          // 已归档的空白草稿不回收：归档是保护性操作，归谁都不该悄悄物理删除
-          if (archived.has(id)) continue;
-          // 保护刚刚在 15 秒内新建中的会话，避免与创建过程发生竞态
-          const age = now - (row.updatedAt || row.createdAt || 0);
-          if (age < 15000) continue;
-          // 其他标签页正打开此草稿（同浏览器档案心跳占用）时保留
-          if (claimedByOtherTab(id)) continue;
-          if (cleanBlankInFlight.current.has(id)) continue;
-          candidates.push(id);
-        }
-        // 打戳表只保留仍是候选的 ID
-        for (const k of [...unclaimedSince.current.keys()]) {
-          if (!candidates.includes(k)) unclaimedSince.current.delete(k);
-        }
-        if (candidates.length === 0) return;
-        let cancelled = false;
-        (async () => {
-          // host 全局占用表：任一客户端（含桌面端/其他浏览器）正打开即保留；
-          // 拉取失败时整轮放弃删除（失败安全，宁可多留不可误删）
-          let hostClaimed;
-          try {
-            const r = await apiPost("/claims/list", {});
-            if (!r || r.ok !== true || !Array.isArray(r.sids)) return;
-            hostClaimed = new Set(r.sids.map(String));
-          } catch { return; }
-          if (cancelled) return;
-          for (const id of candidates) {
-            if (hostClaimed.has(id)) { unclaimedSince.current.delete(id); continue; }
-            const since = unclaimedSince.current.get(id);
-            if (since === void 0) { unclaimedSince.current.set(id, Date.now()); continue; }
-            if (Date.now() - since < 10000) continue;
-            unclaimedSince.current.delete(id);
-            if (cleanBlankInFlight.current.has(id)) continue;
-            cleanBlankInFlight.current.add(id);
-            (async () => {
-              try {
-                await apiPost("/session/deleteDirect", { sessionId: id });
-              } catch (e) {
-                // 静默失败
-              } finally {
-                cleanBlankInFlight.current.delete(id);
-              }
-            })();
-          }
-        })();
-        return () => { cancelled = true; };
-      }, [sessions.ids, sessions.byId, sessions.phase, sessions.current, hardDeleted, archived]);
+      // 空白草稿跟随官方语义：不自动回收（官方从不物理删除会话文件），仅视图层隐藏
+      // （sessionVisible 已排除非当前打开的 blank 行）。v1.9.0 起移除旧的自动回收
+      // 与 claims/heartbeat 占用注册表全套机制。
 
       // 清理「移除显示」集合中已不存在的工作区 ID（注册被外部删除后避免残留）。
       // 必须等 workspaces.phase === "ready" 再清理：加载初期 items 为空数组，
@@ -1914,36 +1651,24 @@ window.__ModuleLoader__.load({
       }, [workspaces]);
       const onRestoreAll = useCallback(() => setArchiveConfirm({ kind: "restoreAll" }), []);
       const onDeleteAll = useCallback(() => setArchiveConfirm({ kind: "deleteAll" }), []);
-      /** 清理「幽灵归档」：host 会话列表中已不存在的归档 ID（日志已被物理删除的残留）。 */
-      const onPruneStale = useCallback(async () => {
-        if (archiveBusy) return;
-        setArchiveBusy(true);
-        try {
-          const r = await apiPost("/archive/pruneStale", { aliveIds: (sessions.ids || []).map(String) });
-          if (!r.ok) throw new Error(r.error || "清理失败");
-          refreshSessions();
-        } catch (error) {
-          showAlert(String((error && error.message) || error), "清理失效归档失败");
-        } finally {
-          setArchiveBusy(false);
-        }
-      }, [sessions.ids, refreshSessions, showAlert, archiveBusy]);
-      /** 清理「工作区幽灵会话」：各工作区 sessionIds 中 host 会话列表已不再返回的残留 ID（只动注册表，不碰物理文件）。 */
-      const onPruneWorkspaceGhosts = useCallback(async () => {
-        if (archiveBusy) return;
-        setArchiveBusy(true);
-        try {
-          const r = await apiPost("/workspace/pruneGhosts", { aliveIds: (sessions.ids || []).map(String) });
-          if (!r.ok) throw new Error(r.error || "清理失败");
-          const n = typeof r.prunedCount === "number" ? r.prunedCount : 0;
-          refreshSessions();
-          showAlert("已从工作区注册表中清除 " + n + " 条失效会话记录", "清理完成");
-        } catch (error) {
-          showAlert(String((error && error.message) || error), "清理幽灵会话失败");
-        } finally {
-          setArchiveBusy(false);
-        }
-      }, [sessions.ids, refreshSessions, showAlert, archiveBusy]);
+      /**
+       * 进入归档区时静默清理「失效归档」：官方列表已不再返回的归档 ID（日志已不存在
+       * 的历史残留），自动剔除，无提示行/按钮。列表未就绪或服务端不可用时静默跳过。
+       */
+      const archivePruneFiredAt = useRef(null);
+      useEffect(() => {
+        if (mode !== "archive") return;
+        if (!sessions || sessions.phase !== "ready") return;
+        if (archivePruneFiredAt.current !== null) return; // 本次会话内只清理一次
+        archivePruneFiredAt.current = Date.now();
+        (async () => {
+          try {
+            const r = await apiPost("/archive/pruneStale", { aliveIds: (sessions.ids || []).map(String) });
+            if (!r || r.ok !== true) return;
+            if (Array.isArray(r.pruned) && r.pruned.length > 0) refreshSessions();
+          } catch { /* 静默 */ }
+        })();
+      }, [mode, sessions, refreshSessions]);
       /** 一键诊断：把本客户端看到的工作区/会话列表状态复制到剪贴板，用于排查“某端显示为空”。 */
       const onCancelArchiveConfirm = useCallback(() => { if (archiveBusy) return; setArchiveConfirm(null); }, [archiveBusy]);
 
@@ -1972,50 +1697,36 @@ window.__ModuleLoader__.load({
             toDelete = [...archived];
           }
 
-          if (k === "deleteOne") {
-            // tabId：让 Host 豁免本标签页自身的占用声明——正在阅览这条归档会话
-            // 不应该成为删不掉它的理由（删完当前会话会 startSession() 兜底）。
-            const r = await apiPost("/archive/delete", { sessionId: archiveConfirm.sessionId, tabId: heartbeatTabId() });
+          /** 删除响应（零守卫）：物理删净才剔除，失败项逐条留在归档区。 */
+          const handleDeleteResponse = (r) => {
             if (!r.ok) throw new Error(r.error || "删除失败");
-            const deleted = Array.isArray(r.deleted) && r.deleted.length ? r.deleted : toDelete;
-            rememberDeleted(deleted);
+            const deleted = Array.isArray(r.deleted) ? r.deleted : toDelete;
+            if (deleted.length > 0) rememberDeleted(deleted);
             if (sessions && sessions.current && deleted.some((id) => String(id) === String(sessions.current))) {
               startSession();
             }
             refreshSessions();
+            const desc = describeDeleteFailures(r);
+            if (desc) showAlert(desc, "部分删除失败");
+          };
+
+          if (k === "deleteOne") {
+            // 零守卫：不再传 tabId/占用豁免（服务端已无占用概念）。
+            handleDeleteResponse(await apiPost("/archive/delete", { sessionId: archiveConfirm.sessionId }));
           } else if (k === "restoreGroup") {
             const r = await apiPost("/archive/unarchiveAll", { workspaceId: archiveConfirm.workspaceId });
             if (!r.ok) throw new Error(r.error || "恢复失败");
             if (Array.isArray(r.restored)) forgetDeleted(r.restored);
             refreshSessions();
           } else if (k === "deleteGroup") {
-            const r = await apiPost("/archive/deleteAll", { workspaceId: archiveConfirm.workspaceId, tabId: heartbeatTabId() });
-            if (!r.ok) throw new Error(r.error || "删除失败");
-            // 服务端为准：r.deleted 为数组即采用（即使为空），仅旧版 Host 无字段时回退本地集
-            const deleted = Array.isArray(r.deleted) ? r.deleted : toDelete;
-            if (deleted.length > 0) rememberDeleted(deleted);
-            const skippedG = Array.isArray(r.skipped) ? r.skipped : [];
-            if (sessions && sessions.current && deleted.some((id) => String(id) === String(sessions.current))) {
-              startSession();
-            }
-            refreshSessions();
-            if (skippedG.length > 0) showAlert(describeSkips(r), "部分跳过");
+            handleDeleteResponse(await apiPost("/archive/deleteAll", { workspaceId: archiveConfirm.workspaceId }));
           } else if (k === "restoreAll") {
             const r = await apiPost("/archive/unarchiveAll", {});
             if (!r.ok) throw new Error(r.error || "恢复失败");
             if (Array.isArray(r.restored)) forgetDeleted(r.restored);
             refreshSessions();
           } else if (k === "deleteAll") {
-            const r = await apiPost("/archive/deleteAll", { tabId: heartbeatTabId() });
-            if (!r.ok) throw new Error(r.error || "删除失败");
-            const deleted = Array.isArray(r.deleted) ? r.deleted : toDelete;
-            if (deleted.length > 0) rememberDeleted(deleted);
-            const skippedA = Array.isArray(r.skipped) ? r.skipped : [];
-            if (sessions && sessions.current && deleted.some((id) => String(id) === String(sessions.current))) {
-              startSession();
-            }
-            refreshSessions();
-            if (skippedA.length > 0) showAlert(describeSkips(r), "部分跳过");
+            handleDeleteResponse(await apiPost("/archive/deleteAll", {}));
           }
           setArchiveConfirm(null);
         } catch (error) {
@@ -2122,8 +1833,6 @@ window.__ModuleLoader__.load({
             onDeleteGroup,
             onRestoreAll,
             onDeleteAll,
-            onPruneStale,
-            onPruneWorkspaceGhosts,
             busy: archiveBusy
           })
         ]);
@@ -2407,11 +2116,8 @@ window.__ModuleLoader__.load({
         try {
           const r = await apiPost("/archive/unarchive", { sessionId: sid });
           if (!r.ok) throw new Error(r.error || "恢复失败");
-          // 同步清除本地删除墓碑：否则本页 5 分钟内仍隐藏刚恢复的会话
+          // 同步清除本地删除墓碑：已删除/已恢复两端可见性一致
           try {
-            const stamps = loadStamps();
-            delete stamps[String(sid)];
-            saveStamps(stamps);
             const cur = loadSet(LS_DELETED);
             if (cur.delete(String(sid))) saveSet(LS_DELETED, cur);
           } catch { /* ignore */ }
@@ -3014,36 +2720,6 @@ window.__ModuleLoader__.load({
       }
       .dswt-blank {
         color: var(--dsw-alias-label-tertiary);
-      }
-      .dswt-miniBtn {
-        flex: none;
-        height: 20px;
-        padding: 0 8px;
-        border-radius: 6px;
-        border: 1px solid var(--dsw-alias-border-l1);
-        background: var(--dsw-alias-bg-layer-2);
-        color: var(--dsw-alias-label-secondary);
-        font-size: 11px;
-        line-height: 18px;
-        cursor: pointer;
-        white-space: nowrap;
-      }
-      .dswt-miniBtn:hover {
-        background: var(--dsw-alias-interactive-bg-hover);
-        color: var(--dsw-alias-label-primary);
-      }
-      .dswt-miniBtn:disabled {
-        opacity: .5;
-        cursor: not-allowed;
-      }
-      .dswt-ghostRow {
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        padding: 6px 10px;
-        border-radius: 10px;
-        border: 1px dashed var(--dsw-alias-border-l2);
-        display: flex;
       }
       .dswt-rail {
         display: flex;
