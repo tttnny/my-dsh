@@ -36,11 +36,7 @@
 
 | 目录 | 说明 |
 | --- | --- |
-| [patch-dsh-finish-reason](./patches/patch-dsh-finish-reason/) | 修复「流结束不带 `finish_reason`」导致的 `Stream ended without finish_reason` 报错、内容丢弃与整轮重试（`openai-completions` 通用检查，覆盖 opencode.ai zen/go 等中转网关）。详见 [README](./patches/patch-dsh-finish-reason/README.md) |
-| [patch-dsh-escalation-noop](./patches/patch-dsh-escalation-noop/) | 修复 `dsh-sandbox` 同模式 `sandbox_permissions` 升级报错（`danger→danger` no-op 放行，真实升级仍审批）。详见 [README](./patches/patch-dsh-escalation-noop/README.md) |
-| [dsh-message-edit-log-compat](./patches/dsh-message-edit-log-compat/) | 修复第三方插件 `dsh-message-edit` 写入自定义事件 `message-edit/version` 导致的历史会话加载失败。详见 [README](./patches/dsh-message-edit-log-compat/README.md) |
 | [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `ptc-cordis` / `matt-cordis`）同进程互斥」。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
-| [ptc-preset-fusion-checklist](./patches/ptc-preset-fusion-checklist/) | **PTC 融合预设防错清单（经验文档）**：写新融合 preset 前逐项核对——persona 融合、技能注释、mode 与措辞一致、同步与验证；附标准 persona 契约文案（ptc/both 两版）与排查命令。详见 [README](./patches/ptc-preset-fusion-checklist/README.md) |
 | [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的手工改动点说明与维护脚本**：相对官方材料的改动点清单（agent 组合与 grilling 技能）、一键 setup（插件同步 + preset 同步 + 自检）、grilling 会话 check 验收（散文预告必须伴随表单投递）。详见 [README](./patches/matt-presets-bootstrap/README.md) |
 
 ---

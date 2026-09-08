@@ -28,7 +28,7 @@ dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 | 模型可见工具 | 原生工具 | 仅 `run_code`（其他全部折叠进 SDK） |
 | grilling 投递 | 原生 `ask_user_grilling` | `run_code` 内 `tools.ask_user_grilling` |
 
-宿主未组装 TypeScript 代码运行时时本 preset 会在挂载时报错点名 `tool-presentation` 行。PTC 会话的 `run_code` 参数错误排查见 [patches/ptc-preset-fusion-checklist](../../patches/ptc-preset-fusion-checklist/README.md)。
+宿主未组装 TypeScript 代码运行时时本 preset 会在挂载时报错点名 `tool-presentation` 行。
 
 ## 验证
 
