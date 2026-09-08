@@ -1,5 +1,5 @@
 /**
- * dsh-workspace-tree — node half (v1.9.0 归档删除零守卫简化版)。
+ * dsh-workspace-tree — node half (v1.9.2 墓碑物理自愈版；归档删除零守卫契约不变)。
  *
  * 核心功能：
  *  - GET  /debug               工作区注册表投影（诊断用）
@@ -13,8 +13,12 @@
  *  - POST /archive/deleteAll   批量永久删除归档会话 { workspaceId? } → { deleted, failed }：
  *                              逐条执行，能删的删掉，删不掉的留在归档区并逐条列原因
  *  - POST /archive/pruneStale  清理归档列表中 host 会话已不再返回的「失效归档」ID
+ *  - POST /archive/tombstoneCheck 查询一组 sessionId 的会话目录是否仍物理存在
+ *                              { ids } → { alive }：浏览器半区墓碑自愈的权威判据——
+ *                              永久删除成功 = 目录必已消失；目录仍在 = 会话存活，
+ *                              该墓碑必为误写（历史版本残留），应作废而非继续隐藏。
  *
- * 设计契约（v1.9.0）：
+ * 设计契约（v1.9.2）：
  *  - 归档门槛在浏览器半区（运行中/等待回复的会话不允许归档，沿用官方
  *    workspace/archiveSession RPC）；凡进入归档区的会话，删除一律零守卫无条件执行。
  *  - 删除 fail-loud：物理删除必须全部成功才剔除注册表/归档；
@@ -1017,6 +1021,42 @@ function aliveIdsFromList(r) {
   return out.size > 0 ? out : null;
 }
 
+/**
+ * 墓碑物理存在性查询（浏览器半区自愈用，v1.9.2）：
+ * 对每个 sessionId，按 DSH 标准编码在所有 scope 目录下探测 `<scope>/<encodedId>/`
+ * 是否为存在目录。永久删除成功必然使目录消失（removeSessionDirStrict 的 fail-loud
+ * 契约），因此「目录仍在」即权威证明该会话存活、浏览器里的墓碑是误写（历史版本
+ * 残留或错误级联），前端据此作废墓碑并恢复显示。只读探测，不做任何删除/写盘。
+ */
+async function handleTombstoneCheck(req, res) {
+  const raw = await parseJsonBody(req);
+  const ids = Array.isArray(raw.ids)
+    ? [...new Set(raw.ids.map((s) => String(s || "").trim()).filter(Boolean))].slice(0, 500)
+    : [];
+  const sessionsRoot = resolve(join(dshHome(), "sessions"));
+  let scopes = [];
+  try {
+    scopes = await readdir(sessionsRoot, { withFileTypes: true });
+  } catch { /* 根目录不可读：alive 返回空，保守维持现状 */ }
+  const alive = [];
+  for (const sid of ids) {
+    const encodedId = encodeSegment(sid);
+    if (!encodedId) continue;
+    for (const scope of scopes) {
+      if (!scope.isDirectory()) continue;
+      const candidate = resolve(sessionsRoot, scope.name, encodedId);
+      if (!candidate.startsWith(sessionsRoot + sep)) continue;
+      try {
+        if ((await stat(candidate)).isDirectory()) {
+          alive.push(sid);
+          break;
+        }
+      } catch { /* ENOENT 等：该 scope 下不存在，继续探测下一个 */ }
+    }
+  }
+  sendJson(res, 200, { ok: true, alive });
+}
+
 function apply(ctx) {
   // 注册用户偏好命名空间：解析值 = schema 默认 ← 组合 base ← settings.yaml 用户层。
   // 旧版 localStorage 配置由浏览器半区一次性迁移上来，Host 不读浏览器存储。
@@ -1045,6 +1085,7 @@ function apply(ctx) {
           if (sub === "delete") return await handleDeleteSession(ctx, req, res);
           if (sub === "deleteAll") return await handleDeleteAll(ctx, req, res);
           if (sub === "pruneStale") return await handlePruneStaleArchives(ctx, req, res);
+          if (sub === "tombstoneCheck") return await handleTombstoneCheck(req, res);
         }
         sendJson(res, 404, { ok: false, error: "not found" });
       } catch (error) {

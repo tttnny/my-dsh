@@ -1,5 +1,5 @@
 /**
- * dsh-workspace-tree — browser half (v1.9.0 归档删除零守卫简化版)。
+ * dsh-workspace-tree — browser half (v1.9.2 墓碑物理自愈版)。
  *
  * 核心设计（第一性原理对齐）：
  *  - 会话空间归属与归档状态正交；官方列表返回的会话一律可见（含空白草稿），
@@ -13,8 +13,10 @@
  *  - 归档门槛：运行中/等待回复的会话不允许归档（按钮置灰），归档动作沿用官方
  *    workspace/archiveSession RPC；凡进入归档区的会话删除零守卫、必定可删。
  *  - 永久删除会话采用持久化墓碑（localStorage）：官方列表仍返回的已删会话无论
- *    刷新/跨标签页都不可见，官方列表收敛后墓碑自动清除（无定时自愈：服务端删除
- *    fail-loud，物理删净才剔除注册表，删除失败会如实报错并保留在归档区）。
+ *    刷新/跨标签页都不可见；官方列表收敛后自动摘碑。v1.9.2 起对「列表仍返回」的
+ *    墓碑增加权威自愈：向 Host 查询会话目录是否仍物理存在——存在即会话存活
+ *    （永久删除成功必然使目录消失），该墓碑必为误写（历史版本残留），自动作废
+ *    恢复显示；设置页亦提供手动「清空墓碑」兜底入口。
  *  - 空白草稿跟随官方语义：不自动回收、仅视图层隐藏（官方从不物理删除会话文件）。
  */
 window.__ModuleLoader__.load({
@@ -305,7 +307,7 @@ window.__ModuleLoader__.load({
       // （live mode 可为 archive 且不持久化，设置页拿不到它）
       return {
         // 注意：此处版本号为手写常量，发版改 package.json 时同步改这里
-        plugin: "dsh-workspace-tree@1.9.0",
+        plugin: "dsh-workspace-tree@1.9.2",
         t: new Date().toISOString(),
         ...(noSnap ? { warning: "snapshots unavailable（ctx 未就绪或已释放）" } : {}),
         defaultMode,
@@ -1194,21 +1196,49 @@ window.__ModuleLoader__.load({
        * 墓碑集合持久化到 localStorage，任何会话一旦删除便在任何标签页/刷新后
        * 都不可见；官方列表 phase=ready 后：
        * - 列表已不再包含该 id（Host 收敛成功）→ 清墓碑；
-       * - 列表仍包含该 id → 继续隐藏。无定时自愈：服务端删除 fail-loud，
-       *   删除失败会如实报错并保留在归档区（不会走到写墓碑），因此「列表长期
-       *   仍返回」只可能是收敛竞态，等列表收敛即摘碑。
+       * - 列表仍包含该 id → v1.9.2 起不再无条件当作收敛竞态：向 Host 查询
+       *   会话目录的物理存在性（/archive/tombstoneCheck）。服务端删除 fail-loud，
+       *   删除成功必然使目录消失，因此「目录仍在」= 会话存活，该墓碑必为误写
+       *   （历史版本错误级联/残留）→ 作废并恢复显示；「目录已没了」才是真实的
+       *   收敛竞态 → 继续隐藏，等列表收敛后摘碑。查询按当前墓碑集合签名去重。
        */
+      const tombCheckRef = useRef(null);
       useEffect(() => {
         if (!sessions || sessions.phase !== "ready" || hardDeleted.size === 0) return;
         const listed = new Set((sessions.ids || []).map(String));
-        const next = new Set();
-        for (const sid of hardDeleted) {
-          if (listed.has(String(sid))) next.add(sid); // 列表仍返回 → 继续隐藏
+        const stillListed = [...hardDeleted].filter((sid) => listed.has(String(sid))).map(String);
+        if (stillListed.length !== hardDeleted.size) {
+          const next = new Set(stillListed);
+          saveSet(LS_DELETED, next);
+          setHardDeleted(next);
+          return;
         }
-        if (next.size === hardDeleted.size) return;
-        saveSet(LS_DELETED, next);
-        setHardDeleted(next);
+        const signature = stillListed.slice().sort().join(",");
+        if (tombCheckRef.current === signature) return;
+        tombCheckRef.current = signature;
+        (async () => {
+          try {
+            const r = await apiPost("/archive/tombstoneCheck", { ids: stillListed });
+            if (!r || r.ok !== true || !Array.isArray(r.alive)) return;
+            const alive = new Set(r.alive.map(String));
+            if (alive.size === 0) return;
+            const next = new Set([...hardDeleted].filter((sid) => !alive.has(String(sid))));
+            if (next.size === hardDeleted.size) return;
+            saveSet(LS_DELETED, next);
+            setHardDeleted(next);
+          } catch {
+            /* 网络/路由失败：保守维持现状，清签名以便列表下次更新时重试 */
+            if (tombCheckRef.current === signature) tombCheckRef.current = null;
+          }
+        })();
       }, [sessions.ids, sessions.phase, hardDeleted]);
+
+      // 设置页「清空墓碑」事件：LS 已由设置页清掉，这里同步内存态立即重渲染。
+      useEffect(() => {
+        const onClear = () => setHardDeleted(new Set());
+        window.addEventListener("dswt-tombstones-cleared", onClear);
+        return () => window.removeEventListener("dswt-tombstones-cleared", onClear);
+      }, []);
 
       /** 记录已永久删除的会话 id（本地持久化，跨刷新/跨标签页生效）。 */
       const rememberDeleted = useCallback((ids) => {
@@ -1945,6 +1975,7 @@ window.__ModuleLoader__.load({
       const [lsCfg, setLsCfg] = useState(getConfig);
       const [, forceScope] = useState(0);
       const [diagMsg, setDiagMsg] = useState("");
+      const [tombMsg, setTombMsg] = useState("");
       useEffect(() => subscribeConfig((next) => {
         const snap = safeScopeSnapshot(resolveSettingsScope());
         if (snap) setLsCfg(scopeValueToConfig(snap.value));
@@ -1987,6 +2018,17 @@ window.__ModuleLoader__.load({
           setDiagMsg("采集失败：" + String((e && e.message) || e));
         } finally {
           copyLockRef.current = false;
+        }
+      };
+      /** 手动清空删除墓碑（自愈失效时的兜底）：清 LS + 广播事件让侧栏树同步内存态。 */
+      const onClearTombstones = () => {
+        try {
+          const n = loadSet(LS_DELETED).size;
+          saveSet(LS_DELETED, new Set());
+          window.dispatchEvent(new CustomEvent("dswt-tombstones-cleared"));
+          setTombMsg(n > 0 ? "已清空 " + n + " 条墓碑" : "墓碑本来就是空的");
+        } catch (e) {
+          setTombMsg("清空失败：" + String((e && e.message) || e));
         }
       };
       const select = (value, options, onPick) => h("select", {
@@ -2075,6 +2117,11 @@ window.__ModuleLoader__.load({
             h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [
               h("button", { type: "button", className: "dswt-configBtn", onClick: onCopyDiag }, "复制诊断信息"),
               diagMsg && h("span", { className: "dswt-configSaved" }, diagMsg)
+            ])),
+          h(ConfigRow, { label: "删除墓碑", hint: "「永久删除」的本地隐藏记录（localStorage）。树已会向 Host 校验物理存在自动作废误写墓碑；若仍疑似被误隐藏，可在此一键清空（不影响真实已删除的会话）" },
+            h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [
+              h("button", { type: "button", className: "dswt-configBtn", onClick: onClearTombstones }, "清空墓碑"),
+              tombMsg && h("span", { className: "dswt-configSaved" }, tombMsg)
             ])),
           h("div", { className: "dswt-configActions" }, [
             h("button", { type: "button", className: "dswt-configBtn", disabled: readOnly, onClick: () => { if (!readOnly) resetEffectiveConfig(); } }, "恢复默认"),
