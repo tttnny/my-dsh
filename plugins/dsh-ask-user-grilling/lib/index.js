@@ -36,7 +36,7 @@ function displayName(entry) {
 function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
-    description: "Deliver one ROUND of grilling questions as a form. Use it only when the grilling skill (grill-me / grill-with-docs, or the grilling phases of triage / wayfinder / improve-codebase-architecture) directs a round: first announce the whole round in the message text (title, options and your recommendation, per the skill's template), then deliver the SAME round as ONE call here — the prose and the form must match one-to-one. Map each question to the fields below (title → header, body → question, the A/B/C choices → options; mark your recommended option with \"(Recommended)\" (it need not be listed first); if your recommendation is not an option, state it briefly in the question text). Each question needs a stable id that does not start with __grill_ (reserved for the auto-appended round-end supplement question — never add your own catch-all/\"anything else?\" question; a non-empty supplement input reshapes the tree: ask a further round, and stop asking once the user confirms shared understanding). If background subagents are still running, this tool returns blocked: end your turn and wait for the settlement notice, do not retry within the same turn. For any non-grilling question use the plain ask_user_question tool.",
+    description: "Deliver one ROUND of grilling questions as a form. Use it only when the grilling skill directs a round. Deliver the round the skill had you announce in the message text as a form — the SAME round, ONE call, in the same turn; the prose and the form must match one-to-one. Map each announced question to the fields below (title → header, body → question, the A/B/C choices → options; recommendation as below). Each question needs a stable id matching the Q-number you announced, never starting with __grill_ (reserved for the auto-appended round-end supplement question — never add your own catch-all/\"anything else?\" question; a non-empty supplement input reshapes the tree: ask a further round, and stop asking once the user confirms shared understanding). Mark your recommended option by appending \"(Recommended)\" to its label (any position; if it isn't an option, state it briefly in the question text). If any of your descendant subagents is still running (or its status can't be confirmed), this tool returns blocked instead of asking: end your turn and wait for the settlement notice, do not retry within the same turn. For any non-grilling question use the plain ask_user_question tool.",
     parameters: {
       questions: {
         type: "array",
@@ -90,12 +90,12 @@ function apply(ctx) {
         properties: {
           blocked: {
             type: "boolean",
-            description: "True when background subagents are running and the round was not asked.",
+            description: "True when any of your descendant subagents is still running (or its status can't be confirmed) and the round was not asked.",
           },
           waiting: {
             type: "array",
             items: { type: "string" },
-            description: "Running subagent display names when blocked.",
+            description: "Display names of your running descendant subagents when blocked.",
           },
           rejected: {
             type: "boolean",
