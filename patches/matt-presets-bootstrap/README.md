@@ -6,8 +6,9 @@
 
 ## 零、当前基线
 
-- 基底：DSH 2.0.5 / `@deepseek-ai/dsh-agent-presets` 0.1.2-rc.1（2026-09-04 重打：`presets/matt-*/agent.cordis.yml` 与官方正文逐字一致，差异仅两处 MATT-ADD）。
-- 本次同步掉的官方变化：`ptc` 头注释改写；`ptc` 的 `tool-workflow` 改为 `disabled: true`（引擎留给 `ralph`，PTC 下不再另 publish 一个模型编排面）；fork 注释改写（issue #2124 表述）；`standard`/`ptc` 注释里的 `tool-subagent-report` 说明段与 plan-mode 尾句以官方正文为准。
+- 基底：DSH 0.1.3-alpha.2（dsh-launcher 安装）/ `@deepseek-ai/dsh-agent-presets` 0.1.3-alpha.2（2026-09-08 重打：`presets/matt-*/agent.cordis.yml` 与官方正文逐字一致，差异仅两处 MATT-ADD；官方正文位置：安装目录 `node_modules/.pnpm/@deepseek-ai+dsh-agent-presets@<ver>*/node_modules/@deepseek-ai/dsh-agent-presets/presets/{standard,ptc,cordis,minimal}/agent.cordis.yml`）。
+- 本次同步掉的官方变化：`dsh-persona` 配置键 `text` → **`prefix`（必填）**——旧键被 schema 拒收（`$.prefix missing required value`），persona 行是组合首条 loader entry，挂载整份失败；官方同时把 `Your working directory is {{cwd}}.` 一句挪进新增的 **`suffix`** 行（suffix 渲染在 first-party guidance 之后），`prefix` 只留 `{{model}}` 首句。`ptc-cordis` 的 persona 为自写合成正文（无逐字官方基底），键形同样对齐：加 `suffix:` 行、`prefix` 首句去掉 cwd。
+- 上一次同步（2026-09-04，基线 `@deepseek-ai/dsh-agent-presets` 0.1.2-rc.1 / DSH 2.0.5）：`ptc` 头注释改写；`ptc` 的 `tool-workflow` 改为 `disabled: true`（引擎留给 `ralph`，PTC 下不再另 publish 一个模型编排面）；fork 注释改写（issue #2124 表述）；`standard`/`ptc` 注释里的 `tool-subagent-report` 说明段与 plan-mode 尾句以官方正文为准。
 - 标记补齐：两处 MATT-ADD 均带 `# MATT-ADD:` 标记行（`customSkillDirs` 块首行、`tool-ask-user-grilling` 行上三行注释）——升级 diff 时只应看到这两个块，多一行都是官方漂移。
 
 ## 一、`agent.cordis.yml`：两处 MATT-ADD
@@ -156,7 +157,8 @@ The session is done when the frontier is empty: every branch of the design tree 
 
 ## 五、何时重打
 
-- **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 以新版官方正文覆盖仓库文件，按第一节重打两处 MATT-ADD（注意改动② 的锚点是 `tool-skill` 块，官方若改了该块结构则需手工定位）；matt-cordis 的两个 cordis 随附技能如有变，从官方 `cordis/skills/` 覆盖。
+- **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 以新版官方正文覆盖仓库文件，按第一节重打两处 MATT-ADD（注意改动② 的锚点是 `tool-skill` 块，官方若改了该块结构则需手工定位）；matt-cordis 的两个 cordis 随附技能如有变，从官方 `cordis/skills/` 覆盖。**persona 行始终逐字取官方正文**——官方偶有键级改名（如 0.1.3-alpha.2 的 `text`→`prefix`、cwd 句拆入 `suffix`），不要保留仓库旧写法。
+- **DSH 升级后（同进程共存）**：官方 `cordis` / `ptc-cordis` / `matt-cordis` 同进程互挂依赖 `dsh-tool-cordis` Host inspect 注册幂等补丁，每次升级/重装后需重跑 [`../patch-dsh-cordis-inspect-idempotent/`](../patch-dsh-cordis-inspect-idempotent/README.md)。注意 **dsh-launcher 布局**（`~/Library/Application Support/in.dsh-plug.dsh-launcher/versions/<ver>/`）不在脚本自动搜索路径内，且 `.pnpm` 嵌套比其 `find -maxdepth 6` 深一层——需把 `DSH_ROOT` 指到对应包的内层 `node_modules`（即 `<ver>/node_modules/.pnpm/@deepseek-ai+dsh-tool-cordis@*/node_modules`）运行一次。
 - **Matt 技能上游更新后**：整体覆盖 25 个技能目录，再把对应 preset 的 `grilling/SKILL.md` 成品覆盖回 grilling——`matt-standard` 与 `matt-cordis` 用 §二 示例一；`matt-ptc` 用 §二 示例二（PTC 形态）。其余技能无本地改动。
 
 仓库 `presets/matt-*/` 即上述改动后的成品；日常落地 = 装好插件后把三个目录（`agent.cordis.yml` + `preset.yml` + `skills/`，不含 README.md）同步到 `~/.dsh/.agent-presets/<id>/` 并重启 DSH。
