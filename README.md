@@ -67,10 +67,15 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck</code></td>
     </tr>
     <tr>
-      <td><b>📱 设备访问</b><br><i>跨设备，依赖 Desktop 宿主与证书链路</i></td>
+      <td rowspan="2"><b>📱 设备访问</b><br><i>跨设备与本机外部应用接入</i></td>
       <td><a href="./plugins/dsh-qr-access"><code>@lynn123411/dsh-qr-access</code></a></td>
       <td><b>扫码访问</b><br>· 设置页分区实时生成局域网 HTTPS 访问地址与本地 CA 证书二维码，手机扫码直连免复制粘贴<br>· 地址现取当前 Desktop 宿主代（token 随重启轮换自动跟随，30s 轮询 + 刷新按钮 + 页面可见即刷新）<br>· 手动点选地址、证书按主机配对、局域网状态徽标直读桌面设置</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-qr-access</code></td>
+    </tr>
+    <tr>
+      <td><a href="./plugins/dsh-browseros-neo"><code>@lynn123411/dsh-browseros-neo</code></a></td>
+      <td><b>Browser Neo 接入</b><br>· 零配置挂载官方 <code>@deepseek-ai/dsh-mcp-client</code> 桥接 BrowserOS neo（工具 <code>mcp__browseros-neo__*</code>，与 Claude Code / Codex 同形，官方设计参数零改动）<br>· 端点自动读 <code>~/.browserclaw/runtime.json</code>（端口未必是文档的 9200）；Neo 后启动自动重挂载，覆盖官方桥 ~10 次重试放弃的坑<br>· <b>单一生命周期状态机</b>：经官方 <code>tools/execute</code> 环绕水位线做「预检（Neo 没跑就地后台拉起等就绪，第一次调用慢而成功）→ 派发 → 失败签名分类 → 修复（僵尸会话重建 / 零窗口 reopen / 冷启动）→ 同调用内重放一次 → 仍败才追加指引」；官方 SDK 漏实现 spec 的「会话 404 必须重连」等缺口全部在调用现场消化，生命周期错误对模型基本不可见<br>· <code>browseros_neo_launch</code> 工具 + 官方 skill Failure 段一句改写（<code>chflags uchg</code> 锁定防回写）<br>· 设置 › Browser Neo：启用开关 / 端点与连接状态 / 立即重连</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-browseros-neo</code></td>
     </tr>
   </tbody>
 </table>
