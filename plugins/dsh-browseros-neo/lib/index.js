@@ -27,11 +27,19 @@ import * as mcpClient from '@deepseek-ai/dsh-mcp-client';
  * upstream zombie-session gap (SDK does not implement spec "session 404 →
  * re-initialize", so after a Neo process swap the bridge never notices).
  *
+ * 1.2.0 hardens that button against two measured quirks: a cold-starting neo
+ * answers HTTP 503 until it is ready (only 200 counts — 'starting' is waited
+ * out, never claimed as connected), and an `open` fired while the app is
+ * still terminating is swallowed by LaunchServices (rc=0, no process ever
+ * comes), so the wait loop re-fires `open` once after 5 s while the endpoint
+ * is fully down.
+ *
  * Still nothing automatic: no supervisor tick, no in-call repair, no window
  * counting, no model-facing tool. The auto-installed browseros-neo skill is
- * left byte-for-byte upstream. Status here reflects the last mount/connect
- * outcome plus a cheap endpoint probe — the bridge's internal background
- * reconnects are not observable from here and are not pretended to be.
+ * left byte-for-byte upstream. Status reads live-probe the current runtime.json
+ * endpoint (deduped) so the panel self-corrects once neo recovers without
+ * another click; the bridge's internal reconnect bookkeeping is still not
+ * observable and is not pretended to be.
  *
  * After any (re)mount, tools enter a conversation at the NEXT step: agent
  * loops snapshot the tool list per step, so mid-run registration never
@@ -48,7 +56,8 @@ const SERVER_NAME = 'browseros-neo';
 const FALLBACK_URL = 'http://127.0.0.1:9200/mcp';
 const LAUNCH_BUNDLE_ID = 'com.browseros.BrowserClaw';
 const PROBE_TIMEOUT_MS = 3_000;
-const LAUNCH_WAIT_MS = 25_000;
+const LAUNCH_WAIT_MS = 60_000; // Chromium-family cold start (background, unfocused) often passes 25s
+const REACTIVATE_AFTER_MS = 5_000; // measured: an `open` fired during app termination is swallowed (rc=0, no process); re-fire once the old instance is fully gone
 const DISPOSE_TIMEOUT_MS = 5_000;
 
 const execFileAsync = promisify(execFile);
@@ -68,10 +77,15 @@ function resolveEndpoint() {
   return FALLBACK_URL;
 }
 
-/** Cheap liveness read: one MCP initialize handshake. Any HTTP answer = app up. Never launches. */
+/**
+ * One MCP initialize handshake against `url`; three-state readiness (measured):
+ * only 200 is `ready`; any other HTTP answer is `starting` (process up, MCP
+ * not — cold boot answers 503 for seconds); a throw is `down`. Never launches.
+ */
 async function endpointUp(url) {
+  let res;
   try {
-    const res = await fetch(url, {
+    res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
       body: JSON.stringify({
@@ -82,22 +96,24 @@ async function endpointUp(url) {
       }),
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-    const sid = res.headers.get('mcp-session-id');
-    await Promise.resolve(res.body?.cancel?.()).catch(() => {});
-    if (sid) {
-      // Don't leak a server-side session per probe.
-      fetch(url, { method: 'DELETE', headers: { 'mcp-session-id': sid }, signal: AbortSignal.timeout(2_000) }).catch(() => {});
-    }
-    return { alive: true };
   } catch (error) {
-    return { alive: false, error: messageOf(error?.cause ?? error) };
+    return { state: 'down', detail: messageOf(error?.cause ?? error) };
   }
+  const sid = res.headers.get('mcp-session-id');
+  await Promise.resolve(res.body?.cancel?.()).catch(() => {});
+  if (sid) {
+    // Don't leak a server-side session per probe.
+    fetch(url, { method: 'DELETE', headers: { 'mcp-session-id': sid }, signal: AbortSignal.timeout(2_000) }).catch(() => {});
+  }
+  return res.status === 200 ? { state: 'ready' } : { state: 'starting', detail: `HTTP ${res.status}` };
 }
 
 export async function apply(ctx) {
   const state = { endpoint: null, connected: false, launchedNeo: false, lastError: null, checkedAt: 0, neoInstalled: false };
   let fiber;
   let inFlight;
+  let probeFlight;
+  let probeTarget = null;
 
   const snapshot = () => ({ ...state });
   const mark = (patch) => {
@@ -111,8 +127,8 @@ export async function apply(ctx) {
     await Promise.race([Promise.resolve(dying?.dispose?.()).catch(() => {}), sleep(DISPOSE_TIMEOUT_MS)]);
   }
 
-  /** Rebuild the bridge against `url`; `alive` (endpoint probe result) decides what "connected" may claim. */
-  async function remount(url, alive) {
+  /** Rebuild the bridge against `url`; `ready` (endpoint probe said 200) decides what "connected" may claim. */
+  async function remount(url, ready) {
     await disposeBridge();
     try {
       fiber = ctx.plugin(mcpClient, {
@@ -124,8 +140,8 @@ export async function apply(ctx) {
       await fiber;
       mark({
         endpoint: url,
-        connected: alive,
-        lastError: alive ? null : `端点暂无应答（${url}）；桥会在 ~2.5 分钟预算内自行重试，Neo 起来后也可再点一次连接`,
+        connected: ready,
+        lastError: ready ? null : `端点未就绪（${url}）；桥会在 ~2.5 分钟预算内自行重试，Neo 起来后也可再点一次连接`,
       });
       return true;
     } catch (error) {
@@ -139,9 +155,10 @@ export async function apply(ctx) {
     let url = resolveEndpoint();
     let probed = await endpointUp(url);
     let launched = false;
-    if (!probed.alive) {
+    let reactivated = false;
+    if (probed.state === 'down') {
       if (platform() !== 'darwin') {
-        mark({ launchedNeo: false, lastError: `neo 未在运行；自动拉起仅支持 macOS，请手动打开 BrowserOS neo 后再点一次（${messageOf(probed.error)}）` });
+        mark({ launchedNeo: false, lastError: `neo 未在运行；自动拉起仅支持 macOS，请手动打开 BrowserOS neo 后再点一次（${probed.detail}）` });
       } else {
         try {
           await execFileAsync('open', ['-g', '-b', LAUNCH_BUNDLE_ID]);
@@ -150,11 +167,18 @@ export async function apply(ctx) {
           mark({ launchedNeo: false, lastError: `后台拉起 BrowserOS neo 失败：${messageOf(error)}` });
         }
         if (launched) {
-          const deadline = Date.now() + LAUNCH_WAIT_MS;
-          while (!probed.alive && Date.now() < deadline) {
-            await sleep(1_000);
+          const launchedAt = Date.now();
+          const deadline = launchedAt + LAUNCH_WAIT_MS;
+          while (probed.state !== 'ready' && Date.now() < deadline) {
+            await sleep(800);
             url = resolveEndpoint(); // 冷启动可能换端口：等待期间持续重读
             probed = await endpointUp(url);
+            if (probed.state === 'down' && !reactivated && Date.now() - launchedAt >= REACTIVATE_AFTER_MS) {
+              // 退出竞态：首个 open 的目标随旧实例一起离场了。补发一次；
+              // 对已在跑的 App 再 open 只是无害的后台激活。
+              reactivated = true;
+              await execFileAsync('open', ['-g', '-b', LAUNCH_BUNDLE_ID]).catch(() => {});
+            }
           }
           mark({ launchedNeo: true });
         }
@@ -162,14 +186,29 @@ export async function apply(ctx) {
     } else {
       mark({ launchedNeo: false });
     }
-    await remount(url, probed.alive);
-    return snapshot();
+    await remount(url, probed.state === 'ready');
+    if (launched && probed.state !== 'ready') {
+      mark({
+        lastError: `已后台拉起 BrowserOS neo${reactivated ? '（含一次退出竞态补发）' : ''}，但 ${LAUNCH_WAIT_MS / 1000} 秒内端点未就绪。` +
+          '桥会在 ~2.5 分钟预算内自行重试；等 App 完全打开后再点一次连接即可确认。',
+      });
+    }
+    return { ...snapshot(), endpointUp: probed.state === 'ready', endpointStarting: probed.state === 'starting' };
   }
 
   /** Single-flight: concurrent clicks share the same run. */
   function connect() {
     if (!inFlight) inFlight = doConnect().finally(() => { inFlight = undefined; });
     return inFlight;
+  }
+
+  /** Deduped live probe of the CURRENT runtime.json endpoint (panel poll). */
+  function probeShared() {
+    if (!probeFlight) {
+      probeTarget = resolveEndpoint();
+      probeFlight = endpointUp(probeTarget).finally(() => { probeFlight = undefined; });
+    }
+    return probeFlight;
   }
 
   function writeJson(res, code, payload) {
@@ -194,7 +233,13 @@ export async function apply(ctx) {
     const path = new URL(req.url ?? '/', 'http://local').pathname;
     if (req.method === 'GET' && (path === '/api/dsh-browseros-neo/status' || path === '/api/dsh-browseros-neo')) {
       state.neoInstalled = existsSync(join(homedir(), '.browserclaw'));
-      return writeJson(res, 200, snapshot());
+      const probed = await probeShared();
+      return writeJson(res, 200, {
+        ...snapshot(),
+        endpointUp: probed.state === 'ready',
+        endpointStarting: probed.state === 'starting',
+        probedEndpoint: probeTarget,
+      });
     }
     if (req.method === 'POST' && path === '/api/dsh-browseros-neo/action') {
       try {
@@ -224,10 +269,10 @@ export async function apply(ctx) {
   // tells the truth before any click), mount. Never launches on startup.
   const url = resolveEndpoint();
   const probed = await endpointUp(url);
-  await remount(url, probed.alive);
+  await remount(url, probed.state === 'ready');
   if (state.connected) {
     ctx.logger.info(`${name}: official MCP bridge mounted → ${url} (tools: mcp__${SERVER_NAME}__*)`);
   } else {
-    ctx.logger.warn(`${name}: bridge mounted but endpoint silent → ${url} (${messageOf(probed.error)}); click 「连接」 in settings after starting neo`);
+    ctx.logger.warn(`${name}: bridge mounted but endpoint ${probed.state} → ${url} (${probed.detail ?? 'no detail'}); click 「连接」 in settings after starting neo`);
   }
 }

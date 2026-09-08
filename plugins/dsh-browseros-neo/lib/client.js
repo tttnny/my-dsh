@@ -16,7 +16,11 @@ window.__ModuleLoader__.load({
 
     function statusMeta(st) {
       if (!st) return { dot: '#8a8f98', text: '读取状态失败' };
-      if (st.connected) return { dot: '#30a46c', text: '已连接 · 工具以 mcp__browseros-neo__* 注册' };
+      if (st.connected && st.endpointUp) return { dot: '#30a46c', text: '已连接 · 工具以 mcp__browseros-neo__* 注册' };
+      if (st.connected && st.endpointStarting) return { dot: '#b58a00', text: '桥在位 · Neo 正在启动（端点未就绪）' };
+      if (st.connected) return { dot: '#b58a00', text: '桥在位，但 Neo 端点当前无应答（Neo 可能已关闭或换了端口）' };
+      if (st.endpointStarting) return { dot: '#b58a00', text: 'Neo 正在启动（端点未就绪），就绪后会自动重连，或再点一次连接' };
+      if (st.endpointUp) return { dot: '#b58a00', text: 'Neo 端点在线 · 桥未确认（点连接重建，或等其自行重连）' };
       if (st.neoInstalled === false) return { dot: '#8a8f98', text: '未检测到 BrowserOS neo（~/.browserclaw 不存在）' };
       return { dot: '#b58a00', text: '未连接' };
     }
@@ -74,10 +78,10 @@ window.__ModuleLoader__.load({
         h('p', { style: small }, 'BrowserOS neo（agent 专用浏览器）接入：官方 dsh-mcp-client 桥的零配置安装器，端口从 ~/.browserclaw/runtime.json 自动解析，不做任何自动生命周期干预。'),
         h('div', row,
           h('span', { style: { width: 10, height: 10, borderRadius: '50%', background: meta.dot, display: 'inline-block', flexShrink: 0 } }),
-          h('span', null, busy ? '正在连接（Neo 没在跑时会先后台拉起，最长约 30 秒）…' : meta.text),
+          h('span', null, busy ? '正在连接（Neo 没在跑则后台拉起；启动未就绪/退出竞态会自动等待与补发，最长约 60 秒）…' : meta.text),
           st && st.checkedAt ? h('span', { style: small }, '· 上次操作 ' + new Date(st.checkedAt).toLocaleTimeString()) : null,
         ),
-        st && st.endpoint ? h('div', { style: small }, '端点：' + st.endpoint) : null,
+        st && st.endpoint ? h('div', { style: small }, '端点：' + st.endpoint + (st.probedEndpoint && st.probedEndpoint !== st.endpoint ? '（当前探测：' + st.probedEndpoint + '）' : '')) : null,
         st && !st.connected && st.lastError ? h('div', { style: Object.assign({}, small, { color: '#e5484d' }) }, '最近错误：' + st.lastError) : null,
         st && st.connected && st.launchedNeo ? h('div', { style: small }, '（本次已为你后台拉起 BrowserOS neo，未抢焦点）') : null,
         h('div', row,
