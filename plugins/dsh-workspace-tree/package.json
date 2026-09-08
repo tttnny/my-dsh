@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-workspace-tree",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "DSH 工作区树：文件系统双模式工作区浏览器——文件夹任意嵌套、会话归入工作区；安全归档区（进区必可删、删除零守卫 fail-loud），附带新建/重命名/IDE 打开等管理。",
   "type": "module",
   "main": "./lib/index.js",
@@ -35,6 +35,9 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "engines": {
+    "node": "^22.19 || >=24"
   },
   "dsh": {
     "bundle": {

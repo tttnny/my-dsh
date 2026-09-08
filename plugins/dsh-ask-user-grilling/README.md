@@ -2,6 +2,8 @@
 
 DSH 侧的 grilling 适配层（输送机制）：把 Matt Pocock 的 grilling 流程在 DSH 里的提问环节做成工具级硬约束。本插件只提供 `ask_user_grilling`，不提供任何 plan-mode 工具——共识达成后不自动进入 plan mode，交还用户决定下一步。分工：本插件负责「在 DSH 里怎么问」的工具与报错层；grilling 纪律文案（散文预告 + 表单投递、子代理停轮）写在工具描述与 matt-* 预设 vendor 的 `skills/grilling/SKILL.md` 里（`matt-ptc` 另含 PTC 投递指引），preset persona 保持原厂原样不做任何修改。
 
+> ⚠️ **安装约束：本插件是 preset 工具行消费的 Cordis 插件，严禁加入 profile `package.json` 的 `dsh.profile.bundles`**（bundle 层必须在包内声明 `dsh.bundle`，本插件没有，加入会导致启动报错）。只需通过 `pnpm add` / `dsh plugin --profile web add` 进入 dependencies 即可，preset 的工具行会直接从 node_modules 解析本包。
+
 ## 特性
 
 - **ask_user_grilling**：grilling 轮次专用提问工具。

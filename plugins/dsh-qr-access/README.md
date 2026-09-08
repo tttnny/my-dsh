@@ -19,15 +19,4 @@ DSH Desktop 的访问 token 随每次重启（宿主换代）轮换，本插件*
 dsh plugin --profile web add @lynn123411/dsh-qr-access
 ```
 
-> 依赖 DSH Desktop v2.0+（兼容模式）且已开启「局域网访问（需要 HTTPS）」；npm 版 DSH 无桌面设置接口，分区会显示不可用提示。
-
-## 本地开发
-
-```bash
-cd plugins/dsh-qr-access
-pnpm install
-pnpm run build        # esbuild 产出 lib/index.js + lib/client.js（CJS + __ModuleLoader__ 包装）
-pnpm run typecheck    # 可选
-```
-
-本地实测：把构建产物同步到 `~/.dsh/profiles/web/node_modules/@lynn123411/dsh-qr-access/`，并在 `~/.dsh/profiles/web/package.json` 的 `dsh.profile.bundles` 中追加 `@lynn123411/dsh-qr-access`，重启 DSH Desktop 后在「设置 → 扫码访问」验证。
+> 依赖 DSH Desktop v2.0+（兼容模式）且已开启「局域网访问（需要 HTTPS）」；npm 版 DSH 无桌面设置接口，分区会显示不可用提示。本地开发流程见 [docs/local-dev.md](./docs/local-dev.md)。

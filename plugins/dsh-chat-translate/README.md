@@ -1,6 +1,6 @@
 # @lynn123411/dsh-chat-translate
 
-DeepSeek Harness Web 界面的工具调用与思考摘要智能翻译插件。自动将当前会话中工具调用标题与思考折叠摘要翻译为中文，采用非侵入式双语对照渲染（点击译文可切换原文），不污染会话上下文。内置 OpenAI 兼容 AI 翻译与免 Key Bing 兜底双通道。
+DeepSeek Harness Web 界面的工具调用与思考摘要智能翻译插件。自动将当前会话中工具调用标题与思考折叠摘要翻译为中文，采用非侵入式双语对照渲染（点击译文可切换原文），不污染会话上下文。内置 OpenAI 兼容 AI 翻译与免 Key Bing 兜底双通道。配置详见 [docs/配置.md](./docs/配置.md)。
 
 ## 特性
 
@@ -20,30 +20,3 @@ DeepSeek Harness Web 界面的工具调用与思考摘要智能翻译插件。�
 dsh plugin --profile web add @lynn123411/dsh-chat-translate
 ```
 
-## 配置
-
-1. **API Key**：打开「设置 - 聊天翻译」，在 AI 翻译卡片中直接填写 API Key 并保存（经 DSH 凭据服务写入 `~/.dsh/.credentials.yaml` 的 `TRANSLATE_API_KEY`，权限 0600，保存后立即生效；留空保存 = 清除该键）。也可以手动编辑该文件：
-
-   ```yaml
-   refs:
-     TRANSLATE_API_KEY: sk-xxx
-   ```
-
-   > ⚠️ **注意**：DSH 的凭据加载器要求 refs 键值非空。手动编辑时要么填写真实 Key，要么**直接删除该行**——不要写成 `TRANSLATE_API_KEY: ""` 这类空值，否则 DSH 启动会失败。未配置时插件自动由 Bing 通道兜底，不会报错。
-
-2. **Base URL 与模型等设置**：在「设置 - 聊天翻译」中填写 Base URL（如 `https://api.openai.com/v1` 或 `https://api.deepseek.com/v1`）与模型名（如 `gpt-4o-mini`、`deepseek-chat`），点击「测试 AI 通道」验证。所有设置（开关、并发数、超时等）由 DSH 持久化到 `~/.dsh/settings.yaml` 的 `dsh-chat-translate` 段，可直接编辑该文件（DSH 会热同步）：
-
-   ```yaml
-   dsh-chat-translate:
-     enabled: true
-     concurrency: 3
-     aiEnabled: true
-     bingEnabled: true
-     baseUrl: http://172.24.52.126:8081/v1
-     model: hy-mt2-1.8b
-     targetLang: zh-Hans
-   ```
-
-   > 从 1.2 起，插件不再读写独立的 `~/.dsh/dsh-chat-translate-config.json`：升级后首次加载会自动把旧文件的值迁移进上面的 settings 段并删除旧文件（若你已在 UI 中改过设置，则以你的设置为准）。
-
-3. **通道行为**：AI 开启且已配置 → AI 优先、失败降级 Bing；AI 开启但未配置 + Bing 开启 → Bing 翻译；AI 未配置 + Bing 关闭 → 不翻译；AI 关闭 + Bing 开启 → 直接 Bing；双关 → 不翻译。

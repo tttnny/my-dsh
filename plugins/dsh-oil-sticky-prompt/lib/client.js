@@ -45,11 +45,7 @@ window.__ModuleLoader__.load({
 			const stack = row.querySelector("[class*=userstack i]");
 			const bubble = stack?.querySelector("[class*=bubble i]") ?? null;
 			if (bubble !== null) return bubble;
-			const root = row.querySelector("[data-time-hover-root]");
-			const legacy = root?.querySelector(":scope > div")?.lastElementChild;
-			if (legacy instanceof HTMLElement) return legacy;
 			if (stack !== null) return stack;
-			if (root instanceof HTMLElement) return root;
 			return row;
 		}
 		function textOf(row) {

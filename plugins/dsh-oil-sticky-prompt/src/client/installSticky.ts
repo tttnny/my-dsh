@@ -21,12 +21,7 @@ function bubbleOf(row: HTMLElement): HTMLElement {
   const stack = row.querySelector<HTMLElement>("[class*=userstack i]");
   const bubble = stack?.querySelector<HTMLElement>("[class*=bubble i]") ?? null;
   if (bubble !== null) return bubble;
-  // 旧版 DSH：[data-time-hover-root] > div > :last-child。
-  const root = row.querySelector("[data-time-hover-root]");
-  const legacy = root?.querySelector(":scope > div")?.lastElementChild;
-  if (legacy instanceof HTMLElement) return legacy;
   if (stack !== null) return stack;
-  if (root instanceof HTMLElement) return root;
   return row;
 }
 

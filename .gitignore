@@ -5,10 +5,10 @@ skills-lock.json
 AGENTS.md
 docs/
 
-# 例外：deck 分叉插件自带 docs/（代码注释引用的 ADR 与上游 README）与 AGENTS.md（分叉开发约定），属插件内容，须入库
-!plugins/dsh-mattpocock-skills-deck/AGENTS.md
-!plugins/dsh-mattpocock-skills-deck/docs/
-!plugins/dsh-mattpocock-skills-deck/docs/**
+# 例外：插件目录自带的 docs/ 属插件内容，须入库（根 docs/ 仍保持 local-only）
+# 注：插件目录若将来需入库 AGENTS.md 之类文件，须另开显式 ! 例外（第 5 行 AGENTS.md 匹配任意层级）
+!plugins/*/docs/
+!plugins/*/docs/**
 .agent-teams/
 tmp/
 
