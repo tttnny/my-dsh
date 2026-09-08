@@ -7,7 +7,7 @@ import "@deepseek-ai/dsh-user-questions";
  * hardens how rounds are asked inside DSH.
  *
  * ask_user_grilling:
- *   - gate: refuses while background subagents are running (R1)
+ *   - no hard gate on running subagents: waiting for settlement is description-level discipline only (soft, was R1)
  *   - forces multi-select on every question (R2)
  *   - appends a round-end supplement question (R3) — per-question supplement is
  *     via the built-in custom input ("Type your answer" / "输入你的答案"), no
@@ -29,14 +29,10 @@ const ROUND_END_QUESTION = {
   multiSelect: true,
 };
 
-function displayName(entry) {
-  return entry.label ?? entry.id;
-}
-
 function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
-    description: "Deliver one ROUND of grilling questions as a form. Use it only when the grilling skill directs a round. Deliver the round the skill had you announce in the message text as a form — the SAME round, ONE call, in the same turn; the prose and the form must match one-to-one. Map each announced question to the fields below (title → header, body → question, the A/B/C choices → options; recommendation as below). Each question needs a stable id matching the Q-number you announced, never starting with __grill_ (reserved for the auto-appended round-end supplement question — never add your own catch-all/\"anything else?\" question; a non-empty supplement input reshapes the tree: ask a further round, and stop asking once the user confirms shared understanding). Mark your recommended option by appending \"(Recommended)\" to its label (any position; if it isn't an option, state it briefly in the question text). If any of your descendant subagents is still running (or its status can't be confirmed), this tool returns blocked instead of asking: end your turn and wait for the settlement notice, do not retry within the same turn. For any non-grilling question use the plain ask_user_question tool.",
+    description: "Ask the user questions as a form — the only question tool in these presets; route every user-facing question through here, grilling rounds and all other questions alike. For a grilling round, deliver the round the skill had you announce in the message text — the SAME round, ONE call, in the same turn; the prose and the form must match one-to-one. Map each announced question to the fields below (title → header, body → question, the A/B/C choices → options; recommendation as below). Each question needs a stable id matching the Q-number you announced, never starting with __grill_ (reserved for the auto-appended round-end supplement question — never add your own catch-all/\"anything else?\" question; a non-empty supplement input reshapes the tree: ask a further round, and stop asking once the user confirms shared understanding). Mark your recommended option by appending \"(Recommended)\" to its label (any position; if it isn't an option, state it briefly in the question text). If you dispatched subagents whose findings the next round depends on, prefer ending your turn and waiting until all of them have settled before asking — asking the frontier before the facts arrive wastes a round.",
     parameters: {
       questions: {
         type: "array",
@@ -88,15 +84,6 @@ function apply(ctx) {
         type: "object",
         additionalProperties: false,
         properties: {
-          blocked: {
-            type: "boolean",
-            description: "True when any of your descendant subagents is still running (or its status can't be confirmed) and the round was not asked.",
-          },
-          waiting: {
-            type: "array",
-            items: { type: "string" },
-            description: "Display names of your running descendant subagents when blocked.",
-          },
           rejected: {
             type: "boolean",
             description: "True when input validation failed and the round was not asked.",
@@ -108,7 +95,7 @@ function apply(ctx) {
           },
           error: {
             type: "string",
-            description: "Human-readable error when blocked or rejected.",
+            description: "Human-readable error when rejected.",
           },
           answers: {
             type: "array",
@@ -140,38 +127,7 @@ function apply(ctx) {
       render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }],
     },
     async execute(args, exec) {
-      // 1. gate: refuse while background subagents are running (R1)
-      const subagents = ctx.get("subagents");
-      const agent = exec.agent;
-      const waiting = [];
-      if (subagents !== undefined && agent !== undefined) {
-        try {
-          const entries = await subagents.listDescendants(agent.id, exec.signal);
-          for (const entry of entries) {
-            if (entry.kind === "child" && entry.activity === "running") waiting.push(displayName(entry));
-          }
-        } catch (error) {
-          // Fail-closed: R1 says never enter the decision tree unless we know
-          // no subagents are running. Only an aborted call (user cancelled)
-          // propagates; any other listing failure blocks the round.
-          if (exec.signal.aborted) throw error;
-          console.error("ask_user_grilling: subagent listing failed: %o", error);
-          return {
-            blocked: true,
-            waiting: [],
-            error: "Cannot confirm background subagent status (subagents query failed). End your turn and wait; call this tool again in a later turn.",
-          };
-        }
-      }
-      if (waiting.length > 0) {
-        return {
-          blocked: true,
-          waiting,
-          error: `Still ${waiting.length} subagent(s) running (${waiting.join(", ")}). End your turn and wait — the settlement notice will wake you automatically, then call again.`,
-        };
-      }
-
-      // 2. input validation: reserved id prefix guard only (the round-end
+      // 1. input validation: reserved id prefix guard only (the round-end
       //    question owns __grill_). Stem/option separation (R4) is guidance,
       //    NOT enforced: substring matching rejected legitimate stems (e.g. a
       //    stem that naturally mentions an option name), so no stem check may
@@ -190,7 +146,7 @@ function apply(ctx) {
         };
       }
 
-      // 3. transform: force multi-select (R2); per-question supplement is via the built-in custom input ("Type your answer"/"输入你的答案") — no extra option is added to avoid duplication with that field
+      // 2. transform: force multi-select (R2); per-question supplement is via the built-in custom input ("Type your answer"/"输入你的答案") — no extra option is added to avoid duplication with that field
       const questions = args.questions.map((question) => ({
         id: question.id,
         question: question.question,
@@ -204,10 +160,10 @@ function apply(ctx) {
         multiSelect: true,
       }));
 
-      // 4. round-end supplement question (R3) — single "无需补充" option; supplement is via custom input, so no "I have something to add" option (duplicates that field)
+      // 3. round-end supplement question (R3) — single "无需补充" option; supplement is via custom input, so no "I have something to add" option (duplicates that field)
       questions.push(ROUND_END_QUESTION);
 
-      // 5. ask through the userQuestions seam (UI renders from the service)
+      // 4. ask through the userQuestions seam (UI renders from the service)
       const answer = await ctx.userQuestions.ask({
         questions,
         ...(exec.agent !== undefined ? { agent: exec.agent } : {}),

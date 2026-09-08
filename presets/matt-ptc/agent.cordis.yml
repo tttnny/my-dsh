@@ -256,9 +256,8 @@
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 
-- id: tool-ask-user
-  name: '@deepseek-ai/dsh-tool-ask-user'
-
+# MATT-DEL: upstream tool-ask-user row removed — every user-facing question
+# goes through ask_user_grilling (the preset's only question tool).
 - id: tool-todo
   name: '@deepseek-ai/dsh-tool-todo'
   config:

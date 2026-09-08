@@ -34,7 +34,7 @@ Recommended: <your recommended answer>
 > **DSH delivery：** 每一轮分两步投递：先在消息文本里**以散文预告这一轮的全部问题**（标题、正文、选项与推荐），在**同一回合内**紧接着再在 `run_code` 程序内用 `return await tools.ask_user_grilling({ questions: [...] })` 把**同一轮**作为**一次**调用投出，让用户在表单中作答：
 >
 > - 散文预告与投递必须**同一轮、一一对应**：预告里列出的问题、选项与推荐，投递时就发这一套，不得漏问、也不得在表单里另起一套或换一轮（轮末补充题由代码自动追加，不用你写，也不在预告里）。
-> - （本 skill 的轮次内）强制使用 `tools.ask_user_grilling` 而不使用 `tools.ask_user_question`。
+> - 提问一律走 `tools.ask_user_grilling`（本 preset 唯一的提问工具）。
 
 Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
