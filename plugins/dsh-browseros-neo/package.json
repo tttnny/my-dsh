@@ -1,11 +1,12 @@
 {
   "name": "@lynn123411/dsh-browseros-neo",
-  "version": "1.0.0",
-  "description": "Zero-config BrowserOS neo MCP mount: resolves the real endpoint from ~/.browserclaw/runtime.json and mounts the official @deepseek-ai/dsh-mcp-client bridge — configuration, nothing more.",
+  "version": "1.1.0",
+  "description": "Zero-config BrowserOS neo MCP mount: resolves the real endpoint from ~/.browserclaw/runtime.json and mounts the official @deepseek-ai/dsh-mcp-client bridge; one settings button relaunches neo and rebuilds the bridge when needed — still configuration, nothing more.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
@@ -23,6 +24,11 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [],
+      "immediately": true
     }
   },
   "engines": {

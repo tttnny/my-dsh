@@ -74,7 +74,7 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-browseros-neo"><code>@lynn123411/dsh-browseros-neo</code></a></td>
-      <td><b>Browser Neo 接入</b><br>· <b>只做 MCP 配置</b>：读 <code>~/.browserclaw/runtime.json</code> 解析真实端点（端口未必是文档的 9200），挂载官方 <code>@deepseek-ai/dsh-mcp-client</code> 桥（工具 <code>mcp__browseros-neo__*</code>，与 Claude Code / Codex 同形，官方参数零改动）<br>· Neo 生命周期全权交官方桥自带监督器（~2.5 分钟退避重连预算，覆盖 Neo 后开 / 秒级重启自愈）；预算烧光与上游僵尸会话缺口按官方唯一出路恢复——改存一次 <code>cordis.patch.yml</code> 触发插件重载<br>· 自动安装的官方 <code>browseros-neo</code> skill 保持原版原样，插件不改写、不锁定</td>
+      <td><b>Browser Neo 接入</b><br>· <b>只做 MCP 配置</b>：读 <code>~/.browserclaw/runtime.json</code> 解析真实端点（端口未必是文档的 9200），挂载官方 <code>@deepseek-ai/dsh-mcp-client</code> 桥（工具 <code>mcp__browseros-neo__*</code>，与 Claude Code / Codex 同形，官方参数零改动）<br>· Neo 生命周期交官方桥自带监督器（~2.5 分钟退避重连预算，覆盖 Neo 后开 / 秒级重启自愈）；预算烧光与上游僵尸会话缺口用设置 › Browser Neo「连接 BrowserOS neo」一键恢复（未运行先 <code>open -g</code> 后台拉起 + 重读端口 + 重建桥会话），或改存 <code>cordis.patch.yml</code> 触发插件重载<br>· 自动安装的官方 <code>browseros-neo</code> skill 保持原版原样，插件不改写、不锁定</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-browseros-neo</code></td>
     </tr>
   </tbody>
