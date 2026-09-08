@@ -1,4 +1,5 @@
 import { cleanBaseUrl, fetchChannelDetails, fetchRecentLogs } from './a6api-client.js';
+import { fetchWithNetRetry, isFlakyNetworkError } from './net.js';
 import type { ApiRoutingLogItem, MerchantChannelInfo } from '../types.js';
 
 export interface ProbeResult {
@@ -35,7 +36,7 @@ export async function probeSingleModel(
   let requestError = '';
 
   try {
-    const res = await fetch(`${cleanUrl}/v1/chat/completions`, {
+    const res = await fetchWithNetRetry(`${cleanUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -46,8 +47,9 @@ export async function probeSingleModel(
         messages: [{ role: 'user', content: '1' }],
         max_tokens: 1,
       }),
-      // 推理模型(如 grok-4.6)实测单次响应可达 40-90s+,阈值过短会被频繁掐断导致探测失败
-      signal: AbortSignal.timeout(180000),
+      // 推理模型(如 grok-4.6)实测单次响应可达 40-90s+,阈值过短会被频繁掐断导致探测失败；
+      // 走 fetchWithNetRetry：每次尝试独立 180s 窗口，传输层瞬断(ECONNRESET)自动重试一次
+      timeoutMs: 180000,
     });
 
     if (res.ok) {
@@ -61,6 +63,10 @@ export async function probeSingleModel(
     // 超时错误英文原文对用户不友好,转为中文提示
     if (raw.includes('aborted due to timeout') || err?.name === 'TimeoutError') {
       requestError = '探测超时(阈值180秒) — 推理模型响应较慢,已保留上次商户数据,请稍后重试';
+    } else if (isFlakyNetworkError(err)) {
+      // 实测：上游回收空闲连接后首发请求约 5s 抛 fetch failed(ECONNRESET)，重试即恢复；
+      // fetchWithNetRetry 已自动重试一次，走到这里说明重试后仍失败
+      requestError = '与上游连接不稳定(fetch failed，已自动重试仍失败)，请稍后重试';
     } else {
       requestError = raw;
     }

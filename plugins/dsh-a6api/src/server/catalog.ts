@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
+import { fetchWithNetRetry } from './net.js';
 import type { A6ApiModelMeta, CatalogModelEntry } from '../types.js';
 
 /**
@@ -296,9 +297,9 @@ export async function fetchMarketplaceModels(
   }
   const headers = buildWebHeaders(userId, accessToken);
   const first = await (async () => {
-    const res = await fetch(`${MARKET_SEARCH}?view=list&page=1&page_size=${PAGE_SIZE}`, {
+    const res = await fetchWithNetRetry(`${MARKET_SEARCH}?view=list&page=1&page_size=${PAGE_SIZE}`, {
       headers,
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15000,
     });
     if (!res.ok) throw new Error(`A6API 市场接口 HTTP ${res.status}`);
     return res.json();
@@ -312,9 +313,9 @@ export async function fetchMarketplaceModels(
     while (idx <= pages) {
       const p = idx++;
       try {
-        const res = await fetch(`${MARKET_SEARCH}?view=list&page=${p}&page_size=${PAGE_SIZE}`, {
+        const res = await fetchWithNetRetry(`${MARKET_SEARCH}?view=list&page=${p}&page_size=${PAGE_SIZE}`, {
           headers,
-          signal: AbortSignal.timeout(15000),
+          timeoutMs: 15000,
         });
         const j = await res.json();
         all.push(...(j?.data?.items || []));
@@ -353,9 +354,9 @@ let orCache: { at: number; models: any[] } | null = null;
 async function getOpenRouterModels(): Promise<any[]> {
   if (orCache && Date.now() - orCache.at < OR_TTL_MS) return orCache.models;
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetchWithNetRetry(OPENROUTER_URL, {
       headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(20000),
+      timeoutMs: 20000,
     });
     if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}`);
     const j: any = await res.json();

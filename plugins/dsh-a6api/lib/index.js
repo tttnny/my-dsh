@@ -26,6 +26,41 @@ function dshHomePath(...segments) {
   return join(resolveDshHome(), ...segments);
 }
 
+// src/server/net.ts
+var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function isFlakyNetworkError(err) {
+  if (err?.name === "TimeoutError" || err?.name === "AbortError") return false;
+  const cause = err?.cause;
+  const raw = `${err?.message || ""} ${cause?.code || ""} ${cause?.message || ""}`;
+  return /fetch failed|ECONNRESET|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EPIPE|socket hang up|other side closed|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT|SSL_ERROR|ERR_SSL/i.test(
+    raw
+  );
+}
+async function fetchWithNetRetry(url, init = {}, opts) {
+  const retries = opts?.retries ?? 1;
+  const delayMs = opts?.delayMs ?? 800;
+  const { timeoutMs, ...rest } = init;
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const signal = timeoutMs ? AbortSignal.timeout(timeoutMs) : rest.signal;
+      return await fetch(url, { ...rest, signal });
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries && isFlakyNetworkError(err)) {
+        console.warn(
+          `[dsh-a6api] \u4E0A\u6E38\u8FDE\u63A5\u77AC\u65AD(${err?.cause?.code || err?.message || "network"})\uFF0C${delayMs}ms \u540E\u91CD\u8BD5:`,
+          url.split("?")[0]
+        );
+        await sleep(delayMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 // src/server/catalog.ts
 var CATALOG_VERSION = 1;
 function catalogFile() {
@@ -234,9 +269,9 @@ async function fetchMarketplaceModels(userId, accessToken) {
   }
   const headers = buildWebHeaders(userId, accessToken);
   const first = await (async () => {
-    const res = await fetch(`${MARKET_SEARCH}?view=list&page=1&page_size=${PAGE_SIZE}`, {
+    const res = await fetchWithNetRetry(`${MARKET_SEARCH}?view=list&page=1&page_size=${PAGE_SIZE}`, {
       headers,
-      signal: AbortSignal.timeout(15e3)
+      timeoutMs: 15e3
     });
     if (!res.ok) throw new Error(`A6API \u5E02\u573A\u63A5\u53E3 HTTP ${res.status}`);
     return res.json();
@@ -250,9 +285,9 @@ async function fetchMarketplaceModels(userId, accessToken) {
     while (idx <= pages) {
       const p = idx++;
       try {
-        const res = await fetch(`${MARKET_SEARCH}?view=list&page=${p}&page_size=${PAGE_SIZE}`, {
+        const res = await fetchWithNetRetry(`${MARKET_SEARCH}?view=list&page=${p}&page_size=${PAGE_SIZE}`, {
           headers,
-          signal: AbortSignal.timeout(15e3)
+          timeoutMs: 15e3
         });
         const j = await res.json();
         all.push(...j?.data?.items || []);
@@ -285,9 +320,9 @@ var orCache = null;
 async function getOpenRouterModels() {
   if (orCache && Date.now() - orCache.at < OR_TTL_MS) return orCache.models;
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetchWithNetRetry(OPENROUTER_URL, {
       headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(2e4)
+      timeoutMs: 2e4
     });
     if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}`);
     const j = await res.json();
@@ -434,9 +469,9 @@ async function fetchBalance(baseURL, apiKey, userId, accessToken) {
     const uniqueCandidates = [...new Set(candidates)];
     for (const url of uniqueCandidates) {
       try {
-        const res = await fetch(url, {
+        const res = await fetchWithNetRetry(url, {
           headers: buildWebHeaders2(userId, accessToken),
-          signal: AbortSignal.timeout(6e3)
+          timeoutMs: 6e3
         });
         if (res.ok) {
           const json = await res.json();
@@ -463,12 +498,12 @@ async function fetchBalance(baseURL, apiKey, userId, accessToken) {
   }
   if (!hasAccountAuth && apiKey && apiKey.trim()) {
     try {
-      const usageRes = await fetch(`${cleanUrl}/v1/dashboard/billing/usage?start_date=2024-01-01&end_date=2030-12-31`, {
+      const usageRes = await fetchWithNetRetry(`${cleanUrl}/v1/dashboard/billing/usage?start_date=2024-01-01&end_date=2030-12-31`, {
         headers: {
           Authorization: `Bearer ${apiKey.trim()}`,
           Accept: "application/json"
         },
-        signal: AbortSignal.timeout(6e3)
+        timeoutMs: 6e3
       }).catch(() => null);
       if (usageRes && usageRes.ok) {
         const usageJson = await usageRes.json();
@@ -501,12 +536,12 @@ async function fetchTokenModels(baseURL, apiKey) {
   let lastErr = null;
   for (const url of endpoints) {
     try {
-      const res = await fetch(url, {
+      const res = await fetchWithNetRetry(url, {
         headers: {
           Authorization: `Bearer ${apiKey.trim()}`,
           Accept: "application/json"
         },
-        signal: AbortSignal.timeout(8e3)
+        timeoutMs: 8e3
       });
       if (res.ok) {
         const json = await res.json();
@@ -526,9 +561,9 @@ async function fetchTokenModels(baseURL, apiKey) {
 async function fetchRecentLogs(userId, accessToken, limit = 30) {
   if (!userId && !accessToken) return [];
   try {
-    const res = await fetch(`https://a6api.com/api/log/self?p=1&page_size=${limit}&type=0`, {
+    const res = await fetchWithNetRetry(`https://a6api.com/api/log/self?p=1&page_size=${limit}&type=0`, {
       headers: buildWebHeaders2(userId, accessToken),
-      signal: AbortSignal.timeout(8e3)
+      timeoutMs: 8e3
     });
     if (res.ok) {
       const json = await res.json();
@@ -587,11 +622,11 @@ async function fetchChannelDetails(channelId, userId, accessToken, targetModelNa
   const targetName = targetModelName || "";
   const meta = resolveModelMeta(targetName);
   try {
-    const res = await fetch(
+    const res = await fetchWithNetRetry(
       `https://a6api.com/api/marketplace/channels/search?channel_id=${channelId}&view=list&page=1&page_size=20`,
       {
         headers: buildWebHeaders2(userId, accessToken),
-        signal: AbortSignal.timeout(8e3)
+        timeoutMs: 8e3
       }
     );
     if (res.ok) {
@@ -789,7 +824,7 @@ async function fetchPriceFluctuation(userId, accessToken) {
   const headers = buildWebHeaders2(uid || void 0, token || void 0);
   const url = "https://a6api.com/api/marketplace/price-notices";
   try {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(8e3) });
+    const res = await fetchWithNetRetry(url, { headers, timeoutMs: 8e3 });
     if (res.status === 401 || res.status === 403) {
       console.warn("[dsh-a6api] fetchPriceFluctuation auth failed", res.status);
       return { pendingCount: 0, unseenCount: 0, totalCount: 0, authError: true };
@@ -852,9 +887,16 @@ function parseMarketplaceResult(json) {
   if (!json) return { ok: false, message: "\u7A7A\u54CD\u5E94" };
   const top = json.success === false ? json : null;
   const inner = json.data && json.data.success === false ? json.data : null;
-  if (top) return { ok: false, message: top.message || "\u64CD\u4F5C\u5931\u8D25" };
-  if (inner) return { ok: false, message: inner.message || "\u64CD\u4F5C\u5931\u8D25" };
+  if (top) return { ok: false, message: friendlyMarketMessage(top.message) };
+  if (inner) return { ok: false, message: friendlyMarketMessage(inner.message) };
   return { ok: true, data: json.data };
+}
+function friendlyMarketMessage(msg) {
+  const s = String(msg || "");
+  if (s === "invalid_request") {
+    return "\u4E0A\u6E38\u62D2\u7EDD\u4E86\u8BE5\u64CD\u4F5C(invalid_request)\uFF1A\u53C2\u6570\u672A\u901A\u8FC7\u5E73\u53F0\u6821\u9A8C\uFF08\u53EF\u80FD\u662F\u5E73\u53F0\u63A5\u53E3\u8C03\u6574\u6216\u56FA\u5B9A\u8BB0\u5F55\u5DF2\u53D8\u5316\uFF09\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u6216\u5230\u5B98\u7F51\u5904\u7406";
+  }
+  return s || "\u64CD\u4F5C\u5931\u8D25";
 }
 function extractArray(json) {
   if (!json) return [];
@@ -868,9 +910,9 @@ function extractArray(json) {
 async function fetchMarketplacePins(userId, accessToken) {
   if (!userId && !accessToken) return [];
   try {
-    const res = await fetch("https://a6api.com/api/marketplace/pins", {
+    const res = await fetchWithNetRetry("https://a6api.com/api/marketplace/pins", {
       headers: buildWebHeaders2(userId, accessToken),
-      signal: AbortSignal.timeout(8e3)
+      timeoutMs: 8e3
     });
     if (!res.ok) {
       console.warn("[dsh-a6api] fetchMarketplacePins HTTP", res.status);
@@ -899,9 +941,9 @@ async function fetchMarketplacePins(userId, accessToken) {
 async function fetchTokens(userId, accessToken) {
   if (!userId && !accessToken) return [];
   try {
-    const res = await fetch("https://a6api.com/api/token/?p=1&size=100", {
+    const res = await fetchWithNetRetry("https://a6api.com/api/token/?p=1&size=100", {
       headers: buildWebHeaders2(userId, accessToken),
-      signal: AbortSignal.timeout(8e3)
+      timeoutMs: 8e3
     });
     if (!res.ok) return [];
     const json = await res.json().catch(() => null);
@@ -923,18 +965,21 @@ function friendlyActionError(err) {
   if (raw.includes("aborted due to timeout") || err?.name === "TimeoutError") {
     return "\u8BF7\u6C42\u8D85\u65F6\uFF0C\u8BF7\u91CD\u8BD5";
   }
+  if (isFlakyNetworkError(err)) {
+    return "\u4E0E\u4E0A\u6E38\u8FDE\u63A5\u4E0D\u7A33\u5B9A\uFF08\u5DF2\u81EA\u52A8\u91CD\u8BD5\u4ECD\u5931\u8D25\uFF09\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
+  }
   return raw;
 }
 async function marketplacePin(userId, accessToken, payload) {
   try {
-    const res = await fetch("https://a6api.com/api/marketplace/pin", {
+    const res = await fetchWithNetRetry("https://a6api.com/api/marketplace/pin", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...buildWebHeaders2(userId, accessToken)
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(1e4)
+      timeoutMs: 1e4
     });
     const json = await res.json().catch(() => null);
     const result = parseMarketplaceResult(json);
@@ -947,14 +992,14 @@ async function marketplacePin(userId, accessToken, payload) {
 }
 async function marketplaceUnpin(userId, accessToken, payload) {
   try {
-    const res = await fetch("https://a6api.com/api/marketplace/unpin", {
+    const res = await fetchWithNetRetry("https://a6api.com/api/marketplace/unpin", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...buildWebHeaders2(userId, accessToken)
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(1e4)
+      timeoutMs: 1e4
     });
     const json = await res.json().catch(() => null);
     if (!res.ok && !json) return { ok: false, message: `HTTP ${res.status}` };
@@ -966,12 +1011,12 @@ async function marketplaceUnpin(userId, accessToken, payload) {
 }
 async function marketplaceDisableChannel(userId, accessToken, channelId, model) {
   try {
-    const res = await fetch(
+    const res = await fetchWithNetRetry(
       `https://a6api.com/api/marketplace/channels/${channelId}/disable?model=${encodeURIComponent(model)}`,
       {
         method: "POST",
         headers: buildWebHeaders2(userId, accessToken),
-        signal: AbortSignal.timeout(1e4)
+        timeoutMs: 1e4
       }
     );
     const json = await res.json().catch(() => null);
@@ -984,12 +1029,12 @@ async function marketplaceDisableChannel(userId, accessToken, channelId, model) 
 }
 async function marketplaceRestoreChannel(userId, accessToken, channelId, model) {
   try {
-    const res = await fetch(
+    const res = await fetchWithNetRetry(
       `https://a6api.com/api/marketplace/channels/${channelId}/restore?model=${encodeURIComponent(model)}`,
       {
         method: "POST",
         headers: buildWebHeaders2(userId, accessToken),
-        signal: AbortSignal.timeout(1e4)
+        timeoutMs: 1e4
       }
     );
     const json = await res.json().catch(() => null);
@@ -1002,7 +1047,7 @@ async function marketplaceRestoreChannel(userId, accessToken, channelId, model) 
 }
 
 // src/server/probe.ts
-var sleep = (ms) => new Promise((resolve2) => setTimeout(resolve2, ms));
+var sleep2 = (ms) => new Promise((resolve2) => setTimeout(resolve2, ms));
 async function probeSingleModel(baseURL, apiKey, userId, accessToken, modelName) {
   const targetModel = modelName || "";
   const cleanUrl = cleanBaseUrl(baseURL);
@@ -1013,7 +1058,7 @@ async function probeSingleModel(baseURL, apiKey, userId, accessToken, modelName)
   let requestOk = false;
   let requestError = "";
   try {
-    const res = await fetch(`${cleanUrl}/v1/chat/completions`, {
+    const res = await fetchWithNetRetry(`${cleanUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1024,8 +1069,9 @@ async function probeSingleModel(baseURL, apiKey, userId, accessToken, modelName)
         messages: [{ role: "user", content: "1" }],
         max_tokens: 1
       }),
-      // 推理模型(如 grok-4.6)实测单次响应可达 40-90s+,阈值过短会被频繁掐断导致探测失败
-      signal: AbortSignal.timeout(18e4)
+      // 推理模型(如 grok-4.6)实测单次响应可达 40-90s+,阈值过短会被频繁掐断导致探测失败；
+      // 走 fetchWithNetRetry：每次尝试独立 180s 窗口，传输层瞬断(ECONNRESET)自动重试一次
+      timeoutMs: 18e4
     });
     if (res.ok) {
       requestOk = true;
@@ -1037,13 +1083,15 @@ async function probeSingleModel(baseURL, apiKey, userId, accessToken, modelName)
     const raw = err?.message || String(err);
     if (raw.includes("aborted due to timeout") || err?.name === "TimeoutError") {
       requestError = "\u63A2\u6D4B\u8D85\u65F6(\u9608\u503C180\u79D2) \u2014 \u63A8\u7406\u6A21\u578B\u54CD\u5E94\u8F83\u6162,\u5DF2\u4FDD\u7559\u4E0A\u6B21\u5546\u6237\u6570\u636E,\u8BF7\u7A0D\u540E\u91CD\u8BD5";
+    } else if (isFlakyNetworkError(err)) {
+      requestError = "\u4E0E\u4E0A\u6E38\u8FDE\u63A5\u4E0D\u7A33\u5B9A(fetch failed\uFF0C\u5DF2\u81EA\u52A8\u91CD\u8BD5\u4ECD\u5931\u8D25)\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
     } else {
       requestError = raw;
     }
   }
   const durationMs = Date.now() - startTime;
   if (requestOk && (userId || accessToken)) {
-    await sleep(1200);
+    await sleep2(1200);
     try {
       const logs = await fetchRecentLogs(userId, accessToken, 15);
       const minTimestamp = Math.floor(startTime / 1e3) - 10;
@@ -2188,7 +2236,15 @@ function apply(ctx) {
               if (!tokenId) {
                 return sendJson(res, 400, { ok: false, error: "\u65E0\u6CD5\u89E3\u6790 API Key \u5BF9\u5E94\u7684\u4EE4\u724C ID\uFF08\u591A\u4EE4\u724C\u8D26\u53F7\u9700\u4FDD\u8BC1\u4EE4\u724C\u5217\u8868\u53EF\u8BFB\uFF09\uFF1B\u53EF\u5148\u300C\u63A2\u6D4B\u5546\u5BB6\u300D\u4E00\u6B21\u540E\u91CD\u8BD5\uFF0C\u6216\u5230\u5B98\u7F51\u624B\u52A8\u53D6\u6D88" });
               }
-              const unpinResult = await marketplaceUnpin(userId, token, { token_id: tokenId, model_name: modelName });
+              let channelId = Number(body.channelId) > 0 ? Number(body.channelId) : 0;
+              if (!channelId) {
+                const card2 = cachedMerchantOf(modelName);
+                if (card2?.channel_id) channelId = Number(card2.channel_id);
+              }
+              if (!channelId) {
+                return sendJson(res, 400, { ok: false, error: "\u672A\u80FD\u786E\u5B9A\u8BE5\u6A21\u578B\u56FA\u5B9A\u6240\u5C5E\u7684\u5546\u5BB6\u6E20\u9053\uFF08\u4E0A\u6E38\u53D6\u6D88\u56FA\u5B9A\u9700\u8981\u6E20\u9053 ID\uFF09\uFF1B\u8BF7\u5148\u5237\u65B0\u5217\u8868\u6216\u300C\u63A2\u6D4B\u5546\u5BB6\u300D\u4E00\u6B21\u540E\u91CD\u8BD5\uFF0C\u6216\u5230\u5B98\u7F51\u624B\u52A8\u53D6\u6D88" });
+              }
+              const unpinResult = await marketplaceUnpin(userId, token, { token_id: tokenId, channel_id: channelId, model_name: modelName });
               if (!unpinResult.ok) {
                 return sendJson(res, 400, { ok: false, error: unpinResult.message || "\u53D6\u6D88\u56FA\u5B9A\u5931\u8D25" });
               }

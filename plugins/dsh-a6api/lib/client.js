@@ -51,6 +51,7 @@ function formatRelativeNow(tsSec) {
 }
 var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 var RATE_LIMIT_RE = /\b429\b|Too Many Requests|rate\s*limit/i;
+var PROBE_RESULT_GUARD_MS = 2e4;
 var A6ApiStore = class {
   state = {
     loading: true,
@@ -117,19 +118,35 @@ var A6ApiStore = class {
           const data = json.data;
           this.state.config = data.config;
           this.state.balance = data.balance;
+          const localModels = this.state.models;
           this.state.models = data.models;
           const snapshot = this.probeAllSnapshot;
-          if (this.state.probeAllActive && snapshot) {
-            this.state.models = this.state.models.map((m) => {
-              if (this.state.probingModelNames.has(m.model_name)) {
-                return { ...m, probeStatus: "probing" };
-              }
-              if (snapshot.includes(m.model_name) && !this.probeAllDone.has(m.model_name)) {
-                return { ...m, probeStatus: "queued", probeError: void 0 };
-              }
-              return m;
-            });
-          }
+          const localByName = new Map(localModels.map((m) => [m.model_name, m]));
+          const nowMs = Date.now();
+          this.state.models = this.state.models.map((m) => {
+            const local = localByName.get(m.model_name);
+            if (!local) return m;
+            if (this.state.probingModelNames.has(m.model_name)) {
+              return { ...m, probeStatus: "probing" };
+            }
+            if (local.lastProbedAt && nowMs - local.lastProbedAt < PROBE_RESULT_GUARD_MS) {
+              return {
+                ...m,
+                merchant: local.merchant,
+                probeStatus: local.probeStatus,
+                probeError: local.probeError,
+                probeLatencyMs: local.probeLatencyMs,
+                lastProbedAt: local.lastProbedAt,
+                // 探测请求本身会写路由日志，本地乐观时效不早于旧快照，优先保留
+                lastRoutedAt: local.lastRoutedAt ?? m.lastRoutedAt,
+                lastRoutedText: local.lastRoutedText ?? m.lastRoutedText
+              };
+            }
+            if (this.state.probeAllActive && snapshot && snapshot.includes(m.model_name) && !this.probeAllDone.has(m.model_name)) {
+              return { ...m, probeStatus: "queued", probeError: void 0 };
+            }
+            return m;
+          });
           this.state.dshConfiguredModels = data.dshConfiguredModels;
           if (Array.isArray(data.pins)) {
             this.state.pins = data.pins;
@@ -531,7 +548,7 @@ var A6ApiStore = class {
    * 固定 / 取消固定 / 禁用 / 恢复 的统一执行器。
    * 成功后会刷新 /state（服务端会把平台固定记录叠加回卡片，跟随官网状态）。
    */
-  async runMarketplaceAction(modelName, endpoint, busySet) {
+  async runMarketplaceAction(modelName, endpoint, busySet, extraBody) {
     if (busySet.has(modelName)) return { ok: false, error: "\u64CD\u4F5C\u8FDB\u884C\u4E2D" };
     busySet.add(modelName);
     this.notify();
@@ -539,7 +556,7 @@ var A6ApiStore = class {
       const res = await fetch(`/api/dsh-a6api/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelName })
+        body: JSON.stringify({ modelName, ...extraBody })
       });
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
@@ -567,9 +584,14 @@ var A6ApiStore = class {
   pinModel(modelName) {
     return this.runMarketplaceAction(modelName, "pin", this.state.actionBusyModels);
   }
-  /** 取消该模型的固定 */
-  unpinModel(modelName) {
-    return this.runMarketplaceAction(modelName, "unpin", this.state.actionBusyModels);
+  /** 取消该模型的固定（上游 pr195 起需要固定所属渠道 ID，随请求透传，服务端另做卡片缓存兜底） */
+  unpinModel(modelName, channelId) {
+    return this.runMarketplaceAction(
+      modelName,
+      "unpin",
+      this.state.actionBusyModels,
+      channelId && channelId > 0 ? { channelId } : void 0
+    );
   }
   /** 禁用卡片当前商家对该模型的服务 */
   disableModel(modelName) {
@@ -641,6 +663,27 @@ var MerchantCard = ({ model }) => {
   const [pinConfirmOpen, setPinConfirmOpen] = (0, import_react.useState)(false);
   const [actionError, setActionError] = (0, import_react.useState)(null);
   const errorTimerRef = (0, import_react.useRef)(null);
+  const REFRESH_FLASH_MS = 1600;
+  const prevProbeStatus = (0, import_react.useRef)(model.probeStatus);
+  const [refreshFlash, setRefreshFlash] = (0, import_react.useState)(null);
+  const flashTimerRef = (0, import_react.useRef)(null);
+  (0, import_react.useEffect)(() => {
+    const prev = prevProbeStatus.current;
+    const cur = model.probeStatus;
+    if (prev === cur) return;
+    prevProbeStatus.current = cur;
+    if (prev === "probing" && (cur === "success" || cur === "error")) {
+      setRefreshFlash(cur === "success" ? "ok" : "err");
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setRefreshFlash(null), REFRESH_FLASH_MS);
+    }
+  }, [model.probeStatus]);
+  (0, import_react.useEffect)(
+    () => () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    },
+    []
+  );
   const isProbing = model.probeStatus === "probing";
   const isQueued = model.probeStatus === "queued";
   const merchant = model.merchant;
@@ -684,7 +727,8 @@ var MerchantCard = ({ model }) => {
   const handleUnpin = async (e) => {
     e.stopPropagation();
     setActionError(null);
-    const r = await store.unpinModel(model.model_name);
+    const channelId = Number(model.pinnedChannelId || model.merchant?.channel_id || 0) || void 0;
+    const r = await store.unpinModel(model.model_name, channelId);
     if (!r.ok) flashActionError(r.error || "\u53D6\u6D88\u56FA\u5B9A\u5931\u8D25");
   };
   const handleDisable = async (e) => {
@@ -767,315 +811,322 @@ var MerchantCard = ({ model }) => {
 = \xA5${Number(per1m.toPrecision(4))} /1M \u2248 \xA5${fmtSig(blend100m)} /1\u4EBF tokens
 \u547D\u4E2D\u7387\u53D6\u5361\u7247 24h \u5B9E\u6D4B\u7F13\u5B58\u547D\u4E2D\u7387`;
   })() : void 0;
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: `dsh-a6-official-card ${model.inDsh ? "in-dsh" : ""}`, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-card-main-bar", onClick: () => setExpanded(!expanded), children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-identity", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-title-col", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-title-line", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-name-text", children: model.model_name }),
-          merchant?.channel_id && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-dot-sep", children: "\xB7" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-merchant-id-text", children: [
-              "\u5546\u6237ID ",
-              merchant.channel_id
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+    "div",
+    {
+      className: `dsh-a6-official-card${model.inDsh ? " in-dsh" : ""}${refreshFlash ? ` dsh-a6-card-refresh ${refreshFlash === "ok" ? "refresh-ok" : "refresh-err"}` : ""}`,
+      children: [
+        refreshFlash && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: `dsh-a6-refresh-flag ${refreshFlash === "ok" ? "ok" : "err"}`, "aria-hidden": "true", children: refreshFlash === "ok" ? "\u2713 \u5546\u6237\u6570\u636E\u5DF2\u66F4\u65B0" : "\u2715 \u63A2\u6D4B\u5931\u8D25" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-card-main-bar", onClick: () => setExpanded(!expanded), children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-identity", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-title-col", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-title-line", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-name-text", children: model.model_name }),
+              merchant?.channel_id && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-dot-sep", children: "\xB7" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-merchant-id-text", children: [
+                  "\u5546\u6237ID ",
+                  merchant.channel_id
+                ] })
+              ] }),
+              isPinnedHere && !isChannelDisabled && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "span",
+                {
+                  className: "dsh-a6-pin-badge here",
+                  "data-tooltip": `\u8BE5\u6A21\u578B\u5DF2\u56FA\u5B9A\u5230\u5F53\u524D\u5546\u5BB6${model.pinnedFallback === false ? "\uFF08\u4E25\u683C\u56FA\u5B9A\uFF09" : "\uFF0C\u5F02\u5E38\u65F6\u81EA\u52A8\u5207\u6362\u667A\u80FD\u4F18\u9009"}${pinTokenNote}`,
+                  "data-tooltip-pos": "down",
+                  children: "\u5DF2\u56FA\u5B9A"
+                }
+              ),
+              isPinnedElsewhere && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "span",
+                {
+                  className: "dsh-a6-pin-badge elsewhere",
+                  "data-tooltip": `\u8BE5\u6A21\u578B\u5DF2\u56FA\u5B9A\u5230${model.pinnedChannelId ? `\u5546\u6237 #${model.pinnedChannelId}` : "\u5176\u4ED6\u5546\u5BB6"}${model.pinnedSupplierName ? `\uFF08${model.pinnedSupplierName}\uFF09` : ""}${!hasMerchant ? "\uFF1B\u5F53\u524D\u6682\u65E0\u5546\u5BB6\u6570\u636E" : ""}${pinTokenNote}`,
+                  "data-tooltip-pos": "down",
+                  children: !hasMerchant && model.pinnedChannelId ? `\u5DF2\u56FA\u5B9A\u5230\u5546\u6237 #${model.pinnedChannelId}` : "\u5DF2\u56FA\u5B9A\u5230\u5176\u4ED6\u5546\u5BB6"
+                }
+              ),
+              isChannelDisabled && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-badge disabled", "data-tooltip": "\u5F53\u524D\u5546\u5BB6\u5DF2\u5BF9\u8BE5\u6A21\u578B\u7981\u7528\uFF0C\u8DEF\u7531\u4E0D\u4F1A\u547D\u4E2D\u6B64\u6E20\u9053", "data-tooltip-pos": "down", children: "\u5DF2\u7981\u7528" })
+            ] }),
+            merchant?.description && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-sub-desc", children: merchant.description })
+          ] }) }),
+          merchant ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-bar-pricing", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-price-col", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-top", title: "\u8F93\u5165\u4EF7 (1M)", children: merchant.input_price_cny }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-btm", title: "\u7F13\u5B58\u8BFB (1M)", children: merchant.cache_read_price_cny })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-price-col", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-top", title: "\u8F93\u51FA\u4EF7 (1M)", children: merchant.output_price_cny }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-btm", title: "\u7F13\u5B58\u5199 (1M)", children: merchant.cache_write_price_cny })
+            ] }),
+            blend100mValid && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-blend-pill", title: blendTitle, children: [
+              "\u2248 \xA5",
+              fmtSig(blend100m),
+              "/\u4EBF"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-ratio-pill", title: "\u5B9E\u65F6\u500D\u7387\u6BD4\u5B98\u65B9\u4EF7", children: ratioText })
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-pricing unprobed", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            "div",
+            {
+              className: `dsh-a6-unprobed-hint ${model.probeError ? "error" : ""}`,
+              "data-tooltip": model.probeError || void 0,
+              "data-tooltip-pos": "down",
+              children: isProbing ? "\u5546\u5BB6\u63A2\u6D4B\u4E2D..." : isQueued ? "\u6392\u961F\u7B49\u5F85\u63A2\u6D4B..." : model.probeError ? "\u63A2\u6D4B\u5931\u8D25" : "\u5C1A\u672A\u63A2\u6D4B\u5546\u5BB6"
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-bar-uptime", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-uptime-row", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-label", children: "\u5B9E\u65F6" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dots-track", children: renderRealtimeDots() }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-val", children: merchant ? `${merchant.recent_success_rate_pct.toFixed(1)}%` : "100.0%" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-uptime-row", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-label", children: "24h" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dots-track", children: render24hDots() }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-val", children: merchant ? `${merchant.success_rate_24h_pct.toFixed(1)}%` : "99.3%" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-uptime-row", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-label", children: "7d" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dots-track", children: render7dDots() }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-val", children: merchant?.sr_7d_state === "no_data" ? "-" : merchant?.success_rate_7d_pct ? `${merchant.success_rate_7d_pct.toFixed(1)}%` : "-" })
             ] })
           ] }),
-          isPinnedHere && !isChannelDisabled && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-            "span",
-            {
-              className: "dsh-a6-pin-badge here",
-              "data-tooltip": `\u8BE5\u6A21\u578B\u5DF2\u56FA\u5B9A\u5230\u5F53\u524D\u5546\u5BB6${model.pinnedFallback === false ? "\uFF08\u4E25\u683C\u56FA\u5B9A\uFF09" : "\uFF0C\u5F02\u5E38\u65F6\u81EA\u52A8\u5207\u6362\u667A\u80FD\u4F18\u9009"}${pinTokenNote}`,
-              "data-tooltip-pos": "down",
-              children: "\u5DF2\u56FA\u5B9A"
-            }
-          ),
-          isPinnedElsewhere && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-            "span",
-            {
-              className: "dsh-a6-pin-badge elsewhere",
-              "data-tooltip": `\u8BE5\u6A21\u578B\u5DF2\u56FA\u5B9A\u5230${model.pinnedChannelId ? `\u5546\u6237 #${model.pinnedChannelId}` : "\u5176\u4ED6\u5546\u5BB6"}${model.pinnedSupplierName ? `\uFF08${model.pinnedSupplierName}\uFF09` : ""}${!hasMerchant ? "\uFF1B\u5F53\u524D\u6682\u65E0\u5546\u5BB6\u6570\u636E" : ""}${pinTokenNote}`,
-              "data-tooltip-pos": "down",
-              children: !hasMerchant && model.pinnedChannelId ? `\u5DF2\u56FA\u5B9A\u5230\u5546\u6237 #${model.pinnedChannelId}` : "\u5DF2\u56FA\u5B9A\u5230\u5176\u4ED6\u5546\u5BB6"
-            }
-          ),
-          isChannelDisabled && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-badge disabled", "data-tooltip": "\u5F53\u524D\u5546\u5BB6\u5DF2\u5BF9\u8BE5\u6A21\u578B\u7981\u7528\uFF0C\u8DEF\u7531\u4E0D\u4F1A\u547D\u4E2D\u6B64\u6E20\u9053", "data-tooltip-pos": "down", children: "\u5DF2\u7981\u7528" })
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-perf", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-perf-row", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-latency-text", children: latencySec }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-cache-hit-text", children: [
+              cacheHitPct.toFixed(1),
+              "%"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-hit-track", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "div",
+              {
+                className: "dsh-a6-hit-fill",
+                style: { width: `${Math.min(100, Math.max(0, cacheHitPct))}%` }
+              }
+            ) })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-tags", children: (merchant?.labels || ["\u7A33\u5B9A", "\u4F4E\u4EF7", "\u9AD8\u901F", "\u9AD8\u8D28"]).map((lbl, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `dsh-a6-smart-pill ${getTagClass(lbl)}`, children: lbl }, idx)) })
         ] }),
-        merchant?.description && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-sub-desc", children: merchant.description })
-      ] }) }),
-      merchant ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-bar-pricing", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-price-col", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-top", title: "\u8F93\u5165\u4EF7 (1M)", children: merchant.input_price_cny }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-btm", title: "\u7F13\u5B58\u8BFB (1M)", children: merchant.cache_read_price_cny })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-price-col", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-top", title: "\u8F93\u51FA\u4EF7 (1M)", children: merchant.output_price_cny }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-price-btm", title: "\u7F13\u5B58\u5199 (1M)", children: merchant.cache_write_price_cny })
-        ] }),
-        blend100mValid && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-blend-pill", title: blendTitle, children: [
-          "\u2248 \xA5",
-          fmtSig(blend100m),
-          "/\u4EBF"
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-ratio-pill", title: "\u5B9E\u65F6\u500D\u7387\u6BD4\u5B98\u65B9\u4EF7", children: ratioText })
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-pricing unprobed", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        "div",
-        {
-          className: `dsh-a6-unprobed-hint ${model.probeError ? "error" : ""}`,
-          "data-tooltip": model.probeError || void 0,
-          "data-tooltip-pos": "down",
-          children: isProbing ? "\u5546\u5BB6\u63A2\u6D4B\u4E2D..." : isQueued ? "\u6392\u961F\u7B49\u5F85\u63A2\u6D4B..." : model.probeError ? "\u63A2\u6D4B\u5931\u8D25" : "\u5C1A\u672A\u63A2\u6D4B\u5546\u5BB6"
-        }
-      ) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-bar-uptime", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-uptime-row", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-label", children: "\u5B9E\u65F6" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dots-track", children: renderRealtimeDots() }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-val", children: merchant ? `${merchant.recent_success_rate_pct.toFixed(1)}%` : "100.0%" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-uptime-row", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-label", children: "24h" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dots-track", children: render24hDots() }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-val", children: merchant ? `${merchant.success_rate_24h_pct.toFixed(1)}%` : "99.3%" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-uptime-row", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-label", children: "7d" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dots-track", children: render7dDots() }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-uptime-val", children: merchant?.sr_7d_state === "no_data" ? "-" : merchant?.success_rate_7d_pct ? `${merchant.success_rate_7d_pct.toFixed(1)}%` : "-" })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-perf", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-perf-row", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-latency-text", children: latencySec }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-cache-hit-text", children: [
-          cacheHitPct.toFixed(1),
-          "%"
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-hit-track", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "div",
-          {
-            className: "dsh-a6-hit-fill",
-            style: { width: `${Math.min(100, Math.max(0, cacheHitPct))}%` }
-          }
-        ) })
-      ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-tags", children: (merchant?.labels || ["\u7A33\u5B9A", "\u4F4E\u4EF7", "\u9AD8\u901F", "\u9AD8\u8D28"]).map((lbl, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `dsh-a6-smart-pill ${getTagClass(lbl)}`, children: lbl }, idx)) })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-card-footer", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-time-stack", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-          "span",
-          {
-            className: "dsh-a6-time-ago",
-            "data-tooltip": "\u8BE5\u5546\u6237\u8DEF\u7EBF\u5168\u7F51\u6700\u8FD1\u4E00\u6B21\u6210\u529F\u54CD\u5E94\u65F6\u95F4",
-            children: [
-              "\u5168\u7F51\u6700\u8FD1\uFF1A",
-              merchant?.last_success_text || "\u521A\u521A"
-            ]
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-          "span",
-          {
-            className: `dsh-a6-time-ago dsh-a6-route-snapshot${model.lastRoutedAt ? "" : " never"}`,
-            "data-tooltip": model.lastRoutedAt ? `\u4E2A\u4EBA\u6700\u540E\u4E00\u6B21\u8BF7\u6C42\u8BE5\u5546\u5BB6\u7684\u8BE5\u6A21\u578B ${formatAbsolute(model.lastRoutedAt)}` : "\u65E5\u5FD7\u4E2D\u6682\u65E0\u8BE5\u5546\u5BB6\u7684\u8BE5\u6A21\u578B\u8DEF\u7531\u8BB0\u5F55",
-            children: [
-              "\u4E2A\u4EBA\u6700\u8FD1\uFF1A",
-              model.lastRoutedText || "\u4ECE\u672A\u8DEF\u7531"
-            ]
-          }
-        )
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-actions", onClick: (e) => e.stopPropagation(), children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-bar-actions-btns", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "button",
-          {
-            type: "button",
-            className: "dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm",
-            onClick: handleProbe,
-            disabled: isProbing || isQueued,
-            "data-tooltip": isQueued ? "\u6B63\u5728\u5168\u91CF\u63A2\u6D4B\u961F\u5217\u4E2D\u7B49\u5F85\uFF0C\u8BF7\u52FF\u91CD\u590D\u70B9\u51FB" : "\u5411\u8BE5\u6A21\u578B\u53D1\u9001\u4E00\u6B21\u8BF7\u6C42\u4EE5\u63A2\u6D4B\u5E76\u6355\u83B7\u5176\u5B9E\u9645\u547D\u4E2D\u7684\u5546\u6237 ID\u3001\u4EF7\u683C\u53CA\u5065\u5EB7\u5EA6\u6307\u6807\uFF08\u6D88\u8017\u5C11\u91CFToken\uFF09",
-            children: isProbing ? "\u63A2\u6D4B\u4E2D..." : isQueued ? "\u7B49\u5F85\u63A2\u6D4B" : "\u63A2\u6D4B\u5546\u5BB6"
-          }
-        ),
-        isPinnedHere ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "button",
-          {
-            type: "button",
-            className: "dsh-a6-btn dsh-a6-btn-danger dsh-a6-btn-sm",
-            onClick: handleUnpin,
-            disabled: isBusy || !canWebAction || model.pinTokenMatched === false || isProbing || isQueued,
-            "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u53D6\u6D88\u56FA\u5B9A" : model.pinTokenMatched === false ? "\u8BE5\u56FA\u5B9A\u5C5E\u4E8E\u5176\u4ED6\u4EE4\u724C\uFF0C\u65E0\u6CD5\u5728\u6B64\u53D6\u6D88\uFF1B\u5982\u9700\u53D6\u6D88\u8BF7\u5230\u5B98\u7F51\u6216\u5148\u4E3A\u5F53\u524D\u4EE4\u724C\u56FA\u5B9A\u6B64\u5546\u5BB6" : !canWebAction ? "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD" : model.pinTokenMatched === void 0 ? "\u672A\u80FD\u786E\u8BA4\u8BE5\u56FA\u5B9A\u662F\u5426\u5C5E\u4E8E\u5F53\u524D\u4EE4\u724C\uFF0C\u70B9\u51FB\u540E\u5C06\u91CD\u65B0\u89E3\u6790\u5E76\u5C1D\u8BD5\u53D6\u6D88\uFF1B\u82E5\u5931\u8D25\u53EF\u5148\u63A2\u6D4B\u4E00\u6B21\u540E\u91CD\u8BD5\uFF0C\u6216\u5230\u5B98\u7F51\u624B\u52A8\u53D6\u6D88" : "\u53D6\u6D88\u56FA\u5B9A\u540E\u6062\u590D\u667A\u80FD\u4F18\u9009\u8DEF\u7531\uFF0C\u53EF\u91CD\u65B0\u63A2\u6D4B\u540E\u518D\u51B3\u5B9A\u662F\u5426\u56FA\u5B9A",
-            children: isBusy ? "\u5904\u7406\u4E2D..." : "\u53D6\u6D88\u56FA\u5B9A"
-          }
-        ) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "button",
-          {
-            type: "button",
-            className: "dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm",
-            onClick: handleOpenPinConfirm,
-            disabled: isBusy || !hasMerchant || !canWebAction || isProbing || isQueued,
-            "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u56FA\u5B9A\u5546\u5BB6" : !hasMerchant ? "\u8BE5\u6A21\u578B\u6682\u65E0\u5546\u5BB6\u6570\u636E\uFF0C\u8BF7\u5148\u300C\u63A2\u6D4B\u5546\u5BB6\u300D" : !canWebAction ? "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD" : "\u628A\u5F53\u524D\u5546\u5BB6\u56FA\u5B9A\u4E3A\u8BE5\u6A21\u578B\u7684\u670D\u52A1\u6E20\u9053\uFF08\u4F18\u5148\u8DEF\u7531\uFF0C\u5F02\u5E38\u65F6\u81EA\u52A8\u5207\u6362\u667A\u80FD\u4F18\u9009\uFF09",
-            children: isBusy ? "\u5904\u7406\u4E2D..." : "\u56FA\u5B9A\u5546\u5BB6"
-          }
-        ),
-        isChannelDisabled ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "button",
-          {
-            type: "button",
-            className: "dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm",
-            onClick: handleRestore,
-            disabled: isBusy || !canWebAction || isProbing || isQueued,
-            "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u6062\u590D" : canWebAction ? "\u6062\u590D\u8BE5\u5546\u5BB6\u5BF9\u6B64\u6A21\u578B\u7684\u670D\u52A1" : "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD",
-            children: isBusy ? "\u5904\u7406\u4E2D..." : "\u6062\u590D"
-          }
-        ) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "button",
-          {
-            type: "button",
-            className: "dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm",
-            onClick: handleDisable,
-            disabled: isBusy || !hasMerchant || !canWebAction || isProbing || isQueued,
-            "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u7981\u7528" : !hasMerchant ? "\u8BE5\u6A21\u578B\u6682\u65E0\u5546\u5BB6\u6570\u636E\uFF0C\u8BF7\u5148\u300C\u63A2\u6D4B\u5546\u5BB6\u300D" : !canWebAction ? "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD" : "\u7981\u7528\u5F53\u524D\u5546\u5BB6\u5BF9\u8BE5\u6A21\u578B\u7684\u670D\u52A1\uFF0C\u8DEF\u7531\u5C06\u4E0D\u518D\u547D\u4E2D\u6B64\u6E20\u9053",
-            children: isBusy ? "\u5904\u7406\u4E2D..." : "\u7981\u7528"
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "button",
-          {
-            type: "button",
-            className: `dsh-a6-btn dsh-a6-btn-sm ${model.inDsh ? "dsh-a6-btn-in-dsh" : "dsh-a6-btn-primary"}`,
-            onClick: handleToggleDsh,
-            "data-tooltip": model.inDsh ? "\u5DF2\u52A0\u5165 DSH \u6A21\u578B\u9009\u62E9\u5668 (\u70B9\u51FB\u79FB\u9664)" : "\u6DFB\u52A0\u81F3 DSH \u6A21\u578B\u9009\u62E9\u5668",
-            children: model.inDsh ? "\u79FB\u9664\u6A21\u578B" : "\u6DFB\u52A0\u6A21\u578B"
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "button",
-          {
-            type: "button",
-            className: `dsh-a6-expand-toggle-btn ${expanded ? "open" : ""}`,
-            onClick: () => setExpanded(!expanded),
-            "data-tooltip": expanded ? "\u6536\u8D77\u4EF7\u683C\u8BE6\u60C5" : "\u5C55\u5F00\u5B98\u65B9\u57FA\u51C6\u4EF7\u4E0E\u5546\u6237\u5B9E\u65F6\u4EF7\u5BF9\u6BD4\u8868",
-            "data-tooltip-pos": "left",
-            children: expanded ? "\u6536\u8D77" : "\u8BE6\u60C5"
-          }
-        )
-      ] }) }),
-      actionError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-action-error", role: "alert", children: actionError })
-    ] }),
-    expanded && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-detail-container", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-detail-top-row", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-dt-left", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-dt-label", children: "\u6E20\u9053\u8BF4\u660E" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-dt-desc", children: merchant?.description || "\u9AD8\u5E76\u53D1 \u4E3B\u6253\u4FBF\u5B9C \u7A33\u5B9A" })
-        ] }),
-        merchant?.channel_name && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-dt-right", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-dt-label", children: "\u547D\u4E2D\u7EBF\u8DEF" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-dt-channel-name", children: [
-            merchant.channel_name,
-            " (ID: ",
-            merchant.channel_id,
-            ")"
-          ] })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dt-divider" }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dt-table-col", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", { className: "dsh-a6-price-table", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { className: "dsh-a6-th-blank" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { children: "\u8F93\u5165\u4EF7 (1M)" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { children: "\u8F93\u51FA\u4EF7 (1M)" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { children: "\u7F13\u5B58\u8BFB (1M)" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { children: "\u7F13\u5B58\u5199 (1M)" })
-        ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tbody", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { className: "dsh-a6-tr-official", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-label", children: "\u5B98\u65B9\u4EF7" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: merchant?.official_price?.input_cny || "\xA526.884" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: merchant?.official_price?.output_cny || "\xA5134.418" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: merchant?.official_price?.cache_read_cny || "\xA52.688" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: merchant?.official_price?.cache_write_cny || "\xA533.605" })
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-card-footer", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-time-stack", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+              "span",
+              {
+                className: "dsh-a6-time-ago",
+                "data-tooltip": "\u8BE5\u5546\u6237\u8DEF\u7EBF\u5168\u7F51\u6700\u8FD1\u4E00\u6B21\u6210\u529F\u54CD\u5E94\u65F6\u95F4",
+                children: [
+                  "\u5168\u7F51\u6700\u8FD1\uFF1A",
+                  merchant?.last_success_text || "\u521A\u521A"
+                ]
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+              "span",
+              {
+                className: `dsh-a6-time-ago dsh-a6-route-snapshot${model.lastRoutedAt ? "" : " never"}`,
+                "data-tooltip": model.lastRoutedAt ? `\u4E2A\u4EBA\u6700\u540E\u4E00\u6B21\u8BF7\u6C42\u8BE5\u5546\u5BB6\u7684\u8BE5\u6A21\u578B ${formatAbsolute(model.lastRoutedAt)}` : "\u65E5\u5FD7\u4E2D\u6682\u65E0\u8BE5\u5546\u5BB6\u7684\u8BE5\u6A21\u578B\u8DEF\u7531\u8BB0\u5F55",
+                children: [
+                  "\u4E2A\u4EBA\u6700\u8FD1\uFF1A",
+                  model.lastRoutedText || "\u4ECE\u672A\u8DEF\u7531"
+                ]
+              }
+            )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { className: "dsh-a6-tr-merchant", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-label", children: "\u5546\u6237\u4EF7" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-bold", children: merchant?.input_price_cny || "\xA50.1364" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-bold", children: merchant?.output_price_cny || "\xA50.6822" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-bold", children: merchant?.cache_read_price_cny || "\xA50.0136" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-bold", children: merchant?.cache_write_price_cny || "\xA50.1705" })
-          ] })
-        ] })
-      ] }) })
-    ] }),
-    pinConfirmOpen && merchant && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-      "div",
-      {
-        className: "dsh-a6-pin-modal-overlay",
-        onClick: (e) => {
-          e.stopPropagation();
-          setPinConfirmOpen(false);
-        },
-        children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-bar-actions", onClick: (e) => e.stopPropagation(), children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-bar-actions-btns", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm",
+                onClick: handleProbe,
+                disabled: isProbing || isQueued,
+                "data-tooltip": isQueued ? "\u6B63\u5728\u5168\u91CF\u63A2\u6D4B\u961F\u5217\u4E2D\u7B49\u5F85\uFF0C\u8BF7\u52FF\u91CD\u590D\u70B9\u51FB" : "\u5411\u8BE5\u6A21\u578B\u53D1\u9001\u4E00\u6B21\u8BF7\u6C42\u4EE5\u63A2\u6D4B\u5E76\u6355\u83B7\u5176\u5B9E\u9645\u547D\u4E2D\u7684\u5546\u6237 ID\u3001\u4EF7\u683C\u53CA\u5065\u5EB7\u5EA6\u6307\u6807\uFF08\u6D88\u8017\u5C11\u91CFToken\uFF09",
+                children: isProbing ? "\u63A2\u6D4B\u4E2D..." : isQueued ? "\u7B49\u5F85\u63A2\u6D4B" : "\u63A2\u6D4B\u5546\u5BB6"
+              }
+            ),
+            isPinnedHere ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "dsh-a6-btn dsh-a6-btn-danger dsh-a6-btn-sm",
+                onClick: handleUnpin,
+                disabled: isBusy || !canWebAction || model.pinTokenMatched === false || isProbing || isQueued,
+                "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u53D6\u6D88\u56FA\u5B9A" : model.pinTokenMatched === false ? "\u8BE5\u56FA\u5B9A\u5C5E\u4E8E\u5176\u4ED6\u4EE4\u724C\uFF0C\u65E0\u6CD5\u5728\u6B64\u53D6\u6D88\uFF1B\u5982\u9700\u53D6\u6D88\u8BF7\u5230\u5B98\u7F51\u6216\u5148\u4E3A\u5F53\u524D\u4EE4\u724C\u56FA\u5B9A\u6B64\u5546\u5BB6" : !canWebAction ? "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD" : model.pinTokenMatched === void 0 ? "\u672A\u80FD\u786E\u8BA4\u8BE5\u56FA\u5B9A\u662F\u5426\u5C5E\u4E8E\u5F53\u524D\u4EE4\u724C\uFF0C\u70B9\u51FB\u540E\u5C06\u91CD\u65B0\u89E3\u6790\u5E76\u5C1D\u8BD5\u53D6\u6D88\uFF1B\u82E5\u5931\u8D25\u53EF\u5148\u63A2\u6D4B\u4E00\u6B21\u540E\u91CD\u8BD5\uFF0C\u6216\u5230\u5B98\u7F51\u624B\u52A8\u53D6\u6D88" : "\u53D6\u6D88\u56FA\u5B9A\u540E\u6062\u590D\u667A\u80FD\u4F18\u9009\u8DEF\u7531\uFF0C\u53EF\u91CD\u65B0\u63A2\u6D4B\u540E\u518D\u51B3\u5B9A\u662F\u5426\u56FA\u5B9A",
+                children: isBusy ? "\u5904\u7406\u4E2D..." : "\u53D6\u6D88\u56FA\u5B9A"
+              }
+            ) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm",
+                onClick: handleOpenPinConfirm,
+                disabled: isBusy || !hasMerchant || !canWebAction || isProbing || isQueued,
+                "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u56FA\u5B9A\u5546\u5BB6" : !hasMerchant ? "\u8BE5\u6A21\u578B\u6682\u65E0\u5546\u5BB6\u6570\u636E\uFF0C\u8BF7\u5148\u300C\u63A2\u6D4B\u5546\u5BB6\u300D" : !canWebAction ? "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD" : "\u628A\u5F53\u524D\u5546\u5BB6\u56FA\u5B9A\u4E3A\u8BE5\u6A21\u578B\u7684\u670D\u52A1\u6E20\u9053\uFF08\u4F18\u5148\u8DEF\u7531\uFF0C\u5F02\u5E38\u65F6\u81EA\u52A8\u5207\u6362\u667A\u80FD\u4F18\u9009\uFF09",
+                children: isBusy ? "\u5904\u7406\u4E2D..." : "\u56FA\u5B9A\u5546\u5BB6"
+              }
+            ),
+            isChannelDisabled ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm",
+                onClick: handleRestore,
+                disabled: isBusy || !canWebAction || isProbing || isQueued,
+                "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u6062\u590D" : canWebAction ? "\u6062\u590D\u8BE5\u5546\u5BB6\u5BF9\u6B64\u6A21\u578B\u7684\u670D\u52A1" : "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD",
+                children: isBusy ? "\u5904\u7406\u4E2D..." : "\u6062\u590D"
+              }
+            ) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm",
+                onClick: handleDisable,
+                disabled: isBusy || !hasMerchant || !canWebAction || isProbing || isQueued,
+                "data-tooltip": isProbing || isQueued ? "\u63A2\u6D4B\u5B8C\u6210\u540E\u518D\u7981\u7528" : !hasMerchant ? "\u8BE5\u6A21\u578B\u6682\u65E0\u5546\u5BB6\u6570\u636E\uFF0C\u8BF7\u5148\u300C\u63A2\u6D4B\u5546\u5BB6\u300D" : !canWebAction ? "\u9700\u5148\u5728\u300C\u57FA\u7840\u914D\u7F6E\u300D\u914D\u7F6E\u7CFB\u7EDF\u8BBF\u95EE\u4EE4\u724C/\u4F1A\u8BDD" : "\u7981\u7528\u5F53\u524D\u5546\u5BB6\u5BF9\u8BE5\u6A21\u578B\u7684\u670D\u52A1\uFF0C\u8DEF\u7531\u5C06\u4E0D\u518D\u547D\u4E2D\u6B64\u6E20\u9053",
+                children: isBusy ? "\u5904\u7406\u4E2D..." : "\u7981\u7528"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "button",
+              {
+                type: "button",
+                className: `dsh-a6-btn dsh-a6-btn-sm ${model.inDsh ? "dsh-a6-btn-in-dsh" : "dsh-a6-btn-primary"}`,
+                onClick: handleToggleDsh,
+                "data-tooltip": model.inDsh ? "\u5DF2\u52A0\u5165 DSH \u6A21\u578B\u9009\u62E9\u5668 (\u70B9\u51FB\u79FB\u9664)" : "\u6DFB\u52A0\u81F3 DSH \u6A21\u578B\u9009\u62E9\u5668",
+                children: model.inDsh ? "\u79FB\u9664\u6A21\u578B" : "\u6DFB\u52A0\u6A21\u578B"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "button",
+              {
+                type: "button",
+                className: `dsh-a6-expand-toggle-btn ${expanded ? "open" : ""}`,
+                onClick: () => setExpanded(!expanded),
+                "data-tooltip": expanded ? "\u6536\u8D77\u4EF7\u683C\u8BE6\u60C5" : "\u5C55\u5F00\u5B98\u65B9\u57FA\u51C6\u4EF7\u4E0E\u5546\u6237\u5B9E\u65F6\u4EF7\u5BF9\u6BD4\u8868",
+                "data-tooltip-pos": "left",
+                children: expanded ? "\u6536\u8D77" : "\u8BE6\u60C5"
+              }
+            )
+          ] }) }),
+          actionError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-action-error", role: "alert", children: actionError })
+        ] }),
+        expanded && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-detail-container", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-detail-top-row", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-dt-left", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-dt-label", children: "\u6E20\u9053\u8BF4\u660E" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-dt-desc", children: merchant?.description || "\u9AD8\u5E76\u53D1 \u4E3B\u6253\u4FBF\u5B9C \u7A33\u5B9A" })
+            ] }),
+            merchant?.channel_name && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-dt-right", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-dt-label", children: "\u547D\u4E2D\u7EBF\u8DEF" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-dt-channel-name", children: [
+                merchant.channel_name,
+                " (ID: ",
+                merchant.channel_id,
+                ")"
+              ] })
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dt-divider" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-dt-table-col", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", { className: "dsh-a6-price-table", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { className: "dsh-a6-th-blank" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { children: "\u8F93\u5165\u4EF7 (1M)" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { children: "\u8F93\u51FA\u4EF7 (1M)" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { children: "\u7F13\u5B58\u8BFB (1M)" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { children: "\u7F13\u5B58\u5199 (1M)" })
+            ] }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tbody", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { className: "dsh-a6-tr-official", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-label", children: "\u5B98\u65B9\u4EF7" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: merchant?.official_price?.input_cny || "\xA526.884" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: merchant?.official_price?.output_cny || "\xA5134.418" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: merchant?.official_price?.cache_read_cny || "\xA52.688" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: merchant?.official_price?.cache_write_cny || "\xA533.605" })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { className: "dsh-a6-tr-merchant", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-label", children: "\u5546\u6237\u4EF7" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-bold", children: merchant?.input_price_cny || "\xA50.1364" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-bold", children: merchant?.output_price_cny || "\xA50.6822" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-bold", children: merchant?.cache_read_price_cny || "\xA50.0136" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: "dsh-a6-td-bold", children: merchant?.cache_write_price_cny || "\xA50.1705" })
+              ] })
+            ] })
+          ] }) })
+        ] }),
+        pinConfirmOpen && merchant && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
           "div",
           {
-            className: "dsh-a6-pin-modal",
-            role: "dialog",
-            "aria-modal": "true",
-            "aria-label": "\u56FA\u5B9A\u5546\u5BB6\u786E\u8BA4",
-            onClick: (e) => e.stopPropagation(),
-            children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-pin-modal-title", children: "\u56FA\u5B9A\u5546\u5BB6" }),
-              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-body", children: [
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-row", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-modal-label", children: "\u6A21\u578B" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-modal-value", children: model.model_name })
-                ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-row", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-modal-label", children: "\u5546\u5BB6" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-pin-modal-value", children: [
-                    merchant.channel_name,
-                    " (ID: ",
-                    merchant.channel_id,
-                    ")"
+            className: "dsh-a6-pin-modal-overlay",
+            onClick: (e) => {
+              e.stopPropagation();
+              setPinConfirmOpen(false);
+            },
+            children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+              "div",
+              {
+                className: "dsh-a6-pin-modal",
+                role: "dialog",
+                "aria-modal": "true",
+                "aria-label": "\u56FA\u5B9A\u5546\u5BB6\u786E\u8BA4",
+                onClick: (e) => e.stopPropagation(),
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-pin-modal-title", children: "\u56FA\u5B9A\u5546\u5BB6" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-body", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-row", children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-modal-label", children: "\u6A21\u578B" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-modal-value", children: model.model_name })
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-row", children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-modal-label", children: "\u5546\u5BB6" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-pin-modal-value", children: [
+                        merchant.channel_name,
+                        " (ID: ",
+                        merchant.channel_id,
+                        ")"
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-row", children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-modal-label", children: "\u5F53\u524D\u4EF7" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-pin-modal-value", children: [
+                        "\u8F93\u5165 ",
+                        merchant.input_price_cny,
+                        " \xB7 \u8F93\u51FA ",
+                        merchant.output_price_cny
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "dsh-a6-pin-modal-note", children: "\u56FA\u5B9A\u540E\u8BE5\u6A21\u578B\u7684\u6D41\u91CF\u4F18\u5148\u8D70\u6B64\u5546\u5BB6\uFF1B\u5546\u5BB6\u5F02\u5E38\u65F6\u81EA\u52A8\u5207\u6362\u667A\u80FD\u4F18\u9009\uFF08\u5E73\u53F0\u9ED8\u8BA4\uFF09\u3002\u56FA\u5B9A\u751F\u6548\u4E8E\u5F53\u524D API Key \u4EE4\u724C\uFF0C\u53EF\u968F\u65F6\u53D6\u6D88\u3002" }),
+                    actionError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-action-error", children: actionError })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-foot", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                      "button",
+                      {
+                        type: "button",
+                        className: "dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm",
+                        onClick: () => setPinConfirmOpen(false),
+                        disabled: isBusy,
+                        children: "\u53D6\u6D88"
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                      "button",
+                      {
+                        type: "button",
+                        className: "dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm",
+                        onClick: handleConfirmPin,
+                        disabled: isBusy,
+                        children: isBusy ? "\u56FA\u5B9A\u4E2D..." : "\u786E\u8BA4\u56FA\u5B9A"
+                      }
+                    )
                   ] })
-                ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-row", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-a6-pin-modal-label", children: "\u5F53\u524D\u4EF7" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "dsh-a6-pin-modal-value", children: [
-                    "\u8F93\u5165 ",
-                    merchant.input_price_cny,
-                    " \xB7 \u8F93\u51FA ",
-                    merchant.output_price_cny
-                  ] })
-                ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "dsh-a6-pin-modal-note", children: "\u56FA\u5B9A\u540E\u8BE5\u6A21\u578B\u7684\u6D41\u91CF\u4F18\u5148\u8D70\u6B64\u5546\u5BB6\uFF1B\u5546\u5BB6\u5F02\u5E38\u65F6\u81EA\u52A8\u5207\u6362\u667A\u80FD\u4F18\u9009\uFF08\u5E73\u53F0\u9ED8\u8BA4\uFF09\u3002\u56FA\u5B9A\u751F\u6548\u4E8E\u5F53\u524D API Key \u4EE4\u724C\uFF0C\u53EF\u968F\u65F6\u53D6\u6D88\u3002" }),
-                actionError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-a6-action-error", children: actionError })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-a6-pin-modal-foot", children: [
-                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-                  "button",
-                  {
-                    type: "button",
-                    className: "dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm",
-                    onClick: () => setPinConfirmOpen(false),
-                    disabled: isBusy,
-                    children: "\u53D6\u6D88"
-                  }
-                ),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-                  "button",
-                  {
-                    type: "button",
-                    className: "dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm",
-                    onClick: handleConfirmPin,
-                    disabled: isBusy,
-                    children: isBusy ? "\u56FA\u5B9A\u4E2D..." : "\u786E\u8BA4\u56FA\u5B9A"
-                  }
-                )
-              ] })
-            ]
+                ]
+              }
+            )
           }
         )
-      }
-    )
-  ] });
+      ]
+    }
+  );
 };
 
 // src/client/components/BalanceCard.tsx
@@ -4745,6 +4796,161 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
   background: #ef4444 !important;
   border-color: #ef4444 !important;
   color: #ffffff !important;
+}
+
+/* ============================================================
+ * \u63A2\u6D4B\u5B8C\u6210 \u2192 \u5361\u7247\u5237\u65B0\u52A8\u753B\uFF08MerchantCard\uFF0C\u4FA7\u8FB9\u680F\u6D6E\u5C42\u4E0E\u8BBE\u7F6E\u9875\u5171\u7528\uFF09
+ * \u89E6\u53D1\uFF1AprobeStatus \u7531 probing \u8DC3\u8FC1\u5230 success/error \u65F6\u6302 .dsh-a6-card-refresh
+ * refresh-ok = \u6210\u529F\u53D6\u5230\u5546\u6237\uFF1Brefresh-err = \u63A2\u6D4B\u5931\u8D25
+ * \u6839\u8282\u70B9\u4EC5\u6539 box-shadow/::after\uFF08\u4E0D\u52A0 transform/filter\uFF09\uFF0C\u907F\u514D\u628A\u5185\u90E8
+ * position:fixed \u7684\u56FA\u5B9A\u5F39\u7A97\u5377\u5165\u81EA\u8EAB containing block\u3002
+ * ============================================================ */
+.dsh-a6-official-card.dsh-a6-card-refresh {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* 1) \u5149\u5E26\u4ECE\u5DE6\u4FA7\u626B\u8FC7\u6574\u5361 */
+.dsh-a6-card-refresh::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 55%;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    rgba(56, 189, 248, 0) 0%,
+    rgba(56, 189, 248, 0.12) 45%,
+    rgba(125, 211, 252, 0.22) 50%,
+    rgba(56, 189, 248, 0.12) 55%,
+    rgba(56, 189, 248, 0) 100%
+  );
+  transform: translateX(-120%);
+  animation: dsh-a6-refresh-sweep 0.85s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes dsh-a6-refresh-sweep {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(230%); }
+}
+
+/* 2) \u5361\u7247\u8FB9\u6846/\u5916\u53D1\u5149\u8109\u51B2\uFF08\u7EFF=\u6210\u529F\uFF0C\u7EA2=\u5931\u8D25\uFF09 */
+.dsh-a6-card-refresh.refresh-ok {
+  animation: dsh-a6-refresh-glow-ok 1.15s ease-out;
+}
+.dsh-a6-card-refresh.refresh-err {
+  animation: dsh-a6-refresh-glow-err 1.15s ease-out;
+}
+
+@keyframes dsh-a6-refresh-glow-ok {
+  0% {
+    border-color: #10b981;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45), 0 1px 3px rgba(0, 0, 0, 0.02);
+  }
+  35% {
+    box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.12), 0 2px 10px rgba(16, 185, 129, 0.22);
+  }
+  100% {
+    border-color: var(--dsw-alias-border-l2, #e2e8f0);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  }
+}
+@keyframes dsh-a6-refresh-glow-err {
+  0% {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45), 0 1px 3px rgba(0, 0, 0, 0.02);
+  }
+  35% {
+    box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.12), 0 2px 10px rgba(239, 68, 68, 0.22);
+  }
+  100% {
+    border-color: var(--dsw-alias-border-l2, #e2e8f0);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  }
+}
+
+/* 3) \u53F3\u4E0A\u89D2\u77AC\u65F6\u72B6\u6001\u5FBD\u6807\u6DE1\u5165\u4E0A\u6D6E */
+.dsh-a6-refresh-flag {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 4;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  animation: dsh-a6-refresh-flag-in 1.45s ease-out forwards;
+}
+.dsh-a6-refresh-flag.ok {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+.dsh-a6-refresh-flag.err {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.38);
+}
+
+@keyframes dsh-a6-refresh-flag-in {
+  0% { opacity: 0; transform: translateY(6px); }
+  22% { opacity: 1; transform: translateY(0); }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 4) \u4E3B\u4F53\u4FE1\u606F\u5217\u8F7B\u5FAE\u4E0A\u6D6E\u6DE1\u5165\uFF08\u9519\u5CF0\uFF09 */
+.dsh-a6-card-refresh .dsh-a6-bar-identity {
+  animation: dsh-a6-refresh-rise 0.42s ease-out 0.05s both;
+}
+.dsh-a6-card-refresh .dsh-a6-bar-pricing {
+  animation: dsh-a6-refresh-rise 0.42s ease-out 0.12s both;
+}
+.dsh-a6-card-refresh .dsh-a6-bar-uptime {
+  animation: dsh-a6-refresh-rise 0.42s ease-out 0.19s both;
+}
+.dsh-a6-card-refresh .dsh-a6-bar-perf {
+  animation: dsh-a6-refresh-rise 0.42s ease-out 0.26s both;
+}
+.dsh-a6-card-refresh .dsh-a6-bar-tags {
+  animation: dsh-a6-refresh-rise 0.42s ease-out 0.32s both;
+}
+
+@keyframes dsh-a6-refresh-rise {
+  0% { opacity: 0.35; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* \u65E0\u969C\u788D\uFF1A\u5C0A\u91CD\u7CFB\u7EDF\u300C\u51CF\u5F31\u52A8\u6001\u6548\u679C\u300D\uFF0C\u4EC5\u4FDD\u7559\u8FB9\u6846\u989C\u8272\u8109\u51B2 */
+@media (prefers-reduced-motion: reduce) {
+  .dsh-a6-card-refresh::before,
+  .dsh-a6-card-refresh .dsh-a6-bar-identity,
+  .dsh-a6-card-refresh .dsh-a6-bar-pricing,
+  .dsh-a6-card-refresh .dsh-a6-bar-uptime,
+  .dsh-a6-card-refresh .dsh-a6-bar-perf,
+  .dsh-a6-card-refresh .dsh-a6-bar-tags {
+    animation: none !important;
+  }
+  .dsh-a6-card-refresh.refresh-ok,
+  .dsh-a6-card-refresh.refresh-err {
+    animation-duration: 0.01ms !important;
+  }
+  .dsh-a6-refresh-flag {
+    animation-duration: 1.45s !important;
+    animation-name: dsh-a6-refresh-flag-fade !important;
+  }
+  @keyframes dsh-a6-refresh-flag-fade {
+    0%, 100% { opacity: 0; }
+    22%, 78% { opacity: 1; }
+  }
 }
 `;
 

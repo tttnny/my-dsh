@@ -1,5 +1,6 @@
 import type { BalanceInfo, MerchantChannelInfo, OfficialPrices, ApiRoutingLogItem, MarketplacePin, A6ApiTokenItem } from '../types.js';
 import { resolveModelMeta } from './catalog.js';
+import { fetchWithNetRetry, isFlakyNetworkError } from './net.js';
 
 /** Normalize Base URL removing trailing slashes */
 export function cleanBaseUrl(url: string): string {
@@ -106,9 +107,9 @@ export async function fetchBalance(
 
     for (const url of uniqueCandidates) {
       try {
-        const res = await fetch(url, {
+        const res = await fetchWithNetRetry(url, {
           headers: buildWebHeaders(userId, accessToken),
-          signal: AbortSignal.timeout(6000),
+          timeoutMs: 6000,
         });
         if (res.ok) {
           const json = await res.json();
@@ -139,12 +140,12 @@ export async function fetchBalance(
   // 2. If only API Key is present, query usage for consumed statistics if auth is not yet connected
   if (!hasAccountAuth && apiKey && apiKey.trim()) {
     try {
-      const usageRes = await fetch(`${cleanUrl}/v1/dashboard/billing/usage?start_date=2024-01-01&end_date=2030-12-31`, {
+      const usageRes = await fetchWithNetRetry(`${cleanUrl}/v1/dashboard/billing/usage?start_date=2024-01-01&end_date=2030-12-31`, {
         headers: {
           Authorization: `Bearer ${apiKey.trim()}`,
           Accept: 'application/json',
         },
-        signal: AbortSignal.timeout(6000),
+        timeoutMs: 6000,
       }).catch(() => null);
 
       if (usageRes && usageRes.ok) {
@@ -183,12 +184,12 @@ export async function fetchTokenModels(baseURL: string, apiKey: string): Promise
 
   for (const url of endpoints) {
     try {
-      const res = await fetch(url, {
+      const res = await fetchWithNetRetry(url, {
         headers: {
           Authorization: `Bearer ${apiKey.trim()}`,
           Accept: 'application/json',
         },
-        signal: AbortSignal.timeout(8000),
+        timeoutMs: 8000,
       });
       if (res.ok) {
         const json = await res.json();
@@ -215,9 +216,9 @@ export async function fetchRecentLogs(
 ): Promise<ApiRoutingLogItem[]> {
   if (!userId && !accessToken) return [];
   try {
-    const res = await fetch(`https://a6api.com/api/log/self?p=1&page_size=${limit}&type=0`, {
+    const res = await fetchWithNetRetry(`https://a6api.com/api/log/self?p=1&page_size=${limit}&type=0`, {
       headers: buildWebHeaders(userId, accessToken),
-      signal: AbortSignal.timeout(8000),
+      timeoutMs: 8000,
     });
     if (res.ok) {
       const json = await res.json();
@@ -294,11 +295,11 @@ export async function fetchChannelDetails(
   const meta = resolveModelMeta(targetName);
 
   try {
-    const res = await fetch(
+    const res = await fetchWithNetRetry(
       `https://a6api.com/api/marketplace/channels/search?channel_id=${channelId}&view=list&page=1&page_size=20`,
       {
         headers: buildWebHeaders(userId, accessToken),
-        signal: AbortSignal.timeout(8000),
+        timeoutMs: 8000,
       },
     );
     if (res.ok) {
@@ -522,7 +523,7 @@ export async function fetchPriceFluctuation(
   const headers = buildWebHeaders(uid || undefined, token || undefined);
   const url = 'https://a6api.com/api/marketplace/price-notices';
   try {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+    const res = await fetchWithNetRetry(url, { headers, timeoutMs: 8000 });
     if (res.status === 401 || res.status === 403) {
       console.warn('[dsh-a6api] fetchPriceFluctuation auth failed', res.status);
       return { pendingCount: 0, unseenCount: 0, totalCount: 0, authError: true };
@@ -615,9 +616,18 @@ function parseMarketplaceResult(json: any): MarketplaceActionResult {
   if (!json) return { ok: false, message: '空响应' };
   const top = json.success === false ? json : null;
   const inner = json.data && json.data.success === false ? json.data : null;
-  if (top) return { ok: false, message: top.message || '操作失败' };
-  if (inner) return { ok: false, message: inner.message || '操作失败' };
+  if (top) return { ok: false, message: friendlyMarketMessage(top.message) };
+  if (inner) return { ok: false, message: friendlyMarketMessage(inner.message) };
   return { ok: true, data: json.data };
+}
+
+/** 上游通用错误码友好化：invalid_request 等裸码对用户不可读，给出可操作的解释 */
+function friendlyMarketMessage(msg: any): string {
+  const s = String(msg || '');
+  if (s === 'invalid_request') {
+    return '上游拒绝了该操作(invalid_request)：参数未通过平台校验（可能是平台接口调整或固定记录已变化），请稍后重试或到官网处理';
+  }
+  return s || '操作失败';
 }
 
 /** 提取数组字段：兼容 data / data.data / data.items / data.data.items 四种形态 */
@@ -638,9 +648,9 @@ export async function fetchMarketplacePins(
 ): Promise<MarketplacePin[]> {
   if (!userId && !accessToken) return [];
   try {
-    const res = await fetch('https://a6api.com/api/marketplace/pins', {
+    const res = await fetchWithNetRetry('https://a6api.com/api/marketplace/pins', {
       headers: buildWebHeaders(userId, accessToken),
-      signal: AbortSignal.timeout(8000),
+      timeoutMs: 8000,
     });
     if (!res.ok) {
       console.warn('[dsh-a6api] fetchMarketplacePins HTTP', res.status);
@@ -676,9 +686,9 @@ export async function fetchTokens(
 ): Promise<A6ApiTokenItem[]> {
   if (!userId && !accessToken) return [];
   try {
-    const res = await fetch('https://a6api.com/api/token/?p=1&size=100', {
+    const res = await fetchWithNetRetry('https://a6api.com/api/token/?p=1&size=100', {
       headers: buildWebHeaders(userId, accessToken),
-      signal: AbortSignal.timeout(8000),
+      timeoutMs: 8000,
     });
     if (!res.ok) return [];
     const json: any = await res.json().catch(() => null);
@@ -704,6 +714,9 @@ function friendlyActionError(err: any): string {
   if (raw.includes('aborted due to timeout') || err?.name === 'TimeoutError') {
     return '请求超时，请重试';
   }
+  if (isFlakyNetworkError(err)) {
+    return '与上游连接不稳定（已自动重试仍失败），请稍后重试';
+  }
   return raw;
 }
 
@@ -719,14 +732,14 @@ export async function marketplacePin(
   },
 ): Promise<MarketplaceActionResult> {
   try {
-    const res = await fetch('https://a6api.com/api/marketplace/pin', {
+    const res = await fetchWithNetRetry('https://a6api.com/api/marketplace/pin', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...buildWebHeaders(userId, accessToken),
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(10000),
+      timeoutMs: 10000,
     });
     const json: any = await res.json().catch(() => null);
     const result = parseMarketplaceResult(json);
@@ -738,21 +751,22 @@ export async function marketplacePin(
   }
 }
 
-/** POST /api/marketplace/unpin — 取消某模型的固定 */
+/** POST /api/marketplace/unpin — 取消某模型的固定
+ *  上游 pr195（2026-09-08）起 payload 必须携带 channel_id，缺字段一律 400 invalid_request */
 export async function marketplaceUnpin(
   userId: string | undefined,
   accessToken: string | undefined,
-  payload: { token_id: number; model_name: string },
+  payload: { token_id: number; channel_id: number; model_name: string },
 ): Promise<MarketplaceActionResult> {
   try {
-    const res = await fetch('https://a6api.com/api/marketplace/unpin', {
+    const res = await fetchWithNetRetry('https://a6api.com/api/marketplace/unpin', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...buildWebHeaders(userId, accessToken),
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(10000),
+      timeoutMs: 10000,
     });
     const json: any = await res.json().catch(() => null);
     if (!res.ok && !json) return { ok: false, message: `HTTP ${res.status}` };
@@ -771,12 +785,12 @@ export async function marketplaceDisableChannel(
   model: string,
 ): Promise<MarketplaceActionResult> {
   try {
-    const res = await fetch(
+    const res = await fetchWithNetRetry(
       `https://a6api.com/api/marketplace/channels/${channelId}/disable?model=${encodeURIComponent(model)}`,
       {
         method: 'POST',
         headers: buildWebHeaders(userId, accessToken),
-        signal: AbortSignal.timeout(10000),
+        timeoutMs: 10000,
       },
     );
     const json: any = await res.json().catch(() => null);
@@ -796,12 +810,12 @@ export async function marketplaceRestoreChannel(
   model: string,
 ): Promise<MarketplaceActionResult> {
   try {
-    const res = await fetch(
+    const res = await fetchWithNetRetry(
       `https://a6api.com/api/marketplace/channels/${channelId}/restore?model=${encodeURIComponent(model)}`,
       {
         method: 'POST',
         headers: buildWebHeaders(userId, accessToken),
-        signal: AbortSignal.timeout(10000),
+        timeoutMs: 10000,
       },
     );
     const json: any = await res.json().catch(() => null);

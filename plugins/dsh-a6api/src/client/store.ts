@@ -22,6 +22,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** 限流特征：网关 429 / Too Many Requests / rate limit（Key 级并发限制时出现；\b429\b 避免误伤上游错误码如 42901） */
 const RATE_LIMIT_RE = /\b429\b|Too Many Requests|rate\s*limit/i;
 
+/**
+ * 探测结果保护窗口（ms）：刚完成探测的模型在该窗口内，其「探测产生的字段」以本地为准，
+ * 不被 /state 快照覆盖。快照可能构建于本次探测完成之前（60s 轮询在途、服务端在途旧构建、
+ * 120s 短缓存命中），整体覆盖会把新商户刷回旧值，表现为「探测完成后卡片要等下一轮轮询才更新」。
+ * 窗口需覆盖最长在途构建（/state 内部商户回填有 10s 上限），取 20s 富余。
+ */
+const PROBE_RESULT_GUARD_MS = 20_000;
+
 export interface StoreState {
   loading: boolean;
   config: A6ApiConfig;
@@ -124,21 +132,48 @@ class A6ApiStore {
           const data: A6ApiStateResponse = json.data;
           this.state.config = data.config;
           this.state.balance = data.balance;
+          // 先留存本地模型：合并时用于找回「探测在途 / 刚完成探测」模型的本地结果
+          const localModels = this.state.models;
           this.state.models = data.models;
-          // 全量探测进行中：/state 只产 idle/success，重挂 queued/probing，
-          // 避免「刷新列表 / 固定操作 / 轮询发现 pins 变化」等 fetchState 打断排队与进度计数
+          // 探测保护合并：/state 快照可能是本次探测完成前构建的（轮询在途 / 服务端在途旧构建 /
+          // 短缓存命中）。原实现只在全量探测时重挂状态，单模型探测的结果会被旧快照整体覆盖，
+          // 卡片要等下一轮轮询才更新。现统一为三层保护：
+          //   1) 探测在途（单模型/全量）：贴回 probing 态，排队模型保持 queued 不被打断；
+          //   2) 保护窗口内刚完成探测：仅保留本地探测产生的字段（商户/状态/错误/时延/路由时效），
+          //      其余服务端字段（inDsh / pinStatus / 目录元数据等）照常更新，避免固定/启用状态被连带抑制；
+          //   3) 窗口外：完全以服务端为准（merchantCardCache 已含探测结果）。
           const snapshot = this.probeAllSnapshot;
-          if (this.state.probeAllActive && snapshot) {
-            this.state.models = this.state.models.map((m) => {
-              if (this.state.probingModelNames.has(m.model_name)) {
-                return { ...m, probeStatus: 'probing' as const };
-              }
-              if (snapshot.includes(m.model_name) && !this.probeAllDone.has(m.model_name)) {
-                return { ...m, probeStatus: 'queued' as const, probeError: undefined };
-              }
-              return m;
-            });
-          }
+          const localByName = new Map(localModels.map((m) => [m.model_name, m]));
+          const nowMs = Date.now();
+          this.state.models = this.state.models.map((m) => {
+            const local = localByName.get(m.model_name);
+            if (!local) return m;
+            if (this.state.probingModelNames.has(m.model_name)) {
+              return { ...m, probeStatus: 'probing' as const };
+            }
+            if (local.lastProbedAt && nowMs - local.lastProbedAt < PROBE_RESULT_GUARD_MS) {
+              return {
+                ...m,
+                merchant: local.merchant,
+                probeStatus: local.probeStatus,
+                probeError: local.probeError,
+                probeLatencyMs: local.probeLatencyMs,
+                lastProbedAt: local.lastProbedAt,
+                // 探测请求本身会写路由日志，本地乐观时效不早于旧快照，优先保留
+                lastRoutedAt: local.lastRoutedAt ?? m.lastRoutedAt,
+                lastRoutedText: local.lastRoutedText ?? m.lastRoutedText,
+              };
+            }
+            if (
+              this.state.probeAllActive &&
+              snapshot &&
+              snapshot.includes(m.model_name) &&
+              !this.probeAllDone.has(m.model_name)
+            ) {
+              return { ...m, probeStatus: 'queued' as const, probeError: undefined };
+            }
+            return m;
+          });
           this.state.dshConfiguredModels = data.dshConfiguredModels;
           if (Array.isArray(data.pins)) {
             this.state.pins = data.pins;
@@ -590,6 +625,7 @@ class A6ApiStore {
     modelName: string,
     endpoint: string,
     busySet: Set<string>,
+    extraBody?: Record<string, unknown>,
   ): Promise<{ ok: boolean; error?: string }> {
     if (busySet.has(modelName)) return { ok: false, error: '操作进行中' };
     busySet.add(modelName);
@@ -598,7 +634,7 @@ class A6ApiStore {
       const res = await fetch(`/api/dsh-a6api/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelName }),
+        body: JSON.stringify({ modelName, ...extraBody }),
       });
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
@@ -628,9 +664,14 @@ class A6ApiStore {
     return this.runMarketplaceAction(modelName, 'pin', this.state.actionBusyModels);
   }
 
-  /** 取消该模型的固定 */
-  public unpinModel(modelName: string): Promise<{ ok: boolean; error?: string }> {
-    return this.runMarketplaceAction(modelName, 'unpin', this.state.actionBusyModels);
+  /** 取消该模型的固定（上游 pr195 起需要固定所属渠道 ID，随请求透传，服务端另做卡片缓存兜底） */
+  public unpinModel(modelName: string, channelId?: number): Promise<{ ok: boolean; error?: string }> {
+    return this.runMarketplaceAction(
+      modelName,
+      'unpin',
+      this.state.actionBusyModels,
+      channelId && channelId > 0 ? { channelId } : undefined,
+    );
   }
 
   /** 禁用卡片当前商家对该模型的服务 */

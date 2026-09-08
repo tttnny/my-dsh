@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { store } from '../store.js';
 import type { ModelCardData } from '../../types.js';
 
@@ -28,6 +28,32 @@ export const MerchantCard: React.FC<{
   const [pinConfirmOpen, setPinConfirmOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimerRef = useRef<any>(null);
+
+  // ===== 探测完成 → 卡片刷新动画（侧边栏浮层与设置页共用本组件，一处生效两处） =====
+  // 触发条件：本卡片 probeStatus 由 'probing' 跃迁到终态（success/error），即探测结果回填瞬间。
+  // 动画全部基于 box-shadow/::after/子列 opacity-transform，根节点不加 transform/filter，
+  // 避免把内部 position:fixed 的固定弹窗裹进动画 containing block。
+  const REFRESH_FLASH_MS = 1600;
+  const prevProbeStatus = useRef(model.probeStatus);
+  const [refreshFlash, setRefreshFlash] = useState<'ok' | 'err' | null>(null);
+  const flashTimerRef = useRef<any>(null);
+  useEffect(() => {
+    const prev = prevProbeStatus.current;
+    const cur = model.probeStatus;
+    if (prev === cur) return;
+    prevProbeStatus.current = cur;
+    if (prev === 'probing' && (cur === 'success' || cur === 'error')) {
+      setRefreshFlash(cur === 'success' ? 'ok' : 'err');
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setRefreshFlash(null), REFRESH_FLASH_MS);
+    }
+  }, [model.probeStatus]);
+  useEffect(
+    () => () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    },
+    [],
+  );
 
   const isProbing = model.probeStatus === 'probing';
   const isQueued = model.probeStatus === 'queued';
@@ -83,7 +109,9 @@ export const MerchantCard: React.FC<{
   const handleUnpin = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setActionError(null);
-    const r = await store.unpinModel(model.model_name);
+    // 上游取消固定需要渠道 ID：优先固定记录自身渠道，其次卡片商家渠道
+    const channelId = Number(model.pinnedChannelId || model.merchant?.channel_id || 0) || undefined;
+    const r = await store.unpinModel(model.model_name, channelId);
     if (!r.ok) flashActionError(r.error || '取消固定失败');
   };
 
@@ -196,7 +224,16 @@ export const MerchantCard: React.FC<{
     : undefined;
 
   return (
-    <div className={`dsh-a6-official-card ${model.inDsh ? 'in-dsh' : ''}`}>
+    <div
+      className={`dsh-a6-official-card${model.inDsh ? ' in-dsh' : ''}${
+        refreshFlash ? ` dsh-a6-card-refresh ${refreshFlash === 'ok' ? 'refresh-ok' : 'refresh-err'}` : ''
+      }`}
+    >
+      {refreshFlash && (
+        <div className={`dsh-a6-refresh-flag ${refreshFlash === 'ok' ? 'ok' : 'err'}`} aria-hidden="true">
+          {refreshFlash === 'ok' ? '✓ 商户数据已更新' : '✕ 探测失败'}
+        </div>
+      )}
       {/* 1. Main Top Row */}
       <div className="dsh-a6-card-main-bar" onClick={() => setExpanded(!expanded)}>
         {/* Col 1: Model Title & Subtitle */}

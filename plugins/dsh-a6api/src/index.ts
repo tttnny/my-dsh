@@ -689,7 +689,17 @@ export function apply(ctx: any): void {
               if (!tokenId) {
                 return sendJson(res, 400, { ok: false, error: '无法解析 API Key 对应的令牌 ID（多令牌账号需保证令牌列表可读）；可先「探测商家」一次后重试，或到官网手动取消' });
               }
-              const unpinResult = await marketplaceUnpin(userId, token, { token_id: tokenId, model_name: modelName });
+              // 上游 pr195 起 unpin 必须携带 channel_id（固定所属渠道）：
+              // 优先取客户端卡片上的固定渠道（pinnedChannelId / 卡片商家），兜底服务端商户卡片缓存
+              let channelId = Number(body.channelId) > 0 ? Number(body.channelId) : 0;
+              if (!channelId) {
+                const card = cachedMerchantOf(modelName);
+                if (card?.channel_id) channelId = Number(card.channel_id);
+              }
+              if (!channelId) {
+                return sendJson(res, 400, { ok: false, error: '未能确定该模型固定所属的商家渠道（上游取消固定需要渠道 ID）；请先刷新列表或「探测商家」一次后重试，或到官网手动取消' });
+              }
+              const unpinResult = await marketplaceUnpin(userId, token, { token_id: tokenId, channel_id: channelId, model_name: modelName });
               if (!unpinResult.ok) {
                 return sendJson(res, 400, { ok: false, error: unpinResult.message || '取消固定失败' });
               }
