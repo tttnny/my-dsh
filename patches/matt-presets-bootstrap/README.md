@@ -144,11 +144,11 @@ The session is done when the frontier is empty: every branch of the design tree 
 ## 三、其余文件（无本地改动或自写）
 
 - `skills/` 其余 24 个技能：来自 [mattpocock/skills](https://github.com/mattpocock/skills) **原样 vendor，无改动**；matt-cordis 额外含 cordis 官方随附 2 技能（`cordis-plugin-development`、`editing-cordis-compositions`），同样原样随官方同步。**原因**：上游即权威来源，逐字复制可整体随上游替换、仓库侧零 diff 维护（grilling 是唯一有本地改动的例外）。
-- `preset.yml`：自写两行 `name` / `description`。三份 `name` 分别为「Matt 标准 / Matt PTC 模式 / Matt 创造模式」；`description` 一句话说明「官方组合逐字（persona 零改动）＋ Matt 的 25 个技能 ＋ grilling 适配插件（ask_user_grilling），纪律写在技能旁注与插件工具描述里；共识后不自动进入 plan mode」。**原因**：preset 名与说明显示在 DSH 的会话选择器上，需要用户可读的名称与一句话说明。
+- `preset.yml`：自写两行 `name` / `description`。三份 `name` 分别为「Matt 标准 / Matt PTC 模式 / Matt 创造模式」；`description` 各写一句话，大意都是「官方组合（persona 零改动）＋ Matt 的 25 个技能 ＋ grilling 适配插件，共识后不自动进入 plan mode」（三份措辞各见实物：standard 强调先散文预告再表单投递，ptc 强调模型只见 run_code，cordis 强调随附技能与 tool-cordis）。**原因**：preset 名与说明显示在 DSH 的会话选择器上，需要用户可读的名称与一句话说明。
 
 ## 四、外部材料（非改动、需自带）
 
-- 插件 `@lynn123411/dsh-ask-user-grilling`（只提供 `ask_user_grilling`，其精简的工具描述承载「grilling 轮次专用、先散文预告同一轮、再以工具投递表单、字段映射、勿自加收尾题、子代理闸门（`blocked` 现教停轮）」等工具必知项；多选与每题补充输入框是 UI 自动行为，刻意不写入描述，避免模型为规避多选影响出题）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖），不要只手工拷贝进 `node_modules/@lynn123411/`：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`），此插件一旦被剪，**引用它的四份 preset 会整体从模式选择里消失**（2026-09-08 实例：23:11 profile 同步剪掉手工拷贝的 0.2.1，四份 preset 全隐藏，`pnpm add` 回装后恢复）。仓库 `plugins/dsh-ask-user-grilling/` 是事实源（0.2.1 发布版与仓库逐字节一致）；如仓库含未发布改点，先发布再回装，勿回退到裸拷贝。**原因**：改动② 引用的正是这个包，不装则工具行解析失败；工具描述与技能旁注分工互补——投递纪律在旁注，停轮纪律只在工具描述（SKILL 侧已删，避免诱导），工具描述只留必知项。
+- 插件 `@lynn123411/dsh-ask-user-grilling`（只提供 `ask_user_grilling`，其精简的工具描述承载「grilling 轮次专用、先散文预告同一轮、再以工具投递表单、字段映射、勿自加收尾题、子代理闸门（`blocked` 现教停轮）」等工具必知项；多选与每题补充输入框是 UI 自动行为，刻意不写入描述，避免模型为规避多选影响出题）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖），不要只手工拷贝进 `node_modules/@lynn123411/`：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`），此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**（2026-09-08 实例：23:11 profile 同步剪掉手工拷贝的 0.2.1，三份 preset 全隐藏，`pnpm add` 回装后恢复）。仓库 `plugins/dsh-ask-user-grilling/` 是事实源（0.2.2 已发布；工作区现有未发布改点：工具描述重写与 schema 措辞，待下次发版）；如仓库含未发布改点，先发布再回装，勿回退到裸拷贝。**原因**：改动② 引用的正是这个包，不装则工具行解析失败；工具描述与技能旁注分工互补——投递纪律在旁注，停轮纪律只在工具描述（SKILL 侧已删，避免诱导），工具描述只留必知项。
 - 25 个技能随 mattpocock/skills 上游更新。
 
 ## 五、何时重打

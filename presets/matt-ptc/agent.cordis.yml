@@ -99,8 +99,9 @@
   name: '@deepseek-ai/dsh-tool-skill'
 
 # MATT-ADD: deliver every grilling round through ask_user_grilling (one form
-# call per round). Skills (incl. grilling) ship upstream-verbatim; the delivery
-# discipline lives in this tool's description, not in persona or skill files.
+# call per round). Skills ship upstream-verbatim except grilling (DSH-delivery
+# note, see patches/matt-presets-bootstrap/README.md section 2); the asking
+# discipline lives in this tool's description plus that note, not in persona.
 - id: tool-ask-user-grilling
   name: '@lynn123411/dsh-ask-user-grilling'
 
