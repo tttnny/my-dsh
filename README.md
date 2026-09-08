@@ -6,18 +6,74 @@
 
 ## 🧩 插件（plugins/）
 
-| 插件 | 类型 | 说明 | 安装 |
-| --- | --- | --- | --- |
-| [@lynn123411/dsh-ui-deepseek-bg](./plugins/dsh-ui-deepseek-bg) | `dsh.bundle` + `dsh.client/web` | **背景引擎**：仿 DSH 官网风格的极光（WebGL2 流体）/ 粒子鲸鱼 / 星座网格 + 鼠标跟随交互，内置「背景特效」面板（性能档位 / 特效开关 / GPU 调优） | `dsh plugin --profile web add @lynn123411/dsh-ui-deepseek-bg` |
-| [@lynn123411/dsh-ui-beam-orbs](./plugins/dsh-ui-beam-orbs) | `dsh.bundle` + `dsh.client/web` | **界面皮肤层**：玻璃拟态 + Border Beam 五态边框流光 + Thinking Orbs 几何光球 + Pulse 任务框 + 发送按钮微动效，内置「界面特效」面板，与背景引擎叠加还原完整官网沉浸感 | `dsh plugin --profile web add @lynn123411/dsh-ui-beam-orbs` |
-| [@lynn123411/dsh-workspace-tree](./plugins/dsh-workspace-tree) | `dsh.bundle` + `dsh.client/web` | **工作区树**：文件系统推导的多级树（文件夹/工作区双模式，环境严格隔离）+ 一键在外部 IDE（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）打开 + 全局重命名与归档/物理删除管理 | `dsh plugin --profile web add @lynn123411/dsh-workspace-tree` |
-| [@lynn123411/dsh-oil-sticky-prompt](./plugins/dsh-oil-sticky-prompt) | `dsh.bundle` + `dsh.client/web` | **对话吸顶提示**：将最近的用户 Prompt 悬浮固定在对话流顶部，点击平滑回滚至对应消息，告别长对话迷路 | `dsh plugin --profile web add @lynn123411/dsh-oil-sticky-prompt` |
-| [@lynn123411/dsh-chat-translate](./plugins/dsh-chat-translate) | `dsh.bundle` + `dsh.client/web` | **聊天翻译**：工具调用与思考摘要自动译中（思考摘要待思考完全结束后才翻译，仅当前会话、正文不翻）：OpenAI 兼容 AI 通道（可配 Base URL/模型，Key 存 `~/.dsh/.credentials.yaml`）+ 免 Key Bing 兜底双通道，内置「聊天翻译」面板 | `dsh plugin --profile web add @lynn123411/dsh-chat-translate` |
-| [@lynn123411/dsh-a6api](./plugins/dsh-a6api) | `dsh.bundle` + `dsh.client/web` | **A6API 接入**：将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，提供多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步、商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）、侧边栏快捷模型卡片与账户余额/价格波动/模型市场胶囊行 | `dsh plugin --profile web add @lynn123411/dsh-a6api` |
-| [@lynn123411/dsh-ask-user-grilling](./plugins/dsh-ask-user-grilling) | 普通 Cordis 插件（preset 工具行消费，非 bundle） | **grilling 投递工具**：`ask_user_grilling`（后台子代理闸门 / 强制多选 / 轮末补充 / 题干引导不硬校验 / 描述内置纪律）。配合 `matt-*` 预设使用：grilling 轮次先散文预告、再以一次工具投递表单作答；达成共识后不自动进入 plan mode | `dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling` |
-| [@lynn123411/dsh-mattpocock-skills-deck](./plugins/dsh-mattpocock-skills-deck) | `dsh.bundle` + `dsh.client/web`（上游分叉） | **Matt 技能控制面板（Deck）**：wayfinder 地图/票务/进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）。分叉改点：技能判装识别 `~/.dsh/.agent-presets/<id>/skills/` 根并**按当前会话生效 preset 门控**（没选 Matt preset 不虚报「环境 10/10」；选了不误报缺失）；移除上游随包全局技能 provider | `dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck` |
-| [@lynn123411/dsh-llm-agentrouter](./plugins/dsh-llm-agentrouter) | `dsh.bundle` + `dsh.client/web`（上游分叉） | **AgentRouter 中转聚合**：单 pi-ai 路由承载多模型 + 国内/国际端点设置卡一键切换 + 出站 User-Agent/402 配额围栏。分叉改点：适配 alpha.5 新 settings（`ctx.settings.installSection`）与 slots（`settings.plugins.tab`）API，沿用 `llm-agentrouter` 命名空间 | `dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter` |
-| [@lynn123411/dsh-qr-access](./plugins/dsh-qr-access) | `dsh.bundle` + `dsh.client/web` | **扫码访问**：设置页分区实时生成局域网 HTTPS 访问地址与本地 CA 证书二维码，手机扫码直连免复制粘贴；地址现取当前 Desktop 宿主代（token 随重启轮换自动跟随，30s 轮询 + 刷新按钮），手动点选地址、证书按主机配对、局域网状态徽标直读桌面设置 | `dsh plugin --profile web add @lynn123411/dsh-qr-access` |
+<table>
+  <thead>
+    <tr>
+      <th>类型</th>
+      <th>插件</th>
+      <th>说明</th>
+      <th>安装</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td rowspan="2"><b>🎨 视觉皮肤</b><br><i>只改表现，关掉即回官方原版</i></td>
+      <td><a href="./plugins/dsh-ui-deepseek-bg"><code>@lynn123411/dsh-ui-deepseek-bg</code></a></td>
+      <td><b>背景引擎</b><br>· 仿 DSH 官网风格：极光（WebGL2 流体）/ 粒子鲸鱼 / 星座网格 + 鼠标跟随交互<br>· 内置「背景特效」面板（性能档位 / 特效开关 / GPU 调优）<br>· 建议与界面皮肤层成对安装，还原完整官网观感</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-ui-deepseek-bg</code></td>
+    </tr>
+    <tr>
+      <td><a href="./plugins/dsh-ui-beam-orbs"><code>@lynn123411/dsh-ui-beam-orbs</code></a></td>
+      <td><b>界面皮肤层</b><br>· 玻璃拟态 + Border Beam 五态边框流光 + Thinking Orbs 几何光球 + Pulse 任务框 + 发送按钮微动效<br>· 内置「界面特效」面板，与背景引擎叠加还原完整沉浸感<br>· 浅色主题自动回退官方原版</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-ui-beam-orbs</code></td>
+    </tr>
+    <tr>
+      <td rowspan="2"><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
+      <td><a href="./plugins/dsh-oil-sticky-prompt"><code>@lynn123411/dsh-oil-sticky-prompt</code></a></td>
+      <td><b>对话吸顶提示</b><br>· 最近一条用户 Prompt 悬浮固定在对话流顶部，告别长对话迷路<br>· 点击平滑回滚至对应消息<br>· 纯 DOM 观察、零服务依赖</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-oil-sticky-prompt</code></td>
+    </tr>
+    <tr>
+      <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
+      <td><b>聊天翻译</b><br>· 工具调用与思考摘要自动译中（思考完全结束才翻、仅当前会话、正文不翻）<br>· OpenAI 兼容 AI 通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）+ 免 Key Bing 兜底双通道<br>· 内置「聊天翻译」面板</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
+    </tr>
+    <tr>
+      <td><b>🗂️ 工作区管理</b><br><i>侧栏信息架构与会话资产，含写语义</i></td>
+      <td><a href="./plugins/dsh-workspace-tree"><code>@lynn123411/dsh-workspace-tree</code></a></td>
+      <td><b>工作区树</b><br>· 文件系统推导的多级树（文件夹 / 工作区双模式，会话环境严格隔离）<br>· 一键在外部 IDE 打开（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）<br>· 全局重命名 + 安全归档区 + 级联物理删除<br>· 唯一带注册表与文件系统写语义的侧栏插件</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-workspace-tree</code></td>
+    </tr>
+    <tr>
+      <td rowspan="2"><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
+      <td><a href="./plugins/dsh-a6api"><code>@lynn123411/dsh-a6api</code></a></td>
+      <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 侧边栏快捷模型卡片 + 账户余额 / 价格波动 / 模型市场胶囊行</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-a6api</code></td>
+    </tr>
+    <tr>
+      <td><a href="./plugins/dsh-llm-agentrouter"><code>@lynn123411/dsh-llm-agentrouter</code></a></td>
+      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉 <code>aqiu817/dsh-llm-agentrouter</code>：适配 alpha.5 新 settings（<code>ctx.settings.installSection</code>）与 slots（<code>settings.plugins.tab</code>），沿用 <code>llm-agentrouter</code> 命名空间</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter</code></td>
+    </tr>
+    <tr>
+      <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
+      <td><a href="./plugins/dsh-ask-user-grilling"><code>@lynn123411/dsh-ask-user-grilling</code></a></td>
+      <td><b>grilling 投递工具</b><br>· <code>ask_user_grilling</code>：后台子代理闸门 / 强制多选 / 轮末补充 / 题干引导不硬校验 / 描述内置纪律<br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次工具投递表单作答；达成共识后不自动进入 plan mode<br>· ⚠️ 形态：普通 Cordis 插件（preset 工具行消费，非 bundle），严禁加入 profile <code>package.json</code> 的 <code>dsh.profile.bundles</code></td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling</code></td>
+    </tr>
+    <tr>
+      <td><a href="./plugins/dsh-mattpocock-skills-deck"><code>@lynn123411/dsh-mattpocock-skills-deck</code></a></td>
+      <td><b>Matt 技能控制面板（Deck）</b><br>· wayfinder 地图 / 票务 / 进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）<br>· 上游分叉 <code>FeatherHunter/dsh-mattpocock-skills-deck</code>：技能判装识别 <code>~/.dsh/.agent-presets/&lt;id&gt;/skills/</code> 根并<b>按当前会话生效 preset 门控</b>（没选 Matt preset 不虚报「环境 10/10」，选了不误报缺失）<br>· 移除上游随包全局技能 provider</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck</code></td>
+    </tr>
+    <tr>
+      <td><b>📱 设备访问</b><br><i>跨设备，依赖 Desktop 宿主与证书链路</i></td>
+      <td><a href="./plugins/dsh-qr-access"><code>@lynn123411/dsh-qr-access</code></a></td>
+      <td><b>扫码访问</b><br>· 设置页分区实时生成局域网 HTTPS 访问地址与本地 CA 证书二维码，手机扫码直连免复制粘贴<br>· 地址现取当前 Desktop 宿主代（token 随重启轮换自动跟随，30s 轮询 + 刷新按钮 + 页面可见即刷新）<br>· 手动点选地址、证书按主机配对、局域网状态徽标直读桌面设置</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-qr-access</code></td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 
