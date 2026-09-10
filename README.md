@@ -69,7 +69,7 @@
     <tr>
       <td><b>📱 设备访问</b><br><i>跨设备与本机外部应用接入</i></td>
       <td><a href="./plugins/dsh-qr-access"><code>@lynn123411/dsh-qr-access</code></a></td>
-      <td><b>扫码访问</b><br>· 设置页分区实时生成局域网 HTTPS 访问地址与本地 CA 证书二维码，手机扫码直连免复制粘贴<br>· 地址现取当前 Desktop 宿主代（token 随重启轮换自动跟随，30s 轮询 + 刷新按钮 + 页面可见即刷新）<br>· 手动点选地址、证书按主机配对、局域网状态徽标直读桌面设置</td>
+      <td><b>扫码访问</b><br>· 设置页分区实时生成<b>带 token 的当前实例访问地址</b>二维码，手机扫码直达、免复制粘贴<br>· 双数据源：DSH Desktop 桌面接口优先（局域网 HTTPS + 本地 CA 证书码），<b>任意 dsh 实例</b>走插件自带宿主路由（<code>/api</code> 栅栏 + 会话鉴权），列出当前页面 / 本机 / 局域网 / <code>--trusted-host</code> 受信主机地址<br>· 地址现取当前宿主代（token 随重启轮换自动跟随，30s 轮询 + 刷新按钮 + 页面可见即刷新）<br>· 形态：bundle 型插件，宿主半区只注册一条只读路由，不新增端口与凭据面</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-qr-access</code></td>
     </tr>
   </tbody>
@@ -88,12 +88,12 @@
 
 ---
 
-## 🛠️ 本地补丁脚本（patches/）
+## 🛠️ 本地补丁（patches/）
 
 | 目录 | 说明 |
 | --- | --- |
-| [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `ptc-cordis` / `matt-cordis`）同进程互斥」。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
-| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的手工改动点说明与维护脚本**：相对官方材料的改动点清单（agent 组合与 grilling 技能）、一键 setup（插件同步 + preset 同步 + 自检）、grilling 会话 check 验收（散文预告必须伴随表单投递）。详见 [README](./patches/matt-presets-bootstrap/README.md) |
+| [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `ptc-cordis` / `matt-cordis`）同进程互斥」。**纯文档补丁（无脚本）**：从运行中的 DSH 进程反推它实际加载的副本再改，锚点/校验/回滚逐字写死在 README 里。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
+| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的手工改动点说明**：相对官方材料的改动点清单（agent 组合与 grilling 技能）、setup 流程（插件同步 + preset 同步 + 自检）、grilling 会话 check 验收（散文预告必须伴随表单投递）。详见 [README](./patches/matt-presets-bootstrap/README.md) |
 
 ---
 

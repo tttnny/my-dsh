@@ -163,7 +163,7 @@ The session is done when the frontier is empty: every branch of the design tree 
 ## 五、何时重打
 
 - **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 以新版官方正文覆盖仓库文件，按第一节重打两处 MATT-ADD + 一处 MATT-DEL（注意改动② 的锚点是 `tool-skill` 块，官方若改了该块结构则需手工定位；改动③是删 `tool-ask-user` 行并留标记）；matt-cordis 的两个 cordis 随附技能如有变，从官方 `cordis/skills/` 覆盖。**persona 行始终逐字取官方正文**——官方偶有键级改名（如 0.1.3-alpha.2 的 `text`→`prefix`、cwd 句拆入 `suffix`），不要保留仓库旧写法。
-- **DSH 升级后（同进程共存）**：官方 `cordis` / `ptc-cordis` / `matt-cordis` 同进程互挂依赖 `dsh-tool-cordis` Host inspect 注册幂等补丁，每次升级/重装后需重跑 [`../patch-dsh-cordis-inspect-idempotent/`](../patch-dsh-cordis-inspect-idempotent/README.md)。注意 **dsh-launcher 布局**（`~/Library/Application Support/in.dsh-plug.dsh-launcher/versions/<ver>/`）不在脚本自动搜索路径内，且 `.pnpm` 嵌套比其 `find -maxdepth 6` 深一层——需把 `DSH_ROOT` 指到对应包的内层 `node_modules`（即 `<ver>/node_modules/.pnpm/@deepseek-ai+dsh-tool-cordis@*/node_modules`）运行一次。
+- **DSH 升级后（同进程共存）**：官方 `cordis` / `ptc-cordis` / `matt-cordis` 同进程互挂依赖 `dsh-tool-cordis` Host inspect 注册幂等补丁，每次升级/重装后需重打 [`../patch-dsh-cordis-inspect-idempotent/`](../patch-dsh-cordis-inspect-idempotent/README.md)（**纯文档，无脚本**，由 AI 按文执行）。定位目标：从**运行中的 DSH 进程** cmdline 反推 `@deepseek-ai/dsh` 安装目录，再用 Node 自身解析（`require.resolve('@deepseek-ai/dsh-tool-cordis', { paths: [...] })`）取它实际加载的 `lib/index.js`。**不要按固定路径扫**（DSH Desktop 应用包与 dsh-launcher 的 `versions/<ver>/` 是两套互不相干的安装，猜错会「报成功但问题依旧」），**也不要手写 `.pnpm/*` glob**（哈希段随 peer 组合变化）。
 - **Matt 技能上游更新后**：整体覆盖 25 个技能目录，再把对应 preset 的 `grilling/SKILL.md` 成品覆盖回 grilling——`matt-standard` 与 `matt-cordis` 用 §二 示例一；`matt-ptc` 用 §二 示例二（PTC 形态）。其余技能无本地改动。
 
 仓库 `presets/matt-*/` 即上述改动后的成品；日常落地 = 装好插件后把三个目录（`agent.cordis.yml` + `preset.yml` + `skills/`，不含 README.md）同步到 `~/.dsh/.agent-presets/<id>/` 并重启 DSH。

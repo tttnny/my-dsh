@@ -36,11 +36,7 @@ ptc-cordis/
 ### 冲突根因
 `@deepseek-ai/dsh-tool-cordis` 会向全局单例 `ctx.cordisInspect` 注册 Host inspect provider。由于该注册表未做幂等处理，同一进程先后加载两个包含 `dsh-tool-cordis` 的预设时会触发 `already registered` 异常。
 
-### 一键修复
-运行仓库里的补丁脚本（幂等、自动定位 DSH Desktop 应用包 / npm 全局根 / `~/.dsh/profiles/*`，含备份与回滚）：
+### 修复
+按 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md) 执行（**纯文档补丁，无脚本**，由 AI 按文操作）：从**运行中的 DSH 进程**反推它实际加载的 `dsh-tool-cordis/lib/index.js`，改动其中一处注册循环，改完重启 DSH 生效。
 
-```bash
-bash ../../patches/patch-dsh-cordis-inspect-idempotent/patch-dsh-cordis-inspect-idempotent.sh
-```
-
-详见 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md)。
+> 不要按固定路径（DSH Desktop 应用包 / npm 全局根 / `~/.dsh/profiles/*`）去扫——同机可并存多套互不相干的 DSH 安装，扫到的那份未必是正在跑的那份。
