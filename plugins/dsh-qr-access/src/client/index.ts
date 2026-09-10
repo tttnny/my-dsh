@@ -48,8 +48,19 @@ interface ClientContext {
 export function apply(ctx: ClientContext): void {
   // locale 只做可选查找（不写进 inject）：宿主换代若缺 locale，插件仍要挂载分区，
   // 仅退化为中文文案并留痕，而不是被 cordis 拦在 apply 之外静默失效。
+  //
+  // 【必须走 ctx.get('locale')，不能用 ctx.locale】ctx.locale 是 cordis 代理的
+  // **属性访问**：未在 inject 中声明该服务时，代理直接抛
+  // "cannot get property \"locale\" without inject"，且该异常发生在 ?? 求值**之前**
+  // ——会把整个 apply() 打挂，插件连 slots 分区都挂不上（0.1.5-rc.1 实测故障）。
+  // ctx.get(name) 才是不需要 inject 声明的读取通道。
   const lookup = typeof ctx.get === 'function' ? ctx.get.bind(ctx) : null;
-  const candidate = ctx.locale ?? (lookup ? (lookup('locale') as LocaleService | null | undefined) : null);
+  let candidate: LocaleService | null | undefined;
+  try {
+    candidate = lookup ? (lookup('locale') as LocaleService | null | undefined) : null;
+  } catch {
+    candidate = null;
+  }
   const locale = candidate && typeof candidate.register === 'function' && typeof candidate.bind === 'function' ? candidate : null;
   if (locale) {
     ctx.effect(() => locale.register(NS, DICTS), 'dsh-qr-access: locale dictionaries');

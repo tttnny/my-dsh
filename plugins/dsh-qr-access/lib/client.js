@@ -2146,7 +2146,12 @@ var DICTS = {
 };
 function apply(ctx) {
   const lookup = typeof ctx.get === "function" ? ctx.get.bind(ctx) : null;
-  const candidate = ctx.locale ?? (lookup ? lookup("locale") : null);
+  let candidate;
+  try {
+    candidate = lookup ? lookup("locale") : null;
+  } catch {
+    candidate = null;
+  }
   const locale = candidate && typeof candidate.register === "function" && typeof candidate.bind === "function" ? candidate : null;
   if (locale) {
     ctx.effect(() => locale.register(NS, DICTS), "dsh-qr-access: locale dictionaries");
