@@ -17,6 +17,22 @@ function check(ok, msg, detail='') {
   else { failed = true; console.log('  FAIL ' + msg + (detail ? ' — ' + String(detail).slice(0,800) : '')) }
 }
 
+// 0.1.5-rc.1：宿主通道从 connection.rpc.handle('/dsws') 改为 connection.fetch 的 /api/dsws 精确 Fetch 路由
+// （见 src/host/rpcChannel.js）。mkRoute 把路由包成与旧 handle 同签名的 dispatch(endpoint, args) → {ok,value}
+// 信封，各调用点的 handlers['/dsws'] 用法无需改动；注册走动态 import，故每段 apply 后必须留等待。
+function mkRoute(sink) {
+  return (route) => {
+    sink['/dsws'] = async (endpoint, args) => {
+      const resp = await route.fetch(new Request('http://dsh.internal/api/dsws', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint: endpoint, args: args }),
+      }))
+      return await resp.json()
+    }
+  }
+}
+
 // #284 迁移桥：wf.status 已退役，断言目标改为 wf.chain 全链快照；把链步骤归一化为旧行形状（key/level/detail/hint）
 function chainToRow(chainRes) {
   const v = chainRes && chainRes.value ? chainRes.value : chainRes
@@ -49,8 +65,10 @@ console.log('== #281 红牌分拣与等待合同门禁（#284 迁移：断言经
 // ---------- 1. 源码门禁 ----------
 console.log('\n— 验收1：源码门禁（纪律与线索） —')
 {
-  const hostSrc = readFileSync('src/host/index.js', 'utf8')
-  check(hostSrc.includes('SKILL_PENDING_MAX'), 'src/host/index.js 含 SKILL_PENDING_MAX（有界等待）')
+  // H1 #445 起技能探测实现搬到 src/host/skillProbe.js（index.js 只留动态加载接线），
+  // 本段「源码门禁」的扫描口径随之改为「接线 + 实现」两文件合并——断言意图不变，只是跟着拆分走。
+  const hostSrc = readFileSync('src/host/index.js', 'utf8') + '\n' + readFileSync('src/host/skillProbe.js', 'utf8')
+  check(hostSrc.includes('SKILL_PENDING_MAX'), '宿主探测实现含 SKILL_PENDING_MAX（有界等待）')
   check(hostSrc.includes('lightProbeReason'), '含 lightProbeReason（轻探分拣）')
   check(hostSrc.includes('isSkillCardValid'), '含 isSkillCardValid（名片校验）')
   check(hostSrc.includes('ensureSkillsInvalidateSubscription'), '含失效广播订阅')
@@ -61,7 +79,8 @@ console.log('\n— 验收1：源码门禁（纪律与线索） —')
   check(hostSrc.includes('probeCardViaDirect'), '#296: host 含直读探卡（probeCardViaDirect）')
   check(hostSrc.includes('evidenceSummary'), '#296: host 含判据摘要（evidenceSummary）')
   // 轻探仅涉标准根
-  const lightProbeSnippet = hostSrc.slice(hostSrc.indexOf('async function lightProbeReason'))
+  const probeImplSrc = readFileSync('src/host/skillProbe.js', 'utf8')
+  const lightProbeSnippet = probeImplSrc.slice(probeImplSrc.indexOf('async function lightProbeReason'))
   check(lightProbeSnippet.includes('.agents') && lightProbeSnippet.includes('SKILL.md'), '轻探仅涉标准根 SKILL.md')
   check(!lightProbeSnippet.includes('.claude') && !lightProbeSnippet.includes('.minimax'), '轻探不含 .claude/.minimax（已退役）')
 }
@@ -79,27 +98,19 @@ console.log('\n— 验收1：源码门禁（纪律与线索） —')
   check(/setup-matt-pocock-skills/.test(catSrc), 'check-catalog 含正确拼写')
 }
 {
-  const adrPath = 'docs/adr/20260828-skill-probe-redcard-and-waiting.md'
-  check(existsSync(adrPath), 'ADR 第三、五条已落纸：' + adrPath)
-  if (existsSync(adrPath)) {
-    const adr = readFileSync(adrPath, 'utf8')
-    check(adr.includes('看一眼文件只用于解释原因') || adr.includes('One Glance'), 'ADR 含“看一眼”纪律')
-    check(adr.includes('等待合同') || adr.includes('Waiting'), 'ADR 含等待合同')
-    check(adr.includes('SKILL_PENDING_MAX') || adr.includes('有界'), 'ADR 含封顶/有界')
-  }
-  const adrUnionPath = 'docs/adr/20260828-skill-probe-union-channels.md'
-  check(existsSync(adrUnionPath), '#296 ADR 已落纸：' + adrUnionPath)
-  if (existsSync(adrUnionPath)) {
-    const uadr = readFileSync(adrUnionPath, 'utf8')
-    check(uadr.includes('任一通道') || uadr.includes('union'), '#296 ADR 含「任一通道有效」规则')
-    check(uadr.includes('直读'), '#296 ADR 含直读通道边界')
-  }
+  // ADR 落纸断言已于 1.8.7 退役：该插件的过程文档在提交 75d2c61「精简文档」里整体移除
+  // （.gitignore 只保证 plugins/*/docs/ 可入库，不等于必须存在），本门禁不再回指已删文档。
+  // 原 ADR 守护的三条契约未被放弃，已由上方源码门禁直接断言：
+  //   一眼纪律 → 上方 lightProbeSnippet 仅涉标准根；有界等待 → SKILL_PENDING_MAX；
+  //   #296 并联判据 → directSkillCardRead / probeCardViaDirect / evidenceSummary。
   // 产物一致性：build 产物与 src 同步（防陈旧产物派发）
   {
-    const pkgLog = 'package/lib/index.js'
-    check(existsSync(pkgLog), '构建产物存在：' + pkgLog)
-    if (existsSync(pkgLog)) {
-      const lib = readFileSync(pkgLog, 'utf8')
+    // H1 #445 后探测实现落在 package/lib/skillProbe.js（build 逐文件原样拷贝 src/host/*），
+    // 产物侧扫描口径同步改为「接线 + 实现」两产物合并。
+    const pkgFiles = ['package/lib/index.js', 'package/lib/skillProbe.js']
+    check(pkgFiles.every(function (p) { return existsSync(p) }), '构建产物存在：' + pkgFiles.join(' + '))
+    if (pkgFiles.every(function (p) { return existsSync(p) })) {
+      const lib = pkgFiles.map(function (p) { return readFileSync(p, 'utf8') }).join('\n')
       check(lib.includes('SKILL_PENDING_MAX'), 'pkg 产物含 SKILL_PENDING_MAX（产物不陈旧）')
       check(lib.includes('lightProbeReason'), 'pkg 产物含 lightProbeReason')
       check(lib.includes('probeFsExists'), 'pkg 产物含 probeFsExists（path-shaped 纪律）')
@@ -194,8 +205,8 @@ console.log('\n— 验收2：轻探分拣 缺失 vs 名片无效（永不绿） 
     timeout: (a,b) => (typeof a==='function' ? setTimeout(a,b) : new Promise(r=>setTimeout(r,a))),
     interval: () => () => {},
   }
-  const connection = { rpc: { handle: (path, fn) => { handlers[path] = fn } } }
   const handlers = {}
+  const connection = { fetch: { register: mkRoute(handlers) } }
   const ctx = {
     get(k) {
       if (k === 'skills') return skillsMock
@@ -218,7 +229,7 @@ console.log('\n— 验收2：轻探分拣 缺失 vs 名片无效（永不绿） 
     const mod = hostMod.default ?? hostMod
     try { (mod.apply ?? mod).call(null, ctx) } catch (e) { console.log('apply error', e) }
     // 等待平台初始化
-    await new Promise(r=> setTimeout(r, 50))
+    await new Promise(r=> setTimeout(r, 300))
     // 调用 wf.chain 并检查 wayfinder 步骤的 detail 区分（#284 迁移）
     // 场景 A：目录完全缺失 -> 应为缺失
     files.clear()
@@ -352,7 +363,7 @@ console.log('\n— 验收3：标准根外有效副本 绿+来源行 —')
       if(k==='platform') return platformStub2
       if(k==='subprocess') return subprocess2
       if(k==='timer') return timer2
-      if(k==='connection') return { rpc: { handle: (p,fn)=>{handlers2[p]=fn} } }
+      if(k==='connection') return { fetch: { register: mkRoute(handlers2) } }
       if(k==='sessions') return { get: ()=>null }
       return undefined
     },
@@ -363,7 +374,7 @@ console.log('\n— 验收3：标准根外有效副本 绿+来源行 —')
   const hostMod2 = await import(hostUrl2.href)
   const mod2 = hostMod2.default ?? hostMod2
   try { (mod2.apply ?? mod2).call(null, ctx2) } catch{}
-  await new Promise(r=> setTimeout(r,50))
+  await new Promise(r=> setTimeout(r, 300))
   let statusOff = null
   {
     const dispatch = handlers2['/dsws']
@@ -443,7 +454,7 @@ console.log('\n— 验收3.5：多通道并联 — 注册表未命中时任一�
       if(k==='platform') return platformStub5
       if(k==='subprocess') return subprocess5
       if(k==='timer') return timer5
-      if(k==='connection') return { rpc: { handle: (p,fn)=>{handlers5[p]=fn} } }
+      if(k==='connection') return { fetch: { register: mkRoute(handlers5) } }
       if(k==='sessions') return { get: ()=>null }
       return undefined
     },
@@ -454,7 +465,7 @@ console.log('\n— 验收3.5：多通道并联 — 注册表未命中时任一�
   const hostMod5 = await import(hostUrl5.href)
   const mod5 = hostMod5.default ?? hostMod5
   try{ (mod5.apply ?? mod5).call(null, ctx5) } catch{}
-  await new Promise(r=> setTimeout(r,50))
+  await new Promise(r=> setTimeout(r, 300))
   const call5 = async () => {
     const dispatch = handlers5['/dsws']
     return await callChain(dispatch, { cwd: tmpHome5, lang: 'zh' })
@@ -564,7 +575,7 @@ console.log('\n— 验收3.6：BOM 名片 — Windows 编辑器另存的合法�
       if(k==='platform') return platformStub6
       if(k==='subprocess') return subprocess6
       if(k==='timer') return timer6
-      if(k==='connection') return { rpc: { handle: (p,fn)=>{handlers6[p]=fn} } }
+      if(k==='connection') return { fetch: { register: mkRoute(handlers6) } }
       if(k==='sessions') return { get: ()=>null }
       return undefined
     },
@@ -575,7 +586,7 @@ console.log('\n— 验收3.6：BOM 名片 — Windows 编辑器另存的合法�
   const hostMod6 = await import(hostUrl6.href)
   const mod6 = hostMod6.default ?? hostMod6
   try{ (mod6.apply ?? mod6).call(null, ctx6) } catch{}
-  await new Promise(r=> setTimeout(r,50))
+  await new Promise(r=> setTimeout(r, 300))
   const call6 = async () => {
     const dispatch = handlers6['/dsws']
     return await callChain(dispatch, { cwd: tmpHome6, lang: 'zh' })
@@ -645,7 +656,7 @@ console.log('\n— 验收4：等待态 有界推进 + 失效广播 + 封顶失�
       if(k==='platform') return platformStub3
       if(k==='subprocess') return { async resolveExecutable(){return null}, spawn(){ return { done: Promise.resolve({exitCode:0}), collected:{stdout:{readFrom:()=>({text:''})}, stderr:{readFrom:()=>({text:''})}}, terminate(){} } } }
       if(k==='timer') return { timeout: (a,b)=> (typeof a==='function'? setTimeout(a,b): new Promise(r=>setTimeout(r,a))) }
-      if(k==='connection') return { rpc: { handle: (p,fn)=>{handlers3[p]=fn} } }
+      if(k==='connection') return { fetch: { register: mkRoute(handlers3) } }
       if(k==='sessions') return { get: ()=>null }
       return undefined
     },
@@ -656,7 +667,7 @@ console.log('\n— 验收4：等待态 有界推进 + 失效广播 + 封顶失�
   const hostMod3 = await import(hostUrl3.href)
   const mod3 = hostMod3.default ?? hostMod3
   try{ (mod3.apply ?? mod3).call(null, ctx3) } catch{}
-  await new Promise(r=> setTimeout(r,50))
+  await new Promise(r=> setTimeout(r, 300))
   // 连续 force 调用 4 次，验证前 3 pending，第 4 bad 且携带原文
   const getStatus = async () => {
     const dispatch = handlers3['/dsws']
