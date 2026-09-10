@@ -11,7 +11,7 @@ export default defineConfig([
     platform: "node",
     target: "es2024",
     fixedExtension: false,
-    dts: false,
+    dts: true,
     clean: false,
   },
   {
@@ -22,6 +22,8 @@ export default defineConfig([
     platform: "browser",
     target: "es2022",
     fixedExtension: false,
+    // 客户端半区是 window.__ModuleLoader__ 工厂包：tsdown 在自定义 entryFileNames 下
+    // 只会吐出 client.ts.map 而没有 .d.ts（实测 0.22.14），因此保持 dts: false。
     dts: false,
     sourcemap: true,
     clean: false,

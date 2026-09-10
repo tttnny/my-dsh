@@ -3,8 +3,8 @@
  * 契约：模块真源（ESM 导出）；scripts/build.mjs 构建时剥行首 export 拼回
  * src/client/index.js 的 `// ==== leaf:... (spliced by build) ====` 标记处（一源两物）。
  */
-    // ---- 5.8b 右侧停靠（details 槽位 · 三视图完整内容；开合/拖拽/宽度记忆由壳管理）----
-    // 契约：details 槽 = 壳右侧第三列（AppFrame grid），scope session；关闭 = ctx.layout.closeDetails()
+    // ---- 5.8b 右侧停靠（rightbar 槽位 · 三视图完整内容；开合/拖拽/宽度记忆由壳管理）----
+    // 契约：rightbar 槽 = 壳右侧第三列（AppFrame grid），scope session；关闭 = ctx.layout.closeDetails()
     //   （占位者 props 亦注入 closeDetails）；宽度 300-520px 可拖拽；关闭时子树不卸载（状态保留）。
     // issue #15：tabs 行内容放不下时折叠为纯图标（内容自适应 + 滞回防抖）
 export     const DetailsDock = (props) => {
@@ -20,7 +20,7 @@ export     const DetailsDock = (props) => {
       const layoutSvc = ctx.get('layout')
       const dockRef = React.useRef(null)
       const [dw, setDw] = React.useState(460)
-      // 列宽感知：details 列 300-520px；窄于 380 时动作按钮折叠为纯图标（与悬浮面板同阈值）
+      // 列宽感知：rightbar 列 300-520px；窄于 380 时动作按钮折叠为纯图标（与悬浮面板同阈值）
       React.useEffect(function () {
         if (!dockRef.current) return
         const el = dockRef.current
@@ -32,8 +32,12 @@ export     const DetailsDock = (props) => {
       }, [])
       // #179 加固与污染自愈已搬 DockSync.js（useDockSync），此处单调供装配（同闭包拼回）
       useDockSync(s, sid, summaryCwd, props)
+      // 【0.1.5-rc.1 适配】closeDetails() → closeRightbar()（官方改名，见 router.js openDockPanel）。
+      // 双版本兼容：先试新名（占位者 props 优先，其次 layout 服务），再回退旧名。
       const closeDock = function () {
-        if (props && typeof props.closeDetails === 'function') props.closeDetails()
+        if (props && typeof props.closeRightbar === 'function') props.closeRightbar()
+        else if (layoutSvc && typeof layoutSvc.closeRightbar === 'function') layoutSvc.closeRightbar()
+        else if (props && typeof props.closeDetails === 'function') props.closeDetails()
         else if (layoutSvc && typeof layoutSvc.closeDetails === 'function') layoutSvc.closeDetails()
       }
       const groups = compute(s)

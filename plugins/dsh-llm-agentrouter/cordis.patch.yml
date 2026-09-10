@@ -47,6 +47,17 @@
 # field for. The group title is therefore the only reachable surface — and it is
 # a name, not a notice, so it stays a name. The endpoint is explained where it is
 # changed: 设置 → 插件 → AgentRouter 中转站.
+#
+# WHOLE-OBJECT OVERWRITE, NOT A DEEP MERGE — RE-CHECK ON EVERY dsh-base BUMP
+# The loader applies a patch entry as `target[key] = value`
+# (applyEntryPatches, 0.1.5-rc.1), so the `config:` below REPLACES the
+# llm-pi-ai row's whole config object: nothing a default config carried survives,
+# at any depth. That is safe today only because dsh-base mounts
+# `- id: llm-pi-ai` with a `name:` and no `config:` at all
+# (dsh-base/cordis.patch.yml:107), so there is nothing to lose. If a future
+# dsh-base gives that row a default config, this patch swallows it SILENTLY —
+# diff the shipped llm-pi-ai row against this file on every dsh-base bump and
+# fold whatever it adds into the `providers:` map below.
 - id: llm-pi-ai
   name: '@deepseek-ai/dsh-llm-pi-ai'
   config:

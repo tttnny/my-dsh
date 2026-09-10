@@ -46,5 +46,8 @@ try {
     execSync('pnpm exec tsc -p tsconfig.json', { stdio: 'inherit' });
   }
 } catch (err) {
-  console.warn('[dsh-chat-tidy] tsc emit skipped or failed:', err?.message || err);
+  // Declaration emit is part of the build: a silent warning here would let
+  // lib/types drift behind src/ without failing anything.
+  console.error('[dsh-chat-translate] tsc declaration emit failed:', err?.message || err);
+  process.exitCode = 1;
 }

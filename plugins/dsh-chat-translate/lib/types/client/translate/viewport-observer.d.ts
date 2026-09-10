@@ -16,6 +16,12 @@ export interface ViewportObserverOptions {
 }
 export declare class StreamDebounceViewportObserver {
     private intersectionObserver;
+    /**
+     * Pending per-element streaming debounce timers. A Map (not a WeakMap)
+     * because disconnect() must enumerate and clear every pending timer: a
+     * WeakMap cannot be iterated, so a debounce armed just before the switch was
+     * turned off would still fire registerForViewport() afterwards.
+     */
     private streamingTimers;
     private pendingQueue;
     private batchFlushTimer;

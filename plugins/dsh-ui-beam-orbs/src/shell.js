@@ -27,7 +27,7 @@ function initShell(shared) {
       diag.htmlBg = hcs ? hcs.backgroundColor : "?";
       diag.frameFound = !!frame;
       diag.frameBg = fcs ? fcs.backgroundColor : "?";
-      var glassEls = document.querySelectorAll(".gdEzaW_bubble, [data-composer-card=\"true\"], .pI_x6G_sidebarCol");
+      var glassEls = document.querySelectorAll(".Sixlwa_bubble, [data-composer-card=\"true\"], .pI_x6G_sidebarCol");
       diag.glassEls = glassEls.length;
     }
     collect();
@@ -55,6 +55,24 @@ function initShell(shared) {
     var GLASS_PROPS = ["background", "background-color", "backdrop-filter", "-webkit-backdrop-filter",
       "box-shadow", "border-right-color", "border-color", "--dsh-bg-blur"];
     var processedGlass = (typeof WeakSet !== "undefined") ? new WeakSet() : null;
+    // 视图根容器（会话视图等全高不透明层）候选集合。
+    // 0.1.5-rc.1 槽位破坏性改名：conversation / details / pI_x6G_detailsCol 全部消失，
+    // 改为 main / main.conversation / conversation.session / rightbar(.pI_x6G_rightbarCol)。
+    // 承载不透明背景（.wSkVaW_root{background:var(--dsw-alias-bg-base)}）的确切祖先在无浏览器
+    // 环境下无法断定，故多候选并列：命中即透明化，未命中项为空集不影响结果。
+    // 【候选集合为适配 0.1.5-rc.1 槽位改名；具体生效项需真机确认】
+    var VIEW_SELECTORS = '[data-slot="main"] > div, [data-slot="main.conversation"] > div, ' +
+      '[data-slot="conversation.session"] > div, .pI_x6G_rightbarCol > div';
+    // 玻璃化目标（消息气泡 / 工具 DSL 块内容体 / 上下文注入行 / 计划·提问·审批卡 / IO 卡片）。
+    // 原 .gdEzaW_bubble 与 _block_* / _copyButton_* / _bannerWrap_* / .VOzbGW_panel 在
+    // 0.1.3-alpha.2 与 0.1.5-rc.1 均不存在；此处全部改为实测真实类名，并按 _*Body / _bubble
+    // 后缀兜底，避免 DSH 重组后哈希漂移再次整体失配。
+    var GLASS_TARGET_SELECTORS = '.Sixlwa_bubble, .o3BgMG_terminalBody, .o3BgMG_codeBody, ' +
+      '.o3BgMG_diffBody, .o3BgMG_readBody, .o3BgMG_searchBody, .o3BgMG_webBody, ' +
+      '.o3BgMG_imageBody, .XrJvXW_body, .LVzXQa_card, .Mbwy4a_card, .CY-8Ka_ioCard, ' +
+      '.o3BgMG_ioCard, [class$="_bubble"], [class$="_codeBody"], [class$="_terminalBody"], ' +
+      '[class$="_diffBody"], [class$="_readBody"], [class$="_searchBody"], [class$="_webBody"], ' +
+      '[class$="_imageBody"]';
     // 幂等写入：值与优先级均一致时跳过。流式输出期间本函数随每次 DOM 突变合批触发，
     // 无条件 setProperty 会造成大量冗余样式失效/重绘；跳过未变化项可显著降低主线程
     // 与合成器压力（GPU 优化，最终样式结果与原实现完全一致）
@@ -103,15 +121,15 @@ function initShell(shared) {
         var frame0 = document.querySelector('[data-slot="root"] .pI_x6G_frame') ||
           document.querySelector('[data-slot="root"] > div');
         clearInline(frame0);
-        clearInline(document.querySelector("#root ._boot_9gj4p_6"));
-        var views0 = document.querySelectorAll('[data-slot="conversation"] > div, .pI_x6G_detailsCol > div');
+        clearInline(document.querySelector("#root [class*=\"_boot_\"]"));
+        var views0 = document.querySelectorAll(VIEW_SELECTORS);
         for (var i0 = 0; i0 < views0.length; i0++) clearInline(views0[i0]);
         clearInline(document.querySelector(".pI_x6G_sidebarCol"));
         clearInline(document.querySelector(".hHd-Xa_root, [data-slot=\"sidebar\"] > div"));
         clearInline(document.querySelector(".uV2eYG_card, [data-composer-card=\"true\"]"));
         clearInline(document.querySelector(".wSkVaW_composerSeat, [data-composer-seat]"));
-        clearInline(document.querySelector(".qDHVXG_fade"));
-        var glassEls0 = document.querySelectorAll(".gdEzaW_bubble, ._block_10eou_7, ._block_biesw_7, ._block_srovd_7, ._block_s66q0_7, ._block_178r4_4, ._block_d4nqi_7, ._body_1ye18_20, ._copyButton_10eou_142, ._bannerWrap_178r4_21, .LVzXQa_card, .Mbwy4a_card, .VOzbGW_panel, .CY-8Ka_ioCard, .o3BgMG_ioCard, [class$=\"_bubble\"], [class*=\"_block_\"], [class$=\"_bannerWrap\"], [class$=\"_copyButton\"]");
+        clearInline(document.querySelector(".bhn1Oq_fade, [class$=\"_fade\"]"));
+        var glassEls0 = document.querySelectorAll(GLASS_TARGET_SELECTORS);
         for (var g0 = 0; g0 < glassEls0.length; g0++) clearInline(glassEls0[g0]);
         return;
       }
@@ -126,12 +144,12 @@ function initShell(shared) {
         diag.frameBg = window.getComputedStyle ? window.getComputedStyle(frame).backgroundColor : "?";
         setProp(frame, "background", "transparent", "important");
       }
-      var bootEl = document.querySelector("#root ._boot_9gj4p_6");
+      var bootEl = document.querySelector("#root [class*=\"_boot_\"]");
       if (bootEl && bootEl.style) {
         setProp(bootEl, "background", "transparent", "important");
       }
       // 视图根容器（会话视图等全高不透明层）同样透明化
-      var views = document.querySelectorAll('[data-slot="conversation"] > div, .pI_x6G_detailsCol > div');
+      var views = document.querySelectorAll(VIEW_SELECTORS);
       for (var i = 0; i < views.length; i++) {
         var v = views[i];
         if (v && v.style) setProp(v, "background", "transparent", "important");
@@ -164,13 +182,15 @@ function initShell(shared) {
       }
       var seat = document.querySelector(".wSkVaW_composerSeat, [data-composer-seat]");
       if (seat && seat.style) setProp(seat, "background", "transparent", "important");
-      // 会话列表底部渐隐条（qDHVXG_fade）：玻璃侧边栏下会露出浅色白条，透明化
-      var fade = document.querySelector(".qDHVXG_fade");
+      // 会话列表底部渐隐条：0.1.5-rc.1 真实类名 .bhn1Oq_fade（dsh-client-ui-workspace，规则为
+      // background:linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill))，
+      // 正是原 .qDHVXG_fade 注释描述的那条不透明渐隐条；qDHVXG_fade 两版皆无，为历史死选择器）
+      var fade = document.querySelector(".bhn1Oq_fade, [class$=\"_fade\"]");
       if (fade && fade.style) setProp(fade, "background", "transparent", "important");
       // 消息气泡与代码块玻璃化（与侧边栏/输入框同款材质）—— WeakSet 缓存避免每突变全量重写
       var glassRing = "inset 0 0 0 1px hsla(0,0%,100%,.08)";
       var blurPx = (bgSettings.blur || 8) + "px";
-      var glassEls = document.querySelectorAll(".gdEzaW_bubble, ._block_10eou_7, ._block_biesw_7, ._block_srovd_7, ._block_s66q0_7, ._block_178r4_4, ._block_d4nqi_7, ._body_1ye18_20, ._copyButton_10eou_142, ._bannerWrap_178r4_21, .LVzXQa_card, .Mbwy4a_card, .VOzbGW_panel, .CY-8Ka_ioCard, .o3BgMG_ioCard, [class$=\"_bubble\"], [class*=\"_block_\"], [class$=\"_bannerWrap\"], [class$=\"_copyButton\"]");
+      var glassEls = document.querySelectorAll(GLASS_TARGET_SELECTORS);
       for (var gi = 0; gi < glassEls.length; gi++) {
         var ge = glassEls[gi];
         if (!ge || !ge.style) continue;

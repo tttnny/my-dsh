@@ -31,6 +31,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
+// node_modules/.pnpm/qrcode-generator@1.5.2/node_modules/qrcode-generator/qrcode.js
 var require_qrcode = __commonJS({
   "node_modules/.pnpm/qrcode-generator@1.5.2/node_modules/qrcode-generator/qrcode.js"(exports, module2) {
     var qrcode2 = (function() {
@@ -2138,10 +2139,27 @@ function QrAccessPanel() {
 // src/client/index.ts
 var name = "dsh-qr-access";
 var inject = ["slots"];
+var NS = "dsh-qr-access";
+var DICTS = {
+  zh: { section: "\u626B\u7801\u8BBF\u95EE" },
+  en: { section: "QR Access" }
+};
 function apply(ctx) {
+  const lookup = typeof ctx.get === "function" ? ctx.get.bind(ctx) : null;
+  const candidate = ctx.locale ?? (lookup ? lookup("locale") : null);
+  const locale = candidate && typeof candidate.register === "function" && typeof candidate.bind === "function" ? candidate : null;
+  if (locale) {
+    ctx.effect(() => locale.register(NS, DICTS), "dsh-qr-access: locale dictionaries");
+  } else {
+    console.warn("[dsh-qr-access] locale service unavailable \u2014 section label falls back to Chinese");
+  }
+  const t = locale ? locale.bind(NS) : (key) => DICTS.zh[key] ?? key;
   ctx.effect(() => {
-    const slots = ctx.slots ?? (typeof ctx.get === "function" ? ctx.get("slots") : null);
-    if (!slots || typeof slots.inject !== "function" || typeof slots.register !== "function") return;
+    const slots = ctx.slots ?? (lookup ? lookup("slots") : null);
+    if (!slots || typeof slots.inject !== "function" || typeof slots.register !== "function") {
+      console.warn("[dsh-qr-access] slots service unavailable \u2014 settings panel not mounted");
+      return;
+    }
     return slots.inject("settings.section", () => {
       return slots.register(
         {
@@ -2150,7 +2168,7 @@ function apply(ctx) {
           // 约定：自有插件设置项 order 从 110 起步进 10（原生最大 100=桌面设置）。
           // 已占用：聊天翻译 110、A6api 120 → 本插件取 130，保证排在所有自有项之后。
           order: 130,
-          label: () => "\u626B\u7801\u8BBF\u95EE"
+          label: () => t("section")
         },
         QrAccessPanel
       );

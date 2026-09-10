@@ -52,13 +52,13 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-llm-agentrouter"><code>@lynn123411/dsh-llm-agentrouter</code></a></td>
-      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉 <code>aqiu817/dsh-llm-agentrouter</code>：适配 alpha.5 新 settings（<code>ctx.settings.installSection</code>）与 slots（<code>settings.plugins.tab</code>），沿用 <code>llm-agentrouter</code> 命名空间</td>
+      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉 <code>aqiu817/dsh-llm-agentrouter</code>：沿用 <code>llm-agentrouter</code> 命名空间；适配 <code>ctx.settings.installSection</code> 与 <code>settings.plugins.tab</code> slots，已在 <code>0.1.5-rc.1</code> 逐项实证兼容</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter</code></td>
     </tr>
     <tr>
       <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
       <td><a href="./plugins/dsh-ask-user-grilling"><code>@lynn123411/dsh-ask-user-grilling</code></a></td>
-      <td><b>grilling 投递工具</b><br>· <code>ask_user_grilling</code>：后台子代理闸门 / 强制多选 / 轮末补充 / 题干引导不硬校验 / 描述内置纪律<br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次工具投递表单作答；达成共识后不自动进入 plan mode<br>· ⚠️ 形态：普通 Cordis 插件（preset 工具行消费，非 bundle），严禁加入 profile <code>package.json</code> 的 <code>dsh.profile.bundles</code></td>
+      <td><b>grilling 投递工具</b><br>· <code>ask_user_grilling</code>：唯一提问工具路由 / 强制多选 / 轮末补充 / 题干引导不硬校验 / 子代理等齐为<b>软纪律（无硬闸门）</b><br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次工具投递表单作答；达成共识后不自动进入 plan mode<br>· ⚠️ 形态：普通 Cordis 插件（preset 工具行消费，非 bundle），严禁加入 profile <code>package.json</code> 的 <code>dsh.profile.bundles</code></td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling</code></td>
     </tr>
     <tr>

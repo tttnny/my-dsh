@@ -16,7 +16,7 @@ DSH Web 界面皮肤层插件：在深色主题下提供全局玻璃拟态、Bor
 
 ## 安装
 
-要求 DSH ≥ 0.1.0-rc.8。在终端执行以下命令一键安装：
+适配 DSH 0.1.5-rc.1（已实证）。在终端执行以下命令一键安装：
 
 ```bash
 dsh plugin --profile web add @lynn123411/dsh-ui-beam-orbs

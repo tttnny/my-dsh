@@ -1,5 +1,5 @@
 node_modules/
-lib/types/
+# lib/types/ 不忽略：package.json exports 的 types 指向它，fresh clone 未构建时也必须存在
 lib/*.map
 .DS_Store
 *.log

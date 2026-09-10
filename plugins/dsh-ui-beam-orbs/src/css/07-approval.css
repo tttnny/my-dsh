@@ -1,6 +1,12 @@
-/* ============ 授权/审批卡片与设置弹窗：仅深色主题生效 ============ */
-body[data-ds-dark-theme] .VOzbGW_panel,
-body[data-ds-dark-theme] [data-slot="approval"] > div {
+/* ============ 审批卡片：仅深色主题生效 ============
+   .mna1RW_card = dsh-client-ui-approval/ApprovalPanel.module.css 的真实审批卡
+   （0.1.3-alpha.2 与 0.1.5-rc.1 实测均在）。修正两处错位：
+   1) 原 .VOzbGW_panel 实为 dsh-client-ui-settings-general 的「设置弹窗面板」——原规则把审批样式
+      套到了设置弹窗上，现移除（设置弹窗恢复官方原版外观）；
+   2) 原 [data-slot="approval"] 在两版均非合法槽位键（从未生效过的历史死选择器）。
+   新增 [data-slot="conversation.approval.detail"]（0.1.5-rc.1 合法槽位，为审批卡内部的 detail 插槽）。 */
+body[data-ds-dark-theme] .mna1RW_card,
+body[data-ds-dark-theme] [data-slot="conversation.approval.detail"] > div {
   background: rgba(13, 15, 19, 0.75) !important;
   backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
   -webkit-backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;

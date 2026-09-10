@@ -66,7 +66,13 @@ export class CredentialsReader implements KeyReader {
     return this.cachedKey;
   }
 
-  /** Status-only view for the settings UI (plaintext never crosses the wire). */
+  /**
+   * Status-only view of the ref (plaintext never crosses the wire).
+   *
+   * @internal Test-only. The settings UI reads key status through the
+   * `credentials` Remote API with its own client-side shape, so nothing in
+   * `src/` calls this host-side method; only `scripts/test-*.mjs` do.
+   */
   async describe(): Promise<{ configured: boolean; writable: boolean }> {
     try {
       const info = await this.service.describe(TRANSLATE_API_KEY_REF);

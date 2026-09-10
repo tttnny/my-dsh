@@ -154,7 +154,7 @@ export     const SettingsPage = (props) => {
           ]),
         ]),
         h('div', { className: 'dsws-cfg-sub' }, tr('cfg.sub')),
-        // v1.4：打开位置（details 列 / better-sidebar）—— better-sidebar 未装时仅显示 dock 选项
+        // v1.4：打开位置（rightbar 列 / better-sidebar）—— better-sidebar 未装时仅显示 dock 选项
         h('div', { className: 'dsws-cfg-group' }, [
           h('div', { className: 'dsws-cfg-gtitle' }, [Ic({ n: 'map', size: 13 }), h('span', null, tr('cfg.openIn'))]),
           h('div', { className: 'dsws-cfg-gdesc' }, tr('cfg.openInDesc')),

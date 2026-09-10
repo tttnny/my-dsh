@@ -1,12 +1,18 @@
 {
   "name": "@lynn123411/dsh-qr-access",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "DSH 扫码访问：设置页实时生成局域网 HTTPS 访问地址与本地 CA 证书二维码，手机扫码直连，免复制粘贴；地址实时跟随 DSH 重启后的 token 轮换。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
-    ".": "./lib/index.js",
-    "./client": "./lib/client.js",
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
@@ -37,13 +43,14 @@
     "scan"
   ],
   "license": "MIT",
-  "dependencies": {
-    "qrcode-generator": "^1.5.2"
-  },
   "devDependencies": {
     "@types/react": "^19.2.18",
     "esbuild": "^0.25.0",
+    "qrcode-generator": "^1.5.2",
     "typescript": "^6.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
   },
   "scripts": {
     "build": "node build.mjs",

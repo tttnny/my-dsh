@@ -79,9 +79,12 @@ body[data-ds-dark-theme] [data-composer-seat] {
   background: transparent !important;
 }
 
-/* 会话列表底部渐隐条（qDHVXG_fade）：原来用不透明侧边栏填充色渐变，
-   在玻璃侧边栏下会露出浅色白条——透明化 */
-body[data-ds-dark-theme] .qDHVXG_fade {
+/* 会话列表底部渐隐条：0.1.5-rc.1 真实类名 .bhn1Oq_fade（dsh-client-ui-workspace，
+   规则 background:linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill))
+   即「用不透明侧边栏填充色渐变」的那条），在玻璃侧边栏下会露出浅色白条——透明化。
+   原 .qDHVXG_fade 在 0.1.3-alpha.2 与 0.1.5-rc.1 均不存在（历史死选择器）。 */
+body[data-ds-dark-theme] .bhn1Oq_fade,
+body[data-ds-dark-theme] [class$="_fade"] {
   background: transparent !important;
 }
 
@@ -103,8 +106,10 @@ body[data-ds-dark-theme] .qDHVXG_fade {
 /* ============ 消息气泡与代码块玻璃化（与侧边栏/输入框同款材质）============ */
 /* 仅深色主题生效；浅色主题保持官方原版气泡/代码块 */
 
-/* 用户消息气泡 */
-body[data-ds-dark-theme] .gdEzaW_bubble {
+/* 用户消息气泡（.Sixlwa_bubble = dsh-client-ui-chat MessageItem.module.css，0.1.3-alpha.2 与
+   0.1.5-rc.1 实测均在；原 .gdEzaW_bubble 两版皆无，为历史死选择器） */
+body[data-ds-dark-theme] .Sixlwa_bubble,
+body[data-ds-dark-theme] [class$="_bubble"] {
   background: rgba(13, 15, 19, 0.55) !important;
   /* GPU 优化：气泡数量多且背后是平滑极光；强度跟随设置面板 */
   backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
@@ -112,16 +117,27 @@ body[data-ds-dark-theme] .gdEzaW_bubble {
   box-shadow: inset 0 0 0 1px hsla(0, 0%, 100%, 0.08) !important;
 }
 
-/* 代码块容器（终端/阅读/差异/搜索等 DSL 块）+ 复制按钮 + banner */
-body[data-ds-dark-theme] ._block_10eou_7,
-body[data-ds-dark-theme] ._block_biesw_7,
-body[data-ds-dark-theme] ._block_srovd_7,
-body[data-ds-dark-theme] ._block_s66q0_7,
-body[data-ds-dark-theme] ._block_178r4_4,
-body[data-ds-dark-theme] ._block_d4nqi_7,
-body[data-ds-dark-theme] ._body_1ye18_20,
-body[data-ds-dark-theme] ._copyButton_10eou_142,
-body[data-ds-dark-theme] ._bannerWrap_178r4_21 {
+/* 工具 DSL 块内容体（终端/代码/差异/阅读/搜索/网页/图片）+ 上下文注入行。
+   实测真实类名：dsh-client-ui-tool 的 o3BgMG_*Body 族（0.1.3-alpha.2 / 0.1.5-rc.1 均在），
+   以及 dsh-client-ui-chat 的 .XrJvXW_body —— 注意后者实为「上下文注入行」内容体，并非代码块。
+   原 _block_* / _body_1ye18_20 / _copyButton_10eou_142 / _bannerWrap_178r4_21 在 0.1.3-alpha.2
+   与 0.1.5-rc.1 全量产物中均不存在（历史死选择器）；其兜底 [class*="_block_"] /
+   [class$="_bannerWrap"] / [class$="_copyButton"] 同样 0 命中，故改为按 _*Body 后缀兜底。 */
+body[data-ds-dark-theme] .o3BgMG_terminalBody,
+body[data-ds-dark-theme] .o3BgMG_codeBody,
+body[data-ds-dark-theme] .o3BgMG_diffBody,
+body[data-ds-dark-theme] .o3BgMG_readBody,
+body[data-ds-dark-theme] .o3BgMG_searchBody,
+body[data-ds-dark-theme] .o3BgMG_webBody,
+body[data-ds-dark-theme] .o3BgMG_imageBody,
+body[data-ds-dark-theme] .XrJvXW_body,
+body[data-ds-dark-theme] [class$="_codeBody"],
+body[data-ds-dark-theme] [class$="_terminalBody"],
+body[data-ds-dark-theme] [class$="_diffBody"],
+body[data-ds-dark-theme] [class$="_readBody"],
+body[data-ds-dark-theme] [class$="_searchBody"],
+body[data-ds-dark-theme] [class$="_webBody"],
+body[data-ds-dark-theme] [class$="_imageBody"] {
   background: rgba(13, 15, 19, 0.55) !important;
   /* GPU 优化：代码块数量多；强度跟随设置面板 */
   backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
@@ -133,7 +149,7 @@ body[data-ds-dark-theme] ._bannerWrap_178r4_21 {
 body[data-ds-dark-theme] .CY-8Ka_card,
 body[data-ds-dark-theme] .o3BgMG_root,
 body[data-ds-dark-theme] .ztWv_q_callRow,
-body[data-ds-dark-theme] .Md3f7G_callRow {
+body[data-ds-dark-theme] .EvIC1a_callRow {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
@@ -207,8 +223,8 @@ body[data-ds-dark-theme] .o3BgMG_ioCard {
 /* ---------- 以下状态栏深色适配仅深色主题生效 ---------- */
 
 /* 隐藏原生直接裸文本，防止 React Virtual DOM 冲突 */
-body[data-ds-dark-theme] .Md3f7G_turnStatus,
-body[data-ds-dark-theme] [role="status"][aria-live="polite"].Md3f7G_turnStatus {
+body[data-ds-dark-theme] .EvIC1a_turnStatus,
+body[data-ds-dark-theme] [role="status"][aria-live="polite"].EvIC1a_turnStatus {
   font-size: 0 !important;
 }
 
@@ -222,7 +238,7 @@ body[data-ds-dark-theme] .dsh-turn-status-text {
   -webkit-text-fill-color: var(--dsw-static-deepseek-500, #1d6bf3);
 }
 
-body[data-ds-dark-theme] .Md3f7G_turnStatus {
+body[data-ds-dark-theme] .EvIC1a_turnStatus {
   display: inline-flex !important;
   align-items: center !important;
   font-weight: 500 !important;
@@ -242,23 +258,23 @@ body[data-ds-dark-theme] .dsh-turn-status-text {
   background-clip: text !important;
   -webkit-text-fill-color: transparent !important;
   color: transparent !important;
-  animation: 1.8s linear infinite Md3f7G_dsh-turn-status-shimmer !important;
+  animation: 1.8s linear infinite dsh-beam-orbs-turn-status-shimmer !important;
 }
 
 /* 流光关键帧：background-size 为 250% 100%，200% -> -300% 恰好平移整数个平铺周期，形成无缝循环 */
-@keyframes Md3f7G_dsh-turn-status-shimmer {
+@keyframes dsh-beam-orbs-turn-status-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -300% 0; }
 }
 
-body[data-ds-dark-theme] .Md3f7G_turnStatusClock,
+body[data-ds-dark-theme] .EvIC1a_turnStatusClock,
 body[data-ds-dark-theme] [class*="turnStatusClock"] {
   font-size: 12px !important;
   display: inline-block !important;
   vertical-align: middle !important;
 }
 
-body[data-ds-dark-theme] .Md3f7G_turnStatusClock {
+body[data-ds-dark-theme] .EvIC1a_turnStatusClock {
   font-size: 12px !important;
   font-variant-numeric: tabular-nums !important;
   color: rgba(255, 255, 255, 0.6) !important;
@@ -268,13 +284,13 @@ body[data-ds-dark-theme] .Md3f7G_turnStatusClock {
   filter: none !important;
 }
 
-body[data-ds-dark-theme] [data-plan-mode="1"] .Md3f7G_turnStatus,
-body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] {
+body[data-ds-dark-theme] [data-plan-mode="1"] .EvIC1a_turnStatus,
+body[data-ds-dark-theme] .EvIC1a_turnStatus[data-planning] {
   filter: drop-shadow(0 0 10px rgba(255, 122, 41, 0.5)) !important;
 }
 
 body[data-ds-dark-theme] [data-plan-mode="1"] .dsh-turn-status-text,
-body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text {
+body[data-ds-dark-theme] .EvIC1a_turnStatus[data-planning] .dsh-turn-status-text {
   background: linear-gradient(90deg, #ff7a29 0%, #ff9d42 35%, #fff1d6 50%, #ff9d42 65%, #ff7a29 100%) !important;
   background-size: 250% 100% !important;
   -webkit-background-clip: text !important;
@@ -295,7 +311,7 @@ body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text
 
   /* 计划态同步降级为实色橙色，渐变整块填充不会透在实色字后 */
   body[data-ds-dark-theme] [data-plan-mode="1"] .dsh-turn-status-text,
-  body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text {
+  body[data-ds-dark-theme] .EvIC1a_turnStatus[data-planning] .dsh-turn-status-text {
     background: none !important;
     animation: none !important;
     color: #ff7a29 !important;
@@ -314,15 +330,20 @@ body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text
   }
 
   body[data-ds-dark-theme] [data-plan-mode="1"] .dsh-turn-status-text,
-  body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text {
+  body[data-ds-dark-theme] .EvIC1a_turnStatus[data-planning] .dsh-turn-status-text {
     color: #ff7a29 !important;
     -webkit-text-fill-color: #ff7a29 !important;
   }
 }
 
-/* ============ 计划待审框 (Plan Review Card)：仅深色主题生效 ============ */
-body[data-ds-dark-theme] .LVzXQa_card,
-body[data-ds-dark-theme] [data-slot="plan-review"] > div {
+/* ============ 计划待审框 (Plan Review Card)：仅深色主题生效 ============
+   .LVzXQa_card = dsh-client-ui-user-questions/PlanReviewPanel.module.css 的真实计划待审卡
+   （0.1.3-alpha.2 与 0.1.5-rc.1 实测均在）。
+   原 [data-slot="plan-review"] 在两版均非合法槽位键（从未生效过的历史死选择器），已删除。
+   注意：计划待审卡没有独立槽位——它经 conversation.composer 链按 pendingInteraction 选中渲染，
+   故不可用 [data-slot="conversation.input.plan"]：后者是 dsh-client-ui-plan 注册的「输入栏 plan
+   开关 chip」，只要有会话就存在（与计划待审无关），套用会让橙色计划样式常驻输入栏。 */
+body[data-ds-dark-theme] .LVzXQa_card {
   background: rgba(13, 15, 19, 0.68) !important;
   backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
   -webkit-backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
@@ -773,9 +794,12 @@ body[data-ds-dark-theme] [data-beam="dsh-todo"][data-pulse-active] [data-beam-bl
   }
 }
 
-/* ============ 提问框 (Ask User Question Card)：仅深色主题生效 ============ */
-body[data-ds-dark-theme] .Mbwy4a_card,
-body[data-ds-dark-theme] [data-slot="user-questions"] > div {
+/* ============ 提问框 (Ask User Question Card)：仅深色主题生效 ============
+   .Mbwy4a_card = dsh-client-ui-user-questions/QuestionComposer.module.css 的真实提问卡
+   （0.1.3-alpha.2 与 0.1.5-rc.1 实测均在）。
+   原 [data-slot="user-questions"] 在两版均非合法槽位键（从未生效过的历史死选择器），已删除。
+   提问卡同样经 conversation.composer 链渲染，没有独立槽位，故只按真实类名匹配。 */
+body[data-ds-dark-theme] .Mbwy4a_card {
   background: rgba(13, 15, 19, 0.68) !important;
   backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
   -webkit-backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
@@ -783,9 +807,15 @@ body[data-ds-dark-theme] [data-slot="user-questions"] > div {
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4), inset 0 0 0 1px hsla(0, 0%, 100%, 0.08) !important;
 }
 
-/* ============ 授权/审批卡片与设置弹窗：仅深色主题生效 ============ */
-body[data-ds-dark-theme] .VOzbGW_panel,
-body[data-ds-dark-theme] [data-slot="approval"] > div {
+/* ============ 审批卡片：仅深色主题生效 ============
+   .mna1RW_card = dsh-client-ui-approval/ApprovalPanel.module.css 的真实审批卡
+   （0.1.3-alpha.2 与 0.1.5-rc.1 实测均在）。修正两处错位：
+   1) 原 .VOzbGW_panel 实为 dsh-client-ui-settings-general 的「设置弹窗面板」——原规则把审批样式
+      套到了设置弹窗上，现移除（设置弹窗恢复官方原版外观）；
+   2) 原 [data-slot="approval"] 在两版均非合法槽位键（从未生效过的历史死选择器）。
+   新增 [data-slot="conversation.approval.detail"]（0.1.5-rc.1 合法槽位，为审批卡内部的 detail 插槽）。 */
+body[data-ds-dark-theme] .mna1RW_card,
+body[data-ds-dark-theme] [data-slot="conversation.approval.detail"] > div {
   background: rgba(13, 15, 19, 0.75) !important;
   backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
   -webkit-backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
@@ -827,19 +857,29 @@ body[data-ds-dark-theme].dsh-bg-no-glass .pI_x6G_sidebarCol {
 }
 body[data-ds-dark-theme].dsh-bg-no-glass .uV2eYG_card,
 body[data-ds-dark-theme].dsh-bg-no-glass [data-composer-card="true"],
-body[data-ds-dark-theme].dsh-bg-no-glass .gdEzaW_bubble,
-body[data-ds-dark-theme].dsh-bg-no-glass ._block_10eou_7,
-body[data-ds-dark-theme].dsh-bg-no-glass ._block_biesw_7,
-body[data-ds-dark-theme].dsh-bg-no-glass ._block_srovd_7,
-body[data-ds-dark-theme].dsh-bg-no-glass ._block_s66q0_7,
-body[data-ds-dark-theme].dsh-bg-no-glass ._block_178r4_4,
-body[data-ds-dark-theme].dsh-bg-no-glass ._block_d4nqi_7,
-body[data-ds-dark-theme].dsh-bg-no-glass ._body_1ye18_20,
-body[data-ds-dark-theme].dsh-bg-no-glass ._copyButton_10eou_142,
-body[data-ds-dark-theme].dsh-bg-no-glass ._bannerWrap_178r4_21,
+/* 目标与 02-bubbles.css 的玻璃化目标保持一致（原 .gdEzaW_bubble / _block_* / _copyButton_* /
+   _bannerWrap_* / .VOzbGW_panel 在两版 DSH 中均不存在；.VOzbGW_panel 实为设置弹窗面板，
+   02-bubbles.css 已不再对其施加玻璃，此处同步移除） */
+body[data-ds-dark-theme].dsh-bg-no-glass .Sixlwa_bubble,
+body[data-ds-dark-theme].dsh-bg-no-glass .o3BgMG_terminalBody,
+body[data-ds-dark-theme].dsh-bg-no-glass .o3BgMG_codeBody,
+body[data-ds-dark-theme].dsh-bg-no-glass .o3BgMG_diffBody,
+body[data-ds-dark-theme].dsh-bg-no-glass .o3BgMG_readBody,
+body[data-ds-dark-theme].dsh-bg-no-glass .o3BgMG_searchBody,
+body[data-ds-dark-theme].dsh-bg-no-glass .o3BgMG_webBody,
+body[data-ds-dark-theme].dsh-bg-no-glass .o3BgMG_imageBody,
+body[data-ds-dark-theme].dsh-bg-no-glass .XrJvXW_body,
+body[data-ds-dark-theme].dsh-bg-no-glass [class$="_bubble"],
+body[data-ds-dark-theme].dsh-bg-no-glass [class$="_codeBody"],
+body[data-ds-dark-theme].dsh-bg-no-glass [class$="_terminalBody"],
+body[data-ds-dark-theme].dsh-bg-no-glass [class$="_diffBody"],
+body[data-ds-dark-theme].dsh-bg-no-glass [class$="_readBody"],
+body[data-ds-dark-theme].dsh-bg-no-glass [class$="_searchBody"],
+body[data-ds-dark-theme].dsh-bg-no-glass [class$="_webBody"],
+body[data-ds-dark-theme].dsh-bg-no-glass [class$="_imageBody"],
 body[data-ds-dark-theme].dsh-bg-no-glass .LVzXQa_card,
 body[data-ds-dark-theme].dsh-bg-no-glass .Mbwy4a_card,
-body[data-ds-dark-theme].dsh-bg-no-glass .VOzbGW_panel,
+body[data-ds-dark-theme].dsh-bg-no-glass .mna1RW_card,
 body[data-ds-dark-theme].dsh-bg-no-glass .CY-8Ka_ioCard,
 body[data-ds-dark-theme].dsh-bg-no-glass .o3BgMG_ioCard {
   backdrop-filter: none !important;
@@ -2165,7 +2205,7 @@ function initSettings(shared) {
           sliderItemBlur())),
       h("div", { className: "dsh-bg-foot" },
         h("button", { type: "button", className: "dsh-bg-reset", onClick: function () { resetSettings(); } }, "恢复默认"),
-        h("span", { className: "dsh-bg-note" }, "v1.0.5 · 即时生效并自动保存")));
+        h("span", { className: "dsh-bg-note" }, "v1.0.6 · 即时生效并自动保存")));
   }
 
   var SETTINGS_NAV_MARKER = "data-dsh-beam-orbs-settings-nav";
@@ -2204,12 +2244,12 @@ function initSettings(shared) {
       });
       // 监听设置弹窗挂载，标记「界面特效」导航项以展示专属 Sparkles 光效图标
       syncSettingsNavIcon();
+      // 合批订阅已覆盖 #root 全树 childList/subtree + class/aria-label 属性突变，足以在设置弹窗
+      // 挂载与导航项重绘时重跑标记。原先额外挂了一个裸 observer（document.body 全量子树 +
+      // characterData:true，流式输出高频触发）却从不 disconnect，既是泄漏也是纯冗余：此处删除，
+      // 由上面的 subscribeCoalesced 单例统一承载（它随订阅者归零自动 disconnect）。
       if (shared.refs.subscribeCoalesced) {
         shared.refs.subscribeCoalesced(syncSettingsNavIcon);
-      }
-      if (window.MutationObserver && document.body) {
-        var navObs = new MutationObserver(syncSettingsNavIcon);
-        navObs.observe(document.body, { childList: true, subtree: true, characterData: true });
       }
     } catch (e) {}
   }
@@ -2404,7 +2444,13 @@ function initBeam(shared) {
   function isPlanMode() {
     try {
       if (document.querySelector('[aria-label*="plan mode 已开启"], [aria-label*="Plan mode on"], [aria-label*="plan mode is on"], [aria-label*="Plan Mode on"]')) return true;
-      if (document.querySelector('[data-slot="plan"]')) return true;
+      // 0.1.5-rc.1：plan 状态由输入栏的 plan chip 承载（dsh-client-ui-plan PlanModeControl，
+      // 类名 rS3zOq_chip）。该组件在非 plan mode 时 return null，仅计划模式开启才渲染，
+      // 故其存在即 plan mode 开启，且与 locale 无关（上一行的 aria-label 判定保留为哈希漂移兜底）。
+      // 原 [data-slot="plan"] 在 0.1.3-alpha.2 / 0.1.5-rc.1 均非合法槽位键（从未生效）；
+      // 不可改用 [data-slot="conversation.input.plan"]——那是只要有会话就渲染的 plan 开关槽位，
+      // 会导致 isPlanMode() 恒为 true、beam 永久停在 planning 态。
+      if (document.querySelector('.rS3zOq_chip')) return true;
       if (document.documentElement.dataset && document.documentElement.dataset.planMode === "1") return true;
     } catch(e) {}
     return false;
@@ -2424,9 +2470,7 @@ function initBeam(shared) {
         '.CY-8Ka_root[data-state="running"]',
         '.o3BgMG_root[data-state="running"]',
         '.iWrAna_card[data-state="running"]',
-        '._Xvjua_root[data-state="running"]',
         '[data-variant="think"][data-state="running"]',
-        '.QWLzlG_root[data-state="running"]',
         '[data-variant="answer"][data-state="running"]',
         '[data-role="assistant"][data-streaming="true"]'
       ].join(", ");
@@ -3174,7 +3218,7 @@ function initOrbs(shared) {
       }
 
       // 2. 通用摘要类（grep, glob, bash, skill, web_search, subagent, etc.）
-      var sumEl = el.querySelector('[class*="summary"]:not([class*="error"]), .o3BgMG_summary, .CY-8Ka_summary, .iWrAna_summary, ._Xvjua_summary, [class*="title"]');
+      var sumEl = el.querySelector('[class*="summary"]:not([class*="error"]), .o3BgMG_summary, .CY-8Ka_summary, .iWrAna_summary, [class*="title"]');
       if (sumEl && sumEl.textContent) {
         var txt = sumEl.textContent.trim();
         if (txt.length > 0) {
@@ -3241,12 +3285,12 @@ function initOrbs(shared) {
     interactiveCardCache.ts = nowMs;
     interactiveCardCache.hit = false;
     try {
-      var qEl = document.querySelector('[data-slot="user-questions"], .Mbwy4a_card, [class*="QuestionComposer"]');
+      var qEl = document.querySelector('.Mbwy4a_card, [class*="QuestionComposer"]');
       if (qEl && isVisible(qEl)) interactiveCardCache.hit = true;
     } catch(e) {}
     if (!interactiveCardCache.hit) {
       try {
-        var pEl = document.querySelector('[data-slot="plan-review"], .LVzXQa_card, [class*="PlanReviewPanel"]');
+        var pEl = document.querySelector('.LVzXQa_card, [class*="PlanReviewPanel"]');
         if (pEl && isVisible(pEl)) interactiveCardCache.hit = true;
       } catch(e) {}
     }
@@ -3258,8 +3302,7 @@ function initOrbs(shared) {
     try {
       var sels = [
         '[data-variant="answer"][data-state="running"]',
-        '[data-role="assistant"][data-streaming="true"]',
-        '.QWLzlG_root[data-variant="answer"][data-state="running"]'
+        '[data-role="assistant"][data-streaming="true"]'
       ];
       for (var si = 0; si < sels.length; si++) {
         var el = document.querySelector(sels[si]);
@@ -3272,7 +3315,7 @@ function initOrbs(shared) {
   function rawDetect() {
     try {
       // Tier 1: 优先检测当前处于 running 状态的工具调用行 / 命令 / 子分派
-      var runningRows = document.querySelectorAll('[data-tool][data-state="running"], [data-sample="bash"][data-state="running"], [data-subcalls] [data-tool][data-state="running"], .CY-8Ka_root[data-state="running"], .o3BgMG_root[data-state="running"], .iWrAna_card[data-state="running"], ._Xvjua_root[data-state="running"], .ztWv_q_subCalls [data-tool][data-state="running"]');
+      var runningRows = document.querySelectorAll('[data-tool][data-state="running"], [data-sample="bash"][data-state="running"], [data-subcalls] [data-tool][data-state="running"], .CY-8Ka_root[data-state="running"], .o3BgMG_root[data-state="running"], .iWrAna_card[data-state="running"], .ztWv_q_subCalls [data-tool][data-state="running"]');
       if (runningRows && runningRows.length > 0) {
         // 并发工具数：剔除“祖先已在集合内”的行（run_code 父行与其 running 子调用并存时
         // 父子会同时命中并集选择器），避免 N 双计产生 “Running 4 tools… (3 tools)” 式双重文案
@@ -3289,7 +3332,7 @@ function initOrbs(shared) {
         }
         for (var i = runningRows.length - 1; i >= 0; i--) {
           var row = runningRows[i];
-          if (row.classList && (row.classList.contains("Md3f7G_turnStatus") || row.classList.contains("dsh-turn-status-text"))) continue;
+          if (row.classList && (row.classList.contains("EvIC1a_turnStatus") || row.classList.contains("dsh-turn-status-text"))) continue;
           var tool = row.getAttribute("data-tool");
           if (!tool && (row.classList.contains("CY-8Ka_root") || row.closest(".CY-8Ka_card") || row.getAttribute("data-sample") === "bash")) {
             tool = "bash";
@@ -3347,18 +3390,18 @@ function initOrbs(shared) {
       }
 
       // Tier 2: 活跃的思考/推理流 (Reasoning Stream) — 纯 Thinking，不拼接具体摘要
-      var reasoningEl = document.querySelector('[data-variant="think"][data-state="running"], .QWLzlG_root[data-state="running"]');
+      var reasoningEl = document.querySelector('[data-variant="think"][data-state="running"]');
       if (reasoningEl && isVisible(reasoningEl)) {
         var thinkText = "Thinking…";
         return { state: "composing", text: thinkText, tool: "reasoning" };
       }
 
       // Tier 3: 用户提问与计划待审交互卡片
-      var questionEl = document.querySelector('[data-slot="user-questions"], .Mbwy4a_card, [class*="QuestionComposer"]');
+      var questionEl = document.querySelector('.Mbwy4a_card, [class*="QuestionComposer"]');
       if (questionEl && isVisible(questionEl)) {
         return { state: "breathing", text: "Asking question…", tool: "ask_user_question" };
       }
-      var planReviewEl = document.querySelector('[data-slot="plan-review"], .LVzXQa_card, [class*="PlanReviewPanel"]');
+      var planReviewEl = document.querySelector('.LVzXQa_card, [class*="PlanReviewPanel"]');
       if (planReviewEl && isVisible(planReviewEl)) {
         return { state: "shaping", text: "Reviewing plan…", tool: "exit_plan_mode" };
       }
@@ -3366,7 +3409,7 @@ function initOrbs(shared) {
       // Tier 5: 活跃 Todo 项追踪（仅 executing 时）
       var executing = shared.refs.isExecuting ? shared.refs.isExecuting() : false;
       if (executing) {
-        var activeTodoEl = document.querySelector('[data-testid="todo-panel"] [data-status="in_progress"], [data-slot="conversation.input.dock"] [data-status="in_progress"], [data-slot="plan"] [data-status="in_progress"], [class*="todo"] [data-status="in_progress"]');
+        var activeTodoEl = document.querySelector('[data-testid="todo-panel"] [data-status="in_progress"], [data-slot="conversation.input.dock"] [data-status="in_progress"], [class*="todo"] [data-status="in_progress"]');
         if (activeTodoEl && activeTodoEl.textContent) {
           var todoContent = activeTodoEl.textContent.trim();
           if (todoContent.length > 0) {
@@ -3598,7 +3641,7 @@ function initOrbs(shared) {
         } else {
           orbTextSpan = document.createElement("span");
           orbTextSpan.className = "dsh-turn-status-text";
-          var clockEl = statusEl.querySelector(".Md3f7G_turnStatusClock, [class*='turnStatusClock']");
+          var clockEl = statusEl.querySelector(".EvIC1a_turnStatusClock, [class*='turnStatusClock']");
           if (clockEl) {
             statusEl.insertBefore(orbTextSpan, clockEl);
           } else {
@@ -3784,7 +3827,7 @@ function initOrbs(shared) {
       if (orbMutObs || orbPollTimer) { try { detachThinkingOrbs(); } catch(e) {} }
       return;
     }
-    var statusEl = document.querySelector(".Md3f7G_turnStatus, [role=\"status\"][aria-live=\"polite\"]:not([data-dsh-sr-announcer])");
+    var statusEl = document.querySelector(".EvIC1a_turnStatus, [role=\"status\"][aria-live=\"polite\"]:not([data-dsh-sr-announcer])");
     var executing = shared.refs.isExecuting ? shared.refs.isExecuting() : false;
     // 启动门控扩展：存在交互卡片（提问呼吸环 / 计划审核 shaping）时同样保持小球，
     // 修复用户交互阶段小球蒸发的问题
@@ -3896,7 +3939,7 @@ function initShell(shared) {
       diag.htmlBg = hcs ? hcs.backgroundColor : "?";
       diag.frameFound = !!frame;
       diag.frameBg = fcs ? fcs.backgroundColor : "?";
-      var glassEls = document.querySelectorAll(".gdEzaW_bubble, [data-composer-card=\"true\"], .pI_x6G_sidebarCol");
+      var glassEls = document.querySelectorAll(".Sixlwa_bubble, [data-composer-card=\"true\"], .pI_x6G_sidebarCol");
       diag.glassEls = glassEls.length;
     }
     collect();
@@ -3908,7 +3951,7 @@ function initShell(shared) {
     function render() {
       collect();
       panel.textContent = [
-        "dsh-ui-beam-orbs v1.0.5 diagnostics",
+        "dsh-ui-beam-orbs v1.0.6 diagnostics",
         "theme: " + diag.theme,
         "body bg: " + diag.bodyBg,
         "html bg: " + diag.htmlBg,
@@ -3924,6 +3967,24 @@ function initShell(shared) {
     var GLASS_PROPS = ["background", "background-color", "backdrop-filter", "-webkit-backdrop-filter",
       "box-shadow", "border-right-color", "border-color", "--dsh-bg-blur"];
     var processedGlass = (typeof WeakSet !== "undefined") ? new WeakSet() : null;
+    // 视图根容器（会话视图等全高不透明层）候选集合。
+    // 0.1.5-rc.1 槽位破坏性改名：conversation / details / pI_x6G_detailsCol 全部消失，
+    // 改为 main / main.conversation / conversation.session / rightbar(.pI_x6G_rightbarCol)。
+    // 承载不透明背景（.wSkVaW_root{background:var(--dsw-alias-bg-base)}）的确切祖先在无浏览器
+    // 环境下无法断定，故多候选并列：命中即透明化，未命中项为空集不影响结果。
+    // 【候选集合为适配 0.1.5-rc.1 槽位改名；具体生效项需真机确认】
+    var VIEW_SELECTORS = '[data-slot="main"] > div, [data-slot="main.conversation"] > div, ' +
+      '[data-slot="conversation.session"] > div, .pI_x6G_rightbarCol > div';
+    // 玻璃化目标（消息气泡 / 工具 DSL 块内容体 / 上下文注入行 / 计划·提问·审批卡 / IO 卡片）。
+    // 原 .gdEzaW_bubble 与 _block_* / _copyButton_* / _bannerWrap_* / .VOzbGW_panel 在
+    // 0.1.3-alpha.2 与 0.1.5-rc.1 均不存在；此处全部改为实测真实类名，并按 _*Body / _bubble
+    // 后缀兜底，避免 DSH 重组后哈希漂移再次整体失配。
+    var GLASS_TARGET_SELECTORS = '.Sixlwa_bubble, .o3BgMG_terminalBody, .o3BgMG_codeBody, ' +
+      '.o3BgMG_diffBody, .o3BgMG_readBody, .o3BgMG_searchBody, .o3BgMG_webBody, ' +
+      '.o3BgMG_imageBody, .XrJvXW_body, .LVzXQa_card, .Mbwy4a_card, .CY-8Ka_ioCard, ' +
+      '.o3BgMG_ioCard, [class$="_bubble"], [class$="_codeBody"], [class$="_terminalBody"], ' +
+      '[class$="_diffBody"], [class$="_readBody"], [class$="_searchBody"], [class$="_webBody"], ' +
+      '[class$="_imageBody"]';
     // 幂等写入：值与优先级均一致时跳过。流式输出期间本函数随每次 DOM 突变合批触发，
     // 无条件 setProperty 会造成大量冗余样式失效/重绘；跳过未变化项可显著降低主线程
     // 与合成器压力（GPU 优化，最终样式结果与原实现完全一致）
@@ -3972,15 +4033,15 @@ function initShell(shared) {
         var frame0 = document.querySelector('[data-slot="root"] .pI_x6G_frame') ||
           document.querySelector('[data-slot="root"] > div');
         clearInline(frame0);
-        clearInline(document.querySelector("#root ._boot_9gj4p_6"));
-        var views0 = document.querySelectorAll('[data-slot="conversation"] > div, .pI_x6G_detailsCol > div');
+        clearInline(document.querySelector("#root [class*=\"_boot_\"]"));
+        var views0 = document.querySelectorAll(VIEW_SELECTORS);
         for (var i0 = 0; i0 < views0.length; i0++) clearInline(views0[i0]);
         clearInline(document.querySelector(".pI_x6G_sidebarCol"));
         clearInline(document.querySelector(".hHd-Xa_root, [data-slot=\"sidebar\"] > div"));
         clearInline(document.querySelector(".uV2eYG_card, [data-composer-card=\"true\"]"));
         clearInline(document.querySelector(".wSkVaW_composerSeat, [data-composer-seat]"));
-        clearInline(document.querySelector(".qDHVXG_fade"));
-        var glassEls0 = document.querySelectorAll(".gdEzaW_bubble, ._block_10eou_7, ._block_biesw_7, ._block_srovd_7, ._block_s66q0_7, ._block_178r4_4, ._block_d4nqi_7, ._body_1ye18_20, ._copyButton_10eou_142, ._bannerWrap_178r4_21, .LVzXQa_card, .Mbwy4a_card, .VOzbGW_panel, .CY-8Ka_ioCard, .o3BgMG_ioCard, [class$=\"_bubble\"], [class*=\"_block_\"], [class$=\"_bannerWrap\"], [class$=\"_copyButton\"]");
+        clearInline(document.querySelector(".bhn1Oq_fade, [class$=\"_fade\"]"));
+        var glassEls0 = document.querySelectorAll(GLASS_TARGET_SELECTORS);
         for (var g0 = 0; g0 < glassEls0.length; g0++) clearInline(glassEls0[g0]);
         return;
       }
@@ -3995,12 +4056,12 @@ function initShell(shared) {
         diag.frameBg = window.getComputedStyle ? window.getComputedStyle(frame).backgroundColor : "?";
         setProp(frame, "background", "transparent", "important");
       }
-      var bootEl = document.querySelector("#root ._boot_9gj4p_6");
+      var bootEl = document.querySelector("#root [class*=\"_boot_\"]");
       if (bootEl && bootEl.style) {
         setProp(bootEl, "background", "transparent", "important");
       }
       // 视图根容器（会话视图等全高不透明层）同样透明化
-      var views = document.querySelectorAll('[data-slot="conversation"] > div, .pI_x6G_detailsCol > div');
+      var views = document.querySelectorAll(VIEW_SELECTORS);
       for (var i = 0; i < views.length; i++) {
         var v = views[i];
         if (v && v.style) setProp(v, "background", "transparent", "important");
@@ -4033,13 +4094,15 @@ function initShell(shared) {
       }
       var seat = document.querySelector(".wSkVaW_composerSeat, [data-composer-seat]");
       if (seat && seat.style) setProp(seat, "background", "transparent", "important");
-      // 会话列表底部渐隐条（qDHVXG_fade）：玻璃侧边栏下会露出浅色白条，透明化
-      var fade = document.querySelector(".qDHVXG_fade");
+      // 会话列表底部渐隐条：0.1.5-rc.1 真实类名 .bhn1Oq_fade（dsh-client-ui-workspace，规则为
+      // background:linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill))，
+      // 正是原 .qDHVXG_fade 注释描述的那条不透明渐隐条；qDHVXG_fade 两版皆无，为历史死选择器）
+      var fade = document.querySelector(".bhn1Oq_fade, [class$=\"_fade\"]");
       if (fade && fade.style) setProp(fade, "background", "transparent", "important");
       // 消息气泡与代码块玻璃化（与侧边栏/输入框同款材质）—— WeakSet 缓存避免每突变全量重写
       var glassRing = "inset 0 0 0 1px hsla(0,0%,100%,.08)";
       var blurPx = (bgSettings.blur || 8) + "px";
-      var glassEls = document.querySelectorAll(".gdEzaW_bubble, ._block_10eou_7, ._block_biesw_7, ._block_srovd_7, ._block_s66q0_7, ._block_178r4_4, ._block_d4nqi_7, ._body_1ye18_20, ._copyButton_10eou_142, ._bannerWrap_178r4_21, .LVzXQa_card, .Mbwy4a_card, .VOzbGW_panel, .CY-8Ka_ioCard, .o3BgMG_ioCard, [class$=\"_bubble\"], [class*=\"_block_\"], [class$=\"_bannerWrap\"], [class$=\"_copyButton\"]");
+      var glassEls = document.querySelectorAll(GLASS_TARGET_SELECTORS);
       for (var gi = 0; gi < glassEls.length; gi++) {
         var ge = glassEls[gi];
         if (!ge || !ge.style) continue;
@@ -4148,7 +4211,7 @@ function initBoot(shared) {
         var toggle = document.querySelector(".hHd-Xa_toggle, [aria-label*=\"sidebar\"], [aria-label*=\"侧边栏\"]");
         if (toggle) toggle.click();
         setTimeout(function () {
-          var first = document.querySelector('.qDHVXG_listArea [role="button"], .qDHVXG_listArea button, [data-slot="sidebar.workspaces"] [role="button"]');
+          var first = document.querySelector('.bhn1Oq_list [role="button"], .bhn1Oq_list button, [data-slot="sidebar.workspaces"] [role="button"]');
           if (first) first.click();
           setTimeout(function () {
             var codes = document.querySelectorAll("pre, [class*=\"_block_\"], [class*=\"_banner\"], [class*=\"_body\"], code");

@@ -6,7 +6,7 @@
  *   不搬任何组件，行为零变化。
  *
  * v26 变更（#373 用户拍板 2026-08-14）：
- *   打开形式收敛为「仅右侧 details 列」——移除 Document PiP 独立小窗（Electron 不可用、
+ *   打开形式收敛为「仅右侧 rightbar 列」——移除 Document PiP 独立小窗（Electron 不可用、
  *   曾致桌面卡死）、停靠/悬浮双模式记忆（PANEL_MODE_KEY）、状态栏「停靠」seg、右栏「悬浮」按钮；
  *   状态栏胶囊允许换行（窄栏不再截断）。
  *
@@ -147,7 +147,7 @@ export default {
     // 3. store（v14：按会话隔离；无 sid 时用 shared）
     // ============================================================
     // v24-48：面板默认高度 = 屏幕约 1/2
-    // v1.5 T3：面板默认高度固定 1/2（用户拍板彻底移除 panelHeight 配置 —— details 列高度与它无关，配置不生效）
+    // v1.5 T3：面板默认高度固定 1/2（用户拍板彻底移除 panelHeight 配置 —— rightbar 列高度与它无关，配置不生效）
     // ==== shared:workspaceKey (spliced by build) ====
     // ==== kernel:storePrefs (spliced by build) ====
     // ==== kernel:storeSwitch (spliced by build) ====
@@ -159,10 +159,11 @@ export default {
     // ==== kernel:probeChain (spliced by build) ====
     // ==== kernel:probeSnapshot (spliced by build) ====
     // ==== kernel:probeAuto (spliced by build) ====
-    // 打开形式（#373 用户拍板 2026-08-14）：仅右侧 details 列（停靠）一种形式。
+    // 打开形式（#373 用户拍板 2026-08-14）：仅右侧栏（0.1.5-rc.1 起官方名为 rightbar，旧名 details）一种形式。
     //   已移除：① Document PiP 独立小窗（Electron 无法创建 PiP 窗口、曾致桌面卡死 —— 代码不再含 pip 形态）；
     //   ② 停靠/悬浮双模式记忆（PANEL_MODE_KEY）；③ 状态栏「停靠」seg 与右栏「悬浮」按钮。
-    //   打开一律走 layout.openDetails()；layout 服务不可用时退回页内悬浮面板（仅兜底，无任何入口按钮）。
+    //   打开一律走 layout.openRightbar(true, false)（0.1.5-rc.1 新名；旧版回退 openDetails()）；
+    //   layout 服务不可用时退回页内悬浮面板（仅兜底，无任何入口按钮）。
     // ==== kernel:router (spliced by build) ====
 
     // v10：沉淀 = 会话级动作 —— 注入「零丢失快照」prompt（默认文本见 §2.5 FIXATE_PROMPT，T2b 可编辑）

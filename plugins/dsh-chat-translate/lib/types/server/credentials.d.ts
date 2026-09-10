@@ -45,7 +45,13 @@ export declare class CredentialsReader implements KeyReader {
     refresh(): Promise<void>;
     /** Synchronous cached read — the hot translation path stays sync. */
     getApiKey(): string;
-    /** Status-only view for the settings UI (plaintext never crosses the wire). */
+    /**
+     * Status-only view of the ref (plaintext never crosses the wire).
+     *
+     * @internal Test-only. The settings UI reads key status through the
+     * `credentials` Remote API with its own client-side shape, so nothing in
+     * `src/` calls this host-side method; only `scripts/test-*.mjs` do.
+     */
     describe(): Promise<{
         configured: boolean;
         writable: boolean;

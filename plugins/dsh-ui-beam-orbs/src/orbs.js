@@ -130,7 +130,7 @@ function initOrbs(shared) {
       }
 
       // 2. 通用摘要类（grep, glob, bash, skill, web_search, subagent, etc.）
-      var sumEl = el.querySelector('[class*="summary"]:not([class*="error"]), .o3BgMG_summary, .CY-8Ka_summary, .iWrAna_summary, ._Xvjua_summary, [class*="title"]');
+      var sumEl = el.querySelector('[class*="summary"]:not([class*="error"]), .o3BgMG_summary, .CY-8Ka_summary, .iWrAna_summary, [class*="title"]');
       if (sumEl && sumEl.textContent) {
         var txt = sumEl.textContent.trim();
         if (txt.length > 0) {
@@ -197,12 +197,12 @@ function initOrbs(shared) {
     interactiveCardCache.ts = nowMs;
     interactiveCardCache.hit = false;
     try {
-      var qEl = document.querySelector('[data-slot="user-questions"], .Mbwy4a_card, [class*="QuestionComposer"]');
+      var qEl = document.querySelector('.Mbwy4a_card, [class*="QuestionComposer"]');
       if (qEl && isVisible(qEl)) interactiveCardCache.hit = true;
     } catch(e) {}
     if (!interactiveCardCache.hit) {
       try {
-        var pEl = document.querySelector('[data-slot="plan-review"], .LVzXQa_card, [class*="PlanReviewPanel"]');
+        var pEl = document.querySelector('.LVzXQa_card, [class*="PlanReviewPanel"]');
         if (pEl && isVisible(pEl)) interactiveCardCache.hit = true;
       } catch(e) {}
     }
@@ -214,8 +214,7 @@ function initOrbs(shared) {
     try {
       var sels = [
         '[data-variant="answer"][data-state="running"]',
-        '[data-role="assistant"][data-streaming="true"]',
-        '.QWLzlG_root[data-variant="answer"][data-state="running"]'
+        '[data-role="assistant"][data-streaming="true"]'
       ];
       for (var si = 0; si < sels.length; si++) {
         var el = document.querySelector(sels[si]);
@@ -228,7 +227,7 @@ function initOrbs(shared) {
   function rawDetect() {
     try {
       // Tier 1: 优先检测当前处于 running 状态的工具调用行 / 命令 / 子分派
-      var runningRows = document.querySelectorAll('[data-tool][data-state="running"], [data-sample="bash"][data-state="running"], [data-subcalls] [data-tool][data-state="running"], .CY-8Ka_root[data-state="running"], .o3BgMG_root[data-state="running"], .iWrAna_card[data-state="running"], ._Xvjua_root[data-state="running"], .ztWv_q_subCalls [data-tool][data-state="running"]');
+      var runningRows = document.querySelectorAll('[data-tool][data-state="running"], [data-sample="bash"][data-state="running"], [data-subcalls] [data-tool][data-state="running"], .CY-8Ka_root[data-state="running"], .o3BgMG_root[data-state="running"], .iWrAna_card[data-state="running"], .ztWv_q_subCalls [data-tool][data-state="running"]');
       if (runningRows && runningRows.length > 0) {
         // 并发工具数：剔除“祖先已在集合内”的行（run_code 父行与其 running 子调用并存时
         // 父子会同时命中并集选择器），避免 N 双计产生 “Running 4 tools… (3 tools)” 式双重文案
@@ -245,7 +244,7 @@ function initOrbs(shared) {
         }
         for (var i = runningRows.length - 1; i >= 0; i--) {
           var row = runningRows[i];
-          if (row.classList && (row.classList.contains("Md3f7G_turnStatus") || row.classList.contains("dsh-turn-status-text"))) continue;
+          if (row.classList && (row.classList.contains("EvIC1a_turnStatus") || row.classList.contains("dsh-turn-status-text"))) continue;
           var tool = row.getAttribute("data-tool");
           if (!tool && (row.classList.contains("CY-8Ka_root") || row.closest(".CY-8Ka_card") || row.getAttribute("data-sample") === "bash")) {
             tool = "bash";
@@ -303,18 +302,18 @@ function initOrbs(shared) {
       }
 
       // Tier 2: 活跃的思考/推理流 (Reasoning Stream) — 纯 Thinking，不拼接具体摘要
-      var reasoningEl = document.querySelector('[data-variant="think"][data-state="running"], .QWLzlG_root[data-state="running"]');
+      var reasoningEl = document.querySelector('[data-variant="think"][data-state="running"]');
       if (reasoningEl && isVisible(reasoningEl)) {
         var thinkText = "Thinking…";
         return { state: "composing", text: thinkText, tool: "reasoning" };
       }
 
       // Tier 3: 用户提问与计划待审交互卡片
-      var questionEl = document.querySelector('[data-slot="user-questions"], .Mbwy4a_card, [class*="QuestionComposer"]');
+      var questionEl = document.querySelector('.Mbwy4a_card, [class*="QuestionComposer"]');
       if (questionEl && isVisible(questionEl)) {
         return { state: "breathing", text: "Asking question…", tool: "ask_user_question" };
       }
-      var planReviewEl = document.querySelector('[data-slot="plan-review"], .LVzXQa_card, [class*="PlanReviewPanel"]');
+      var planReviewEl = document.querySelector('.LVzXQa_card, [class*="PlanReviewPanel"]');
       if (planReviewEl && isVisible(planReviewEl)) {
         return { state: "shaping", text: "Reviewing plan…", tool: "exit_plan_mode" };
       }
@@ -322,7 +321,7 @@ function initOrbs(shared) {
       // Tier 5: 活跃 Todo 项追踪（仅 executing 时）
       var executing = shared.refs.isExecuting ? shared.refs.isExecuting() : false;
       if (executing) {
-        var activeTodoEl = document.querySelector('[data-testid="todo-panel"] [data-status="in_progress"], [data-slot="conversation.input.dock"] [data-status="in_progress"], [data-slot="plan"] [data-status="in_progress"], [class*="todo"] [data-status="in_progress"]');
+        var activeTodoEl = document.querySelector('[data-testid="todo-panel"] [data-status="in_progress"], [data-slot="conversation.input.dock"] [data-status="in_progress"], [class*="todo"] [data-status="in_progress"]');
         if (activeTodoEl && activeTodoEl.textContent) {
           var todoContent = activeTodoEl.textContent.trim();
           if (todoContent.length > 0) {
@@ -554,7 +553,7 @@ function initOrbs(shared) {
         } else {
           orbTextSpan = document.createElement("span");
           orbTextSpan.className = "dsh-turn-status-text";
-          var clockEl = statusEl.querySelector(".Md3f7G_turnStatusClock, [class*='turnStatusClock']");
+          var clockEl = statusEl.querySelector(".EvIC1a_turnStatusClock, [class*='turnStatusClock']");
           if (clockEl) {
             statusEl.insertBefore(orbTextSpan, clockEl);
           } else {
@@ -740,7 +739,7 @@ function initOrbs(shared) {
       if (orbMutObs || orbPollTimer) { try { detachThinkingOrbs(); } catch(e) {} }
       return;
     }
-    var statusEl = document.querySelector(".Md3f7G_turnStatus, [role=\"status\"][aria-live=\"polite\"]:not([data-dsh-sr-announcer])");
+    var statusEl = document.querySelector(".EvIC1a_turnStatus, [role=\"status\"][aria-live=\"polite\"]:not([data-dsh-sr-announcer])");
     var executing = shared.refs.isExecuting ? shared.refs.isExecuting() : false;
     // 启动门控扩展：存在交互卡片（提问呼吸环 / 计划审核 shaping）时同样保持小球，
     // 修复用户交互阶段小球蒸发的问题

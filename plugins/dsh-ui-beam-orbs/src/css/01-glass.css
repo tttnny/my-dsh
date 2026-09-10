@@ -50,9 +50,12 @@ body[data-ds-dark-theme] [data-composer-seat] {
   background: transparent !important;
 }
 
-/* 会话列表底部渐隐条（qDHVXG_fade）：原来用不透明侧边栏填充色渐变，
-   在玻璃侧边栏下会露出浅色白条——透明化 */
-body[data-ds-dark-theme] .qDHVXG_fade {
+/* 会话列表底部渐隐条：0.1.5-rc.1 真实类名 .bhn1Oq_fade（dsh-client-ui-workspace，
+   规则 background:linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill))
+   即「用不透明侧边栏填充色渐变」的那条），在玻璃侧边栏下会露出浅色白条——透明化。
+   原 .qDHVXG_fade 在 0.1.3-alpha.2 与 0.1.5-rc.1 均不存在（历史死选择器）。 */
+body[data-ds-dark-theme] .bhn1Oq_fade,
+body[data-ds-dark-theme] [class$="_fade"] {
   background: transparent !important;
 }
 

@@ -786,7 +786,7 @@ defineMethod("transform", [
   "preserve"
 ], ({ inner }, isInner) => inner.toString(isInner));
 
-// node_modules/.pnpm/@deepseek-ai+dsh-home-paths@0.1.3-alpha.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-home-paths/lib/index.js
+// node_modules/.pnpm/@deepseek-ai+dsh-home-paths@0.1.5-rc.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-home-paths/lib/index.js
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve as resolve2 } from "node:path";
 var DSH_HOME_DIR_NAME = ".dsh";
@@ -842,21 +842,6 @@ var ConfigManager = class {
       config.baseUrl.trim() && config.model.trim() && this.credentials.getApiKey()
     );
   }
-  getMaskedConfig() {
-    const config = this.getConfig();
-    return {
-      enabled: config.enabled,
-      concurrency: config.concurrency,
-      timeoutMs: config.timeoutMs,
-      aiTimeoutMs: config.aiTimeoutMs,
-      aiEnabled: config.aiEnabled,
-      bingEnabled: config.bingEnabled,
-      baseUrl: config.baseUrl,
-      model: config.model,
-      targetLang: config.targetLang || "zh-Hans",
-      aiConfigured: this.isAiConfigured()
-    };
-  }
   onConfigChange(listener) {
     return this.scope.watch(listener);
   }
@@ -864,6 +849,11 @@ var ConfigManager = class {
    * Merge a partial update into the settings namespace. Values are sanitized
    * here (bounds, trimming) so the schema's own constraints act as a second
    * line of defence rather than the only one.
+   *
+   * @internal Test-only. No production path calls this: the host writes the
+   * settings namespace from the browser through the DSH settings service, and
+   * this facade is only driven by `scripts/test-*.mjs` (regression suite).
+   * Kept (with this marker) so those tests keep exercising the sanitizer.
    */
   async updateConfig(partial) {
     await this.scope.update(sanitizePatch({ ...partial }));
@@ -975,7 +965,13 @@ var CredentialsReader = class {
   getApiKey() {
     return this.cachedKey;
   }
-  /** Status-only view for the settings UI (plaintext never crosses the wire). */
+  /**
+   * Status-only view of the ref (plaintext never crosses the wire).
+   *
+   * @internal Test-only. The settings UI reads key status through the
+   * `credentials` Remote API with its own client-side shape, so nothing in
+   * `src/` calls this host-side method; only `scripts/test-*.mjs` do.
+   */
   async describe() {
     try {
       const info = await this.service.describe(TRANSLATE_API_KEY_REF);

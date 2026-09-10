@@ -15,7 +15,7 @@
     // 五端口与 shared/ui/slots.js 同源（此处冗余一份零依赖声明，供宿主 vm 预检无需跨文件解析）
     export const SLOT_DEFS_KERNEL = Object.freeze([
       Object.freeze({ id: 'banner-seat', parentSlot: 'shell.overlay', scope: 'root', kind: 'list', order: 10 }),
-      Object.freeze({ id: 'dock-seat', parentSlot: 'details', scope: 'session-maybe', kind: 'list', order: 20 }),
+      Object.freeze({ id: 'dock-seat', parentSlot: 'rightbar', scope: 'session-maybe', kind: 'list', order: 20 }),
       Object.freeze({ id: 'statusbar-seat', parentSlot: 'conversation.input.dock', scope: 'session', kind: 'list', order: 30 }),
       Object.freeze({ id: 'modal-seat', parentSlot: 'shell.overlay', scope: 'root', kind: 'single', order: 100 }),
       Object.freeze({ id: 'toast-seat', parentSlot: 'shell.overlay', scope: 'root', kind: 'list', order: 90 }),
@@ -40,7 +40,7 @@
 
     // 治理：校验是否可在当前上下文声明（children 才能声明子座位）
     export function canDeclareIn(parentSlotId) {
-      return parentSlotId === 'shell.overlay' || parentSlotId === 'details' || parentSlotId === 'conversation.input.dock'
+      return parentSlotId === 'shell.overlay' || parentSlotId === 'rightbar' || parentSlotId === 'conversation.input.dock'
     }
 
     // 挂接：modal 仅 fail+(form|wizard)（与 shared/ui/slots.js shouldShowInModal 同判据，零依赖冗余；2026-08-28 wizard 扩展）

@@ -1,5 +1,5 @@
 import * as fs from 'node:fs/promises';
-import type { PluginConfig, MaskedPluginConfig } from './types.ts';
+import type { PluginConfig } from './types.ts';
 import type { CredentialsReader } from './credentials.ts';
 
 /** Hard cap for the translation concurrency pool. */
@@ -70,22 +70,6 @@ export class ConfigManager {
     );
   }
 
-  getMaskedConfig(): MaskedPluginConfig {
-    const config = this.getConfig();
-    return {
-      enabled: config.enabled,
-      concurrency: config.concurrency,
-      timeoutMs: config.timeoutMs,
-      aiTimeoutMs: config.aiTimeoutMs,
-      aiEnabled: config.aiEnabled,
-      bingEnabled: config.bingEnabled,
-      baseUrl: config.baseUrl,
-      model: config.model,
-      targetLang: config.targetLang || 'zh-Hans',
-      aiConfigured: this.isAiConfigured(),
-    };
-  }
-
   onConfigChange(listener: (config: PluginConfig) => void): () => void {
     return this.scope.watch(listener);
   }
@@ -94,6 +78,11 @@ export class ConfigManager {
    * Merge a partial update into the settings namespace. Values are sanitized
    * here (bounds, trimming) so the schema's own constraints act as a second
    * line of defence rather than the only one.
+   *
+   * @internal Test-only. No production path calls this: the host writes the
+   * settings namespace from the browser through the DSH settings service, and
+   * this facade is only driven by `scripts/test-*.mjs` (regression suite).
+   * Kept (with this marker) so those tests keep exercising the sanitizer.
    */
   async updateConfig(partial: Partial<PluginConfig>): Promise<PluginConfig> {
     await this.scope.update(sanitizePatch({ ...partial }));

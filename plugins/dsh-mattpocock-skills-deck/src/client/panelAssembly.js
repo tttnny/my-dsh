@@ -87,10 +87,14 @@
     __injectOnce('settings.plugins.tab', function () {
       return slots.register({ name: 'settings.plugins.tab', id: 'dsws-settings', order: 40, label: function () { return tr('panel.title') } }, withCx(SettingsPage))
     })
-    // 原型：右侧停靠（details 槽位 · 替换内置工具详情面板；single 槽动态注册优先级低 → 胜出）
-    // priority: -1 低于内置详情面板的默认 0 → 无冲突且「低者胜出」替换内置面板
-    __injectOnce('details', function () {
-      return slots.register({ name: 'details', id: 'dsws-details', order: 10, priority: -1 }, withCx(DetailsDock))
+    // 原型：右侧停靠（rightbar 槽位 · 替换内置面板）
+    // 【0.1.5-rc.1 适配】官方把原 `details` 槽改名为 `rightbar`：实测槽位契约
+    //   0.1.3-alpha.2 有 details/conversation、无 rightbar；0.1.5-rc.1 无 details、有 rightbar。
+    //   槽位名写错**不会报错**——slots.inject 对未声明槽位静默跳过、回调永不执行，
+    //   表现为「注册成功但面板永不挂载」，故必须跟随官方改名。
+    // priority: -1 低于内置面板默认 0 → 无冲突且「低者胜出」替换内置面板
+    __injectOnce('rightbar', function () {
+      return slots.register({ name: 'rightbar', id: 'dsws-details', order: 10, priority: -1 }, withCx(DetailsDock))
     })
 
     // v1.4.1：apply 时尽力注册 better-sidebar tab（MattSkillsDeck）；better-sidebar 服务未就绪（加载晚于本模块）→ 定时重试（最多 10 次）

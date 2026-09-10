@@ -1,6 +1,11 @@
-/* ============ 计划待审框 (Plan Review Card)：仅深色主题生效 ============ */
-body[data-ds-dark-theme] .LVzXQa_card,
-body[data-ds-dark-theme] [data-slot="plan-review"] > div {
+/* ============ 计划待审框 (Plan Review Card)：仅深色主题生效 ============
+   .LVzXQa_card = dsh-client-ui-user-questions/PlanReviewPanel.module.css 的真实计划待审卡
+   （0.1.3-alpha.2 与 0.1.5-rc.1 实测均在）。
+   原 [data-slot="plan-review"] 在两版均非合法槽位键（从未生效过的历史死选择器），已删除。
+   注意：计划待审卡没有独立槽位——它经 conversation.composer 链按 pendingInteraction 选中渲染，
+   故不可用 [data-slot="conversation.input.plan"]：后者是 dsh-client-ui-plan 注册的「输入栏 plan
+   开关 chip」，只要有会话就存在（与计划待审无关），套用会让橙色计划样式常驻输入栏。 */
+body[data-ds-dark-theme] .LVzXQa_card {
   background: rgba(13, 15, 19, 0.68) !important;
   backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
   -webkit-backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;

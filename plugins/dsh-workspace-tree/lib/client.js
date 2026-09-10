@@ -307,7 +307,7 @@ window.__ModuleLoader__.load({
       // （live mode 可为 archive 且不持久化，设置页拿不到它）
       return {
         // 注意：此处版本号为手写常量，发版改 package.json 时同步改这里
-        plugin: "dsh-workspace-tree@1.9.2",
+        plugin: "dsh-workspace-tree@1.9.3",
         t: new Date().toISOString(),
         ...(noSnap ? { warning: "snapshots unavailable（ctx 未就绪或已释放）" } : {}),
         defaultMode,
@@ -1757,7 +1757,9 @@ window.__ModuleLoader__.load({
             if (Array.isArray(r.restored)) forgetDeleted(r.restored);
             refreshSessions();
           } else if (k === "deleteAll") {
-            handleDeleteResponse(await apiPost("/archive/deleteAll", {}));
+            // all: true 为服务端强制要求：空对象 {} 不再等于「删除全部归档」
+            // （防误触 + 防 CSRF，见 host 半区 handleDeleteAll）。
+            handleDeleteResponse(await apiPost("/archive/deleteAll", { all: true }));
           }
           setArchiveConfirm(null);
         } catch (error) {
@@ -2245,26 +2247,12 @@ window.__ModuleLoader__.load({
           if (name === "uiWorkspace") patchUiWorkspaceArchivedView();
         }));
       }
-      if (ctx.workspaces) {
-        const patchedProject = function() {
-          const workspace = this.manager.getSnapshot();
-          const sessions = this.sessions.list.getSnapshot();
-          const baselinesReady = workspace.phase === "ready" && sessions.phase === "ready";
-          this.list.set({
-            items: workspace.items,
-            archivedSessionIds: workspace.archivedSessionIds,
-            state: workspace.state,
-            phase: workspace.phase,
-            error: workspace.error,
-            baselinesReady,
-            recentWorkspaceId: baselinesReady ? this.list.getSnapshot()?.recentWorkspaceId : void 0
-          });
-        };
-        // 同时覆盖 prototype 与实例自身属性两种情形
-        const proto = Object.getPrototypeOf(ctx.workspaces);
-        if (proto && typeof proto.project === "function") proto.project = patchedProject;
-        if (typeof ctx.workspaces.project === "function") ctx.workspaces.project = patchedProject;
-      }
+      // 历史兼容块已移除（2026-09-10 审计）：此处曾 patch ctx.workspaces.project，
+      // 但 dsh-api-workspace-controller 的 WorkspaceController 在 0.1.3-alpha.2 与
+      // 0.1.5-rc.1 **两个版本都没有 project 方法**，两处 typeof 守卫恒为假 →
+      // 整块是永不执行的死代码（且内部用的是旧 WorkspaceRuntime 的
+      // this.manager / this.sessions.list 形状）。已阅览归档会话仍由上面的
+      // patchUiWorkspaceArchivedView() 承担。
 
       // 启用开关走有效配置（Host 就绪即读 settings，否则回退 LS）。
       // 注意：apply 时刻 scope 可能仍在 loading，此处是启动快照；运行中关闭
@@ -2337,16 +2325,12 @@ window.__ModuleLoader__.load({
                 if (!result.ok) throw new Error(result.error?.message || "重命名失败");
                 return;
               }
-              if (ctx.connection?.api?.sessions?.rename) {
-                const res = await ctx.connection.api.sessions.rename({ sessionId, title });
-                if (res && res.result && !res.result.ok) {
-                  throw new Error(res.result.error?.message || "重命名失败");
-                }
-                if (typeof ctx.sessions?.refresh === "function") {
-                  ctx.sessions.refresh();
-                }
-                return;
-              }
+              // 历史兜底已移除（2026-09-10 审计）：ctx.connection.api 在
+              // 0.1.3-alpha.2 与 0.1.5-rc.1 的 connection handle 上都**不存在**
+              // （handle 只有 isLoopback/generation/state/rpc/reconnect/
+              // registerGenerationSource/start），该分支恒为假。
+              // 主路径 ctx.sessions.binding(id).session.rename() 覆盖所有
+              // host 列表内的会话（binding 会为其物化 scope），保持不变。
               throw new Error("无法连接到会话重命名服务");
             },
             renameWorkspace: async (workspaceId, title) => {
@@ -2392,14 +2376,10 @@ window.__ModuleLoader__.load({
               if (uiWs && typeof uiWs.pickDirectory === "function") {
                 return await uiWs.pickDirectory();
               }
-              // ctx.directoryPicker 未 inject，属性访问会被 cordis 代理抛错，需包裹 try
-              let picker = null;
-              try { picker = ctx.directoryPicker; } catch { picker = null; }
-              if (picker && typeof picker.pick === "function") {
-                const res = await picker.pick();
-                if (res && res.ok) return res.value;
-                if (res && res.error) throw new Error(res.error.message || "选择目录失败");
-              }
+              // 历史兜底已移除（2026-09-10 审计）：ctx.directoryPicker 从来不是
+              // cordis 服务（全仓无 provide("directoryPicker")），0.1.5-rc.1 里它
+              // 是 Remote 命名空间下的 remote.directoryPicker。主路径
+              // uiWorkspace.pickDirectory() 在两版都可用，保持不变。
               throw new Error("目录选择服务不可用");
             },
             refreshSessions: () => {

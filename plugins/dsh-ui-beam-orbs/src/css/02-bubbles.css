@@ -1,8 +1,10 @@
 /* ============ 消息气泡与代码块玻璃化（与侧边栏/输入框同款材质）============ */
 /* 仅深色主题生效；浅色主题保持官方原版气泡/代码块 */
 
-/* 用户消息气泡 */
-body[data-ds-dark-theme] .gdEzaW_bubble {
+/* 用户消息气泡（.Sixlwa_bubble = dsh-client-ui-chat MessageItem.module.css，0.1.3-alpha.2 与
+   0.1.5-rc.1 实测均在；原 .gdEzaW_bubble 两版皆无，为历史死选择器） */
+body[data-ds-dark-theme] .Sixlwa_bubble,
+body[data-ds-dark-theme] [class$="_bubble"] {
   background: rgba(13, 15, 19, 0.55) !important;
   /* GPU 优化：气泡数量多且背后是平滑极光；强度跟随设置面板 */
   backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
@@ -10,16 +12,27 @@ body[data-ds-dark-theme] .gdEzaW_bubble {
   box-shadow: inset 0 0 0 1px hsla(0, 0%, 100%, 0.08) !important;
 }
 
-/* 代码块容器（终端/阅读/差异/搜索等 DSL 块）+ 复制按钮 + banner */
-body[data-ds-dark-theme] ._block_10eou_7,
-body[data-ds-dark-theme] ._block_biesw_7,
-body[data-ds-dark-theme] ._block_srovd_7,
-body[data-ds-dark-theme] ._block_s66q0_7,
-body[data-ds-dark-theme] ._block_178r4_4,
-body[data-ds-dark-theme] ._block_d4nqi_7,
-body[data-ds-dark-theme] ._body_1ye18_20,
-body[data-ds-dark-theme] ._copyButton_10eou_142,
-body[data-ds-dark-theme] ._bannerWrap_178r4_21 {
+/* 工具 DSL 块内容体（终端/代码/差异/阅读/搜索/网页/图片）+ 上下文注入行。
+   实测真实类名：dsh-client-ui-tool 的 o3BgMG_*Body 族（0.1.3-alpha.2 / 0.1.5-rc.1 均在），
+   以及 dsh-client-ui-chat 的 .XrJvXW_body —— 注意后者实为「上下文注入行」内容体，并非代码块。
+   原 _block_* / _body_1ye18_20 / _copyButton_10eou_142 / _bannerWrap_178r4_21 在 0.1.3-alpha.2
+   与 0.1.5-rc.1 全量产物中均不存在（历史死选择器）；其兜底 [class*="_block_"] /
+   [class$="_bannerWrap"] / [class$="_copyButton"] 同样 0 命中，故改为按 _*Body 后缀兜底。 */
+body[data-ds-dark-theme] .o3BgMG_terminalBody,
+body[data-ds-dark-theme] .o3BgMG_codeBody,
+body[data-ds-dark-theme] .o3BgMG_diffBody,
+body[data-ds-dark-theme] .o3BgMG_readBody,
+body[data-ds-dark-theme] .o3BgMG_searchBody,
+body[data-ds-dark-theme] .o3BgMG_webBody,
+body[data-ds-dark-theme] .o3BgMG_imageBody,
+body[data-ds-dark-theme] .XrJvXW_body,
+body[data-ds-dark-theme] [class$="_codeBody"],
+body[data-ds-dark-theme] [class$="_terminalBody"],
+body[data-ds-dark-theme] [class$="_diffBody"],
+body[data-ds-dark-theme] [class$="_readBody"],
+body[data-ds-dark-theme] [class$="_searchBody"],
+body[data-ds-dark-theme] [class$="_webBody"],
+body[data-ds-dark-theme] [class$="_imageBody"] {
   background: rgba(13, 15, 19, 0.55) !important;
   /* GPU 优化：代码块数量多；强度跟随设置面板 */
   backdrop-filter: blur(var(--dsh-bg-blur, 8px)) !important;
@@ -31,7 +44,7 @@ body[data-ds-dark-theme] ._bannerWrap_178r4_21 {
 body[data-ds-dark-theme] .CY-8Ka_card,
 body[data-ds-dark-theme] .o3BgMG_root,
 body[data-ds-dark-theme] .ztWv_q_callRow,
-body[data-ds-dark-theme] .Md3f7G_callRow {
+body[data-ds-dark-theme] .EvIC1a_callRow {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;

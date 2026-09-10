@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-ui-beam-orbs",
   "description": "DSH Web 界面皮肤层：玻璃拟态 + Border Beam + Thinking Orbs + Pulse 任务清单框 + 发送按钮微动效（背景引擎极光/鲸鱼/星座在 @lynn123411/dsh-ui-deepseek-bg）",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
@@ -17,8 +17,10 @@
   },
   "files": [
     "lib/",
+    "scripts/",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
@@ -29,6 +31,12 @@
     "directory": "plugins/dsh-ui-beam-orbs"
   },
   "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

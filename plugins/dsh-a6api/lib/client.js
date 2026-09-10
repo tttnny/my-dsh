@@ -5157,16 +5157,25 @@ function apply(ctx) {
   }
   if (typeof window === "undefined") return;
   try {
-    setTimeout(() => {
-      try {
-        store.warmUp();
-      } catch {
-      }
-      try {
-        store.initPricePolling();
-      } catch {
-      }
-    }, 1500);
+    ctx.effect(() => {
+      const warmupTimer = setTimeout(() => {
+        try {
+          store.warmUp();
+        } catch {
+        }
+        try {
+          store.initPricePolling();
+        } catch {
+        }
+      }, 1500);
+      return () => {
+        clearTimeout(warmupTimer);
+        try {
+          store.stopAutoRefresh();
+        } catch {
+        }
+      };
+    }, "dsh-a6api: warmup & price polling");
   } catch {
   }
   try {

@@ -3,7 +3,7 @@ node_modules/
 
 # 临时工作区/调测产物（不入库）
 .scratch/
-_research/
+research/
 .bug-investigate/
 .tmp-screenshots/
 .dsh-waystation-cache/

@@ -250,12 +250,12 @@ function initSettings(shared) {
       });
       // 监听设置弹窗挂载，标记「界面特效」导航项以展示专属 Sparkles 光效图标
       syncSettingsNavIcon();
+      // 合批订阅已覆盖 #root 全树 childList/subtree + class/aria-label 属性突变，足以在设置弹窗
+      // 挂载与导航项重绘时重跑标记。原先额外挂了一个裸 observer（document.body 全量子树 +
+      // characterData:true，流式输出高频触发）却从不 disconnect，既是泄漏也是纯冗余：此处删除，
+      // 由上面的 subscribeCoalesced 单例统一承载（它随订阅者归零自动 disconnect）。
       if (shared.refs.subscribeCoalesced) {
         shared.refs.subscribeCoalesced(syncSettingsNavIcon);
-      }
-      if (window.MutationObserver && document.body) {
-        var navObs = new MutationObserver(syncSettingsNavIcon);
-        navObs.observe(document.body, { childList: true, subtree: true, characterData: true });
       }
     } catch (e) {}
   }

@@ -28,5 +28,7 @@ pnpm run typecheck    # 可选
 - 数据来源为 DSH Desktop v2.0+（兼容模式）同源接口 `/api/desktop/settings`；
   纯 npm 版 DSH 无此接口，插件 fail-soft，分区显示不可用提示。
 - 零宿主副作用：不 spawn 任何进程、不新增路由/端口/凭据面；
-  唯一第三方依赖 `qrcode-generator` 已由 esbuild 打进 `lib/client.js`
-  （profile 根 `node_modules/qrcode-generator` 的 hoisted 副本仅为双保险）。
+  唯一第三方依赖 `qrcode-generator` 是**构建期**依赖（devDependencies），
+  已由 esbuild 内联进 `lib/client.js`：client 半区自包含，运行时零 `require`，
+  profile 根 `node_modules/qrcode-generator` 下也**没有**任何副本可依赖。
+  改动它之后必须重新 `node build.mjs`，产物才带上新版本。

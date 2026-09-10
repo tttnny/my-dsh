@@ -35,11 +35,19 @@
         loadSnapshot(st, false)
       }
     }
-    // 打开面板：一律右侧停靠（details 列）；layout 服务不可用 → 页内兜底
+    // 打开面板：一律右侧停靠（rightbar 列）；layout 服务不可用 → 页内兜底
+    // 【0.1.5-rc.1 适配】layout 服务把 openDetails() 改名为
+    // `openRightbar(track: boolean, fullscreen: boolean)`——新签名是「报告右栏呈现方式」
+    // （track=是否预留网格轨道；fullscreen=是否覆盖整帧），不再是旧的 imperative 打开。
+    // 这里传 (true, false)：预留轨道、非全屏，与原 openDetails() 的意图等价。
+    // 双版本兼容：保留旧名回退（typeof 守卫，旧版 DSH 走 openDetails）。
     export const openDockPanel = function (st) {
       const ls = ctx.get('layout')
-      if (ls && typeof ls.openDetails === 'function') {
-        ls.openDetails()
+      const openRight = ls && typeof ls.openRightbar === 'function'
+        ? function () { ls.openRightbar(true, false) }
+        : (ls && typeof ls.openDetails === 'function' ? function () { ls.openDetails() } : null)
+      if (openRight) {
+        openRight()
         // #58 缓存优先：与 openPagePanel 同逻辑，避免切面板闪 loading
         if (!st.cwd) {
           const sync = getCwdSync(st.sessionId)
@@ -61,8 +69,8 @@
       }
       openPagePanel(st)  // layout 服务不可用 → 退回悬浮
     }
-    // v1.4：打开位置可选 —— cfg.openIn: 'dock'（details 列，默认）/ 'sidebar'（dsh-better-sidebar tab）
-    //   better-sidebar 已装时可用；未装或服务不可用 → 回退 details 列
+    // v1.4：打开位置可选 —— cfg.openIn: 'dock'（rightbar 列，默认）/ 'sidebar'（dsh-better-sidebar tab）
+    //   better-sidebar 已装时可用；未装或服务不可用 → 回退 rightbar 列
     // v1.4.1 修复「切侧边栏没反应」：
     //   ① ensureSidebarTab 幂等注册 —— better-sidebar 的 client 可能晚于本模块加载（未声明 inject 依赖），
     //      注册必须可重试；openTab 前 ensure 一次保证已注册（否则 openTab 静默 no-op）。
@@ -101,7 +109,7 @@
     export const openInSidebar = function (st) {
       const bs = ctx.get('betterSidebar')
       if (bs && typeof bs.openTab === 'function') {
-        if (!ensureSidebarTab()) { openDockPanel(st); return }  // 注册失败 → 回退 details 列
+        if (!ensureSidebarTab()) { openDockPanel(st); return }  // 注册失败 → 回退 rightbar 列
         // #2-fix（2026-08-19 用户反馈「新会话点状态栏面板不开」）：必须传 scope={sessionId}。
         //   better-sidebar 的 openTab(seed, scope) 内部 `targetSessionId = scope?.sessionId ?? store.getSnapshot().sessionId`；
         //   新会话时宿主尚未 setSession(该 id) → store sessionId 为 undefined → openTab 静默 return，面板不开。
@@ -127,12 +135,12 @@
         loadSnapshot(st, false)
         return
       }
-      openDockPanel(st)  // better-sidebar 不可用 → 回退 details 列
+      openDockPanel(st)  // better-sidebar 不可用 → 回退 rightbar 列
     }
     export const openPanel = function (st) {
       // #2-fix（2026-08-19 用户反馈「新会话点状态栏按钮右侧面板不开」）：
       //   cfg.openIn 在 apply 时固化；装配竞态（better-sidebar 晚于本模块加载）会令 bsInstalled=false → openIn 误判为 'dock'，
-      //   点击永远走 openDockPanel（宿主 details 列），better-sidebar 面板不展开 → 用户看不到列表（数据其实一直在渲染）。
+      //   点击永远走 openDockPanel（宿主 rightbar 列），better-sidebar 面板不展开 → 用户看不到列表（数据其实一直在渲染）。
       //   实时检测：better-sidebar 当前可用（openTab 存在）且用户未显式选过 dock → 走 sidebar 展开 better-sidebar。
       const bs = ctx.get('betterSidebar')
       const bsReady = !!(bs && typeof bs.openTab === 'function')

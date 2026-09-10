@@ -303,7 +303,13 @@ var NonDestructiveTranslationMount = class {
 // src/client/translate/viewport-observer.ts
 var StreamDebounceViewportObserver = class {
   intersectionObserver = null;
-  streamingTimers = /* @__PURE__ */ new WeakMap();
+  /**
+   * Pending per-element streaming debounce timers. A Map (not a WeakMap)
+   * because disconnect() must enumerate and clear every pending timer: a
+   * WeakMap cannot be iterated, so a debounce armed just before the switch was
+   * turned off would still fire registerForViewport() afterwards.
+   */
+  streamingTimers = /* @__PURE__ */ new Map();
   pendingQueue = [];
   batchFlushTimer = null;
   options;
@@ -357,6 +363,7 @@ var StreamDebounceViewportObserver = class {
       return;
     }
     const timer = window.setTimeout(() => {
+      if (this.streamingTimers.get(element) !== timer) return;
       this.streamingTimers.delete(element);
       if (element.isConnected) {
         const latestText = element.textContent?.trim() || text;
@@ -405,6 +412,10 @@ var StreamDebounceViewportObserver = class {
       clearTimeout(this.batchFlushTimer);
       this.batchFlushTimer = null;
     }
+    for (const timer of this.streamingTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.streamingTimers.clear();
     this.pendingQueue = [];
     if (this.intersectionObserver) {
       this.intersectionObserver.disconnect();

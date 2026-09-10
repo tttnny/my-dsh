@@ -130,7 +130,13 @@ function initBeam(shared) {
   function isPlanMode() {
     try {
       if (document.querySelector('[aria-label*="plan mode 已开启"], [aria-label*="Plan mode on"], [aria-label*="plan mode is on"], [aria-label*="Plan Mode on"]')) return true;
-      if (document.querySelector('[data-slot="plan"]')) return true;
+      // 0.1.5-rc.1：plan 状态由输入栏的 plan chip 承载（dsh-client-ui-plan PlanModeControl，
+      // 类名 rS3zOq_chip）。该组件在非 plan mode 时 return null，仅计划模式开启才渲染，
+      // 故其存在即 plan mode 开启，且与 locale 无关（上一行的 aria-label 判定保留为哈希漂移兜底）。
+      // 原 [data-slot="plan"] 在 0.1.3-alpha.2 / 0.1.5-rc.1 均非合法槽位键（从未生效）；
+      // 不可改用 [data-slot="conversation.input.plan"]——那是只要有会话就渲染的 plan 开关槽位，
+      // 会导致 isPlanMode() 恒为 true、beam 永久停在 planning 态。
+      if (document.querySelector('.rS3zOq_chip')) return true;
       if (document.documentElement.dataset && document.documentElement.dataset.planMode === "1") return true;
     } catch(e) {}
     return false;
@@ -150,9 +156,7 @@ function initBeam(shared) {
         '.CY-8Ka_root[data-state="running"]',
         '.o3BgMG_root[data-state="running"]',
         '.iWrAna_card[data-state="running"]',
-        '._Xvjua_root[data-state="running"]',
         '[data-variant="think"][data-state="running"]',
-        '.QWLzlG_root[data-state="running"]',
         '[data-variant="answer"][data-state="running"]',
         '[data-role="assistant"][data-streaming="true"]'
       ].join(", ");

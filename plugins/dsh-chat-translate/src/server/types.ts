@@ -10,19 +10,6 @@ export interface PluginConfig {
   targetLang: string; // target language, default 'zh-Hans'
 }
 
-export interface MaskedPluginConfig {
-  enabled: boolean;
-  concurrency: number;
-  timeoutMs: number;
-  aiTimeoutMs: number;
-  aiEnabled: boolean;
-  bingEnabled: boolean;
-  baseUrl: string;
-  model: string;
-  targetLang: string;
-  aiConfigured: boolean; // baseUrl + model + TRANSLATE_API_KEY all present
-}
-
 export interface TranslateItemResult {
   original: string;
   translated: string;

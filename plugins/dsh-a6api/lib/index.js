@@ -3,7 +3,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
-// node_modules/.pnpm/@deepseek-ai+dsh-home-paths@0.1.3-alpha.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-home-paths/lib/index.js
+// node_modules/.pnpm/@deepseek-ai+dsh-home-paths@0.1.5-rc.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-home-paths/lib/index.js
 import { opendir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -1758,6 +1758,8 @@ function validateReasoningEfforts(value) {
 var name = "@lynn123411/dsh-a6api";
 var inject = ["webServer"];
 var PREFIX = "/api/dsh-a6api";
+var PROBE_ALL_DEADLINE_MS = 5 * 60 * 1e3;
+var PROBE_ALL_CONCURRENCY = 4;
 var MASK = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
 function maskConfig(c) {
   return {
@@ -1799,6 +1801,10 @@ async function parseJsonBody(req) {
   } catch {
     throw new Error("Invalid JSON body");
   }
+}
+var LOOPBACK_ADDRESSES = /* @__PURE__ */ new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+function isLoopbackRequest(req) {
+  return LOOPBACK_ADDRESSES.has(String(req?.socket?.remoteAddress || ""));
 }
 var merchantCardCache = /* @__PURE__ */ new Map();
 var MERCHANT_CARD_TTL_MS = 15 * 60 * 1e3;
@@ -2074,6 +2080,9 @@ function apply(ctx) {
           if (req.method === "POST" && !String(req.headers["content-type"] || "").toLowerCase().includes("application/json")) {
             return sendJson(res, 415, { ok: false, error: "Content-Type must be application/json" });
           }
+          if (req.method === "POST" && !isLoopbackRequest(req)) {
+            return sendJson(res, 403, { ok: false, error: "Forbidden: \u5199\u64CD\u4F5C\u4EC5\u5141\u8BB8\u672C\u673A\u56DE\u73AF\u8C03\u7528" });
+          }
           try {
             if (pathname === "/state" && (req.method === "GET" || req.method === "HEAD")) {
               const config = await configAccess.readConfig();
@@ -2148,16 +2157,52 @@ function apply(ctx) {
               if (modelIds.length === 0) {
                 modelIds = await configAccess.getDshConfiguredModels();
               }
-              const results = [];
-              for (const m of modelIds) {
-                const r = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, m);
-                if (r.merchant) {
-                  merchantCardCache.set(m.toLowerCase(), { card: r.merchant, at: Date.now() });
+              const deadlineAt = Date.now() + PROBE_ALL_DEADLINE_MS;
+              const results = new Array(modelIds.length);
+              let nextIndex = 0;
+              const worker = async () => {
+                for (; ; ) {
+                  if (Date.now() >= deadlineAt) return;
+                  const i = nextIndex++;
+                  if (i >= modelIds.length) return;
+                  const m = modelIds[i];
+                  try {
+                    const r = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, m);
+                    if (r.merchant) {
+                      merchantCardCache.set(m.toLowerCase(), { card: r.merchant, at: Date.now() });
+                    }
+                    results[i] = r;
+                  } catch (err) {
+                    results[i] = { modelName: m, success: false, error: err?.message || String(err) };
+                  }
                 }
-                results.push(r);
+              };
+              let deadlineTimer = null;
+              try {
+                await Promise.race([
+                  Promise.all(
+                    Array.from({ length: Math.min(PROBE_ALL_CONCURRENCY, modelIds.length) }, () => worker())
+                  ),
+                  // 到点即返回：在途探测不取消（各自仍有 180s 上限，其结果照常回填卡片缓存），
+                  // 但响应不再等待它们 —— 总墙钟时间被钉在预算内。
+                  new Promise((resolve2) => {
+                    deadlineTimer = setTimeout(resolve2, PROBE_ALL_DEADLINE_MS);
+                  })
+                ]);
+              } finally {
+                if (deadlineTimer) clearTimeout(deadlineTimer);
               }
+              const done = results.filter((r) => Boolean(r));
+              const timedOut = done.length < modelIds.length;
               stateMemo.invalidate();
-              return sendJson(res, 200, { ok: true, results });
+              return sendJson(res, 200, {
+                ok: true,
+                results: done,
+                completed: done.length,
+                total: modelIds.length,
+                timedOut,
+                error: timedOut ? `\u5168\u91CF\u63A2\u6D4B\u8D85\u51FA\u603B\u9884\u7B97 ${PROBE_ALL_DEADLINE_MS / 1e3}s\uFF0C\u5DF2\u8FD4\u56DE ${done.length}/${modelIds.length} \u4E2A\u5DF2\u5B8C\u6210\u7ED3\u679C` : void 0
+              });
             }
             if (pathname === "/sync-models" && req.method === "POST") {
               const body = await parseJsonBody(req);

@@ -99,6 +99,7 @@ function apply(ctx) {
           },
           answers: {
             type: "array",
+            required: true,
             description: "One entry per question, in the order asked.",
             items: {
               type: "object",
@@ -161,7 +162,10 @@ function apply(ctx) {
       }));
 
       // 3. round-end supplement question (R3) — single "无需补充" option; supplement is via custom input, so no "I have something to add" option (duplicates that field)
-      questions.push(ROUND_END_QUESTION);
+      questions.push({
+        ...ROUND_END_QUESTION,
+        options: ROUND_END_QUESTION.options.map((option) => ({ ...option })),
+      });
 
       // 4. ask through the userQuestions seam (UI renders from the service)
       const answer = await ctx.userQuestions.ask({

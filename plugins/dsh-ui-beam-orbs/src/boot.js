@@ -22,7 +22,7 @@ function initBoot(shared) {
         var toggle = document.querySelector(".hHd-Xa_toggle, [aria-label*=\"sidebar\"], [aria-label*=\"侧边栏\"]");
         if (toggle) toggle.click();
         setTimeout(function () {
-          var first = document.querySelector('.qDHVXG_listArea [role="button"], .qDHVXG_listArea button, [data-slot="sidebar.workspaces"] [role="button"]');
+          var first = document.querySelector('.bhn1Oq_list [role="button"], .bhn1Oq_list button, [data-slot="sidebar.workspaces"] [role="button"]');
           if (first) first.click();
           setTimeout(function () {
             var codes = document.querySelectorAll("pre, [class*=\"_block_\"], [class*=\"_banner\"], [class*=\"_body\"], code");

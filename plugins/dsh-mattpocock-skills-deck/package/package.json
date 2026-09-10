@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-mattpocock-skills-deck",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tttnny/my-dsh.git",
@@ -46,6 +46,12 @@
   },
   "homepage": "https://github.com/tttnny/my-dsh/tree/main/plugins/dsh-mattpocock-skills-deck#readme",
   "license": "MIT",
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
   "publishConfig": {
     "access": "public"
   }

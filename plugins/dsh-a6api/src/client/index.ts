@@ -208,12 +208,22 @@ export function apply(ctx: any): void {
   }
   if (typeof window === 'undefined') return;
   // 启动预热 + 后台轮询：插件随 DSH 启动即后台拉取一次完整状态（服务端 /state 已并行化），
-  // 之后每 60s 整体刷新 —— 用户打开侧边栏浮层/设置页时数据已就绪，秒开无 spinner
+  // 之后每 60s 整体刷新 —— 用户打开侧边栏浮层/设置页时数据已就绪，秒开无 spinner。
+  // 必须挂在 ctx.effect 内：卸载 / 热重载（HMR）时清掉启动定时器并停掉 store 的 60s 轮询，
+  // 否则每次重新 apply 都会再挂一份无 disposer 的定时器（旧实现 setTimeout 在 effect 之外）。
+  // 清理复用 store.stopAutoRefresh()（clear interval 并置空 autoRefreshTimer）；
+  // 之后重新 apply 时 initPricePolling() 见 timer 为空会重新 startAutoRefresh，语义自洽。
   try {
-    setTimeout(() => {
-      try { store.warmUp(); } catch {}
-      try { store.initPricePolling(); } catch {}
-    }, 1500);
+    ctx.effect(() => {
+      const warmupTimer = setTimeout(() => {
+        try { store.warmUp(); } catch {}
+        try { store.initPricePolling(); } catch {}
+      }, 1500);
+      return () => {
+        clearTimeout(warmupTimer);
+        try { store.stopAutoRefresh(); } catch {}
+      };
+    }, 'dsh-a6api: warmup & price polling');
   } catch {}
 
 

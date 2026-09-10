@@ -1,11 +1,15 @@
 {
   "name": "@lynn123411/dsh-oil-sticky-prompt",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "DSH 对话吸顶提示：将最近的用户 Prompt 悬浮固定在对话流顶部，点击平滑回滚至对应消息。",
   "type": "module",
   "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
   "exports": {
-    ".": "./lib/index.js",
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
     "./client": "./lib/client.js",
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
@@ -47,7 +51,7 @@
     }
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "rm -rf lib && tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "pnpm typecheck && pnpm test && pnpm build"

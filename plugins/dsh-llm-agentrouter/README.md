@@ -1,6 +1,6 @@
 # @lynn123411/dsh-llm-agentrouter
 
-AgentRouter 中转聚合插件：把同一家中转的多个模型收拢为一条 pi-ai 路由（模型选择器只出现一个 AgentRouter 分组），国内 / 国际端点在「设置 - 插件 - AgentRouter 中转站」一键切换、下一请求即生效，外加出站请求的 User-Agent 改写与 402 配额耗尽提示围栏。分叉自 `aqiu817/dsh-llm-agentrouter`，适配 DSH `0.1.2-alpha.5` 起的新 settings/slots API，已在 `0.1.3-alpha.2` 逐项实证兼容。
+AgentRouter 中转聚合插件：把同一家中转的多个模型收拢为一条 pi-ai 路由（模型选择器只出现一个 AgentRouter 分组），国内 / 国际端点在「设置 - 插件 - AgentRouter 中转站」一键切换、下一请求即生效，外加出站请求的 User-Agent 改写与 402 配额耗尽提示围栏。分叉自 `aqiu817/dsh-llm-agentrouter`，适配 DSH `0.1.2-alpha.5` 起的新 settings/slots API，已在 `0.1.5-rc.1` 逐项实证兼容。
 
 ## 特性
 

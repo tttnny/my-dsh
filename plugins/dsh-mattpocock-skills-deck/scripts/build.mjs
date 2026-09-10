@@ -22,6 +22,7 @@ import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import vm from 'node:vm'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import * as esbuild from 'esbuild'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -537,22 +538,61 @@ if (!args.includes('--no-sync')) {
     try {
       const profileBase = resolve(_home, '.dsh/profiles/web/node_modules/@lynn123411/dsh-mattpocock-skills-deck')
       if (existsSync(profileBase)) {
-        for (const [srcRel, dstRel] of [['package/lib/client.js','lib/client.js'],['package/lib/index.js','lib/index.js']]) {
+        // 【2026-09-10 审计修复】整树同步。
+        // 此前只复制 client.js / index.js 两个文件，但 package/lib 有 90+ 文件
+        // （index.js 动态 import bootstrap/platformChannel/repoKeys/dispatchMeta…）
+        // 且依赖 shared/；漏同步时仍会打印「已同步 / hash 校验通过」——静默陷阱。
+        // 改为整目录 cpSync + 全树 sha256 校验，任何差异都显式报错。
+        const syncPairs = [
+          ['package/lib', 'lib'],
+          ['package/shared', 'shared'],
+          ['package/package.json', 'package.json'],
+          ['package/README.md', 'README.md'],
+          ['cordis.patch.yml', 'cordis.patch.yml']
+        ]
+        for (const [srcRel, dstRel] of syncPairs) {
           const src = resolve(ROOT, srcRel)
           const dst = resolve(profileBase, dstRel)
-          if (existsSync(src)) {
-            mkdirSync(resolve(profileBase, 'lib'), { recursive: true })
-            writeFileSync(dst, readFileSync(src, 'utf8'), 'utf8')
-          }
+          if (!existsSync(src)) continue
+          rmSync(dst, { recursive: true, force: true })
+          mkdirSync(dirname(dst), { recursive: true })
+          cpSync(src, dst, { recursive: true })
         }
         console.log(`[build] 已同步 profile → ${profileBase}`)
-        // hash 校验
+
+        // 全树 hash 校验：逐文件 sha256 比对（排除 node_modules）
+        const hashTree = (base) => {
+          const root = resolve(base)
+          if (!existsSync(root)) return null
+          const out = []
+          const walk = (dir, rel) => {
+            for (const ent of readdirSync(dir, { withFileTypes: true }).sort((x, y) => x.name.localeCompare(y.name))) {
+              if (ent.name === 'node_modules') continue
+              const fp = resolve(dir, ent.name)
+              const rp = rel ? rel + '/' + ent.name : ent.name
+              if (ent.isDirectory()) walk(fp, rp)
+              else out.push(rp + ':' + createHash('sha256').update(readFileSync(fp)).digest('hex'))
+            }
+          }
+          walk(root, '')
+          return out
+        }
         try {
-          const a = readFileSync(resolve(ROOT,'package/lib/client.js'),'utf8')
-          const b = readFileSync(resolve(profileBase,'lib/client.js'),'utf8')
-          if (a !== b) console.warn('[build] profile 同步 hash 不一致')
-          else console.log('[build] profile 同步 hash 校验通过')
-        } catch {}
+          const want = hashTree(resolve(ROOT, 'package'))
+          const got = hashTree(profileBase)
+          const wantMap = new Map(want.map((l) => [l.split(':')[0], l.split(':')[1]]))
+          const gotMap = new Map(got.map((l) => [l.split(':')[0], l.split(':')[1]]))
+          const missing = [...wantMap.keys()].filter((k) => !gotMap.has(k))
+          const extra = [...gotMap.keys()].filter((k) => !wantMap.has(k))
+          const differing = [...wantMap.keys()].filter((k) => gotMap.has(k) && gotMap.get(k) !== wantMap.get(k))
+          if (missing.length || differing.length) {
+            throw new Error(`profile 同步校验失败：缺失 ${missing.length} 项${missing.length ? ' (' + missing.slice(0, 5).join(', ') + ')' : ''}，内容不一致 ${differing.length} 项${differing.length ? ' (' + differing.slice(0, 5).join(', ') + ')' : ''}`)
+          }
+          console.log(`[build] profile 全树 hash 校验通过（${wantMap.size} 个文件）` + (extra.length ? `；运行目录另有 ${extra.length} 项非本包产物（已忽略）` : ''))
+        } catch (ve) {
+          console.error('[build] ' + ve.message)
+          process.exitCode = 1
+        }
       }
     } catch (e) {
       console.warn('[build] profile 同步跳过:', e.message)

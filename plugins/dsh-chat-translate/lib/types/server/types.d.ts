@@ -9,18 +9,6 @@ export interface PluginConfig {
     model: string;
     targetLang: string;
 }
-export interface MaskedPluginConfig {
-    enabled: boolean;
-    concurrency: number;
-    timeoutMs: number;
-    aiTimeoutMs: number;
-    aiEnabled: boolean;
-    bingEnabled: boolean;
-    baseUrl: string;
-    model: string;
-    targetLang: string;
-    aiConfigured: boolean;
-}
 export interface TranslateItemResult {
     original: string;
     translated: string;

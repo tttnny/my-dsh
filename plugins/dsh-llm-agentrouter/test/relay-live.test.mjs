@@ -2,12 +2,15 @@
  * Live integration check: the real pi-ai adapter, this bundle's route profile,
  * and the User-Agent fence, streaming one turn from the relay.
  *
- * It is skipped unless both a relay key and the pi-ai package resolve, so the
- * suite still runs offline and on a machine that has no dsh install. What it
- * proves is the thing unit tests cannot: that a hand-declared route of this
- * shape builds, that the fence survives the adapter's own header pass
- * (attribution strips the profile's copy of `user-agent`), and that the relay
- * accepts the result.
+ * It is opt-in: `AGENTROUTER_LIVE=1` is required, and even then it skips
+ * unless both a relay key and the pi-ai package resolve. This file is part of
+ * the default `node --test test/*.test.mjs` glob, so without the flag a plain
+ * `npm test` would spend real relay quota on every run; with it, the cases
+ * below skip before any request is built and the suite stays green offline.
+ * What the live run proves is the thing unit tests cannot: that a hand-declared
+ * route of this shape builds, that the fence survives the adapter's own header
+ * pass (attribution strips the profile's copy of `user-agent`), and that the
+ * relay accepts the result.
  *
  * Provide the key as `AGENTROUTER_API_KEY`. The dsh Models settings page stores
  * it in the managed credentials document instead, which this test also reads —
@@ -94,10 +97,27 @@ const ENDPOINT = process.env.AGENTROUTER_ENDPOINT ?? 'cn'
 const RELAY_HOST = process.env.AGENTROUTER_HOST
 const HARNESS_UA = 'deepseek-harness/0.1.1 (+https://github.com/deepseek-ai/deepseek-harness)'
 
-const skip =
-  key === undefined ? 'no AGENTROUTER_API_KEY' : dist === undefined ? 'pi-ai is not installed' : false
+/**
+ * The opt-in gate every live case passes through.
+ *
+ * A live run costs real relay quota, so it happens only when the operator asks
+ * for it with `AGENTROUTER_LIVE=1`; without the flag the case skips even when a
+ * key is on disk and pi-ai is installed.
+ *
+ * @param {string | false} reason - why it cannot run with the flag set.
+ * @returns {string | false} the skip reason, or false when it may run.
+ */
+function skipUnlessLive(reason) {
+  return process.env.AGENTROUTER_LIVE === '1' ? reason : 'AGENTROUTER_LIVE is not 1'
+}
 
-test('the declared route streams a turn from the relay', { skip }, async () => {
+const skipStream = skipUnlessLive(
+  key === undefined ? 'no AGENTROUTER_API_KEY' : dist === undefined ? 'pi-ai is not installed' : false,
+)
+// The negative control needs no pi-ai, only the key and the opt-in.
+const skipUnfenced = skipUnlessLive(key === undefined ? 'no AGENTROUTER_API_KEY' : false)
+
+test('the declared route streams a turn from the relay', { skip: skipStream }, async () => {
   const { createModels, createProvider } = await import(`${dist}/index.js`)
   // The lazy factory, exactly as `dsh-llm-pi-ai` resolves it from its protocol
   // table: `createProvider` wants the built streams object, not the module.
@@ -205,7 +225,7 @@ test('the declared route streams a turn from the relay', { skip }, async () => {
   }
 })
 
-test('without the fence the relay rejects the harness User-Agent', { skip: key === undefined ? 'no AGENTROUTER_API_KEY' : false }, async () => {
+test('without the fence the relay rejects the harness User-Agent', { skip: skipUnfenced }, async () => {
   // The negative control that gives the test above its meaning: the relay gates
   // on User-Agent alone, so the same key and body must fail unfenced. If this
   // ever passes, the gate is gone and the fence can be retired.

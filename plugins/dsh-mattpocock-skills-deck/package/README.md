@@ -1,10 +1,10 @@
 # @lynn123411/dsh-mattpocock-skills-deck
 
-> 基于 [FeatherHunter/dsh-mattpocock-skills-deck](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck) v1.7.12 的**分叉（fork）**：Matt Pocock 技能套件（[mattpocock/skills](https://github.com/mattpocock/skills)）的 DSH 控制面板（Deck）——把 wayfinder 地图/票务/进度、triage / grilling / handoff 等动作注入 DSH 侧栏。分叉动机：本合集通过 **agent-preset** 分发技能（`presets/matt-*/skills/`，随会话所选 preset 生效），原插件只探测四个标准技能根、看不到 preset 目录里的技能（红条「未检测到核心技能套件」）；本分叉把「识别 preset 技能根 + 按会话生效 preset 门控」做进源码，替代此前 `patches/dsh-mattpocock-skills-deck` 补丁脚本。上游原版说明文档保留在 [docs/README-UPSTREAM.md](./docs/README-UPSTREAM.md)。
+> 基于 [FeatherHunter/dsh-mattpocock-skills-deck](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck) v1.7.12 的**分叉（fork）**：Matt Pocock 技能套件（[mattpocock/skills](https://github.com/mattpocock/skills)）的 DSH 控制面板（Deck）——把 wayfinder 地图/票务/进度、triage / grilling / handoff 等动作注入 DSH 侧栏。分叉动机：本合集通过 **agent-preset** 分发技能（`presets/matt-*/skills/`，随会话所选 preset 生效），原插件只探测四个标准技能根、看不到 preset 目录里的技能（红条「未检测到核心技能套件」）；本分叉把「识别 preset 技能根 + 按会话生效 preset 门控」做进源码，替代此前 `patches/dsh-mattpocock-skills-deck` 补丁脚本。上游原版说明文档见 [上游仓库 README](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck#readme)（本包内不再附带 docs/，避免 npm 页死链）。
 
 ## 特性
 
-- **控制面板（Deck）**：右侧 details 列注入地图列表 / 票务详情 / 进度契约 / triage 与 grilling 动作按钮 / handoff 交接，支持 GitHub / GitLab / Markdown 三种 issue 后端（数据链路见上游文档，本分叉未改动交互层）。
+- **控制面板（Deck）**：右侧栏（0.1.5-rc.1 起官方槽位名为 `rightbar`，旧名 `details`）注入地图列表 / 票务详情 / 进度契约 / triage 与 grilling 动作按钮 / handoff 交接，支持 GitHub / GitLab / Markdown 三种 issue 后端（数据链路见上游文档，本分叉未改动交互层）。
 - **环境检查链（wf.chain）识别 agent-preset 技能根**（`#preset-skill-roots`）：技能判装在四个标准根（`~/.agents/skills`、`~/.dsh/skills`、项目 `.dsh/skills`、项目 `.agents/skills`）之外，追加本合集 preset 的 `~/.dsh/.agent-presets/<id>/skills/<skill>` 候选（FS 服务与插件只读直读双通道；仍需 `SKILL.md` frontmatter `name` 精确匹配才算已安装）。
 - **按会话 preset 门控**（`#preset-session-gating`）：preset 技能只有随**当前会话所选 preset** 分发时才算「已安装」——会话没选 Matt 相关 preset（如内置 `standard`、`ptc-cordis`）时，环境检查如实显示技能未装，不再虚报「环境 10/10」。生效 preset 经 `agentPreset` 会话投影（创建 header 兜底）解析；解析不到会话上下文时回退「枚举全部 preset 目录」的宽松口径（宁绿勿误报）。
 - **链缓存按会话隔离**：服务端与客户端的环境检查链缓存键均加入 preset / 会话维度，同一工作区里不同 preset 的会话不互串链结果。

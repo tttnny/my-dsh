@@ -510,7 +510,7 @@ async function mutateWorkspaceState(ctx, mutator) {
 }
 
 /**
- * 极速读取 session.jsonl / session.jsonl.zstd 文件的 Header 首行。
+ * 极速读取会话日志文件（session.v<N>.jsonl[.zstd]，见 pickSessionLogFile）的 Header 首行。
  * 利用 DSH 底层首行 Header 单独作为独立 Frame-0 压缩的物理特性，仅读取头部 4KB。
  */
 async function readSessionHeaderFast(logFilePath) {
@@ -578,6 +578,46 @@ function isSubagentChildHeader(header) {
 }
 
 /**
+ * 规范化会话日志文件名（与 DSH 的 sessionFormatLogFilename 同构）。
+ *
+ * 0.1.5-rc.1 起 DSH 把日志名从固定的 `session.jsonl[.zstd]` 改为带格式版本号的
+ * `session.v<N>.jsonl[.zstd]`（`SESSION_FORMAT_VERSION = 3`；v0 即无版本号的旧名）。
+ * 同一会话目录内可并存多个版本（迁移期实测 v2 与 v3 同时存在），因此**不能**再用
+ * 单一 existsSync 探测固定名称——必须枚举目录、取版本最高者。此前用固定名探测导致
+ * 拓扑扫描恒空，级联删除 Subagent 静默失效。
+ */
+const SESSION_LOG_BASENAME = /^session(?:\.v(\d+))?\.jsonl(\.zstd)?$/;
+
+/**
+ * 在会话目录内枚举规范日志文件，返回版本最高者。
+ * 同版本同时存在压缩与未压缩时优先压缩（与 DSH 落盘顺序一致）。
+ *
+ * @returns {{name: string, version: number, compressed: boolean} | null}
+ */
+async function pickSessionLogFile(sessionDirPath) {
+  let entries;
+  try {
+    entries = await readdir(sessionDirPath);
+  } catch {
+    return null;
+  }
+  let best = null;
+  for (const name of entries) {
+    const match = SESSION_LOG_BASENAME.exec(name);
+    if (!match) continue;
+    const version = match[1] === undefined ? 0 : Number(match[1]);
+    if (!Number.isSafeInteger(version)) continue;
+    const compressed = match[2] === ".zstd";
+    if (best === null
+      || version > best.version
+      || (version === best.version && compressed && !best.compressed)) {
+      best = { name, version, compressed };
+    }
+  }
+  return best;
+}
+
+/**
  * 扫描 ~/.dsh/sessions/ 目录下的所有会话元数据并构建拓扑关系图。
  */
 async function scanSessionTopology() {
@@ -600,26 +640,20 @@ async function scanSessionTopology() {
       for (const sDir of sDirs) {
         if (!sDir.isDirectory()) continue;
         const targetSessionDir = join(projectPath, sDir.name);
-        const zstdFile = join(targetSessionDir, "session.jsonl.zstd");
-        const jsonlFile = join(targetSessionDir, "session.jsonl");
 
-        let logFile = null;
+        // 枚举目录取规范日志文件（版本最高者），不能再用固定名 existsSync 探测：
+        // 0.1.5-rc.1 起实际文件名是 session.v<N>.jsonl[.zstd]，且同目录可并存多个版本。
+        const picked = await pickSessionLogFile(targetSessionDir);
+        if (!picked) continue;
+
+        const logFile = join(targetSessionDir, picked.name);
         let sizeBytes = 0;
         try {
-          if (existsSync(zstdFile)) {
-            logFile = zstdFile;
-            const st = await stat(zstdFile);
-            sizeBytes = st.size;
-          } else if (existsSync(jsonlFile)) {
-            logFile = jsonlFile;
-            const st = await stat(jsonlFile);
-            sizeBytes = st.size;
-          }
+          const st = await stat(logFile);
+          sizeBytes = st.size;
         } catch {
           continue;
         }
-
-        if (!logFile) continue;
         const header = await readSessionHeaderFast(logFile);
         // header 缺失时回退：目录名是 encodeSegment 后的编码形，先逆解码，
         // 解不出才用目录名原文（此时仅用于展示/统计，不用于精确删除匹配）。
@@ -880,6 +914,25 @@ function archivedTargets(state, table, workspaceId) {
   return archivedForWorkspace(archived, rec);
 }
 
+/**
+ * 服务端归档门槛（纵深防御）：
+ * 永久删除的「必须先归档」契约此前只在浏览器半区成立（归档按钮置灰），
+ * 但本插件的 host 路由**不受 DSH 会话认证保护**（自注册的 webServer 前缀路由），
+ * 本机任意进程或同源页面都可直接 POST。因此 host 侧必须自证目标确在归档列表中，
+ * 不能只信调用方。
+ *
+ * @returns {Promise<boolean>} 目标会话当前是否在权威归档列表内
+ */
+async function isSessionArchived(ctx, sessionId) {
+  const domain = getWorkspaceDomain(ctx);
+  if (!domain) return false;
+  const registry = ctx.get("workspaceRegistry");
+  const state = (registry && typeof registry.requireState === "function")
+    ? registry.requireState()
+    : domain.global.get();
+  return (state.archivedSessionIds || []).map(String).includes(String(sessionId));
+}
+
 /** 读取当前归档列表并按 workspaceId 过滤出待操作目标（只读快照，不写状态）。 */
 async function readArchivedTargeting(ctx, workspaceId) {
   const domain = getWorkspaceDomain(ctx);
@@ -928,6 +981,11 @@ async function handleDeleteSession(ctx, req, res) {
   const sessionId = typeof raw.sessionId === "string" ? raw.sessionId.trim() : "";
   if (!sessionId) return sendJson(res, 200, { ok: false, error: "sessionId 必填" });
 
+  // 服务端归档门槛：路由无鉴权，不能依赖浏览器半区的按钮置灰。
+  if (!(await isSessionArchived(ctx, sessionId))) {
+    return sendJson(res, 200, { ok: false, error: "拒绝删除：会话不在归档区（永久删除必须先归档）" });
+  }
+
   try {
     const deleted = await deleteSessionCascade(ctx, sessionId);
     sendJson(res, 200, { ok: true, deleted });
@@ -944,6 +1002,16 @@ async function handleDeleteSession(ctx, req, res) {
 async function handleDeleteAll(ctx, req, res) {
   const raw = await parseJsonBody(req);
   const workspaceId = raw.workspaceId === undefined ? undefined : raw.workspaceId;
+
+  // 防误触 / 防 CSRF：不指定 workspaceId 的「删除全部归档」必须显式声明 all: true。
+  // 此前空对象 {} 即等于清空全部归档会话，配合无鉴权的 host 路由构成一条
+  // 「一个跨站表单就能抹掉所有归档会话」的路径。
+  if (workspaceId === undefined && raw.all !== true) {
+    return sendJson(res, 200, {
+      ok: false,
+      error: "拒绝执行：删除全部归档必须显式传 all: true（或指定 workspaceId）"
+    });
+  }
 
   let targeting = [];
   try {

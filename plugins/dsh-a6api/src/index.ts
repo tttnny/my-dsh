@@ -1,5 +1,6 @@
 import { fetchBalance, fetchTokenModels, fetchRecentLogs, fetchPriceFluctuation, formatRelativeTime, fetchMarketplacePins, fetchTokens, fetchChannelDetails, marketplacePin, marketplaceUnpin, marketplaceDisableChannel, marketplaceRestoreChannel } from './server/a6api-client.js';
 import { getKnownMerchantsFromLogs, probeSingleModel } from './server/probe.js';
+import type { ProbeResult } from './server/probe.js';
 import { resolveModelMeta, getCatalog, upsertCatalogEntries, clearCatalog, queryOpenRouter, fetchMarketplaceModels, updateCatalogEntry } from './server/catalog.js';
 import { createConfigAccess } from './server/sync.js';
 import type { ConfigAccess } from './server/sync.js';
@@ -30,6 +31,10 @@ export {
 export { createConfigAccess, A6API_CRED_REF, A6API_TOKEN_REF, A6API_USER_REF } from './server/sync.js';
 
 const PREFIX = '/api/dsh-a6api';
+
+/** 全量探测（POST /probe，无 modelName 或 modelName='all'）的总预算与并发上限 */
+const PROBE_ALL_DEADLINE_MS = 5 * 60 * 1000;
+const PROBE_ALL_CONCURRENCY = 4;
 
 /** 客户端脱敏占位符：服务端绝不回传真实密钥 */
 const MASK = '••••••••';
@@ -78,6 +83,26 @@ async function parseJsonBody(req: any): Promise<any> {
   } catch {
     throw new Error('Invalid JSON body');
   }
+}
+
+// ===== 写操作端点 loopback 护栏 =====
+//
+// 本插件的 HTTP 路由由 webServer.register 自行注册，不经过 DSH 的会话认证
+// （实测无 cookie 亦可访问）。保守加固：只有来自本机回环地址的写操作才被接受。
+// 当前 webServer 仅监听 127.0.0.1，浏览器与本机脚本的 remoteAddress 恒为回环地址，
+// 因此该护栏对现有行为零影响；它的作用是未来放宽监听面（0.0.0.0 / 反向代理）时，
+// 阻止非本机来源改动配置、固定/禁用商家或重写 settings.yaml。
+//
+// 残余风险：同源 CSRF。从本机页面发起的请求 remoteAddress 同样是回环地址，本护栏
+// 无法区分；现有 Content-Type: application/json 强制校验已阻断跨站表单（表单无法
+// 伪造该头，且未下发 ACAO 时跨源预检天然失败），但同源 XSS / 恶意浏览器扩展仍可
+// 借道写配置。如需彻底防护，应将该路由改走 connection.rpc（走 DSH 会话认证），
+// 而不是继续加固自行注册的 HTTP 路由。
+const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/** 仅接受本机回环来源（IPv4 / IPv6 / IPv4-mapped IPv6 三种形态） */
+function isLoopbackRequest(req: any): boolean {
+  return LOOPBACK_ADDRESSES.has(String(req?.socket?.remoteAddress || ''));
 }
 
 // In-memory cache for merchant cards to avoid duplicate log calls
@@ -470,6 +495,14 @@ export function apply(ctx: any): void {
             return sendJson(res, 415, { ok: false, error: 'Content-Type must be application/json' });
           }
 
+          // loopback 护栏：写操作端点（POST /config、/probe、/sync-models、/pin、/unpin、
+          // /disable、/restore、/catalog/clear、/catalog/fetch-models、/catalog/query-openrouter、
+          // /catalog/update）仅接受本机回环来源，非回环直接 403。
+          // GET 只读端点不设限（本机浏览器/脚本行为不变）。
+          if (req.method === 'POST' && !isLoopbackRequest(req)) {
+            return sendJson(res, 403, { ok: false, error: 'Forbidden: 写操作仅允许本机回环调用' });
+          }
+
           try {
             // GET /state — 短缓存 + 并发去重：TTL 内重复/并发请求共享同一份上游结果，
             // 多标签页轮询、页面刷新、面板打开与操作后的自动刷新不再各自重复拉取上游
@@ -584,18 +617,63 @@ export function apply(ctx: any): void {
                 modelIds = await configAccess.getDshConfiguredModels();
               }
 
-              const results = [];
-              for (const m of modelIds) {
-                const r = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, m);
-                if (r.merchant) {
-                  merchantCardCache.set(m.toLowerCase(), { card: r.merchant, at: Date.now() });
+              // 全量探测的总预算 + 并发上限：原实现逐模型串行、每个最长 180s（推理模型），
+              // 模型多时请求可能挂住数十分钟且无任何总预算。现改为固定并发 4 的 worker 池，
+              // 总预算 5 分钟：预算耗尽停止派发新任务，且 Promise.race 到点即返回（不等在途探测），
+              // 返回已完成部分 + 明确错误（HTTP 仍为 200：部分结果可用，调用方据 timedOut/error 判断）。
+              // 客户端从不调用该分支（仅单模型 /probe），单模型路径不受影响。
+              const deadlineAt = Date.now() + PROBE_ALL_DEADLINE_MS;
+              const results: Array<ProbeResult | undefined> = new Array(modelIds.length);
+              let nextIndex = 0;
+              const worker = async (): Promise<void> => {
+                for (;;) {
+                  if (Date.now() >= deadlineAt) return;
+                  const i = nextIndex++;
+                  if (i >= modelIds.length) return;
+                  const m = modelIds[i];
+                  try {
+                    const r = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, m);
+                    if (r.merchant) {
+                      merchantCardCache.set(m.toLowerCase(), { card: r.merchant, at: Date.now() });
+                    }
+                    results[i] = r;
+                  } catch (err: any) {
+                    // 单个模型探测异常不拖垮整批：记录为失败项继续
+                    results[i] = { modelName: m, success: false, error: err?.message || String(err) };
+                  }
                 }
-                results.push(r);
+              };
+              let deadlineTimer: any = null;
+              try {
+                await Promise.race([
+                  Promise.all(
+                    Array.from({ length: Math.min(PROBE_ALL_CONCURRENCY, modelIds.length) }, () => worker()),
+                  ),
+                  // 到点即返回：在途探测不取消（各自仍有 180s 上限，其结果照常回填卡片缓存），
+                  // 但响应不再等待它们 —— 总墙钟时间被钉在预算内。
+                  new Promise<void>((resolve) => {
+                    deadlineTimer = setTimeout(resolve, PROBE_ALL_DEADLINE_MS);
+                  }),
+                ]);
+              } finally {
+                if (deadlineTimer) clearTimeout(deadlineTimer);
               }
+
+              const done = results.filter((r): r is ProbeResult => Boolean(r));
+              const timedOut = done.length < modelIds.length;
 
               // 全量探测同样会刷新日志与商户卡片
               stateMemo.invalidate();
-              return sendJson(res, 200, { ok: true, results });
+              return sendJson(res, 200, {
+                ok: true,
+                results: done,
+                completed: done.length,
+                total: modelIds.length,
+                timedOut,
+                error: timedOut
+                  ? `全量探测超出总预算 ${PROBE_ALL_DEADLINE_MS / 1000}s，已返回 ${done.length}/${modelIds.length} 个已完成结果`
+                  : undefined,
+              });
             }
 
             // POST /sync-models

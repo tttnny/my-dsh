@@ -15,7 +15,13 @@ export interface ViewportObserverOptions {
 
 export class StreamDebounceViewportObserver {
   private intersectionObserver: IntersectionObserver | null = null;
-  private streamingTimers = new WeakMap<HTMLElement, number>();
+  /**
+   * Pending per-element streaming debounce timers. A Map (not a WeakMap)
+   * because disconnect() must enumerate and clear every pending timer: a
+   * WeakMap cannot be iterated, so a debounce armed just before the switch was
+   * turned off would still fire registerForViewport() afterwards.
+   */
+  private streamingTimers = new Map<HTMLElement, number>();
   private pendingQueue: Array<{ element: HTMLElement; text: string }> = [];
   private batchFlushTimer: number | null = null;
   private options: Required<Omit<ViewportObserverOptions, 'onVisibleBatch'>> & {
@@ -79,6 +85,9 @@ export class StreamDebounceViewportObserver {
     }
 
     const timer = window.setTimeout(() => {
+      // Stale-callback guard: disconnect() clears the map, so a callback that
+      // is no longer the registered timer must not re-enter the observer.
+      if (this.streamingTimers.get(element) !== timer) return;
       this.streamingTimers.delete(element);
       if (element.isConnected) {
         // Read latest text content after streaming settles
@@ -137,6 +146,12 @@ export class StreamDebounceViewportObserver {
       clearTimeout(this.batchFlushTimer);
       this.batchFlushTimer = null;
     }
+    // Drop every pending streaming debounce: after a disable none of them may
+    // fire registerForViewport() (the Map is iterable, so this is exhaustive).
+    for (const timer of this.streamingTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.streamingTimers.clear();
     this.pendingQueue = [];
     if (this.intersectionObserver) {
       this.intersectionObserver.disconnect();

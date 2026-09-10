@@ -17,7 +17,7 @@ export const SLOTS_VERSION = 1
 // 五端口定义（ADR 5.1 视觉锚定表一行一对象）
 export const SLOT_DEFS = Object.freeze([
   Object.freeze({ id: 'banner-seat', label: 'banner-seat', visual: '主区顶部 42px 满宽横幅，同槽互斥（蓝/黄/红）', parentSlot: 'shell.overlay', scope: 'root', kind: 'list', order: 10, zGroup: 'banner' }),
-  Object.freeze({ id: 'dock-seat', label: 'dock-seat', visual: '右栏 details 内的 Tab 栏（非整列外壳）', parentSlot: 'details', scope: 'session-maybe', kind: 'list', order: 20, zGroup: 'dock' }),
+  Object.freeze({ id: 'dock-seat', label: 'dock-seat', visual: '右栏 rightbar 内的 Tab 栏（非整列外壳）', parentSlot: 'rightbar', scope: 'session-maybe', kind: 'list', order: 20, zGroup: 'dock' }),
   Object.freeze({ id: 'statusbar-seat', label: 'statusbar-seat', visual: '输入区胶囊区（输入框正上方药丸横排）', parentSlot: 'conversation.input.dock', scope: 'session', kind: 'list', order: 30, zGroup: 'statusbar' }),
   Object.freeze({ id: 'modal-seat', label: 'modal-seat', visual: '主区居中遮罩弹窗', parentSlot: 'shell.overlay', scope: 'root', kind: 'single', order: 100, zGroup: 'modal' }),
   Object.freeze({ id: 'toast-seat', label: 'toast-seat', visual: '右下角轻提示队列', parentSlot: 'shell.overlay', scope: 'root', kind: 'list', order: 90, zGroup: 'toast' }),
@@ -38,7 +38,7 @@ export const MODAL_SEAT = 'modal-seat'
 export const TOAST_SEAT = 'toast-seat'
 
 // 官方父槽归属（host/壳层已占据 3 父槽，不发明新 root）
-export const PARENT_SLOTS = Object.freeze(['shell.overlay', 'details', 'conversation.input.dock'])
+export const PARENT_SLOTS = Object.freeze(['shell.overlay', 'rightbar', 'conversation.input.dock'])
 
 // z 序分组（同父槽 3 端口竞争缓解：modal > toast > banner）
 export const Z_ORDER = Object.freeze({ modal: 300, toast: 200, banner: 100 })

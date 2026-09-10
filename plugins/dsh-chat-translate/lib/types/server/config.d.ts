@@ -1,4 +1,4 @@
-import type { PluginConfig, MaskedPluginConfig } from './types.ts';
+import type { PluginConfig } from './types.ts';
 import type { CredentialsReader } from './credentials.ts';
 /** Hard cap for the translation concurrency pool. */
 export declare const MAX_CONCURRENCY = 100;
@@ -37,12 +37,16 @@ export declare class ConfigManager {
     getConfig(): PluginConfig;
     /** Whether the AI channel has every required piece: baseUrl, model and key. */
     isAiConfigured(): boolean;
-    getMaskedConfig(): MaskedPluginConfig;
     onConfigChange(listener: (config: PluginConfig) => void): () => void;
     /**
      * Merge a partial update into the settings namespace. Values are sanitized
      * here (bounds, trimming) so the schema's own constraints act as a second
      * line of defence rather than the only one.
+     *
+     * @internal Test-only. No production path calls this: the host writes the
+     * settings namespace from the browser through the DSH settings service, and
+     * this facade is only driven by `scripts/test-*.mjs` (regression suite).
+     * Kept (with this marker) so those tests keep exercising the sanitizer.
      */
     updateConfig(partial: Partial<PluginConfig>): Promise<PluginConfig>;
 }

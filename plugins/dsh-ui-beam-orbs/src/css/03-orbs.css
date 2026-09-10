@@ -40,8 +40,8 @@
 /* ---------- 以下状态栏深色适配仅深色主题生效 ---------- */
 
 /* 隐藏原生直接裸文本，防止 React Virtual DOM 冲突 */
-body[data-ds-dark-theme] .Md3f7G_turnStatus,
-body[data-ds-dark-theme] [role="status"][aria-live="polite"].Md3f7G_turnStatus {
+body[data-ds-dark-theme] .EvIC1a_turnStatus,
+body[data-ds-dark-theme] [role="status"][aria-live="polite"].EvIC1a_turnStatus {
   font-size: 0 !important;
 }
 
@@ -55,7 +55,7 @@ body[data-ds-dark-theme] .dsh-turn-status-text {
   -webkit-text-fill-color: var(--dsw-static-deepseek-500, #1d6bf3);
 }
 
-body[data-ds-dark-theme] .Md3f7G_turnStatus {
+body[data-ds-dark-theme] .EvIC1a_turnStatus {
   display: inline-flex !important;
   align-items: center !important;
   font-weight: 500 !important;
@@ -75,23 +75,23 @@ body[data-ds-dark-theme] .dsh-turn-status-text {
   background-clip: text !important;
   -webkit-text-fill-color: transparent !important;
   color: transparent !important;
-  animation: 1.8s linear infinite Md3f7G_dsh-turn-status-shimmer !important;
+  animation: 1.8s linear infinite dsh-beam-orbs-turn-status-shimmer !important;
 }
 
 /* 流光关键帧：background-size 为 250% 100%，200% -> -300% 恰好平移整数个平铺周期，形成无缝循环 */
-@keyframes Md3f7G_dsh-turn-status-shimmer {
+@keyframes dsh-beam-orbs-turn-status-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -300% 0; }
 }
 
-body[data-ds-dark-theme] .Md3f7G_turnStatusClock,
+body[data-ds-dark-theme] .EvIC1a_turnStatusClock,
 body[data-ds-dark-theme] [class*="turnStatusClock"] {
   font-size: 12px !important;
   display: inline-block !important;
   vertical-align: middle !important;
 }
 
-body[data-ds-dark-theme] .Md3f7G_turnStatusClock {
+body[data-ds-dark-theme] .EvIC1a_turnStatusClock {
   font-size: 12px !important;
   font-variant-numeric: tabular-nums !important;
   color: rgba(255, 255, 255, 0.6) !important;
@@ -101,13 +101,13 @@ body[data-ds-dark-theme] .Md3f7G_turnStatusClock {
   filter: none !important;
 }
 
-body[data-ds-dark-theme] [data-plan-mode="1"] .Md3f7G_turnStatus,
-body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] {
+body[data-ds-dark-theme] [data-plan-mode="1"] .EvIC1a_turnStatus,
+body[data-ds-dark-theme] .EvIC1a_turnStatus[data-planning] {
   filter: drop-shadow(0 0 10px rgba(255, 122, 41, 0.5)) !important;
 }
 
 body[data-ds-dark-theme] [data-plan-mode="1"] .dsh-turn-status-text,
-body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text {
+body[data-ds-dark-theme] .EvIC1a_turnStatus[data-planning] .dsh-turn-status-text {
   background: linear-gradient(90deg, #ff7a29 0%, #ff9d42 35%, #fff1d6 50%, #ff9d42 65%, #ff7a29 100%) !important;
   background-size: 250% 100% !important;
   -webkit-background-clip: text !important;
@@ -128,7 +128,7 @@ body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text
 
   /* 计划态同步降级为实色橙色，渐变整块填充不会透在实色字后 */
   body[data-ds-dark-theme] [data-plan-mode="1"] .dsh-turn-status-text,
-  body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text {
+  body[data-ds-dark-theme] .EvIC1a_turnStatus[data-planning] .dsh-turn-status-text {
     background: none !important;
     animation: none !important;
     color: #ff7a29 !important;
@@ -147,7 +147,7 @@ body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text
   }
 
   body[data-ds-dark-theme] [data-plan-mode="1"] .dsh-turn-status-text,
-  body[data-ds-dark-theme] .Md3f7G_turnStatus[data-planning] .dsh-turn-status-text {
+  body[data-ds-dark-theme] .EvIC1a_turnStatus[data-planning] .dsh-turn-status-text {
     color: #ff7a29 !important;
     -webkit-text-fill-color: #ff7a29 !important;
   }
