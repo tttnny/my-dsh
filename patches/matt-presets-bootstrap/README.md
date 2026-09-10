@@ -157,7 +157,7 @@ The session is done when the frontier is empty: every branch of the design tree 
 
 ## 四、外部材料（非改动、需自带）
 
-- 插件 `@lynn123411/dsh-ask-user-grilling`（只提供 `ask_user_grilling`，其精简的工具描述承载「grilling 轮次专用、先散文预告同一轮、再以工具投递表单、字段映射、勿自加收尾题、子代理等齐软纪律（无硬闸门）」等工具必知项；多选与每题补充输入框是 UI 自动行为，刻意不写入描述，避免模型为规避多选影响出题）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖），不要只手工拷贝进 `node_modules/@lynn123411/`：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`），此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**（2026-09-08 实例：23:11 profile 同步剪掉手工拷贝的 0.2.1，三份 preset 全隐藏，`pnpm add` 回装后恢复）。仓库 `plugins/dsh-ask-user-grilling/` 是事实源（0.2.2 已发布；工作区现有未发布改点：工具描述重写、硬闸门拆除与 schema 措辞，待下次发版）；如仓库含未发布改点，先发布再回装，勿回退到裸拷贝。**原因**：改动② 引用的正是这个包，不装则工具行解析失败；工具描述与技能旁注分工互补——投递纪律在旁注，停轮纪律只在工具描述（SKILL 侧已删，避免诱导），工具描述只留必知项。
+- 插件 `@lynn123411/dsh-ask-user-grilling`（只提供 `ask_user_grilling`，其精简的工具描述承载「grilling 轮次专用、先散文预告同一轮、再以工具投递表单、字段映射、勿自加收尾题、子代理等齐软纪律（无硬闸门）」等工具必知项；多选与每题补充输入框是 UI 自动行为，刻意不写入描述，避免模型为规避多选影响出题）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖），不要只手工拷贝进 `node_modules/@lynn123411/`：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`），此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**（2026-09-08 实例：23:11 profile 同步剪掉手工拷贝的 0.2.1，三份 preset 全隐藏，`pnpm add` 回装后恢复）。仓库 `plugins/dsh-ask-user-grilling/` 是事实源（0.2.3 已发布，仓库与 registry 一致、无待发改点）；如仓库日后含未发布改点，先发布再回装，勿回退到裸拷贝。**原因**：改动② 引用的正是这个包，不装则工具行解析失败；工具描述与技能旁注分工互补——投递纪律在旁注，停轮纪律只在工具描述（SKILL 侧已删，避免诱导），工具描述只留必知项。
 - 25 个技能随 mattpocock/skills 上游更新。
 
 ## 五、何时重打
