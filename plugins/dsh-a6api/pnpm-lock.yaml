@@ -7,11 +7,10 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@deepseek-ai/dsh-home-paths':
-        specifier: 0.1.2-alpha.2
-        version: 0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.0.1-rc.5(@deepseek-ai/cordis@4.0.2))
     devDependencies:
+      '@deepseek-ai/dsh-home-paths':
+        specifier: 0.1.3-alpha.2
+        version: 0.1.3-alpha.2(@deepseek-ai/cordis@4.0.2)
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
@@ -42,19 +41,10 @@ packages:
   '@deepseek-ai/cosmokit@1.8.3':
     resolution: {integrity: sha512-qBo+ronVM6Eu2WNVJXi8JcMiqZ19T9BRIpV+5qJUFPXjGH/Z0QKcQMC/IZJ7L394YTOtJgcovbk9qP0w2GsBXQ==}
 
-  '@deepseek-ai/dsh-home-paths@0.1.2-alpha.2':
-    resolution: {integrity: sha512-L4mLwpZvBuKLSRjjSI6lFGUmUTbjcMcMuX1PWbhHKphmvaokQXf6jqNgD/I6VfIg0BnS2rO/jPqasOQUxRNlYw==}
+  '@deepseek-ai/dsh-home-paths@0.1.3-alpha.2':
+    resolution: {integrity: sha512-aIOAPzjZZZJqMH0d2jRKlPe7K4Bg9KnonxuWYIoCkrbgDwEscTC7twLY17i2lTTSYzS2Wfrp3wtyEP6N/Zcrsg==}
     peerDependencies:
       '@deepseek-ai/cordis': ^4.0.2
-      '@deepseek-ai/dsh-invariants': ^0.1.2-alpha.2
-
-  '@deepseek-ai/dsh-invariants@0.0.1-rc.5':
-    resolution: {integrity: sha512-63LTrIMPAeJowv5E9Sr87w1SPs1Ign2/ofr+LPdrgAi4Pi32YFK9o4vSVv7osRHAIzlwxRCoFksythq+Jire3w==}
-    peerDependencies:
-      '@deepseek-ai/cordis': ^4.0.1-rc.4
-
-  '@deepseek-ai/schemastery@3.18.2':
-    resolution: {integrity: sha512-njDtZsznjYxok7KLLlHOPyuv2efdWVbSflAHgztSfbMsg+CVraEoRe2DjOCgClYv3ZCSm7WXoaUkbB/+RY7tWQ==}
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -246,20 +236,9 @@ snapshots:
 
   '@deepseek-ai/cosmokit@1.8.3': {}
 
-  '@deepseek-ai/dsh-home-paths@0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.0.1-rc.5(@deepseek-ai/cordis@4.0.2))':
+  '@deepseek-ai/dsh-home-paths@0.1.3-alpha.2(@deepseek-ai/cordis@4.0.2)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.2
-      '@deepseek-ai/dsh-invariants': 0.0.1-rc.5(@deepseek-ai/cordis@4.0.2)
-
-  '@deepseek-ai/dsh-invariants@0.0.1-rc.5(@deepseek-ai/cordis@4.0.2)':
-    dependencies:
-      '@deepseek-ai/cordis': 4.0.2
-      '@deepseek-ai/schemastery': 3.18.2
-
-  '@deepseek-ai/schemastery@3.18.2':
-    dependencies:
-      '@deepseek-ai/cosmokit': 1.8.3
-      '@standard-schema/spec': 1.1.0
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
-// node_modules/.pnpm/@deepseek-ai+dsh-home-paths@0.1.2-alpha.2_@deepseek-ai+cordis@4.0.2_@deepseek-ai+dsh-in_201e0f99eb7c6b9ed77157bb5f14e24e/node_modules/@deepseek-ai/dsh-home-paths/lib/index.js
+// node_modules/.pnpm/@deepseek-ai+dsh-home-paths@0.1.3-alpha.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-home-paths/lib/index.js
 import { opendir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
