@@ -329,22 +329,11 @@ export default {
     // #265 常驻轻量任务启动（H6 #450 后由命名模块持有，入口防火即发，脏账落盘心跳语义不变）。
     _naming().then(function(h){ try { h.startNamingGuardianLoop() } catch (eLoop) {} }).catch(function(){})
 
-    // B3 rpc 通道注册：/dsws → dispatch 表（loopback 权威）
-    try {
-      const connection = ctx.get('connection')
-      if (connection !== undefined && connection.rpc !== undefined && typeof connection.rpc.handle === 'function') {
-        connection.rpc.handle('/dsws', async (endpoint, payload) => {
-          const fn = __DSW_HANDLERS__.get(endpoint)
-          if (!fn) return { ok: false, error: { code: 'internal', message: 'unknown endpoint: ' + endpoint, details: {} } }
-          try {
-            const value = await fn(payload)
-            return { ok: true, value }
-          } catch (e) {
-            try { _dispatchMeta().then(function(dm){ try { fireLog('error', 'host.dispatch.error', { method: 'wf.' + endpoint, argsHash: dm.shortArgHash(payload), errorKind: dm.dispatchErrorKind(e) }) } catch (eInner) {} }).catch(function(){}) } catch (eLog) {}
-            return { ok: false, error: { code: 'internal', message: String((e && e.message) || e), details: {} } }
-          }
-        }, { authority: 'loopback' })
-      }
-    } catch {}
+    // B3 rpc 通道注册（0.1.5-rc.1 适配）：精确 Fetch 路由 /api/dsws → dispatch 表。
+    // 实现搬到 ./rpcChannel.js（H8：本文件已顶 350 行上限）；仍是 apply 后首个微任务内挂载，远早于客户端首调。
+    // 为什么不能再用 connection.rpc.handle、以及 /api 载体的鉴权语义，见该文件头部注释。
+    let _rpcP = null
+    function _rpcChannel() { if (!_rpcP) _rpcP = import('./rpcChannel.js').then(function(m){ return m.registerRpcChannel({ ctx: ctx, handlers: __DSW_HANDLERS__, fireLog: fireLog, dispatchMeta: _dispatchMeta }) }); return _rpcP }
+    _rpcChannel()
   },
 }

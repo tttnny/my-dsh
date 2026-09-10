@@ -1,12 +1,13 @@
 // smoke-host-dispatch.test.js — host seam dispatch 端到端验证
-// 验证 harness.handle 注册的 handler 能经 connection.rpc.handle('/dsws') 通道被调用：
+// 验证 harness.handle 注册的 handler 能经 /api/dsws 精确 Fetch 路由被调用
+//   （0.1.5-rc.1 起通道从 connection.rpc.handle 改为 connection.fetch.register；原因见 src/host/rpcChannel.js）：
 //   wf.logGetSwitch → logGetSwitch 端点 → { ok: true, enabled, sampleRate }（#498 退役 wf.ping，探活改走免参开关读电话）
 import { readFileSync } from 'node:fs'
 
 const modRaw = await import('../package/lib/index.js')
 const mod = modRaw.default ?? modRaw
 
-let registered = null
+let registeredRoute = null
 // #266 建号感知冒烟：gh api 索引快照由 stub 返回（测试可控 JSON Lines；按调用序切换新旧快照）
 const GH_BASE = '{"number":1,"title":"既有一","state":"OPEN","updatedAt":"u1"}\n{"number":2,"title":"既有二","state":"CLOSED","updatedAt":"u2"}\n'
 let ghIndexText = GH_BASE
@@ -29,30 +30,42 @@ const sleep = (ms) => new Promise(function (res) { setTimeout(res, ms) })
 const platformSvc = { getHome: async () => '', path: { join: (...a) => a.join('/') }, fs: { mkdir: async () => {}, resolve: async (k) => String(k) }, resolveExecutable: async () => 'gh', env: { get: () => undefined } }
 const services = {
   subprocess, timer, fs: fsSvc, platform: platformSvc,
-  connection: { rpc: { handle: (path, fn, opts) => { registered = { path, fn, opts } } } },
+  connection: { fetch: { register: (route) => { registeredRoute = route } } },
 }
 const ctx = { get: (k) => services[k], effect: (fn) => { const r = fn(); return typeof r === 'function' ? r : () => {} } }
 
 ;(mod.apply ?? mod.default?.apply)(ctx)
+// 通道注册走动态 import（D7 禁止静态 import），等微任务 + 模块加载落地
+await new Promise(function (res) { setTimeout(res, 300) })
 
 let failures = 0
 const check = (ok, msg) => { console.log((ok ? '  PASS ' : '  FAIL ') + msg); if (!ok) failures++ }
-check(!!registered && typeof registered.fn === 'function', 'connection.rpc.handle 收到 dispatch fn')
+check(!!registeredRoute && registeredRoute.path === '/api/dsws' && typeof registeredRoute.fetch === 'function', 'connection.fetch.register 收到 /api/dsws 路由（含 fetch）')
+
+// 经路由信封调用（同客户端 host.call 的实际线上形态）：{endpoint, args} → {ok, value}
+const dispatch = registeredRoute ? async function (endpoint, args) {
+  const resp = await registeredRoute.fetch(new Request('http://dsh.internal/api/dsws', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ endpoint: endpoint, args: args }),
+  }))
+  return await resp.json()
+} : null
 
 // 调 dispatch：endpoint 'logGetSwitch'（免参开关读电话，#498 前为 wf.ping → seam 去掉 wf. 前缀）
-if (registered && typeof registered.fn === 'function') {
-  const res = await registered.fn('logGetSwitch', {})
+if (typeof dispatch === 'function') {
+  const res = await dispatch('logGetSwitch', {})
   console.log('  logGetSwitch 结果:', JSON.stringify(res))
   check(!!res && res.ok === true, 'logGetSwitch dispatch ok=true')
-  const bad = await registered.fn('nonexistent', {})
+  const bad = await dispatch('nonexistent', {})
   check(!!bad && bad.ok === false, '未知端点 ok=false（RpcResult 错误信封）')
 }
 
 // ---- #265 命名守护新增操作路径（注册/信号/计划单/回报）----
-if (registered && typeof registered.fn === 'function') {
+if (typeof dispatch === 'function') {
   // loopback dispatch 返回 RpcResult 信封 { ok, value }：处理器原始返回在 .value（ping 断言即信封层）
   const callHandler = async function (endpoint, args) {
-    const env = await registered.fn(endpoint, args)
+    const env = await dispatch(endpoint, args)
     return (env && typeof env.value === 'object' && env.value !== null && ('ok' in env.value)) ? env.value : env
   }
   try {
@@ -87,9 +100,9 @@ if (registered && typeof registered.fn === 'function') {
 }
 
 // ---- #266 建号感知：三操作复原（注册/取消/等待）＋ 索引差值结算 → numbered 订单 ----
-if (registered && typeof registered.fn === 'function') {
+if (typeof dispatch === 'function') {
   const callHandler = async function (endpoint, args) {
-    const env = await registered.fn(endpoint, args)
+    const env = await dispatch(endpoint, args)
     return (env && typeof env.value === 'object' && env.value !== null && ('ok' in env.value)) ? env.value : env
   }
   try {

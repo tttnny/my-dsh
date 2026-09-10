@@ -30,20 +30,30 @@ const fakeRegistry = {
   get: (id) => id === 'github' ? ghTracker : badTracker,
 }
 
-let registered = null
+let registeredRoute = null
 const subprocess = { async resolveExecutable() { return 'gh' }, spawn() { return { stdout: { on: () => {} }, stderr: { on: () => {} }, on: () => {}, terminate: () => {} } } }
 const timer = { timeout: (fn, ms) => setTimeout(fn, ms) }
 const fsSvc = { readFileSync: () => '', writeFileSync: () => {}, existsSync: () => false, mkdirSync: () => {}, readdirSync: () => [], statSync: () => ({ isDirectory: () => false }) }
 const services = {
   subprocess, timer, fs: fsSvc,
   trackerRegistry: fakeRegistry,
-  connection: { rpc: { handle: (path, fn, opts) => { registered = { path, fn, opts } } } },
+  connection: { fetch: { register: (route) => { registeredRoute = route } } },
 }
 const ctx = { get: (k) => services[k], effect: (fn) => { const r = fn(); return typeof r === 'function' ? r : () => {} } }
 
 const modRaw = await import('../package/lib/index.js')
 const mod = modRaw.default ?? modRaw
 ;(mod.apply ?? mod.default?.apply)(ctx)
+// 0.1.5-rc.1：通道注册走动态 import，形态改为 /api/dsws 精确 Fetch 路由（见 src/host/rpcChannel.js）
+await new Promise((res) => setTimeout(res, 300))
+const registered = registeredRoute ? { fn: async function (endpoint, args) {
+  const resp = await registeredRoute.fetch(new Request('http://dsh.internal/api/dsws', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ endpoint: endpoint, args: args }),
+  }))
+  return await resp.json()
+} } : null
 
 const unwrap = (r) => (r && r.ok === true && 'value' in r ? r.value : r) // dispatch 传输信封：{ok:true,value:handler结果}
 if (registered && typeof registered.fn === 'function') {

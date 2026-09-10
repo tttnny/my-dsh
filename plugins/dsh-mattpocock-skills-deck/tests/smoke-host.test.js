@@ -1,8 +1,9 @@
 // smoke-host.test.js — T0 阶段 0 验收·host 半冒烟
 // 加载 package/lib/index.js（ESM），用宿主 stub ctx 调用 apply，断言：
 //   1) name / inject 正确
-//   2) apply 注册 /dsws 通道（connection.rpc.handle 被调用，authority=loopback）
-//   3) dispatch 命中 harness.handle 注册的 handler（wf.chain → chain）
+//   2) apply 注册 /api/dsws 精确 Fetch 路由（connection.fetch.register；0.1.5-rc.1 起不再用
+//      connection.rpc.handle —— 该 API 在本版对兄弟插件不可用，见 src/host/rpcChannel.js 头部注释）
+//   3) 请求信封契约：缺 endpoint → bad-request；未注册 endpoint → not-found
 // 用法: node tests/smoke-host.test.js
 import { readFileSync } from 'node:fs'
 import * as esbuild from 'esbuild'
@@ -19,7 +20,7 @@ try {
   check(false, 'ESM 语法编译: ' + e.message)
 }
 
-// ---- 宿主 stub：subprocess/timer/fs 真实最小实现；connection.rpc.handle 捕获注册 ----
+// ---- 宿主 stub：subprocess/timer/fs 真实最小实现；connection.fetch.register 捕获注册 ----
 let registered = null
 const subprocess = {
   async resolveExecutable() { return 'gh' },
@@ -27,7 +28,7 @@ const subprocess = {
 }
 const timer = { timeout: (fn, ms) => setTimeout(fn, ms) }
 const fsSvc = { readFileSync: () => '', writeFileSync: () => {}, existsSync: () => false, mkdirSync: () => {}, readdirSync: () => [], statSync: () => ({ isDirectory: () => false }) }
-const services = { subprocess, timer, fs: fsSvc, connection: { rpc: { handle: (path, fn, opts) => { registered = { path, fn, opts } } } } }
+const services = { subprocess, timer, fs: fsSvc, connection: { fetch: { register: (route) => { registered = route } } } }
 const ctx = { get: (k) => services[k], effect: (fn) => { const r = fn(); return typeof r === 'function' ? r : () => {} } }
 
 const modRaw = await import('../package/lib/index.js')
@@ -37,9 +38,22 @@ check((Array.isArray(modRaw.inject) && modRaw.inject.length === 4) || modRaw.def
 check(typeof mod.apply === 'function', 'apply 为函数')
 
 mod.apply(ctx)
-check(!!registered, 'connection.rpc.handle 被调用')
-check(!!registered && registered.path === '/dsws', `通道路径 = ${registered && registered.path}`)
-check(!!registered && registered.opts && registered.opts.authority === 'loopback', 'authority = loopback')
+// 通道注册走动态 import（D7 禁止静态 import），等微任务 + 模块加载落地
+await new Promise((resolve) => setTimeout(resolve, 300))
+check(!!registered, 'connection.fetch.register 被调用')
+check(!!registered && registered.path === '/api/dsws', `通道路径 = ${registered && registered.path}`)
+check(!!registered && Array.isArray(registered.methods) && registered.methods.indexOf('POST') >= 0, `methods = ${JSON.stringify(registered && registered.methods)}`)
+
+// ---- 请求信封契约 ----
+const post = (payload) => registered.fetch(new Request('http://dsh.internal/api/dsws', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(payload),
+}))
+const r1 = await (await post({})).json()
+check(r1.ok === false && r1.error.code === 'bad-request', `缺 endpoint → ${JSON.stringify(r1.error && r1.error.code)}`)
+const r2 = await (await post({ endpoint: '__no_such_endpoint__' })).json()
+check(r2.ok === false && r2.error.code === 'not-found', `未注册 endpoint → ${JSON.stringify(r2.error && r2.error.code)}`)
 
 console.log(failures ? `\nhost 冒烟失败 ${failures} 项` : '\nhost 冒烟全部通过')
 process.exit(failures ? 1 : 0)

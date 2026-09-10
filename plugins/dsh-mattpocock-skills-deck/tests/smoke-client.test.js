@@ -21,7 +21,7 @@ window.__ModuleLoader__ = {
   load(spec) { loaded = spec; return spec },
 }
 
-// ---- 宿主 stub（R3 清单 7 项：slots / connection.rpc / locale / workspaces / sessions / timer / React+ReactDOM）----
+// ---- 宿主 stub（R3 清单 7 项：slots / 线上传输 / locale / workspaces / sessions / timer / React+ReactDOM）----
 const dict = {}
 const trFn = (key, params) => {
   let s = dict[key] !== undefined ? dict[key] : key
@@ -31,7 +31,6 @@ const trFn = (key, params) => {
 const slots = { register: () => {}, inject: () => {} }
 const services = {
   slots,
-  connection: { rpc: { call: async () => ({ ok: true, value: { ok: true, maps: [], checks: [], ready: 0, total: 0 } }) } },
   locale: { register: (ns, d) => { Object.assign(dict, d.zh || {}, d.en || {}); return () => {} }, bind: () => trFn },
   workspaces: { list: async () => [] },
   sessions: { list: async () => [] },
@@ -51,6 +50,13 @@ window.React = {
 }
 window.ReactDOM = null
 window.__DSW_SMOKE_CTX__ = ctx
+// 线上传输（0.1.5-rc.1）：客户端经同源 fetch POST /api/dsws 调宿主（见 src/host/rpcChannel.js），
+// jsdom 无 fetch，这里 stub 出与宿主路由同形的 { ok, value } 信封。
+window.fetch = async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ ok: true, value: { ok: true, maps: [], checks: [], ready: 0, total: 0 } }),
+})
 
 // ---- 执行 bundle（在 window 上下文中，document/React 等解析到 jsdom 全局）----
 const code = readFileSync('package/lib/client.js', 'utf8')

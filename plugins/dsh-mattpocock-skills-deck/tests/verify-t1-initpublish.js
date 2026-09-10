@@ -101,28 +101,31 @@ const fsSvc = {
   processPath(t) { return typeof t === 'string' ? t : (t.targetKey || t) },
 }
 function makeSkills() { return { async get() { return undefined }, async list() { return [] } } }
-// host 通道说明：apply 在内部声明同名 harness，把注册收进内部 Map，再经
-// connection.rpc.handle('/dsws') 对外分发。老写法用 new Function 捕获外层
-// harness.handle 永远收不到注册（#472），且分包形态下动态 import('./publishFlow.js')
-// 在 new Function 里没有模块基址（Cannot find module ... from [eval]），所以走标准分发通道。
+// host 通道说明：apply 在内部声明同名 harness，把注册收进内部 Map，再经 /api/dsws 精确 Fetch 路由
+// 对外分发（0.1.5-rc.1 起从 connection.rpc.handle 改为 connection.fetch.register，原因见
+// src/host/rpcChannel.js）。老写法用 new Function 捕获外层 harness.handle 永远收不到注册（#472），
+// 且分包形态下动态 import('./publishFlow.js') 在 new Function 里没有模块基址，所以走标准分发通道。
 async function loadPlugin(services) {
   const modRaw = await import('../package/lib/index.js')
   const mod = modRaw.default ?? modRaw
-  let dispatch = null
-  const connection = {
-    rpc: {
-      handle: (p, fn) => { if (p === '/dsws') dispatch = fn },
-    },
-  }
+  let route = null
+  const connection = { fetch: { register: (r) => { route = r } } }
   const ctx = {
     get: n => (n === 'connection' ? connection : services[n]),
     effect: fn => { const d = fn(); return typeof d === 'function' ? d : () => {} },
   }
   ;(mod.apply ?? mod.default?.apply)(ctx)
-  if (typeof dispatch !== 'function') throw new Error('host 未注册 /dsws 分发通道（请先运行 node scripts/build.mjs）')
-  // 分发回的是 { ok:true, value } 信封：处理器原本的返回值装在 value 里，这里拆开再返回。
+  // 通道注册走动态 import（D7 禁止静态 import），等模块加载落地
+  await new Promise((res) => setTimeout(res, 300))
+  if (!route || typeof route.fetch !== 'function') throw new Error('host 未注册 /api/dsws 精确 Fetch 路由（请先运行 node scripts/build.mjs）')
+  // 路由回的是 { ok:true, value } 信封：处理器原本的返回值装在 value 里，这里拆开再返回。
   return async (endpoint, args) => {
-    const env = await dispatch(endpoint, args)
+    const resp = await route.fetch(new Request('http://dsh.internal/api/dsws', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ endpoint: endpoint, args: args }),
+    }))
+    const env = await resp.json()
     if (env && typeof env.value === 'object' && env.value !== null && 'ok' in env.value) return env.value
     return env
   }

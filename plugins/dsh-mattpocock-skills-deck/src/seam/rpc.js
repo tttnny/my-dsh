@@ -12,15 +12,25 @@
  */
 
 /**
- * pkg 方言的 host shim 工厂：把动态方言的 host.call('wf.x', args) 映射到 rpcCall。
- * @param {() => object} getCtx 返回当前 apply 的 ctx（由运行时外壳注入）
+ * pkg 方言的 host shim 工厂：把动态方言的 host.call('wf.x', args) 映射到同源 POST /api/dsws。
+ *
+ * 0.1.5-rc.1 适配：原实现走 conn.rpc.call('/dsws', ...)，但 Host 侧 connection.rpc.handle() 在本版
+ * 对兄弟插件不可用——register() 内部访问 owner.webServer，而 owner 经 cordis tracker 解析为读取方
+ * ctx 的 shadow，服务解析沿提供方 fiber 的祖先链上溯，webServer（兄弟插件提供）永不在该链上，
+ * 抛 `cannot get property "webServer" without inject` 后通道从未挂载（详见 src/host/rpcChannel.js 头部注释）。
+ * /api/dsws 是 connection 暴露的精确 Fetch 路由，鉴权与 Host/Origin 栅栏由 /api 载体统一施加，
+ * 因此这里不再需要 connection 服务，只用同源 fetch。
+ * @param {() => object} getCtx 返回当前 apply 的 ctx（保留形参：调用方签名不变）
  */
 export function createPkgHost(getCtx) {
   const rpcCall = async function (endpoint, args) {
-    const ctx = getCtx()
-    const conn = ctx && ctx.get && ctx.get('connection')
-    if (conn === undefined || conn.rpc === undefined) throw new Error('connection 服务不可用')
-    const res = await conn.rpc.call('/dsws', endpoint, args)
+    const resp = await fetch('/api/dsws', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ endpoint: endpoint, args: args }),
+    })
+    if (!resp.ok) throw new Error('RPC 传输失败：' + endpoint + '（HTTP ' + resp.status + '）')
+    const res = await resp.json()
     if (res && res.ok) return res.value
     throw new Error((res && res.error && res.error.message) || ('RPC 失败：' + endpoint))
   }

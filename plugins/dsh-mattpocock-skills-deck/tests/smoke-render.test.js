@@ -65,7 +65,6 @@ const slots = {
 }
 const services = {
   slots,
-  connection: { rpc: { call: async () => ({ ok: true, value: { ok: true, maps: [], checks: [], ready: 0, total: 0 } }) } },
   locale: { register: (ns, d) => { Object.assign(dict, d.zh || {}, d.en || {}); return () => {} }, bind: () => trFn },
   workspaces: { list: async () => [] },
   sessions: { list: async () => [] },
@@ -75,6 +74,14 @@ const ctx = {
   get: (k) => services[k],
   effect: (fn) => { const r = fn(); return typeof r === 'function' ? r : () => {} },
 }
+
+// 线上传输（0.1.5-rc.1）：客户端经同源 fetch POST /api/dsws 调宿主（见 src/host/rpcChannel.js），
+// jsdom 无 fetch，这里 stub 出与宿主路由同形的 { ok, value } 信封。
+window.fetch = async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ ok: true, value: { ok: true, maps: [], checks: [], ready: 0, total: 0 } }),
+})
 
 // ---- 加载产物（pkg bundle） via __ModuleLoader__ stub ----
 let loaded = null
@@ -98,7 +105,7 @@ try { mod.apply(ctx) } catch (e) { console.log('  WARN apply threw:', e.message)
 check(registrations.length === 5, `slots.register 捕获 5 个插槽（分叉：无 settings.section；实际 ${registrations.length}）`)
 const slotNames = registrations.map(r => r.meta && r.meta.name).join(', ')
 check(slotNames.includes('conversation.input.dock'), `statusbar 插槽已注册（${slotNames}）`)
-check(slotNames.includes('details'), `panel 插槽已注册（${slotNames}）`)
+check(slotNames.includes('rightbar'), `panel 插槽已注册（${slotNames}）`)
 check(slotNames.includes('settings.plugins.tab'), `settings 插槽已注册（${slotNames}）`)
 check(slotNames.includes('shell.overlay'), `overlay 插槽已注册（${slotNames}）`)
 
@@ -135,7 +142,7 @@ async function renderAndCheck(Comp, props, expects, label) {
 const byId = Object.fromEntries(registrations.map(r => [r.meta && r.meta.id, r.comp]))
 const byName = Object.fromEntries(registrations.map(r => [r.meta && r.meta.name, r.comp]))
 const StatusBarComp = byName['conversation.input.dock'] || byId['dsh-mattpocock-skills-deck']
-const DetailsDockComp = byName['details']
+const DetailsDockComp = byName['rightbar']  // 0.1.5-rc.1：官方 details 槽已改名 rightbar
 const OverlayComp = byName['shell.overlay']
 const SettingsComp = byName['settings.plugins.tab']
 

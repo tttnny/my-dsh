@@ -38,8 +38,25 @@ function makeCtx(capture) {
   const subprocess = { async resolveExecutable() { return 'gh' }, spawn() { return { stdout: { on: () => {} }, stderr: { on: () => {} }, on: () => {}, terminate: () => {}, done: Promise.resolve({ exitCode: 0 }), collected: { stdout: { readFrom: () => ({ text: ghIndexText }) }, stderr: { readFrom: () => ({ text: '' }) } } } } }
   // host 的真实 timer 服务双签名：timeout(fn, ms) 节流 / timeout(ms) → Promise（runGh 超时竞速用）
   const timer = { timeout: (a, b) => (typeof a === 'function' ? setTimeout(a, b) : new Promise(function (res) { setTimeout(res, a) })) }
-  const services = { subprocess, timer, fs: fsSvc, platform: platformSvc, connection: { rpc: { handle: (p, fn) => { capture.fn = fn } } } }
+  const services = { subprocess, timer, fs: fsSvc, platform: platformSvc, connection: { fetch: { register: (route) => { capture.route = route } } } }
   return { get: (k) => services[k], effect: (fn) => { const r = fn(); return typeof r === 'function' ? r : () => {} } }
+}
+
+// 0.1.5-rc.1：通道注册走动态 import（D7 禁止静态 import）且形态改为 /api/dsws 精确 Fetch 路由
+//   （connection.rpc.handle 对本版兄弟插件不可用，见 src/host/rpcChannel.js）。
+//   bootPlugin = apply + 等模块落地 + 把路由包成原来的 dispatch(endpoint, args) → {ok,value} 信封。
+async function bootPlugin(mod, capture) {
+  ;((mod.apply ?? mod.default?.apply))(makeCtx(capture))
+  await new Promise(function (res) { setTimeout(res, 300) })
+  if (!capture.route || typeof capture.route.fetch !== 'function') return
+  capture.fn = async function (endpoint, args) {
+    const resp = await capture.route.fetch(new Request('http://dsh.internal/api/dsws', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ endpoint: endpoint, args: args }),
+    }))
+    return await resp.json()
+  }
 }
 
 async function callHandler(fn, endpoint, args) {
@@ -51,7 +68,7 @@ try {
   // ---- 实例一：注册 + 即时落盘 ----
   const m1 = (await import('../package/lib/index.js')).default ?? (await import('../package/lib/index.js'))
   let d1 = {}
-  ;((m1.apply ?? m1.default?.apply))(makeCtx(d1))
+  await bootPlugin(m1, d1)
   check(typeof d1.fn === 'function', '实例一 dispatch 就绪')
 
   const reg = await callHandler(d1.fn, 'namingRegister', { sessionId: 'io-s1', baselineTitle: '[New] 新建需求', cwd: '', hint: '续跑线索样例' })
@@ -71,7 +88,7 @@ try {
   const mod2Raw = await import(url2)
   const m2 = mod2Raw.default ?? mod2Raw
   let d2 = {}
-  ;((m2.apply ?? m2.default?.apply))(makeCtx(d2))
+  await bootPlugin(m2, d2)
   check(typeof d2.fn === 'function' && d2.fn !== d1.fn, '实例二 dispatch 就绪（新模块实例，模拟重启）')
 
   const plan = await callHandler(d2.fn, 'namingPlan', {})
@@ -96,7 +113,7 @@ try {
   const mod3Raw = await import(url3)
   const m3 = mod3Raw.default ?? mod3Raw
   let d3 = {}
-  ;((m3.apply ?? m3.default?.apply))(makeCtx(d3))
+  await bootPlugin(m3, d3)
   const planLock = await callHandler(d3.fn, 'namingPlan', {})
   check(planLock.ok === true && Array.isArray(planLock.orders) && planLock.orders.every(function (o) { return o.sessionId !== 'io-s3' }), '再次重启后 locked 会话仍永不出单（值比对锁持久化成立）')
   // ---- #266：索引差值底座跨重启（面板关闭期间建号 → 重启后 attributed）----
@@ -114,7 +131,7 @@ try {
   const mod4Raw = await import('../package/lib/index.js?restart=266')
   const m4 = mod4Raw.default ?? mod4Raw
   let d4 = {}
-  ;((m4.apply ?? m4.default?.apply))(makeCtx(d4))
+  await bootPlugin(m4, d4)
   const await4 = await callHandler(d4.fn, 'awaitCreatedIssue', { sessionId: 'io-s4' })
   check(!!await4 && await4.ok === true && await4.watching === true, '重启后 io-s4 仍在等待建号')
   await sleep(600)
@@ -143,7 +160,7 @@ try {
   const mod6Raw = await import('../package/lib/index.js?restart=267a')
   const m6 = mod6Raw.default ?? mod6Raw
   let d6 = {}
-  ;((m6.apply ?? m6.default?.apply))(makeCtx(d6))
+  await bootPlugin(m6, d6)
   const planCR = await callHandler(d6.fn, 'namingPlan', {})
   check(!!planCR && Array.isArray(planCR.orders) && planCR.orders.every(function (o) { return o.sessionId !== 'io-s5' }), '#267 重启后冷却窗依旧生效（预算从盘恢复，未归零）')
   await callHandler(d6.fn, 'namingResult', { sessionId: 'io-s5', outcome: 'failed', error: 'face 拒绝 #2' })
@@ -158,7 +175,7 @@ try {
   const mod7Raw = await import('../package/lib/index.js?restart=267b')
   const m7 = mod7Raw.default ?? mod7Raw
   let d7 = {}
-  ;((m7.apply ?? m7.default?.apply))(makeCtx(d7))
+  await bootPlugin(m7, d7)
   const planXR = await callHandler(d7.fn, 'namingPlan', {})
   const fx5r = (planXR && Array.isArray(planXR.failures)) ? planXR.failures.find(function (f) { return f.sessionId === 'io-s5' }) : null
   check(!!fx5r && fx5r.count === 3, '#267 重启后定败清单仍在（面板级提醒跨重启不丢账）')

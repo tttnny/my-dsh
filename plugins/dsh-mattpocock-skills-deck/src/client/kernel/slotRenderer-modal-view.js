@@ -4,16 +4,24 @@
       for (let i = 0; i < schema.length; i++) { const fd = schema[i]; if (fd && fd.defaultValue != null && init[fd.name] === undefined) init[fd.name] = String(fd.defaultValue) }
       return init
     }
+    // 0.1.5-rc.1 hook 顺序修复：把「该不该显示」留在零 hook 的门卫里，带 hook 的弹窗本体
+    //   只在确实要显示时挂载（FormModalBody）。原实现把三处 early return 排在 hooks 之前
+    //   （st 空 / formModal 空 / 未打开且无成功态），弹窗由关到开时 hook 数 1→4，其后 hook
+    //   整体错位 → React areHookInputsEqual 读 undefined.deps 抛 TypeError，modal 槽整条崩溃。
+    //   行为等价：原 vals 跨开关保留，但下方 effect 的 deps 含 m.open，开窗时本就重置。
     export const FormModalSeat = function (props) {
       const st = props && props.st ? props.st : null
+      const m = (st && st.formModal) ? st.formModal : null
+      if (!m || (!m.open && !m.success)) return null
+      return React.createElement(FormModalBody, { st: st })
+    }
+    const FormModalBody = function (props) {
+      const st = props.st
       const cx = (typeof DswsCtx !== 'undefined' && DswsCtx) ? React.useContext(DswsCtx) : null
       const h = (cx && cx.h) ? cx.h : React.createElement
-      if (!st) return null
       const m = st.formModal
-      if (!m) return null
       // #419/#425：成功弹窗态（m.success 且向导已关）与表单态共用一组 hooks（末尾条件分支渲染）
       const isSuccess = !!(m.success && !m.open)
-      if (!m.open && !isSuccess) return null
       const isWizard = !!m.isWizard && Array.isArray(m.steps) && m.steps.length > 0
       const wizardSteps = isWizard ? m.steps : null
       const stepIndex = isWizard ? (typeof m.stepIndex === 'number' ? m.stepIndex : 0) : 0

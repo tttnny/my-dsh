@@ -56,11 +56,18 @@ function extractPluginBody(srcPath) {
 const PKG_CLIENT_SHIMS = `    // ===================== seam shims（pkg 方言绑定 · B3 rpc / B2 style / B4 timer） =====================
     const React = require('react')
     let __DSW_CTX__ = null
+    // 0.1.5-rc.1 适配：不再走 conn.rpc.call('/dsws', ...)。Host 侧 connection.rpc.handle 在本版对
+    //   兄弟插件不可用（owner.webServer 解析不到，详见 src/host/rpcChannel.js 头部注释），通道永远挂不上，
+    //   请求会落到静态兜底处理器拿 HTTP 405。改走 connection 的精确 Fetch 路由 /api/dsws：
+    //   鉴权与 Host/Origin 栅栏由 /api 载体统一施加，客户端因此不再需要持有 connection 服务。
     const __rpcCall = async function (endpoint, args) {
-      const ctx = __DSW_CTX__
-      const conn = ctx && ctx.get ? ctx.get('connection') : undefined
-      if (conn === undefined || conn.rpc === undefined) throw new Error('connection 服务不可用')
-      const res = await conn.rpc.call('/dsws', endpoint, args)
+      const resp = await fetch('/api/dsws', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint: endpoint, args: args }),
+      })
+      if (!resp.ok) throw new Error('RPC 传输失败：' + endpoint + '（HTTP ' + resp.status + '）')
+      const res = await resp.json()
       if (res && res.ok) return res.value
       throw new Error((res && res.error && res.error.message) || ('RPC 失败：' + endpoint))
     }

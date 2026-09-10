@@ -293,6 +293,15 @@
     },
     {
       "file": "src/host/index.js",
+      "spec": "./rpcChannel.js",
+      "resolved": "src/host/rpcChannel.js",
+      "layer": "host",
+      "count": 1,
+      "owner": "my-dsh 1.8.7 · DSH 0.1.5-rc.1 兼容修复",
+      "note": "RPC 通道挂载搬到独立模块：connection.rpc.handle 在本版对兄弟插件不可用，改注册 connection.fetch 的 /api/dsws 精确 Fetch 路由；同时压回 index.js 350 行上限（原文件已顶格）"
+    },
+    {
+      "file": "src/host/index.js",
       "spec": "./repoKeys.js",
       "resolved": "src/host/repoKeys.js",
       "layer": "host",

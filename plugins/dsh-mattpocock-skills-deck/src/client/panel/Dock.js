@@ -10,12 +10,20 @@
 export     const DetailsDock = (props) => {
       // #45 回归：切绘画/工作区后右面板串台——原实现挂载仅跑一次副作用（deps []）且直接取 props.sessionId（宿主 details 槽常空 → 退回 shared 单例），
       //   切会话不重跑水合、非 current 快照经 shared 广播串台；修复 = 跟随 useSessions 权威信号（hookCurrent）+ 精确 cwd（summaryCwd），副作用 deps 随 [sid]/[sid,summaryCwd] 重跑。
+      // 【0.1.5-rc.1 修复】hook 调用次数必须跨渲染恒定：原第 18 行是
+      //   `... && sid) ? props.useSessions(...) : undefined`——把 hook 挂在 `sid` 上。
+      //   sid 由空变有值（会话建立/切换）时 hook 数 1→2，其后所有 hook（useStore/useRef/
+      //   useState/useEffect/useDockSync）整体错位，React 的 areHookInputsEqual 读到 undefined.deps
+      //   抛 `Cannot read properties of undefined (reading 'length')`，被 slot 错误边界捕获 →
+      //   `slot entry crashed in 'rightbar'`，右侧面板整个不挂载。
+      //   官方渲染器的 maybeObservableHook 已保证 useSessions「absent 时也返回一个 hook、不改变
+      //   hook 调用顺序」（dsh-client-ui-renderer/lib/client.js），故 sid 判断一律移进 selector。
       const hookCurrent = (props && typeof props.useSessions === 'function') ? props.useSessions(function (x) { return x.current }) : undefined
       const propSid = props && (props.sessionId || (props.scope && props.scope.sessionId) || (props.session && props.session.id))
       const sid = propSid || hookCurrent
       const cx = React.useContext(DswsCtx)
       const h = cx ? cx.h : React.createElement
-      const summaryCwd = (props && typeof props.useSessions === 'function' && sid) ? props.useSessions(function (x) { return (x.byId && x.byId[sid]) ? x.byId[sid].cwd : undefined }) : undefined
+      const summaryCwd = (props && typeof props.useSessions === 'function') ? props.useSessions(function (x) { return (sid && x.byId && x.byId[sid]) ? x.byId[sid].cwd : undefined }) : undefined
       const s = cx ? cx.storeSvc.useStore(sid) : useStore(sid)
       const layoutSvc = ctx.get('layout')
       const dockRef = React.useRef(null)
