@@ -40,13 +40,20 @@ export     const DetailsDock = (props) => {
       }, [])
       // #179 加固与污染自愈已搬 DockSync.js（useDockSync），此处单调供装配（同闭包拼回）
       useDockSync(s, sid, summaryCwd, props)
-      // 【0.1.5-rc.1 适配】closeDetails() → closeRightbar()（官方改名，见 router.js openDockPanel）。
-      // 双版本兼容：先试新名（占位者 props 优先，其次 layout 服务），再回退旧名。
+      // 关闭按钮：先认 better-sidebar 标签页（deck 现在的**主形态**，见 panelAssembly.js 撤回说明），
+      //   再回退悬浮面板。原实现只认 closeRightbar/closeDetails——但 deck 已不占官方右栏，
+      //   在 better-sidebar 标签里点「关闭」会去关**无关的官方右栏**，属错位。
       const closeDock = function () {
+        try {
+          const bs = ctx.get('betterSidebar')
+          if (bs && typeof bs.closeTab === 'function' && typeof bs.listOpenTabs === 'function') {
+            const open = bs.listOpenTabs() || []
+            if (open.some(function (t) { return t && t.id === 'deck:map' })) { bs.closeTab('deck:map'); return }
+          }
+        } catch (eBs) { /* better-sidebar 不可用 → 继续回退 */ }
         if (props && typeof props.closeRightbar === 'function') props.closeRightbar()
         else if (layoutSvc && typeof layoutSvc.closeRightbar === 'function') layoutSvc.closeRightbar()
-        else if (props && typeof props.closeDetails === 'function') props.closeDetails()
-        else if (layoutSvc && typeof layoutSvc.closeDetails === 'function') layoutSvc.closeDetails()
+        else if (s && typeof s.open === 'boolean') { s.open = false; if (typeof emit === 'function') emit(s) }
       }
       const groups = compute(s)
       const active = s.activeMap !== null ? groups.find(function (x) { return x.m.number === s.activeMap }) : null

@@ -55,8 +55,15 @@ const slots = {
   register: (meta, comp) => { registrations.push({ meta, comp }); return () => {} },
   inject: (name, fn) => { try { fn() } catch (e) {} },
 }
+// 1.8.8：deck 面板改经 better-sidebar 标签页渲染（不再注册官方 rightbar 槽位）
+let capturedSidebarTab = null
+const betterSidebar = {
+  registerTab: (def) => { capturedSidebarTab = def; return () => {} },
+  openTab: () => {}, closeTab: () => {}, listOpenTabs: () => [],
+}
 const services = {
   slots,
+  betterSidebar,
   locale: { register: (ns, d) => { Object.assign(dict, d.zh || {}, d.en || {}); return () => {} }, bind: () => trFn },
   workspaces: { list: async () => [] },
   sessions: { list: async () => [] },
@@ -83,7 +90,8 @@ const mod = loaded.factory((m) => {
 })
 try { mod.apply(ctx) } catch (e) { console.log('  WARN apply threw:', e.message) }
 const byName = Object.fromEntries(registrations.map((r) => [r.meta && r.meta.name, r.comp]))
-const DetailsDockComp = byName.rightbar  // 0.1.5-rc.1：官方 details 槽已改名 rightbar
+// 经 better-sidebar 标签页拿 DetailsDock（DeckSidebarTab 是包裹层）
+const DetailsDockComp = capturedSidebarTab ? capturedSidebarTab.component : null
 check(!!DetailsDockComp, 'DetailsDock 已注册可渲染')
 
 const GH_MODULES = [{ id: 'github', label: 'GitHub', capabilities: { labelsGuide: true, repoCreateChain: true, pullRequests: true } }]

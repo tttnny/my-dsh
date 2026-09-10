@@ -129,6 +129,32 @@ var ClientCache = class {
 };
 var clientCache = new ClientCache();
 
+// src/describe-error.ts
+function describeError(err) {
+  if (err === null || err === void 0) return String(err);
+  const parts = [];
+  const push = (s) => {
+    const t = String(s || "").trim();
+    if (t && !parts.includes(t)) parts.push(t);
+  };
+  const head = err.message || String(err);
+  push(head);
+  const headCode = err.code;
+  if (headCode && !head.includes(headCode)) push("[" + headCode + "]");
+  let cause = err.cause;
+  for (let depth = 0; cause && depth < 4; depth++) {
+    const label = cause.message || String(cause);
+    push(cause.code && !label.includes(cause.code) ? label + " [" + cause.code + "]" : label);
+    if (Array.isArray(cause.errors)) {
+      for (const sub of cause.errors.slice(0, 3)) {
+        if (sub) push(sub.code || sub.message || String(sub));
+      }
+    }
+    cause = cause.cause;
+  }
+  return parts.join(" \u2190 ");
+}
+
 // src/client/translate/api.ts
 async function requestTranslateBatch(texts, options = {}) {
   if (!Array.isArray(texts) || texts.length === 0) return [];
@@ -183,7 +209,7 @@ async function testServerChannel(channel) {
     });
     return await res.json();
   } catch (err) {
-    return { ok: false, latencyMs: 0, error: err?.message || String(err) };
+    return { ok: false, latencyMs: 0, error: describeError(err) };
   }
 }
 
@@ -879,7 +905,7 @@ var SettingsStore = class {
       await this.refreshKeyStatus();
       return { ok: true };
     } catch (err) {
-      return { ok: false, error: err?.message || String(err) };
+      return { ok: false, error: describeError(err) };
     }
   }
   dispose() {

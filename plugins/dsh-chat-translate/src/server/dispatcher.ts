@@ -1,3 +1,4 @@
+import { describeError } from '../describe-error.ts';
 import type { ITranslationAdapter, PluginConfig, TranslateItemResult } from './types.ts';
 import type { ConfigManager } from './config.ts';
 import { MAX_CONCURRENCY } from './config.ts';
@@ -170,7 +171,7 @@ export class TranslationDispatcher {
         } catch (err: any) {
           this.recordFailure(chId);
           console.warn(
-            `[dsh-chat-translate] channel ${chId} failed: ${err?.message || String(err)} | text: ${text.slice(0, 60)}`
+            `[dsh-chat-translate] channel ${chId} failed: ${describeError(err)} | text: ${text.slice(0, 60)}`
           );
           // Continue to next channel
         }
@@ -221,7 +222,7 @@ export class TranslationDispatcher {
       }
       return { ok: false, latencyMs, error: 'Empty translation returned' };
     } catch (err: any) {
-      return { ok: false, latencyMs: Date.now() - start, error: err?.message || String(err) };
+      return { ok: false, latencyMs: Date.now() - start, error: describeError(err) };
     }
   }
 

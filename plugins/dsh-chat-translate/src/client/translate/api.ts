@@ -1,3 +1,5 @@
+import { describeError } from '../../describe-error.ts';
+
 export interface TranslateItemResult {
   original: string;
   translated: string;
@@ -81,6 +83,6 @@ export async function testServerChannel(channel: string): Promise<{ ok: boolean;
     });
     return await res.json();
   } catch (err: any) {
-    return { ok: false, latencyMs: 0, error: err?.message || String(err) };
+    return { ok: false, latencyMs: 0, error: describeError(err) };
   }
 }

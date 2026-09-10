@@ -1,3 +1,4 @@
+import { describeError } from '../../describe-error.ts';
 import { chatTranslateObserver } from '../translate/observer.ts';
 import { testServerChannel } from '../translate/api.ts';
 
@@ -234,7 +235,7 @@ class SettingsStore {
       await this.refreshKeyStatus();
       return { ok: true };
     } catch (err: any) {
-      return { ok: false, error: err?.message || String(err) };
+      return { ok: false, error: describeError(err) };
     }
   }
 

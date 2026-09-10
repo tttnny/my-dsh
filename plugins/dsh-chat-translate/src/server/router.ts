@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { describeError } from '../describe-error.ts';
 import type { ConfigManager } from './config.ts';
 import type { TranslationDispatcher } from './dispatcher.ts';
 
@@ -101,7 +102,7 @@ export function createHttpHandler(configManager: ConfigManager, dispatcher: Tran
       sendJson(res, 404, { ok: false, error: 'Endpoint not found' });
     } catch (err: any) {
       const status = err?.message?.includes('exceeded maximum allowed size') ? 413 : 500;
-      sendJson(res, status, { ok: false, error: err?.message || String(err) });
+      sendJson(res, status, { ok: false, error: describeError(err) });
     }
   };
 }

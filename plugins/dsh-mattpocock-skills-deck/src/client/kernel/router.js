@@ -35,39 +35,17 @@
         loadSnapshot(st, false)
       }
     }
-    // 打开面板：一律右侧停靠（rightbar 列）；layout 服务不可用 → 页内兜底
-    // 【0.1.5-rc.1 适配】layout 服务把 openDetails() 改名为
-    // `openRightbar(track: boolean, fullscreen: boolean)`——新签名是「报告右栏呈现方式」
-    // （track=是否预留网格轨道；fullscreen=是否覆盖整帧），不再是旧的 imperative 打开。
-    // 这里传 (true, false)：预留轨道、非全屏，与原 openDetails() 的意图等价。
-    // 双版本兼容：保留旧名回退（typeof 守卫，旧版 DSH 走 openDetails）。
+    // 打开面板（兜底形态）：deck 自带**悬浮面板**（openPagePanel，含 #58 缓存优先秒开）。
+    //
+    // 【1.8.8】不再走 layout.openRightbar：0.1.5-rc.1 的 rightbar 是**官方右栏框架本身**
+    //   （列宽 / 推挤动画 / 折叠按钮 / dockkit 标签宿主都由官方 RightbarRoot 渲染），
+    //   deck 已撤回对该格子的注册（见 panelAssembly.js 的撤回说明）——再调 openRightbar
+    //   只会打开官方右栏并显示官方标签页，deck 面板并不在其中，用户看到的是「点了没反应」。
+    //
+    // 本路径的触发场景：未装 dsh-better-sidebar，或用户在设置里显式选了 openIn='dock'。
+    // 装了 better-sidebar 且未显式选择时走上方的 openInSidebar（better-sidebar 标签页）。
     export const openDockPanel = function (st) {
-      const ls = ctx.get('layout')
-      const openRight = ls && typeof ls.openRightbar === 'function'
-        ? function () { ls.openRightbar(true, false) }
-        : (ls && typeof ls.openDetails === 'function' ? function () { ls.openDetails() } : null)
-      if (openRight) {
-        openRight()
-        // #58 缓存优先：与 openPagePanel 同逻辑，避免切面板闪 loading
-        if (!st.cwd) {
-          const sync = getCwdSync(st.sessionId)
-          if (sync) { st.cwd = sync; hydrateFromCache(st) }
-        } else { hydrateFromCache(st) }
-        const hasCache = !!(st.snapshot || getCachedSnapshot(st.cwd))
-        const isReal = st.snapMode === 'real' || !!st.snapshot || !!getCachedSnapshot(st.cwd)
-        if (isReal && snapFresh(st)) {
-          if (!st.snapshot && getCachedSnapshot(st.cwd)) { st.snapshot = getCachedSnapshot(st.cwd); st.snapMode = 'real' }
-          emit(st)
-        } else if (isReal || hasCache) {
-          if (!st.snapshot && getCachedSnapshot(st.cwd)) { st.snapshot = getCachedSnapshot(st.cwd); st.snapMode = 'real' }
-          emit(st)
-          loadSnapshot(st, false)
-        } else {
-          loadSnapshot(st, false)
-        }
-        return
-      }
-      openPagePanel(st)  // layout 服务不可用 → 退回悬浮
+      openPagePanel(st)
     }
     // v1.4：打开位置可选 —— cfg.openIn: 'dock'（rightbar 列，默认）/ 'sidebar'（dsh-better-sidebar tab）
     //   better-sidebar 已装时可用；未装或服务不可用 → 回退 rightbar 列

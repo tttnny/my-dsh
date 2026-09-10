@@ -63,8 +63,16 @@ const slots = {
   },
   inject: (name, fn) => { try { fn() } catch (e) {} },
 }
+// 1.8.8：deck 的主形态 = better-sidebar 标签页（DetailsDock 经 DeckSidebarTab 渲染），
+//   不再向官方 rightbar 槽位注册（那会顶掉官方右栏框架，见 panelAssembly.js 撤回说明）。
+let capturedSidebarTab = null
+const betterSidebar = {
+  registerTab: (def) => { capturedSidebarTab = def; return () => {} },
+  openTab: () => {}, closeTab: () => {}, listOpenTabs: () => [],
+}
 const services = {
   slots,
+  betterSidebar,
   locale: { register: (ns, d) => { Object.assign(dict, d.zh || {}, d.en || {}); return () => {} }, bind: () => trFn },
   workspaces: { list: async () => [] },
   sessions: { list: async () => [] },
@@ -102,10 +110,12 @@ check(typeof mod.apply === 'function', 'apply 为函数（render smoke）')
 
 try { mod.apply(ctx) } catch (e) { console.log('  WARN apply threw:', e.message) }
 
-check(registrations.length === 5, `slots.register 捕获 5 个插槽（分叉：无 settings.section；实际 ${registrations.length}）`)
+check(registrations.length === 4, `slots.register 捕获 4 个插槽（分叉：无 settings.section；1.8.8 撤回 rightbar；实际 ${registrations.length}）`)
 const slotNames = registrations.map(r => r.meta && r.meta.name).join(', ')
 check(slotNames.includes('conversation.input.dock'), `statusbar 插槽已注册（${slotNames}）`)
-check(slotNames.includes('rightbar'), `panel 插槽已注册（${slotNames}）`)
+// 回归防护：「点右侧边栏按钮面板直接消失」的根因就是 deck 用 priority:-1 抢了官方 rightbar 格子
+//   （官方 rightbar 条目 = 右栏框架本身，列宽/折叠按钮都归它渲染）。这里钉死「不许再抢」。
+check(!slotNames.includes('rightbar'), `不抢官方 rightbar 格子（防回归）：${slotNames}`)
 check(slotNames.includes('settings.plugins.tab'), `settings 插槽已注册（${slotNames}）`)
 check(slotNames.includes('shell.overlay'), `overlay 插槽已注册（${slotNames}）`)
 
@@ -142,7 +152,8 @@ async function renderAndCheck(Comp, props, expects, label) {
 const byId = Object.fromEntries(registrations.map(r => [r.meta && r.meta.id, r.comp]))
 const byName = Object.fromEntries(registrations.map(r => [r.meta && r.meta.name, r.comp]))
 const StatusBarComp = byName['conversation.input.dock'] || byId['dsh-mattpocock-skills-deck']
-const DetailsDockComp = byName['rightbar']  // 0.1.5-rc.1：官方 details 槽已改名 rightbar
+// deck 面板改经 better-sidebar 标签页渲染（1.8.8 主形态）：DeckSidebarTab = 包裹层 + DetailsDock
+const DetailsDockComp = capturedSidebarTab ? capturedSidebarTab.component : null
 const OverlayComp = byName['shell.overlay']
 const SettingsComp = byName['settings.plugins.tab']
 
@@ -163,14 +174,11 @@ if (StatusBarComp) {
 
 // ---- DetailsDock 渲染（关键路径：panel / tabs 行）----
 if (DetailsDockComp) {
-  const dockProps = {
-    sessionId: 'test-sid',
-    session: { cwd: 'D:\\test' },
-    useSessions: () => null,
-  }
-  await renderAndCheck(DetailsDockComp, dockProps, ['dsws-tabs', 'dsws-body'], 'DetailsDock')
+  // 标签页形态：better-sidebar 只传 scope.sessionId，DetailsDock 收到 { sessionId }
+  const dockProps = { scope: { sessionId: 'test-sid' } }
+  await renderAndCheck(DetailsDockComp, dockProps, ['dsws-tabs', 'dsws-body'], 'DetailsDock(better-sidebar tab)')
 } else {
-  check(false, 'DetailsDock 组件未捕获')
+  check(false, 'DeckSidebarTab 未注册到 betterSidebar（DetailsDock 未捕获）')
 }
 
 // ---- Overlay 渲染（关键路径：portal 挂载点）----

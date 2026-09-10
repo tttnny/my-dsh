@@ -1119,6 +1119,32 @@ var LruDiskCache = class {
   }
 };
 
+// src/describe-error.ts
+function describeError(err) {
+  if (err === null || err === void 0) return String(err);
+  const parts = [];
+  const push2 = (s) => {
+    const t = String(s || "").trim();
+    if (t && !parts.includes(t)) parts.push(t);
+  };
+  const head = err.message || String(err);
+  push2(head);
+  const headCode = err.code;
+  if (headCode && !head.includes(headCode)) push2("[" + headCode + "]");
+  let cause = err.cause;
+  for (let depth = 0; cause && depth < 4; depth++) {
+    const label = cause.message || String(cause);
+    push2(cause.code && !label.includes(cause.code) ? label + " [" + cause.code + "]" : label);
+    if (Array.isArray(cause.errors)) {
+      for (const sub of cause.errors.slice(0, 3)) {
+        if (sub) push2(sub.code || sub.message || String(sub));
+      }
+    }
+    cause = cause.cause;
+  }
+  return parts.join(" \u2190 ");
+}
+
 // src/server/adapters/bing.ts
 var TRANSLATOR_URL = "https://cn.bing.com/translator";
 var TRANSLATE_URL = "https://cn.bing.com/ttranslatev3?isVertical=1&&IG={IG}&IID=translator.5025.1";
@@ -1483,7 +1509,7 @@ var TranslationDispatcher = class {
         } catch (err) {
           this.recordFailure(chId);
           console.warn(
-            `[dsh-chat-translate] channel ${chId} failed: ${err?.message || String(err)} | text: ${text.slice(0, 60)}`
+            `[dsh-chat-translate] channel ${chId} failed: ${describeError(err)} | text: ${text.slice(0, 60)}`
           );
         }
       }
@@ -1527,7 +1553,7 @@ var TranslationDispatcher = class {
       }
       return { ok: false, latencyMs, error: "Empty translation returned" };
     } catch (err) {
-      return { ok: false, latencyMs: Date.now() - start, error: err?.message || String(err) };
+      return { ok: false, latencyMs: Date.now() - start, error: describeError(err) };
     }
   }
   enqueueTask(task) {
@@ -1693,7 +1719,7 @@ function createHttpHandler(configManager, dispatcher) {
       sendJson(res, 404, { ok: false, error: "Endpoint not found" });
     } catch (err) {
       const status = err?.message?.includes("exceeded maximum allowed size") ? 413 : 500;
-      sendJson(res, status, { ok: false, error: err?.message || String(err) });
+      sendJson(res, status, { ok: false, error: describeError(err) });
     }
   };
 }

@@ -87,15 +87,24 @@
     __injectOnce('settings.plugins.tab', function () {
       return slots.register({ name: 'settings.plugins.tab', id: 'dsws-settings', order: 40, label: function () { return tr('panel.title') } }, withCx(SettingsPage))
     })
-    // 原型：右侧停靠（rightbar 槽位 · 替换内置面板）
-    // 【0.1.5-rc.1 适配】官方把原 `details` 槽改名为 `rightbar`：实测槽位契约
-    //   0.1.3-alpha.2 有 details/conversation、无 rightbar；0.1.5-rc.1 无 details、有 rightbar。
-    //   槽位名写错**不会报错**——slots.inject 对未声明槽位静默跳过、回调永不执行，
-    //   表现为「注册成功但面板永不挂载」，故必须跟随官方改名。
-    // priority: -1 低于内置面板默认 0 → 无冲突且「低者胜出」替换内置面板
-    __injectOnce('rightbar', function () {
-      return slots.register({ name: 'rightbar', id: 'dsws-details', order: 10, priority: -1 }, withCx(DetailsDock))
-    })
+    // 【1.8.8 撤回】不再向 rightbar 槽位注册。
+    //
+    // 历史：1.8.6 把 DetailsDock 改名注册到 rightbar，并沿用旧版 `priority: -1`（「低者胜出」），
+    //   意图是「替换内置右栏面板」。该意图在 0.1.5-rc.1 上是错的：
+    //   官方 rightbar 条目**就是右栏框架本身**（dsh-client-ui-sidebar-right 的 RightbarRoot）——
+    //   列宽（P3OORG_panel 的 style.width 720px）、推挤动画、折叠按钮、dockkit 标签宿主全由它渲染。
+    //   被顶掉后：① 右栏列宽恒为 0，用户「点右侧边栏按钮面板直接消失」；
+    //            ② dsh-better-sidebar 注册的 sidebar.right.pane.tab 标签全部失去宿主。
+    //   真机 A/B 实证：临时禁用本注册后，P3OORG_panel / data-sidebar-right-panel 立即回归。
+    //
+    // 官方槽位结构（扩展点只有第三个）：
+    //   rightbar（框架）→ rightbar.session（kind: single，标签宿主）
+    //     → sidebar.right.pane.tab（kind: keyed ← 多标签正确扩展点）/ .title
+    //
+    // deck 现在的两种形态都不占官方右栏，与 better-sidebar 零冲突：
+    //   主形态 = better-sidebar 标签页（下方 ensureSidebarTab + router.js openInSidebar；
+    //            cfg.openIn 检测到 better-sidebar 即默认 'sidebar'）
+    //   兜底   = 自带悬浮面板（router.js openDockPanel → openPagePanel）
 
     // v1.4.1：apply 时尽力注册 better-sidebar tab（MattSkillsDeck）；better-sidebar 服务未就绪（加载晚于本模块）→ 定时重试（最多 10 次）
     //   卸载（HMR / 插件禁用）时清理 disposer + 重试定时器
