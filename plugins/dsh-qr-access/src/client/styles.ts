@@ -28,6 +28,8 @@ export const QR_ACCESS_CSS = `
 .dshqa-addr-host{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;opacity:.66;word-break:break-all}
 .dshqa-tag{font-size:10.5px;padding:1px 7px;border-radius:999px;background:rgba(107,114,128,.18);color:inherit;opacity:.75;font-weight:500;flex:none}
 .dshqa-tag.lan{background:rgba(22,163,74,.14);color:#16a34a;opacity:1}
+.dshqa-tag.page{background:rgba(59,130,246,.14);color:#3b82f6;opacity:1}
+.dshqa-tag.trusted{background:rgba(139,92,246,.16);color:#8b5cf6;opacity:1}
 .dshqa-qr-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px;border-radius:10px;background:rgba(128,128,128,.06)}
 .dshqa-qr-svg{display:block;border-radius:8px;box-shadow:0 1px 8px rgba(0,0,0,.14)}
 .dshqa-url{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;opacity:.8;word-break:break-all;text-align:center;user-select:all;line-height:1.6}

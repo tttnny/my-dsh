@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-qr-access",
-  "version": "0.1.2",
-  "description": "DSH 扫码访问：设置页实时生成局域网 HTTPS 访问地址与本地 CA 证书二维码，手机扫码直连，免复制粘贴；地址实时跟随 DSH 重启后的 token 轮换。",
+  "version": "0.2.0",
+  "description": "DSH 扫码访问：设置页实时生成当前实例（DSH Desktop / 任意 dsh）带 token 的访问地址二维码，手机扫码直连，免复制粘贴；Desktop 另附局域网 HTTPS 与本地 CA 证书码，地址实时跟随 DSH 重启后的 token 轮换。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {

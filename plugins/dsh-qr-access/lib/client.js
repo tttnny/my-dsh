@@ -1732,7 +1732,13 @@ var import_react2 = require("react");
 
 // src/client/api.ts
 var LAN_STATES = ["inactive", "starting", "ready", "failed"];
-function isTokenedHttpUrl(value) {
+var DESKTOP_PATH = "/api/desktop/settings";
+var GENERIC_PATH = "/api/qr-access/urls";
+var source = null;
+function asError(value) {
+  return value instanceof Error ? value : new Error(String(value));
+}
+function isUrlWithToken(value) {
   if (typeof value !== "string" || value.length === 0 || value.length > 2048) return false;
   try {
     const url = new URL(value);
@@ -1749,39 +1755,87 @@ function isHttpsUrl(value) {
     return false;
   }
 }
-function normalizeDesktopSettings(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
-  }
-  const root = value;
-  const web = root.web;
-  if (typeof web !== "object" || web === null || Array.isArray(web)) {
-    throw new Error("\u54CD\u5E94\u7F3A\u5C11 web \u6295\u5F71");
-  }
-  const w = web;
-  if (!isTokenedHttpUrl(w.localUrl)) throw new Error("localUrl \u65E0\u6548");
-  if (!LAN_STATES.includes(w.lanState)) throw new Error("lanState \u65E0\u6548");
-  return {
-    current: typeof root.current === "string" ? root.current : "",
-    web: {
-      localUrl: w.localUrl,
-      lanUrls: Array.isArray(w.lanUrls) ? w.lanUrls.filter(isTokenedHttpUrl) : [],
-      lanState: w.lanState,
-      lanError: typeof w.lanError === "string" ? w.lanError : null,
-      lanCaFingerprint: typeof w.lanCaFingerprint === "string" ? w.lanCaFingerprint : null,
-      lanCaUrls: Array.isArray(w.lanCaUrls) ? w.lanCaUrls.filter(isHttpsUrl) : []
-    }
-  };
+function stringList(value, accept) {
+  return Array.isArray(value) ? value.filter(accept) : [];
 }
-async function fetchDesktopSettings() {
-  const res = await fetch("/api/desktop/settings", {
+async function getJson(path, query = "") {
+  const res = await fetch(`${path}${query}`, {
     method: "GET",
     credentials: "same-origin",
     cache: "no-store",
     headers: { Accept: "application/json" }
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return normalizeDesktopSettings(await res.json());
+  return res.json();
+}
+function normalizeDesktopSettings(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
+  const root = value;
+  const web = root.web;
+  if (typeof web !== "object" || web === null || Array.isArray(web)) throw new Error("\u54CD\u5E94\u7F3A\u5C11 web \u6295\u5F71");
+  const w = web;
+  if (!isUrlWithToken(w.localUrl)) throw new Error("localUrl \u65E0\u6548");
+  if (!LAN_STATES.includes(w.lanState)) throw new Error("lanState \u65E0\u6548");
+  return {
+    mode: "desktop",
+    profileName: typeof root.current === "string" ? root.current : "",
+    boundHost: null,
+    port: null,
+    localUrl: w.localUrl,
+    lanUrls: stringList(w.lanUrls, isUrlWithToken),
+    trustedUrls: [],
+    pageUrl: null,
+    lanState: w.lanState,
+    lanError: typeof w.lanError === "string" ? w.lanError : null,
+    lanCaFingerprint: typeof w.lanCaFingerprint === "string" ? w.lanCaFingerprint : null,
+    lanCaUrls: stringList(w.lanCaUrls, isHttpsUrl)
+  };
+}
+function normalizeQrAccessUrls(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
+  const root = value;
+  if (root.mode !== "generic") throw new Error("mode \u65E0\u6548");
+  if (typeof root.error === "string") throw new Error(root.error);
+  const lanUrls = stringList(root.lanUrls, isUrlWithToken);
+  return {
+    mode: "generic",
+    profileName: "",
+    boundHost: typeof root.boundHost === "string" ? root.boundHost : null,
+    port: typeof root.port === "number" && Number.isInteger(root.port) && root.port > 0 ? root.port : null,
+    localUrl: isUrlWithToken(root.localUrl) ? root.localUrl : null,
+    lanUrls,
+    trustedUrls: stringList(root.trustedUrls, isUrlWithToken),
+    pageUrl: isUrlWithToken(root.pageUrl) ? root.pageUrl : null,
+    lanState: lanUrls.length > 0 ? "ready" : "inactive",
+    lanError: null,
+    lanCaFingerprint: null,
+    lanCaUrls: []
+  };
+}
+async function fetchAccessView() {
+  const failures = [];
+  if (source !== "generic") {
+    try {
+      const view = normalizeDesktopSettings(await getJson(DESKTOP_PATH));
+      source = "desktop";
+      return view;
+    } catch (error) {
+      const reason = asError(error).message;
+      if (source === "desktop") throw asError(error);
+      failures.push(`DSH Desktop \u684C\u9762\u63A5\u53E3 ${DESKTOP_PATH}\uFF1A${reason}`);
+    }
+  }
+  try {
+    const protocol = typeof location === "object" && typeof location.protocol === "string" ? location.protocol : "http:";
+    const view = normalizeQrAccessUrls(await getJson(GENERIC_PATH, `?protocol=${encodeURIComponent(protocol)}`));
+    source = "generic";
+    return view;
+  } catch (error) {
+    failures.push(`\u63D2\u4EF6\u5BBF\u4E3B\u8DEF\u7531 ${GENERIC_PATH}\uFF1A${asError(error).message}`);
+  }
+  throw new Error(
+    `${failures.join("\uFF1B")}\u3002\u684C\u9762\u63A5\u53E3\u4EC5 DSH Desktop \u63D0\u4F9B\uFF1B\u5BBF\u4E3B\u8DEF\u7531\u7531\u672C\u63D2\u4EF6\u5BBF\u4E3B\u534A\u533A\u6CE8\u518C\uFF0C\u521A\u66F4\u65B0\u63D2\u4EF6\u65F6\u9700\u91CD\u542F DSH \u624D\u4F1A\u751F\u6548\u3002`
+  );
 }
 
 // src/client/qr-svg.tsx
@@ -1899,6 +1953,8 @@ var QR_ACCESS_CSS = `
 .dshqa-addr-host{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;opacity:.66;word-break:break-all}
 .dshqa-tag{font-size:10.5px;padding:1px 7px;border-radius:999px;background:rgba(107,114,128,.18);color:inherit;opacity:.75;font-weight:500;flex:none}
 .dshqa-tag.lan{background:rgba(22,163,74,.14);color:#16a34a;opacity:1}
+.dshqa-tag.page{background:rgba(59,130,246,.14);color:#3b82f6;opacity:1}
+.dshqa-tag.trusted{background:rgba(139,92,246,.16);color:#8b5cf6;opacity:1}
 .dshqa-qr-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px;border-radius:10px;background:rgba(128,128,128,.06)}
 .dshqa-qr-svg{display:block;border-radius:8px;box-shadow:0 1px 8px rgba(0,0,0,.14)}
 .dshqa-url{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;opacity:.8;word-break:break-all;text-align:center;user-select:all;line-height:1.6}
@@ -1937,6 +1993,13 @@ function isLoopbackHost(url) {
   const host = hostOf(url);
   return host === "127.0.0.1" || host === "localhost" || host.startsWith("127.");
 }
+function isPlainHttp(url) {
+  try {
+    return new URL(url).protocol === "http:";
+  } catch {
+    return false;
+  }
+}
 function fallbackCopy(text) {
   try {
     const ta = document.createElement("textarea");
@@ -1962,16 +2025,35 @@ async function copyText(text) {
   }
   return fallbackCopy(text);
 }
-function buildAddressRows(web) {
-  return [
-    { url: web.localUrl, kind: "local", title: "\u672C\u673A\u8BBF\u95EE", host: hostOf(web.localUrl) },
-    ...web.lanUrls.map((url, i) => ({
-      url,
-      kind: "lan",
-      title: web.lanUrls.length > 1 ? `\u5C40\u57DF\u7F51 HTTPS #${i + 1}` : "\u5C40\u57DF\u7F51 HTTPS",
-      host: hostOf(url)
-    }))
-  ];
+var ROW_TAG = {
+  page: { label: "\u5F53\u524D\u9875\u9762", cls: "page" },
+  local: { label: "\u672C\u673A", cls: "" },
+  lan: { label: "\u5C40\u57DF\u7F51", cls: "lan" },
+  trusted: { label: "\u96A7\u9053/\u53CD\u4EE3", cls: "trusted" }
+};
+function buildAddressRows(view) {
+  const rows = [];
+  const push = (url, kind, title) => {
+    if (url === null || url.length === 0 || rows.some((row) => row.url === url)) return;
+    rows.push({ url, kind, title, host: hostOf(url) });
+  };
+  if (view.mode === "generic") {
+    push(view.pageUrl, "page", "\u5F53\u524D\u9875\u9762\u5730\u5740");
+    push(view.localUrl, "local", "\u672C\u673A\u8BBF\u95EE");
+  } else {
+    push(view.localUrl, "local", "\u672C\u673A\u8BBF\u95EE");
+  }
+  view.lanUrls.forEach((url, i) => {
+    push(url, "lan", view.mode === "generic" ? view.lanUrls.length > 1 ? `\u5C40\u57DF\u7F51 #${i + 1}` : "\u5C40\u57DF\u7F51" : view.lanUrls.length > 1 ? `\u5C40\u57DF\u7F51 HTTPS #${i + 1}` : "\u5C40\u57DF\u7F51 HTTPS");
+  });
+  view.trustedUrls.forEach((url, i) => {
+    push(url, "trusted", view.trustedUrls.length > 1 ? `\u53D7\u4FE1\u4E3B\u673A #${i + 1}` : "\u53D7\u4FE1\u4E3B\u673A");
+  });
+  return rows;
+}
+function preferredUrl(rows) {
+  const crossDevice = rows.find((row) => row.kind !== "local" && !isLoopbackHost(row.url));
+  return (crossDevice ?? rows[0])?.url ?? null;
 }
 function QrAccessPanel() {
   const [view, setView] = (0, import_react2.useState)(null);
@@ -1986,15 +2068,13 @@ function QrAccessPanel() {
   const refresh = (0, import_react2.useCallback)(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const next = await fetchDesktopSettings();
+      const next = await fetchAccessView();
       if (!aliveRef.current) return;
       viewRef.current = next;
       setView(next);
       setError(null);
-      setSelected((prev) => {
-        const all = [next.web.localUrl, ...next.web.lanUrls];
-        return prev && all.includes(prev) ? prev : next.web.lanUrls[0] ?? next.web.localUrl;
-      });
+      const rows = buildAddressRows(next);
+      setSelected((prev) => prev && rows.some((row) => row.url === prev) ? prev : preferredUrl(rows));
     } catch (err) {
       if (!aliveRef.current) return;
       if (!silent || !viewRef.current) setError(String(err?.message ?? String(err)));
@@ -2018,10 +2098,11 @@ function QrAccessPanel() {
     };
   }, [refresh]);
   (0, import_react2.useEffect)(() => () => window.clearTimeout(copyTimerRef.current), []);
-  const web = view?.web ?? null;
-  const addresses = (0, import_react2.useMemo)(() => web ? buildAddressRows(web) : [], [web]);
+  const addresses = (0, import_react2.useMemo)(() => view ? buildAddressRows(view) : [], [view]);
+  const crossDevice = (0, import_react2.useMemo)(() => addresses.some((row) => row.kind !== "local" && !isLoopbackHost(row.url)), [addresses]);
+  const port = view?.port ?? null;
   const caUrl = (0, import_react2.useMemo)(() => {
-    if (!web || !selected || web.lanCaUrls.length === 0) return null;
+    if (!view || view.mode !== "desktop" || !selected || view.lanCaUrls.length === 0) return null;
     if (isLoopbackHost(selected)) return null;
     let hostname = "";
     try {
@@ -2029,15 +2110,15 @@ function QrAccessPanel() {
     } catch {
       return null;
     }
-    const matched = web.lanCaUrls.find((u) => {
+    const matched = view.lanCaUrls.find((u) => {
       try {
         return new URL(u).hostname === hostname;
       } catch {
         return false;
       }
     });
-    return matched ?? web.lanCaUrls[0];
-  }, [web, selected]);
+    return matched ?? view.lanCaUrls[0];
+  }, [view, selected]);
   const onCopy = (0, import_react2.useCallback)(async () => {
     if (!selected) return;
     const ok = await copyText(selected);
@@ -2045,33 +2126,49 @@ function QrAccessPanel() {
     window.clearTimeout(copyTimerRef.current);
     copyTimerRef.current = window.setTimeout(() => setCopied(false), 1600);
   }, [selected]);
-  const lanMeta = web ? LAN_STATE_META[web.lanState] : null;
+  const lanMeta = view && view.mode === "desktop" ? LAN_STATE_META[view.lanState] : null;
+  const genericMeta = view && view.mode === "generic" ? crossDevice ? { label: "\u53EF\u8DE8\u8BBE\u5907", tone: "ok" } : { label: "\u4EC5\u672C\u673A", tone: "muted" } : null;
+  const badge = lanMeta ?? genericMeta;
+  const activeTab = tab === "ca" && (view?.lanCaUrls.length ?? 0) > 0 ? "ca" : "url";
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-panel", children: [
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-card", children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-card-title", children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "\u8FDE\u63A5\u72B6\u6001" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshqa-title-right", children: [
-          lanMeta && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: `dshqa-badge ${lanMeta.tone}`, children: lanMeta.label }),
+          badge && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: `dshqa-badge ${badge.tone}`, children: badge.label }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { type: "button", className: "dshqa-btn", onClick: () => void refresh(), disabled: loading, children: loading ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0" })
         ] })
       ] }),
-      web?.lanState === "inactive" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-desc", children: "\u5C40\u57DF\u7F51 HTTPS \u672A\u542F\u7528\uFF1A\u5728\u300C\u684C\u9762\u8BBE\u7F6E\u300D\u4E2D\u6253\u5F00\u300C\u5C40\u57DF\u7F51\u8BBF\u95EE\uFF08\u9700\u8981 HTTPS\uFF09\u300D\u540E\uFF0C\u624B\u673A\u624D\u80FD\u626B\u7801\u8BBF\u95EE\u3002" }),
-      web?.lanState === "starting" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-desc", children: "\u5C40\u57DF\u7F51 HTTPS \u6B63\u5728\u542F\u52A8\uFF0C\u9762\u677F\u4F1A\u81EA\u52A8\u8DDF\u968F\u6700\u65B0\u72B6\u6001\u3002" }),
-      web?.lanState === "failed" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-desc", children: [
+      view?.mode === "desktop" && view.lanState === "inactive" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-desc", children: "\u5C40\u57DF\u7F51 HTTPS \u672A\u542F\u7528\uFF1A\u5728\u300C\u684C\u9762\u8BBE\u7F6E\u300D\u4E2D\u6253\u5F00\u300C\u5C40\u57DF\u7F51\u8BBF\u95EE\uFF08\u9700\u8981 HTTPS\uFF09\u300D\u540E\uFF0C\u624B\u673A\u624D\u80FD\u626B\u7801\u8BBF\u95EE\u3002" }),
+      view?.mode === "desktop" && view.lanState === "starting" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-desc", children: "\u5C40\u57DF\u7F51 HTTPS \u6B63\u5728\u542F\u52A8\uFF0C\u9762\u677F\u4F1A\u81EA\u52A8\u8DDF\u968F\u6700\u65B0\u72B6\u6001\u3002" }),
+      view?.mode === "desktop" && view.lanState === "failed" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-desc", children: [
         "\u542F\u52A8\u5931\u8D25",
-        web.lanError ? `\uFF1A${web.lanError}` : "\uFF0C\u8BF7\u67E5\u770B DSH Desktop \u8BCA\u65AD\u4FE1\u606F\u3002"
+        view.lanError ? `\uFF1A${view.lanError}` : "\uFF0C\u8BF7\u67E5\u770B DSH Desktop \u8BCA\u65AD\u4FE1\u606F\u3002"
       ] }),
-      web?.lanState === "ready" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-desc", children: "\u5DF2\u5C31\u7EEA\u3002\u7528\u624B\u673A\u76F8\u673A\u626B\u63CF\u4E0B\u65B9\u4E8C\u7EF4\u7801\u5373\u53EF\u6253\u5F00 DSH\uFF1B\u9996\u6B21\u4F7F\u7528\u8BF7\u5148\u5728\u300CCA \u8BC1\u4E66\u300D\u9875\u5B8C\u6210\u4FE1\u4EFB\uFF0C\u5426\u5219\u6D4F\u89C8\u5668\u4F1A\u62A5\u8BC1\u4E66\u544A\u8B66\u3002" })
-    ] }),
-    error && !web && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-card", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-card-title", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "\u672A\u68C0\u6D4B\u5230\u684C\u9762\u8BBE\u7F6E\u63A5\u53E3" }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-desc", children: [
-        "\u8BFB\u53D6 /api/desktop/settings \u5931\u8D25\uFF08",
-        error,
-        "\uFF09\u3002\u6B64\u5206\u533A\u4F9D\u8D56 DSH Desktop v2.0+ \u7684\u540C\u6E90\u684C\u9762\u63A5\u53E3\uFF1A \u8BF7\u4F7F\u7528 DSH Desktop\uFF08\u517C\u5BB9\u6A21\u5F0F\uFF09\u5E76\u4FDD\u6301\u6D4F\u89C8\u5668\u8BBF\u95EE\u5F00\u542F\uFF1Bnpm \u7248 DSH \u65E0\u6B64\u63A5\u53E3\uFF0C\u672C\u5206\u533A\u4E0D\u53EF\u7528\u3002"
+      view?.mode === "desktop" && view.lanState === "ready" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-desc", children: "\u5DF2\u5C31\u7EEA\u3002\u7528\u624B\u673A\u76F8\u673A\u626B\u63CF\u4E0B\u65B9\u4E8C\u7EF4\u7801\u5373\u53EF\u6253\u5F00 DSH\uFF1B\u9996\u6B21\u4F7F\u7528\u8BF7\u5148\u5728\u300CCA \u8BC1\u4E66\u300D\u9875\u5B8C\u6210\u4FE1\u4EFB\uFF0C\u5426\u5219\u6D4F\u89C8\u5668\u4F1A\u62A5\u8BC1\u4E66\u544A\u8B66\u3002" }),
+      view?.mode === "generic" && crossDevice && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-desc", children: "\u5DF2\u5217\u51FA\u672C\u5B9E\u4F8B\u7684\u8DE8\u8BBE\u5907\u5730\u5740\uFF1A\u624B\u673A\u9700\u4E0E\u7535\u8111\u5904\u4E8E\u540C\u4E00\u7F51\u7EDC\u6216\u540C\u4E00\u96A7\u9053\u4E0B\u3002\u901A\u7528\u5B9E\u4F8B\u9ED8\u8BA4\u662F\u660E\u6587 HTTP\uFF0C\u5E26 token \u7684\u94FE\u63A5\u4F1A\u660E\u6587\u4F20\u8F93\uFF0C\u8BF7\u53EA\u5728\u53EF\u4FE1\u7F51\u7EDC\u91CC\u5206\u4EAB\u3002" }),
+      view?.mode === "generic" && !crossDevice && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-desc", children: [
+        "\u672C\u5B9E\u4F8B\u53EA\u76D1\u542C ",
+        view.boundHost ?? "127.0.0.1",
+        port === null ? "" : `:${port}`,
+        "\uFF0C\u4E8C\u7EF4\u7801\u53EA\u80FD\u5728\u8FD9\u53F0\u7535\u8111\u4E0A\u6253\u5F00\u3002DSH \u5F53\u524D\u7248\u672C\u4ECD\u62D2\u7EDD",
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("code", { children: " --host 0.0.0.0" }),
+        "\uFF1B\u5982\u9700\u624B\u673A\u8BBF\u95EE\uFF0C\u8BF7\u5728\u672C\u673A\u8D77\u96A7\u9053 / \u53CD\u5411\u4EE3\u7406\u6307\u5411 ",
+        view.boundHost ?? "127.0.0.1",
+        port === null ? "" : `:${port}`,
+        "\uFF0C\u5E76\u7528 ",
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("code", { children: "--trusted-host" }),
+        " \u58F0\u660E\u8BE5 authority\uFF0C\u672C\u9762\u677F\u4F1A\u81EA\u52A8\u5217\u51FA\u5B83\u3002"
       ] })
     ] }),
-    web && selected && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-card", children: [
+    error && !view && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-card", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-card-title", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "\u672A\u68C0\u6D4B\u5230\u53EF\u7528\u7684\u8BBF\u95EE\u5730\u5740\u63A5\u53E3" }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-desc", children: [
+        "\u8BFB\u53D6\u8BBF\u95EE\u5730\u5740\u5931\u8D25\uFF1A",
+        error
+      ] })
+    ] }),
+    view && selected && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-card", children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-card-title", children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "\u626B\u7801\u8FDE\u63A5" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshqa-tabs", children: [
@@ -2079,23 +2176,23 @@ function QrAccessPanel() {
             "button",
             {
               type: "button",
-              className: `dshqa-tab ${tab === "url" ? "active" : ""}`,
+              className: `dshqa-tab ${activeTab === "url" ? "active" : ""}`,
               onClick: () => setTab("url"),
               children: "\u8BBF\u95EE\u5730\u5740"
             }
           ),
-          web.lanCaUrls.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+          view.lanCaUrls.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "button",
             {
               type: "button",
-              className: `dshqa-tab ${tab === "ca" ? "active" : ""}`,
+              className: `dshqa-tab ${activeTab === "ca" ? "active" : ""}`,
               onClick: () => setTab("ca"),
               children: "CA \u8BC1\u4E66"
             }
           )
         ] })
       ] }),
-      tab === "url" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+      activeTab === "url" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-addr-list", children: addresses.map((addr) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
           "button",
           {
@@ -2107,7 +2204,7 @@ function QrAccessPanel() {
               /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshqa-addr-main", children: [
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshqa-addr-title", children: [
                   addr.title,
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: `dshqa-tag ${addr.kind === "lan" ? "lan" : ""}`, children: addr.kind === "lan" ? "\u5C40\u57DF\u7F51" : "\u672C\u673A" })
+                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: `dshqa-tag ${ROW_TAG[addr.kind].cls}`, children: ROW_TAG[addr.kind].label })
                 ] }),
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshqa-addr-host", children: addr.host })
               ] })
@@ -2120,16 +2217,17 @@ function QrAccessPanel() {
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-url", children: selected }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-copy-row", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { type: "button", className: "dshqa-btn", onClick: () => void onCopy(), children: copied ? "\u5DF2\u590D\u5236 \u2713" : "\u590D\u5236\u94FE\u63A5" }) })
         ] }),
-        isLoopbackHost(selected) && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-note", children: "\u672C\u673A\u5730\u5740\u53EA\u6709\u8FD9\u53F0\u7535\u8111\u80FD\u8BBF\u95EE\uFF1B\u624B\u673A\u8BF7\u9009\u62E9\u300C\u5C40\u57DF\u7F51\u300D\u5730\u5740\u3002" })
+        isLoopbackHost(selected) && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-note", children: "\u672C\u673A\u5730\u5740\u53EA\u6709\u8FD9\u53F0\u7535\u8111\u80FD\u8BBF\u95EE\uFF1B\u624B\u673A\u8BF7\u9009\u62E9\u300C\u5C40\u57DF\u7F51\u300D\u6216\u300C\u53D7\u4FE1\u4E3B\u673A\u300D\u5730\u5740\u3002" }),
+        view.mode === "generic" && isPlainHttp(selected) && !isLoopbackHost(selected) && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-note", children: "\u8BE5\u5730\u5740\u662F\u660E\u6587 HTTP\uFF1Atoken \u4F1A\u968F\u94FE\u63A5\u660E\u6587\u7ECF\u8FC7\u7F51\u7EDC\uFF0C\u8BF7\u53EA\u5728\u53EF\u4FE1\u7F51\u7EDC\u91CC\u4F7F\u7528\u3002" })
       ] }),
-      tab === "ca" && (caUrl ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+      activeTab === "ca" && (caUrl ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-qr-wrap", children: [
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(QrSvg, { text: caUrl, size: 184 }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-url", children: caUrl })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshqa-note", children: [
           "\u9996\u6B21 HTTPS \u8BBF\u95EE\u524D\u9700\u5728\u624B\u673A\u4E0A\u5B89\u88C5\u5E76\u4FE1\u4EFB\u672C\u5730 CA\uFF1A\u626B\u7801\u6253\u5F00\u8BC1\u4E66\u9875\uFF08\u6D4F\u89C8\u5668\u53EF\u80FD\u63D0\u793A\u8BC1\u4E66\u544A\u8B66\uFF0C\u9009\u62E9\u7EE7\u7EED\u8BBF\u95EE\u5373\u53EF\u4E0B\u8F7D\uFF09 \u2192 \u6309\u7CFB\u7EDF\u5F15\u5BFC\u5B89\u88C5 \u2192 iOS \u9700\u518D\u5230\u300C\u8BBE\u7F6E \u203A \u901A\u7528 \u203A \u5173\u4E8E\u672C\u673A \u203A \u8BC1\u4E66\u4FE1\u4EFB\u8BBE\u7F6E\u300D\u5F00\u542F\u5B8C\u5168\u4FE1\u4EFB\uFF1BAndroid \u5728\u300C\u8BBE\u7F6E \u203A \u5B89\u5168 \u203A \u52A0\u5BC6\u4E0E\u51ED\u636E \u203A \u5B89\u88C5\u8BC1\u4E66\u300D\u4E2D\u5B89\u88C5\u3002\u672C\u5730 CA SHA-256 \u6307\u7EB9\uFF1A",
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("code", { children: web.lanCaFingerprint ?? "\u2014" })
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("code", { children: view.lanCaFingerprint ?? "\u2014" })
         ] })
       ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshqa-note", children: selected && isLoopbackHost(selected) ? "\u672C\u673A\u8BBF\u95EE\u65E0\u9700\u8BC1\u4E66\u3002\u8BF7\u5148\u5728\u300C\u8BBF\u95EE\u5730\u5740\u300D\u9875\u9009\u62E9\u4E00\u4E2A\u5C40\u57DF\u7F51\u5730\u5740\uFF0C\u8FD9\u91CC\u4F1A\u663E\u793A\u4E0E\u4E4B\u914D\u5BF9\u7684\u8BC1\u4E66\u4E0B\u8F7D\u7801\u3002" : "\u5F53\u524D\u5C40\u57DF\u7F51\u72B6\u6001\u6682\u65E0\u53EF\u4E0B\u8F7D\u7684\u8BC1\u4E66\u5730\u5740\u3002" }))
     ] })

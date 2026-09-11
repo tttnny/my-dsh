@@ -5,9 +5,12 @@
 ```bash
 cd plugins/dsh-qr-access
 pnpm install
-pnpm run build        # esbuild 产出 lib/index.js + lib/client.js（CJS + __ModuleLoader__ 包装）
+pnpm run build        # esbuild 产出 lib/index.js（宿主半区，ESM）+ lib/client.js（CJS + __ModuleLoader__ 包装）
 pnpm run typecheck    # 可选
 ```
+
+宿主半区源码在 `src/index.ts` + `src/host/urls.ts`（地址解析与铸 token 白名单）；
+浏览器半区在 `src/client/`。
 
 ## 本机验证（运行目录同步）
 
@@ -21,14 +24,23 @@ pnpm run typecheck    # 可选
   `package.json` 的 `dsh.profile.bundles` 列表中（标准安装命令会自动登记）。
   注意：「不要加进 bundles」的告诫只适用于无 `dsh.bundle` 声明的纯工具型插件
   （如 `@lynn123411/dsh-ask-user-grilling`），不适用于本插件。
-- 重启 DSH Desktop 后在「设置 → 扫码访问」验证。
+- **宿主半区新增路由必须重启 DSH 才生效**（`lib/index.js` 的路由注册只在插件加载时执行）；
+  仅改浏览器半区时可只刷新页面。重启后在「设置 → 扫码访问」验证，并可用
+  `curl -b <cookie> 'http://127.0.0.1:<port>/api/qr-access/urls?protocol=http:'` 直接看响应。
 
 ## 宿主依赖说明
 
-- 数据来源为 DSH Desktop v2.0+（兼容模式）同源接口 `/api/desktop/settings`；
-  纯 npm 版 DSH 无此接口，插件 fail-soft，分区显示不可用提示。
-- 零宿主副作用：不 spawn 任何进程、不新增路由/端口/凭据面；
-  唯一第三方依赖 `qrcode-generator` 是**构建期**依赖（devDependencies），
+- 两条数据源，浏览器半区自动选择：
+  1. **DSH Desktop**（优先）：同源桌面接口 `/api/desktop/settings`（局域网 HTTPS + CA 证书）；
+  2. **任意 dsh 实例**（兜底）：本插件宿主半区注册的 `GET /api/qr-access/urls`。
+- 安全边界：宿主路由挂在 DSH 自带 `/api` 前缀下，自动继承 `connection` 的 Host/Origin
+  栅栏与浏览器会话鉴权；只为「回环 / 局域网 IP 字面量 / `--trusted-host` 声明项 / 当前页面
+  authority」铸 token，响应 `cache-control: no-store`。不新增端口、不新增凭据、不 spawn 进程。
+- 已知限制：DSH 0.1.5-rc.1 的 CLI 拒绝 `--host 0.0.0.0`，故通用实例恒为回环绑定，
+  `webRuntime.lanAddresses` 为空；跨设备只能靠本机隧道/反代 + `--trusted-host`。
+- 唯一第三方依赖 `qrcode-generator` 是**构建期**依赖（devDependencies），
   已由 esbuild 内联进 `lib/client.js`：client 半区自包含，运行时零 `require`，
   profile 根 `node_modules/qrcode-generator` 下也**没有**任何副本可依赖。
   改动它之后必须重新 `node build.mjs`，产物才带上新版本。
+- `node:os` 仅用于「绑定 `0.0.0.0` 且宿主未提供 `webRuntime`」时自算局域网地址，
+  由 `src/host/node-os.d.ts` 提供最小环境声明（不引入 `@types/node`）。
