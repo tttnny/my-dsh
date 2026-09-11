@@ -3,18 +3,18 @@ import "@deepseek-ai/dsh-user-questions";
 
 /**
  * @lynn123411/dsh-ask-user-grilling — DSH delivery adaptations for grilling
- * rounds (mattpocock/skills). No skill file is modified; this package only
- * hardens how rounds are asked inside DSH.
+ * rounds (mattpocock/skills). This package only shapes how rounds are asked
+ * inside DSH; it modifies no skill file.
  *
  * ask_user_grilling:
- *   - no hard gate on running subagents: waiting for settlement is description-level discipline only (soft, was R1)
- *   - forces multi-select on every question (R2)
- *   - appends a round-end supplement question (R3) — per-question supplement is
- *     via the built-in custom input ("Type your answer" / "输入你的答案"), no
- *     extra per-question "Supplement" option to avoid duplication with that
- *     field (see image.png issue: checkbox + input were redundant)
- *   - stem/option separation is guidance only — never rejects stems (R4
- *     relaxed: substring checks false-positive on legitimate stems)
+ *   - forces multi-select on every question — the schema offers no opt-out
+ *   - appends a round-end supplement question; per-question supplement goes
+ *     through the built-in custom input ("Type your answer" / "输入你的答案"),
+ *     so no extra per-question option is added (it would duplicate that field)
+ *   - treats stem/option separation as guidance only and never rejects a stem:
+ *     substring checks false-positive on legitimate stems
+ *   - leaves waiting for subagent settlement to the tool description — soft
+ *     discipline, not a gate
  */
 const name = "tool-ask-user-grilling";
 const inject = ["tools", "userQuestions"];
@@ -129,8 +129,8 @@ function apply(ctx) {
     },
     async execute(args, exec) {
       // 1. input validation: reserved id prefix guard only (the round-end
-      //    question owns __grill_). Stem/option separation (R4) is guidance,
-      //    NOT enforced: substring matching rejected legitimate stems (e.g. a
+      //    question owns __grill_). Stem/option separation is guidance, NOT
+      //    enforced: substring matching would reject legitimate stems (e.g. a
       //    stem that naturally mentions an option name), so no stem check may
       //    refuse a round — a bad stem is preferable to a false rejection.
       const violations = [];
@@ -147,7 +147,7 @@ function apply(ctx) {
         };
       }
 
-      // 2. transform: force multi-select (R2); per-question supplement is via the built-in custom input ("Type your answer"/"输入你的答案") — no extra option is added to avoid duplication with that field
+      // 2. transform: force multi-select; per-question supplement is via the built-in custom input ("Type your answer"/"输入你的答案") — no extra option is added to avoid duplication with that field
       const questions = args.questions.map((question) => ({
         id: question.id,
         question: question.question,
@@ -161,7 +161,7 @@ function apply(ctx) {
         multiSelect: true,
       }));
 
-      // 3. round-end supplement question (R3) — single "无需补充" option; supplement is via custom input, so no "I have something to add" option (duplicates that field)
+      // 3. round-end supplement question — single "无需补充" option; supplement is via custom input, so no "I have something to add" option (duplicates that field)
       questions.push({
         ...ROUND_END_QUESTION,
         options: ROUND_END_QUESTION.options.map((option) => ({ ...option })),
