@@ -23,27 +23,27 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$3;
 		}
 		var TypewriterAssistantNodeView_module_css_default = {
-			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
-			"thinkTitle": "_07evbq_thinkTitle",
-			"thinkChevron": "_07evbq_thinkChevron",
-			"disclosureRow": "_07evbq_disclosureRow",
-			"root": "_07evbq_root",
-			"disclosureContent": "_07evbq_disclosureContent",
 			"disclosureTitle": "_07evbq_disclosureTitle",
-			"disclosureRoot": "_07evbq_disclosureRoot",
-			"thinkBody": "_07evbq_thinkBody",
-			"stopped": "_07evbq_stopped",
-			"thinkSummary": "_07evbq_thinkSummary",
-			"thinkLeading": "_07evbq_thinkLeading",
-			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
-			"visuallyHidden": "_07evbq_visuallyHidden",
-			"follow": "_07evbq_follow",
-			"think": "_07evbq_think",
-			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
 			"thinkSeparator": "_07evbq_thinkSeparator",
-			"body": "_07evbq_body",
+			"think": "_07evbq_think",
+			"disclosureRoot": "_07evbq_disclosureRoot",
+			"thinkChevron": "_07evbq_thinkChevron",
+			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
 			"disclosureLeading": "_07evbq_disclosureLeading",
-			"thinkRow": "_07evbq_thinkRow"
+			"body": "_07evbq_body",
+			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
+			"disclosureRow": "_07evbq_disclosureRow",
+			"stopped": "_07evbq_stopped",
+			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
+			"thinkBody": "_07evbq_thinkBody",
+			"visuallyHidden": "_07evbq_visuallyHidden",
+			"thinkRow": "_07evbq_thinkRow",
+			"thinkSummary": "_07evbq_thinkSummary",
+			"thinkTitle": "_07evbq_thinkTitle",
+			"root": "_07evbq_root",
+			"thinkLeading": "_07evbq_thinkLeading",
+			"disclosureContent": "_07evbq_disclosureContent",
+			"follow": "_07evbq_follow"
 		};
 		//#endregion
 		//#region src/client/AnimatedDisclosure.tsx
@@ -3707,35 +3707,35 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$1;
 		}
 		var SmoothStreamCard_module_css_default = {
-			"label": "QGTmaa_label",
-			"update": "QGTmaa_update",
-			"headText": "QGTmaa_headText",
-			"name": "QGTmaa_name",
-			"field": "QGTmaa_field",
-			"updateRow": "QGTmaa_updateRow",
-			"failed": "QGTmaa_failed",
-			"toggle": "QGTmaa_toggle",
-			"chevronOpen": "QGTmaa_chevronOpen",
-			"cardOpen": "QGTmaa_cardOpen",
-			"discard": "QGTmaa_discard",
-			"hint": "QGTmaa_hint",
-			"body": "QGTmaa_body",
-			"fieldDisabled": "QGTmaa_fieldDisabled",
-			"header": "QGTmaa_header",
-			"pending": "QGTmaa_pending",
-			"chevron": "QGTmaa_chevron",
-			"version": "QGTmaa_version",
-			"choiceRow": "QGTmaa_choiceRow",
-			"choice": "QGTmaa_choice",
 			"description": "QGTmaa_description",
-			"save": "QGTmaa_save",
-			"card": "QGTmaa_card",
+			"field": "QGTmaa_field",
 			"fieldHead": "QGTmaa_fieldHead",
-			"updateCopy": "QGTmaa_updateCopy",
-			"readOnly": "QGTmaa_readOnly",
+			"toggle": "QGTmaa_toggle",
+			"cardOpen": "QGTmaa_cardOpen",
+			"choice": "QGTmaa_choice",
+			"failure": "QGTmaa_failure",
+			"name": "QGTmaa_name",
+			"hint": "QGTmaa_hint",
+			"choiceRow": "QGTmaa_choiceRow",
+			"pending": "QGTmaa_pending",
+			"fieldDisabled": "QGTmaa_fieldDisabled",
 			"footer": "QGTmaa_footer",
+			"updateCopy": "QGTmaa_updateCopy",
+			"chevron": "QGTmaa_chevron",
+			"headText": "QGTmaa_headText",
+			"discard": "QGTmaa_discard",
+			"card": "QGTmaa_card",
+			"updateRow": "QGTmaa_updateRow",
+			"update": "QGTmaa_update",
+			"save": "QGTmaa_save",
 			"choiceInput": "QGTmaa_choiceInput",
-			"failure": "QGTmaa_failure"
+			"header": "QGTmaa_header",
+			"body": "QGTmaa_body",
+			"readOnly": "QGTmaa_readOnly",
+			"chevronOpen": "QGTmaa_chevronOpen",
+			"version": "QGTmaa_version",
+			"failed": "QGTmaa_failed",
+			"label": "QGTmaa_label"
 		};
 		//#endregion
 		//#region src/client/SmoothStreamCard.tsx
@@ -4029,9 +4029,13 @@ window.__ModuleLoader__.load({
 		const READING_ITEM_SLOT = "reading.settings.item";
 		/**
 		* Page body. The shell supplies the section's own seats plus `renderSlot`
-		* bound to the child slot declared at registration time; the page itself owns
-		* only the stack. Cards render `<li>` roots, so the stack is a markerless
-		* list — a stray `<li>` under a plain container would draw a bullet.
+		* bound to the child slot declared at registration time; the page owns the
+		* layout only.
+		*
+		* Cards are laid out SIDE BY SIDE: a markerless grid whose columns fit as many
+		* ~280px cards as the settings column has room for, so the reading plugins sit
+		* in one row on a wide panel and wrap gracefully on a narrow one. Cards render
+		* `<li>` roots, hence the list reset.
 		*/
 		function ReadingSettingsSection({ renderSlot }) {
 			return (0, react.createElement)("ul", { style: {
@@ -4039,6 +4043,8 @@ window.__ModuleLoader__.load({
 				margin: 0,
 				padding: 0,
 				display: "grid",
+				gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+				alignItems: "start",
 				gap: "12px"
 			} }, renderSlot(READING_ITEM_SLOT, {}));
 		}
@@ -4303,33 +4309,33 @@ window.__ModuleLoader__.load({
 		}
 		var DebugPanel_module_css_default = {
 			"numberWrap": "fE600W_numberWrap",
-			"primaryButton": "fE600W_primaryButton",
-			"panelHeader": "fE600W_panelHeader",
-			"metrics": "fE600W_metrics",
-			"footerSpacer": "fE600W_footerSpacer",
-			"triggerActive": "fE600W_triggerActive",
-			"panel": "fE600W_panel",
-			"guide": "fE600W_guide",
-			"number": "fE600W_number",
-			"controlHead": "fE600W_controlHead",
-			"infoButton": "fE600W_infoButton",
-			"state": "fE600W_state",
-			"range": "fE600W_range",
-			"iconButton": "fE600W_iconButton",
-			"trigger": "fE600W_trigger",
-			"statusLive": "fE600W_statusLive",
-			"secondaryButton": "fE600W_secondaryButton",
 			"title": "fE600W_title",
+			"metrics": "fE600W_metrics",
+			"trigger": "fE600W_trigger",
+			"number": "fE600W_number",
 			"scrollArea": "fE600W_scrollArea",
-			"unsaved": "fE600W_unsaved",
-			"control": "fE600W_control",
-			"unit": "fE600W_unit",
+			"controlHead": "fE600W_controlHead",
+			"panelHeader": "fE600W_panelHeader",
 			"metric": "fE600W_metric",
+			"iconButton": "fE600W_iconButton",
+			"panel": "fE600W_panel",
+			"controlLabel": "fE600W_controlLabel",
+			"statusLive": "fE600W_statusLive",
+			"infoButton": "fE600W_infoButton",
+			"control": "fE600W_control",
 			"footer": "fE600W_footer",
-			"visuallyHidden": "fE600W_visuallyHidden",
-			"statusDot": "fE600W_statusDot",
+			"triggerActive": "fE600W_triggerActive",
+			"state": "fE600W_state",
+			"unit": "fE600W_unit",
+			"unsaved": "fE600W_unsaved",
+			"range": "fE600W_range",
+			"secondaryButton": "fE600W_secondaryButton",
 			"section": "fE600W_section",
-			"controlLabel": "fE600W_controlLabel"
+			"guide": "fE600W_guide",
+			"statusDot": "fE600W_statusDot",
+			"footerSpacer": "fE600W_footerSpacer",
+			"visuallyHidden": "fE600W_visuallyHidden",
+			"primaryButton": "fE600W_primaryButton"
 		};
 		//#endregion
 		//#region src/client/DebugPanel.tsx
