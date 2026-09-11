@@ -12,7 +12,7 @@ DeepSeek Harness Web 界面的工具调用与思考摘要智能翻译插件。�
 - **当前会话作用域**：仅翻译当前查看的会话，切换会话自动跟随新内容；视口懒加载（150px 缓冲）与文档顺序排队，译文按阅读顺序出现。
 - **智能调度与熔断保护**：1–100 动态并发限流队列、AI 30s / Bing 2s 超时、连续失败熔断自愈、在途请求合并去重、7 天 LRU 磁盘持久化缓存（`~/.dsh/dsh-chat-translate/cache.json`）。
 - **DSH 原生配置接入**：配置走 DSH `settings` 服务（用户层写入 `~/.dsh/settings.yaml` 的 `dsh-chat-translate` 段）、密钥走 DSH `credentials` 服务、设置面板经 `settingsScope` 与 `credentials` Remote API 读写——无任何自研配置文件。
-- **设置面板集成**：设置面板已迁入与 `dsh-smooth-stream`、`dsh-oil-sticky-prompt` 共用的「设置 - 阅读体验」共享页（本插件贡献其中一张卡片），页内提供总开关、AI/Bing 通道开关、Base URL 与模型配置、通道测试与并发数调节。
+- **设置面板集成**：设置面板挂在与 `dsh-smooth-stream`、`dsh-oil-sticky-prompt` 共用的「设置 - 阅读体验」共享页（本插件贡献其中一张卡片），页内提供总开关、AI/Bing 通道开关、Base URL 与模型配置、通道测试与并发数调节。
 
 ## 安装
 
