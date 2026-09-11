@@ -1,19 +1,19 @@
 # matt-presets-bootstrap — 三个 matt preset 的手工改动点说明
 
-三个 matt preset（`matt-standard` / `matt-ptc` / `matt-cordis`）＝ **官方组合逐字** ＋ **Matt 的 25 个技能** ＋ **grilling 适配插件**（`ask_user_grilling`）－ 普通提问工具（`tool-ask-user` 行删除，改动③）。本文逐处说明相对官方材料**改了什么、改成什么样、为什么**；本目录为纯文档，由 AI 按本文执行。仓库 `presets/matt-*/` 就是改好的成品，直接同步即用；以下改动点只在「从零组装 / DSH 升级后重打」时需要动手。
+三个 matt preset（`matt-standard` / `matt-ptc` / `matt-cordis`）＝ **官方组合逐字** ＋ **Matt 的 25 个技能** ＋ **grilling 适配插件**（`ask_user_grilling`）－ 普通提问工具（`tool-ask-user` 行原位换成 `ask_user_grilling`，改动②）。本文逐处说明相对官方材料**改了什么、改成什么样、为什么**；本目录为纯文档，由 AI 按本文执行。仓库 `presets/matt-*/` 就是改好的成品，直接同步即用；以下改动点只在「从零组装 / DSH 升级后重打」时需要动手。
 
-改动只发生在两类文件上：`agent.cordis.yml`（官方正文上加两处 MATT-ADD、删一处 MATT-DEL）与 `skills/grilling/SKILL.md`（本地适配，改动内容为中文）。`matt-standard` 与 `matt-cordis` 的 `grilling/SKILL.md` 完全相同；`matt-ptc` 的投递纪律整段按 PTC 形态表述（`run_code` 程序内 `tools.ask_user_grilling`，见 §二 示例二），PTC 措辞不进入非 PTC preset。persona 一行不改——grilling 纪律不写进 persona，而是下沉到技能正文（投递纪律段 + 子代理等齐段）：模型读到技能时正好看到，比 system prompt 里的抽象禁令有效。插件只改表单呈现、工具描述与原生 `ask_user_question` 逐字一致，不承载任何纪律。
+改动只发生在两类文件上：`agent.cordis.yml`（官方正文上一处插入、一处工具行原位替换）与 `skills/grilling/SKILL.md`（本地适配，改动内容为中文）。`matt-standard` 与 `matt-cordis` 的 `grilling/SKILL.md` 完全相同；`matt-ptc` 的投递纪律整段按 PTC 形态表述（`run_code` 程序内 `tools.ask_user_grilling`，见 §二 示例二），PTC 措辞不进入非 PTC preset。persona 一行不改——grilling 纪律不写进 persona，而是下沉到技能正文（投递纪律段 + 子代理等齐段）：模型读到技能时正好看到，比 system prompt 里的抽象禁令有效。插件只改表单呈现、工具描述与原生 `ask_user_question` 逐字一致，不承载任何纪律。
 
 ## 零、当前基线
 
 - 官方基底：**DSH 0.1.5-rc.1** / `@deepseek-ai/dsh-agent-presets@0.1.5-rc.1`。官方正文位置：安装目录 `node_modules/.pnpm/@deepseek-ai+dsh-agent-presets@<ver>*/node_modules/@deepseek-ai/dsh-agent-presets/presets/{standard,ptc,cordis,minimal}/agent.cordis.yml`。
-- 成品与官方正文的差异**恰为** §一 那三处标记块 + §二 的 grilling 技能正文；多一处都是官方漂移或漏派生。
-- 三处标记：两处 MATT-ADD 各带 `# MATT-ADD:` 标记注释（`customSkillDirs` 块首行、`tool-ask-user-grilling` 行上四行注释），删除处带两行 `# MATT-DEL:`。
+- 成品与官方正文的差异**恰为** §一 那两处改动块 + §二 的 grilling 技能正文；多一处都是官方漂移或漏派生。
+- 两处改动块：`customSkillDirs` 插入（块首行 `# MATT-ADD:`），以及 `tool-ask-user` 行的原位替换（行上一行 `# MATT-DEL:` + 四行 `# MATT-ADD:`）。
 - persona 行逐字取官方正文，仓库不保留旧写法（官方偶有键级改名）。
 
-## 一、`agent.cordis.yml`：两处 MATT-ADD + 一处 MATT-DEL
+## 一、`agent.cordis.yml`：一处插入 + 一处原位替换
 
-结构：官方正文逐字，加两处 MATT-ADD 插入块、删一处工具行（MATT-DEL 标记）。
+结构：官方正文逐字，只在两处动手——`skill-filesystem` 段插入 `customSkillDirs`；`remaining model-facing rows` 段把 `tool-ask-user` 行**原位换成** `tool-ask-user-grilling`（提问槽位始终只放一个工具，所以是替换而不是另加一行）。
 
 - **改动 ① `customSkillDirs`**：`- id: skill-filesystem` 段的 `name:` 行之后插入（**matt-cordis 官方自带此块，跳过**）。**原因**：25 个技能是 vendor 进 `skills/` 的额外目录，skill-filesystem 默认不扫它——不加此块模型根本发现不了、也调不到这些技能：
 
@@ -24,27 +24,19 @@
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
 ```
 
-- **改动 ② 普通工具区的插件工具行**：`- id: tool-skill` 块（`tool-skill` / `dsh-tool-skill`）之后插入。三份内容相同；`# MATT-ADD:` 标记是升级 diff 审查识别「预期差异」的依据，勿删：
+- **改动 ② `tool-ask-user` → `tool-ask-user-grilling`**：`remaining model-facing rows` 组内的 `- id: tool-ask-user` 块整块换成下面这个块（三份内容相同）。`# MATT-DEL:` / `# MATT-ADD:` 标记是升级 diff 审查识别「预期差异」的依据，勿删：
 
 ```yaml
-# MATT-ADD: deliver every grilling round through ask_user_grilling (one form
-# call per round). Skills ship upstream-verbatim except grilling (DSH-delivery
-# note, see patches/matt-presets-bootstrap/README.md section 2); the asking
-# discipline lives in this tool's description plus that note, not in persona.
+# MATT-DEL: upstream tool-ask-user row removed.
+# MATT-ADD: replaced in place by tool-ask-user-grilling — the same form with
+# forced multi-select and an auto-appended round-end supplement question. Skills
+# ship upstream-verbatim except grilling (DSH-delivery note, see
+# patches/matt-presets-bootstrap/README.md section 2).
 - id: tool-ask-user-grilling
   name: '@lynn123411/dsh-ask-user-grilling'
 ```
 
-**原因**：把 grilling 轮次的提问做成工具级约束——所有提问一律走它（`tool-ask-user` 行已删，见改动③），不调工具就投不出表单，比 persona 里的劝导可靠得多；该行放在 planning 组**之外**（普通工具区）即可，因为 `ask_user_grilling` 只消费 host-plane 的 `userQuestions`、无 realm 依赖，也不提供任何 plan-mode 工具（共识达成后交还用户决定下一步）。
-
-- **改动 ③ 删除 `tool-ask-user` 行**：`remaining model-facing rows` 组内的 `- id: tool-ask-user` 块整块删除，原位留两行 `# MATT-DEL:` 标记（见成品）。三份内容相同：
-
-```yaml
-# MATT-DEL: upstream tool-ask-user row removed — every user-facing question
-# goes through ask_user_grilling (the preset's only question tool).
-```
-
-**原因**：三份 preset 内所有提问一律走 `ask_user_grilling`，不再保留普通提问工具。副作用一并接受：一切提问（plan mode 追问、简单确认）都被强制多选并自动追加轮末补充题；官方 plan-mode 正文两处点名的 `ask_user_question` 悬空（逐字不能改，不管）；子代理运行时也不拦截任何提问。
+**原因**：一问一答只留一个工具——所有提问一律走 `ask_user_grilling`（原生 `ask_user_question` 的表单呈现变体：强制多选 + 自动追加轮末补充题），普通提问工具不再保留，所以直接在原槽位替换。该行放在 planning 组**之外**（普通工具区）即可，因为 `ask_user_grilling` 只消费 host-plane 的 `userQuestions`、无 realm 依赖，也不提供任何 plan-mode 工具（共识达成后交还用户决定下一步）。副作用一并接受：一切提问（plan mode 追问、简单确认）都被强制多选并自动追加轮末补充题；官方 plan-mode 正文两处点名的 `ask_user_question` 悬空（逐字不能改，不管）。
 
 ## 二、`skills/grilling/SKILL.md`：本地适配（成品全文）
 
@@ -153,7 +145,7 @@ The session is done when the frontier is empty: every branch of the design tree 
 **本地改动逐条说明**（①–④ 对应上文中标注；其余为上游英文原样、非改动）：
 
 - **①** 上游格式块用 emoji 问号/箭头标记、且正文占位含 `including multiple choices`（诱导把选项塞进题干）；本改动把模板改写为纯文本并**把选项独立成 `Options:` 块**（`Qn.` 标题 / 正文占位不含选项 / `Options:` 列 A/B/C / `Recommended:`），引导行保留上游英文 `Format a round like so:`。**原因**：模板是模型最可能整段照抄的样例——emoji 会被抄进输出、『选项塞正文』的占位会诱导模型把 A/B/C 写进题干；选项独立成块后与投递字段一一对应，模型照模板组织即可。
-- **②** 在格式块后新增旁注「**DSH delivery**」整段（中文）：轮次投递 = **先在消息文本里按模板以散文预告本轮全部问题（标题/正文/选项/推荐），在同一回合内紧接着把同一轮作为一次 `ask_user_grilling` 调用发出、让用户在表单中作答**；预告与投递必须**同一轮、一一对应**（不得另起一套；轮末补充题由代码自动追加，不计入一一对应）；提问一律走 `ask_user_grilling`（本 preset 的提问工具——`tool-ask-user` 行已删，见 §一 改动③）。字段组织细节（title→`header`、body→`question`、选项→`options`、推荐加标记）不写进旁注，由模板与工具描述承载、让模型自行判断。**matt-ptc**：投递纪律整段按 PTC 形态表述（见上文示例二）——预告照常写在消息文本里，投递写成 `run_code` 程序内的 `tools.ask_user_grilling({ questions: [...] })`，（`tool-ask-user` 行同样删除）。**原因**：纯散文让用户拿到不可点击文本、丢失表单；纯工具又让用户看不到正文里的问题陈述——散文预告 + 工具表单各司其职，且必须成对出现；PTC 形态只属于 PTC preset，不进入非 PTC 版本。
+- **②** 在格式块后新增旁注「**DSH delivery**」整段（中文）：轮次投递 = **先在消息文本里按模板以散文预告本轮全部问题（标题/正文/选项/推荐），在同一回合内紧接着把同一轮作为一次 `ask_user_grilling` 调用发出、让用户在表单中作答**；预告与投递必须**同一轮、一一对应**（不得另起一套；轮末补充题由代码自动追加，不计入一一对应）；提问一律走 `ask_user_grilling`（本 preset 的提问工具——`tool-ask-user` 行原位换成了它，见 §一 改动②）。字段组织细节（title→`header`、body→`question`、选项→`options`、推荐加标记）不写进旁注，由模板与工具描述承载、让模型自行判断。**matt-ptc**：投递纪律整段按 PTC 形态表述（见上文示例二）——预告照常写在消息文本里，投递写成 `run_code` 程序内的 `tools.ask_user_grilling({ questions: [...] })`，（`tool-ask-user` 行同样原位替换）。**原因**：纯散文让用户拿到不可点击文本、丢失表单；纯工具又让用户看不到正文里的问题陈述——散文预告 + 工具表单各司其职，且必须成对出现；PTC 形态只属于 PTC preset，不进入非 PTC 版本。
 - **③** 上游事实段含 "Don't block on it … ask the rest of the frontier now." 一句（鼓励先问其余轮次），**整句删除**；段末以 "The _decisions_ are the user's: put each to them and wait." 收尾。**原因**：本地「等齐再问」纪律（见④）与上游句「先把其余 frontier 问完」直接冲突——`ask_user_grilling` 不设硬闸门、不会拦下抢先提问，冲突只能靠删上游句消解。
 - **④** 事实段后新增旁注「**Sub-agent rounds**」整段（中文）：派遣子代理后先输出各代理任务清单（各自去查什么），然后**停**——本回合不再调任何其他工具、不提问、结束回合；不轮询，等结算通知自动唤醒；等**全部**已派遣子代理结算后再问 frontier（包括未受阻的问题）。**原因**：不约束时模型会派遣子代理后继续追问，而事实还没收齐——停轮等结算反而更快更准。本纪律是描述级软纪律，且**只写在这条旁注里**——插件只改表单呈现，其工具描述与原生 `ask_user_question` 逐字一致，不承载任何纪律。
 
@@ -169,8 +161,8 @@ The session is done when the frontier is empty: every branch of the design tree 
 
 ## 五、何时重打
 
-- **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 以新版官方正文覆盖仓库文件，按第一节重打两处 MATT-ADD + 一处 MATT-DEL（注意改动② 的锚点是 `tool-skill` 块，官方若改了该块结构则需手工定位；改动③是删 `tool-ask-user` 行并留标记），并**逐行核对官方新增行是否已全部纳入**——官方会在组合里新增工具行，只 diff 三个标记块看不出来，必须对「官方正文 vs 仓库成品」做**全量 diff**；matt-cordis 的两个 cordis 随附技能如有变，从官方 `cordis/skills/` 覆盖。**persona 行始终逐字取官方正文**，不要保留仓库旧写法。
-- **重打后的校验**：① `diff <官方> <仓库成品>` 的输出必须**恰好**是 §一 那三个标记块——`standard`/`ptc` 各 4 行插入（改动①）+ 7 行插入（改动②，含其上空行）+ 3 行删除换 2 行注释（改动③），`cordis` 无改动① 故为 12 行；多一行都意味着漏派生或官方漂移。② 解析后逐条比对：条目总数与官方相同（增 `tool-ask-user-grilling`、减 `tool-ask-user`），共有条目中除 `skill-filesystem` 因改动① 多出 `config`（仅 `standard`/`ptc`）外**逐字段一致**。③ 三份引用的非官方第一方行可解析（`@lynn123411/dsh-ask-user-grilling`、`@deepseek-ai/dsh-tool-present`）。
+- **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 以新版官方正文覆盖仓库文件，按第一节重打那两处改动（改动① 的锚点是 `skill-filesystem` 段的 `name:` 行；改动② 的锚点是 `remaining model-facing rows` 里的 `- id: tool-ask-user` 块——官方若改了这两处结构则需手工定位），并**逐行核对官方新增行是否已全部纳入**——官方会在组合里新增工具行，只 diff 这两个改动块看不出来，必须对「官方正文 vs 仓库成品」做**全量 diff**；matt-cordis 的两个 cordis 随附技能如有变，从官方 `cordis/skills/` 覆盖。**persona 行始终逐字取官方正文**，不要保留仓库旧写法。
+- **重打后的校验**：① `diff <官方> <仓库成品>` 的输出必须**恰好**是 §一 那两处改动块——`standard`/`ptc` 各 13 行（改动① 4 行插入；改动② 2 删 7 增，即 `tool-ask-user` 两行换成标记注释与 grilling 行），`cordis` 无改动① 故为 9 行；多一行都意味着漏派生或官方漂移。② 解析后逐条比对：条目总数与官方相同（增 `tool-ask-user-grilling`、减 `tool-ask-user`），共有条目中除 `skill-filesystem` 因改动① 多出 `config`（仅 `standard`/`ptc`）外**逐字段一致**。③ 三份引用的非官方第一方行可解析（`@lynn123411/dsh-ask-user-grilling`、`@deepseek-ai/dsh-tool-present`）。
 - **DSH 升级后（同进程共存）**：官方 `cordis` / `ptc-cordis` / `matt-cordis` 同进程互挂依赖 `dsh-tool-cordis` Host inspect 注册幂等补丁，每次升级/重装后需重打 [`../patch-dsh-cordis-inspect-idempotent/`](../patch-dsh-cordis-inspect-idempotent/README.md)（**纯文档，无脚本**，由 AI 按文执行）。定位目标：从**运行中的 DSH 进程** cmdline 反推 `@deepseek-ai/dsh` 安装目录，再用 Node 自身解析（`require.resolve('@deepseek-ai/dsh-tool-cordis', { paths: [...] })`）取它实际加载的 `lib/index.js`。**不要按固定路径扫**（DSH Desktop 应用包与 dsh-launcher 的 `versions/<ver>/` 是两套互不相干的安装，猜错会「报成功但问题依旧」），**也不要手写 `.pnpm/*` glob**（哈希段随 peer 组合变化）。
 - **Matt 技能上游更新后**：整体覆盖 25 个技能目录，再把对应 preset 的 `grilling/SKILL.md` 成品覆盖回 grilling——`matt-standard` 与 `matt-cordis` 用 §二 示例一；`matt-ptc` 用 §二 示例二（PTC 形态）。其余技能无本地改动。
 

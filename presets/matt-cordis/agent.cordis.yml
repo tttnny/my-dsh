@@ -223,8 +223,14 @@
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 
-# MATT-DEL: upstream tool-ask-user row removed — every user-facing question
-# goes through ask_user_grilling (the preset's only question tool).
+# MATT-DEL: upstream tool-ask-user row removed.
+# MATT-ADD: replaced in place by tool-ask-user-grilling — the same form with
+# forced multi-select and an auto-appended round-end supplement question. Skills
+# ship upstream-verbatim except grilling (DSH-delivery note, see
+# patches/matt-presets-bootstrap/README.md section 2).
+- id: tool-ask-user-grilling
+  name: '@lynn123411/dsh-ask-user-grilling'
+
 - id: tool-todo
   name: '@deepseek-ai/dsh-tool-todo'
   config:
@@ -260,13 +266,6 @@
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
-
-# MATT-ADD: deliver every grilling round through ask_user_grilling (one form
-# call per round). Skills ship upstream-verbatim except grilling (DSH-delivery
-# note, see patches/matt-presets-bootstrap/README.md section 2); the asking
-# discipline lives in this tool's description plus that note, not in persona.
-- id: tool-ask-user-grilling
-  name: '@lynn123411/dsh-ask-user-grilling'
 
 - id: present
   name: '@deepseek-ai/dsh-tool-present'
