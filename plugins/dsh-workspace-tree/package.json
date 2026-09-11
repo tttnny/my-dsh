@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-workspace-tree",
-  "version": "1.9.3",
+  "version": "1.9.8",
   "description": "DSH 工作区树：文件系统双模式工作区浏览器——文件夹任意嵌套、会话归入工作区；安全归档区（进区必可删、删除零守卫 fail-loud），附带新建/重命名/IDE 打开等管理。",
   "type": "module",
   "main": "./lib/index.js",
@@ -33,6 +33,11 @@
     "sidebar"
   ],
   "license": "MIT",
+  "scripts": {
+    "smoke": "node scripts/smoke-client.mjs && node scripts/smoke-host.mjs",
+    "test": "node scripts/smoke-client.mjs && node scripts/smoke-host.mjs",
+    "check": "node --check lib/client.js && node --check lib/index.js && node scripts/smoke-client.mjs && node scripts/smoke-host.mjs"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/schemastery": "^3.18.2"

@@ -13,21 +13,32 @@
  *  - POST /archive/deleteAll   批量永久删除归档会话 { workspaceId? } → { deleted, failed }：
  *                              逐条执行，能删的删掉，删不掉的留在归档区并逐条列原因
  *  - POST /archive/pruneStale  清理归档列表中 host 会话已不再返回的「失效归档」ID
+ *  - POST /archive/guardCheck  归档门槛的 Host 权威判据 { sessionId } → { ok, status, running }
+ *                              status 取 ctx.agents.get(sessionId)?.status（idle | running；
+ *                              无活 Agent 时 inactive）。官方 workspace/archiveSession 在
+ *                              Host 侧没有运行态守卫，客户端 running 位又是转发事实、存在
+ *                              窗口期，故浏览器半区归档前问这里一次真值。
+ *  - GET  /picker/native       原生选择器可用性 { ok, platform, supported }（仅 macOS 为 true）
+ *  - POST /picker/native       在宿主显示器上弹出 macOS 原生「选择文件夹」→ { path }
+ *                              用户取消 → { path: null }；对话框开在 Mac 屏幕上，远端浏览器
+ *                              看不到它，因此这是本机辅助入口（官方 browse 对话框仍负责远端）。
  *  - POST /archive/tombstoneCheck 查询一组 sessionId 的会话目录是否仍物理存在
  *                              { ids } → { alive }：浏览器半区墓碑自愈的权威判据——
  *                              永久删除成功 = 目录必已消失；目录仍在 = 会话存活，
  *                              该墓碑必为误写（历史版本残留），应作废而非继续隐藏。
  *
- * 设计契约（v1.9.2）：
- *  - 归档门槛在浏览器半区（运行中/等待回复的会话不允许归档，沿用官方
- *    workspace/archiveSession RPC）；凡进入归档区的会话，删除一律零守卫无条件执行。
+ * 设计契约（v1.9.5）：
+ *  - 归档门槛：运行中（Host 实测 agents 状态）与等待回复（浏览器半区读官方 pending
+ *    座位）的会话不允许归档。按钮置灰只是提示，真正的门槛是「动作侧活快照复查 +
+ *    /archive/guardCheck 权威复查」；归档仍沿用官方 workspace/archiveSession RPC。
+ *    凡进入归档区的会话，删除一律零守卫无条件执行。
  *  - 删除 fail-loud：物理删除必须全部成功才剔除注册表/归档；
  *    出现真实失败（文件被锁/权限等）则报错并把会话留在归档区，可幂等重试。
  *  - 不再有 claims/heartbeat 占用注册表、运行守卫、幽灵/孤儿清理等历史补丁机制；
  *    空白草稿回收跟随官方（不做自动清理）。
  */
 import { mkdir, open, readdir, rm, stat } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
@@ -1096,6 +1107,119 @@ function aliveIdsFromList(r) {
  * 契约），因此「目录仍在」即权威证明该会话存活、浏览器里的墓碑是误写（历史版本
  * 残留或错误级联），前端据此作废墓碑并恢复显示。只读探测，不做任何删除/写盘。
  */
+/**
+ * 归档门槛的 Host 权威判据：官方 workspace/archiveSession 在 Host 侧直接写注册表
+ * （只对未知会话报错），没有任何运行态守卫；而客户端 running 位是 Host 转发来的事实
+ * （客户端 prompt() 不做乐观翻转 → 发送后到状态帧落地之间存在窗口，事件流打嗝时更会
+ * 停在 stale-false）。因此浏览器半区在归档前问这里一次真值：活 Agent 的 status。
+ *
+ * agents 服务缺席（旧版/未装配）或读取出错时回 unknown —— 浏览器半区对 ok:true 但
+ * status 不可判的结果按「无法证明在运行」放行，最终仍由官方 RPC 定生死（fail-open）。
+ * @param ctx - Host 上下文（用于 ctx.get("agents")，不声明硬依赖）。
+ */
+/** 原生选择器（macOS Finder）单飞锁：同一时刻只允许一个等待中的对话框。 */
+let nativePickBusy = false;
+/** 原生选择器超时：对话框被晾着也要回收进程。 */
+const NATIVE_PICK_TIMEOUT_MS = 5 * 60 * 1000;
+/** 测试注入的执行器（生产路径为 null）。 */
+let nativeRunnerOverride = null;
+/** 默认执行器：execFile 收集 stdout。 */
+function runNativeCommand(command, args, options) {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { maxBuffer: 1 << 20, ...options }, (error, stdout, stderr) => {
+      if (error) {
+        if (stderr !== undefined) error.stderr = stderr;
+        reject(error);
+        return;
+      }
+      resolve({ stdout: String(stdout) });
+    });
+  });
+}
+
+/**
+ * macOS 原生「选择文件夹」对话框：命令与取消判定对齐内核自带前端
+ * （@deepseek-ai/dsh-host-directory-picker-native 的 darwin 分支用同一条 osascript，
+ * 同样的 exit code 1 + stderr 含 "User canceled" / -128 判定）。
+ *
+ * 注意语义：对话框开在**宿主显示器**上，只有坐在这台 Mac 前的人看得见——远端浏览器点它
+ * 只会让 Mac 屏幕上弹窗。所以这是"本机辅助入口"，不替代官方 browse 浏览对话框
+ * （远端设备只有后者可用）。DSH 自带的自适应前端正是因为这个原因只在回环绑定时挂 native。
+ *
+ * @param platform - 目标平台（注入以便测试）。
+ * @param run - 执行器 (command, args, options) => Promise<{ stdout }>（注入以便测试）。
+ * @returns {Promise<string|null>} 选定目录的绝对路径；用户取消返回 null。
+ * @throws 平台不支持 / 命令缺失 / 超时 / 其它执行失败。
+ */
+async function pickNativeDirectory(platform, run) {
+  if (platform !== "darwin") {
+    const error = new Error("原生 Finder 选择器仅在 macOS 可用（当前平台 " + platform + "）");
+    error.unsupported = true;
+    throw error;
+  }
+  try {
+    const result = await run("osascript", [
+      "-e",
+      'set selectedFolder to choose folder with prompt "选择工作区目录"',
+      "-e",
+      "POSIX path of selectedFolder"
+    ], { timeout: NATIVE_PICK_TIMEOUT_MS });
+    const path = String((result && result.stdout) || "").replace(/[\r\n]+$/, "");
+    return path === "" ? null : path;
+  } catch (error) {
+    const code = error && error.code;
+    const stderr = String((error && error.stderr) || "");
+    if (code === 1 && /(?:User canceled|-128)/i.test(stderr)) return null;   // 操作员取消
+    if (code === "ENOENT") throw new Error("未找到 osascript：系统命令缺失，无法弹出 Finder 选择器");
+    if (error && (error.killed || error.signal !== undefined && error.signal !== null)) {
+      throw new Error("Finder 选择器超时（" + Math.round(NATIVE_PICK_TIMEOUT_MS / 60000) + " 分钟）后已终止");
+    }
+    throw error;
+  }
+}
+
+/** GET /picker/native：原生选择器可用性（浏览器半区据此决定是否显示 Finder 按钮）。 */
+function handleNativePickerStatus(res) {
+  sendJson(res, 200, { ok: true, platform: process.platform, supported: process.platform === "darwin" });
+}
+
+/** POST /picker/native：在宿主显示器上弹出原生选择文件夹对话框 → { path }（取消为 null）。 */
+async function handleNativePickerPick(res) {
+  if (nativePickBusy) {
+    return sendJson(res, 200, { ok: false, error: "已经有一个原生选择器窗口在等待操作" });
+  }
+  nativePickBusy = true;
+  try {
+    const path = await pickNativeDirectory(process.platform, nativeRunnerOverride || runNativeCommand);
+    sendJson(res, 200, { ok: true, path: path });
+  } catch (error) {
+    sendJson(res, 200, { ok: false, error: String((error && error.message) || error) });
+  } finally {
+    nativePickBusy = false;
+  }
+}
+
+async function handleGuardCheck(ctx, req, res) {
+  const raw = await parseJsonBody(req);
+  const sessionId = typeof raw.sessionId === "string" ? raw.sessionId.trim() : "";
+  if (!sessionId) return sendJson(res, 200, { ok: false, error: "sessionId 必填" });
+  let status = "unknown";
+  try {
+    const agents = ctx.get("agents");
+    if (!agents || typeof agents.get !== "function") {
+      // 服务缺席（旧版/未装配）：观察不到存活态，如实回 unknown，不冒充 inactive。
+      status = "unknown";
+    } else {
+      const agent = agents.get(sessionId);
+      if (agent === undefined) status = "inactive";
+      else if (typeof agent.status === "string") status = agent.status;
+    }
+  } catch (err) {
+    status = "unknown";
+  }
+  sendJson(res, 200, { ok: true, sessionId, status, running: status === "running" });
+}
+
 async function handleTombstoneCheck(req, res) {
   const raw = await parseJsonBody(req);
   const ids = Array.isArray(raw.ids)
@@ -1146,6 +1270,10 @@ function apply(ctx) {
         if (head === "debug" && (req.method === "GET" || req.method === "HEAD")) return await handleDebug(ctx, req, res);
         if (head === "mkdir" && req.method === "POST") return await handleMkdir(req, res);
         if (head === "open-ide" && req.method === "POST") return await handleOpenIde(req, res);
+        if (head === "picker" && rest[1] === "native") {
+          if (req.method === "GET" || req.method === "HEAD") return handleNativePickerStatus(res);
+          if (req.method === "POST") return await handleNativePickerPick(res);
+        }
         if (head === "archive" && req.method === "POST") {
           const sub = rest[1];
           if (sub === "unarchive") return await handleUnarchive(ctx, req, res);
@@ -1153,6 +1281,7 @@ function apply(ctx) {
           if (sub === "delete") return await handleDeleteSession(ctx, req, res);
           if (sub === "deleteAll") return await handleDeleteAll(ctx, req, res);
           if (sub === "pruneStale") return await handlePruneStaleArchives(ctx, req, res);
+          if (sub === "guardCheck") return await handleGuardCheck(ctx, req, res);
           if (sub === "tombstoneCheck") return await handleTombstoneCheck(req, res);
         }
         sendJson(res, 404, { ok: false, error: "not found" });
@@ -1163,4 +1292,10 @@ function apply(ctx) {
   }), "dsh-workspace-tree: routes");
 }
 
-export { apply, inject, name };
+/** 测试注入点（仅供 scripts/smoke-host.mjs 驱动原生选择器分支，生产不使用）。 */
+const __test = {
+  pickNativeDirectory: pickNativeDirectory,
+  setNativeRunner: (runner) => { nativeRunnerOverride = runner; }
+};
+
+export { apply, inject, name, __test };
