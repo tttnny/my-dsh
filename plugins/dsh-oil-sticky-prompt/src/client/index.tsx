@@ -146,6 +146,8 @@ export function apply(ctx: ClientContext): void {
       name: READING_ITEM_SLOT,
       id: STICKY_PROMPT_SETTINGS_NS,
       order: 20,
+      // 共享页按此标签渲染 tab
+      label: () => t("title"),
       locale: NS,
       inject: () => ({ scope }),
     }, StickyPromptCard));

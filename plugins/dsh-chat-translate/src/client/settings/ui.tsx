@@ -312,10 +312,10 @@ export function setupSettingsUi(ctx: any): void {
     // 共用一页，内核不允许 settings.section 的同一 id 被注册两次、也不允许子 slot
     // 被声明两次，因此三家携带同一份页壳、先到先得当选：当选者注册页面并声明
     // reading.settings.item 子 slot，未当选者只把卡片注册进该子 slot 等页面出现。
-    // claimReadingSettingsPage 只读 ctx.slots，故交给它已解析出的 slots 服务。
-    const pageCtx: any = { slots };
+    // 共享页壳需要真 ctx：它用 ctx.slots 读注册表，并用 ctx.get('locale') 在语言
+    // 切换时重读 tab 标签（可选服务，必须走 ctx.get，不能用 ctx.locale）。
     slots.inject('settings.section', () =>
-      claimReadingSettingsPage(pageCtx, () => t('pageNav'), NS)
+      claimReadingSettingsPage(ctx, () => t('pageNav'), NS)
     );
 
     slots.inject(READING_ITEM_SLOT, () =>
@@ -326,6 +326,8 @@ export function setupSettingsUi(ctx: any): void {
           id: SETTINGS_NAMESPACE,
           // 卡片在共享页里的顺序：丝滑流式 10、吸顶提示 20、聊天翻译 30
           order: 30,
+          // 共享页按此标签渲染 tab
+          label: () => t('title'),
           locale: NS,
         },
         TidySettingsPanel

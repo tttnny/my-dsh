@@ -77,7 +77,7 @@ function createScope() {
  * the declared services are present.
  */
 function createClientContext(dom: Dom, scope: ReturnType<typeof createScope>) {
-  const slots = {} as { inject: unknown; register: unknown; entries: unknown }
+  const slots = {} as { inject: unknown; register: unknown; entries: unknown; getVersion: unknown; subscribe: unknown }
   const effectLabels: string[] = []
   const disposers: Array<() => void> = []
   const registrations: Registration[] = []
@@ -90,6 +90,11 @@ function createClientContext(dom: Dom, scope: ReturnType<typeof createScope>) {
     registrations.push({ options, component })
     return () => {}
   }
+  // The shared page shell builds its tab roster from the child slot's own
+  // registrations, so the model carries the registry's version/subscribe face.
+  let slotsVersion = 0
+  slots.getVersion = (): number => slotsVersion
+  slots.subscribe = (): (() => void) => () => {}
   // Both slots are declared by the time this plugin activates — the shell
   // declares `settings.section`, and claiming the page declares its item slot —
   // so the real registry runs each callback synchronously here.
@@ -98,21 +103,28 @@ function createClientContext(dom: Dom, scope: ReturnType<typeof createScope>) {
     return () => {}
   }
 
+  const localeService = {
+    getSnapshot: () => ({ revision: 0 }),
+    subscribe: () => () => {},
+    bind: (ns: string) => (key: string) => `${ns}:${key}`,
+    register: (ns: string, dicts: unknown): (() => void) => {
+      dictionaries.push({ ns, dicts })
+      return () => {}
+    },
+  }
+
+  const get = (name: string): unknown => (name === 'locale' ? localeService : undefined)
+
   const settingsCtx = {
     effect: (factory: () => void | (() => void), label: string): void => {
       effectLabels.push(label)
       const disposer = factory()
       if (typeof disposer === 'function') disposers.push(disposer)
     },
-    locale: {
-      bind: (ns: string) => (key: string) => `${ns}:${key}`,
-      register: (ns: string, dicts: unknown): (() => void) => {
-        dictionaries.push({ ns, dicts })
-        return () => {}
-      },
-    },
+    locale: localeService,
     settingsScope: { bind: () => scope },
     slots,
+    get,
   }
 
   const ctx = {
@@ -125,6 +137,8 @@ function createClientContext(dom: Dom, scope: ReturnType<typeof createScope>) {
       injectedDeps.push(deps)
       callback(settingsCtx)
     },
+    get,
+    slots,
   }
 
   return {
