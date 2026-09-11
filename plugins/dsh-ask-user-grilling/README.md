@@ -23,4 +23,4 @@ dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 
 已发布至 npm，供三个 matt 预设（`matt-standard` / `matt-ptc` / `matt-cordis`）使用（preset 的工具行直接消费本包）。
 
-**本地开发**：临时联调可将本目录复制到 `~/.dsh/profiles/web/node_modules/@lynn123411/dsh-ask-user-grilling/`（preset 的工具行会直接从 node_modules 解析），但裸拷贝是未注册状态：`pnpm install` / `dsh plugin add|remove` 等任何 profile 同步都会把它当 extraneous 清掉，并导致三份 matt preset 从模式选择里消失（2026-09-08 真实事故，见 `patches/matt-presets-bootstrap/README.md` §四）——“被清重拷”只是重复踩坑。注意：**不要**把它加进 profile `package.json` 的 `dsh.profile.bundles`（bundle 层必须在包内声明 `dsh.bundle`，否则启动报错）。含未发布改点时调完即发版，再用 `pnpm add` 回装为注册版本。
+**本地开发**：临时联调可将本目录复制到 `~/.dsh/profiles/web/node_modules/@lynn123411/dsh-ask-user-grilling/`（preset 的工具行会直接从 node_modules 解析），但裸拷贝是未注册状态：`pnpm install` / `dsh plugin add|remove` 等任何 profile 同步都会把它当 extraneous 清掉，并导致三份 matt preset 从模式选择里消失（roster 对每份 preset 做行可解析性健康检查，插件被剪即整份隐藏）——“被清重拷”只是重复踩坑。注意：**不要**把它加进 profile `package.json` 的 `dsh.profile.bundles`（bundle 层必须在包内声明 `dsh.bundle`，否则启动报错）。含未发布改点时调完即发版，再用 `pnpm add` 回装为注册版本。
