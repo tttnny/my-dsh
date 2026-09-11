@@ -91,6 +91,7 @@
 
 | preset | 说明 |
 | --- | --- |
+| [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份与持久 shell（`prefix` 即完整系统提示词、关闭运行时快照；shell 那组行含 isolate realm 原样搬入）＋ 文件工具 `read` / `write` / `edit`。工具目录就是这四个——没有检索、`read_image`、技能、计划、目标、子代理。随附一行 preset 目录内的 `tool-filter` 插件在 `system-prompt/assemble` 处把 `read_image` 移出模型可见目录（`tools.restrict()` 只筛继承工具、兄弟行包注册表又输给 loader 的并发装载，两条路都已实测不成立） |
 | [ptc-cordis](./presets/ptc-cordis) | **PTC-Cordis 混合模式**：融合 PTC（`mode: ptc`：模型只见 `run_code`，全部工具经 SDK 以脚本调用）与 Cordis 动态插件编辑（`cordis_define`/`run`），含 `cordis-plugin-development` / `editing-cordis-compositions` 随附技能，开箱与官方 `standard` / `ptc` / `cordis` 并列可选 |
 | [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：官方 `standard` 组合（persona 零改动）+ Matt Pocock 25 个工程/生产力技能（[mattpocock/skills](https://github.com/mattpocock/skills)）+ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答；达成共识后不自动进入 plan mode |
 | [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式（实验性）**：官方 `ptc` 组合（persona 零改动，`mode: ptc` 下模型只见 `run_code`）+ 25 个 Matt 技能 + grilling 投递插件（grilling 轮次经 `run_code` 内的 `tools.ask_user_grilling` 投递） |
