@@ -9,11 +9,11 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // entry ('settings.plugin.item') plus the native settings scope contract.
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { TypewriterAssistantNodeView } from './TypewriterAssistantNodeView.tsx'
 import { wrapFollowNodeView, type FollowWrapProps } from './TypewriterToolNodeView.tsx'
 import { SmoothStreamCard } from './SmoothStreamCard.tsx'
+import { claimReadingSettingsPage, READING_ITEM_SLOT } from './reading-settings-page.tsx'
 import { SmoothStreamCardController } from './smooth-stream-card-controller.ts'
 import { createSmoothStreamPluginApi } from './smooth-stream-settings-api.ts'
 import { DebugPanel } from './DebugPanel.tsx'
@@ -253,12 +253,20 @@ export function apply(ctx: ClientContext): void {
     const detachDebug = card.subscribe(syncDebug)
     syncDebug()
     card.start()
+    const t = settingsCtx.locale.bind(SETTINGS_NS)
     settingsCtx.effect(() => settingsCtx.locale.register(SETTINGS_NS, { zh, en }), 'dsh-smooth-stream: settings dictionaries')
-    // `settings.plugin.item` is a keyed slot: the key IS the Host settings
-    // namespace, which is what pairs this card with the namespace above.
-    settingsCtx.slots.inject('settings.plugin.item', () => settingsCtx.slots.register({
-      name: 'settings.plugin.item',
-      key: STREAM_SETTINGS_NS,
+    // The 「阅读体验」 page hosts this plugin's card together with the other
+    // reading plugins: whoever activates first claims the page, the rest only
+    // register cards into its child slot.
+    settingsCtx.slots.inject('settings.section', () => claimReadingSettingsPage(
+      settingsCtx,
+      () => t('pageNav'),
+      SETTINGS_NS,
+    ))
+    settingsCtx.slots.inject(READING_ITEM_SLOT, () => settingsCtx.slots.register({
+      name: READING_ITEM_SLOT,
+      id: STREAM_SETTINGS_NS,
+      order: 10,
       locale: SETTINGS_NS,
       inject: () => card.inject(),
     }, SmoothStreamCard))

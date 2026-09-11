@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-smooth-stream",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "丝滑流式渲染与零重排跟随引擎。分叉自 Laplace-bit/dsh-smooth-stream v0.6.0，单内核适配 DSH 0.1.5-rc.1，并移除工具卡片内部的逐字揭示。",
   "license": "MIT",
   "type": "module",
@@ -63,7 +63,8 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --pretty false",
-    "check": "pnpm typecheck && pnpm build"
+    "smoke": "node scripts/smoke-client.mjs",
+    "check": "pnpm typecheck && pnpm build && pnpm smoke"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",

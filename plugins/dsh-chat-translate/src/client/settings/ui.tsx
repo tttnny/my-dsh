@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import * as React from 'react';
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { settingsStore, SETTINGS_NAMESPACE, type ClientSettingsState } from './store.ts';
 import { SETTINGS_CSS } from './styles.ts';
+import { claimReadingSettingsPage, READING_ITEM_SLOT } from '../reading-settings-page.tsx';
+import { NS, en, zh } from '../locales.ts';
 let stylesInjected = false;
 function ensureSettingsStyles(): void {
   if (stylesInjected || typeof document === 'undefined') return;
@@ -25,7 +28,14 @@ function Switch(props: { checked: boolean; onChange: () => void; label: string }
   );
 }
 
-export function TidySettingsPanel(): React.ReactElement {
+/**
+ * Chat-translate's card inside the shared 「阅读体验」 settings page. The card
+ * keeps its own chrome (title rows, switches, credential form); the shared page
+ * only stacks the participants' cards.
+ * @param _props - renderer-bound seat of the `reading.settings.item` slot.
+ * @returns The card element.
+ */
+export function TidySettingsPanel(_props: PropsRuntime<'reading.settings.item'>): React.ReactElement {
   ensureSettingsStyles();
 
   const [state, setState] = useState<ClientSettingsState>(() => settingsStore.getState());
@@ -249,6 +259,12 @@ export function TidySettingsPanel(): React.ReactElement {
   );
 }
 
+/**
+ * Bind the settings store to DSH's native settings/credentials services and
+ * join the shared 「阅读体验」 settings page: whichever participant activates
+ * first claims the page, everyone registers a card into its child slot.
+ * @param ctx - DSH browser client context; services are resolved defensively.
+ */
 export function setupSettingsUi(ctx: any): void {
   if (typeof window === 'undefined') return;
 
@@ -270,22 +286,47 @@ export function setupSettingsUi(ctx: any): void {
     console.warn('[dsh-chat-translate] Failed to bind settings scope:', err);
   }
 
+  // The locale service is optional, like the services above: the page label and
+  // the card's `t` seat fall back to the Chinese copy without it.
+  const locale = ctx?.locale || (ctx?.get ? ctx.get('locale') : null);
+  if (locale && typeof locale.register === 'function' && typeof ctx?.effect === 'function') {
+    ctx.effect(
+      () => locale.register(NS, { zh, en }),
+      'dsh-chat-translate: locale dictionaries'
+    );
+  }
+  const t =
+    locale && typeof locale.bind === 'function'
+      ? locale.bind(NS)
+      : (): string => zh.pageNav;
+
   try {
     const slots = ctx?.slots || (ctx?.get ? ctx.get('slots') : null);
     if (!slots || typeof slots.inject !== 'function') return;
 
-    slots.inject('settings.section', () => {
-      return slots.register(
+    // 共享「阅读体验」设置页：本插件与 dsh-smooth-stream、dsh-oil-sticky-prompt
+    // 共用一页，内核不允许 settings.section 的同一 id 被注册两次、也不允许子 slot
+    // 被声明两次，因此三家携带同一份页壳、先到先得当选：当选者注册页面并声明
+    // reading.settings.item 子 slot，未当选者只把卡片注册进该子 slot 等页面出现。
+    // claimReadingSettingsPage 只读 ctx.slots，故交给它已解析出的 slots 服务。
+    const pageCtx: any = { slots };
+    slots.inject('settings.section', () =>
+      claimReadingSettingsPage(pageCtx, () => t('pageNav'), NS)
+    );
+
+    slots.inject(READING_ITEM_SLOT, () =>
+      slots.register(
         {
-          name: 'settings.section',
-          id: 'dsh-chat-translate',
-          // 约定：自有插件设置项 order 从 110 起步进 10（原生最大 100=桌面设置），保证排在所有原生项之下
-          order: 110,
-          label: () => '聊天翻译',
+          name: READING_ITEM_SLOT,
+          // id = 本插件的 Host 设置命名空间（settings.section 时代的 id 沿用）
+          id: SETTINGS_NAMESPACE,
+          // 卡片在共享页里的顺序：丝滑流式 10、吸顶提示 20、聊天翻译 30
+          order: 30,
+          locale: NS,
         },
         TidySettingsPanel
-      );
-    });
+      )
+    );
   } catch (err) {
     console.warn('[dsh-chat-translate] Failed to inject settings section:', err);
   }

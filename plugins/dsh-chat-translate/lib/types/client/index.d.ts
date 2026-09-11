@@ -1,10 +1,12 @@
 /** Client plugin name, shared with the browser bundle id. */
 export declare const name = "dsh-chat-translate";
 /**
- * Declared services: slots for the settings section, settingsScope for the
- * per-namespace settings mirror, and the remote + remote.credentials pair for
- * the credentials Remote namespace — the runtime withholds any service not
- * declared here, so `ctx.remote.credentials` would be undefined otherwise.
+ * Declared services: slots for the shared 「阅读体验」 settings page (page claim
+ * plus the card registration), settingsScope for the per-namespace settings
+ * mirror, and the remote + remote.credentials pair for the credentials Remote
+ * namespace — the runtime withholds any service not declared here, so
+ * `ctx.remote.credentials` would be undefined otherwise. The locale service is
+ * optional and read through `ctx.get`, like the renderer's slots registry.
  */
 export declare const inject: string[];
 interface ClientContext {
@@ -12,12 +14,14 @@ interface ClientContext {
     get?(serviceName: string): any;
     slots?: any;
     settingsScope?: any;
+    locale?: any;
     remote?: {
         credentials?: any;
     };
 }
 /**
- * Mount the tool-call / think-summary translation observer and the settings UI.
+ * Mount the tool-call / think-summary translation observer and the settings UI
+ * card inside the shared reading-settings page.
  * @param ctx - DSH browser client context.
  */
 export declare function apply(ctx: ClientContext): void;

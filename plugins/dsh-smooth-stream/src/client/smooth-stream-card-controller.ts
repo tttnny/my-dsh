@@ -69,7 +69,7 @@ export interface SmoothStreamCardOptions {
 
 /** Bridges the native settings namespace onto a staged settings form. */
 export class SmoothStreamCardController {
-  private readonly store = createSnapshotStore<SmoothStreamCardState>(this.projection())
+  private readonly store: SnapshotStore<SmoothStreamCardState>
   private readonly scope: SettingsScope<StreamSettings>
   private readonly pluginApi: SmoothStreamPluginApi | undefined
   private readonly isLoopback: boolean
@@ -87,6 +87,9 @@ export class SmoothStreamCardController {
     this.scope = options.scope
     this.pluginApi = options.pluginApi
     this.isLoopback = options.isLoopback
+    // Built only after the collaborators land: the first projection reads the
+    // scope, and a field initializer would run before this constructor body.
+    this.store = createSnapshotStore<SmoothStreamCardState>(this.projection())
   }
 
   /** Follow the scope and read the Host-side package provenance. */

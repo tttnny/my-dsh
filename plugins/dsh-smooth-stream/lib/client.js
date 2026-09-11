@@ -23,27 +23,27 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$3;
 		}
 		var TypewriterAssistantNodeView_module_css_default = {
-			"body": "_07evbq_body",
-			"thinkLeading": "_07evbq_thinkLeading",
-			"thinkTitle": "_07evbq_thinkTitle",
-			"thinkBody": "_07evbq_thinkBody",
-			"disclosureLeading": "_07evbq_disclosureLeading",
-			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
-			"stopped": "_07evbq_stopped",
-			"think": "_07evbq_think",
-			"disclosureRow": "_07evbq_disclosureRow",
-			"thinkChevron": "_07evbq_thinkChevron",
-			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
-			"thinkSummary": "_07evbq_thinkSummary",
-			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
 			"disclosureContent": "_07evbq_disclosureContent",
-			"visuallyHidden": "_07evbq_visuallyHidden",
-			"follow": "_07evbq_follow",
-			"thinkSeparator": "_07evbq_thinkSeparator",
-			"thinkRow": "_07evbq_thinkRow",
-			"root": "_07evbq_root",
+			"thinkLeading": "_07evbq_thinkLeading",
+			"thinkSummary": "_07evbq_thinkSummary",
 			"disclosureRoot": "_07evbq_disclosureRoot",
-			"disclosureTitle": "_07evbq_disclosureTitle"
+			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
+			"disclosureTitle": "_07evbq_disclosureTitle",
+			"thinkTitle": "_07evbq_thinkTitle",
+			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
+			"thinkBody": "_07evbq_thinkBody",
+			"disclosureRow": "_07evbq_disclosureRow",
+			"root": "_07evbq_root",
+			"think": "_07evbq_think",
+			"thinkRow": "_07evbq_thinkRow",
+			"thinkSeparator": "_07evbq_thinkSeparator",
+			"disclosureLeading": "_07evbq_disclosureLeading",
+			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
+			"stopped": "_07evbq_stopped",
+			"body": "_07evbq_body",
+			"thinkChevron": "_07evbq_thinkChevron",
+			"follow": "_07evbq_follow",
+			"visuallyHidden": "_07evbq_visuallyHidden"
 		};
 		//#endregion
 		//#region src/client/AnimatedDisclosure.tsx
@@ -3510,8 +3510,8 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$2;
 		}
 		var AgentRowEntrance_module_css_default = {
-			"surface": "_72ZBkW_surface",
-			"dsh-smooth-stream-agent-row-in": "_72ZBkW_dsh-smooth-stream-agent-row-in"
+			"dsh-smooth-stream-agent-row-in": "_72ZBkW_dsh-smooth-stream-agent-row-in",
+			"surface": "_72ZBkW_surface"
 		};
 		//#endregion
 		//#region src/client/TypewriterToolNodeView.tsx
@@ -3707,43 +3707,43 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$1;
 		}
 		var SmoothStreamCard_module_css_default = {
-			"failed": "QGTmaa_failed",
-			"hint": "QGTmaa_hint",
-			"field": "QGTmaa_field",
-			"choice": "QGTmaa_choice",
-			"failure": "QGTmaa_failure",
-			"updateCopy": "QGTmaa_updateCopy",
-			"chevronOpen": "QGTmaa_chevronOpen",
-			"toggle": "QGTmaa_toggle",
-			"fieldHead": "QGTmaa_fieldHead",
-			"choiceInput": "QGTmaa_choiceInput",
-			"cardOpen": "QGTmaa_cardOpen",
-			"card": "QGTmaa_card",
-			"pending": "QGTmaa_pending",
-			"updateRow": "QGTmaa_updateRow",
-			"footer": "QGTmaa_footer",
-			"headText": "QGTmaa_headText",
-			"update": "QGTmaa_update",
-			"choiceRow": "QGTmaa_choiceRow",
-			"description": "QGTmaa_description",
-			"label": "QGTmaa_label",
-			"chevron": "QGTmaa_chevron",
-			"body": "QGTmaa_body",
-			"save": "QGTmaa_save",
-			"header": "QGTmaa_header",
-			"version": "QGTmaa_version",
 			"discard": "QGTmaa_discard",
+			"update": "QGTmaa_update",
+			"failure": "QGTmaa_failure",
+			"header": "QGTmaa_header",
+			"chevron": "QGTmaa_chevron",
+			"toggle": "QGTmaa_toggle",
+			"failed": "QGTmaa_failed",
+			"cardOpen": "QGTmaa_cardOpen",
+			"description": "QGTmaa_description",
+			"save": "QGTmaa_save",
+			"version": "QGTmaa_version",
 			"readOnly": "QGTmaa_readOnly",
+			"choiceRow": "QGTmaa_choiceRow",
+			"card": "QGTmaa_card",
+			"choiceInput": "QGTmaa_choiceInput",
+			"headText": "QGTmaa_headText",
+			"field": "QGTmaa_field",
+			"chevronOpen": "QGTmaa_chevronOpen",
+			"footer": "QGTmaa_footer",
+			"updateRow": "QGTmaa_updateRow",
+			"body": "QGTmaa_body",
+			"fieldHead": "QGTmaa_fieldHead",
+			"updateCopy": "QGTmaa_updateCopy",
 			"fieldDisabled": "QGTmaa_fieldDisabled",
+			"label": "QGTmaa_label",
+			"hint": "QGTmaa_hint",
+			"pending": "QGTmaa_pending",
+			"choice": "QGTmaa_choice",
 			"name": "QGTmaa_name"
 		};
 		//#endregion
 		//#region src/client/SmoothStreamCard.tsx
 		/**
-		* The smooth-stream plugin configuration card, rendered inside the Web
-		* Settings "plugin configuration" page. Preferences are staged until the user
-		* saves — the same shape as the Host-shipped cards, hand-drawn because the
-		* Host cards' chrome is not exported for reuse.
+		* The smooth-stream card inside the shared 「阅读体验」 settings page.
+		* Preferences are staged until the user saves — the same shape as the
+		* Host-shipped cards, hand-drawn because the Host cards' chrome is not
+		* exported for reuse.
 		*/
 		/** Render the smooth-stream card independently of the core settings namespace allowlist. */
 		function SmoothStreamCard(props) {
@@ -4002,10 +4002,80 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
+		//#region src/client/reading-settings-page.tsx
+		/**
+		* The shared 「阅读体验」 settings page.
+		*
+		* Several plugins contribute their configuration to ONE settings page, but the
+		* kernel cannot declare that page jointly: `settings.section` is a list slot
+		* that rejects a duplicate `id` at the same priority ("already has an entry
+		* with id"), and a child slot may be declared exactly once ("slot … is already
+		* declared"). Composing three cards into one page therefore takes one
+		* declarer, so every participating plugin carries this same shell and the
+		* FIRST one to activate claims the page; the others register their card into
+		* {@link READING_ITEM_SLOT} and wait for the winner's declaration through
+		* `slots.inject`. Uninstalling the winner promotes another participant on the
+		* next boot, so no participant is a fixed owner.
+		*
+		* Keep this file identical across the participating plugins
+		* (`dsh-smooth-stream`, `dsh-oil-sticky-prompt`, `dsh-chat-translate`).
+		* Participants own their own card component, locale dictionaries, settings
+		* namespace and Host half — only the page shell below is shared, because
+		* cross-plugin value imports are forbidden by the client bundle purity gate.
+		*/
+		/** Page id claimed by the first participating plugin to activate. */
+		const READING_PAGE_ID = "reading";
+		/** The page's one child slot: every participant's card registers here. */
+		const READING_ITEM_SLOT = "reading.settings.item";
+		/**
+		* Page body. The shell supplies the section's own seats plus `renderSlot`
+		* bound to the child slot declared at registration time; the page itself owns
+		* only the stack. Cards render `<li>` roots, so the stack is a markerless
+		* list — a stray `<li>` under a plain container would draw a bullet.
+		*/
+		function ReadingSettingsSection({ renderSlot }) {
+			return (0, react.createElement)("ul", { style: {
+				listStyle: "none",
+				margin: 0,
+				padding: 0,
+				display: "grid",
+				gap: "12px"
+			} }, renderSlot(READING_ITEM_SLOT, {}));
+		}
+		/** Whether a participant already holds the shared page. */
+		function readingPageClaimed(ctx) {
+			return ctx.slots.entries("settings.section").some((entry) => entry.options.id === READING_PAGE_ID);
+		}
+		/**
+		* Claim the shared page when no participant holds it yet. Call inside
+		* `ctx.slots.inject('settings.section', …)`: injection order decides the
+		* winner, and the losers stay silent instead of colliding with the kernel's
+		* duplicate-id and duplicate-declaration guards.
+		* @param ctx - browser context carrying the slot registry.
+		* @param label - page label, re-read by the shell on every projection.
+		* @param locale - locale namespace the label thunk translates through.
+		* @returns The page registration's disposer, or a no-op when another
+		* participant already holds the page.
+		*/
+		function claimReadingSettingsPage(ctx, label, locale) {
+			if (readingPageClaimed(ctx)) return () => {};
+			return ctx.slots.register({
+				name: "settings.section",
+				id: READING_PAGE_ID,
+				order: 110,
+				label,
+				locale,
+				children: { "reading.settings.item": {
+					kind: "list",
+					scope: "root"
+				} }
+			}, ReadingSettingsSection);
+		}
+		//#endregion
 		//#region src/client/smooth-stream-card-controller.ts
 		/** Bridges the native settings namespace onto a staged settings form. */
 		var SmoothStreamCardController = class {
-			store = createSnapshotStore(this.projection());
+			store;
 			scope;
 			pluginApi;
 			isLoopback;
@@ -4022,6 +4092,7 @@ window.__ModuleLoader__.load({
 				this.scope = options.scope;
 				this.pluginApi = options.pluginApi;
 				this.isLoopback = options.isLoopback;
+				this.store = createSnapshotStore(this.projection());
 			}
 			/** Follow the scope and read the Host-side package provenance. */
 			start() {
@@ -4231,34 +4302,34 @@ window.__ModuleLoader__.load({
 			tag.textContent = css;
 		}
 		var DebugPanel_module_css_default = {
-			"infoButton": "fE600W_infoButton",
-			"triggerActive": "fE600W_triggerActive",
-			"number": "fE600W_number",
-			"panel": "fE600W_panel",
-			"control": "fE600W_control",
 			"unit": "fE600W_unit",
-			"range": "fE600W_range",
-			"numberWrap": "fE600W_numberWrap",
-			"primaryButton": "fE600W_primaryButton",
 			"visuallyHidden": "fE600W_visuallyHidden",
-			"state": "fE600W_state",
-			"footer": "fE600W_footer",
-			"secondaryButton": "fE600W_secondaryButton",
-			"panelHeader": "fE600W_panelHeader",
-			"trigger": "fE600W_trigger",
-			"section": "fE600W_section",
-			"title": "fE600W_title",
-			"statusDot": "fE600W_statusDot",
+			"range": "fE600W_range",
 			"iconButton": "fE600W_iconButton",
-			"unsaved": "fE600W_unsaved",
-			"guide": "fE600W_guide",
-			"metric": "fE600W_metric",
-			"controlHead": "fE600W_controlHead",
+			"statusLive": "fE600W_statusLive",
 			"scrollArea": "fE600W_scrollArea",
+			"metric": "fE600W_metric",
+			"footer": "fE600W_footer",
 			"controlLabel": "fE600W_controlLabel",
 			"footerSpacer": "fE600W_footerSpacer",
+			"numberWrap": "fE600W_numberWrap",
+			"statusDot": "fE600W_statusDot",
+			"title": "fE600W_title",
+			"number": "fE600W_number",
+			"section": "fE600W_section",
+			"trigger": "fE600W_trigger",
 			"metrics": "fE600W_metrics",
-			"statusLive": "fE600W_statusLive"
+			"infoButton": "fE600W_infoButton",
+			"primaryButton": "fE600W_primaryButton",
+			"secondaryButton": "fE600W_secondaryButton",
+			"panelHeader": "fE600W_panelHeader",
+			"state": "fE600W_state",
+			"guide": "fE600W_guide",
+			"panel": "fE600W_panel",
+			"control": "fE600W_control",
+			"triggerActive": "fE600W_triggerActive",
+			"unsaved": "fE600W_unsaved",
+			"controlHead": "fE600W_controlHead"
 		};
 		//#endregion
 		//#region src/client/DebugPanel.tsx
@@ -4652,6 +4723,7 @@ window.__ModuleLoader__.load({
 		const en = {
 			title: "Smooth stream",
 			description: "How replies are revealed while they stream.",
+			pageNav: "Reading",
 			enabled: "Enable smooth streaming",
 			enabledHint: "Let this plugin render and follow streaming replies. Turn off to use the built-in Harness renderer.",
 			controlScroll: "Take over scrolling",
@@ -4740,6 +4812,7 @@ window.__ModuleLoader__.load({
 		const zh = {
 			title: "丝滑流式",
 			description: "回复在流式输出时如何逐字展现。",
+			pageNav: "阅读体验",
 			enabled: "启用丝滑流式渲染",
 			enabledHint: "由本插件渲染并跟随流式回复；关闭后使用 Harness 内置渲染。",
 			controlScroll: "接管滚动",
@@ -5028,13 +5101,16 @@ window.__ModuleLoader__.load({
 				const detachDebug = card.subscribe(syncDebug);
 				syncDebug();
 				card.start();
+				const t = settingsCtx.locale.bind(NS);
 				settingsCtx.effect(() => settingsCtx.locale.register(NS, {
 					zh,
 					en
 				}), "dsh-smooth-stream: settings dictionaries");
-				settingsCtx.slots.inject("settings.plugin.item", () => settingsCtx.slots.register({
-					name: "settings.plugin.item",
-					key: STREAM_SETTINGS_NS,
+				settingsCtx.slots.inject("settings.section", () => claimReadingSettingsPage(settingsCtx, () => t("pageNav"), NS));
+				settingsCtx.slots.inject(READING_ITEM_SLOT, () => settingsCtx.slots.register({
+					name: READING_ITEM_SLOT,
+					id: STREAM_SETTINGS_NS,
+					order: 10,
 					locale: NS,
 					inject: () => card.inject()
 				}, SmoothStreamCard));

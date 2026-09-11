@@ -30,17 +30,17 @@
     <tr>
       <td rowspan="3"><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-oil-sticky-prompt"><code>@lynn123411/dsh-oil-sticky-prompt</code></a></td>
-      <td><b>对话吸顶提示</b><br>· 最近一条用户 Prompt 悬浮固定在对话流顶部，告别长对话迷路<br>· 点击平滑回滚至对应消息<br>· 纯 DOM 观察、零服务依赖</td>
+      <td><b>对话吸顶提示</b><br>· 最近一条用户 Prompt 悬浮固定在对话流顶部，告别长对话迷路<br>· 点击平滑回滚至对应消息<br>· 纯 DOM 观察、零服务依赖<br>· 新增「启用 / 停用」设置，并入共享的「<b>阅读体验</b>」设置页</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-oil-sticky-prompt</code></td>
     </tr>
     <tr>
       <td><a href="./plugins/dsh-smooth-stream"><code>@lynn123411/dsh-smooth-stream</code></a></td>
-      <td><b>丝滑流式渲染</b><br>· 自适应揭示引擎：按积压深度调速，折行单帧位移 ≤ 8px<br>· 二阶阻尼弹簧跟随：合成层 <code>translate3d</code> 补偿，零重排<br>· 闭环背压 + 掉帧自愈；思考块自动展开、回合结算自动折叠<br>· <b>工具卡片内部不逐字揭示</b>：工具行保留入场与跟随，卡片文本即时完整呈现<br>· 上游分叉 <code>Laplace-bit/dsh-smooth-stream</code> v0.6.0：单内核适配 <code>0.1.5-rc.1</code>，改名 <code>lynn-smooth-stream</code> 命名空间</td>
+      <td><b>丝滑流式渲染</b><br>· 自适应揭示引擎：按积压深度调速，折行单帧位移 ≤ 8px<br>· 二阶阻尼弹簧跟随：合成层 <code>translate3d</code> 补偿，零重排<br>· 闭环背压 + 掉帧自愈；思考块自动展开、回合结算自动折叠<br>· <b>工具卡片内部不逐字揭示</b>：工具行保留入场与跟随，卡片文本即时完整呈现<br>· 设置项与另两个阅读插件共用「<b>阅读体验</b>」设置页（先到先得当选页面宿主）<br>· 上游分叉 <code>Laplace-bit/dsh-smooth-stream</code> v0.6.0：单内核适配 <code>0.1.5-rc.1</code>，改名 <code>lynn-smooth-stream</code> 命名空间</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-smooth-stream</code></td>
     </tr>
     <tr>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
-      <td><b>聊天翻译</b><br>· 工具调用与思考摘要自动译中（思考完全结束才翻、仅当前会话、正文不翻）<br>· OpenAI 兼容 AI 通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）+ 免 Key Bing 兜底双通道<br>· 内置「聊天翻译」面板</td>
+      <td><b>聊天翻译</b><br>· 工具调用与思考摘要自动译中（思考完全结束才翻、仅当前会话、正文不翻）<br>· OpenAI 兼容 AI 通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）+ 免 Key Bing 兜底双通道<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（原「聊天翻译」独立设置页已移除）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>

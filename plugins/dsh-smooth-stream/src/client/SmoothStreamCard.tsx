@@ -1,20 +1,19 @@
 /**
- * The smooth-stream plugin configuration card, rendered inside the Web
- * Settings "plugin configuration" page. Preferences are staged until the user
- * saves — the same shape as the Host-shipped cards, hand-drawn because the
- * Host cards' chrome is not exported for reuse.
+ * The smooth-stream card inside the shared 「阅读体验」 settings page.
+ * Preferences are staged until the user saves — the same shape as the
+ * Host-shipped cards, hand-drawn because the Host cards' chrome is not
+ * exported for reuse.
  */
 
 import { useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { IconChevronDownOutline14, IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SmoothStreamCardFace } from './smooth-stream-card-controller.ts'
 import css from './SmoothStreamCard.module.css'
 
 /** Props the renderer binds for the smooth-stream card. */
 export type SmoothStreamCardProps =
-  PropsRuntime<'settings.plugin.item'>
+  PropsRuntime<'reading.settings.item'>
   & PropsLocale<'settings.smoothStream'>
   & InjectFace<SmoothStreamCardFace>
 

@@ -5,7 +5,7 @@ export const NS = 'settings.smoothStream'
 
 /** Locale keys the card renders. */
 export type SmoothStreamLocaleKey =
-  | 'title' | 'description'
+  | 'title' | 'description' | 'pageNav'
   | 'enabled' | 'enabledHint'
   | 'controlScroll' | 'controlScrollHint'
   | 'motionPreference' | 'motionPreferenceHint'
@@ -37,6 +37,7 @@ export type SmoothStreamLocaleKey =
 export const en: Record<SmoothStreamLocaleKey, string> = {
   title: 'Smooth stream',
   description: 'How replies are revealed while they stream.',
+  pageNav: 'Reading',
   enabled: 'Enable smooth streaming',
   enabledHint: 'Let this plugin render and follow streaming replies. Turn off to use the built-in Harness renderer.',
   controlScroll: 'Take over scrolling',
@@ -126,6 +127,7 @@ export const en: Record<SmoothStreamLocaleKey, string> = {
 export const zh: Record<SmoothStreamLocaleKey, string> = {
   title: '丝滑流式',
   description: '回复在流式输出时如何逐字展现。',
+  pageNav: '阅读体验',
   enabled: '启用丝滑流式渲染',
   enabledHint: '由本插件渲染并跟随流式回复；关闭后使用 Harness 内置渲染。',
   controlScroll: '接管滚动',
