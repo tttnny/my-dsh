@@ -1,0 +1,10 @@
+# Applied when this package appears in a profile's dsh.profile.bundles list.
+- insert:
+    - id: lynn-smooth-stream
+      name: '@lynn123411/dsh-smooth-stream'
+      config:
+        mode: typewriter
+        preset: balanced
+        revealCharsPerSec: 80
+        scrollSpeedPxPerSec: 48
+        maxScrollSpeedPxPerSec: 1000
