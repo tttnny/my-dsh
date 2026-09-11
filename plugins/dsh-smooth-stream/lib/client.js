@@ -23,27 +23,27 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$3;
 		}
 		var TypewriterAssistantNodeView_module_css_default = {
+			"body": "_07evbq_body",
+			"visuallyHidden": "_07evbq_visuallyHidden",
+			"follow": "_07evbq_follow",
+			"thinkChevron": "_07evbq_thinkChevron",
+			"stopped": "_07evbq_stopped",
+			"disclosureLeading": "_07evbq_disclosureLeading",
+			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
+			"thinkSummary": "_07evbq_thinkSummary",
+			"root": "_07evbq_root",
+			"thinkBody": "_07evbq_thinkBody",
+			"disclosureRoot": "_07evbq_disclosureRoot",
+			"disclosureRow": "_07evbq_disclosureRow",
+			"thinkRow": "_07evbq_thinkRow",
 			"disclosureTitle": "_07evbq_disclosureTitle",
+			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
+			"thinkLeading": "_07evbq_thinkLeading",
+			"thinkTitle": "_07evbq_thinkTitle",
 			"thinkSeparator": "_07evbq_thinkSeparator",
 			"think": "_07evbq_think",
-			"disclosureRoot": "_07evbq_disclosureRoot",
-			"thinkChevron": "_07evbq_thinkChevron",
-			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
-			"disclosureLeading": "_07evbq_disclosureLeading",
-			"body": "_07evbq_body",
 			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
-			"disclosureRow": "_07evbq_disclosureRow",
-			"stopped": "_07evbq_stopped",
-			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
-			"thinkBody": "_07evbq_thinkBody",
-			"visuallyHidden": "_07evbq_visuallyHidden",
-			"thinkRow": "_07evbq_thinkRow",
-			"thinkSummary": "_07evbq_thinkSummary",
-			"thinkTitle": "_07evbq_thinkTitle",
-			"root": "_07evbq_root",
-			"thinkLeading": "_07evbq_thinkLeading",
-			"disclosureContent": "_07evbq_disclosureContent",
-			"follow": "_07evbq_follow"
+			"disclosureContent": "_07evbq_disclosureContent"
 		};
 		//#endregion
 		//#region src/client/AnimatedDisclosure.tsx
@@ -3510,8 +3510,8 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$2;
 		}
 		var AgentRowEntrance_module_css_default = {
-			"dsh-smooth-stream-agent-row-in": "_72ZBkW_dsh-smooth-stream-agent-row-in",
-			"surface": "_72ZBkW_surface"
+			"surface": "_72ZBkW_surface",
+			"dsh-smooth-stream-agent-row-in": "_72ZBkW_dsh-smooth-stream-agent-row-in"
 		};
 		//#endregion
 		//#region src/client/TypewriterToolNodeView.tsx
@@ -3707,35 +3707,35 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$1;
 		}
 		var SmoothStreamCard_module_css_default = {
-			"description": "QGTmaa_description",
-			"field": "QGTmaa_field",
-			"fieldHead": "QGTmaa_fieldHead",
-			"toggle": "QGTmaa_toggle",
-			"cardOpen": "QGTmaa_cardOpen",
-			"choice": "QGTmaa_choice",
-			"failure": "QGTmaa_failure",
-			"name": "QGTmaa_name",
-			"hint": "QGTmaa_hint",
-			"choiceRow": "QGTmaa_choiceRow",
-			"pending": "QGTmaa_pending",
 			"fieldDisabled": "QGTmaa_fieldDisabled",
-			"footer": "QGTmaa_footer",
-			"updateCopy": "QGTmaa_updateCopy",
-			"chevron": "QGTmaa_chevron",
-			"headText": "QGTmaa_headText",
-			"discard": "QGTmaa_discard",
-			"card": "QGTmaa_card",
-			"updateRow": "QGTmaa_updateRow",
-			"update": "QGTmaa_update",
-			"save": "QGTmaa_save",
+			"pending": "QGTmaa_pending",
+			"field": "QGTmaa_field",
+			"chevronOpen": "QGTmaa_chevronOpen",
 			"choiceInput": "QGTmaa_choiceInput",
+			"version": "QGTmaa_version",
+			"failed": "QGTmaa_failed",
 			"header": "QGTmaa_header",
 			"body": "QGTmaa_body",
 			"readOnly": "QGTmaa_readOnly",
-			"chevronOpen": "QGTmaa_chevronOpen",
-			"version": "QGTmaa_version",
-			"failed": "QGTmaa_failed",
-			"label": "QGTmaa_label"
+			"hint": "QGTmaa_hint",
+			"footer": "QGTmaa_footer",
+			"update": "QGTmaa_update",
+			"cardOpen": "QGTmaa_cardOpen",
+			"updateCopy": "QGTmaa_updateCopy",
+			"discard": "QGTmaa_discard",
+			"card": "QGTmaa_card",
+			"toggle": "QGTmaa_toggle",
+			"description": "QGTmaa_description",
+			"name": "QGTmaa_name",
+			"label": "QGTmaa_label",
+			"save": "QGTmaa_save",
+			"updateRow": "QGTmaa_updateRow",
+			"choice": "QGTmaa_choice",
+			"failure": "QGTmaa_failure",
+			"headText": "QGTmaa_headText",
+			"chevron": "QGTmaa_chevron",
+			"fieldHead": "QGTmaa_fieldHead",
+			"choiceRow": "QGTmaa_choiceRow"
 		};
 		//#endregion
 		//#region src/client/SmoothStreamCard.tsx
@@ -4010,43 +4010,135 @@ window.__ModuleLoader__.load({
 		* kernel cannot declare that page jointly: `settings.section` is a list slot
 		* that rejects a duplicate `id` at the same priority ("already has an entry
 		* with id"), and a child slot may be declared exactly once ("slot … is already
-		* declared"). Composing three cards into one page therefore takes one
+		* declared"). Composing several cards into one page therefore takes one
 		* declarer, so every participating plugin carries this same shell and the
 		* FIRST one to activate claims the page; the others register their card into
 		* {@link READING_ITEM_SLOT} and wait for the winner's declaration through
 		* `slots.inject`. Uninstalling the winner promotes another participant on the
 		* next boot, so no participant is a fixed owner.
 		*
+		* The page renders ONE TAB PER REGISTERED CARD: the tab roster comes from the
+		* child slot's own registrations (id + `label` + `order`, the same shape the
+		* kernel's own Plugins page uses for its tabs), and each panel dispatches
+		* through `renderSlot(READING_ITEM_SLOT, {}, { only: id })`. Every panel stays
+		* mounted but hidden, so a card's local state survives a tab switch.
+		*
 		* Keep this file identical across the participating plugins
 		* (`dsh-smooth-stream`, `dsh-oil-sticky-prompt`, `dsh-chat-translate`).
 		* Participants own their own card component, locale dictionaries, settings
 		* namespace and Host half — only the page shell below is shared, because
 		* cross-plugin value imports are forbidden by the client bundle purity gate.
+		* It imports nothing but `react` plus type-only DSH packages on purpose, so
+		* every participant's build configuration compiles it unchanged.
 		*/
 		/** Page id claimed by the first participating plugin to activate. */
 		const READING_PAGE_ID = "reading";
 		/** The page's one child slot: every participant's card registers here. */
 		const READING_ITEM_SLOT = "reading.settings.item";
+		/** A registration label is a plain string or a thunk re-read per projection. */
+		function readLabel(label) {
+			if (typeof label === "function") return label();
+			return typeof label === "string" ? label : "";
+		}
+		const TABLIST_STYLE = {
+			display: "flex",
+			gap: "4px",
+			marginBottom: "12px",
+			borderBottom: "1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25))"
+		};
+		const TAB_STYLE = {
+			appearance: "none",
+			background: "transparent",
+			border: "none",
+			borderBottom: "2px solid transparent",
+			marginBottom: "-1px",
+			padding: "6px 12px",
+			cursor: "pointer",
+			font: "inherit",
+			fontSize: "13px",
+			color: "var(--dsw-alias-label-secondary, inherit)"
+		};
+		const TAB_ACTIVE_STYLE = {
+			...TAB_STYLE,
+			color: "var(--dsw-alias-label-primary, inherit)",
+			borderBottomColor: "var(--dsw-alias-label-primary, currentColor)",
+			fontWeight: 600
+		};
+		/** Panels stay mounted (hidden) so each card keeps its local state. */
+		const PANEL_STYLE = {
+			listStyle: "none",
+			margin: 0,
+			padding: 0
+		};
+		const PANEL_HIDDEN_STYLE = {
+			...PANEL_STYLE,
+			display: "none"
+		};
 		/**
-		* Page body. The shell supplies the section's own seats plus `renderSlot`
-		* bound to the child slot declared at registration time; the page owns the
-		* layout only.
-		*
-		* Cards are laid out SIDE BY SIDE: a markerless grid whose columns fit as many
-		* ~280px cards as the settings column has room for, so the reading plugins sit
-		* in one row on a wide panel and wrap gracefully on a narrow one. Cards render
-		* `<li>` roots, hence the list reset.
+		* Build the live tab roster over the child slot's registrations. `locale` is
+		* read through `ctx.get`: a participant needs it only to re-read localized
+		* labels on a language switch, and reaching an undeclared service as
+		* `ctx.locale` would trip the kernel's inject guard.
+		* @param ctx - browser context carrying the slot registry.
+		* @returns The tab store consumed by the page component.
 		*/
-		function ReadingSettingsSection({ renderSlot }) {
-			return (0, react.createElement)("ul", { style: {
-				listStyle: "none",
-				margin: 0,
-				padding: 0,
-				display: "grid",
-				gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-				alignItems: "start",
-				gap: "12px"
-			} }, renderSlot(READING_ITEM_SLOT, {}));
+		function createReadingTabs(ctx) {
+			const locale = ctx.get("locale");
+			let version = -1;
+			let revision = -1;
+			let tabs = [];
+			return {
+				getSnapshot: () => {
+					const nextVersion = ctx.slots.getVersion(READING_ITEM_SLOT);
+					const nextRevision = locale === void 0 ? 0 : locale.getSnapshot().revision;
+					if (nextVersion === version && nextRevision === revision) return tabs;
+					version = nextVersion;
+					revision = nextRevision;
+					tabs = ctx.slots.entries(READING_ITEM_SLOT).map((entry) => ({
+						id: entry.options.id ?? "",
+						order: entry.options.order ?? 0,
+						label: readLabel(entry.options.label)
+					})).sort((left, right) => left.order - right.order);
+					return tabs;
+				},
+				subscribe: (listener) => {
+					const offSlots = ctx.slots.subscribe(READING_ITEM_SLOT, listener);
+					const offLocale = locale?.subscribe(listener);
+					return () => {
+						offSlots();
+						offLocale?.();
+					};
+				}
+			};
+		}
+		/**
+		* Page body: one tab per registered card, plus the selected card's panel.
+		* The shell supplies the section's own seats and `renderSlot` bound to the
+		* child slot declared at registration time.
+		*/
+		function ReadingSettingsSection({ renderSlot, readingTabs }) {
+			const tabs = (0, react.useSyncExternalStore)(readingTabs.subscribe, readingTabs.getSnapshot, readingTabs.getSnapshot);
+			const [requested, setRequested] = (0, react.useState)(null);
+			const selected = requested !== null && tabs.some((tab) => tab.id === requested) ? requested : tabs[0]?.id ?? null;
+			if (selected === null) return null;
+			return (0, react.createElement)("div", null, (0, react.createElement)("div", {
+				role: "tablist",
+				style: TABLIST_STYLE
+			}, tabs.map((tab) => (0, react.createElement)("button", {
+				key: tab.id,
+				type: "button",
+				role: "tab",
+				"aria-selected": tab.id === selected,
+				style: tab.id === selected ? TAB_ACTIVE_STYLE : TAB_STYLE,
+				onClick: () => {
+					setRequested(tab.id);
+				}
+			}, tab.label))), tabs.map((tab) => (0, react.createElement)("ul", {
+				key: tab.id,
+				role: "tabpanel",
+				hidden: tab.id !== selected,
+				style: tab.id === selected ? PANEL_STYLE : PANEL_HIDDEN_STYLE
+			}, renderSlot(READING_ITEM_SLOT, {}, { only: tab.id }))));
 		}
 		/** Whether a participant already holds the shared page. */
 		function readingPageClaimed(ctx) {
@@ -4065,12 +4157,14 @@ window.__ModuleLoader__.load({
 		*/
 		function claimReadingSettingsPage(ctx, label, locale) {
 			if (readingPageClaimed(ctx)) return () => {};
+			const readingTabs = createReadingTabs(ctx);
 			return ctx.slots.register({
 				name: "settings.section",
 				id: READING_PAGE_ID,
 				order: 110,
 				label,
 				locale,
+				inject: () => ({ readingTabs }),
 				children: { "reading.settings.item": {
 					kind: "list",
 					scope: "root"
@@ -4308,34 +4402,34 @@ window.__ModuleLoader__.load({
 			tag.textContent = css;
 		}
 		var DebugPanel_module_css_default = {
-			"numberWrap": "fE600W_numberWrap",
-			"title": "fE600W_title",
-			"metrics": "fE600W_metrics",
-			"trigger": "fE600W_trigger",
-			"number": "fE600W_number",
-			"scrollArea": "fE600W_scrollArea",
-			"controlHead": "fE600W_controlHead",
-			"panelHeader": "fE600W_panelHeader",
-			"metric": "fE600W_metric",
-			"iconButton": "fE600W_iconButton",
+			"primaryButton": "fE600W_primaryButton",
 			"panel": "fE600W_panel",
-			"controlLabel": "fE600W_controlLabel",
-			"statusLive": "fE600W_statusLive",
 			"infoButton": "fE600W_infoButton",
 			"control": "fE600W_control",
-			"footer": "fE600W_footer",
-			"triggerActive": "fE600W_triggerActive",
-			"state": "fE600W_state",
-			"unit": "fE600W_unit",
-			"unsaved": "fE600W_unsaved",
+			"footerSpacer": "fE600W_footerSpacer",
+			"title": "fE600W_title",
+			"section": "fE600W_section",
+			"statusDot": "fE600W_statusDot",
+			"visuallyHidden": "fE600W_visuallyHidden",
+			"panelHeader": "fE600W_panelHeader",
+			"statusLive": "fE600W_statusLive",
 			"range": "fE600W_range",
 			"secondaryButton": "fE600W_secondaryButton",
-			"section": "fE600W_section",
+			"trigger": "fE600W_trigger",
 			"guide": "fE600W_guide",
-			"statusDot": "fE600W_statusDot",
-			"footerSpacer": "fE600W_footerSpacer",
-			"visuallyHidden": "fE600W_visuallyHidden",
-			"primaryButton": "fE600W_primaryButton"
+			"state": "fE600W_state",
+			"iconButton": "fE600W_iconButton",
+			"metrics": "fE600W_metrics",
+			"controlHead": "fE600W_controlHead",
+			"controlLabel": "fE600W_controlLabel",
+			"number": "fE600W_number",
+			"metric": "fE600W_metric",
+			"unsaved": "fE600W_unsaved",
+			"triggerActive": "fE600W_triggerActive",
+			"scrollArea": "fE600W_scrollArea",
+			"numberWrap": "fE600W_numberWrap",
+			"unit": "fE600W_unit",
+			"footer": "fE600W_footer"
 		};
 		//#endregion
 		//#region src/client/DebugPanel.tsx
@@ -5117,6 +5211,7 @@ window.__ModuleLoader__.load({
 					name: READING_ITEM_SLOT,
 					id: STREAM_SETTINGS_NS,
 					order: 10,
+					label: () => t("title"),
 					locale: NS,
 					inject: () => card.inject()
 				}, SmoothStreamCard));

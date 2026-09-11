@@ -69,6 +69,8 @@ const errors = []
 
 /** Set by the election case: a pre-existing occupant of the shared page. */
 let existingSections = []
+/** Registrations collected on the shared page's card slot (tab roster source). */
+const cards = []
 
 /**
  * Service table. `ctx.get(name)` reads from here (cordis' reflect.get never
@@ -83,23 +85,38 @@ const services = () => ({
       return () => {}
     },
     register: (options, component) => {
-      registrations.push({
+      const record = {
         name: options.name,
         key: options.key,
         id: options.id,
         order: options.order,
         priority: options.priority,
         locale: options.locale,
+        label: options.label,
         children: options.children === undefined ? undefined : Object.keys(options.children),
+        inject: options.inject,
         component,
-      })
+      }
+      registrations.push(record)
+      // StoredEntry shape: the page reads `entry.options.*`.
+      if (options.name === 'reading.settings.item') cards.push({ options: record })
       return () => {}
     },
-    entries: (key) => (key === 'settings.section' ? existingSections : []),
+    entries: (key) => {
+      if (key === 'settings.section') return existingSections
+      if (key === 'reading.settings.item') return cards
+      return []
+    },
+    // The shared page builds its tab roster from the child slot's registry face.
+    getVersion: () => cards.length + existingSections.length,
+    subscribe: () => () => {},
   },
   locale: {
     register: (ns) => { locales.push(ns); return () => {} },
     bind: () => (key) => key,
+    // The shared page re-reads tab labels when the locale revision moves.
+    getSnapshot: () => ({ revision: 0 }),
+    subscribe: () => () => {},
   },
   settingsScope: { bind: (spec) => { injects.push(`bind:${spec.namespace}`); return scope } },
   settings: { register: () => scope, writable: true },
@@ -170,6 +187,14 @@ check('shared page declares its card slot', JSON.stringify(page?.children) === '
 const card = registrations.find(r => r.name === 'reading.settings.item')
 check('smooth-stream card registered on the shared page slot', card !== undefined)
 check('card keyed by its Host settings namespace', card?.id === 'lynn-smooth-stream')
+check('card carries the tab label', typeof card?.label === 'function' && card.label() === 'title')
+
+// The page turns those registrations into tabs.
+const pageFace = typeof page?.inject === 'function' ? page.inject() : undefined
+const tabs = pageFace?.readingTabs?.getSnapshot?.() ?? []
+check('page exposes one tab per registered card', tabs.length === 1 && tabs[0]?.id === 'lynn-smooth-stream')
+check('tab label resolves through the registration label', tabs[0]?.label === 'title')
+check('tab roster is subscribable', typeof pageFace?.readingTabs?.subscribe === 'function')
 check('settings scope bound to the same namespace', injects.some(i => i === 'bind:lynn-smooth-stream'))
 
 const debugPanel = registrations.find(r => r.name === 'conversation.session.header.utilities')
@@ -185,6 +210,7 @@ for (const error of errors) console.log(`       ${error}`)
 
 // Election case: another participant already holds the page.
 registrations.length = 0
+cards.length = 0
 errors.length = 0
 existingSections = [{ options: { id: 'reading' } }]
 try {

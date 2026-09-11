@@ -2,7 +2,7 @@
 /** Dictionary namespace owned by this plugin's settings card. */
 export declare const NS = "settings.chatTranslate";
 /** Locale keys this plugin renders. */
-export type ChatTranslateLocaleKey = 'pageNav';
+export type ChatTranslateLocaleKey = 'pageNav' | 'title';
 /** English copy. */
 export declare const en: Record<ChatTranslateLocaleKey, string>;
 /** Chinese copy. */

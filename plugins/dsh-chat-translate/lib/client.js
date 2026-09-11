@@ -1213,21 +1213,105 @@ var import_react = require("react");
 var READING_PAGE_ID = "reading";
 var READING_PAGE_ORDER = 110;
 var READING_ITEM_SLOT = "reading.settings.item";
-function ReadingSettingsSection({ renderSlot }) {
-  return (0, import_react.createElement)(
-    "ul",
-    {
-      style: {
-        listStyle: "none",
-        margin: 0,
-        padding: 0,
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-        alignItems: "start",
-        gap: "12px"
-      }
+function readLabel(label) {
+  if (typeof label === "function") return label();
+  return typeof label === "string" ? label : "";
+}
+var TABLIST_STYLE = {
+  display: "flex",
+  gap: "4px",
+  marginBottom: "12px",
+  borderBottom: "1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25))"
+};
+var TAB_STYLE = {
+  appearance: "none",
+  background: "transparent",
+  border: "none",
+  borderBottom: "2px solid transparent",
+  marginBottom: "-1px",
+  padding: "6px 12px",
+  cursor: "pointer",
+  font: "inherit",
+  fontSize: "13px",
+  color: "var(--dsw-alias-label-secondary, inherit)"
+};
+var TAB_ACTIVE_STYLE = {
+  ...TAB_STYLE,
+  color: "var(--dsw-alias-label-primary, inherit)",
+  borderBottomColor: "var(--dsw-alias-label-primary, currentColor)",
+  fontWeight: 600
+};
+var PANEL_STYLE = { listStyle: "none", margin: 0, padding: 0 };
+var PANEL_HIDDEN_STYLE = { ...PANEL_STYLE, display: "none" };
+function createReadingTabs(ctx) {
+  const locale = ctx.get("locale");
+  let version = -1;
+  let revision = -1;
+  let tabs = [];
+  return {
+    getSnapshot: () => {
+      const nextVersion = ctx.slots.getVersion(READING_ITEM_SLOT);
+      const nextRevision = locale === void 0 ? 0 : locale.getSnapshot().revision;
+      if (nextVersion === version && nextRevision === revision) return tabs;
+      version = nextVersion;
+      revision = nextRevision;
+      tabs = ctx.slots.entries(READING_ITEM_SLOT).map((entry) => ({
+        id: entry.options.id ?? "",
+        order: entry.options.order ?? 0,
+        label: readLabel(entry.options.label)
+      })).sort((left, right) => left.order - right.order);
+      return tabs;
     },
-    renderSlot(READING_ITEM_SLOT, {})
+    subscribe: (listener) => {
+      const offSlots = ctx.slots.subscribe(READING_ITEM_SLOT, listener);
+      const offLocale = locale?.subscribe(listener);
+      return () => {
+        offSlots();
+        offLocale?.();
+      };
+    }
+  };
+}
+function ReadingSettingsSection({ renderSlot, readingTabs }) {
+  const tabs = (0, import_react.useSyncExternalStore)(
+    readingTabs.subscribe,
+    readingTabs.getSnapshot,
+    readingTabs.getSnapshot
+  );
+  const [requested, setRequested] = (0, import_react.useState)(null);
+  const selected = requested !== null && tabs.some((tab) => tab.id === requested) ? requested : tabs[0]?.id ?? null;
+  if (selected === null) return null;
+  return (0, import_react.createElement)(
+    "div",
+    null,
+    (0, import_react.createElement)(
+      "div",
+      { role: "tablist", style: TABLIST_STYLE },
+      tabs.map((tab) => (0, import_react.createElement)(
+        "button",
+        {
+          key: tab.id,
+          type: "button",
+          role: "tab",
+          "aria-selected": tab.id === selected,
+          style: tab.id === selected ? TAB_ACTIVE_STYLE : TAB_STYLE,
+          onClick: () => {
+            setRequested(tab.id);
+          }
+        },
+        tab.label
+      ))
+    ),
+    tabs.map((tab) => (0, import_react.createElement)(
+      "ul",
+      {
+        key: tab.id,
+        role: "tabpanel",
+        hidden: tab.id !== selected,
+        style: tab.id === selected ? PANEL_STYLE : PANEL_HIDDEN_STYLE
+      },
+      renderSlot(READING_ITEM_SLOT, {}, { only: tab.id })
+    ))
   );
 }
 function readingPageClaimed(ctx) {
@@ -1236,12 +1320,14 @@ function readingPageClaimed(ctx) {
 function claimReadingSettingsPage(ctx, label, locale) {
   if (readingPageClaimed(ctx)) return () => {
   };
+  const readingTabs = createReadingTabs(ctx);
   return ctx.slots.register({
     name: "settings.section",
     id: READING_PAGE_ID,
     order: READING_PAGE_ORDER,
     label,
     locale,
+    inject: () => ({ readingTabs }),
     children: { "reading.settings.item": { kind: "list", scope: "root" } }
   }, ReadingSettingsSection);
 }
@@ -1249,10 +1335,12 @@ function claimReadingSettingsPage(ctx, label, locale) {
 // src/client/locales.ts
 var NS = "settings.chatTranslate";
 var en = {
-  pageNav: "Reading"
+  pageNav: "Reading",
+  title: "Chat translate"
 };
 var zh = {
-  pageNav: "\u9605\u8BFB\u4F53\u9A8C"
+  pageNav: "\u9605\u8BFB\u4F53\u9A8C",
+  title: "\u804A\u5929\u7FFB\u8BD1"
 };
 
 // src/client/settings/ui.tsx
@@ -1516,10 +1604,9 @@ function setupSettingsUi(ctx) {
   try {
     const slots = ctx?.slots || (ctx?.get ? ctx.get("slots") : null);
     if (!slots || typeof slots.inject !== "function") return;
-    const pageCtx = { slots };
     slots.inject(
       "settings.section",
-      () => claimReadingSettingsPage(pageCtx, () => t("pageNav"), NS)
+      () => claimReadingSettingsPage(ctx, () => t("pageNav"), NS)
     );
     slots.inject(
       READING_ITEM_SLOT,
@@ -1530,6 +1617,8 @@ function setupSettingsUi(ctx) {
           id: SETTINGS_NAMESPACE,
           // 卡片在共享页里的顺序：丝滑流式 10、吸顶提示 20、聊天翻译 30
           order: 30,
+          // 共享页按此标签渲染 tab
+          label: () => t("title"),
           locale: NS
         },
         TidySettingsPanel

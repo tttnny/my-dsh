@@ -488,43 +488,135 @@ window.__ModuleLoader__.load({
 		* kernel cannot declare that page jointly: `settings.section` is a list slot
 		* that rejects a duplicate `id` at the same priority ("already has an entry
 		* with id"), and a child slot may be declared exactly once ("slot … is already
-		* declared"). Composing three cards into one page therefore takes one
+		* declared"). Composing several cards into one page therefore takes one
 		* declarer, so every participating plugin carries this same shell and the
 		* FIRST one to activate claims the page; the others register their card into
 		* {@link READING_ITEM_SLOT} and wait for the winner's declaration through
 		* `slots.inject`. Uninstalling the winner promotes another participant on the
 		* next boot, so no participant is a fixed owner.
 		*
+		* The page renders ONE TAB PER REGISTERED CARD: the tab roster comes from the
+		* child slot's own registrations (id + `label` + `order`, the same shape the
+		* kernel's own Plugins page uses for its tabs), and each panel dispatches
+		* through `renderSlot(READING_ITEM_SLOT, {}, { only: id })`. Every panel stays
+		* mounted but hidden, so a card's local state survives a tab switch.
+		*
 		* Keep this file identical across the participating plugins
 		* (`dsh-smooth-stream`, `dsh-oil-sticky-prompt`, `dsh-chat-translate`).
 		* Participants own their own card component, locale dictionaries, settings
 		* namespace and Host half — only the page shell below is shared, because
 		* cross-plugin value imports are forbidden by the client bundle purity gate.
+		* It imports nothing but `react` plus type-only DSH packages on purpose, so
+		* every participant's build configuration compiles it unchanged.
 		*/
 		/** Page id claimed by the first participating plugin to activate. */
 		const READING_PAGE_ID = "reading";
 		/** The page's one child slot: every participant's card registers here. */
 		const READING_ITEM_SLOT = "reading.settings.item";
+		/** A registration label is a plain string or a thunk re-read per projection. */
+		function readLabel(label) {
+			if (typeof label === "function") return label();
+			return typeof label === "string" ? label : "";
+		}
+		const TABLIST_STYLE = {
+			display: "flex",
+			gap: "4px",
+			marginBottom: "12px",
+			borderBottom: "1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25))"
+		};
+		const TAB_STYLE = {
+			appearance: "none",
+			background: "transparent",
+			border: "none",
+			borderBottom: "2px solid transparent",
+			marginBottom: "-1px",
+			padding: "6px 12px",
+			cursor: "pointer",
+			font: "inherit",
+			fontSize: "13px",
+			color: "var(--dsw-alias-label-secondary, inherit)"
+		};
+		const TAB_ACTIVE_STYLE = {
+			...TAB_STYLE,
+			color: "var(--dsw-alias-label-primary, inherit)",
+			borderBottomColor: "var(--dsw-alias-label-primary, currentColor)",
+			fontWeight: 600
+		};
+		/** Panels stay mounted (hidden) so each card keeps its local state. */
+		const PANEL_STYLE = {
+			listStyle: "none",
+			margin: 0,
+			padding: 0
+		};
+		const PANEL_HIDDEN_STYLE = {
+			...PANEL_STYLE,
+			display: "none"
+		};
 		/**
-		* Page body. The shell supplies the section's own seats plus `renderSlot`
-		* bound to the child slot declared at registration time; the page owns the
-		* layout only.
-		*
-		* Cards are laid out SIDE BY SIDE: a markerless grid whose columns fit as many
-		* ~280px cards as the settings column has room for, so the reading plugins sit
-		* in one row on a wide panel and wrap gracefully on a narrow one. Cards render
-		* `<li>` roots, hence the list reset.
+		* Build the live tab roster over the child slot's registrations. `locale` is
+		* read through `ctx.get`: a participant needs it only to re-read localized
+		* labels on a language switch, and reaching an undeclared service as
+		* `ctx.locale` would trip the kernel's inject guard.
+		* @param ctx - browser context carrying the slot registry.
+		* @returns The tab store consumed by the page component.
 		*/
-		function ReadingSettingsSection({ renderSlot }) {
-			return (0, react.createElement)("ul", { style: {
-				listStyle: "none",
-				margin: 0,
-				padding: 0,
-				display: "grid",
-				gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-				alignItems: "start",
-				gap: "12px"
-			} }, renderSlot(READING_ITEM_SLOT, {}));
+		function createReadingTabs(ctx) {
+			const locale = ctx.get("locale");
+			let version = -1;
+			let revision = -1;
+			let tabs = [];
+			return {
+				getSnapshot: () => {
+					const nextVersion = ctx.slots.getVersion(READING_ITEM_SLOT);
+					const nextRevision = locale === void 0 ? 0 : locale.getSnapshot().revision;
+					if (nextVersion === version && nextRevision === revision) return tabs;
+					version = nextVersion;
+					revision = nextRevision;
+					tabs = ctx.slots.entries(READING_ITEM_SLOT).map((entry) => ({
+						id: entry.options.id ?? "",
+						order: entry.options.order ?? 0,
+						label: readLabel(entry.options.label)
+					})).sort((left, right) => left.order - right.order);
+					return tabs;
+				},
+				subscribe: (listener) => {
+					const offSlots = ctx.slots.subscribe(READING_ITEM_SLOT, listener);
+					const offLocale = locale?.subscribe(listener);
+					return () => {
+						offSlots();
+						offLocale?.();
+					};
+				}
+			};
+		}
+		/**
+		* Page body: one tab per registered card, plus the selected card's panel.
+		* The shell supplies the section's own seats and `renderSlot` bound to the
+		* child slot declared at registration time.
+		*/
+		function ReadingSettingsSection({ renderSlot, readingTabs }) {
+			const tabs = (0, react.useSyncExternalStore)(readingTabs.subscribe, readingTabs.getSnapshot, readingTabs.getSnapshot);
+			const [requested, setRequested] = (0, react.useState)(null);
+			const selected = requested !== null && tabs.some((tab) => tab.id === requested) ? requested : tabs[0]?.id ?? null;
+			if (selected === null) return null;
+			return (0, react.createElement)("div", null, (0, react.createElement)("div", {
+				role: "tablist",
+				style: TABLIST_STYLE
+			}, tabs.map((tab) => (0, react.createElement)("button", {
+				key: tab.id,
+				type: "button",
+				role: "tab",
+				"aria-selected": tab.id === selected,
+				style: tab.id === selected ? TAB_ACTIVE_STYLE : TAB_STYLE,
+				onClick: () => {
+					setRequested(tab.id);
+				}
+			}, tab.label))), tabs.map((tab) => (0, react.createElement)("ul", {
+				key: tab.id,
+				role: "tabpanel",
+				hidden: tab.id !== selected,
+				style: tab.id === selected ? PANEL_STYLE : PANEL_HIDDEN_STYLE
+			}, renderSlot(READING_ITEM_SLOT, {}, { only: tab.id }))));
 		}
 		/** Whether a participant already holds the shared page. */
 		function readingPageClaimed(ctx) {
@@ -543,12 +635,14 @@ window.__ModuleLoader__.load({
 		*/
 		function claimReadingSettingsPage(ctx, label, locale) {
 			if (readingPageClaimed(ctx)) return () => {};
+			const readingTabs = createReadingTabs(ctx);
 			return ctx.slots.register({
 				name: "settings.section",
 				id: READING_PAGE_ID,
 				order: 110,
 				label,
 				locale,
+				inject: () => ({ readingTabs }),
 				children: { "reading.settings.item": {
 					kind: "list",
 					scope: "root"
@@ -751,6 +845,7 @@ window.__ModuleLoader__.load({
 					name: READING_ITEM_SLOT,
 					id: STICKY_PROMPT_SETTINGS_NS,
 					order: 20,
+					label: () => t("title"),
 					locale: NS,
 					inject: () => ({ scope })
 				}, StickyPromptCard));

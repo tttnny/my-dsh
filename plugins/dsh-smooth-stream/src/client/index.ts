@@ -267,6 +267,8 @@ export function apply(ctx: ClientContext): void {
       name: READING_ITEM_SLOT,
       id: STREAM_SETTINGS_NS,
       order: 10,
+      // The shared page renders one tab per card, titled by this label.
+      label: () => t('title'),
       locale: SETTINGS_NS,
       inject: () => card.inject(),
     }, SmoothStreamCard))

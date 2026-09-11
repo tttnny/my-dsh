@@ -5,23 +5,31 @@
  * kernel cannot declare that page jointly: `settings.section` is a list slot
  * that rejects a duplicate `id` at the same priority ("already has an entry
  * with id"), and a child slot may be declared exactly once ("slot … is already
- * declared"). Composing three cards into one page therefore takes one
+ * declared"). Composing several cards into one page therefore takes one
  * declarer, so every participating plugin carries this same shell and the
  * FIRST one to activate claims the page; the others register their card into
  * {@link READING_ITEM_SLOT} and wait for the winner's declaration through
  * `slots.inject`. Uninstalling the winner promotes another participant on the
  * next boot, so no participant is a fixed owner.
  *
+ * The page renders ONE TAB PER REGISTERED CARD: the tab roster comes from the
+ * child slot's own registrations (id + `label` + `order`, the same shape the
+ * kernel's own Plugins page uses for its tabs), and each panel dispatches
+ * through `renderSlot(READING_ITEM_SLOT, {}, { only: id })`. Every panel stays
+ * mounted but hidden, so a card's local state survives a tab switch.
+ *
  * Keep this file identical across the participating plugins
  * (`dsh-smooth-stream`, `dsh-oil-sticky-prompt`, `dsh-chat-translate`).
  * Participants own their own card component, locale dictionaries, settings
  * namespace and Host half — only the page shell below is shared, because
  * cross-plugin value imports are forbidden by the client bundle purity gate.
+ * It imports nothing but `react` plus type-only DSH packages on purpose, so
+ * every participant's build configuration compiles it unchanged.
  */
 
-import { createElement } from 'react'
+import { createElement, useState, useSyncExternalStore } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { LocaleNamespaceMap, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, LocaleNamespaceMap, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 
 /** Page id claimed by the first participating plugin to activate. */
 export const READING_PAGE_ID = 'reading'
@@ -37,33 +45,156 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-type ReadingPageProps = PropsRuntime<'settings.section'> & PropsRenderSlots<typeof READING_ITEM_SLOT>
+/** One participant's tab, derived from its card registration. */
+export interface ReadingTab {
+  /** Registration id — the participant's Host settings namespace. */
+  id: string
+  /** Registration order, ascending in the tab bar. */
+  order: number
+  /** Registration label, already resolved for the active locale. */
+  label: string
+}
+
+/** Live tab roster handed to the page component through its inject face. */
+export interface ReadingTabsFace {
+  getSnapshot(): readonly ReadingTab[]
+  subscribe(listener: () => void): () => void
+}
+
+/** Inject face of the shared page. */
+export interface ReadingPageFace {
+  readingTabs: ReadingTabsFace
+}
+
+type ReadingPageProps =
+  PropsRuntime<'settings.section'>
+  & PropsRenderSlots<typeof READING_ITEM_SLOT>
+  & InjectFace<ReadingPageFace>
+
+/** A registration label is a plain string or a thunk re-read per projection. */
+function readLabel(label: unknown): string {
+  if (typeof label === 'function') return (label as () => string)()
+  return typeof label === 'string' ? label : ''
+}
+
+const TABLIST_STYLE = {
+  display: 'flex',
+  gap: '4px',
+  marginBottom: '12px',
+  borderBottom: '1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25))',
+} as const
+
+const TAB_STYLE = {
+  appearance: 'none',
+  background: 'transparent',
+  border: 'none',
+  borderBottom: '2px solid transparent',
+  marginBottom: '-1px',
+  padding: '6px 12px',
+  cursor: 'pointer',
+  font: 'inherit',
+  fontSize: '13px',
+  color: 'var(--dsw-alias-label-secondary, inherit)',
+} as const
+
+const TAB_ACTIVE_STYLE = {
+  ...TAB_STYLE,
+  color: 'var(--dsw-alias-label-primary, inherit)',
+  borderBottomColor: 'var(--dsw-alias-label-primary, currentColor)',
+  fontWeight: 600,
+} as const
+
+/** Panels stay mounted (hidden) so each card keeps its local state. */
+const PANEL_STYLE = { listStyle: 'none', margin: 0, padding: 0 } as const
+const PANEL_HIDDEN_STYLE = { ...PANEL_STYLE, display: 'none' } as const
 
 /**
- * Page body. The shell supplies the section's own seats plus `renderSlot`
- * bound to the child slot declared at registration time; the page owns the
- * layout only.
- *
- * Cards are laid out SIDE BY SIDE: a markerless grid whose columns fit as many
- * ~280px cards as the settings column has room for, so the reading plugins sit
- * in one row on a wide panel and wrap gracefully on a narrow one. Cards render
- * `<li>` roots, hence the list reset.
+ * Build the live tab roster over the child slot's registrations. `locale` is
+ * read through `ctx.get`: a participant needs it only to re-read localized
+ * labels on a language switch, and reaching an undeclared service as
+ * `ctx.locale` would trip the kernel's inject guard.
+ * @param ctx - browser context carrying the slot registry.
+ * @returns The tab store consumed by the page component.
  */
-export function ReadingSettingsSection({ renderSlot }: ReadingPageProps) {
-  return createElement(
-    'ul',
-    {
-      style: {
-        listStyle: 'none',
-        margin: 0,
-        padding: 0,
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-        alignItems: 'start',
-        gap: '12px',
-      },
+function createReadingTabs(ctx: ClientContext): ReadingTabsFace {
+  const locale = ctx.get('locale') as
+    | { getSnapshot(): { revision: number }; subscribe(listener: () => void): () => void }
+    | undefined
+  let version = -1
+  let revision = -1
+  let tabs: readonly ReadingTab[] = []
+  return {
+    getSnapshot: () => {
+      const nextVersion = ctx.slots.getVersion(READING_ITEM_SLOT)
+      const nextRevision = locale === undefined ? 0 : locale.getSnapshot().revision
+      if (nextVersion === version && nextRevision === revision) return tabs
+      version = nextVersion
+      revision = nextRevision
+      tabs = ctx.slots.entries(READING_ITEM_SLOT)
+        .map(entry => ({
+          id: entry.options.id ?? '',
+          order: entry.options.order ?? 0,
+          label: readLabel(entry.options.label),
+        }))
+        .sort((left, right) => left.order - right.order)
+      return tabs
     },
-    renderSlot(READING_ITEM_SLOT, {}),
+    subscribe: (listener) => {
+      const offSlots = ctx.slots.subscribe(READING_ITEM_SLOT, listener)
+      const offLocale = locale?.subscribe(listener)
+      return () => {
+        offSlots()
+        offLocale?.()
+      }
+    },
+  }
+}
+
+/**
+ * Page body: one tab per registered card, plus the selected card's panel.
+ * The shell supplies the section's own seats and `renderSlot` bound to the
+ * child slot declared at registration time.
+ */
+export function ReadingSettingsSection({ renderSlot, readingTabs }: ReadingPageProps) {
+  const tabs = useSyncExternalStore(
+    readingTabs.subscribe,
+    readingTabs.getSnapshot,
+    readingTabs.getSnapshot,
+  )
+  const [requested, setRequested] = useState<string | null>(null)
+  const selected = requested !== null && tabs.some(tab => tab.id === requested)
+    ? requested
+    : tabs[0]?.id ?? null
+  if (selected === null) return null
+  return createElement(
+    'div',
+    null,
+    createElement(
+      'div',
+      { role: 'tablist', style: TABLIST_STYLE },
+      tabs.map(tab => createElement(
+        'button',
+        {
+          key: tab.id,
+          type: 'button',
+          role: 'tab',
+          'aria-selected': tab.id === selected,
+          style: tab.id === selected ? TAB_ACTIVE_STYLE : TAB_STYLE,
+          onClick: () => { setRequested(tab.id) },
+        },
+        tab.label,
+      )),
+    ),
+    tabs.map(tab => createElement(
+      'ul',
+      {
+        key: tab.id,
+        role: 'tabpanel',
+        hidden: tab.id !== selected,
+        style: tab.id === selected ? PANEL_STYLE : PANEL_HIDDEN_STYLE,
+      },
+      renderSlot(READING_ITEM_SLOT, {}, { only: tab.id }),
+    )),
   )
 }
 
@@ -89,12 +220,14 @@ export function claimReadingSettingsPage(
   locale: keyof LocaleNamespaceMap & string,
 ): () => void {
   if (readingPageClaimed(ctx)) return () => {}
+  const readingTabs = createReadingTabs(ctx)
   return ctx.slots.register({
     name: 'settings.section',
     id: READING_PAGE_ID,
     order: READING_PAGE_ORDER,
     label,
     locale,
+    inject: () => ({ readingTabs }),
     children: { 'reading.settings.item': { kind: 'list', scope: 'root' } },
   }, ReadingSettingsSection)
 }
