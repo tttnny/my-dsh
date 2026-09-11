@@ -1,0 +1,6 @@
+# @lynn123411/dsh-web-auth-url bundle patch
+# 声明在 package.json 的 dsh.bundle.patch，`dsh plugin add` 后自动并入 profile 层栈。
+# 只 insert 一行宿主半边：本插件没有客户端半边，也没有要覆盖的内核行。
+- insert:
+    - id: dsh-web-auth-url
+      name: '@lynn123411/dsh-web-auth-url'

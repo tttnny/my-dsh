@@ -1,0 +1,58 @@
+{
+  "name": "@lynn123411/dsh-web-auth-url",
+  "version": "0.1.0",
+  "description": "把当前 Web 实例的带 token 访问地址交给模型与 shell：托管 DSH_WEB_AUTH_URL（每次 shell 调用即时解析，跟随重启后的 token 轮换），并贡献一段紧随 web-surface 的提示词说明 cookie jar 用法，secret 不进提示词与 transcript。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "web",
+    "auth"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tttnny/my-dsh.git",
+    "directory": "plugins/dsh-web-auth-url"
+  },
+  "scripts": {
+    "test": "node scripts/smoke-host.mjs",
+    "check": "node scripts/smoke-host.mjs"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
