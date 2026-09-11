@@ -98,6 +98,7 @@
 | 目录 | 说明 |
 | --- | --- |
 | [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `ptc-cordis` / `matt-cordis`）同进程互斥」。**纯文档补丁（无脚本）**：从运行中的 DSH 进程反推它实际加载的副本再改，锚点/校验/回滚逐字写死在 README 里。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
+| [patch-dsh-agent-loop-inbox-own-events](./patches/patch-dsh-agent-loop-inbox-own-events/) | 修复**分叉子会话继承源会话未认领排队消息**：inbox 投影折叠整个 snapshot（含 fork 继承前缀），而 `init(header, inheritedEventCount)` 拿到的切点未被使用——子会话一建好队列里就带着源会话那条消息，用户发的第一条只能排在它后面，幽灵消息先被认领发给模型。补丁让投影跳过继承前缀（恢复 0.1.5-alpha.1 之前 `session.ownEvents()` 的语义）并作废旧投影缓存行。**纯文档补丁（无脚本）**：从运行中的 DSH 进程反推它实际加载的副本再改，锚点/校验/回滚逐字写死在 README 里。详见 [README](./patches/patch-dsh-agent-loop-inbox-own-events/README.md) |
 | [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的手工改动点说明**：相对官方材料的逐处改动清单（`agent.cordis.yml` 两处 MATT-ADD + 一处 MATT-DEL、`skills/grilling/SKILL.md` 本地适配成品全文）、当前基线、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
 
 ---
