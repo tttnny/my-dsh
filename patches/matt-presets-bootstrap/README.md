@@ -1,13 +1,14 @@
 # matt-presets-bootstrap — 三个 matt preset 的手工改动点说明
 
-三个 matt preset（`matt-standard` / `matt-ptc` / `matt-cordis`）＝ **官方组合逐字** ＋ **Matt 的 25 个技能** ＋ **grilling 适配插件**（`ask_user_grilling`）－ 普通提问工具（`tool-ask-user` 行删除，改动③）。本文逐处说明相对官方材料**改了什么、改成什么样、为什么**，供不跑 `matt-presets-bootstrap.sh`、手工复现/维护时对照。仓库 `presets/matt-*/` 就是改好的成品，直接同步即用；以下改动点只在「从零组装 / DSH 升级后重打」时需要动手。
+三个 matt preset（`matt-standard` / `matt-ptc` / `matt-cordis`）＝ **官方组合逐字** ＋ **Matt 的 25 个技能** ＋ **grilling 适配插件**（`ask_user_grilling`）－ 普通提问工具（`tool-ask-user` 行删除，改动③）。本文逐处说明相对官方材料**改了什么、改成什么样、为什么**，供手工复现/维护时对照（本目录为**纯文档**，无脚本——`matt-presets-bootstrap.sh` 已于 2026-09-04 删除，由 AI 按本文执行）。仓库 `presets/matt-*/` 就是改好的成品，直接同步即用；以下改动点只在「从零组装 / DSH 升级后重打」时需要动手。
 
 改动只发生在两类文件上：`agent.cordis.yml`（官方正文上加两处 MATT-ADD、删一处 MATT-DEL）与 `skills/grilling/SKILL.md`（本地适配，改动内容为中文）。`matt-standard` 与 `matt-cordis` 的 `grilling/SKILL.md` 完全相同；`matt-ptc` 的投递纪律整段按 PTC 形态表述（`run_code` 程序内 `tools.ask_user_grilling`，见 §二 示例二），PTC 措辞不进入非 PTC preset。persona 一行不改——grilling 纪律不写进 persona，而是下沉到技能正文（投递纪律段 + 子代理等齐段）与插件工具描述（模型读到技能/工具时正好看到，比 system prompt 里的抽象禁令有效）。
 
 ## 零、当前基线
 
-- 基底：DSH 0.1.3-alpha.2（dsh-launcher 安装）/ `@deepseek-ai/dsh-agent-presets` 0.1.3-alpha.2（2026-09-08 重打：`presets/matt-*/agent.cordis.yml` 与官方正文逐字一致，差异仅两处 MATT-ADD；官方正文位置：安装目录 `node_modules/.pnpm/@deepseek-ai+dsh-agent-presets@<ver>*/node_modules/@deepseek-ai/dsh-agent-presets/presets/{standard,ptc,cordis,minimal}/agent.cordis.yml`）。
-- 本次同步掉的官方变化：`dsh-persona` 配置键 `text` → **`prefix`（必填）**——旧键被 schema 拒收（`$.prefix missing required value`），persona 行是组合首条 loader entry，挂载整份失败；官方同时把 `Your working directory is {{cwd}}.` 一句挪进新增的 **`suffix`** 行（suffix 渲染在 first-party guidance 之后），`prefix` 只留 `{{model}}` 首句。`ptc-cordis` 的 persona 为自写合成正文（无逐字官方基底），键形同样对齐：加 `suffix:` 行、`prefix` 首句去掉 cwd。
+- 基底：`presets/matt-*/agent.cordis.yml` 的官方正文派生自 **0.1.3-alpha.2**（`@deepseek-ai/dsh-agent-presets@0.1.3-alpha.2`；2026-09-08 重打，差异为两处 MATT-ADD + 一处 MATT-DEL）。官方正文位置：安装目录 `node_modules/.pnpm/@deepseek-ai+dsh-agent-presets@<ver>*/node_modules/@deepseek-ai/dsh-agent-presets/presets/{standard,ptc,cordis,minimal}/agent.cordis.yml`。
+- **已知漂移（尚未重打）**：本机当前运行的是 **DSH 0.1.5-rc.1**（dsh-launcher `versions/0.1.5-rc.1/`，官方组合包 `@deepseek-ai/dsh-agent-presets@0.1.5-rc.1`；同机另装有 rc.2，两版的 `standard` 组合逐字相同）。0.1.5-rc.1 的 `standard` / `ptc` / `cordis` 三份尾部各新增一行 `- id: present` / `name: '@deepseek-ai/dsh-tool-present'`，**仓库三份 matt preset 均未纳入，且没有 MATT-DEL 标记**——不是有意删除，是漏派生。推定影响：matt 会话里模型没有 `present` 工具（按官方组合显式列举该行推断；`@deepseek-ai/dsh-tool-present@0.1.5-rc.1` 在本机存在且可从 presets 包目录 `require.resolve`，补入即可解析。未做实会话实测）。重打时一并补入，步骤见 §五。
+- 上一次实际执行的同步（基线 0.1.3-alpha.2，2026-09-08）掉过的官方变化：`dsh-persona` 配置键 `text` → **`prefix`（必填）**——旧键被 schema 拒收（`$.prefix missing required value`），persona 行是组合首条 loader entry，挂载整份失败；官方同时把 `Your working directory is {{cwd}}.` 一句挪进新增的 **`suffix`** 行（suffix 渲染在 first-party guidance 之后），`prefix` 只留 `{{model}}` 首句。`ptc-cordis` 的 persona 为自写合成正文（无逐字官方基底），键形同样对齐：加 `suffix:` 行、`prefix` 首句去掉 cwd。
 - 上一次同步（2026-09-04，基线 `@deepseek-ai/dsh-agent-presets` 0.1.2-rc.1 / DSH 2.0.5）：`ptc` 头注释改写；`ptc` 的 `tool-workflow` 改为 `disabled: true`（引擎留给 `ralph`，PTC 下不再另 publish 一个模型编排面）；fork 注释改写（issue #2124 表述）；`standard`/`ptc` 注释里的 `tool-subagent-report` 说明段与 plan-mode 尾句以官方正文为准。
 - 标记补齐：两处 MATT-ADD 均带 `# MATT-ADD:` 标记行（`customSkillDirs` 块首行、`tool-ask-user-grilling` 行上三行注释），删除处带两行 `# MATT-DEL:` 标记——升级 diff 时只应看到这三个块，多一行都是官方漂移。
 
@@ -28,13 +29,14 @@
 
 ```yaml
 # MATT-ADD: deliver every grilling round through ask_user_grilling (one form
-# call per round). Skills (incl. grilling) ship upstream-verbatim; the delivery
-# discipline lives in this tool's description, not in persona or skill files.
+# call per round). Skills ship upstream-verbatim except grilling (DSH-delivery
+# note, see patches/matt-presets-bootstrap/README.md section 2); the asking
+# discipline lives in this tool's description plus that note, not in persona.
 - id: tool-ask-user-grilling
   name: '@lynn123411/dsh-ask-user-grilling'
 ```
 
-**原因**：把 grilling 轮次的提问做成工具级硬约束——不调工具就投不出表单，比 persona 里的劝导可靠得多；该行放在 planning 组**之外**（普通工具区）即可，因为 `ask_user_grilling` 消费 host-plane 的 `userQuestions`/`subagents`、无 realm 依赖，也不提供任何 plan-mode 工具（共识达成后交还用户决定下一步）。
+**原因**：把 grilling 轮次的提问做成工具级约束——所有提问一律走它（`tool-ask-user` 行已删，见改动③），不调工具就投不出表单，比 persona 里的劝导可靠得多；该行放在 planning 组**之外**（普通工具区）即可，因为 `ask_user_grilling` 只消费 host-plane 的 `userQuestions`（拆硬闸门后**不再消费 `subagents`**）、无 realm 依赖，也不提供任何 plan-mode 工具（共识达成后交还用户决定下一步）。
 
 - **改动 ③ 删除 `tool-ask-user` 行**：`remaining model-facing rows` 组内的 `- id: tool-ask-user` 块整块删除，原位留两行 `# MATT-DEL:` 标记（见成品）。三份内容相同：
 
@@ -163,12 +165,12 @@ The session is done when the frontier is empty: every branch of the design tree 
 
 ## 四、外部材料（非改动、需自带）
 
-- 插件 `@lynn123411/dsh-ask-user-grilling`（只提供 `ask_user_grilling`，其精简的工具描述承载「grilling 轮次专用、先散文预告同一轮、再以工具投递表单、字段映射、勿自加收尾题、子代理等齐软纪律（无硬闸门）」等工具必知项；多选与每题补充输入框是 UI 自动行为，刻意不写入描述，避免模型为规避多选影响出题）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖），不要只手工拷贝进 `node_modules/@lynn123411/`：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`），此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**（2026-09-08 实例：23:11 profile 同步剪掉手工拷贝的 0.2.1，三份 preset 全隐藏，`pnpm add` 回装后恢复）。仓库 `plugins/dsh-ask-user-grilling/` 是事实源（0.2.3 已发布，仓库与 registry 一致、无待发改点）；如仓库日后含未发布改点，先发布再回装，勿回退到裸拷贝。**原因**：改动② 引用的正是这个包，不装则工具行解析失败；工具描述与技能旁注分工互补——投递纪律只在旁注，等齐纪律两处各表（旁注给完整停轮程序，工具描述给一句劝告，软纪律、无硬闸门），工具描述只留必知项。
+- 插件 `@lynn123411/dsh-ask-user-grilling`（只提供 `ask_user_grilling`，其精简的工具描述承载「grilling 轮次专用、先散文预告同一轮、再以工具投递表单、字段映射、勿自加收尾题、子代理等齐软纪律（无硬闸门）」等工具必知项；多选与每题补充输入框是 UI 自动行为，刻意不写入描述，避免模型为规避多选影响出题）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖），不要只手工拷贝进 `node_modules/@lynn123411/`：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`），此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**（2026-09-08 实例：23:11 profile 同步剪掉手工拷贝的 0.2.1，三份 preset 全隐藏，`pnpm add` 回装后恢复）。仓库 `plugins/dsh-ask-user-grilling/` 是事实源（**0.2.4 已发布**；2026-09-11 起仓库 `README.md` 有文案改动，与 registry 上的 0.2.4 存在 **README-only 差异**——`lib/` 逐字相同）；如仓库日后含未发布改点，先发布再回装，勿回退到裸拷贝。**原因**：改动② 引用的正是这个包，不装则工具行解析失败；工具描述与技能旁注分工互补——投递纪律只在旁注，等齐纪律两处各表（旁注给完整停轮程序，工具描述给一句劝告，软纪律、无硬闸门），工具描述只留必知项。
 - 25 个技能随 mattpocock/skills 上游更新。
 
 ## 五、何时重打
 
-- **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 以新版官方正文覆盖仓库文件，按第一节重打两处 MATT-ADD + 一处 MATT-DEL（注意改动② 的锚点是 `tool-skill` 块，官方若改了该块结构则需手工定位；改动③是删 `tool-ask-user` 行并留标记）；matt-cordis 的两个 cordis 随附技能如有变，从官方 `cordis/skills/` 覆盖。**persona 行始终逐字取官方正文**——官方偶有键级改名（如 0.1.3-alpha.2 的 `text`→`prefix`、cwd 句拆入 `suffix`），不要保留仓库旧写法。
+- **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 以新版官方正文覆盖仓库文件，按第一节重打两处 MATT-ADD + 一处 MATT-DEL（注意改动② 的锚点是 `tool-skill` 块，官方若改了该块结构则需手工定位；改动③是删 `tool-ask-user` 行并留标记），并**逐行核对官方新增行是否已全部纳入**——对「官方正文 vs 仓库成品」做**全量 diff**，不要只看这三个标记块（0.1.5-rc.1 新增的 `present` 行就是这样漏掉的，见 §零 已知漂移）；matt-cordis 的两个 cordis 随附技能如有变，从官方 `cordis/skills/` 覆盖。**persona 行始终逐字取官方正文**——官方偶有键级改名（如 0.1.3-alpha.2 的 `text`→`prefix`、cwd 句拆入 `suffix`），不要保留仓库旧写法。
 - **DSH 升级后（同进程共存）**：官方 `cordis` / `ptc-cordis` / `matt-cordis` 同进程互挂依赖 `dsh-tool-cordis` Host inspect 注册幂等补丁，每次升级/重装后需重打 [`../patch-dsh-cordis-inspect-idempotent/`](../patch-dsh-cordis-inspect-idempotent/README.md)（**纯文档，无脚本**，由 AI 按文执行）。定位目标：从**运行中的 DSH 进程** cmdline 反推 `@deepseek-ai/dsh` 安装目录，再用 Node 自身解析（`require.resolve('@deepseek-ai/dsh-tool-cordis', { paths: [...] })`）取它实际加载的 `lib/index.js`。**不要按固定路径扫**（DSH Desktop 应用包与 dsh-launcher 的 `versions/<ver>/` 是两套互不相干的安装，猜错会「报成功但问题依旧」），**也不要手写 `.pnpm/*` glob**（哈希段随 peer 组合变化）。
 - **Matt 技能上游更新后**：整体覆盖 25 个技能目录，再把对应 preset 的 `grilling/SKILL.md` 成品覆盖回 grilling——`matt-standard` 与 `matt-cordis` 用 §二 示例一；`matt-ptc` 用 §二 示例二（PTC 形态）。其余技能无本地改动。
 

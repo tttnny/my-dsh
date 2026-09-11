@@ -20,7 +20,7 @@ dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 
 ## 与官方 cordis preset 的共存注意事项
 
-`@deepseek-ai/dsh-tool-cordis` 向全局单例 `ctx.cordisInspect` 注册 Host inspect provider 时**没有幂等处理**。同一 DSH 进程内先后挂载两个含 `tool-cordis` 的 preset（官方 `cordis`、`ptc-cordis`、本预设任意两个）会触发 `already registered` 异常。若你确实需要同进程混用，运行仓库里的幂等补丁脚本（详见 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md)）。仅使用本预设则无需任何补丁。
+`@deepseek-ai/dsh-tool-cordis` 向全局单例 `ctx.cordisInspect` 注册 Host inspect provider 时**没有幂等处理**。同一 DSH 进程内先后挂载两个含 `tool-cordis` 的 preset（官方 `cordis`、`ptc-cordis`、本预设任意两个）会触发 `already registered` 异常。若你确实需要同进程混用，按 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md) 执行（**纯文档补丁，无脚本**，由 AI 按文操作）。仅使用本预设则无需任何补丁。
 
 ## 验证
 

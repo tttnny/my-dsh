@@ -93,7 +93,7 @@
 | 目录 | 说明 |
 | --- | --- |
 | [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `ptc-cordis` / `matt-cordis`）同进程互斥」。**纯文档补丁（无脚本）**：从运行中的 DSH 进程反推它实际加载的副本再改，锚点/校验/回滚逐字写死在 README 里。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
-| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的手工改动点说明**：相对官方材料的改动点清单（agent 组合与 grilling 技能）、setup 流程（插件同步 + preset 同步 + 自检）、grilling 会话 check 验收（散文预告必须伴随表单投递）。详见 [README](./patches/matt-presets-bootstrap/README.md) |
+| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的手工改动点说明**：相对官方材料的逐处改动清单（`agent.cordis.yml` 两处 MATT-ADD + 一处 MATT-DEL、`skills/grilling/SKILL.md` 本地适配成品全文）、当前基线与已知漂移、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
 
 ---
 
