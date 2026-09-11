@@ -12,6 +12,10 @@ docs/
 .agent-teams/
 tmp/
 
+# 仓库根 node_modules 不放依赖安装，只放指向当前 DSH 版本内核包的软链接
+# （link: 开发插件的宿主半边要靠它解析 @deepseek-ai/*，见 docs/agents/plugins.md 第 3 条）
+node_modules/
+
 # secrets & local credentials
 .env
 .env.*
