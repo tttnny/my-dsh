@@ -27,7 +27,10 @@ export default defineConfig([
     dts: false,
     sourcemap: true,
     clean: false,
-    // 纯 DOM 插件：无运行时外部依赖，全部打包进 client.js。
+    // react / jsx-runtime 由 Web 外壳的模块表提供（require 走外壳种子），
+    // 其余全部内联；卡片组件是唯一需要 React 的地方。（tsdown 0.22 起
+    // `external` 已弃用，等价写法是 deps.neverBundle。）
+    deps: { neverBundle: ["react", "react/jsx-runtime"] },
     outputOptions: {
       entryFileNames: "client.js",
       banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PLUGIN_ID)}, factory: (require) => {`,

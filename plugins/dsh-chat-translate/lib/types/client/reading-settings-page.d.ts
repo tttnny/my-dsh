@@ -1,0 +1,68 @@
+/**
+ * The shared 「阅读体验」 settings page.
+ *
+ * Several plugins contribute their configuration to ONE settings page, but the
+ * kernel cannot declare that page jointly: `settings.section` is a list slot
+ * that rejects a duplicate `id` at the same priority ("already has an entry
+ * with id"), and a child slot may be declared exactly once ("slot … is already
+ * declared"). Composing three cards into one page therefore takes one
+ * declarer, so every participating plugin carries this same shell and the
+ * FIRST one to activate claims the page; the others register their card into
+ * {@link READING_ITEM_SLOT} and wait for the winner's declaration through
+ * `slots.inject`. Uninstalling the winner promotes another participant on the
+ * next boot, so no participant is a fixed owner.
+ *
+ * Keep this file identical across the participating plugins
+ * (`dsh-smooth-stream`, `dsh-oil-sticky-prompt`, `dsh-chat-translate`).
+ * Participants own their own card component, locale dictionaries, settings
+ * namespace and Host half — only the page shell below is shared, because
+ * cross-plugin value imports are forbidden by the client bundle purity gate.
+ */
+import type { Context as ClientContext } from '@deepseek-ai/cordis';
+import type { LocaleNamespaceMap, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
+/** Page id claimed by the first participating plugin to activate. */
+export declare const READING_PAGE_ID = "reading";
+/** Sidebar position of the shared page; own plugins start at 110. */
+export declare const READING_PAGE_ORDER = 110;
+/** The page's one child slot: every participant's card registers here. */
+export declare const READING_ITEM_SLOT = "reading.settings.item";
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+    interface SlotMap {
+        /** One participating plugin's card inside the shared reading page. */
+        'reading.settings.item': {
+            kind: 'list';
+            scope: 'root';
+        };
+    }
+}
+type ReadingPageProps = PropsRuntime<'settings.section'> & PropsRenderSlots<typeof READING_ITEM_SLOT>;
+/**
+ * Page body. The shell supplies the section's own seats plus `renderSlot`
+ * bound to the child slot declared at registration time; the page itself owns
+ * only the stack. Cards render `<li>` roots, so the stack is a markerless
+ * list — a stray `<li>` under a plain container would draw a bullet.
+ */
+export declare function ReadingSettingsSection({ renderSlot }: ReadingPageProps): import("react").DetailedReactHTMLElement<{
+    style: {
+        listStyle: "none";
+        margin: number;
+        padding: number;
+        display: "grid";
+        gap: string;
+    };
+}, HTMLElement>;
+/** Whether a participant already holds the shared page. */
+export declare function readingPageClaimed(ctx: ClientContext): boolean;
+/**
+ * Claim the shared page when no participant holds it yet. Call inside
+ * `ctx.slots.inject('settings.section', …)`: injection order decides the
+ * winner, and the losers stay silent instead of colliding with the kernel's
+ * duplicate-id and duplicate-declaration guards.
+ * @param ctx - browser context carrying the slot registry.
+ * @param label - page label, re-read by the shell on every projection.
+ * @param locale - locale namespace the label thunk translates through.
+ * @returns The page registration's disposer, or a no-op when another
+ * participant already holds the page.
+ */
+export declare function claimReadingSettingsPage(ctx: ClientContext, label: () => string, locale: keyof LocaleNamespaceMap & string): () => void;
+export {};

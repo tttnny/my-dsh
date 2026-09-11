@@ -4,6 +4,8 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+		let react = require("react");
+		let react_jsx_runtime = require("react/jsx-runtime");
 		//#region src/client/cssEscape.ts
 		/**
 		* CSS 属性选择器双引号值内的转义降级分支。
@@ -296,6 +298,332 @@ window.__ModuleLoader__.load({
 			};
 		}
 		//#endregion
+		//#region src/settings.ts
+		/**
+		* User-owned settings for the sticky-prompt plugin.
+		*
+		* The Host registers the namespace in the durable settings document and the
+		* browser binds the same namespace through the native `settingsScope` service,
+		* so both halves share this one contract module. Deliberately outside
+		* `client/`: the Host half imports it too, and the client half must not own a
+		* path the Host bundle would have to reach through.
+		*/
+		/**
+		* Settings namespace registered by the Host and bound in the browser. It is
+		* also the `id` this plugin's card registers under in the shared 「阅读体验」
+		* page's item slot, and it must stay a lowercase hyphenated identifier (the
+		* kernel validates it at registration).
+		*/
+		const STICKY_PROMPT_SETTINGS_NS = "lynn-sticky-prompt";
+		/** Defaults shared by the Host schema and the browser-side fallback. */
+		const DEFAULT_STICKY_PROMPT_SETTINGS = { enabled: true };
+		//#endregion
+		//#region src/client/StickyPromptCard.tsx
+		/**
+		* The sticky-prompt card inside the shared 「阅读体验」 settings page.
+		*
+		* One preference, written straight through the bound namespace scope: the Host
+		* document stays the single authority, so the card keeps no draft state and the
+		* browser half follows the committed value live. The chrome mirrors the shipped
+		* plugin-card look with inline styles, because the Host cards' styles are not
+		* exported for reuse and this plugin ships no CSS pipeline to keep it
+		* dependency-light.
+		*/
+		/** Card chrome, mirroring the shipped plugin-card look through theme tokens. */
+		const styles = {
+			card: {
+				listStyle: "none",
+				display: "flex",
+				flexDirection: "column",
+				border: "1px solid var(--dsw-alias-border-l2)",
+				borderRadius: "12px",
+				background: "var(--dsw-alias-bg-layer-3)"
+			},
+			header: {
+				display: "flex",
+				flexDirection: "column",
+				gap: "4px",
+				padding: "14px 16px 12px"
+			},
+			name: {
+				fontWeight: 600,
+				fontSize: "15px",
+				lineHeight: 1.4,
+				color: "var(--dsw-alias-label-primary)"
+			},
+			description: {
+				fontSize: "13px",
+				lineHeight: 1.5,
+				color: "var(--dsw-alias-label-tertiary)"
+			},
+			body: {
+				display: "flex",
+				flexDirection: "column",
+				margin: "0 16px",
+				paddingBottom: "8px",
+				borderTop: "1px solid var(--dsw-alias-border-l2)"
+			},
+			field: {
+				display: "flex",
+				flexDirection: "column",
+				gap: "6px",
+				padding: "12px 0"
+			},
+			fieldHead: {
+				display: "flex",
+				alignItems: "center",
+				justifyContent: "space-between",
+				gap: "8px"
+			},
+			label: {
+				flex: 1,
+				minWidth: 0,
+				fontSize: "13px",
+				fontWeight: 500,
+				lineHeight: 1.5,
+				color: "var(--dsw-alias-label-primary)"
+			},
+			toggle: {
+				flex: "none",
+				width: "16px",
+				height: "16px",
+				accentColor: "var(--dsw-alias-brand-primary)",
+				cursor: "pointer"
+			},
+			hint: {
+				margin: 0,
+				fontSize: "12px",
+				lineHeight: 1.5,
+				color: "var(--dsw-alias-label-tertiary)"
+			},
+			statusLine: {
+				margin: 0,
+				paddingBottom: "8px",
+				fontSize: "12px",
+				lineHeight: 1.5,
+				color: "var(--dsw-alias-label-tertiary)"
+			},
+			failure: {
+				margin: 0,
+				paddingBottom: "8px",
+				fontSize: "12px",
+				lineHeight: 1.5,
+				color: "var(--dsw-alias-label-error)"
+			}
+		};
+		/** Status copy for a scope that cannot serve an edit right now. */
+		function statusKey(snapshot) {
+			if (snapshot.status === "loading") return "loading";
+			if (snapshot.status === "unavailable") return "unavailable";
+			return snapshot.writable ? void 0 : "readOnly";
+		}
+		/** Render the sticky-prompt card independently of the core settings namespace allowlist. */
+		function StickyPromptCard(props) {
+			const { t, scope } = props;
+			const snapshot = (0, react.useSyncExternalStore)((0, react.useCallback)((listener) => scope.subscribe(listener), [scope]), (0, react.useCallback)(() => scope.getSnapshot(), [scope]));
+			const [failed, setFailed] = (0, react.useState)(false);
+			const status = statusKey(snapshot);
+			const enabled = snapshot.value?.enabled ?? DEFAULT_STICKY_PROMPT_SETTINGS.enabled;
+			const write = (next) => {
+				setFailed(false);
+				scope.set("enabled", next).catch(() => {
+					setFailed(true);
+				});
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+				style: styles.card,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					style: styles.header,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: styles.name,
+						children: t("title")
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: styles.description,
+						children: t("description")
+					})]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					style: styles.body,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							style: styles.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								style: styles.fieldHead,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: styles.label,
+									children: t("enabled")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									type: "checkbox",
+									style: styles.toggle,
+									checked: enabled,
+									disabled: status !== void 0,
+									onChange: (event) => {
+										write(event.target.checked);
+									}
+								})]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								style: styles.hint,
+								children: t("enabledHint")
+							})]
+						}),
+						status === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							style: styles.statusLine,
+							role: "status",
+							children: t(status)
+						}),
+						failed ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							style: styles.failure,
+							role: "status",
+							children: t("writeFailed")
+						}) : null
+					]
+				})]
+			});
+		}
+		//#endregion
+		//#region src/client/reading-settings-page.tsx
+		/**
+		* The shared 「阅读体验」 settings page.
+		*
+		* Several plugins contribute their configuration to ONE settings page, but the
+		* kernel cannot declare that page jointly: `settings.section` is a list slot
+		* that rejects a duplicate `id` at the same priority ("already has an entry
+		* with id"), and a child slot may be declared exactly once ("slot … is already
+		* declared"). Composing three cards into one page therefore takes one
+		* declarer, so every participating plugin carries this same shell and the
+		* FIRST one to activate claims the page; the others register their card into
+		* {@link READING_ITEM_SLOT} and wait for the winner's declaration through
+		* `slots.inject`. Uninstalling the winner promotes another participant on the
+		* next boot, so no participant is a fixed owner.
+		*
+		* Keep this file identical across the participating plugins
+		* (`dsh-smooth-stream`, `dsh-oil-sticky-prompt`, `dsh-chat-translate`).
+		* Participants own their own card component, locale dictionaries, settings
+		* namespace and Host half — only the page shell below is shared, because
+		* cross-plugin value imports are forbidden by the client bundle purity gate.
+		*/
+		/** Page id claimed by the first participating plugin to activate. */
+		const READING_PAGE_ID = "reading";
+		/** The page's one child slot: every participant's card registers here. */
+		const READING_ITEM_SLOT = "reading.settings.item";
+		/**
+		* Page body. The shell supplies the section's own seats plus `renderSlot`
+		* bound to the child slot declared at registration time; the page itself owns
+		* only the stack. Cards render `<li>` roots, so the stack is a markerless
+		* list — a stray `<li>` under a plain container would draw a bullet.
+		*/
+		function ReadingSettingsSection({ renderSlot }) {
+			return (0, react.createElement)("ul", { style: {
+				listStyle: "none",
+				margin: 0,
+				padding: 0,
+				display: "grid",
+				gap: "12px"
+			} }, renderSlot(READING_ITEM_SLOT, {}));
+		}
+		/** Whether a participant already holds the shared page. */
+		function readingPageClaimed(ctx) {
+			return ctx.slots.entries("settings.section").some((entry) => entry.options.id === READING_PAGE_ID);
+		}
+		/**
+		* Claim the shared page when no participant holds it yet. Call inside
+		* `ctx.slots.inject('settings.section', …)`: injection order decides the
+		* winner, and the losers stay silent instead of colliding with the kernel's
+		* duplicate-id and duplicate-declaration guards.
+		* @param ctx - browser context carrying the slot registry.
+		* @param label - page label, re-read by the shell on every projection.
+		* @param locale - locale namespace the label thunk translates through.
+		* @returns The page registration's disposer, or a no-op when another
+		* participant already holds the page.
+		*/
+		function claimReadingSettingsPage(ctx, label, locale) {
+			if (readingPageClaimed(ctx)) return () => {};
+			return ctx.slots.register({
+				name: "settings.section",
+				id: READING_PAGE_ID,
+				order: 110,
+				label,
+				locale,
+				children: { "reading.settings.item": {
+					kind: "list",
+					scope: "root"
+				} }
+			}, ReadingSettingsSection);
+		}
+		//#endregion
+		//#region src/client/stickyPromptRuntime.ts
+		/**
+		* Owner of the sticky-prompt DOM behaviour, driven by the `enabled` preference.
+		*
+		* The installer already returns a disposer, so a toggle is a plain
+		* install/dispose pair with no partial teardown. Routing both activation paths
+		* (startup default, settings-driven flips) through one owner keeps a single
+		* writer, so at most one installation — one listener set, one timer map, one
+		* injected host per scroller — can exist at a time.
+		*/
+		/** Preference-driven lifecycle of the sticky-prompt installation. */
+		var StickyPromptRuntime = class {
+			install;
+			release;
+			/**
+			* @param install - installer producing its own disposer. Injectable so the
+			* toggle logic stays testable without a DOM; the production caller passes
+			* {@link installStickyUserRows}.
+			*/
+			constructor(install = installStickyUserRows) {
+				this.install = install;
+			}
+			/**
+			* Apply a preference value: installs on the off→on edge, disposes the
+			* listeners, timers, and injected DOM on the on→off edge, and does nothing
+			* when the requested value already holds — so a redundant scope notification
+			* never restarts the behaviour and drops the currently pinned row.
+			* @param enabled - the value the user's section resolves to.
+			*/
+			setEnabled(enabled) {
+				if (enabled === (this.release !== void 0)) return;
+				if (!enabled) {
+					this.release?.();
+					this.release = void 0;
+					return;
+				}
+				this.release = this.install();
+			}
+			/** Release the installation whatever the preference says (plugin or service teardown). */
+			dispose() {
+				this.release?.();
+				this.release = void 0;
+			}
+		};
+		//#endregion
+		//#region src/client/locales.ts
+		/** Locale bundles for the sticky-prompt card inside the shared 「阅读体验」 settings page. */
+		/** Dictionary namespace owned by this plugin's settings card. */
+		const NS = "settings.oilStickyPrompt";
+		/** English copy. */
+		const en = {
+			title: "Sticky prompt",
+			description: "Pin the latest user message to the top of the conversation so the current question stays in view.",
+			pageNav: "Reading",
+			enabled: "Enable the sticky prompt",
+			enabledHint: "Turn off to stop injecting the sticky bar; turning it back on restores it immediately.",
+			loading: "Loading plugin settings…",
+			readOnly: "This deployment stores settings read-only.",
+			unavailable: "Plugin settings are unavailable in this connection.",
+			writeFailed: "The deployment did not accept this change; the effective value is unchanged."
+		};
+		/** Simplified Chinese copy. */
+		const zh = {
+			title: "吸顶提示",
+			description: "把最近的用户消息固定在对话流顶部，长上下文回看时不丢失当前问题。",
+			pageNav: "阅读体验",
+			enabled: "启用吸顶提示",
+			enabledHint: "关闭后不再注入吸顶条；重新开启立即恢复。",
+			loading: "正在加载插件设置…",
+			readOnly: "本部署的设置为只读。",
+			unavailable: "当前连接无法访问插件设置。",
+			writeFailed: "本部署没有接受这次修改，当前生效值未改变。"
+		};
+		//#endregion
 		//#region src/client/index.tsx
 		const STYLE_ID = "dsh-oil-sticky-prompt";
 		const STYLES = `
@@ -362,6 +690,13 @@ window.__ModuleLoader__.load({
 		const name = "dsh-oil-sticky-prompt";
 		/** 无硬依赖的纯 DOM 观察插件：不等待任何服务，immediately 由 package.json 声明。 */
 		const inject = [];
+		/**
+		* 浏览器半边：把吸顶行为的生命周期接到用户偏好上。
+		*
+		* 样式表与 DOM 行为分开挂载：样式是惰性的（关闭时页面里没有宿主节点可命中），
+		* 随插件卸载回收即可；行为则由 StickyPromptRuntime 单一持有，随 `enabled`
+		* 偏好安装 / 拆除，因此不会出现两份监听器或重复注入的宿主节点。
+		*/
 		function apply(ctx) {
 			ctx.effect(() => {
 				const existing = document.querySelector(`style[data-plugin-css=${JSON.stringify(STYLE_ID)}]`);
@@ -374,7 +709,46 @@ window.__ModuleLoader__.load({
 					tag.remove();
 				};
 			}, "dsh-oil-sticky-prompt: styles");
-			ctx.effect(() => installStickyUserRows(), "dsh-oil-sticky-prompt: stick");
+			const runtime = new StickyPromptRuntime(installStickyUserRows);
+			ctx.effect(() => {
+				runtime.setEnabled(DEFAULT_STICKY_PROMPT_SETTINGS.enabled);
+				return () => {
+					runtime.dispose();
+				};
+			}, "dsh-oil-sticky-prompt: stick");
+			ctx.inject([
+				"slots",
+				"locale",
+				"settingsScope"
+			], (settingsCtx) => {
+				const scope = settingsCtx.settingsScope.bind({ namespace: STICKY_PROMPT_SETTINGS_NS });
+				const t = settingsCtx.locale.bind(NS);
+				settingsCtx.effect(() => settingsCtx.locale.register(NS, {
+					zh,
+					en
+				}), "dsh-oil-sticky-prompt: settings dictionaries");
+				settingsCtx.effect(() => {
+					const sync = () => {
+						const snapshot = scope.getSnapshot();
+						if (snapshot.status !== "ready") return;
+						runtime.setEnabled(snapshot.value?.enabled ?? DEFAULT_STICKY_PROMPT_SETTINGS.enabled);
+					};
+					const off = scope.subscribe(sync);
+					sync();
+					return () => {
+						off();
+						runtime.setEnabled(DEFAULT_STICKY_PROMPT_SETTINGS.enabled);
+					};
+				}, "dsh-oil-sticky-prompt: enabled preference");
+				settingsCtx.slots.inject("settings.section", () => claimReadingSettingsPage(settingsCtx, () => t("pageNav"), NS));
+				settingsCtx.slots.inject(READING_ITEM_SLOT, () => settingsCtx.slots.register({
+					name: READING_ITEM_SLOT,
+					id: STICKY_PROMPT_SETTINGS_NS,
+					order: 20,
+					locale: NS,
+					inject: () => ({ scope })
+				}, StickyPromptCard));
+			});
 		}
 		//#endregion
 		exports.apply = apply;

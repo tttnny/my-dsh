@@ -738,7 +738,7 @@ var ChatTranslateObserver = class {
 var chatTranslateObserver = new ChatTranslateObserver();
 
 // src/client/settings/ui.tsx
-var import_react = require("react");
+var import_react2 = require("react");
 
 // src/client/settings/store.ts
 var SETTINGS_NAMESPACE = "dsh-chat-translate";
@@ -1208,6 +1208,43 @@ var SETTINGS_CSS = String.raw`
 }
 `;
 
+// src/client/reading-settings-page.tsx
+var import_react = require("react");
+var READING_PAGE_ID = "reading";
+var READING_PAGE_ORDER = 110;
+var READING_ITEM_SLOT = "reading.settings.item";
+function ReadingSettingsSection({ renderSlot }) {
+  return (0, import_react.createElement)(
+    "ul",
+    { style: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "12px" } },
+    renderSlot(READING_ITEM_SLOT, {})
+  );
+}
+function readingPageClaimed(ctx) {
+  return ctx.slots.entries("settings.section").some((entry) => entry.options.id === READING_PAGE_ID);
+}
+function claimReadingSettingsPage(ctx, label, locale) {
+  if (readingPageClaimed(ctx)) return () => {
+  };
+  return ctx.slots.register({
+    name: "settings.section",
+    id: READING_PAGE_ID,
+    order: READING_PAGE_ORDER,
+    label,
+    locale,
+    children: { "reading.settings.item": { kind: "list", scope: "root" } }
+  }, ReadingSettingsSection);
+}
+
+// src/client/locales.ts
+var NS = "settings.chatTranslate";
+var en = {
+  pageNav: "Reading"
+};
+var zh = {
+  pageNav: "\u9605\u8BFB\u4F53\u9A8C"
+};
+
 // src/client/settings/ui.tsx
 var import_jsx_runtime = require("react/jsx-runtime");
 var stylesInjected = false;
@@ -1232,14 +1269,14 @@ function Switch(props) {
     }
   );
 }
-function TidySettingsPanel() {
+function TidySettingsPanel(_props) {
   ensureSettingsStyles();
-  const [state, setState] = (0, import_react.useState)(() => settingsStore.getState());
-  const [testing, setTesting] = (0, import_react.useState)(null);
-  const [apiKeyInput, setApiKeyInput] = (0, import_react.useState)("");
-  const [savingKey, setSavingKey] = (0, import_react.useState)(false);
-  const [keyMsg, setKeyMsg] = (0, import_react.useState)(null);
-  (0, import_react.useEffect)(() => {
+  const [state, setState] = (0, import_react2.useState)(() => settingsStore.getState());
+  const [testing, setTesting] = (0, import_react2.useState)(null);
+  const [apiKeyInput, setApiKeyInput] = (0, import_react2.useState)("");
+  const [savingKey, setSavingKey] = (0, import_react2.useState)(false);
+  const [keyMsg, setKeyMsg] = (0, import_react2.useState)(null);
+  (0, import_react2.useEffect)(() => {
     return settingsStore.subscribe(() => {
       setState(settingsStore.getState());
     });
@@ -1458,21 +1495,36 @@ function setupSettingsUi(ctx) {
   } catch (err) {
     console.warn("[dsh-chat-translate] Failed to bind settings scope:", err);
   }
+  const locale = ctx?.locale || (ctx?.get ? ctx.get("locale") : null);
+  if (locale && typeof locale.register === "function" && typeof ctx?.effect === "function") {
+    ctx.effect(
+      () => locale.register(NS, { zh, en }),
+      "dsh-chat-translate: locale dictionaries"
+    );
+  }
+  const t = locale && typeof locale.bind === "function" ? locale.bind(NS) : () => zh.pageNav;
   try {
     const slots = ctx?.slots || (ctx?.get ? ctx.get("slots") : null);
     if (!slots || typeof slots.inject !== "function") return;
-    slots.inject("settings.section", () => {
-      return slots.register(
+    const pageCtx = { slots };
+    slots.inject(
+      "settings.section",
+      () => claimReadingSettingsPage(pageCtx, () => t("pageNav"), NS)
+    );
+    slots.inject(
+      READING_ITEM_SLOT,
+      () => slots.register(
         {
-          name: "settings.section",
-          id: "dsh-chat-translate",
-          // 约定：自有插件设置项 order 从 110 起步进 10（原生最大 100=桌面设置），保证排在所有原生项之下
-          order: 110,
-          label: () => "\u804A\u5929\u7FFB\u8BD1"
+          name: READING_ITEM_SLOT,
+          // id = 本插件的 Host 设置命名空间（settings.section 时代的 id 沿用）
+          id: SETTINGS_NAMESPACE,
+          // 卡片在共享页里的顺序：丝滑流式 10、吸顶提示 20、聊天翻译 30
+          order: 30,
+          locale: NS
         },
         TidySettingsPanel
-      );
-    });
+      )
+    );
   } catch (err) {
     console.warn("[dsh-chat-translate] Failed to inject settings section:", err);
   }
