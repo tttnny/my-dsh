@@ -77,31 +77,39 @@ function readLabel(label: unknown): string {
   return typeof label === 'string' ? label : ''
 }
 
+/**
+ * Tab chrome mirrors the kernel's own settings tabs (`.tabs` / `.tab` in
+ * `ui-settings-plugins`): tertiary label, 13px, 22px gutter. The marker is the
+ * ACTIVE TAB'S OWN bottom border and the bar draws no rail of its own — a
+ * shared underline reads as "every tab is selected", which is exactly the bug
+ * this replaces.
+ */
 const TABLIST_STYLE = {
   display: 'flex',
-  gap: '4px',
-  marginBottom: '12px',
-  borderBottom: '1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25))',
+  alignItems: 'flex-end',
+  gap: '22px',
+  marginTop: '2px',
+  marginBottom: '16px',
 } as const
 
 const TAB_STYLE = {
   appearance: 'none',
   background: 'transparent',
   border: 'none',
+  // Reserved so switching tabs never shifts the row by the marker's height.
   borderBottom: '2px solid transparent',
-  marginBottom: '-1px',
-  padding: '6px 12px',
+  padding: '7px 1px 9px',
   cursor: 'pointer',
   font: 'inherit',
   fontSize: '13px',
-  color: 'var(--dsw-alias-label-secondary, inherit)',
+  lineHeight: '20px',
+  color: 'var(--dsw-alias-label-tertiary, inherit)',
 } as const
 
 const TAB_ACTIVE_STYLE = {
   ...TAB_STYLE,
   color: 'var(--dsw-alias-label-primary, inherit)',
   borderBottomColor: 'var(--dsw-alias-label-primary, currentColor)',
-  fontWeight: 600,
 } as const
 
 /** Panels stay mounted (hidden) so each card keeps its local state. */
