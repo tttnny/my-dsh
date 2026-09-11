@@ -1227,10 +1227,11 @@ var TABLIST_STYLE = {
 var TAB_STYLE = {
   appearance: "none",
   background: "transparent",
+  // No border on ANY tab: the marker below is the active tab's own element, so
+  // an inactive tab has nothing that could render a line.
   border: "none",
-  // Reserved so switching tabs never shifts the row by the marker's height.
-  borderBottom: "2px solid transparent",
-  padding: "7px 1px 9px",
+  position: "relative",
+  padding: "7px 1px 11px",
   cursor: "pointer",
   font: "inherit",
   fontSize: "13px",
@@ -1239,8 +1240,16 @@ var TAB_STYLE = {
 };
 var TAB_ACTIVE_STYLE = {
   ...TAB_STYLE,
-  color: "var(--dsw-alias-label-primary, inherit)",
-  borderBottomColor: "var(--dsw-alias-label-primary, currentColor)"
+  color: "var(--dsw-alias-label-primary, inherit)"
+};
+var TAB_MARKER_STYLE = {
+  position: "absolute",
+  left: 0,
+  right: 0,
+  bottom: 0,
+  height: "2px",
+  borderRadius: "2px 2px 0 0",
+  background: "var(--dsw-alias-label-primary, currentColor)"
 };
 var PANEL_STYLE = { listStyle: "none", margin: 0, padding: 0 };
 var PANEL_HIDDEN_STYLE = { ...PANEL_STYLE, display: "none" };
@@ -1300,7 +1309,8 @@ function ReadingSettingsSection({ renderSlot, readingTabs }) {
             setRequested(tab.id);
           }
         },
-        tab.label
+        tab.label,
+        tab.id === selected ? (0, import_react.createElement)("span", { style: TAB_MARKER_STYLE, "aria-hidden": true }) : null
       ))
     ),
     tabs.map((tab) => (0, import_react.createElement)(
@@ -1601,7 +1611,7 @@ function setupSettingsUi(ctx) {
       "dsh-chat-translate: locale dictionaries"
     );
   }
-  const t = locale && typeof locale.bind === "function" ? locale.bind(NS) : () => zh.pageNav;
+  const t = locale && typeof locale.bind === "function" ? locale.bind(NS) : (key) => zh[key] ?? key;
   try {
     const slots = ctx?.slots || (ctx?.get ? ctx.get("slots") : null);
     if (!slots || typeof slots.inject !== "function") return;

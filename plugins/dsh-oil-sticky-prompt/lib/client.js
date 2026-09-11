@@ -536,8 +536,8 @@ window.__ModuleLoader__.load({
 			appearance: "none",
 			background: "transparent",
 			border: "none",
-			borderBottom: "2px solid transparent",
-			padding: "7px 1px 9px",
+			position: "relative",
+			padding: "7px 1px 11px",
 			cursor: "pointer",
 			font: "inherit",
 			fontSize: "13px",
@@ -546,8 +546,17 @@ window.__ModuleLoader__.load({
 		};
 		const TAB_ACTIVE_STYLE = {
 			...TAB_STYLE,
-			color: "var(--dsw-alias-label-primary, inherit)",
-			borderBottomColor: "var(--dsw-alias-label-primary, currentColor)"
+			color: "var(--dsw-alias-label-primary, inherit)"
+		};
+		/** The kernel's own tab marker: a 2px rounded bar under the active label. */
+		const TAB_MARKER_STYLE = {
+			position: "absolute",
+			left: 0,
+			right: 0,
+			bottom: 0,
+			height: "2px",
+			borderRadius: "2px 2px 0 0",
+			background: "var(--dsw-alias-label-primary, currentColor)"
 		};
 		/** Panels stay mounted (hidden) so each card keeps its local state. */
 		const PANEL_STYLE = {
@@ -618,7 +627,10 @@ window.__ModuleLoader__.load({
 				onClick: () => {
 					setRequested(tab.id);
 				}
-			}, tab.label))), tabs.map((tab) => (0, react.createElement)("ul", {
+			}, tab.label, tab.id === selected ? (0, react.createElement)("span", {
+				style: TAB_MARKER_STYLE,
+				"aria-hidden": true
+			}) : null))), tabs.map((tab) => (0, react.createElement)("ul", {
 				key: tab.id,
 				role: "tabpanel",
 				hidden: tab.id !== selected,

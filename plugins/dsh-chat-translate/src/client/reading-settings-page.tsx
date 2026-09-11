@@ -95,10 +95,11 @@ const TABLIST_STYLE = {
 const TAB_STYLE = {
   appearance: 'none',
   background: 'transparent',
+  // No border on ANY tab: the marker below is the active tab's own element, so
+  // an inactive tab has nothing that could render a line.
   border: 'none',
-  // Reserved so switching tabs never shifts the row by the marker's height.
-  borderBottom: '2px solid transparent',
-  padding: '7px 1px 9px',
+  position: 'relative',
+  padding: '7px 1px 11px',
   cursor: 'pointer',
   font: 'inherit',
   fontSize: '13px',
@@ -109,7 +110,17 @@ const TAB_STYLE = {
 const TAB_ACTIVE_STYLE = {
   ...TAB_STYLE,
   color: 'var(--dsw-alias-label-primary, inherit)',
-  borderBottomColor: 'var(--dsw-alias-label-primary, currentColor)',
+} as const
+
+/** The kernel's own tab marker: a 2px rounded bar under the active label. */
+const TAB_MARKER_STYLE = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  bottom: 0,
+  height: '2px',
+  borderRadius: '2px 2px 0 0',
+  background: 'var(--dsw-alias-label-primary, currentColor)',
 } as const
 
 /** Panels stay mounted (hidden) so each card keeps its local state. */
@@ -191,6 +202,7 @@ export function ReadingSettingsSection({ renderSlot, readingTabs }: ReadingPageP
           onClick: () => { setRequested(tab.id) },
         },
         tab.label,
+        tab.id === selected ? createElement('span', { style: TAB_MARKER_STYLE, 'aria-hidden': true }) : null,
       )),
     ),
     tabs.map(tab => createElement(

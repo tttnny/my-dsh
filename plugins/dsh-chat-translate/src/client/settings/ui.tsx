@@ -4,7 +4,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { settingsStore, SETTINGS_NAMESPACE, type ClientSettingsState } from './store.ts';
 import { SETTINGS_CSS } from './styles.ts';
 import { claimReadingSettingsPage, READING_ITEM_SLOT } from '../reading-settings-page.tsx';
-import { NS, en, zh } from '../locales.ts';
+import { NS, en, zh, type ChatTranslateLocaleKey } from '../locales.ts';
 let stylesInjected = false;
 function ensureSettingsStyles(): void {
   if (stylesInjected || typeof document === 'undefined') return;
@@ -299,10 +299,12 @@ export function setupSettingsUi(ctx: any): void {
       'dsh-chat-translate: locale dictionaries'
     );
   }
-  const t =
-    locale && typeof locale.bind === 'function'
-      ? locale.bind(NS)
-      : (): string => zh.pageNav;
+  const t = locale && typeof locale.bind === 'function'
+    ? locale.bind(NS)
+    // Key-aware fallback: an earlier revision returned `zh.pageNav` for EVERY
+    // key, which labelled the shared page's tab with the page name instead of
+    // this plugin's own title whenever the locale service was not yet there.
+    : (key: ChatTranslateLocaleKey): string => zh[key] ?? key;
 
   try {
     const slots = ctx?.slots || (ctx?.get ? ctx.get('slots') : null);

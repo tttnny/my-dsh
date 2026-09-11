@@ -23,27 +23,27 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$3;
 		}
 		var TypewriterAssistantNodeView_module_css_default = {
-			"thinkBody": "_07evbq_thinkBody",
-			"thinkSummary": "_07evbq_thinkSummary",
-			"stopped": "_07evbq_stopped",
+			"disclosureContent": "_07evbq_disclosureContent",
+			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
+			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
 			"think": "_07evbq_think",
+			"stopped": "_07evbq_stopped",
+			"body": "_07evbq_body",
+			"thinkSeparator": "_07evbq_thinkSeparator",
 			"disclosureTitle": "_07evbq_disclosureTitle",
-			"thinkRow": "_07evbq_thinkRow",
+			"thinkTitle": "_07evbq_thinkTitle",
 			"disclosureRow": "_07evbq_disclosureRow",
 			"thinkLeading": "_07evbq_thinkLeading",
-			"thinkSeparator": "_07evbq_thinkSeparator",
 			"disclosureLeading": "_07evbq_disclosureLeading",
-			"thinkChevron": "_07evbq_thinkChevron",
-			"root": "_07evbq_root",
-			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
-			"thinkTitle": "_07evbq_thinkTitle",
-			"disclosureContent": "_07evbq_disclosureContent",
+			"thinkBody": "_07evbq_thinkBody",
 			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
-			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
-			"follow": "_07evbq_follow",
 			"visuallyHidden": "_07evbq_visuallyHidden",
+			"root": "_07evbq_root",
+			"thinkSummary": "_07evbq_thinkSummary",
 			"disclosureRoot": "_07evbq_disclosureRoot",
-			"body": "_07evbq_body"
+			"thinkRow": "_07evbq_thinkRow",
+			"thinkChevron": "_07evbq_thinkChevron",
+			"follow": "_07evbq_follow"
 		};
 		//#endregion
 		//#region src/client/AnimatedDisclosure.tsx
@@ -3510,8 +3510,8 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$2;
 		}
 		var AgentRowEntrance_module_css_default = {
-			"surface": "_72ZBkW_surface",
-			"dsh-smooth-stream-agent-row-in": "_72ZBkW_dsh-smooth-stream-agent-row-in"
+			"dsh-smooth-stream-agent-row-in": "_72ZBkW_dsh-smooth-stream-agent-row-in",
+			"surface": "_72ZBkW_surface"
 		};
 		//#endregion
 		//#region src/client/TypewriterToolNodeView.tsx
@@ -3707,33 +3707,33 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$1;
 		}
 		var SmoothStreamCard_module_css_default = {
-			"footer": "QGTmaa_footer",
-			"choiceInput": "QGTmaa_choiceInput",
-			"failed": "QGTmaa_failed",
-			"hint": "QGTmaa_hint",
 			"cardOpen": "QGTmaa_cardOpen",
-			"name": "QGTmaa_name",
-			"save": "QGTmaa_save",
-			"readOnly": "QGTmaa_readOnly",
-			"body": "QGTmaa_body",
-			"update": "QGTmaa_update",
-			"pending": "QGTmaa_pending",
-			"version": "QGTmaa_version",
-			"field": "QGTmaa_field",
-			"label": "QGTmaa_label",
 			"failure": "QGTmaa_failure",
 			"fieldHead": "QGTmaa_fieldHead",
-			"description": "QGTmaa_description",
-			"headText": "QGTmaa_headText",
-			"toggle": "QGTmaa_toggle",
-			"updateRow": "QGTmaa_updateRow",
-			"header": "QGTmaa_header",
-			"fieldDisabled": "QGTmaa_fieldDisabled",
-			"updateCopy": "QGTmaa_updateCopy",
-			"discard": "QGTmaa_discard",
-			"card": "QGTmaa_card",
+			"choice": "QGTmaa_choice",
+			"choiceInput": "QGTmaa_choiceInput",
+			"hint": "QGTmaa_hint",
+			"body": "QGTmaa_body",
 			"choiceRow": "QGTmaa_choiceRow",
-			"choice": "QGTmaa_choice"
+			"updateCopy": "QGTmaa_updateCopy",
+			"footer": "QGTmaa_footer",
+			"failed": "QGTmaa_failed",
+			"fieldDisabled": "QGTmaa_fieldDisabled",
+			"save": "QGTmaa_save",
+			"discard": "QGTmaa_discard",
+			"header": "QGTmaa_header",
+			"name": "QGTmaa_name",
+			"headText": "QGTmaa_headText",
+			"readOnly": "QGTmaa_readOnly",
+			"version": "QGTmaa_version",
+			"updateRow": "QGTmaa_updateRow",
+			"update": "QGTmaa_update",
+			"field": "QGTmaa_field",
+			"pending": "QGTmaa_pending",
+			"card": "QGTmaa_card",
+			"description": "QGTmaa_description",
+			"label": "QGTmaa_label",
+			"toggle": "QGTmaa_toggle"
 		};
 		//#endregion
 		//#region src/client/SmoothStreamCard.tsx
@@ -4043,8 +4043,8 @@ window.__ModuleLoader__.load({
 			appearance: "none",
 			background: "transparent",
 			border: "none",
-			borderBottom: "2px solid transparent",
-			padding: "7px 1px 9px",
+			position: "relative",
+			padding: "7px 1px 11px",
 			cursor: "pointer",
 			font: "inherit",
 			fontSize: "13px",
@@ -4053,8 +4053,17 @@ window.__ModuleLoader__.load({
 		};
 		const TAB_ACTIVE_STYLE = {
 			...TAB_STYLE,
-			color: "var(--dsw-alias-label-primary, inherit)",
-			borderBottomColor: "var(--dsw-alias-label-primary, currentColor)"
+			color: "var(--dsw-alias-label-primary, inherit)"
+		};
+		/** The kernel's own tab marker: a 2px rounded bar under the active label. */
+		const TAB_MARKER_STYLE = {
+			position: "absolute",
+			left: 0,
+			right: 0,
+			bottom: 0,
+			height: "2px",
+			borderRadius: "2px 2px 0 0",
+			background: "var(--dsw-alias-label-primary, currentColor)"
 		};
 		/** Panels stay mounted (hidden) so each card keeps its local state. */
 		const PANEL_STYLE = {
@@ -4125,7 +4134,10 @@ window.__ModuleLoader__.load({
 				onClick: () => {
 					setRequested(tab.id);
 				}
-			}, tab.label))), tabs.map((tab) => (0, react.createElement)("ul", {
+			}, tab.label, tab.id === selected ? (0, react.createElement)("span", {
+				style: TAB_MARKER_STYLE,
+				"aria-hidden": true
+			}) : null))), tabs.map((tab) => (0, react.createElement)("ul", {
 				key: tab.id,
 				role: "tabpanel",
 				hidden: tab.id !== selected,
@@ -4394,34 +4406,34 @@ window.__ModuleLoader__.load({
 			tag.textContent = css;
 		}
 		var DebugPanel_module_css_default = {
-			"controlLabel": "fE600W_controlLabel",
 			"control": "fE600W_control",
-			"trigger": "fE600W_trigger",
-			"footerSpacer": "fE600W_footerSpacer",
-			"state": "fE600W_state",
-			"triggerActive": "fE600W_triggerActive",
+			"number": "fE600W_number",
+			"unit": "fE600W_unit",
+			"footer": "fE600W_footer",
+			"metric": "fE600W_metric",
+			"panelHeader": "fE600W_panelHeader",
 			"statusLive": "fE600W_statusLive",
-			"range": "fE600W_range",
-			"unsaved": "fE600W_unsaved",
-			"scrollArea": "fE600W_scrollArea",
-			"title": "fE600W_title",
-			"section": "fE600W_section",
+			"trigger": "fE600W_trigger",
+			"iconButton": "fE600W_iconButton",
+			"infoButton": "fE600W_infoButton",
 			"guide": "fE600W_guide",
+			"footerSpacer": "fE600W_footerSpacer",
+			"triggerActive": "fE600W_triggerActive",
+			"unsaved": "fE600W_unsaved",
+			"primaryButton": "fE600W_primaryButton",
+			"visuallyHidden": "fE600W_visuallyHidden",
+			"range": "fE600W_range",
+			"controlLabel": "fE600W_controlLabel",
+			"panel": "fE600W_panel",
+			"section": "fE600W_section",
+			"secondaryButton": "fE600W_secondaryButton",
+			"title": "fE600W_title",
+			"scrollArea": "fE600W_scrollArea",
+			"statusDot": "fE600W_statusDot",
 			"metrics": "fE600W_metrics",
 			"controlHead": "fE600W_controlHead",
 			"numberWrap": "fE600W_numberWrap",
-			"secondaryButton": "fE600W_secondaryButton",
-			"primaryButton": "fE600W_primaryButton",
-			"iconButton": "fE600W_iconButton",
-			"number": "fE600W_number",
-			"metric": "fE600W_metric",
-			"infoButton": "fE600W_infoButton",
-			"unit": "fE600W_unit",
-			"visuallyHidden": "fE600W_visuallyHidden",
-			"panelHeader": "fE600W_panelHeader",
-			"footer": "fE600W_footer",
-			"panel": "fE600W_panel",
-			"statusDot": "fE600W_statusDot"
+			"state": "fE600W_state"
 		};
 		//#endregion
 		//#region src/client/DebugPanel.tsx
