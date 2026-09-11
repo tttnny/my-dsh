@@ -23,9 +23,13 @@
  *                              用户取消 → { path: null }；对话框开在 Mac 屏幕上，远端浏览器
  *                              看不到它，因此这是本机辅助入口（官方 browse 对话框仍负责远端）。
  *  - POST /archive/tombstoneCheck 查询一组 sessionId 的会话目录是否仍物理存在
- *                              { ids } → { alive }：浏览器半区墓碑自愈的权威判据——
- *                              永久删除成功 = 目录必已消失；目录仍在 = 会话存活，
- *                              该墓碑必为误写（历史版本残留），应作废而非继续隐藏。
+ *                              { ids } → { alive }：浏览器半区墓碑自愈与自动收编
+ *                              前置过滤的权威判据——永久删除成功 = 目录必已消失；
+ *                              目录仍在 = 会话存活，该墓碑必为误写（历史版本残留），
+ *                              应作废而非继续隐藏；目录没了 = 已删，收编必须跳过
+ *                              （否则已删会话会以活会话身份复活，并按 cwd 重建
+ *                              用户刚移除的工作区）。会话根目录不可枚举时返回
+ *                              ok:false（绝不谎报「全部已删」），调用方 fail-open。
  *
  * 设计契约（v1.9.5）：
  *  - 归档门槛：运行中（Host 实测 agents 状态）与等待回复（浏览器半区读官方 pending
@@ -1226,10 +1230,15 @@ async function handleTombstoneCheck(req, res) {
     ? [...new Set(raw.ids.map((s) => String(s || "").trim()).filter(Boolean))].slice(0, 500)
     : [];
   const sessionsRoot = resolve(join(dshHome(), "sessions"));
-  let scopes = [];
+  let scopes;
   try {
     scopes = await readdir(sessionsRoot, { withFileTypes: true });
-  } catch { /* 根目录不可读：alive 返回空，保守维持现状 */ }
+  } catch (error) {
+    // 根目录不可枚举时**不能**把全部 id 判成「目录已消失」：调用方会据此写删除
+    // 墓碑并跳过自动收编，误判会把存活会话永久隐藏。如实回 ok:false，由调用方
+    // fail-open（墓碑自愈维持现状、收编照常执行）。
+    return sendJson(res, 200, { ok: false, error: "会话根目录不可读: " + String((error && error.message) || error) });
+  }
   const alive = [];
   for (const sid of ids) {
     const encodedId = encodeSegment(sid);
