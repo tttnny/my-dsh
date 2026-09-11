@@ -21,6 +21,14 @@ interface TextRevealRecord {
 /** Last presented text per root, retained across follow lifecycle flips. */
 const ledgerByRoot = new WeakMap<HTMLElement, Map<Text, TextRevealRecord>>()
 
+/**
+ * Text that keeps revealing inside a host that opted out of pacing:
+ * `dsh-chat-translate` mounts a finished translation in this block, and a
+ * translation is read as it arrives, so it keeps the left-to-right flow while
+ * the surrounding content lands at once.
+ */
+export const TRANSLATION_REVEAL_SELECTOR = '.dsh-tidy-translated-block'
+
 const SKIP_TEXT_SELECTOR = [
   '[aria-hidden="true"]',
   '[aria-live]',
@@ -36,6 +44,18 @@ function revealable(node: Text, root: HTMLElement): boolean {
   return parent !== null
     && root.contains(parent)
     && parent.closest(SKIP_TEXT_SELECTOR) === null
+}
+
+/**
+ * Whether a text node still reveals inside a host that opted out of pacing.
+ * @param node - Candidate Text node owned by the host.
+ * @param selector - Selector supplied through `paceWithin`, when present.
+ * @returns true when one of the node's ancestors matches the selector.
+ */
+function pacedWithin(node: Text, selector: string | undefined): boolean {
+  if (selector === undefined) return false
+  const parent = node.parentElement
+  return parent !== null && parent.closest(selector) !== null
 }
 
 function commonPrefix(left: readonly string[], right: readonly string[]): number {
@@ -59,6 +79,10 @@ function commonPrefix(left: readonly string[], right: readonly string[]): number
  * ledger, settle announcements, and lifecycle identical to a finished reveal.
  * Rows that must not type (the fork's Tool cards) use it so their content
  * appears instantly without losing the shared entrance/follow bookkeeping.
+ * @param paceWithin - Selector that outranks `pace: false`: a text node inside
+ * a matching ancestor still reveals character by character. Hosts name the
+ * translation block here, because a mounted translation is a reading surface
+ * even though everything around it lands at once.
  */
 export function useProgressiveDomText(
   rootRef: RefObject<HTMLElement | null>,
@@ -67,6 +91,7 @@ export function useProgressiveDomText(
   speedCpsRef: { current: number },
   onSettled?: (() => void) | undefined,
   pace = true,
+  paceWithin?: string | undefined,
 ): void {
   useLayoutEffect(() => {
     const root = rootRef.current
@@ -148,11 +173,14 @@ export function useProgressiveDomText(
 
     const enqueue = (node: Text, full: string, preserve: TextRevealRecord | undefined): void => {
       if (!revealable(node, root)) return
-      if (!pace) {
+      if (!pace && !pacedWithin(node, paceWithin)) {
         // Row-level opt-out: ledger the text at full length, leave nothing
         // pending, and let this pass announce the settle like a finished
-        // reveal. Text never leaves the DOM at a truncated length.
-        settle(node)
+        // reveal. Text never leaves the DOM at a truncated length. A host that
+        // names a `paceWithin` selector only ever writes inside it, so the rest
+        // of its subtree is skipped instead of re-ledgered on every frame — a
+        // Think card hosts a long streaming reasoning body.
+        if (paceWithin === undefined) settle(node)
         return
       }
       const chars = [...full]
@@ -301,5 +329,5 @@ export function useProgressiveDomText(
       speedCpsRef.current = 35
       debugRuntime.reportStream(streamId, null)
     }
-  }, [enabled, onSettled, pace, revealInitial, rootRef, speedCpsRef])
+  }, [enabled, onSettled, pace, paceWithin, revealInitial, rootRef, speedCpsRef])
 }

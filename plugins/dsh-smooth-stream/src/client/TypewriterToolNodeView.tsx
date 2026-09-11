@@ -119,15 +119,17 @@ function liveAgentTailMode(root: HTMLElement): 'turn' | 'handoff' | null {
  * @param Inner - The already-registered row component.
  * @param useControlScroll - Live scroll-ownership preference.
  * @param options - `reveal: false` keeps the row's entrance and follow
- * lifecycle but never paces its own text (the fork's Tool-row opt-out).
+ * lifecycle but never paces its own text (the fork's Tool-row opt-out);
+ * `revealWithin` names a selector whose text still reveals inside such a row.
  * @returns A follow-hosted row.
  */
 export function wrapFollowNodeView(
   Inner: ComponentType<FollowWrapProps>,
   useControlScroll?: () => boolean,
-  options?: { readonly reveal?: boolean },
+  options?: { readonly reveal?: boolean; readonly revealWithin?: string },
 ) {
   const reveal = options?.reveal ?? true
+  const revealWithin = options?.revealWithin
   return function TypewriterFollowNodeView(props: FollowWrapProps) {
     const controlScroll = useControlScroll?.() ?? true
     const speedCpsRef = useRef(35)
@@ -164,6 +166,7 @@ export function wrapFollowNodeView(
       speedCpsRef,
       runtimeFollowable ? finishRuntimeReveal : undefined,
       reveal,
+      revealWithin,
     )
     useLayoutEffect(() => {
       if (structurallyFollowable) return

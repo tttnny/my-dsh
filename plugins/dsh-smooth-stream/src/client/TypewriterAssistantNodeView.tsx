@@ -9,6 +9,7 @@ import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation
 import { AnimatedDisclosure } from './AnimatedDisclosure.tsx'
 import { notifyFollowCommit } from './teleprompterGlide.ts'
 import { useSmoothStreamContent, type StreamSmoothingPreset } from './useSmoothStreamContent.ts'
+import { TRANSLATION_REVEAL_SELECTOR, useProgressiveDomText } from './useProgressiveDomText.ts'
 import { useFpsGuard } from './useFpsGuard.ts'
 import { FollowHost } from './FollowHost.tsx'
 import { DEFAULT_STREAM_CONFIG, type StreamMode } from '../config.ts'
@@ -536,6 +537,26 @@ function AnimatedReasoning({
     if (element === null) return
     element.scrollLeft = running ? element.scrollWidth - element.clientWidth : 0
   }, [running, summary])
+
+  const notifySummaryCommit = useCallback(() => {
+    notifyFollowCommit(commitAnchorRef.current)
+  }, [])
+  const summarySpeedRef = useRef(35)
+  // A translated Think summary is mounted into this card by `dsh-chat-translate`
+  // once the block stopped running — usually after this row stopped streaming —
+  // so this host always watches and never gates on the live turn: it paces the
+  // translation block and nothing else. Every other text node in the card is
+  // left exactly as React rendered it, so the reasoning feed keeps its own
+  // reveal untouched.
+  useProgressiveDomText(
+    commitAnchorRef,
+    true,
+    true,
+    summarySpeedRef,
+    notifySummaryCommit,
+    false,
+    TRANSLATION_REVEAL_SELECTOR,
+  )
 
   // Preserve FollowHost's layout wrapper without mounting a second scroll owner.
   return (

@@ -12,6 +12,7 @@ import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { TypewriterAssistantNodeView } from './TypewriterAssistantNodeView.tsx'
 import { wrapFollowNodeView, type FollowWrapProps } from './TypewriterToolNodeView.tsx'
+import { TRANSLATION_REVEAL_SELECTOR } from './useProgressiveDomText.ts'
 import { SmoothStreamCard } from './SmoothStreamCard.tsx'
 import { claimReadingSettingsPage, READING_ITEM_SLOT } from './reading-settings-page.tsx'
 import { SmoothStreamCardController } from './smooth-stream-card-controller.ts'
@@ -49,7 +50,9 @@ const SKIP_WRAP = new Set(['assistant-step', 'user', 'steering', 'command-input'
  * Rows that keep the shared entrance and follow lifecycle but never pace their
  * own text. Tool cards are this fork's deliberate exception: their content
  * arrives instantly — nothing inside a Tool card types itself out — while the
- * row still enters, glides, and follows with the rest of the transcript.
+ * row still enters, glides, and follows with the rest of the transcript. A
+ * mounted translation is the one thing that still reveals inside them; see
+ * {@link TRANSLATION_REVEAL_SELECTOR}.
  */
 const REVEAL_SKIP = new Set(['tool-call'])
 
@@ -114,7 +117,10 @@ function wrapAgentChatRows(
       const current = entry.component
       if (!isWrappableComponent(current) || wrapped.has(current)) continue
       const inner = current as ComponentType<FollowWrapProps>
-      const next = wrapFollowNodeView(inner, useControlScroll, { reveal: !REVEAL_SKIP.has(key) })
+      const next = wrapFollowNodeView(inner, useControlScroll, {
+        reveal: !REVEAL_SKIP.has(key),
+        revealWithin: TRANSLATION_REVEAL_SELECTOR,
+      })
       wrapped.add(next)
       entry.component = next
       restores.push(() => {

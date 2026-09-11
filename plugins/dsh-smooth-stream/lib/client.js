@@ -23,27 +23,27 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$3;
 		}
 		var TypewriterAssistantNodeView_module_css_default = {
+			"thinkBody": "_07evbq_thinkBody",
 			"disclosureContent": "_07evbq_disclosureContent",
-			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
-			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
-			"think": "_07evbq_think",
-			"stopped": "_07evbq_stopped",
-			"body": "_07evbq_body",
-			"thinkSeparator": "_07evbq_thinkSeparator",
-			"disclosureTitle": "_07evbq_disclosureTitle",
-			"thinkTitle": "_07evbq_thinkTitle",
-			"disclosureRow": "_07evbq_disclosureRow",
+			"visuallyHidden": "_07evbq_visuallyHidden",
+			"thinkRow": "_07evbq_thinkRow",
+			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
 			"thinkLeading": "_07evbq_thinkLeading",
 			"disclosureLeading": "_07evbq_disclosureLeading",
-			"thinkBody": "_07evbq_thinkBody",
-			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
-			"visuallyHidden": "_07evbq_visuallyHidden",
+			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
+			"disclosureRow": "_07evbq_disclosureRow",
+			"body": "_07evbq_body",
+			"follow": "_07evbq_follow",
+			"think": "_07evbq_think",
 			"root": "_07evbq_root",
+			"thinkTitle": "_07evbq_thinkTitle",
 			"thinkSummary": "_07evbq_thinkSummary",
-			"disclosureRoot": "_07evbq_disclosureRoot",
-			"thinkRow": "_07evbq_thinkRow",
 			"thinkChevron": "_07evbq_thinkChevron",
-			"follow": "_07evbq_follow"
+			"stopped": "_07evbq_stopped",
+			"thinkSeparator": "_07evbq_thinkSeparator",
+			"disclosureRoot": "_07evbq_disclosureRoot",
+			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
+			"disclosureTitle": "_07evbq_disclosureTitle"
 		};
 		//#endregion
 		//#region src/client/AnimatedDisclosure.tsx
@@ -2483,6 +2483,303 @@ window.__ModuleLoader__.load({
 			return displayedContent;
 		}
 		//#endregion
+		//#region src/client/useProgressiveDomText.ts
+		/**
+		* Progressive text reveal for opaque Agent renderers.
+		*
+		* Slot renderers own arbitrary React trees, so the generic integration cannot
+		* clone or classify their business components. This hook leaves that tree and
+		* all of its event handlers in place, and only paces visible Text node data
+		* while the row belongs to the live Agent turn. No clip, mask, overlay, or
+		* duplicate accessibility tree is introduced.
+		*/
+		/** Last presented text per root, retained across follow lifecycle flips. */
+		const ledgerByRoot = /* @__PURE__ */ new WeakMap();
+		/**
+		* Text that keeps revealing inside a host that opted out of pacing:
+		* `dsh-chat-translate` mounts a finished translation in this block, and a
+		* translation is read as it arrives, so it keeps the left-to-right flow while
+		* the surrounding content lands at once.
+		*/
+		const TRANSLATION_REVEAL_SELECTOR = ".dsh-tidy-translated-block";
+		const SKIP_TEXT_SELECTOR = [
+			"[aria-hidden=\"true\"]",
+			"[aria-live]",
+			"[contenteditable=\"true\"]",
+			"script",
+			"style",
+			"textarea"
+		].join(",");
+		function revealable(node, root) {
+			if (node.data.trim() === "") return false;
+			const parent = node.parentElement;
+			return parent !== null && root.contains(parent) && parent.closest(SKIP_TEXT_SELECTOR) === null;
+		}
+		/**
+		* Whether a text node still reveals inside a host that opted out of pacing.
+		* @param node - Candidate Text node owned by the host.
+		* @param selector - Selector supplied through `paceWithin`, when present.
+		* @returns true when one of the node's ancestors matches the selector.
+		*/
+		function pacedWithin(node, selector) {
+			if (selector === void 0) return false;
+			const parent = node.parentElement;
+			return parent !== null && parent.closest(selector) !== null;
+		}
+		function commonPrefix(left, right) {
+			const limit = Math.min(left.length, right.length);
+			let index = 0;
+			while (index < limit && left[index] === right[index]) index += 1;
+			return index;
+		}
+		/**
+		* Pace text inside a renderer whose React component is intentionally opaque.
+		* Initial content is revealed only for a genuinely new row; later mutations
+		* stay paced until `enabled` becomes false, at which point the full renderer
+		* content is restored synchronously before paint.
+		* @param rootRef - Host element whose Text nodes this hook owns.
+		* @param enabled - Whether the row currently belongs to the live Agent turn.
+		* @param revealInitial - Whether a freshly mounted row's existing text is paced.
+		* @param speedCpsRef - Shared reveal-cadence ref also read by the follower.
+		* @param onSettled - Invoked once each time the queue drains.
+		* @param pace - False renders every text node at full length while keeping the
+		* ledger, settle announcements, and lifecycle identical to a finished reveal.
+		* Rows that must not type (the fork's Tool cards) use it so their content
+		* appears instantly without losing the shared entrance/follow bookkeeping.
+		* @param paceWithin - Selector that outranks `pace: false`: a text node inside
+		* a matching ancestor still reveals character by character. Hosts name the
+		* translation block here, because a mounted translation is a reading surface
+		* even though everything around it lands at once.
+		*/
+		function useProgressiveDomText(rootRef, enabled, revealInitial, speedCpsRef, onSettled, pace = true, paceWithin) {
+			(0, react.useLayoutEffect)(() => {
+				const root = rootRef.current;
+				if (root === null || typeof document === "undefined") return;
+				let records = ledgerByRoot.get(root);
+				if (!enabled && records === void 0) return;
+				if (records === void 0) {
+					records = /* @__PURE__ */ new Map();
+					ledgerByRoot.set(root, records);
+				}
+				const forEachText = (from, callback) => {
+					if (from.nodeType === Node.TEXT_NODE) {
+						callback(from);
+						return;
+					}
+					const walker = document.createTreeWalker(from, NodeFilter.SHOW_TEXT);
+					let current = walker.nextNode();
+					while (current !== null) {
+						callback(current);
+						current = walker.nextNode();
+					}
+				};
+				const settle = (text) => {
+					if (!revealable(text, root)) return;
+					const chars = [...text.data];
+					records.set(text, {
+						chars,
+						full: text.data,
+						shown: chars.length
+					});
+				};
+				const snapshotVisible = () => {
+					const current = /* @__PURE__ */ new Set();
+					forEachText(root, (text) => {
+						if (!revealable(text, root)) return;
+						current.add(text);
+						settle(text);
+					});
+					for (const text of records.keys()) if (!current.has(text)) records.delete(text);
+				};
+				if (!enabled) {
+					snapshotVisible();
+					const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver(snapshotVisible);
+					observer?.observe(root, {
+						childList: true,
+						characterData: true,
+						subtree: true
+					});
+					return () => {
+						observer?.disconnect();
+					};
+				}
+				const pending = /* @__PURE__ */ new Set();
+				const internalWrites = /* @__PURE__ */ new WeakMap();
+				let rafId = 0;
+				let lastFrame = null;
+				let debt = 0;
+				let stopped = false;
+				let announcedSettled = false;
+				const streamId = `dom-${Math.random().toString(36).slice(2)}`;
+				const announceSettled = () => {
+					lastFrame = null;
+					debt = 0;
+					speedCpsRef.current = 35;
+					debugRuntime.reportStream(streamId, null);
+					if (announcedSettled) return;
+					announcedSettled = true;
+					onSettled?.();
+				};
+				const write = (node, value) => {
+					if (node.data === value) return;
+					internalWrites.set(node, value);
+					node.data = value;
+				};
+				const enqueue = (node, full, preserve) => {
+					if (!revealable(node, root)) return;
+					if (!pace && !pacedWithin(node, paceWithin)) {
+						if (paceWithin === void 0) settle(node);
+						return;
+					}
+					const chars = [...full];
+					const preserved = preserve === void 0 ? 0 : Math.min(preserve.shown, commonPrefix(preserve.chars, chars));
+					const record = {
+						chars,
+						full,
+						shown: preserved
+					};
+					records.set(node, record);
+					if (preserved < chars.length) {
+						pending.add(node);
+						announcedSettled = false;
+					} else pending.delete(node);
+					write(node, chars.slice(0, preserved).join(""));
+				};
+				const visit = (from, reveal) => {
+					forEachText(from, (text) => {
+						if (!revealable(text, root)) return;
+						if (reveal) {
+							enqueue(text, text.data, records.get(text));
+							return;
+						}
+						settle(text);
+					});
+				};
+				const forget = (from) => {
+					forEachText(from, (text) => {
+						if (root.contains(text)) return;
+						records.delete(text);
+						pending.delete(text);
+					});
+				};
+				const scheduleFrame = () => {
+					if (stopped || pending.size === 0 || rafId !== 0) return;
+					rafId = requestAnimationFrame(frame);
+				};
+				const frame = (now) => {
+					rafId = 0;
+					if (stopped) return;
+					if (pending.size === 0) {
+						announceSettled();
+						return;
+					}
+					announcedSettled = false;
+					if (lastFrame === null) {
+						lastFrame = now;
+						scheduleFrame();
+						return;
+					}
+					const elapsed = Math.max(0, now - lastFrame);
+					lastFrame = now;
+					let backlog = 0;
+					for (const node of pending) {
+						const record = records.get(node);
+						if (record !== void 0) backlog += record.chars.length - record.shown;
+					}
+					const step = computeAdaptiveQueueStep(backlog, elapsed, debt, 1, debugRuntime.activeTuning());
+					debt = step.debt;
+					speedCpsRef.current = step.speedCps;
+					let remaining = step.revealChars;
+					for (const node of [...pending]) {
+						if (remaining <= 0) break;
+						const record = records.get(node);
+						if (record === void 0 || !node.isConnected) {
+							pending.delete(node);
+							records.delete(node);
+							continue;
+						}
+						const amount = Math.min(remaining, record.chars.length - record.shown);
+						const shown = record.shown + amount;
+						const next = {
+							...record,
+							shown
+						};
+						records.set(node, next);
+						write(node, next.chars.slice(0, shown).join(""));
+						remaining -= amount;
+						if (shown >= next.chars.length) pending.delete(node);
+					}
+					let targetChars = 0;
+					let displayedChars = 0;
+					let nextBacklog = 0;
+					for (const [node, record] of records) {
+						if (!node.isConnected) {
+							records.delete(node);
+							pending.delete(node);
+							continue;
+						}
+						targetChars += record.chars.length;
+						displayedChars += record.shown;
+						if (pending.has(node)) nextBacklog += record.chars.length - record.shown;
+					}
+					debugRuntime.reportStream(streamId, {
+						backlog: nextBacklog,
+						speedCps: step.speedCps,
+						targetChars,
+						displayedChars,
+						active: pending.size > 0
+					});
+					if (pending.size === 0) announceSettled();
+					else scheduleFrame();
+				};
+				visit(root, revealInitial);
+				const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver((mutations) => {
+					for (const mutation of mutations) {
+						if (mutation.type === "characterData") {
+							const node = mutation.target;
+							if (internalWrites.get(node) === node.data) {
+								internalWrites.delete(node);
+								continue;
+							}
+							enqueue(node, node.data, records.get(node));
+							continue;
+						}
+						for (const removed of mutation.removedNodes) forget(removed);
+						for (const added of mutation.addedNodes) visit(added, true);
+					}
+					if (pending.size === 0) announceSettled();
+					else scheduleFrame();
+				});
+				observer?.observe(root, {
+					childList: true,
+					characterData: true,
+					subtree: true
+				});
+				if (pending.size === 0) announceSettled();
+				else scheduleFrame();
+				return () => {
+					stopped = true;
+					cancelAnimationFrame(rafId);
+					observer?.disconnect();
+					for (const [node, record] of records) {
+						const controlled = record.chars.slice(0, record.shown).join("");
+						if (node.isConnected && node.data === controlled) write(node, record.full);
+					}
+					pending.clear();
+					speedCpsRef.current = 35;
+					debugRuntime.reportStream(streamId, null);
+				};
+			}, [
+				enabled,
+				onSettled,
+				pace,
+				paceWithin,
+				revealInitial,
+				rootRef,
+				speedCpsRef
+			]);
+		}
+		//#endregion
 		//#region src/client/useFpsGuard.ts
 		/**
 		* Performance guard for the streaming reveal.
@@ -3029,6 +3326,10 @@ window.__ModuleLoader__.load({
 				if (element === null) return;
 				element.scrollLeft = running ? element.scrollWidth - element.clientWidth : 0;
 			}, [running, summary]);
+			const notifySummaryCommit = (0, react.useCallback)(() => {
+				notifyFollowCommit(commitAnchorRef.current);
+			}, []);
+			useProgressiveDomText(commitAnchorRef, true, true, (0, react.useRef)(35), notifySummaryCommit, false, TRANSLATION_REVEAL_SELECTOR);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: TypewriterAssistantNodeView_module_css_default.follow,
 				ref: commitAnchorRef,
@@ -3222,280 +3523,6 @@ window.__ModuleLoader__.load({
 			});
 		});
 		//#endregion
-		//#region src/client/useProgressiveDomText.ts
-		/**
-		* Progressive text reveal for opaque Agent renderers.
-		*
-		* Slot renderers own arbitrary React trees, so the generic integration cannot
-		* clone or classify their business components. This hook leaves that tree and
-		* all of its event handlers in place, and only paces visible Text node data
-		* while the row belongs to the live Agent turn. No clip, mask, overlay, or
-		* duplicate accessibility tree is introduced.
-		*/
-		/** Last presented text per root, retained across follow lifecycle flips. */
-		const ledgerByRoot = /* @__PURE__ */ new WeakMap();
-		const SKIP_TEXT_SELECTOR = [
-			"[aria-hidden=\"true\"]",
-			"[aria-live]",
-			"[contenteditable=\"true\"]",
-			"script",
-			"style",
-			"textarea"
-		].join(",");
-		function revealable(node, root) {
-			if (node.data.trim() === "") return false;
-			const parent = node.parentElement;
-			return parent !== null && root.contains(parent) && parent.closest(SKIP_TEXT_SELECTOR) === null;
-		}
-		function commonPrefix(left, right) {
-			const limit = Math.min(left.length, right.length);
-			let index = 0;
-			while (index < limit && left[index] === right[index]) index += 1;
-			return index;
-		}
-		/**
-		* Pace text inside a renderer whose React component is intentionally opaque.
-		* Initial content is revealed only for a genuinely new row; later mutations
-		* stay paced until `enabled` becomes false, at which point the full renderer
-		* content is restored synchronously before paint.
-		* @param rootRef - Host element whose Text nodes this hook owns.
-		* @param enabled - Whether the row currently belongs to the live Agent turn.
-		* @param revealInitial - Whether a freshly mounted row's existing text is paced.
-		* @param speedCpsRef - Shared reveal-cadence ref also read by the follower.
-		* @param onSettled - Invoked once each time the queue drains.
-		* @param pace - False renders every text node at full length while keeping the
-		* ledger, settle announcements, and lifecycle identical to a finished reveal.
-		* Rows that must not type (the fork's Tool cards) use it so their content
-		* appears instantly without losing the shared entrance/follow bookkeeping.
-		*/
-		function useProgressiveDomText(rootRef, enabled, revealInitial, speedCpsRef, onSettled, pace = true) {
-			(0, react.useLayoutEffect)(() => {
-				const root = rootRef.current;
-				if (root === null || typeof document === "undefined") return;
-				let records = ledgerByRoot.get(root);
-				if (!enabled && records === void 0) return;
-				if (records === void 0) {
-					records = /* @__PURE__ */ new Map();
-					ledgerByRoot.set(root, records);
-				}
-				const forEachText = (from, callback) => {
-					if (from.nodeType === Node.TEXT_NODE) {
-						callback(from);
-						return;
-					}
-					const walker = document.createTreeWalker(from, NodeFilter.SHOW_TEXT);
-					let current = walker.nextNode();
-					while (current !== null) {
-						callback(current);
-						current = walker.nextNode();
-					}
-				};
-				const settle = (text) => {
-					if (!revealable(text, root)) return;
-					const chars = [...text.data];
-					records.set(text, {
-						chars,
-						full: text.data,
-						shown: chars.length
-					});
-				};
-				const snapshotVisible = () => {
-					const current = /* @__PURE__ */ new Set();
-					forEachText(root, (text) => {
-						if (!revealable(text, root)) return;
-						current.add(text);
-						settle(text);
-					});
-					for (const text of records.keys()) if (!current.has(text)) records.delete(text);
-				};
-				if (!enabled) {
-					snapshotVisible();
-					const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver(snapshotVisible);
-					observer?.observe(root, {
-						childList: true,
-						characterData: true,
-						subtree: true
-					});
-					return () => {
-						observer?.disconnect();
-					};
-				}
-				const pending = /* @__PURE__ */ new Set();
-				const internalWrites = /* @__PURE__ */ new WeakMap();
-				let rafId = 0;
-				let lastFrame = null;
-				let debt = 0;
-				let stopped = false;
-				let announcedSettled = false;
-				const streamId = `dom-${Math.random().toString(36).slice(2)}`;
-				const announceSettled = () => {
-					lastFrame = null;
-					debt = 0;
-					speedCpsRef.current = 35;
-					debugRuntime.reportStream(streamId, null);
-					if (announcedSettled) return;
-					announcedSettled = true;
-					onSettled?.();
-				};
-				const write = (node, value) => {
-					if (node.data === value) return;
-					internalWrites.set(node, value);
-					node.data = value;
-				};
-				const enqueue = (node, full, preserve) => {
-					if (!revealable(node, root)) return;
-					if (!pace) {
-						settle(node);
-						return;
-					}
-					const chars = [...full];
-					const preserved = preserve === void 0 ? 0 : Math.min(preserve.shown, commonPrefix(preserve.chars, chars));
-					const record = {
-						chars,
-						full,
-						shown: preserved
-					};
-					records.set(node, record);
-					if (preserved < chars.length) {
-						pending.add(node);
-						announcedSettled = false;
-					} else pending.delete(node);
-					write(node, chars.slice(0, preserved).join(""));
-				};
-				const visit = (from, reveal) => {
-					forEachText(from, (text) => {
-						if (!revealable(text, root)) return;
-						if (reveal) {
-							enqueue(text, text.data, records.get(text));
-							return;
-						}
-						settle(text);
-					});
-				};
-				const forget = (from) => {
-					forEachText(from, (text) => {
-						if (root.contains(text)) return;
-						records.delete(text);
-						pending.delete(text);
-					});
-				};
-				const scheduleFrame = () => {
-					if (stopped || pending.size === 0 || rafId !== 0) return;
-					rafId = requestAnimationFrame(frame);
-				};
-				const frame = (now) => {
-					rafId = 0;
-					if (stopped) return;
-					if (pending.size === 0) {
-						announceSettled();
-						return;
-					}
-					announcedSettled = false;
-					if (lastFrame === null) {
-						lastFrame = now;
-						scheduleFrame();
-						return;
-					}
-					const elapsed = Math.max(0, now - lastFrame);
-					lastFrame = now;
-					let backlog = 0;
-					for (const node of pending) {
-						const record = records.get(node);
-						if (record !== void 0) backlog += record.chars.length - record.shown;
-					}
-					const step = computeAdaptiveQueueStep(backlog, elapsed, debt, 1, debugRuntime.activeTuning());
-					debt = step.debt;
-					speedCpsRef.current = step.speedCps;
-					let remaining = step.revealChars;
-					for (const node of [...pending]) {
-						if (remaining <= 0) break;
-						const record = records.get(node);
-						if (record === void 0 || !node.isConnected) {
-							pending.delete(node);
-							records.delete(node);
-							continue;
-						}
-						const amount = Math.min(remaining, record.chars.length - record.shown);
-						const shown = record.shown + amount;
-						const next = {
-							...record,
-							shown
-						};
-						records.set(node, next);
-						write(node, next.chars.slice(0, shown).join(""));
-						remaining -= amount;
-						if (shown >= next.chars.length) pending.delete(node);
-					}
-					let targetChars = 0;
-					let displayedChars = 0;
-					let nextBacklog = 0;
-					for (const [node, record] of records) {
-						if (!node.isConnected) {
-							records.delete(node);
-							pending.delete(node);
-							continue;
-						}
-						targetChars += record.chars.length;
-						displayedChars += record.shown;
-						if (pending.has(node)) nextBacklog += record.chars.length - record.shown;
-					}
-					debugRuntime.reportStream(streamId, {
-						backlog: nextBacklog,
-						speedCps: step.speedCps,
-						targetChars,
-						displayedChars,
-						active: pending.size > 0
-					});
-					if (pending.size === 0) announceSettled();
-					else scheduleFrame();
-				};
-				visit(root, revealInitial);
-				const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver((mutations) => {
-					for (const mutation of mutations) {
-						if (mutation.type === "characterData") {
-							const node = mutation.target;
-							if (internalWrites.get(node) === node.data) {
-								internalWrites.delete(node);
-								continue;
-							}
-							enqueue(node, node.data, records.get(node));
-							continue;
-						}
-						for (const removed of mutation.removedNodes) forget(removed);
-						for (const added of mutation.addedNodes) visit(added, true);
-					}
-					if (pending.size === 0) announceSettled();
-					else scheduleFrame();
-				});
-				observer?.observe(root, {
-					childList: true,
-					characterData: true,
-					subtree: true
-				});
-				if (pending.size === 0) announceSettled();
-				else scheduleFrame();
-				return () => {
-					stopped = true;
-					cancelAnimationFrame(rafId);
-					observer?.disconnect();
-					for (const [node, record] of records) {
-						const controlled = record.chars.slice(0, record.shown).join("");
-						if (node.isConnected && node.data === controlled) write(node, record.full);
-					}
-					pending.clear();
-					speedCpsRef.current = 35;
-					debugRuntime.reportStream(streamId, null);
-				};
-			}, [
-				enabled,
-				onSettled,
-				pace,
-				revealInitial,
-				rootRef,
-				speedCpsRef
-			]);
-		}
-		//#endregion
 		//#region \0dsh-css:/Users/tny/Desktop/work/my-dsh/plugins/dsh-smooth-stream/src/client/AgentRowEntrance.module.css.mjs
 		const css$2 = "._72ZBkW_surface{min-width:0}._72ZBkW_surface[data-entrance=active]{will-change:opacity, transform;animation:.22s cubic-bezier(.2,.8,.2,1) both _72ZBkW_dsh-smooth-stream-agent-row-in}@keyframes _72ZBkW_dsh-smooth-stream-agent-row-in{0%{opacity:0;clip-path:inset(0 100% 0 0);transform:translateY(4px)}55%{opacity:1;clip-path:inset(0 18% 0 0)}to{opacity:1;clip-path:inset(0);transform:translate(0,0)}}@media (prefers-reduced-motion:reduce){._72ZBkW_surface[data-entrance=active]{opacity:1;clip-path:none;will-change:auto;animation:none;transform:none}}";
 		const tagId$2 = "@lynn123411/dsh-smooth-stream/AgentRowEntrance.module.css";
@@ -3510,8 +3537,8 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$2;
 		}
 		var AgentRowEntrance_module_css_default = {
-			"dsh-smooth-stream-agent-row-in": "_72ZBkW_dsh-smooth-stream-agent-row-in",
-			"surface": "_72ZBkW_surface"
+			"surface": "_72ZBkW_surface",
+			"dsh-smooth-stream-agent-row-in": "_72ZBkW_dsh-smooth-stream-agent-row-in"
 		};
 		//#endregion
 		//#region src/client/TypewriterToolNodeView.tsx
@@ -3597,11 +3624,13 @@ window.__ModuleLoader__.load({
 		* @param Inner - The already-registered row component.
 		* @param useControlScroll - Live scroll-ownership preference.
 		* @param options - `reveal: false` keeps the row's entrance and follow
-		* lifecycle but never paces its own text (the fork's Tool-row opt-out).
+		* lifecycle but never paces its own text (the fork's Tool-row opt-out);
+		* `revealWithin` names a selector whose text still reveals inside such a row.
 		* @returns A follow-hosted row.
 		*/
 		function wrapFollowNodeView(Inner, useControlScroll, options) {
 			const reveal = options?.reveal ?? true;
+			const revealWithin = options?.revealWithin;
 			return function TypewriterFollowNodeView(props) {
 				const controlScroll = useControlScroll?.() ?? true;
 				const speedCpsRef = (0, react.useRef)(35);
@@ -3631,7 +3660,7 @@ window.__ModuleLoader__.load({
 					runtimeHandledRef.current = true;
 					setRuntimeFollowable(false);
 				}, []);
-				useProgressiveDomText(hostRef, followable, revealInitialRef.current, speedCpsRef, runtimeFollowable ? finishRuntimeReveal : void 0, reveal);
+				useProgressiveDomText(hostRef, followable, revealInitialRef.current, speedCpsRef, runtimeFollowable ? finishRuntimeReveal : void 0, reveal, revealWithin);
 				(0, react.useLayoutEffect)(() => {
 					if (structurallyFollowable) return;
 					const root = hostRef.current;
@@ -3707,33 +3736,33 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$1;
 		}
 		var SmoothStreamCard_module_css_default = {
+			"update": "QGTmaa_update",
+			"name": "QGTmaa_name",
+			"readOnly": "QGTmaa_readOnly",
 			"cardOpen": "QGTmaa_cardOpen",
-			"failure": "QGTmaa_failure",
+			"toggle": "QGTmaa_toggle",
+			"footer": "QGTmaa_footer",
 			"fieldHead": "QGTmaa_fieldHead",
+			"card": "QGTmaa_card",
 			"choice": "QGTmaa_choice",
+			"field": "QGTmaa_field",
+			"failure": "QGTmaa_failure",
+			"updateRow": "QGTmaa_updateRow",
+			"updateCopy": "QGTmaa_updateCopy",
+			"description": "QGTmaa_description",
+			"headText": "QGTmaa_headText",
+			"version": "QGTmaa_version",
 			"choiceInput": "QGTmaa_choiceInput",
 			"hint": "QGTmaa_hint",
-			"body": "QGTmaa_body",
-			"choiceRow": "QGTmaa_choiceRow",
-			"updateCopy": "QGTmaa_updateCopy",
-			"footer": "QGTmaa_footer",
 			"failed": "QGTmaa_failed",
+			"body": "QGTmaa_body",
+			"pending": "QGTmaa_pending",
+			"label": "QGTmaa_label",
 			"fieldDisabled": "QGTmaa_fieldDisabled",
 			"save": "QGTmaa_save",
 			"discard": "QGTmaa_discard",
 			"header": "QGTmaa_header",
-			"name": "QGTmaa_name",
-			"headText": "QGTmaa_headText",
-			"readOnly": "QGTmaa_readOnly",
-			"version": "QGTmaa_version",
-			"updateRow": "QGTmaa_updateRow",
-			"update": "QGTmaa_update",
-			"field": "QGTmaa_field",
-			"pending": "QGTmaa_pending",
-			"card": "QGTmaa_card",
-			"description": "QGTmaa_description",
-			"label": "QGTmaa_label",
-			"toggle": "QGTmaa_toggle"
+			"choiceRow": "QGTmaa_choiceRow"
 		};
 		//#endregion
 		//#region src/client/SmoothStreamCard.tsx
@@ -4406,34 +4435,34 @@ window.__ModuleLoader__.load({
 			tag.textContent = css;
 		}
 		var DebugPanel_module_css_default = {
-			"control": "fE600W_control",
-			"number": "fE600W_number",
-			"unit": "fE600W_unit",
-			"footer": "fE600W_footer",
-			"metric": "fE600W_metric",
-			"panelHeader": "fE600W_panelHeader",
-			"statusLive": "fE600W_statusLive",
-			"trigger": "fE600W_trigger",
-			"iconButton": "fE600W_iconButton",
-			"infoButton": "fE600W_infoButton",
-			"guide": "fE600W_guide",
-			"footerSpacer": "fE600W_footerSpacer",
-			"triggerActive": "fE600W_triggerActive",
-			"unsaved": "fE600W_unsaved",
-			"primaryButton": "fE600W_primaryButton",
-			"visuallyHidden": "fE600W_visuallyHidden",
-			"range": "fE600W_range",
-			"controlLabel": "fE600W_controlLabel",
-			"panel": "fE600W_panel",
-			"section": "fE600W_section",
-			"secondaryButton": "fE600W_secondaryButton",
-			"title": "fE600W_title",
-			"scrollArea": "fE600W_scrollArea",
-			"statusDot": "fE600W_statusDot",
-			"metrics": "fE600W_metrics",
-			"controlHead": "fE600W_controlHead",
 			"numberWrap": "fE600W_numberWrap",
-			"state": "fE600W_state"
+			"section": "fE600W_section",
+			"number": "fE600W_number",
+			"panel": "fE600W_panel",
+			"panelHeader": "fE600W_panelHeader",
+			"statusDot": "fE600W_statusDot",
+			"iconButton": "fE600W_iconButton",
+			"triggerActive": "fE600W_triggerActive",
+			"secondaryButton": "fE600W_secondaryButton",
+			"state": "fE600W_state",
+			"primaryButton": "fE600W_primaryButton",
+			"range": "fE600W_range",
+			"title": "fE600W_title",
+			"guide": "fE600W_guide",
+			"metrics": "fE600W_metrics",
+			"trigger": "fE600W_trigger",
+			"statusLive": "fE600W_statusLive",
+			"scrollArea": "fE600W_scrollArea",
+			"metric": "fE600W_metric",
+			"control": "fE600W_control",
+			"controlLabel": "fE600W_controlLabel",
+			"infoButton": "fE600W_infoButton",
+			"footer": "fE600W_footer",
+			"visuallyHidden": "fE600W_visuallyHidden",
+			"unsaved": "fE600W_unsaved",
+			"controlHead": "fE600W_controlHead",
+			"unit": "fE600W_unit",
+			"footerSpacer": "fE600W_footerSpacer"
 		};
 		//#endregion
 		//#region src/client/DebugPanel.tsx
@@ -5034,7 +5063,9 @@ window.__ModuleLoader__.load({
 		* Rows that keep the shared entrance and follow lifecycle but never pace their
 		* own text. Tool cards are this fork's deliberate exception: their content
 		* arrives instantly — nothing inside a Tool card types itself out — while the
-		* row still enters, glides, and follows with the rest of the transcript.
+		* row still enters, glides, and follows with the rest of the transcript. A
+		* mounted translation is the one thing that still reveals inside them; see
+		* {@link TRANSLATION_REVEAL_SELECTOR}.
 		*/
 		const REVEAL_SKIP = /* @__PURE__ */ new Set(["tool-call"]);
 		/** React function/class or an exotic component such as memo/forwardRef/lazy. */
@@ -5082,7 +5113,10 @@ window.__ModuleLoader__.load({
 					const current = entry.component;
 					if (!isWrappableComponent(current) || wrapped.has(current)) continue;
 					const inner = current;
-					const next = wrapFollowNodeView(inner, useControlScroll, { reveal: !REVEAL_SKIP.has(key) });
+					const next = wrapFollowNodeView(inner, useControlScroll, {
+						reveal: !REVEAL_SKIP.has(key),
+						revealWithin: TRANSLATION_REVEAL_SELECTOR
+					});
 					wrapped.add(next);
 					entry.component = next;
 					restores.push(() => {
