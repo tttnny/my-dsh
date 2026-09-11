@@ -40,7 +40,7 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
-      <td><b>聊天翻译</b><br>· 工具调用与思考摘要自动译中（思考完全结束才翻、仅当前会话、正文不翻）<br>· OpenAI 兼容 AI 通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）+ 免 Key Bing 兜底双通道<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（原「聊天翻译」独立设置页已移除）</td>
+      <td><b>聊天翻译</b><br>· 工具调用与思考摘要自动译中（思考完全结束才翻、仅当前会话、正文不翻）<br>· OpenAI 兼容 AI 通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）+ 免 Key Bing 兜底双通道<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>
