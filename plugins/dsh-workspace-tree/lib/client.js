@@ -5,7 +5,9 @@
  *  - 会话空间归属与归档状态正交；官方列表返回的会话一律可见（含空白草稿），
  *    工作区模式显示活跃会话、归档区显示已归档会话。
  *  - 无「未分组」：会话失去工作区归属（如 DSH 升级重置注册表）时后台自动收编
- *    ——将其 cwd 注册为工作区（幂等）并挂载会话，未分组区块不再存在。
+ *    ——将其 cwd 注册为工作区（幂等）并挂载会话，未分组区块不再存在。收编前按
+ *    物理存在性过一遍：官方列表仍返回、目录却已消失的已删会话写入删除墓碑并跳过，
+ *    既不让幽灵复活成活会话，也不把刚真注销的工作区按 cwd 原地建回来。
  *  - 工作区管理默认「移除显示」而非「删除注册」：仅隐藏工作区节点（localStorage 记忆），
  *    注册与会话归属不变；重新添加同一目录后工作区连同会话一起恢复显示。
  *    例外：名下已无任何可见会话与归档会话的空工作区，移除时自动走官方 workspace/delete
@@ -320,6 +322,32 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * 会话目录物理存在性探测（Host 权威）：返回其中「目录已消失」的会话 id 集合。
+     * 收编链路用它挡掉官方列表仍在返回的已删会话：官方索引收敛有延迟、host 内存也
+     * 仍持有它们，收编这类幽灵会把它当活会话重新挂载，并把用户刚「彻底移除」的空
+     * 工作区按 cwd 原地重建（于是出现「点了移除，工作区还在」）。
+     * 判据与删除墓碑同源：删除 fail-loud，删除成功必然使目录消失，因此目录在 = 存活、
+     * 目录没了 = 已删；被误判的墓碑仍有列表收敛/墓碑自愈兜底。
+     * fail-open：路由缺席（旧版宿主半边）、网络故障或响应形状不符时返回空集，调用方
+     * 维持原有收编行为——探测故障只应减少保护，不应卡住收编本身。
+     * @param {string[]} ids - 待探测的会话 id（调用方已去重）。
+     * @returns {Promise<Set<string>>} 目录已消失的会话 id 集合。
+     */
+    async function probeGoneSessions(ids) {
+      const gone = new Set();
+      if (!Array.isArray(ids) || ids.length === 0) return gone;
+      try {
+        const result = await apiPost("/archive/tombstoneCheck", { ids });
+        if (!result || result.ok !== true || !Array.isArray(result.alive)) return gone;
+        const alive = new Set(result.alive.map(String));
+        for (const id of ids) if (!alive.has(String(id))) gone.add(String(id));
+      } catch {
+        /* fail-open */
+      }
+      return gone;
+    }
+
     // ══════════════ 展开状态持久化 ══════════════
     function loadSet(key) {
       try {
@@ -368,7 +396,7 @@ window.__ModuleLoader__.load({
       // （live mode 可为 archive 且不持久化，设置页拿不到它）
       return {
         // 注意：此处版本号为手写常量，发版改 package.json 时同步改这里
-        plugin: "dsh-workspace-tree@1.9.3",
+        plugin: "dsh-workspace-tree@1.9.9",
         t: new Date().toISOString(),
         ...(noSnap ? { warning: "snapshots unavailable（ctx 未就绪或已释放）" } : {}),
         defaultMode,
@@ -1758,12 +1786,18 @@ window.__ModuleLoader__.load({
        * 或经官方入口在任意 cwd 新建的会话），将其 cwd 注册为工作区（Host 侧按 path 幂等），
        * 再走 Host session.create 的幂等 adopt 语义挂载会话——「未分组」从此不再存在。
        * 失败不弹窗，随列表下一次更新自动重试。
+       *
+       * 收编前先按物理存在性过一遍（一次性批量问 Host，见 probeGoneSessions）：官方列表
+       * 仍会返回已删会话一段时间，收编幽灵会把它当活会话重新挂载，并按 cwd 把用户刚
+       * 「彻底移除」的空工作区原地重建。目录已消失的候选写入删除墓碑（与归档删除同源：
+       * 目录没了 = 已删）并跳过；探测不可用时 fail-open，维持原有收编行为。
        */
       const adoptInFlight = useRef(new Set());
       useEffect(() => {
         if (!sessions || sessions.phase !== "ready") return;
         if (!workspaces || workspaces.phase !== "ready") return;
         const accounted = accountedSessionIds(workspaces.items || []);
+        const candidates = [];
         for (const sid of sessions.ids || []) {
           const id = String(sid);
           if (accounted.has(id)) continue;
@@ -1776,22 +1810,33 @@ window.__ModuleLoader__.load({
           // subagent 子会话归 subagent 路由所有，宿主禁止 attach 到工作区（adopt 必然失败）
           if (isSubagentRow(row)) continue;
           if (adoptInFlight.current.has(id)) continue;
-          adoptInFlight.current.add(id);
-          (async () => {
-            try {
-              const cwd = row.cwd;
-              if (!cwd) return;
-              let ws = (workspaces.items || []).find((w) => normalizePath(w.path) === normalizePath(cwd));
-              if (!ws) ws = await createWorkspace({ path: cwd });
-              if (ws && ws.workspaceId) await adoptSession(id, ws.workspaceId);
-            } catch (error) {
-              console.warn("[workspace-tree] 自动收编失败（将随列表更新重试）:", id, error);
-            } finally {
-              adoptInFlight.current.delete(id);
-            }
-          })();
+          // 无 cwd 的会话无从判断归属（也无从注册工作区），照旧跳过
+          if (!row.cwd) continue;
+          candidates.push({ id, cwd: row.cwd });
         }
-      }, [sessions.ids, sessions.byId, sessions.phase, workspaces.items, workspaces.phase, hardDeleted, archived, createWorkspace, adoptSession]);
+        if (candidates.length === 0) return;
+        for (const candidate of candidates) adoptInFlight.current.add(candidate.id);
+        (async () => {
+          try {
+            // 幽灵判定先于任何写操作：先 createWorkspace 再发现会话已删，会留下一个
+            // 空工作区把用户的移除结果又摆回树上。
+            const gone = await probeGoneSessions(candidates.map((candidate) => candidate.id));
+            if (gone.size > 0) rememberDeleted([...gone]);
+            for (const candidate of candidates) {
+              if (gone.has(candidate.id)) continue;
+              try {
+                let ws = (workspaces.items || []).find((w) => normalizePath(w.path) === normalizePath(candidate.cwd));
+                if (!ws) ws = await createWorkspace({ path: candidate.cwd });
+                if (ws && ws.workspaceId) await adoptSession(candidate.id, ws.workspaceId);
+              } catch (error) {
+                console.warn("[workspace-tree] 自动收编失败（将随列表更新重试）:", candidate.id, error);
+              }
+            }
+          } finally {
+            for (const candidate of candidates) adoptInFlight.current.delete(candidate.id);
+          }
+        })();
+      }, [sessions.ids, sessions.byId, sessions.phase, workspaces.items, workspaces.phase, hardDeleted, archived, createWorkspace, adoptSession, rememberDeleted]);
 
       // 空白草稿跟随官方语义：不自动回收（官方从不物理删除会话文件），仅视图层隐藏
       // （sessionVisible 已排除非当前打开的 blank 行）。v1.9.0 起移除旧的自动回收

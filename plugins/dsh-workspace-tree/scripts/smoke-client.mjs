@@ -73,6 +73,10 @@ globalThis.window = {
 let guardAnswer = { ok: true, status: 'idle', running: false }
 let guardFailure = null
 let guardCalls = []
+/** Physical-existence probe knobs: ids the host still finds on disk, or a thrown failure. */
+let tombstoneAlive = []
+let tombstoneFailure = null
+let tombstoneCalls = []
 /** Native (macOS Finder) picker knobs: support probe answer and the POST result.
  *  Default false = a host that cannot serve the Finder chooser; the macOS scenarios
  *  opt in explicitly (see the merged 「添加工作区」 cases at the end). */
@@ -86,6 +90,12 @@ globalThis.fetch = async (url, init) => {
     guardCalls.push(JSON.parse(init?.body ?? '{}'))
     if (guardFailure !== null) throw new Error(guardFailure)
     const body = typeof guardAnswer === 'function' ? guardAnswer(guardCalls) : guardAnswer
+    return { json: async () => body }
+  }
+  if (path.endsWith('/archive/tombstoneCheck')) {
+    tombstoneCalls.push(JSON.parse(init?.body ?? '{}'))
+    if (tombstoneFailure !== null) throw new Error(tombstoneFailure)
+    const body = typeof tombstoneAlive === 'function' ? tombstoneAlive(tombstoneCalls) : { ok: true, alive: tombstoneAlive }
     return { json: async () => body }
   }
   if (path.endsWith('/picker/native')) {
@@ -415,6 +425,9 @@ async function boot(makeOverrides = {}, ledgerOption, hostFacts = {}) {
 
   guardCalls = []
   guardFailure = null
+  tombstoneCalls = []
+  tombstoneFailure = null
+  tombstoneAlive = []
   nativeSupported = hostFacts.native === true
   nativePickCalls = 0
   nativeProbeFailure = null
@@ -476,6 +489,26 @@ const sidebarPropsWith = (face, rows, current, state, calls) => {
       archivedSessionIds: [],
       phase: 'ready',
     }),
+  }
+}
+
+/** Sidebar props with an explicit Workspace list (the auto-adopt cases need real items). */
+const sidebarPropsWithWorkspaces = (face, rows, items, state, calls) => {
+  // Publishing into the mutable store keeps `useSessions` and the plugin's `liveSessionRow`
+  // reading one source, exactly like the shipped controller does.
+  state.sessionSnapshot = {
+    ids: rows.map((row) => row.id),
+    byId: Object.fromEntries(rows.map((row) => [row.id, row])),
+    current: undefined,
+    phase: 'ready',
+  }
+  return {
+    ...face,
+    wide: true,
+    ...(calls === undefined ? {} : { renderSlot: renderSlotStub(calls) }),
+    useSessionPendingInteraction: (select) => select(new Map()),
+    useSessions: (select) => select(state.sessionSnapshot),
+    useWorkspaces: (select) => select({ items, archivedSessionIds: [], phase: 'ready' }),
   }
 }
 
@@ -880,6 +913,80 @@ const listing = (path, entries, crumbs) => ({
   check('merged: a failed support probe keeps the plain tooltip and the sidebar working',
     addWorkspaceButton(tree) !== undefined && addWorkspaceButton(tree).props.title === '添加工作区'
     && harness.calls.errors.length === 0)
+}
+
+// ── 自动收编只认物理存在的会话：已删幽灵写墓碑跳过，「彻底移除」的工作区不被复活 ──
+
+{
+  const DELETED_KEY = 'dswt-workspace-tree.deleted'
+  storage.delete(DELETED_KEY)
+
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const row = (over = {}) => ({
+    id: 'session-ghost', displayTitle: 'ghost row', cwd: '/home/tny/standard',
+    running: false, blank: false, updatedAt: Date.now(), ...over,
+  })
+  const ws = (id, path) => ({ workspaceId: id, path, title: path.split('/').pop(), sessionIds: [] })
+  const propsWith = (rows, items) => sidebarPropsWithWorkspaces(face, rows, items, harness.state, harness.calls)
+  const created = () => harness.calls.workspaceCreate.length
+  const adopted = () => harness.calls.sessionCreate.length
+  // Async handlers outlive one settle round; drain before snapshotting per-case deltas.
+  const drain = async () => { for (let i = 0; i < 3; i += 1) await new Promise((resolveTurn) => setTimeout(resolveTurn, 0)) }
+
+  // 1) 用户刚把空工作区「彻底移除」（注册表里已无该 path），官方列表仍返回其幽灵会话：
+  //    收编必须跳过——否则 createWorkspace + attach 会把工作区原地建回来（本 bug 根因）。
+  tombstoneAlive = []
+  let createdBefore = created()
+  let adoptedBefore = adopted()
+  await settle(Browser, propsWith([row()], []))
+  await drain()
+  check('adopt: a ghost whose directory is gone never gets its workspace re-created',
+    created() === createdBefore && adopted() === adoptedBefore)
+  check('adopt: the ghost is probed through the host physical-existence route',
+    tombstoneCalls.length >= 1
+    && JSON.stringify(tombstoneCalls[0].ids) === JSON.stringify(['session-ghost']))
+  check('adopt: the ghost is tombstoned (hidden, skipped on every later pass)',
+    JSON.parse(storage.get(DELETED_KEY) ?? '[]').includes('session-ghost'))
+
+  // 2) 幽灵 + 仍在注册表里的同路径空工作区：也不得把它挂回去。
+  tombstoneAlive = []
+  createdBefore = created()
+  adoptedBefore = adopted()
+  await settle(Browser, propsWith([row({ id: 'session-ghost-2' })], [ws('ws-empty', '/home/tny/standard')]))
+  await drain()
+  check('adopt: a gone-directory ghost is not attached to an existing empty workspace',
+    created() === createdBefore && adopted() === adoptedBefore)
+
+  // 3) 物理存在的无归属会话：照旧挂到同路径工作区（收编语义不变）。
+  tombstoneAlive = ['session-live']
+  createdBefore = created()
+  adoptedBefore = adopted()
+  await settle(Browser, propsWith([row({ id: 'session-live' })], [ws('ws-empty', '/home/tny/standard')]))
+  await drain()
+  const adoptedNow = harness.calls.sessionCreate.slice(adoptedBefore)
+  check('adopt: a physically present session still attaches to its workspace',
+    adoptedNow.length >= 1 && created() === createdBefore
+    && adoptedNow.every((input) => input.sessionId === 'session-live' && input.workspaceId === 'ws-empty'))
+
+  // 4) 物理存在但没有任何工作区认领：照旧按 cwd 注册工作区。
+  tombstoneAlive = ['session-fresh']
+  createdBefore = created()
+  await settle(Browser, propsWith([row({ id: 'session-fresh', cwd: '/home/tny/fresh' })], []))
+  await drain()
+  const createdNow = harness.calls.workspaceCreate.slice(createdBefore)
+  check('adopt: an unaccounted live session still registers its cwd as a workspace',
+    createdNow.length >= 1 && createdNow.every((input) => input.path === '/home/tny/fresh'))
+
+  // 5) 探测不可用（旧版宿主半边 / 网络故障）：fail-open，维持原收编行为。
+  tombstoneFailure = 'network down'
+  createdBefore = created()
+  await settle(Browser, propsWith([row({ id: 'session-offline', cwd: '/home/tny/offline' })], []))
+  await drain()
+  const offlineCreated = harness.calls.workspaceCreate.slice(createdBefore)
+  check('adopt: an unreachable probe fails open instead of blocking adoption',
+    offlineCreated.length >= 1 && offlineCreated.every((input) => input.path === '/home/tny/offline'))
+  tombstoneFailure = null
 }
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`)

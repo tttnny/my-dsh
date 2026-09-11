@@ -11,7 +11,7 @@
  * Run with: node scripts/smoke-host.mjs [plugin-dir]
  */
 
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -91,6 +91,33 @@ check('missing sessionId is refused', noIdCase.ok === false && /sessionId/.test(
 
 const notFoundCase = await call('/api/dsh-workspace-tree/archive/doesNotExist', {}, undefined)
 check('unknown sub-route still answers 404 JSON', notFoundCase.ok === false && /not found/.test(String(notFoundCase.error)))
+
+// ─────── physical-existence probe (auto-adopt gate + tombstone self-heal) ───────
+
+const probe = '/api/dsh-workspace-tree/archive/tombstoneCheck'
+const previousDshHome = process.env.DSH_HOME
+const restoreDshHome = () => {
+  if (previousDshHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = previousDshHome
+}
+
+process.env.DSH_HOME = join(mkdtempSync(join(tmpdir(), 'dswt-home-missing-')), 'no-such-home')
+const unreadableRoot = await call(probe, { ids: ['session-x'] }, undefined)
+check('tombstoneCheck: an unreadable sessions root answers ok:false, never "all dead"',
+  unreadableRoot.httpStatus === 200 && unreadableRoot.ok === false && !Array.isArray(unreadableRoot.alive))
+
+const scratchHome = mkdtempSync(join(tmpdir(), 'dswt-home-'))
+mkdirSync(join(scratchHome, 'sessions'), { recursive: true })
+process.env.DSH_HOME = scratchHome
+const emptyRoot = await call(probe, { ids: ['session-x'] }, undefined)
+check('tombstoneCheck: an enumerable root reports a missing id as not alive',
+  emptyRoot.ok === true && Array.isArray(emptyRoot.alive) && emptyRoot.alive.length === 0)
+
+mkdirSync(join(scratchHome, 'sessions', '--scope--', 'session-y'), { recursive: true })
+const foundRoot = await call(probe, { ids: ['session-y'] }, undefined)
+check('tombstoneCheck: an existing session directory is reported alive',
+  foundRoot.ok === true && JSON.stringify(foundRoot.alive) === JSON.stringify(['session-y']))
+restoreDshHome()
 
 // ───────────────────── native Finder picker (macOS `choose folder`) ─────────────────────
 
