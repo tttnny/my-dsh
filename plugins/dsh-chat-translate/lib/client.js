@@ -1495,7 +1495,7 @@ function setupSettingsUi(ctx) {
   } catch (err) {
     console.warn("[dsh-chat-translate] Failed to bind settings scope:", err);
   }
-  const locale = ctx?.locale || (ctx?.get ? ctx.get("locale") : null);
+  const locale = typeof ctx?.get === "function" ? ctx.get("locale") : null;
   if (locale && typeof locale.register === "function" && typeof ctx?.effect === "function") {
     ctx.effect(
       () => locale.register(NS, { zh, en }),

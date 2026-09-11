@@ -287,8 +287,12 @@ export function setupSettingsUi(ctx: any): void {
   }
 
   // The locale service is optional, like the services above: the page label and
-  // the card's `t` seat fall back to the Chinese copy without it.
-  const locale = ctx?.locale || (ctx?.get ? ctx.get('locale') : null);
+  // the card's `t` seat fall back to the Chinese copy without it. It is read
+  // through `ctx.get` and never as `ctx.locale` — the kernel guard throws
+  // `cannot get property "locale" without inject` for any service the plugin did
+  // not declare, and locale is deliberately not one of them (an undeclared read
+  // here aborted the whole client apply and took the plugin off the page).
+  const locale = typeof ctx?.get === 'function' ? ctx.get('locale') : null;
   if (locale && typeof locale.register === 'function' && typeof ctx?.effect === 'function') {
     ctx.effect(
       () => locale.register(NS, { zh, en }),

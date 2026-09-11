@@ -60,7 +60,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node scripts/test-regression-suite.mjs && node scripts/test-channel-logic.mjs && node scripts/test-store.mjs && node scripts/test-toggle-restore.mjs"
+    "test": "node scripts/test-client-wiring.mjs && node scripts/test-regression-suite.mjs && node scripts/test-channel-logic.mjs && node scripts/test-store.mjs && node scripts/test-toggle-restore.mjs"
   },
   "engines": {
     "node": "^22.19 || >=24"
