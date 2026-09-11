@@ -63,7 +63,7 @@
     <tr>
       <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
       <td><a href="./plugins/dsh-ask-user-grilling"><code>@lynn123411/dsh-ask-user-grilling</code></a></td>
-      <td><b>grilling 投递工具</b><br>· <code>ask_user_grilling</code>：唯一提问工具路由 / 强制多选 / 轮末补充 / 题干引导不硬校验 / 子代理等齐为<b>软纪律（无硬闸门）</b><br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次工具投递表单作答；达成共识后不自动进入 plan mode<br>· ⚠️ 形态：普通 Cordis 插件（preset 工具行消费，非 bundle），严禁加入 profile <code>package.json</code> 的 <code>dsh.profile.bundles</code></td>
+      <td><b>提问表单变体</b><br>· <code>ask_user_grilling</code>：原生 <code>ask_user_question</code> 的呈现变体——同一条 <code>userQuestions</code> seam，工具描述与全部参数描述<b>与原生逐字一致</b>，只强制多选、并自动追加一道轮末补充题（多选刻意不写进描述）<br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次表单投递作答<br>· ⚠️ 形态：普通 Cordis 插件（preset 工具行消费，非 bundle），严禁加入 profile <code>package.json</code> 的 <code>dsh.profile.bundles</code></td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling</code></td>
     </tr>
     <tr>

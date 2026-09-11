@@ -2,19 +2,18 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import "@deepseek-ai/dsh-user-questions";
 
 /**
- * @lynn123411/dsh-ask-user-grilling — DSH delivery adaptations for grilling
- * rounds (mattpocock/skills). This package only shapes how rounds are asked
- * inside DSH; it modifies no skill file.
+ * @lynn123411/dsh-ask-user-grilling — a presentation variant of the native
+ * `ask_user_question` (`@deepseek-ai/dsh-tool-ask-user`). Same capability seam
+ * (ctx.userQuestions) and the same tool/parameter descriptions verbatim; only
+ * the rendered form differs.
  *
  * ask_user_grilling:
  *   - forces multi-select on every question — the schema offers no opt-out
  *   - appends a round-end supplement question; per-question supplement goes
  *     through the built-in custom input ("Type your answer" / "输入你的答案"),
  *     so no extra per-question option is added (it would duplicate that field)
- *   - treats stem/option separation as guidance only and never rejects a stem:
- *     substring checks false-positive on legitimate stems
- *   - leaves waiting for subagent settlement to the tool description — soft
- *     discipline, not a gate
+ *   - rejects question ids using the reserved `__grill_` prefix, so the
+ *     auto-appended question can never be shadowed
  */
 const name = "tool-ask-user-grilling";
 const inject = ["tools", "userQuestions"];
@@ -32,12 +31,12 @@ const ROUND_END_QUESTION = {
 function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
-    description: "Ask the user questions as a form — the only question tool in these presets; route every user-facing question through here, grilling rounds and all other questions alike. For a grilling round, deliver the round the skill had you announce in the message text — the SAME round, ONE call, in the same turn; the prose and the form must match one-to-one. Map each announced question to the fields below (title → header, body → question, the A/B/C choices → options; recommendation as below). Each question needs a stable id matching the Q-number you announced, never starting with __grill_ (reserved for the auto-appended round-end supplement question — never add your own catch-all/\"anything else?\" question; a non-empty supplement input reshapes the tree: ask a further round, and stop asking once the user confirms shared understanding). Mark your recommended option by appending \"(Recommended)\" to its label (any position; if it isn't an option, state it briefly in the question text). If you dispatched subagents whose findings the next round depends on, prefer ending your turn and waiting until all of them have settled before asking — asking the frontier before the facts arrive wastes a round.",
+    description: "Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. Send one or more questions, each with a stable id that will be echoed in the answer.",
     parameters: {
       questions: {
         type: "array",
         required: true,
-        description: "The current round's questions (round/frontier protocol: see the grilling skill). Each needs a stable id, a stem and options.",
+        description: "Questions to ask the user before continuing.",
         items: {
           type: "object",
           additionalProperties: true,
@@ -45,20 +44,20 @@ function apply(ctx) {
             id: {
               type: "string",
               required: true,
-              description: "Stable id for this question; echoed in the answer. Must NOT start with __grill_ (reserved prefix).",
+              description: "Stable id for this question; echoed in the answer.",
             },
             question: {
               type: "string",
               required: true,
-              description: "The question stem — write only the question. The A/B/C choices belong in options, never in the stem.",
+              description: "The specific question to ask the user.",
             },
             header: {
               type: "string",
-              description: "Optional short heading, e.g. \"Q2 — Deadline\".",
+              description: "Optional short heading for the question, such as \"Confirm\" or \"Choose Mode\".",
             },
             options: {
               type: "array",
-              description: "Choices to show the user. Mark your recommended option by appending \"(Recommended)\" to its label; any list position is fine.",
+              description: "Optional choices to show the user. If you recommend one, put it first and append \"(Recommended)\" to that label.",
               items: {
                 type: "object",
                 additionalProperties: true,

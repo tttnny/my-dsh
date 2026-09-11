@@ -2,7 +2,7 @@
 
 三个 matt preset（`matt-standard` / `matt-ptc` / `matt-cordis`）＝ **官方组合逐字** ＋ **Matt 的 25 个技能** ＋ **grilling 适配插件**（`ask_user_grilling`）－ 普通提问工具（`tool-ask-user` 行删除，改动③）。本文逐处说明相对官方材料**改了什么、改成什么样、为什么**；本目录为纯文档，由 AI 按本文执行。仓库 `presets/matt-*/` 就是改好的成品，直接同步即用；以下改动点只在「从零组装 / DSH 升级后重打」时需要动手。
 
-改动只发生在两类文件上：`agent.cordis.yml`（官方正文上加两处 MATT-ADD、删一处 MATT-DEL）与 `skills/grilling/SKILL.md`（本地适配，改动内容为中文）。`matt-standard` 与 `matt-cordis` 的 `grilling/SKILL.md` 完全相同；`matt-ptc` 的投递纪律整段按 PTC 形态表述（`run_code` 程序内 `tools.ask_user_grilling`，见 §二 示例二），PTC 措辞不进入非 PTC preset。persona 一行不改——grilling 纪律不写进 persona，而是下沉到技能正文（投递纪律段 + 子代理等齐段）与插件工具描述（模型读到技能/工具时正好看到，比 system prompt 里的抽象禁令有效）。
+改动只发生在两类文件上：`agent.cordis.yml`（官方正文上加两处 MATT-ADD、删一处 MATT-DEL）与 `skills/grilling/SKILL.md`（本地适配，改动内容为中文）。`matt-standard` 与 `matt-cordis` 的 `grilling/SKILL.md` 完全相同；`matt-ptc` 的投递纪律整段按 PTC 形态表述（`run_code` 程序内 `tools.ask_user_grilling`，见 §二 示例二），PTC 措辞不进入非 PTC preset。persona 一行不改——grilling 纪律不写进 persona，而是下沉到技能正文（投递纪律段 + 子代理等齐段）：模型读到技能时正好看到，比 system prompt 里的抽象禁令有效。插件只改表单呈现、工具描述与原生 `ask_user_question` 逐字一致，不承载任何纪律。
 
 ## 零、当前基线
 
@@ -89,7 +89,7 @@ Recommended: <your recommended answer>
 > **DSH delivery：** 每一轮分两步投递：先在消息文本里**以散文预告这一轮的全部问题**（标题、正文、选项与推荐），在**同一回合内**紧接着把**同一轮**作为**一次** `ask_user_grilling` 调用发出，让用户在表单中作答：   # ②
 >
 > - 散文预告与工具投递必须**同一轮、一一对应**：预告里列出的问题、选项与推荐，投递时就发这一套，不得漏问、也不得在表单里另起一套或换一轮（轮末补充题由代码自动追加，不用你写，也不在预告里）。
-> - 提问一律走 `ask_user_grilling`（本 preset 唯一的提问工具）。
+> - 提问一律走 `ask_user_grilling`（本 preset 的提问工具）。
 
 Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
@@ -139,7 +139,7 @@ Recommended: <your recommended answer>
 > **DSH delivery：** 每一轮分两步投递：先在消息文本里**以散文预告这一轮的全部问题**（标题、正文、选项与推荐），在**同一回合内**紧接着再在 `run_code` 程序内用 `return await tools.ask_user_grilling({ questions: [...] })` 把**同一轮**作为**一次**调用投出，让用户在表单中作答：   # ②
 >
 > - 散文预告与投递必须**同一轮、一一对应**：预告里列出的问题、选项与推荐，投递时就发这一套，不得漏问、也不得在表单里另起一套或换一轮（轮末补充题由代码自动追加，不用你写，也不在预告里）。
-> - 提问一律走 `tools.ask_user_grilling`（本 preset 唯一的提问工具）。
+> - 提问一律走 `tools.ask_user_grilling`（本 preset 的提问工具）。
 
 Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
@@ -153,9 +153,9 @@ The session is done when the frontier is empty: every branch of the design tree 
 **本地改动逐条说明**（①–④ 对应上文中标注；其余为上游英文原样、非改动）：
 
 - **①** 上游格式块用 emoji 问号/箭头标记、且正文占位含 `including multiple choices`（诱导把选项塞进题干）；本改动把模板改写为纯文本并**把选项独立成 `Options:` 块**（`Qn.` 标题 / 正文占位不含选项 / `Options:` 列 A/B/C / `Recommended:`），引导行保留上游英文 `Format a round like so:`。**原因**：模板是模型最可能整段照抄的样例——emoji 会被抄进输出、『选项塞正文』的占位会诱导模型把 A/B/C 写进题干；选项独立成块后与投递字段一一对应，模型照模板组织即可。
-- **②** 在格式块后新增旁注「**DSH delivery**」整段（中文）：轮次投递 = **先在消息文本里按模板以散文预告本轮全部问题（标题/正文/选项/推荐），在同一回合内紧接着把同一轮作为一次 `ask_user_grilling` 调用发出、让用户在表单中作答**；预告与投递必须**同一轮、一一对应**（不得另起一套；轮末补充题由代码自动追加，不计入一一对应）；提问一律走 `ask_user_grilling`（本 preset 唯一的提问工具——`tool-ask-user` 行已删，见 §一 改动③）。字段组织细节（title→`header`、body→`question`、选项→`options`、推荐加标记）不写进旁注，由模板与工具描述承载、让模型自行判断。**matt-ptc**：投递纪律整段按 PTC 形态表述（见上文示例二）——预告照常写在消息文本里，投递写成 `run_code` 程序内的 `tools.ask_user_grilling({ questions: [...] })`，（`tool-ask-user` 行同样删除）。**原因**：纯散文让用户拿到不可点击文本、丢失表单；纯工具又让用户看不到正文里的问题陈述——散文预告 + 工具表单各司其职，且必须成对出现；PTC 形态只属于 PTC preset，不进入非 PTC 版本。
+- **②** 在格式块后新增旁注「**DSH delivery**」整段（中文）：轮次投递 = **先在消息文本里按模板以散文预告本轮全部问题（标题/正文/选项/推荐），在同一回合内紧接着把同一轮作为一次 `ask_user_grilling` 调用发出、让用户在表单中作答**；预告与投递必须**同一轮、一一对应**（不得另起一套；轮末补充题由代码自动追加，不计入一一对应）；提问一律走 `ask_user_grilling`（本 preset 的提问工具——`tool-ask-user` 行已删，见 §一 改动③）。字段组织细节（title→`header`、body→`question`、选项→`options`、推荐加标记）不写进旁注，由模板与工具描述承载、让模型自行判断。**matt-ptc**：投递纪律整段按 PTC 形态表述（见上文示例二）——预告照常写在消息文本里，投递写成 `run_code` 程序内的 `tools.ask_user_grilling({ questions: [...] })`，（`tool-ask-user` 行同样删除）。**原因**：纯散文让用户拿到不可点击文本、丢失表单；纯工具又让用户看不到正文里的问题陈述——散文预告 + 工具表单各司其职，且必须成对出现；PTC 形态只属于 PTC preset，不进入非 PTC 版本。
 - **③** 上游事实段含 "Don't block on it … ask the rest of the frontier now." 一句（鼓励先问其余轮次），**整句删除**；段末以 "The _decisions_ are the user's: put each to them and wait." 收尾。**原因**：本地「等齐再问」纪律（见④）与上游句「先把其余 frontier 问完」直接冲突——`ask_user_grilling` 不设硬闸门、不会拦下抢先提问，冲突只能靠删上游句消解。
-- **④** 事实段后新增旁注「**Sub-agent rounds**」整段（中文）：派遣子代理后先输出各代理任务清单（各自去查什么），然后**停**——本回合不再调任何其他工具、不提问、结束回合；不轮询，等结算通知自动唤醒；等**全部**已派遣子代理结算后再问 frontier（包括未受阻的问题）。**原因**：不约束时模型会派遣子代理后继续追问，而事实还没收齐——停轮等结算反而更快更准。本纪律是描述级软纪律，与插件工具描述里的一句劝告同源、两处各表：旁注给完整停轮程序，工具描述只留必知项。
+- **④** 事实段后新增旁注「**Sub-agent rounds**」整段（中文）：派遣子代理后先输出各代理任务清单（各自去查什么），然后**停**——本回合不再调任何其他工具、不提问、结束回合；不轮询，等结算通知自动唤醒；等**全部**已派遣子代理结算后再问 frontier（包括未受阻的问题）。**原因**：不约束时模型会派遣子代理后继续追问，而事实还没收齐——停轮等结算反而更快更准。本纪律是描述级软纪律，且**只写在这条旁注里**——插件只改表单呈现，其工具描述与原生 `ask_user_question` 逐字一致，不承载任何纪律。
 
 ## 三、其余文件（无本地改动或自写）
 
@@ -164,7 +164,7 @@ The session is done when the frontier is empty: every branch of the design tree 
 
 ## 四、外部材料（非改动、需自带）
 
-- 插件 `@lynn123411/dsh-ask-user-grilling`（只提供 `ask_user_grilling`，其精简的工具描述承载「grilling 轮次专用、先散文预告同一轮、再以工具投递表单、字段映射、勿自加收尾题、子代理等齐软纪律（无硬闸门）」等工具必知项；多选与每题补充输入框是 UI 自动行为，刻意不写入描述，避免模型为规避多选影响出题）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖）。**不要手工拷贝进 `node_modules/@lynn123411/`**：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`）——此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**。仓库 `plugins/dsh-ask-user-grilling/` 是事实源；回装前先用 `npm view` 确认 registry 已发布该版本，仓库含未发布改点时先发布再回装。**原因**：改动② 引用的正是这个包，不装则工具行解析失败；工具描述与技能旁注分工互补——投递纪律只在旁注，等齐纪律两处各表（旁注给完整停轮程序，工具描述给一句劝告），工具描述只留必知项。
+- 插件 `@lynn123411/dsh-ask-user-grilling`（`ask_user_question` 的表单呈现变体：同一条 `ctx.userQuestions` seam，工具描述与全部参数描述**与原生逐字一致**，只强制多选、并自动追加一道轮末补充题；多选刻意不写进描述，避免模型为规避多选而影响出题质量）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖）。**不要手工拷贝进 `node_modules/@lynn123411/`**：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`）——此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**。仓库 `plugins/dsh-ask-user-grilling/` 是事实源；回装前先用 `npm view` 确认 registry 已发布该版本，仓库含未发布改点时先发布再回装。**原因**：改动② 引用的正是这个包，不装则工具行解析失败；它只负责表单呈现（描述与原生一致），grilling 纪律全部由技能正文承载。
 - 25 个技能随 mattpocock/skills 上游更新。
 
 ## 五、何时重打
