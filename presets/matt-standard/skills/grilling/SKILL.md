@@ -40,4 +40,6 @@ Each round the user answers reshapes the tree: settled decisions push the fronti
 
 Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, etc.), dispatch a sub-agent to find it; don't ask the user for anything you could look up yourself. The _decisions_ are the user's: put each to them and wait.
 
+> **Sub-agent rounds：** 如果你在某轮派遣了子代理，先输出每个子代理的任务清单（各自要去查什么），然后**停**：不再调用任何其他工具、不提问、结束本回合。子代理的结算通知会自动唤醒你——不要轮询。等**全部**已派遣子代理结算后，再问 frontier（包括未受阻的问题）。
+
 The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Do not act on it until the user confirms you have reached a shared understanding.
