@@ -12,8 +12,11 @@ docs/
 .agent-teams/
 tmp/
 
+# 本机开发工具（与 docs/ 同为 local-only）；锚定根目录，避免误伤 plugins/*/scripts/
+/scripts/
+
 # 仓库根 node_modules 不放依赖安装，只放指向当前 DSH 版本内核包的软链接
-# （link: 开发插件的宿主半边要靠它解析 @deepseek-ai/*，见 docs/agents/plugins.md 第 3 条）
+# （link: 开发插件的宿主半边要靠它解析 @deepseek-ai/*，见 docs/rules/plugins.md 第 4 条）
 node_modules/
 
 # secrets & local credentials
