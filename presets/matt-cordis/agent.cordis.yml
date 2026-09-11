@@ -267,3 +267,6 @@
 # discipline lives in this tool's description plus that note, not in persona.
 - id: tool-ask-user-grilling
   name: '@lynn123411/dsh-ask-user-grilling'
+
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'
