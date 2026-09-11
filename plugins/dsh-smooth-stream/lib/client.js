@@ -23,27 +23,27 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$3;
 		}
 		var TypewriterAssistantNodeView_module_css_default = {
-			"body": "_07evbq_body",
-			"visuallyHidden": "_07evbq_visuallyHidden",
-			"follow": "_07evbq_follow",
-			"thinkChevron": "_07evbq_thinkChevron",
-			"stopped": "_07evbq_stopped",
-			"disclosureLeading": "_07evbq_disclosureLeading",
-			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
-			"thinkSummary": "_07evbq_thinkSummary",
-			"root": "_07evbq_root",
 			"thinkBody": "_07evbq_thinkBody",
-			"disclosureRoot": "_07evbq_disclosureRoot",
-			"disclosureRow": "_07evbq_disclosureRow",
-			"thinkRow": "_07evbq_thinkRow",
-			"disclosureTitle": "_07evbq_disclosureTitle",
-			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
-			"thinkLeading": "_07evbq_thinkLeading",
-			"thinkTitle": "_07evbq_thinkTitle",
-			"thinkSeparator": "_07evbq_thinkSeparator",
+			"thinkSummary": "_07evbq_thinkSummary",
+			"stopped": "_07evbq_stopped",
 			"think": "_07evbq_think",
+			"disclosureTitle": "_07evbq_disclosureTitle",
+			"thinkRow": "_07evbq_thinkRow",
+			"disclosureRow": "_07evbq_disclosureRow",
+			"thinkLeading": "_07evbq_thinkLeading",
+			"thinkSeparator": "_07evbq_thinkSeparator",
+			"disclosureLeading": "_07evbq_disclosureLeading",
+			"thinkChevron": "_07evbq_thinkChevron",
+			"root": "_07evbq_root",
 			"disclosureChevronHover": "_07evbq_disclosureChevronHover",
-			"disclosureContent": "_07evbq_disclosureContent"
+			"thinkTitle": "_07evbq_thinkTitle",
+			"disclosureContent": "_07evbq_disclosureContent",
+			"dsh-smooth-stream-think-sweep": "_07evbq_dsh-smooth-stream-think-sweep",
+			"disclosureIconIdle": "_07evbq_disclosureIconIdle",
+			"follow": "_07evbq_follow",
+			"visuallyHidden": "_07evbq_visuallyHidden",
+			"disclosureRoot": "_07evbq_disclosureRoot",
+			"body": "_07evbq_body"
 		};
 		//#endregion
 		//#region src/client/AnimatedDisclosure.tsx
@@ -3694,7 +3694,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:/Users/tny/Desktop/work/my-dsh/plugins/dsh-smooth-stream/src/client/SmoothStreamCard.module.css.mjs
-		const css$1 = ".QGTmaa_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:12px;flex-direction:column;list-style:none;transition:border-color .16s,background .16s;display:flex}.QGTmaa_card:hover{border-color:var(--dsw-alias-label-dimmed)}.QGTmaa_cardOpen{border-color:var(--dsw-alias-label-dimmed);background:var(--dsw-alias-bg-layer-2)}.QGTmaa_header{appearance:none;cursor:pointer;text-align:left;width:100%;font:inherit;color:inherit;background:0 0;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.QGTmaa_header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.QGTmaa_headText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.QGTmaa_name{color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:1.4}.QGTmaa_description{color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1.5}.QGTmaa_version{text-overflow:ellipsis;white-space:nowrap;max-width:16rem;color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:1.5;overflow:hidden}.QGTmaa_pending{background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);white-space:nowrap;border-radius:999px;flex:none;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.QGTmaa_chevron{color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s}.QGTmaa_chevronOpen{transform:rotate(180deg)}.QGTmaa_body{border-top:1px solid var(--dsw-alias-border-l2);flex-direction:column;margin:0 16px;padding-bottom:8px;display:flex}.QGTmaa_readOnly{color:var(--dsw-alias-label-tertiary);margin:12px 0 0;font-size:12px;line-height:1.5}.QGTmaa_field{flex-direction:column;gap:6px;padding:12px 0;display:flex}.QGTmaa_field+.QGTmaa_field{border-top:1px solid var(--dsw-alias-border-l2)}.QGTmaa_fieldDisabled{opacity:.5}.QGTmaa_fieldHead{justify-content:space-between;align-items:center;gap:8px;display:flex}.QGTmaa_label{min-width:0;color:var(--dsw-alias-label-primary);flex:1;font-size:13px;font-weight:500;line-height:1.5}.QGTmaa_toggle{width:16px;height:16px;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}.QGTmaa_toggle:disabled{cursor:default}.QGTmaa_toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.QGTmaa_choiceRow{flex-wrap:wrap;gap:6px 14px;margin:2px 0 0;padding:0;display:flex}.QGTmaa_choice{color:var(--dsw-alias-label-secondary);cursor:pointer;align-items:center;gap:5px;font-size:12px;line-height:1.5;display:flex}.QGTmaa_choiceInput{width:14px;height:14px;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}.QGTmaa_choice:has(.QGTmaa_choiceInput:disabled){cursor:default;opacity:.55}.QGTmaa_choiceInput:disabled{cursor:default}.QGTmaa_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:12px;line-height:1.5}.QGTmaa_failure{justify-content:space-between;align-items:center;gap:12px;padding:12px 0;display:flex}.QGTmaa_updateRow{border-top:1px solid var(--dsw-alias-border-l2);justify-content:space-between;align-items:center;gap:12px;padding:12px 0;display:flex}.QGTmaa_updateCopy{flex-direction:column;gap:4px;min-width:0;display:flex}.QGTmaa_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}.QGTmaa_failed{min-width:0;color:var(--dsw-alias-label-error);flex:1;margin:0;font-size:12px;line-height:1.5}.QGTmaa_save,.QGTmaa_discard,.QGTmaa_update{appearance:none;font:inherit;cursor:pointer;border:1px solid #0000;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.QGTmaa_save{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.QGTmaa_discard{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0}.QGTmaa_discard:hover:not(:disabled),.QGTmaa_update:hover:not(:disabled){border-color:var(--dsw-alias-label-dimmed);color:var(--dsw-alias-label-primary)}.QGTmaa_update{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0;flex:none;align-items:center;gap:6px;display:inline-flex}.QGTmaa_discard:disabled,.QGTmaa_save:disabled,.QGTmaa_update:disabled{opacity:.4;cursor:default}.QGTmaa_discard:focus-visible,.QGTmaa_save:focus-visible,.QGTmaa_update:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}";
+		const css$1 = ".QGTmaa_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:12px;flex-direction:column;list-style:none;transition:border-color .16s,background .16s;display:flex}.QGTmaa_card:hover{border-color:var(--dsw-alias-label-dimmed)}.QGTmaa_cardOpen{border-color:var(--dsw-alias-label-dimmed);background:var(--dsw-alias-bg-layer-2)}.QGTmaa_header{appearance:none;text-align:left;width:100%;font:inherit;color:inherit;background:0 0;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.QGTmaa_headText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.QGTmaa_name{color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:1.4}.QGTmaa_description{color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1.5}.QGTmaa_version{text-overflow:ellipsis;white-space:nowrap;max-width:16rem;color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:1.5;overflow:hidden}.QGTmaa_pending{background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);white-space:nowrap;border-radius:999px;flex:none;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.QGTmaa_body{border-top:1px solid var(--dsw-alias-border-l2);flex-direction:column;margin:0 16px;padding-bottom:8px;display:flex}.QGTmaa_readOnly{color:var(--dsw-alias-label-tertiary);margin:12px 0 0;font-size:12px;line-height:1.5}.QGTmaa_field{flex-direction:column;gap:6px;padding:12px 0;display:flex}.QGTmaa_field+.QGTmaa_field{border-top:1px solid var(--dsw-alias-border-l2)}.QGTmaa_fieldDisabled{opacity:.5}.QGTmaa_fieldHead{justify-content:space-between;align-items:center;gap:8px;display:flex}.QGTmaa_label{min-width:0;color:var(--dsw-alias-label-primary);flex:1;font-size:13px;font-weight:500;line-height:1.5}.QGTmaa_toggle{width:16px;height:16px;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}.QGTmaa_toggle:disabled{cursor:default}.QGTmaa_toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.QGTmaa_choiceRow{flex-wrap:wrap;gap:6px 14px;margin:2px 0 0;padding:0;display:flex}.QGTmaa_choice{color:var(--dsw-alias-label-secondary);cursor:pointer;align-items:center;gap:5px;font-size:12px;line-height:1.5;display:flex}.QGTmaa_choiceInput{width:14px;height:14px;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}.QGTmaa_choice:has(.QGTmaa_choiceInput:disabled){cursor:default;opacity:.55}.QGTmaa_choiceInput:disabled{cursor:default}.QGTmaa_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:12px;line-height:1.5}.QGTmaa_failure{justify-content:space-between;align-items:center;gap:12px;padding:12px 0;display:flex}.QGTmaa_updateRow{border-top:1px solid var(--dsw-alias-border-l2);justify-content:space-between;align-items:center;gap:12px;padding:12px 0;display:flex}.QGTmaa_updateCopy{flex-direction:column;gap:4px;min-width:0;display:flex}.QGTmaa_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}.QGTmaa_failed{min-width:0;color:var(--dsw-alias-label-error);flex:1;margin:0;font-size:12px;line-height:1.5}.QGTmaa_save,.QGTmaa_discard,.QGTmaa_update{appearance:none;font:inherit;cursor:pointer;border:1px solid #0000;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.QGTmaa_save{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.QGTmaa_discard{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0}.QGTmaa_discard:hover:not(:disabled),.QGTmaa_update:hover:not(:disabled){border-color:var(--dsw-alias-label-dimmed);color:var(--dsw-alias-label-primary)}.QGTmaa_update{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0;flex:none;align-items:center;gap:6px;display:inline-flex}.QGTmaa_discard:disabled,.QGTmaa_save:disabled,.QGTmaa_update:disabled{opacity:.4;cursor:default}.QGTmaa_discard:focus-visible,.QGTmaa_save:focus-visible,.QGTmaa_update:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}";
 		const tagId$1 = "@lynn123411/dsh-smooth-stream/SmoothStreamCard.module.css";
 		if (typeof document !== "undefined") {
 			let tag = document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]");
@@ -3707,60 +3707,46 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$1;
 		}
 		var SmoothStreamCard_module_css_default = {
-			"fieldDisabled": "QGTmaa_fieldDisabled",
-			"pending": "QGTmaa_pending",
-			"field": "QGTmaa_field",
-			"chevronOpen": "QGTmaa_chevronOpen",
-			"choiceInput": "QGTmaa_choiceInput",
-			"version": "QGTmaa_version",
-			"failed": "QGTmaa_failed",
-			"header": "QGTmaa_header",
-			"body": "QGTmaa_body",
-			"readOnly": "QGTmaa_readOnly",
-			"hint": "QGTmaa_hint",
 			"footer": "QGTmaa_footer",
-			"update": "QGTmaa_update",
+			"choiceInput": "QGTmaa_choiceInput",
+			"failed": "QGTmaa_failed",
+			"hint": "QGTmaa_hint",
 			"cardOpen": "QGTmaa_cardOpen",
+			"name": "QGTmaa_name",
+			"save": "QGTmaa_save",
+			"readOnly": "QGTmaa_readOnly",
+			"body": "QGTmaa_body",
+			"update": "QGTmaa_update",
+			"pending": "QGTmaa_pending",
+			"version": "QGTmaa_version",
+			"field": "QGTmaa_field",
+			"label": "QGTmaa_label",
+			"failure": "QGTmaa_failure",
+			"fieldHead": "QGTmaa_fieldHead",
+			"description": "QGTmaa_description",
+			"headText": "QGTmaa_headText",
+			"toggle": "QGTmaa_toggle",
+			"updateRow": "QGTmaa_updateRow",
+			"header": "QGTmaa_header",
+			"fieldDisabled": "QGTmaa_fieldDisabled",
 			"updateCopy": "QGTmaa_updateCopy",
 			"discard": "QGTmaa_discard",
 			"card": "QGTmaa_card",
-			"toggle": "QGTmaa_toggle",
-			"description": "QGTmaa_description",
-			"name": "QGTmaa_name",
-			"label": "QGTmaa_label",
-			"save": "QGTmaa_save",
-			"updateRow": "QGTmaa_updateRow",
-			"choice": "QGTmaa_choice",
-			"failure": "QGTmaa_failure",
-			"headText": "QGTmaa_headText",
-			"chevron": "QGTmaa_chevron",
-			"fieldHead": "QGTmaa_fieldHead",
-			"choiceRow": "QGTmaa_choiceRow"
+			"choiceRow": "QGTmaa_choiceRow",
+			"choice": "QGTmaa_choice"
 		};
 		//#endregion
 		//#region src/client/SmoothStreamCard.tsx
-		/**
-		* The smooth-stream card inside the shared 「阅读体验」 settings page.
-		* Preferences are staged until the user saves — the same shape as the
-		* Host-shipped cards, hand-drawn because the Host cards' chrome is not
-		* exported for reuse.
-		*/
 		/** Render the smooth-stream card independently of the core settings namespace allowlist. */
 		function SmoothStreamCard(props) {
 			const { t } = props;
-			const [open, setOpen] = (0, react.useState)(false);
 			const state = props.useSmoothStreamCard((snapshot) => snapshot);
 			const blocked = !state.dirty || state.saving || state.status !== "ready";
 			const versionLabel = state.version === void 0 ? null : t(state.installation === "development" ? "developmentVersion" : "version").replace("{version}", state.version);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
-				className: open ? `${SmoothStreamCard_module_css_default.card} ${SmoothStreamCard_module_css_default.cardOpen}` : SmoothStreamCard_module_css_default.card,
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-					type: "button",
+				className: `${SmoothStreamCard_module_css_default.card} ${SmoothStreamCard_module_css_default.cardOpen}`,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: SmoothStreamCard_module_css_default.header,
-					"aria-expanded": open,
-					onClick: () => {
-						setOpen(!open);
-					},
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: SmoothStreamCard_module_css_default.headText,
@@ -3779,10 +3765,9 @@ window.__ModuleLoader__.load({
 						state.dirty ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: SmoothStreamCard_module_css_default.pending,
 							children: t("unsaved")
-						}) : null,
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, { className: open ? `${SmoothStreamCard_module_css_default.chevron} ${SmoothStreamCard_module_css_default.chevronOpen}` : SmoothStreamCard_module_css_default.chevron })
+						}) : null
 					]
-				}), open ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: SmoothStreamCard_module_css_default.body,
 					children: [
 						state.status === "loading" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
@@ -3998,7 +3983,7 @@ window.__ModuleLoader__.load({
 							})
 						] }) : null
 					]
-				}) : null]
+				})]
 			});
 		}
 		//#endregion
@@ -4040,29 +4025,36 @@ window.__ModuleLoader__.load({
 			if (typeof label === "function") return label();
 			return typeof label === "string" ? label : "";
 		}
+		/**
+		* Tab chrome mirrors the kernel's own settings tabs (`.tabs` / `.tab` in
+		* `ui-settings-plugins`): tertiary label, 13px, 22px gutter. The marker is the
+		* ACTIVE TAB'S OWN bottom border and the bar draws no rail of its own — a
+		* shared underline reads as "every tab is selected", which is exactly the bug
+		* this replaces.
+		*/
 		const TABLIST_STYLE = {
 			display: "flex",
-			gap: "4px",
-			marginBottom: "12px",
-			borderBottom: "1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25))"
+			alignItems: "flex-end",
+			gap: "22px",
+			marginTop: "2px",
+			marginBottom: "16px"
 		};
 		const TAB_STYLE = {
 			appearance: "none",
 			background: "transparent",
 			border: "none",
 			borderBottom: "2px solid transparent",
-			marginBottom: "-1px",
-			padding: "6px 12px",
+			padding: "7px 1px 9px",
 			cursor: "pointer",
 			font: "inherit",
 			fontSize: "13px",
-			color: "var(--dsw-alias-label-secondary, inherit)"
+			lineHeight: "20px",
+			color: "var(--dsw-alias-label-tertiary, inherit)"
 		};
 		const TAB_ACTIVE_STYLE = {
 			...TAB_STYLE,
 			color: "var(--dsw-alias-label-primary, inherit)",
-			borderBottomColor: "var(--dsw-alias-label-primary, currentColor)",
-			fontWeight: 600
+			borderBottomColor: "var(--dsw-alias-label-primary, currentColor)"
 		};
 		/** Panels stay mounted (hidden) so each card keeps its local state. */
 		const PANEL_STYLE = {
@@ -4402,34 +4394,34 @@ window.__ModuleLoader__.load({
 			tag.textContent = css;
 		}
 		var DebugPanel_module_css_default = {
-			"primaryButton": "fE600W_primaryButton",
-			"panel": "fE600W_panel",
-			"infoButton": "fE600W_infoButton",
+			"controlLabel": "fE600W_controlLabel",
 			"control": "fE600W_control",
+			"trigger": "fE600W_trigger",
 			"footerSpacer": "fE600W_footerSpacer",
-			"title": "fE600W_title",
-			"section": "fE600W_section",
-			"statusDot": "fE600W_statusDot",
-			"visuallyHidden": "fE600W_visuallyHidden",
-			"panelHeader": "fE600W_panelHeader",
+			"state": "fE600W_state",
+			"triggerActive": "fE600W_triggerActive",
 			"statusLive": "fE600W_statusLive",
 			"range": "fE600W_range",
-			"secondaryButton": "fE600W_secondaryButton",
-			"trigger": "fE600W_trigger",
+			"unsaved": "fE600W_unsaved",
+			"scrollArea": "fE600W_scrollArea",
+			"title": "fE600W_title",
+			"section": "fE600W_section",
 			"guide": "fE600W_guide",
-			"state": "fE600W_state",
-			"iconButton": "fE600W_iconButton",
 			"metrics": "fE600W_metrics",
 			"controlHead": "fE600W_controlHead",
-			"controlLabel": "fE600W_controlLabel",
+			"numberWrap": "fE600W_numberWrap",
+			"secondaryButton": "fE600W_secondaryButton",
+			"primaryButton": "fE600W_primaryButton",
+			"iconButton": "fE600W_iconButton",
 			"number": "fE600W_number",
 			"metric": "fE600W_metric",
-			"unsaved": "fE600W_unsaved",
-			"triggerActive": "fE600W_triggerActive",
-			"scrollArea": "fE600W_scrollArea",
-			"numberWrap": "fE600W_numberWrap",
+			"infoButton": "fE600W_infoButton",
 			"unit": "fE600W_unit",
-			"footer": "fE600W_footer"
+			"visuallyHidden": "fE600W_visuallyHidden",
+			"panelHeader": "fE600W_panelHeader",
+			"footer": "fE600W_footer",
+			"panel": "fE600W_panel",
+			"statusDot": "fE600W_statusDot"
 		};
 		//#endregion
 		//#region src/client/DebugPanel.tsx
