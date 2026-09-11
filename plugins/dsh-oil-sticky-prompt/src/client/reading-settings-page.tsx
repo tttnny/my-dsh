@@ -41,14 +41,28 @@ type ReadingPageProps = PropsRuntime<'settings.section'> & PropsRenderSlots<type
 
 /**
  * Page body. The shell supplies the section's own seats plus `renderSlot`
- * bound to the child slot declared at registration time; the page itself owns
- * only the stack. Cards render `<li>` roots, so the stack is a markerless
- * list — a stray `<li>` under a plain container would draw a bullet.
+ * bound to the child slot declared at registration time; the page owns the
+ * layout only.
+ *
+ * Cards are laid out SIDE BY SIDE: a markerless grid whose columns fit as many
+ * ~280px cards as the settings column has room for, so the reading plugins sit
+ * in one row on a wide panel and wrap gracefully on a narrow one. Cards render
+ * `<li>` roots, hence the list reset.
  */
 export function ReadingSettingsSection({ renderSlot }: ReadingPageProps) {
   return createElement(
     'ul',
-    { style: { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '12px' } },
+    {
+      style: {
+        listStyle: 'none',
+        margin: 0,
+        padding: 0,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        alignItems: 'start',
+        gap: '12px',
+      },
+    },
     renderSlot(READING_ITEM_SLOT, {}),
   )
 }

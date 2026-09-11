@@ -38,9 +38,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 type ReadingPageProps = PropsRuntime<'settings.section'> & PropsRenderSlots<typeof READING_ITEM_SLOT>;
 /**
  * Page body. The shell supplies the section's own seats plus `renderSlot`
- * bound to the child slot declared at registration time; the page itself owns
- * only the stack. Cards render `<li>` roots, so the stack is a markerless
- * list — a stray `<li>` under a plain container would draw a bullet.
+ * bound to the child slot declared at registration time; the page owns the
+ * layout only.
+ *
+ * Cards are laid out SIDE BY SIDE: a markerless grid whose columns fit as many
+ * ~280px cards as the settings column has room for, so the reading plugins sit
+ * in one row on a wide panel and wrap gracefully on a narrow one. Cards render
+ * `<li>` roots, hence the list reset.
  */
 export declare function ReadingSettingsSection({ renderSlot }: ReadingPageProps): import("react").DetailedReactHTMLElement<{
     style: {
@@ -48,6 +52,8 @@ export declare function ReadingSettingsSection({ renderSlot }: ReadingPageProps)
         margin: number;
         padding: number;
         display: "grid";
+        gridTemplateColumns: string;
+        alignItems: "start";
         gap: string;
     };
 }, HTMLElement>;

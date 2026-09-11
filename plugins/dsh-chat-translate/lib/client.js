@@ -1216,7 +1216,17 @@ var READING_ITEM_SLOT = "reading.settings.item";
 function ReadingSettingsSection({ renderSlot }) {
   return (0, import_react.createElement)(
     "ul",
-    { style: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "12px" } },
+    {
+      style: {
+        listStyle: "none",
+        margin: 0,
+        padding: 0,
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+        alignItems: "start",
+        gap: "12px"
+      }
+    },
     renderSlot(READING_ITEM_SLOT, {})
   );
 }
