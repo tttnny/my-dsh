@@ -18,6 +18,13 @@
  *    （永久删除成功必然使目录消失），该墓碑必为误写（历史版本残留），自动作废
  *    恢复显示；设置页亦提供手动「清空墓碑」兜底入口。
  *  - 空白草稿跟随官方语义：不自动回收、仅视图层隐藏（官方从不物理删除会话文件）。
+ *  - 目录选择面：官方「一种能力、两种交互」——回环绑定（且非 SSH）时挂 native 系统
+ *    选择器，局域网/远端绑定时只挂 browse 原语（listDirectory / createDirectory）。
+ *    内核「添加工作区只有一条路」依赖 sidebar.workspaces.directoryFlow 子槽；本插件以
+ *    priority -1 顶掉 sidebar.workspaces 后，官方对话框无处渲染，而内核的槽位声明账本
+ *    （SlotCore.register：slot "…" is already declared）不允许再声明同一子槽——被顶掉的
+ *    内核 entry 仍持有该声明。故 native 走官方系统选择器，browse 由插件自持对话框承担，
+ *    底层只用官方 browse 原语。
  */
 window.__ModuleLoader__.load({
   id: "@lynn123411/dsh-workspace-tree",
@@ -257,6 +264,60 @@ window.__ModuleLoader__.load({
         body: JSON.stringify(body)
       });
       return res.json();
+    }
+
+    /**
+     * 「借道渲染官方目录对话框」能力的模块级引用。主组件定义在 factory 作用域（拿不到
+     * apply 的局部变量），所以 apply 装配好 officialFlowBridge 后挂到这里；探测失败时
+     * 保持 ok:false —— 组件据此回退自持对话框。
+     */
+    const officialFlowBridgeRef = {
+      ok: false,
+      reason: "尚未装配",
+      hole: "sidebar.workspaces.directoryFlow",
+      occupied: () => false,
+      subscribe: () => () => {}
+    };
+
+    async function apiGet(path) {
+      const res = await fetch(API + path, { method: "GET" });
+      return res.json();
+    }
+
+    // ══════════════ 归档门槛（运行中 / 等待交互 不归档） ══════════════
+    /**
+     * 官方"等待人回复"的三种交互（与内核 visiblePendingKind 一致）：审批、计划复核、提问。
+     * 其余 kind（以及无交互）不构成门槛。
+     */
+    const PENDING_LABEL = { "approval": "等待审批", "plan-review": "等待计划复核", "question": "等待回答提问" };
+    /**
+     * 从官方 pending 座位（`useSessionPendingInteraction` 的快照，Map<SessionId, {kind}>）
+     * 取一条待处理交互。注意：客户端 `SessionSummary` 上**没有** pendingInteraction 字段，
+     * 这个数据只走座位——本插件 v1.9.3 之前误读 row.pendingInteraction（恒 undefined），
+     * 导致「等待审批的会话"可归档」与状态点 warning 态永不出现。
+     */
+    function pendingKindOf(pendingInteractions, sid) {
+      if (!pendingInteractions || typeof pendingInteractions.get !== "function") return null;
+      const entry = pendingInteractions.get(sid) || pendingInteractions.get(String(sid));
+      const kind = entry && entry.kind;
+      return (kind && Object.prototype.hasOwnProperty.call(PENDING_LABEL, kind)) ? kind : null;
+    }
+    /**
+     * 归档门槛的 Host 权威判据。官方 workspace/archiveSession 在 Host 侧没有运行态守卫
+     * （直接写注册表），而客户端 running 位是 Host 转发来的事实（客户端 prompt() 不做乐观
+     * 翻转，发送后到状态帧落地之间存在窗口），所以归档前问一次插件自己的 Host 半边：
+     * agents.get(sessionId).status（本轮实测 Host 服务 `agents.get(id)` 返回带 status 的
+     * 活 Agent，状态取值 idle | running）。
+     * @returns {Promise<{ok:boolean, running?:boolean, status?:string}>} ok=false 表示查询
+     *   本身不可用（旧版/网络故障）——调用方 fail-open 放行，由官方 RPC 定生死。
+     */
+    async function checkArchiveGuard(sessionId) {
+      try {
+        const result = await apiPost("/archive/guardCheck", { sessionId });
+        return (result && result.ok === true) ? result : { ok: false };
+      } catch {
+        return { ok: false };
+      }
     }
 
     // ══════════════ 展开状态持久化 ══════════════
@@ -507,9 +568,11 @@ window.__ModuleLoader__.load({
       });
     }
 
-    function sessionState(row, current) {
+    function sessionState(row, current, pendingKind) {
       if (!row) return "done";
-      if (row.pendingInteraction) return "warning";
+      // 等待人回复（审批/计划复核/提问）优先于运行态：这种会话在动，但卡在人身上。
+      // pendingKind 由官方 pending 座位传入（row 上没有该字段，见 pendingKindOf 注释）。
+      if (pendingKind) return "warning";
       if (row.running) return "ongoing";
       if (row.completed && !current) return "done-reminder";
       return "done";
@@ -681,20 +744,20 @@ window.__ModuleLoader__.load({
     function aggPriority(st) {
       return AGG_PRIO[st] || 0;
     }
-    function aggOfSessionIds(ids, sessions, archived, hardDeleted) {
+    function aggOfSessionIds(ids, sessions, archived, hardDeleted, pendingInteractions) {
       const byId = (sessions && sessions.byId) || {};
       const cur = sessions ? sessions.current : null;
       let best = null;
       for (const sid of ids || []) {
         const row = byId[sid];
         if (!sessionVisible(row, cur, archived, hardDeleted)) continue;
-        const st = sessionState(row, sid === cur);
+        const st = sessionState(row, sid === cur, pendingKindOf(pendingInteractions, sid));
         if (aggPriority(st) > aggPriority(best)) best = st;
         if (best === "warning") return best;
       }
       return best;
     }
-    function decorateAgg(node, wsOf, childrenOf, sessions, archived, hardDeleted) {
+    function decorateAgg(node, wsOf, childrenOf, sessions, archived, hardDeleted, pendingInteractions) {
       let best = null;
       let running = false;
       let hasSessions = false;
@@ -702,14 +765,14 @@ window.__ModuleLoader__.load({
       if (w) {
         const vis = visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted);
         if (vis.length > 0) hasSessions = true;
-        best = aggOfSessionIds(w.sessionIds, sessions, archived, hardDeleted);
+        best = aggOfSessionIds(w.sessionIds, sessions, archived, hardDeleted, pendingInteractions);
         const byId = (sessions && sessions.byId) || {};
         for (const sid of vis) {
           if (byId[sid] && byId[sid].running) { running = true; break; }
         }
       }
       for (const c of childrenOf(node)) {
-        const cs = decorateAgg(c, wsOf, childrenOf, sessions, archived, hardDeleted);
+        const cs = decorateAgg(c, wsOf, childrenOf, sessions, archived, hardDeleted, pendingInteractions);
         if (aggPriority(cs) > aggPriority(best)) best = cs;
         if (c.aggRunning) running = true;
         if (c.aggHasSessions) hasSessions = true;
@@ -839,14 +902,17 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 工作区模式：会话行 ══════════════
-    function SessionRow({ sid, sessions, depth, indent, now, onOpen, onRename, onArchive }) {
+    function SessionRow({ sid, sessions, pendingKind, depth, indent, now, onOpen, onRename, onArchive }) {
       const row = (sessions && sessions.byId) ? sessions.byId[sid] : null;
       if (!row) return null;
       const selected = sid === sessions.current;
-      const dotState = sessionState(row, selected);
+      const dotState = sessionState(row, selected, pendingKind);
       // v1.9.0 归档门槛：运行中/等待回复审批的会话不允许归档（进区后才可能删不掉的历史
       // 守卫已整体移除；归档区删除零守卫，因此门槛只需保证「运行态不进区」）。
-      const canArchive = !row.running && !row.pendingInteraction;
+      // v1.9.5：判据改读真实数据源——运行态取 row.running，等待交互取官方 pending 座位
+      // （row.pendingInteraction 不存在，恒 undefined）；置灰只是提示，真正的门槛在
+      // onArchiveSession（那里复查，并再向 Host 要一次 agents 状态）。
+      const canArchive = !row.running && !pendingKind;
       return h("div", {
         className: "dswt-session" + (selected ? " dswt-selected" : ""),
         style: { paddingLeft: 8 + depth * indent },
@@ -1020,6 +1086,236 @@ window.__ModuleLoader__.load({
       ]);
     }
 
+    // ══════════════ 目录选择弹窗（browse 面自持） ══════════════
+    /**
+     * 官方目录选择是「一种能力、两种交互」（@deepseek-ai/dsh-host-directory-picker）：
+     *  - native：uiWorkspace.pickDirectory() 在宿主显示器上开系统选择器，只在回环绑定
+     *    （非 SSH、Linux 有可用选择器）时才挂载；
+     *  - browse：绑定 0.0.0.0 / 远端 / SSH 时 host 只挂 browse 后端，目录面只剩
+     *    listDirectory / createDirectory 两个原语（官方由内置浏览对话框驱动）。
+     *
+     * 内核「添加工作区只有一条路」以 sidebar.workspaces.directoryFlow 子槽承载交互，而
+     * 本插件以 priority -1 顶掉了那个承载者（内核 WorkspaceBrowser），官方对话框便无处
+     * 渲染；本插件也不能自己声明该子槽——内核的槽位声明账本（SlotCore.register：
+     * `slot "…" is already declared`）一个子槽只允许一个 entry 声明，而被顶掉的内核
+     * entry 仍然注册着、仍然持有声明。故本插件自持这个等价对话框，且只架在官方 browse
+     * 原语之上：native 主机走系统选择器，browse 主机走这里。
+     */
+    function DirectoryPickerModal({ open, busy, initialListing, listDirectory, createDirectory, onCancel, onPicked }) {
+      const overlayRef = useRef(null);
+      const [listing, setListing] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState("");
+      /** null = 未在新建；字符串 = 新文件夹名草稿。 */
+      const [newName, setNewName] = useState(null);
+      const [creating, setCreating] = useState(false);
+      const [pathDraft, setPathDraft] = useState("");
+      /** 已消费的那份首屏种子（同一份只吃一次，避免重渲染把它当成新导航）。 */
+      const seedUsed = useRef(null);
+      useModalScrollLock(open);
+
+      /** 拉取一个层级（缺省 = host 的 home）；失败就地显示，不弹窗、不关窗。 */
+      const readLevel = useCallback(async (target) => {
+        if (typeof listDirectory !== "function") {
+          setError("当前 DSH 版本不支持目录浏览（uiWorkspace.listDirectory）；可在文件夹模式用「添加为工作区」，或升级 DSH。");
+          return;
+        }
+        setLoading(true);
+        setError("");
+        try {
+          const next = await listDirectory(target);
+          if (next && typeof next.path === "string") {
+            setListing(next);
+            setPathDraft(next.path);
+          } else {
+            setError("目录列表返回了无法识别的结果");
+          }
+        } catch (e) {
+          setError("无法读取目录：" + String((e && e.message) || e));
+        } finally {
+          setLoading(false);
+        }
+      }, [listDirectory]);
+
+      useEffect(() => {
+        if (!open) {
+          // 关闭即清空：下次打开重新从 home 起，不残留上一次的层级、草稿与错误。
+          setListing(null);
+          setError("");
+          setNewName(null);
+          seedUsed.current = null;
+          return;
+        }
+        // 打开前已探到的一层（调用方为确认 browse 可用而拉的 home）直接作首屏。
+        if (initialListing && seedUsed.current !== initialListing && typeof initialListing.path === "string") {
+          seedUsed.current = initialListing;
+          setListing(initialListing);
+          setPathDraft(initialListing.path);
+          setError("");
+          return;
+        }
+        readLevel(void 0);
+      }, [open, initialListing, readLevel]);
+
+      useEffect(() => {
+        if (!open) return;
+        const onKey = (e) => { if (e.key === "Escape" && !busy) onCancel(); };
+        document.addEventListener("keydown", onKey);
+        return () => document.removeEventListener("keydown", onKey);
+      }, [open, busy, onCancel]);
+
+      if (!open) return null;
+
+      const crumbs = (listing && Array.isArray(listing.crumbs)) ? listing.crumbs : [];
+      const entries = (listing && Array.isArray(listing.entries)) ? listing.entries : [];
+      const parent = crumbs.length >= 2 ? crumbs[crumbs.length - 2] : null;
+      const currentPath = (listing && typeof listing.path === "string") ? listing.path : "";
+      const locked = !!busy || creating;
+      const canCreate = typeof createDirectory === "function";
+      const handleOverlay = (e) => { if (e.target === overlayRef.current && !locked) onCancel(); };
+
+      /** 在当前层新建文件夹，建成后直接进入它（与官方浏览对话框的落点语义一致）。 */
+      const commitNewDir = async () => {
+        const dirName = (newName || "").trim();
+        if (dirName === "" || creating || !canCreate || currentPath === "") return;
+        setCreating(true);
+        setError("");
+        try {
+          const created = await createDirectory(currentPath, dirName);
+          setNewName(null);
+          await readLevel((typeof created === "string" && created !== "") ? created : currentPath);
+        } catch (e) {
+          setError("新建文件夹失败：" + String((e && e.message) || e));
+        } finally {
+          setCreating(false);
+        }
+      };
+
+      const rowNodes = entries.map((entry, i) => h("button", {
+        key: "d" + (entry.path || entry.name || i),
+        type: "button",
+        className: "dswt-pickerRow" + (entry.hidden ? " dswt-pickerRowHidden" : ""),
+        title: entry.path || entry.name,
+        disabled: locked || loading,
+        onClick: () => readLevel(entry.path)
+      }, [
+        h(Icon, { key: "i", name: "folderOpen", size: 15 }),
+        h("span", { key: "n", className: "dswt-pickerRowName" }, entry.name)
+      ]));
+
+      const crumbNodes = crumbs.map((crumb, i) => {
+        const isLast = i === crumbs.length - 1;
+        return h("button", {
+          key: "c" + (crumb.path || i),
+          type: "button",
+          className: "dswt-crumb" + (isLast ? " dswt-crumbActive" : ""),
+          title: crumb.path,
+          disabled: locked || loading || isLast,
+          onClick: () => { if (!isLast) readLevel(crumb.path); }
+        }, crumb.name || crumb.path);
+      });
+
+      const newDirControl = newName === null
+        ? h("button", {
+            key: "nf",
+            type: "button",
+            className: "dswt-modalBtn",
+            title: canCreate ? "在当前位置新建文件夹并进入" : "当前 DSH 版本不支持新建文件夹",
+            disabled: locked || loading || currentPath === "" || !canCreate,
+            onClick: () => setNewName("")
+          }, "新建文件夹")
+        : h("span", { key: "nf", className: "dswt-pickerNewDir" }, [
+            h("input", {
+              key: "i",
+              className: "dswt-modalInput dswt-pickerNewInput",
+              value: newName,
+              placeholder: "新文件夹名称",
+              spellCheck: false,
+              autoFocus: true,
+              disabled: creating,
+              onChange: (e) => setNewName(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === "Enter") { e.preventDefault(); commitNewDir(); }
+                else if (e.key === "Escape") { e.stopPropagation(); setNewName(null); }
+              }
+            }),
+            h("button", {
+              key: "ok",
+              type: "button",
+              className: "dswt-modalBtn dswt-modalBtnPrimary",
+              disabled: creating || (newName || "").trim() === "",
+              onClick: commitNewDir
+            }, creating ? "创建中…" : "创建"),
+            h("button", { key: "no", type: "button", className: "dswt-modalBtn", disabled: creating, onClick: () => setNewName(null) }, "取消")
+          ]);
+
+      return h("div", {
+        ref: overlayRef,
+        className: "dswt-modalOverlay",
+        role: "presentation",
+        onClick: handleOverlay
+      }, [
+        h("div", {
+          key: "panel",
+          className: "dswt-modalPanel dswt-pickerPanel",
+          role: "dialog",
+          "aria-modal": "true",
+          "aria-label": "添加工作区",
+          onClick: (e) => e.stopPropagation()
+        }, [
+          h("div", { key: "t", className: "dswt-modalTitle" }, "添加工作区"),
+          crumbs.length > 0 && h("div", { key: "c", className: "dswt-pickerCrumbs" }, [
+            parent && h("button", {
+              key: "up",
+              type: "button",
+              className: "dswt-crumb dswt-crumbUp",
+              title: "上一级：" + parent.path,
+              disabled: locked || loading,
+              onClick: () => readLevel(parent.path)
+            }, "↑")
+          ].concat(crumbNodes).filter(Boolean)),
+          h("div", { key: "p", className: "dswt-pickerPathRow" }, [
+            h("input", {
+              key: "i",
+              className: "dswt-modalInput dswt-pickerPathInput",
+              value: pathDraft,
+              placeholder: "绝对路径，回车前往",
+              spellCheck: false,
+              disabled: locked,
+              onChange: (e) => setPathDraft(e.target.value),
+              onKeyDown: (e) => { if (e.key === "Enter") { e.preventDefault(); readLevel(pathDraft.trim()); } }
+            }),
+            h("button", {
+              key: "g",
+              type: "button",
+              className: "dswt-modalBtn",
+              disabled: locked || pathDraft.trim() === "",
+              onClick: () => readLevel(pathDraft.trim())
+            }, "前往")
+          ]),
+          h("div", { key: "l", className: "dswt-pickerList", role: "listbox", "aria-label": "目录" },
+            entries.length === 0
+              ? [h("div", { key: "e", className: "dswt-pickerEmpty" }, loading ? "读取中…" : "此目录下没有子文件夹")]
+              : rowNodes
+          ),
+          error !== "" && h("div", { key: "err", className: "dswt-pickerError", role: "alert" }, error),
+          h("div", { key: "a", className: "dswt-modalActions dswt-pickerActions" }, [
+            newDirControl,
+            h("span", { key: "sp", className: "dswt-pickerSpacer" }),
+            h("button", { key: "c", type: "button", className: "dswt-modalBtn", disabled: locked, onClick: onCancel }, "取消"),
+            h("button", {
+              key: "o",
+              type: "button",
+              className: "dswt-modalBtn dswt-modalBtnPrimary",
+              title: currentPath,
+              disabled: locked || loading || currentPath === "",
+              onClick: () => onPicked(currentPath)
+            }, busy ? "添加中…" : "选择此文件夹")
+          ])
+        ])
+      ]);
+    }
+
     // ══════════════ 归档视图：按工作区分组（深度递归收集，全量展示） ══════════════
     function ArchiveView({ sessions, wsForest, archived, hardDeleted, onOpen, onRestoreOne, onDeleteOne, onRestoreGroup, onDeleteGroup, onRestoreAll, onDeleteAll, busy }) {
       const byId = (sessions && sessions.byId) || {};
@@ -1071,7 +1367,7 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 工作区模式：组 ══════════════
-    function WorkspaceGroup({ node, depth, indent, showAgg, sessions, archived, hardDeleted, expandedGroups, toggleGroup, onNewSession, onOpenInIde, onRenameWs, onHideWs, onOpen, onRenameSession, onArchiveSession, now }) {
+    function WorkspaceGroup({ node, depth, indent, showAgg, sessions, pendingInteractions, archived, hardDeleted, expandedGroups, toggleGroup, onNewSession, onOpenInIde, onRenameWs, onHideWs, onOpen, onRenameSession, onArchiveSession, now }) {
       const w = node.w;
       const gkey = w.workspaceId;
       const groupOpen = expandedGroups.has(gkey);
@@ -1105,11 +1401,11 @@ window.__ModuleLoader__.load({
         ]),
         groupOpen && h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": (16 + depth * indent) + "px" } }, [
           sids.map((sid) => h(SessionRow, {
-            key: "s:" + sid, sid, sessions, depth: depth + 1, indent, now, onOpen,
+            key: "s:" + sid, sid, sessions, pendingKind: pendingKindOf(pendingInteractions, sid), depth: depth + 1, indent, now, onOpen,
             onRename: onRenameSession, onArchive: onArchiveSession
           })),
           (node.children || []).map((child) => h(WorkspaceGroup, {
-            key: child.w.workspaceId, node: child, depth: depth + 1, indent, showAgg, sessions, archived, hardDeleted,
+            key: child.w.workspaceId, node: child, depth: depth + 1, indent, showAgg, sessions, pendingInteractions, archived, hardDeleted,
             expandedGroups, toggleGroup, onNewSession, onOpenInIde, onRenameWs, onHideWs,
             onOpen, onRenameSession, onArchiveSession, now
           }))
@@ -1119,9 +1415,14 @@ window.__ModuleLoader__.load({
 
     // ══════════════ 主组件 ══════════════
     function WorkspaceTreeBrowser(props) {
-      const { wide, useSessions, useWorkspaces, startSession, connectWorkspace, open, clearSession, renameSession, renameWorkspace, archiveSession, createWorkspace, deleteWorkspace, pickDirectory, refreshSessions, adoptSession } = props;
+      const { wide, useSessions, useWorkspaces, useSessionPendingInteraction, liveSessionRow, renderSlot, startSession, connectWorkspace, open, clearSession, renameSession, renameWorkspace, archiveSession, createWorkspace, deleteWorkspace, pickDirectory, listDirectory, createDirectory, refreshSessions, adoptSession } = props;
       const sessions = useSessions((s) => s);
       const workspaces = useWorkspaces((s) => s);
+      // 官方「等待人回复」座位（数据源在 dsh-client-ui-session 的 pendingInteractions，
+      // Map<SessionId, {kind}>）。旧版 DSH 没有这个座位：缺席时按「无待处理交互」降级。
+      const pendingInteractions = typeof useSessionPendingInteraction === "function"
+        ? useSessionPendingInteraction((s) => s)
+        : null;
 
       const [mode, setMode] = useState(initialMode);
       const [expandedDirs, setExpandedDirs] = useState(() => loadSet(LS_DIRS));
@@ -1141,6 +1442,42 @@ window.__ModuleLoader__.load({
       const [hideWsBusy, setHideWsBusy] = useState(false);
       const hideWsLockRef = useRef(false);
       const [alertInfo, setAlertInfo] = useState(null);
+      // 内置目录对话框（browse 面）：官方 native 选择器不可用时的等价交互；
+      // pickerSeed 是打开对话框前探到的那一层列表，直接作为首屏（不再二次拉取）。
+      const [pickerOpen, setPickerOpen] = useState(false);
+      const [pickerBusy, setPickerBusy] = useState(false);
+      const [pickerSeed, setPickerSeed] = useState(null);
+
+      /** 收回内置目录对话框（首屏种子一并丢弃，下次重新探测）。 */
+      const closeDirectoryPicker = useCallback(() => {
+        setPickerOpen(false);
+        setPickerSeed(null);
+      }, []);
+
+      // macOS 原生 Finder 选择器：宿主侧 /picker/native 报告可用性（仅 darwin 为 true），
+      // 不可用（含旧版宿主半边没有该路由）时不显示按钮。
+      const [nativePicker, setNativePicker] = useState(false);
+      const [nativeBusy, setNativeBusy] = useState(false);
+      useEffect(() => {
+        let alive = true;
+        apiGet("/picker/native").then((result) => {
+          if (alive && result && result.ok === true && result.supported === true) setNativePicker(true);
+        }).catch(() => { /* 旧版宿主半边：保持隐藏 */ });
+        return () => { alive = false; };
+      }, []);
+
+      // 官方目录流（借道渲染成功 + 槽位有占位者时优先使用）：
+      // open/busy 交给占位者，onPicked/onCancel/onError 回到这里。
+      const [officialOpen, setOfficialOpen] = useState(false);
+      const [officialBusy, setOfficialBusy] = useState(false);
+      const [officialFlow, setOfficialFlow] = useState(() => officialFlowBridgeRef.ok && officialFlowBridgeRef.occupied());
+      useEffect(() => {
+        if (!officialFlowBridgeRef.ok) return undefined;
+        const sync = () => setOfficialFlow(officialFlowBridgeRef.occupied());
+        sync();
+        return officialFlowBridgeRef.subscribe(sync);
+      }, []);
+
       const [hardDeleted, setHardDeleted] = useState(() => loadSet(LS_DELETED));
       const [hiddenWs, setHiddenWs] = useState(() => loadSet(LS_HIDDEN_WS));
       const [cfg, setCfg] = useState(getEffectiveConfig);
@@ -1390,6 +1727,29 @@ window.__ModuleLoader__.load({
         }
       }, [createWorkspace, showAlert, unhideWorkspace]);
 
+      /** 官方占位者选中目录：注册工作区（失败照常弹窗），无论成败都收回交互请求。 */
+      const onOfficialPicked = useCallback(async (dirPath) => {
+        if (typeof dirPath !== "string" || dirPath === "") { setOfficialOpen(false); return; }
+        setOfficialBusy(true);
+        try {
+          await addWorkspaceDir(dirPath);
+        } finally {
+          setOfficialBusy(false);
+          setOfficialOpen(false);
+        }
+      }, [addWorkspaceDir]);
+
+      /** 内置目录对话框的采纳：注册工作区（失败照常弹窗），无论成败都收回对话框。 */
+      const onPickerPicked = useCallback(async (dirPath) => {
+        setPickerBusy(true);
+        try {
+          await addWorkspaceDir(dirPath);
+        } finally {
+          setPickerBusy(false);
+          closeDirectoryPicker();
+        }
+      }, [addWorkspaceDir, closeDirectoryPicker]);
+
       // 归档集合（提前声明：收编/回收 effect 的依赖需要它；放后面会触发 TDZ）
       const archived = useMemo(() => new Set((workspaces.archivedSessionIds || []).map(String)), [workspaces.archivedSessionIds]);
 
@@ -1617,19 +1977,51 @@ window.__ModuleLoader__.load({
         }
       }, [deleteWsConfirm, deleteWorkspace, showAlert]);
 
-      const onArchiveSession = useCallback((sessionId) => {
+      /**
+       * 归档会话的唯一入口。判据三层，逐层更权威：
+       *  1) 空白草稿不归档（归档后双视图都不可见，用户会找不到它）；
+       *  2) 运行中 / 等待审批·计划复核·提问 不归档 —— 读**本次渲染**的活快照与官方
+       *     pending 座位，而不是行按钮渲染时算好的 canArchive 闭包（那个可能已过期）；
+       *  3) Host 权威复查：官方 workspace/archiveSession 在 Host 上没有运行态守卫，
+       *     客户端 running 位是 Host 转发事实（发送后到状态帧落地之间有窗口），所以
+       *     归档前问一次插件 Host 半边 agents.get(sessionId).status；查询不可用时
+       *     fail-open 放行（不因网络故障把用户锁死，最终仍由官方 RPC 定生死）。
+       * 判据只拦「不该归档」；归档成功与否仍以官方 RPC 为准。
+       */
+      const onArchiveSession = useCallback(async (sessionId) => {
         // 空白草稿不允许归档：归档后双视图都不可见（工作区视图排 archived、归档视图排 blank），
         // 用户将找不到它。按官方语义空白草稿仅视图层隐藏、不会自动物理删除。
         // 注意：byId 缺行时无法判断 blank，按非 blank 放行并交由 Host 报错（fail-open，见审计）。
-        const row = sessions && sessions.byId ? sessions.byId[sessionId] : null;
-        if (row && row.blank) {
+        const rendered = sessions && sessions.byId ? sessions.byId[sessionId] : null;
+        // 优先读 store 活快照（可覆盖「运行位刚翻真、界面还没重渲染」的窗口），
+        // 读不到再回退渲染快照。
+        const live = (typeof liveSessionRow === "function" ? liveSessionRow(sessionId) : null) || rendered;
+        if (live && live.blank) {
           showAlert("空白草稿无需归档：切换到其他会话后即隐藏", "无需归档");
           return;
         }
-        archiveSession(sessionId).catch((error) => {
+        if (live && live.running) {
+          showAlert("会话正在运行，结束后才能归档", "无法归档");
+          return;
+        }
+        const pendingKind = pendingKindOf(pendingInteractions, sessionId);
+        if (pendingKind) {
+          showAlert("会话正在" + PENDING_LABEL[pendingKind] + "，处理完才能归档", "无法归档");
+          return;
+        }
+        const guard = await checkArchiveGuard(sessionId);
+        if (guard.ok && guard.running) {
+          // 客户端位落后于 Host（转发窗口/事件流打嗝）：顺手让列表重新对齐一次。
+          if (typeof refreshSessions === "function") refreshSessions();
+          showAlert("会话正在运行（Host 实测状态：" + String(guard.status || "running") + "），结束后才能归档", "无法归档");
+          return;
+        }
+        try {
+          await archiveSession(sessionId);
+        } catch (error) {
           showAlert(String((error && error.message) || error), "归档会话失败");
-        });
-      }, [archiveSession, showAlert, sessions]);
+        }
+      }, [archiveSession, showAlert, sessions, liveSessionRow, pendingInteractions, refreshSessions]);
 
       const isCurrentArchived = useMemo(() => {
         if (!sessions || !sessions.current) return false;
@@ -1770,16 +2162,85 @@ window.__ModuleLoader__.load({
         }
       }, [archiveConfirm, archived, workspaces, sessions, rememberDeleted, refreshSessions, showAlert]);
 
+      /**
+       * macOS 原生 Finder 选择器：宿主侧 osascript 弹出真实的「选择文件夹」窗口，**显示在 Mac 的
+       * 屏幕上** ——人就在这台机器前时的首选路径，也是「添加工作区」按钮在本机的单击行为。
+       * 远端设备看不到这个窗口：那类环境 /picker/native 报 supported:false，按钮改走内置目录浏览。
+       * 取消（osascript exit 1 + User canceled）由宿主侧归一成 path: null。
+       */
+      const onPickWithFinder = useCallback(async () => {
+        if (nativeBusy) return;
+        setNativeBusy(true);
+        try {
+          const result = await apiPost("/picker/native", {});
+          if (!result || result.ok !== true) throw new Error((result && result.error) || "原生选择器不可用");
+          if (result.path === null || result.path === void 0 || result.path === "") return;   // 操作员取消
+          await addWorkspaceDir(String(result.path));
+        } catch (error) {
+          showAlert("Finder 选择失败: " + String((error && error.message) || error), "添加工作区失败");
+        } finally {
+          setNativeBusy(false);
+        }
+      }, [nativeBusy, addWorkspaceDir, showAlert]);
+
+      /**
+       * 「添加工作区」按钮的唯一行为。**本机 macOS 单击直达 Finder**（/picker/native 报支持时
+       * 短路到 onPickWithFinder）；其余环境走下面这条内置路径：先试官方目录流占位者（native 主机
+       * 弹系统选择器、browse 主机弹官方浏览对话框），没有占位者时自持兜底——先试
+       * uiWorkspace.pickDirectory()，被拒（browse 主机必被 host 以 directory-picker/unavailable
+       * 拒绝，这不是故障，不该弹错）则转本插件自持的内置浏览对话框。
+       * 转之前先探一次 home：探得通才开对话框（顺带作为首屏，不再二次拉取），
+       * 探不通说明两种能力都没有——此时如实报 native 的原始错误，不留死胡同。
+       */
       const onAddWorkspace = useCallback(async () => {
+        if (nativePicker) return onPickWithFinder();
+        // 官方交互可用（借道成功且槽位有占位者）：native 主机弹系统选择器、browse 主机弹
+        // 官方内置浏览对话框，两种形态都由占位者自己决定，这里只递交 owner 请求。
+        if (officialFlow) {
+          setOfficialOpen(true);
+          return;
+        }
+        let nativeError = null;
         try {
           const path = await pickDirectory();
-          if (path === null) return;
-          const ws = await createWorkspace({ path });
-          unhideWorkspace(ws);
+          if (path === null || path === void 0 || path === "") return;   // 操作员取消
+          await addWorkspaceDir(path);
+          return;
         } catch (error) {
-          showAlert("添加工作区失败: " + String((error && error.message) || error), "添加工作区失败");
+          nativeError = error;
+          console.warn("[dsh-workspace-tree] 官方原生目录选择器不可用，尝试内置浏览对话框：", error);
         }
-      }, [pickDirectory, createWorkspace, showAlert, unhideWorkspace]);
+        try {
+          const seed = await listDirectory(void 0);
+          setPickerSeed(seed || null);
+          setPickerOpen(true);
+        } catch (browseError) {
+          console.warn("[dsh-workspace-tree] 内置目录浏览同样不可用：", browseError);
+          // 两种能力都没有：如实报错，不留一个点不动的对话框。
+          // native 是被 capability 拒绝的（host 服务 browse，只是客户端这边也拿不到
+          // browse 面，例如旧版 DSH）时，真正的可操作信息在 browse 那一侧；否则
+          // native 的失败原因更准（系统选择器真的坏了）。
+          const nativeMsg = String((nativeError && nativeError.message) || nativeError || "");
+          const browseMsg = String((browseError && browseError.message) || browseError || "");
+          const nativeRefused = /needs the native capability|directory-picker\/unavailable/.test(nativeMsg);
+          try {
+            document.body.setAttribute("data-dswt-dirflow-diag", JSON.stringify({
+              bridge: officialFlowBridgeRef.ok ? "ok" : officialFlowBridgeRef.reason,
+              occupied: officialFlowBridgeRef.occupied(),
+              nativeMsg: nativeMsg,
+              browseMsg: browseMsg,
+              nativeRefused: nativeRefused
+            }));
+          } catch { /* ignore */ }
+          showAlert("添加工作区失败: " + ((nativeRefused && browseMsg) ? browseMsg : (nativeMsg || browseMsg)), "添加工作区失败");
+        }
+      }, [nativePicker, onPickWithFinder, officialFlow, pickDirectory, listDirectory, addWorkspaceDir, showAlert]);
+
+      /**
+       * 官方目录流的现场诊断（写在侧栏根节点的 data 属性上，供排查与支持）：
+       * official = 走官方占位者；self = 回退自持对话框；bridge 段给出探测结论/失败原因。
+       */
+      const dirflowDiag = () => (officialFlow ? "official" : "self") + ";bridge=" + (officialFlowBridgeRef.ok ? "ok" : officialFlowBridgeRef.reason);
 
       // 数据投影计算：visibleItems 为未被「移除显示」的工作区（树只由它构建）
       const items = workspaces.items || [];
@@ -1793,20 +2254,55 @@ window.__ModuleLoader__.load({
         // 归档用全量森林：被“移除显示”的工作区的归档会话也必须可见可恢复，
         // 否则隐藏即永久失联（与“仅移除显示、归属不变”的承诺冲突）
         const archiveForest = buildWorkspaceForest(items);
-        for (const n of dirForest) decorateAgg(n, (x) => x.ws, (x) => x.children, sessions, archived, hardDeleted);
-        for (const n of wsForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted);
-        for (const n of archiveForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted);
+        for (const n of dirForest) decorateAgg(n, (x) => x.ws, (x) => x.children, sessions, archived, hardDeleted, pendingInteractions);
+        for (const n of wsForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, pendingInteractions);
+        for (const n of archiveForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, pendingInteractions);
         return { dirForest, wsForest, archiveForest };
-      }, [visibleItems, items, sessions, archived, hardDeleted]);
+      }, [visibleItems, items, sessions, archived, hardDeleted, pendingInteractions]);
 
       const dirForest = aggCtx.dirForest;
       const wsForest = aggCtx.wsForest;
       const archiveForest = aggCtx.archiveForest;
 
+      // 官方目录流占位者：借道成功且有占位者时才渲染（native 驱动或官方 browse 对话框）。
+      const officialFlowNode = (officialFlow && typeof renderSlot === "function")
+        ? renderSlot(officialFlowBridgeRef.hole, {
+            open: officialOpen,
+            busy: officialBusy,
+            onPicked: onOfficialPicked,
+            onCancel: () => setOfficialOpen(false),
+            onError: (message) => {
+              setOfficialOpen(false);
+              showAlert(String(message || "目录选择失败"), "添加工作区失败");
+            }
+          })
+        : null;
+
+      // 内置目录对话框（browse 面回退）—— 挂在两套布局里，只有打开时才渲染面板。
+      const pickerNode = h(DirectoryPickerModal, {
+        key: "dirPicker",
+        open: pickerOpen,
+        busy: pickerBusy,
+        initialListing: pickerSeed,
+        listDirectory,
+        createDirectory,
+        onCancel: closeDirectoryPicker,
+        onPicked: onPickerPicked
+      });
+
+      // 「添加工作区」是**唯一**入口：本机 macOS 单击直达 Finder，其余环境走内置目录浏览
+      // （分支逻辑在 onAddWorkspace）。标题随环境说明本次会开什么，避免出现第二个同类按钮。
+      const addWorkspaceTitle = nativePicker
+        ? (nativeBusy ? "Finder 窗口已打开，等待选择…" : "添加工作区（用 Finder 选择目录）")
+        : "添加工作区";
+      const addWorkspaceDisabled = nativePicker ? nativeBusy : (pickerBusy || officialBusy);
+
       // rail 模式：窄图标列
       if (!wide) {
-        return h("div", { className: "dswt-rail" }, [
-          h("button", { key: "ws", type: "button", className: "dswt-rail-btn", title: "添加工作区", onClick: onAddWorkspace }, h(Icon, { name: "folderOpen", size: 18 }))
+        return h("div", { className: "dswt-rail", "data-dswt-dirflow": dirflowDiag() }, [
+          h("button", { key: "ws", type: "button", className: "dswt-rail-btn", title: addWorkspaceTitle, "aria-label": "添加工作区", disabled: addWorkspaceDisabled, onClick: onAddWorkspace }, h(Icon, { name: "folderOpen", size: 18 })),
+          officialFlowNode,
+          pickerNode
         ]);
       }
 
@@ -1827,7 +2323,7 @@ window.__ModuleLoader__.load({
         ]),
         h("span", { key: "a", className: "dswt-headerActions" }, [
           mode !== "archive" && h("button", { key: "ns", type: "button", className: "dswt-headBtn", title: "新建会话（选择工作区）", onClick: () => { if (clearSession) clearSession(); else if (typeof startSession === "function") startSession(); } }, h(Icon, { name: "newChat", size: 16 })),
-          mode !== "archive" && h("button", { key: "ws", type: "button", className: "dswt-headBtn", title: "添加工作区", onClick: onAddWorkspace }, h(Icon, { name: "plus", size: 16 })),
+          mode !== "archive" && h("button", { key: "ws", type: "button", className: "dswt-headBtn", title: addWorkspaceTitle, "aria-label": "添加工作区", disabled: addWorkspaceDisabled, onClick: onAddWorkspace }, h(Icon, { name: "plus", size: 16 })),
           h("button", { key: "ar", type: "button", className: "dswt-headBtn" + (mode === "archive" ? " dswt-headBtnActive" : ""), title: mode === "archive" ? "返回" : "归档区", onClick: toggleArchive }, h(Icon, { name: "archive", size: 16 }))
         ].filter(Boolean))
       ]);
@@ -1873,7 +2369,7 @@ window.__ModuleLoader__.load({
         // 工作区模式：全部会话均归属于某工作区（无归属者由后台自动收编），故无「未分组」区块
         body = h("div", { key: "l", className: "dswt-list", role: "tree", "aria-label": "工作区" }, [
           wsForest.map((node) => h(WorkspaceGroup, {
-            key: node.w.workspaceId, node, depth: 0, indent: cfg.indent, showAgg: cfg.showAgg, sessions, archived, hardDeleted,
+            key: node.w.workspaceId, node, depth: 0, indent: cfg.indent, showAgg: cfg.showAgg, sessions, pendingInteractions, archived, hardDeleted,
             expandedGroups, toggleGroup,
             onNewSession: (wid) => newSessionInDir(wid, node.w.path),
             onOpenInIde: openInIde,
@@ -1895,8 +2391,8 @@ window.__ModuleLoader__.load({
         return { open: false, title: "", desc: "", confirmText: "确认", danger: false };
       })();
 
-      return h("div", { className: "dswt-root" }, [
-        header, body,
+      return h("div", { className: "dswt-root", "data-dswt-dirflow": dirflowDiag() }, [
+        header, body, officialFlowNode, pickerNode,
         h(RenameModal, {
           key: "renameModal",
           open: renameTarget !== null,
@@ -2275,121 +2771,274 @@ window.__ModuleLoader__.load({
         }
       }, (props) => h(ReadonlyArchivedComposerBanner, { ...props, ctx })));
 
-      ctx.slots.inject("sidebar.workspaces", () => ctx.slots.register({
-        name: "sidebar.workspaces",
-        priority: -1,
-        inject: () => {
-          // uiWorkspace 每次调用时重新解析（不再一次性缓存）：插件激活与 slot 注入的
-          // 时刻可能早于该服务注册（未声明为硬依赖），延迟到使用点才能可靠拿到。
-          return {
-            startSession: (workspaceId) => {
-              const uiWs = resolveUiWorkspace();
-              if (uiWs && typeof uiWs.startSession === "function") {
-                uiWs.startSession(workspaceId);
-                return;
+      // ══════════════ 官方目录对话框的「借道渲染」 ══════════════
+      /**
+       * 内核「添加工作区只有一条路」把交互挂在 sidebar.workspaces.directoryFlow 子槽上，而槽位
+       * 账本（SlotCore.register）一个子键只允许**一个** entry 声明：被本插件顶掉的内核
+       * WorkspaceBrowser entry 仍然注册着、仍然持有该声明，所以 v1.9.5 只能自持一份等价对话框。
+       *
+       * 但渲染授权看的是 entry 自己的 children 表（boundRenderSlot: `entry.children?.[key]`），
+       * 不是账本里"谁声明了"。于是存在一个不破坏内核不变量的借道办法：让本插件这次 register
+       * 别抛错、把 children 写进我们 entry 的 options，账本继续记在内核 entry 名下。
+       * 代价是必须碰 slots._core 这些**非公开内部**，所以整块做成「探测 → 试探 → 任何一步失败
+       * 即整体放弃、回退自持对话框」，并且补丁作用域收到最小：
+       *  - 只在 armed 窗口（我们那一次注册）临时清掉冲突 record 的 spec，注册后立刻还原；
+       *  - 压制该次合成的 notifyDeclaration（否则占位者会被重新唤醒，在 single 槽里重复注册）；
+       *  - 我们 entry 卸载时跳过对该子键的级联清理（否则会把官方占位者一起掀掉）。
+       */
+      const officialFlowBridge = (() => {
+        const hole = "sidebar.workspaces.directoryFlow";
+        try {
+          const core = ctx.slots ? ctx.slots._core : null;
+          if (!core || typeof core.register !== "function" || typeof core.releaseEntry !== "function"
+            || typeof core.notifyDeclaration !== "function" || !(core.records instanceof Map)) {
+            return { ok: false, reason: "slots._core 形状不符" };
+          }
+          const own = new Set();
+          let armed = false;
+          const origRegister = core.register;
+          const origRelease = core.releaseEntry;
+          core.register = function (options, component) {
+            if (!armed) return origRegister.call(core, options, component);
+            const saved = [];
+            const keys = (options && options.children) ? Object.keys(options.children) : [];
+            for (const key of keys) {
+              const rec = core.records.get(key);
+              if (rec !== undefined && rec.spec !== undefined) {
+                saved.push({ rec: rec, spec: rec.spec, declaredBy: rec.declaredBy, parent: rec.parent, epoch: rec.declarationEpoch });
+                rec.spec = undefined;
               }
-              if (workspaceId && ctx.sessions && typeof ctx.sessions.create === "function") {
-                ctx.sessions.create({ workspaceId }).then((sessionId) => {
-                  if (typeof ctx.sessions.open === "function") ctx.sessions.open(sessionId);
-                }).catch((err) => {
-                  console.warn("[dsh-workspace-tree] startSession fallback failed:", err);
-                });
-              } else if (ctx.sessions && typeof ctx.sessions.clear === "function") {
-                ctx.sessions.clear();
+            }
+            const notify = core.notifyDeclaration;
+            if (saved.length > 0) core.notifyDeclaration = function () {};
+            try {
+              return origRegister.call(core, options, component);
+            } finally {
+              core.notifyDeclaration = notify;
+              for (const item of saved) {
+                item.rec.spec = item.spec;
+                item.rec.declaredBy = item.declaredBy;
+                item.rec.parent = item.parent;
+                item.rec.declarationEpoch = item.epoch;
               }
-            },
-            connectWorkspace: async (workspaceId) => {
-              const uiWs = resolveUiWorkspace();
-              if (uiWs && typeof uiWs.connectWorkspace === "function") {
-                return await uiWs.connectWorkspace(workspaceId);
-              }
-              if (ctx.sessions && typeof ctx.sessions.create === "function") {
-                return await ctx.sessions.create({ workspaceId });
-              }
-              throw new Error("会话创建服务不可用");
-            },
-            open: (sessionId) => {
-              if (ctx.sessions && typeof ctx.sessions.open === "function") {
-                ctx.sessions.open(sessionId);
-              }
-            },
-            clearSession: () => {
-              try {
-                if (typeof ctx.sessions?.clear === "function") ctx.sessions.clear();
-              } catch { /* ignore */ }
-            },
-            renameSession: async (sessionId, title) => {
-              const activeSession = ctx.sessions?.binding?.(sessionId)?.session;
-              if (activeSession) {
-                const result = await activeSession.rename(title);
-                if (!result.ok) throw new Error(result.error?.message || "重命名失败");
-                return;
-              }
-              // 历史兜底已移除（2026-09-10 审计）：ctx.connection.api 在
-              // 0.1.3-alpha.2 与 0.1.5-rc.1 的 connection handle 上都**不存在**
-              // （handle 只有 isLoopback/generation/state/rpc/reconnect/
-              // registerGenerationSource/start），该分支恒为假。
-              // 主路径 ctx.sessions.binding(id).session.rename() 覆盖所有
-              // host 列表内的会话（binding 会为其物化 scope），保持不变。
-              throw new Error("无法连接到会话重命名服务");
-            },
-            renameWorkspace: async (workspaceId, title) => {
-              if (ctx.workspaces && typeof ctx.workspaces.rename === "function") {
-                await ctx.workspaces.rename(workspaceId, title);
-                return;
-              }
-              throw new Error("工作区重命名服务不可用（当前 DSH 版本不支持）");
-            },
-            archiveSession: async (sessionId) => {
-              const uiWs = resolveUiWorkspace();
-              if (uiWs && typeof uiWs.archiveSession === "function") {
-                await uiWs.archiveSession(sessionId);
-                return;
-              } else if (ctx.workspaces && typeof ctx.workspaces.archiveSession === "function") {
-                await ctx.workspaces.archiveSession(sessionId);
-                return;
-              }
-              throw new Error("会话归档服务不可用（当前 DSH 版本不支持）");
-            },
-            createWorkspace: (input) => {
-              if (ctx.workspaces && typeof ctx.workspaces.create === "function") {
-                return ctx.workspaces.create(input);
-              }
-              return Promise.reject(new Error("工作区服务不可用"));
-            },
-            // 官方 RPC workspace/delete：仅注销注册表记录，不删磁盘目录与会话文件
-            // （旧版 DSH 无此方法时抛错，调用方降级为仅隐藏）。
-            deleteWorkspace: (workspaceId) => {
-              if (ctx.workspaces && typeof ctx.workspaces.delete === "function") {
-                return ctx.workspaces.delete(workspaceId);
-              }
-              return Promise.reject(new Error("工作区注销服务不可用（当前 DSH 版本不支持）"));
-            },
-            adoptSession: (sessionId, workspaceId) => {
-              if (ctx.sessions && typeof ctx.sessions.create === "function") {
-                return ctx.sessions.create({ sessionId, workspaceId });
-              }
-              return Promise.reject(new Error("会话服务不可用"));
-            },
-            pickDirectory: async () => {
-              const uiWs = resolveUiWorkspace();
-              if (uiWs && typeof uiWs.pickDirectory === "function") {
-                return await uiWs.pickDirectory();
-              }
-              // 历史兜底已移除（2026-09-10 审计）：ctx.directoryPicker 从来不是
-              // cordis 服务（全仓无 provide("directoryPicker")），0.1.5-rc.1 里它
-              // 是 Remote 命名空间下的 remote.directoryPicker。主路径
-              // uiWorkspace.pickDirectory() 在两版都可用，保持不变。
-              throw new Error("目录选择服务不可用");
-            },
-            refreshSessions: () => {
-              try {
-                if (typeof ctx.sessions?.refresh === "function") ctx.sessions.refresh();
-              } catch { /* ignore */ }
             }
           };
+          core.releaseEntry = function (entry) {
+            if (own.has(entry) && entry && entry.children !== undefined
+              && Object.prototype.hasOwnProperty.call(entry.children, hole)) {
+              const savedChildren = entry.children;
+              entry.children = undefined;
+              try { return origRelease.call(core, entry); } finally { entry.children = savedChildren; }
+            }
+            return origRelease.call(core, entry);
+          };
+          ctx.effect(() => () => {
+            core.register = origRegister;
+            core.releaseEntry = origRelease;
+          }, "dsh-workspace-tree: official directory-flow bridge");
+          return {
+            ok: true,
+            hole: hole,
+            /** 在放行窗口里执行我们那次 register，并登记我们的 entry（卸载时不级联）。 */
+            register: (options, component) => {
+              armed = true;
+              let dispose;
+              try {
+                dispose = ctx.slots.register(options, component);
+              } finally {
+                armed = false;
+              }
+              const rows = core.records.get("sidebar.workspaces");
+              if (rows && Array.isArray(rows.entries)) {
+                for (const entry of rows.entries) if (entry.component === component) own.add(entry);
+              }
+              return dispose;
+            },
+            /** 槽位当前是否有占位者——没有占位者就没有官方交互可渲染。 */
+            occupied: () => {
+              try {
+                const rows = ctx.slots.entries ? ctx.slots.entries(hole) : null;
+                return Array.isArray(rows) && rows.length > 0;
+              } catch { return false; }
+            },
+            /** 占位者出现/消失时回调，用于在官方与自持之间切换。 */
+            subscribe: (listener) => {
+              try {
+                return typeof ctx.slots.subscribe === "function" ? ctx.slots.subscribe(hole, listener) : () => {};
+              } catch { return () => {}; }
+            }
+          };
+        } catch (error) {
+          return { ok: false, reason: String((error && error.message) || error) };
         }
-      }, (props) => h(ErrorBoundary, null, h(WorkspaceTreeBrowser, props))));
+      })();
+      if (officialFlowBridge.ok) {
+        officialFlowBridgeRef.ok = true;
+        officialFlowBridgeRef.hole = officialFlowBridge.hole;
+        officialFlowBridgeRef.occupied = officialFlowBridge.occupied;
+        officialFlowBridgeRef.subscribe = officialFlowBridge.subscribe;
+        officialFlowBridgeRef.reason = "";
+      } else {
+        officialFlowBridgeRef.reason = String(officialFlowBridge.reason || "未知原因");
+        console.info("[dsh-workspace-tree] 官方目录对话框借道渲染不可用（" + officialFlowBridgeRef.reason + "），使用插件自持对话框");
+      }
+
+      ctx.slots.inject("sidebar.workspaces", () => {
+        const component = (props) => h(ErrorBoundary, null, h(WorkspaceTreeBrowser, props));
+        const options = {
+          name: "sidebar.workspaces",
+          priority: -1,
+          inject: () => {
+            // uiWorkspace 每次调用时重新解析（不再一次性缓存）：插件激活与 slot 注入的
+            // 时刻可能早于该服务注册（未声明为硬依赖），延迟到使用点才能可靠拿到。
+            return {
+              startSession: (workspaceId) => {
+                const uiWs = resolveUiWorkspace();
+                if (uiWs && typeof uiWs.startSession === "function") {
+                  uiWs.startSession(workspaceId);
+                  return;
+                }
+                if (workspaceId && ctx.sessions && typeof ctx.sessions.create === "function") {
+                  ctx.sessions.create({ workspaceId }).then((sessionId) => {
+                    if (typeof ctx.sessions.open === "function") ctx.sessions.open(sessionId);
+                  }).catch((err) => {
+                    console.warn("[dsh-workspace-tree] startSession fallback failed:", err);
+                  });
+                } else if (ctx.sessions && typeof ctx.sessions.clear === "function") {
+                  ctx.sessions.clear();
+                }
+              },
+              connectWorkspace: async (workspaceId) => {
+                const uiWs = resolveUiWorkspace();
+                if (uiWs && typeof uiWs.connectWorkspace === "function") {
+                  return await uiWs.connectWorkspace(workspaceId);
+                }
+                if (ctx.sessions && typeof ctx.sessions.create === "function") {
+                  return await ctx.sessions.create({ workspaceId });
+                }
+                throw new Error("会话创建服务不可用");
+              },
+              open: (sessionId) => {
+                if (ctx.sessions && typeof ctx.sessions.open === "function") {
+                  ctx.sessions.open(sessionId);
+                }
+              },
+              clearSession: () => {
+                try {
+                  if (typeof ctx.sessions?.clear === "function") ctx.sessions.clear();
+                } catch { /* ignore */ }
+              },
+              renameSession: async (sessionId, title) => {
+                const activeSession = ctx.sessions?.binding?.(sessionId)?.session;
+                if (activeSession) {
+                  const result = await activeSession.rename(title);
+                  if (!result.ok) throw new Error(result.error?.message || "重命名失败");
+                  return;
+                }
+                // 历史兜底已移除（2026-09-10 审计）：ctx.connection.api 在
+                // 0.1.3-alpha.2 与 0.1.5-rc.1 的 connection handle 上都**不存在**
+                // （handle 只有 isLoopback/generation/state/rpc/reconnect/
+                // registerGenerationSource/start），该分支恒为假。
+                // 主路径 ctx.sessions.binding(id).session.rename() 覆盖所有
+                // host 列表内的会话（binding 会为其物化 scope），保持不变。
+                throw new Error("无法连接到会话重命名服务");
+              },
+              renameWorkspace: async (workspaceId, title) => {
+                if (ctx.workspaces && typeof ctx.workspaces.rename === "function") {
+                  await ctx.workspaces.rename(workspaceId, title);
+                  return;
+                }
+                throw new Error("工作区重命名服务不可用（当前 DSH 版本不支持）");
+              },
+              archiveSession: async (sessionId) => {
+                const uiWs = resolveUiWorkspace();
+                if (uiWs && typeof uiWs.archiveSession === "function") {
+                  await uiWs.archiveSession(sessionId);
+                  return;
+                } else if (ctx.workspaces && typeof ctx.workspaces.archiveSession === "function") {
+                  await ctx.workspaces.archiveSession(sessionId);
+                  return;
+                }
+                throw new Error("会话归档服务不可用（当前 DSH 版本不支持）");
+              },
+              createWorkspace: (input) => {
+                if (ctx.workspaces && typeof ctx.workspaces.create === "function") {
+                  return ctx.workspaces.create(input);
+                }
+                return Promise.reject(new Error("工作区服务不可用"));
+              },
+              /**
+               * 活快照读一行（归档门槛复查用）。比渲染时物化的 props 更新：store 一变更就能
+               * 读到，不必等 React 重渲染——点击落在「运行位刚翻真、界面还没重渲染」的窗口里
+               * 时，靠它把判据拉到最新。缺行/服务缺席返回 null，由调用方回退渲染快照。
+               */
+              liveSessionRow: (sessionId) => {
+                try {
+                  const snap = ctx.sessions?.list?.getSnapshot ? ctx.sessions.list.getSnapshot() : null;
+                  return (snap && snap.byId) ? (snap.byId[sessionId] || null) : null;
+                } catch { return null; }
+              },
+              // 官方 RPC workspace/delete：仅注销注册表记录，不删磁盘目录与会话文件
+              // （旧版 DSH 无此方法时抛错，调用方降级为仅隐藏）。
+              deleteWorkspace: (workspaceId) => {
+                if (ctx.workspaces && typeof ctx.workspaces.delete === "function") {
+                  return ctx.workspaces.delete(workspaceId);
+                }
+                return Promise.reject(new Error("工作区注销服务不可用（当前 DSH 版本不支持）"));
+              },
+              adoptSession: (sessionId, workspaceId) => {
+                if (ctx.sessions && typeof ctx.sessions.create === "function") {
+                  return ctx.sessions.create({ sessionId, workspaceId });
+                }
+                return Promise.reject(new Error("会话服务不可用"));
+              },
+              // 官方目录选择面（UiWorkspaceService 转发 remote.directoryPicker）：
+              //  - pickDirectory：native 系统选择器，只有回环绑定主机挂载；browse 主机
+              //    会被 host 以 directory-picker/unavailable 拒绝（"directoryPicker.pick
+              //    needs the native capability; the composed picker serves \"browse\""）；
+              //  - listDirectory / createDirectory：browse 原语，局域网/远端绑定主机的
+              //    唯一目录面，插件自持的浏览对话框就架在这两个原语上。
+              pickDirectory: async () => {
+                const uiWs = resolveUiWorkspace();
+                if (uiWs && typeof uiWs.pickDirectory === "function") {
+                  return await uiWs.pickDirectory();
+                }
+                // 历史兜底已移除（2026-09-10 审计）：ctx.directoryPicker 从来不是
+                // cordis 服务（全仓无 provide("directoryPicker")），0.1.5-rc.1 里它
+                // 是 Remote 命名空间下的 remote.directoryPicker。主路径
+                // uiWorkspace.pickDirectory() 在两版都可用，保持不变。
+                throw new Error("目录选择服务不可用");
+              },
+              listDirectory: (path, signal) => {
+                const uiWs = resolveUiWorkspace();
+                if (uiWs && typeof uiWs.listDirectory === "function") {
+                  return uiWs.listDirectory(path, signal);
+                }
+                throw new Error("当前 DSH 版本不支持目录浏览（uiWorkspace.listDirectory）；可在文件夹模式用「添加为工作区」，或升级 DSH。");
+              },
+              createDirectory: (path, dirName) => {
+                const uiWs = resolveUiWorkspace();
+                if (uiWs && typeof uiWs.createDirectory === "function") {
+                  return uiWs.createDirectory(path, dirName);
+                }
+                throw new Error("当前 DSH 版本不支持新建文件夹（uiWorkspace.createDirectory）；可在文件夹模式用「新建文件夹」，或升级 DSH。");
+              },
+              refreshSessions: () => {
+                try {
+                  if (typeof ctx.sessions?.refresh === "function") ctx.sessions.refresh();
+                } catch { /* ignore */ }
+              }
+          };
+        }
+        };
+        // 只有借道成功才声明子槽（声明即渲染授权，见 officialFlowBridge 注释）；
+        // 失败则完全保持 v1.9.5 的形态：不声明、用自持对话框。
+        if (officialFlowBridge.ok) {
+          options.children = { [officialFlowBridge.hole]: { kind: "single", scope: "root" } };
+          return officialFlowBridge.register(options, component);
+        }
+        return ctx.slots.register(options, component);
+      });
     }
 
     // ══════════════ 主题原生 CSS（完全基于 DSH 设计变量体系） ══════════════
@@ -3060,6 +3709,141 @@ window.__ModuleLoader__.load({
       @keyframes dswt-modal-in {
         from { opacity: 0; }
         to { opacity: 1; }
+      }
+
+      /* ══════════════ 目录选择弹窗（browse 面自持） ══════════════ */
+      .dswt-pickerPanel {
+        min-width: 480px;
+        max-width: 560px;
+        height: min(560px, calc(100vh - 96px));
+      }
+      .dswt-pickerCrumbs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+        padding-bottom: 2px;
+        scrollbar-width: thin;
+      }
+      .dswt-crumb {
+        flex: none;
+        height: 24px;
+        padding: 0 6px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--dsw-alias-label-tertiary);
+        font-size: 12px;
+        line-height: 24px;
+        cursor: pointer;
+        max-width: 160px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .dswt-crumb:hover:not(:disabled) {
+        background: var(--dsw-alias-interactive-bg-hover);
+        color: var(--dsw-alias-label-primary);
+      }
+      .dswt-crumbActive {
+        color: var(--dsw-alias-label-primary);
+        font-weight: 600;
+      }
+      .dswt-crumbUp {
+        color: var(--dsw-alias-label-secondary);
+        font-size: 13px;
+      }
+      .dswt-crumb:disabled {
+        cursor: default;
+        opacity: 1;
+      }
+      .dswt-pickerPathRow {
+        display: flex;
+        gap: 8px;
+      }
+      .dswt-pickerPathInput {
+        flex: 1;
+        min-width: 0;
+        height: 32px;
+        font-size: 13px;
+        font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      }
+      .dswt-pickerList {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        border: 1px solid var(--dsw-alias-border-l1);
+        border-radius: 10px;
+        background: var(--dsw-alias-bg-layer-2);
+        padding: 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .dswt-pickerRow {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        height: 30px;
+        padding: 0 8px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--dsw-alias-label-primary);
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .dswt-pickerRow:hover:not(:disabled) {
+        background: var(--dsw-alias-interactive-bg-hover);
+      }
+      .dswt-pickerRow:disabled {
+        opacity: .55;
+        cursor: default;
+      }
+      .dswt-pickerRowHidden {
+        color: var(--dsw-alias-label-tertiary);
+      }
+      .dswt-pickerRowName {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .dswt-pickerEmpty {
+        padding: 16px 8px;
+        color: var(--dsw-alias-label-tertiary);
+        font-size: 13px;
+        text-align: center;
+      }
+      .dswt-pickerError {
+        font-size: 12px;
+        line-height: 18px;
+        color: var(--dsw-alias-state-error-primary);
+        word-break: break-all;
+      }
+      .dswt-pickerActions {
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .dswt-pickerSpacer {
+        flex: 1;
+      }
+      .dswt-pickerNewDir {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-width: 0;
+      }
+      .dswt-pickerNewInput {
+        flex: 1;
+        min-width: 0;
+        height: 32px;
+        font-size: 13px;
       }
       @media (prefers-reduced-motion: reduce) {
         .dswt-session { transition: none; animation: none; }
