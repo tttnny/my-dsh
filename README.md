@@ -57,7 +57,7 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-llm-agentrouter"><code>@lynn123411/dsh-llm-agentrouter</code></a></td>
-      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉 <code>aqiu817/dsh-llm-agentrouter</code>：沿用 <code>llm-agentrouter</code> 命名空间；适配 <code>ctx.settings.installSection</code> 与 <code>settings.plugins.tab</code> slots，已在 <code>0.1.5-rc.1</code> 逐项实证兼容</td>
+      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉 <code>aqiu817/dsh-llm-agentrouter</code>：沿用 <code>llm-agentrouter</code> 命名空间；宿主沿用 <code>ctx.settings.installSection</code>，端点卡片与 <code>dsh-a6api</code> 同挂共享设置页「API中转」，已在 <code>0.1.5-rc.1</code> 逐项实证兼容</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter</code></td>
     </tr>
     <tr>

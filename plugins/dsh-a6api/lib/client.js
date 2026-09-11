@@ -36,7 +36,7 @@ __export(index_exports, {
   name: () => name
 });
 module.exports = __toCommonJS(index_exports);
-var import_react7 = __toESM(require("react"), 1);
+var import_react8 = __toESM(require("react"), 1);
 
 // src/client/components/A6ApiSettings.tsx
 var import_react5 = require("react");
@@ -2688,6 +2688,141 @@ var A6ApiSidebarCardBody = ({
   ] });
 };
 
+// src/client/relay-settings-page.js
+var import_react7 = require("react");
+var RELAY_PAGE_ID = "relay";
+var RELAY_PAGE_ORDER = 120;
+var RELAY_ITEM_SLOT = "relay.settings.item";
+var TABLIST_STYLE = {
+  display: "flex",
+  alignItems: "flex-end",
+  gap: "22px",
+  marginTop: "2px",
+  marginBottom: "16px"
+};
+var TAB_STYLE = {
+  appearance: "none",
+  background: "transparent",
+  // No border on ANY tab: the marker below is the active tab's own element, so
+  // an inactive tab has nothing that could render a line.
+  border: "none",
+  position: "relative",
+  padding: "7px 1px 11px",
+  cursor: "pointer",
+  font: "inherit",
+  fontSize: "13px",
+  lineHeight: "20px",
+  color: "var(--dsw-alias-label-tertiary, inherit)"
+};
+var TAB_ACTIVE_STYLE = Object.assign({}, TAB_STYLE, {
+  color: "var(--dsw-alias-label-primary, inherit)"
+});
+var TAB_MARKER_STYLE = {
+  position: "absolute",
+  left: 0,
+  right: 0,
+  bottom: 0,
+  height: "2px",
+  borderRadius: "2px 2px 0 0",
+  background: "var(--dsw-alias-label-primary, currentColor)"
+};
+var PANEL_STYLE = { margin: 0 };
+var PANEL_HIDDEN_STYLE = { margin: 0, display: "none" };
+function readLabel(label) {
+  if (typeof label === "function") return label();
+  return typeof label === "string" ? label : "";
+}
+function createRelayTabs(ctx) {
+  const locale = ctx.get("locale");
+  let version = -1;
+  let revision = -1;
+  let tabs = [];
+  return {
+    getSnapshot: () => {
+      const nextVersion = ctx.slots.getVersion(RELAY_ITEM_SLOT);
+      const nextRevision = locale === void 0 ? 0 : locale.getSnapshot().revision;
+      if (nextVersion === version && nextRevision === revision) return tabs;
+      version = nextVersion;
+      revision = nextRevision;
+      tabs = ctx.slots.entries(RELAY_ITEM_SLOT).map((entry) => ({
+        id: entry.options.id ?? "",
+        order: entry.options.order ?? 0,
+        label: readLabel(entry.options.label)
+      })).sort((left, right) => left.order - right.order);
+      return tabs;
+    },
+    subscribe: (listener) => {
+      const offSlots = ctx.slots.subscribe(RELAY_ITEM_SLOT, listener);
+      const offLocale = locale === void 0 ? void 0 : locale.subscribe(listener);
+      return () => {
+        offSlots();
+        if (offLocale !== void 0) offLocale();
+      };
+    }
+  };
+}
+function RelaySettingsSection({ renderSlot, relayTabs }) {
+  const tabs = (0, import_react7.useSyncExternalStore)(
+    relayTabs.subscribe,
+    relayTabs.getSnapshot,
+    relayTabs.getSnapshot
+  );
+  const [requested, setRequested] = (0, import_react7.useState)(null);
+  const selected = requested !== null && tabs.some((tab) => tab.id === requested) ? requested : tabs.length > 0 ? tabs[0].id : null;
+  if (selected === null) return null;
+  return (0, import_react7.createElement)(
+    "div",
+    null,
+    (0, import_react7.createElement)(
+      "div",
+      { role: "tablist", style: TABLIST_STYLE },
+      tabs.map((tab) => (0, import_react7.createElement)(
+        "button",
+        {
+          key: tab.id,
+          type: "button",
+          role: "tab",
+          "aria-selected": tab.id === selected,
+          style: tab.id === selected ? TAB_ACTIVE_STYLE : TAB_STYLE,
+          onClick: () => {
+            setRequested(tab.id);
+          }
+        },
+        tab.label,
+        tab.id === selected ? (0, import_react7.createElement)("span", { style: TAB_MARKER_STYLE, "aria-hidden": true }) : null
+      ))
+    ),
+    tabs.map((tab) => (0, import_react7.createElement)(
+      "div",
+      {
+        key: tab.id,
+        role: "tabpanel",
+        hidden: tab.id !== selected,
+        style: tab.id === selected ? PANEL_STYLE : PANEL_HIDDEN_STYLE
+      },
+      renderSlot(RELAY_ITEM_SLOT, {}, { only: tab.id })
+    ))
+  );
+}
+function relayPageClaimed(ctx) {
+  return ctx.slots.entries("settings.section").some((entry) => entry.options.id === RELAY_PAGE_ID);
+}
+function claimRelaySettingsPage(ctx, label) {
+  if (relayPageClaimed(ctx)) return () => {
+  };
+  const relayTabs = createRelayTabs(ctx);
+  const children = {};
+  children[RELAY_ITEM_SLOT] = { kind: "list", scope: "root" };
+  return ctx.slots.register({
+    name: "settings.section",
+    id: RELAY_PAGE_ID,
+    order: RELAY_PAGE_ORDER,
+    label,
+    inject: () => ({ relayTabs }),
+    children
+  }, RelaySettingsSection);
+}
+
 // src/client/styles/main.css
 var main_default = `/* A6API Plugin Styles - Clean Professional DSH Native Theme Integration */
 
@@ -4956,7 +5091,28 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 
 // src/client/index.ts
 var name = "@lynn123411/dsh-a6api";
-var inject = ["slots"];
+var inject = ["slots", "locale"];
+var TAB_NAV = { zh: "A6api", en: "A6api" };
+var RELAY_PAGE_NAV = { zh: "API\u4E2D\u8F6C", en: "API relay" };
+var NS = "settings.a6api";
+function registerNavDicts(ctx) {
+  const locale = ctx && typeof ctx.get === "function" ? ctx.get("locale") : void 0;
+  if (!locale || typeof locale.register !== "function") return;
+  ctx.effect(
+    () => locale.register(NS, {
+      zh: { pageNav: RELAY_PAGE_NAV.zh, tabNav: TAB_NAV.zh },
+      en: { pageNav: RELAY_PAGE_NAV.en, tabNav: TAB_NAV.en }
+    }),
+    "dsh-a6api: shared page dictionaries"
+  );
+}
+function navLabel(ctx, key) {
+  const locale = ctx && typeof ctx.get === "function" ? ctx.get("locale") : void 0;
+  if (locale && typeof locale.bind === "function") {
+    return () => locale.bind(NS)(key);
+  }
+  return () => key === "pageNav" ? RELAY_PAGE_NAV.zh : TAB_NAV.zh;
+}
 function injectStyles() {
   if (typeof document === "undefined") return;
   const styleId = "dsh-a6api-styles";
@@ -5182,13 +5338,18 @@ function apply(ctx) {
     const slots = ctx?.slots || (ctx?.get ? ctx.get("slots") : null);
     if (!slots || typeof slots.inject !== "function") return;
     slots.inject("settings.section", () => {
+      registerNavDicts(ctx);
+      return claimRelaySettingsPage(ctx, navLabel(ctx, "pageNav"));
+    });
+    slots.inject(RELAY_ITEM_SLOT, () => {
       return slots.register(
         {
-          name: "settings.section",
+          name: RELAY_ITEM_SLOT,
+          // id = 本插件的设置命名空间：共享页按 id 过滤本 tab 的面板，故须与卡片自身命名空间一致
           id: "dsh-a6api",
-          // 约定：自有插件设置项 order 从 110 起步进 10（原生最大 100=桌面设置），保证排在所有原生项之下
-          order: 120,
-          label: () => "A6api"
+          order: 10,
+          // label 由共享页投影为外层 tab 标题
+          label: navLabel(ctx, "tabNav")
         },
         A6ApiSettingsPanel
       );
@@ -5202,7 +5363,7 @@ function apply(ctx) {
           order: -1,
           label: () => "A6api"
         },
-        (props) => import_react7.default.createElement(A6ApiSidebarCard, {
+        (props) => import_react8.default.createElement(A6ApiSidebarCard, {
           ...props || {},
           getModelDirectories
         })

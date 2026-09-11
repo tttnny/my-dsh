@@ -1,11 +1,46 @@
 import React from 'react';
 import { A6ApiSettingsPanel } from './components/A6ApiSettings.js';
 import { A6ApiSidebarCard } from './components/A6ApiSidebarCard.js';
+import { RELAY_ITEM_SLOT, claimRelaySettingsPage } from './relay-settings-page.js';
 import mainCss from './styles/main.css';
 import { store } from './store.js';
 
 export const name = '@lynn123411/dsh-a6api';
-export const inject = ['slots'];
+export const inject = ['slots', 'locale'];
+
+/** Tab title inside the shared 「API中转」 page, in both shipped languages. */
+const TAB_NAV = { zh: 'A6api', en: 'A6api' };
+/** Sidebar name of the shared 「API中转」 page when this plugin claims it. */
+const RELAY_PAGE_NAV = { zh: 'API中转', en: 'API relay' };
+/** Locale namespace owned by this plugin (shared page titles only). */
+const NS = 'settings.a6api';
+
+/**
+ * Register the shared page's own two titles. Called from inside the
+ * `slots.inject` callback so it runs at the same point as the registration it
+ * serves and is unwound with it; `ctx.get` keeps the read optional (the client
+ * declares `locale`, but a bundle must still tolerate its absence).
+ */
+function registerNavDicts(ctx: any): void {
+  const locale = ctx && typeof ctx.get === 'function' ? ctx.get('locale') : undefined;
+  if (!locale || typeof locale.register !== 'function') return;
+  ctx.effect(
+    () => locale.register(NS, {
+      zh: { pageNav: RELAY_PAGE_NAV.zh, tabNav: TAB_NAV.zh },
+      en: { pageNav: RELAY_PAGE_NAV.en, tabNav: TAB_NAV.en },
+    }),
+    'dsh-a6api: shared page dictionaries',
+  );
+}
+
+/** Translated title thunk; falls back to the built-in dictionary without locale. */
+function navLabel(ctx: any, key: 'pageNav' | 'tabNav'): () => string {
+  const locale = ctx && typeof ctx.get === 'function' ? ctx.get('locale') : undefined;
+  if (locale && typeof locale.bind === 'function') {
+    return () => locale.bind(NS)(key);
+  }
+  return () => (key === 'pageNav' ? RELAY_PAGE_NAV.zh : TAB_NAV.zh);
+}
 
 function injectStyles() {
   if (typeof document === 'undefined') return;
@@ -231,14 +266,22 @@ export function apply(ctx: any): void {
     const slots = ctx?.slots || (ctx?.get ? ctx.get('slots') : null);
     if (!slots || typeof slots.inject !== 'function') return;
 
+    // 设置入口：与 dsh-llm-agentrouter 共用「API中转」一页（外层 tab = 参与插件各一张卡片，
+    // 内核不允许一页被两个插件共同声明，故先激活者当选页面宿主，见 relay-settings-page.js）。
+    // 本面板自带「可用模型 / 模型目录 / 账户资产 / 基础配置」四个内层 tab，整体作为外层一张卡片。
     slots.inject('settings.section', () => {
+      registerNavDicts(ctx);
+      return claimRelaySettingsPage(ctx, navLabel(ctx, 'pageNav'));
+    });
+    slots.inject(RELAY_ITEM_SLOT, () => {
       return slots.register(
         {
-          name: 'settings.section',
+          name: RELAY_ITEM_SLOT,
+          // id = 本插件的设置命名空间：共享页按 id 过滤本 tab 的面板，故须与卡片自身命名空间一致
           id: 'dsh-a6api',
-          // 约定：自有插件设置项 order 从 110 起步进 10（原生最大 100=桌面设置），保证排在所有原生项之下
-          order: 120,
-          label: () => 'A6api',
+          order: 10,
+          // label 由共享页投影为外层 tab 标题
+          label: navLabel(ctx, 'tabNav'),
         },
         A6ApiSettingsPanel,
       );

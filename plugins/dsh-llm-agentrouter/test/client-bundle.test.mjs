@@ -11,6 +11,11 @@
  * with `react-test-renderer` — no browser, no DSH shell. The card subscribes to
  * its section through `useSyncExternalStore`, so it is rendered as a component
  * rather than called as a function.
+ *
+ * The settings page is SHARED with `dsh-a6api`, so these tests also cover the
+ * election: the shell claims `settings.section` only while no participant holds
+ * it, the card joins the page's child slot, and the page renders one tab per
+ * registered card, filtered by id.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -20,6 +25,13 @@ import { createElement } from 'react'
 import { act, create } from 'react-test-renderer'
 
 const require_ = createRequire(import.meta.url)
+
+/** Child slot both participants register their card into. */
+const ITEM_SLOT = 'relay.settings.item'
+/** Page id the first participant to activate claims. */
+const PAGE_ID = 'relay'
+/** Sidebar position of the shared page. */
+const PAGE_ORDER = 120
 
 /**
  * Execute the bundle the way the client module loader does and return what it
@@ -55,6 +67,90 @@ function loadBundle() {
 }
 
 /**
+ * A slot registry stub with the slice of the contract the bundle uses:
+ * `inject` (run immediately), `register`, `entries`, `getVersion` and
+ * `subscribe`.
+ *
+ * @param {object} options - registry options.
+ * @param {object[]} options.sectionEntries - pre-existing `settings.section` rows.
+ * @returns {object} the registry plus everything it recorded.
+ */
+function stubSlots({ sectionEntries = [] } = {}) {
+  const registrations = []
+  const injections = []
+  const itemEntries = []
+  let version = 0
+  let listeners = []
+  const commit = (options) => {
+    itemEntries.push({ options })
+    version += 1
+    for (const listener of [...listeners]) listener()
+  }
+  const slots = {
+    inject: (name, callback) => {
+      injections.push(name)
+      return callback()
+    },
+    register: (options, component) => {
+      registrations.push({ options, component })
+      if (options.name === ITEM_SLOT) commit(options)
+      return () => {}
+    },
+    entries: (name) => (name === ITEM_SLOT ? [...itemEntries] : [...sectionEntries]),
+    getVersion: (name) => (name === ITEM_SLOT ? version : 0),
+    subscribe: (name, listener) => {
+      listeners.push(listener)
+      return () => {
+        listeners = listeners.filter(entry => entry !== listener)
+      }
+    },
+  }
+  return { slots, registrations, injections, itemEntries, commit }
+}
+
+/**
+ * The context the bundle is applied to. The proxy models the kernel's inject
+ * guard: reading an undeclared service throws, which is how a missing `inject`
+ * entry surfaces as a broken page instead of a silent no-op.
+ *
+ * @param {object} options - context options.
+ * @param {object} options.scope - the settings scope stub the card writes through.
+ * @param {object[]} options.sectionEntries - pre-existing `settings.section` rows.
+ * @returns {object} the context plus the slot registry it carries.
+ */
+function stubContext({ scope, sectionEntries = [] } = {}) {
+  const { slots, registrations, injections, itemEntries, commit } = stubSlots({ sectionEntries })
+  const declared = new Set(['slots', 'locale', 'settingsScope'])
+  const services = {
+    slots,
+    locale: {
+      register: () => () => {},
+      bind: (ns) => (key) => `${ns}:${key}`,
+      getSnapshot: () => ({ revision: 1 }),
+      subscribe: () => () => {},
+    },
+    settingsScope: { bind: () => scope },
+  }
+  const base = {
+    ...services,
+    // `ctx.get` is how an OPTIONAL service is read without tripping the guard;
+    // it must stay callable on the stub or the shell cannot read `locale`.
+    get: (name) => services[name],
+    effect: (factory) => factory(),
+  }
+  const ctx = new Proxy(base, {
+    get: (target, property) => {
+      if (typeof property !== 'string') return target[property]
+      if (!(property in target) && !declared.has(property)) {
+        throw new Error(`cannot get property "${property}" without inject`)
+      }
+      return target[property]
+    },
+  })
+  return { ctx, registrations, injections, itemEntries, commit }
+}
+
+/**
  * A settings scope stub with the contract's snapshot shape.
  * @param {object} overrides - snapshot fields overriding the ready defaults.
  * @returns {object} the scope plus the writes it recorded.
@@ -85,7 +181,20 @@ function stubScope(overrides = {}) {
 }
 
 /**
+ * Apply the bundle to a stub context.
+ * @param {object} options - context options.
+ * @returns {object} the exports plus what the application registered.
+ */
+function applyBundle(options = {}) {
+  const { exports } = loadBundle()
+  const context = stubContext(options)
+  exports.apply(context.ctx)
+  return { exports, ...context }
+}
+
+/**
  * Render the card and return its tree.
+ * @param {object} exports_ - the loaded bundle's exports.
  * @param {object} scope - the settings scope stub it reads.
  * @returns {Promise<object>} the react-test-renderer tree.
  */
@@ -123,46 +232,53 @@ test('the bundle registers under its package id and declares the services it use
   )
 })
 
-test('apply registers one card keyed on the settings namespace', () => {
-  const { exports } = loadBundle()
-  const registrations = []
-  const injections = []
-  const bound = []
-  exports.apply({
-    effect: (fn) => fn(),
-    locale: {
-      register: (ns, dictionaries) => {
-        bound.push({ ns, locales: Object.keys(dictionaries) })
-        return () => {}
-      },
-      bind: (ns) => (key) => `${ns}:${key}`,
-    },
-    settingsScope: { bind: (spec) => bound.push(spec) },
-    slots: {
-      inject: (name, callback) => {
-        injections.push(name)
-        callback()
-      },
-      register: (options) => {
-        registrations.push(options)
-        return () => {}
-      },
-    },
-  })
-  assert.deepEqual(injections, ['settings.plugins.tab'], 'the card joins the Plugins settings section')
-  assert.equal(registrations.length, 1)
-  assert.equal(registrations[0].name, 'settings.plugins.tab')
-  assert.equal(registrations[0].id, 'llm-agentrouter', 'the tab key is the settings namespace')
-  assert.equal(typeof registrations[0].label, 'function', 'the tab label localizes')
-  assert.deepEqual(registrations[0].label(), 'settings.agentrouter:title', 'the tab shows the card title')
+test('apply claims the shared page and registers one card into its child slot', () => {
+  const { registrations, injections, itemEntries } = applyBundle({ scope: stubScope() })
+
   assert.deepEqual(
-    bound.find((entry) => entry.locales !== undefined).locales.sort(),
-    ['en', 'zh'],
-    'both dictionaries ship with the card',
+    injections,
+    ['settings.section', ITEM_SLOT],
+    'the card joins the shared page instead of the Plugins settings tabs',
   )
+  assert.equal(registrations.length, 2, 'one page claim plus one card')
+
+  const page = registrations.find((entry) => entry.options.name === 'settings.section')
+  assert.ok(page !== undefined, 'someone must declare the shared page')
+  assert.equal(page.options.id, PAGE_ID)
+  assert.equal(page.options.order, PAGE_ORDER)
+  assert.deepEqual(
+    Object.keys(page.options.children),
+    [ITEM_SLOT],
+    'the page must declare the child slot its participants register into',
+  )
+
+  assert.equal(itemEntries.length, 1)
+  const card = itemEntries[0]
+  assert.equal(card.options.name, ITEM_SLOT)
+  assert.equal(card.options.id, 'llm-agentrouter', 'the card id is the plugin settings namespace')
+  assert.equal(card.options.order, 20, 'the endpoint card is the second tab, after A6api')
+  assert.equal(typeof card.options.label, 'function', 'the tab label localizes')
+  assert.equal(card.options.label(), 'settings.agentrouter:title', 'the tab shows the card title')
+  assert.equal(card.options.locale, 'settings.agentrouter')
 })
 
-test('the two dictionaries cover the same keys', () => {
+test('the card joins the page shell without ever redeclaring it', () => {
+  // The loser's contract: the page row already exists, so the shell must stay
+  // silent and only the card may register.
+  const { registrations } = applyBundle({
+    scope: stubScope(),
+    sectionEntries: [{ options: { id: PAGE_ID } }],
+  })
+  assert.equal(
+    registrations.find((entry) => entry.options.name === 'settings.section'),
+    undefined,
+    'a second declarer would trip the kernel duplicate-id guard',
+  )
+  assert.equal(registrations.length, 1, 'only the card registers when another participant holds the page')
+  assert.equal(registrations[0].options.name, ITEM_SLOT)
+})
+
+test('the dictionaries cover the shared page name too', () => {
   // A missing key renders as the key itself in one language only, which no test
   // of the rendered card would notice.
   const source = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
@@ -171,6 +287,94 @@ test('the two dictionaries cover the same keys', () => {
     return [...body.slice(0, body.indexOf('};')).matchAll(/^\t{3}(\w+):/gm)].map((match) => match[1]).sort()
   }
   assert.deepEqual(keysOf('en'), keysOf('zh'))
+  assert.ok(keysOf('zh').includes('pageNav'), 'the shared page is named in the dictionaries')
+})
+
+test('the shell renders one tab per registered card and filters each panel by id', async () => {
+  const { registrations, commit } = applyBundle({ scope: stubScope() })
+  const page = registrations.find((entry) => entry.options.name === 'settings.section')
+
+  // Stand in for the other participant: dsh-a6api's card, registered first.
+  commit({ id: 'dsh-a6api', order: 10, label: () => 'A6api' })
+
+  const rendered = []
+  const renderSlot = (name, owner, filter) => {
+    rendered.push({ name, owner, filter })
+    return createElement('div', { 'data-panel': filter.only })
+  }
+  const PageComponent = page.component
+  let tree
+  await act(async () => {
+    tree = create(createElement(PageComponent, {
+      renderSlot,
+      relayTabs: page.options.inject().relayTabs,
+    }))
+  })
+
+  const tabs = () => tree.root.findAll((node) => node.type === 'button' && node.props.role === 'tab')
+  assert.deepEqual(
+    tabs().map((node) => node.props.children[0]),
+    ['A6api', 'settings.agentrouter:title'],
+    'tabs follow the card order: the other participant first, this card second',
+  )
+  assert.deepEqual(tabs().map((node) => node.props['aria-selected']), [true, false], 'the first tab opens selected')
+  assert.deepEqual(
+    rendered.map((entry) => entry.name),
+    [ITEM_SLOT, ITEM_SLOT],
+    'both panels come from the shared page child slot',
+  )
+  assert.deepEqual(
+    rendered.map((entry) => entry.filter.only),
+    ['dsh-a6api', 'llm-agentrouter'],
+    'each panel renders exactly its own card',
+  )
+  const panels = () => tree.root.findAll((node) => node.props.role === 'tabpanel')
+  assert.equal(panels()[1].props.style.display, 'none', 'the inactive panel is hidden by style, not only by attribute')
+
+  // Switching tabs re-filters and moves the marker.
+  await act(async () => {
+    tabs()[1].props.onClick()
+  })
+  assert.deepEqual(tabs().map((node) => node.props['aria-selected']), [false, true])
+})
+
+test('a card that registers after the page mounted appears as its own tab', async () => {
+  // The participants activate independently, so the roster must stay live: the
+  // page may already be projected when a card lands — or lands before it, which
+  // the roster test above covers.
+  const { registrations, commit } = applyBundle({ scope: stubScope() })
+  const page = registrations.find((entry) => entry.options.name === 'settings.section')
+
+  const rendered = []
+  const renderSlot = (name, owner, filter) => {
+    rendered.push(filter.only)
+    return null
+  }
+  const PageComponent = page.component
+  let tree
+  await act(async () => {
+    tree = create(createElement(PageComponent, {
+      renderSlot,
+      relayTabs: page.options.inject().relayTabs,
+    }))
+  })
+
+  const tabs = () => tree.root.findAll((node) => node.type === 'button' && node.props.role === 'tab')
+  assert.deepEqual(
+    tabs().map((node) => node.props.children[0]),
+    ['settings.agentrouter:title'],
+    'this plugin already contributed its card during apply',
+  )
+
+  await act(async () => {
+    commit({ id: 'dsh-a6api', order: 10, label: () => 'A6api' })
+  })
+  assert.deepEqual(
+    tabs().map((node) => node.props.children[0]),
+    ['A6api', 'settings.agentrouter:title'],
+    'a later registration orders itself into the existing tab bar',
+  )
+  assert.deepEqual(rendered, ['llm-agentrouter', 'dsh-a6api', 'llm-agentrouter'])
 })
 
 test('the card renders both endpoints, marks the selected one, and names each host', async () => {
