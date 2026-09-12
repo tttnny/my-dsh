@@ -1,7 +1,7 @@
 import { i as createAntigravityAuthService, t as mountCapabilityLifecycle } from "./capability-lifecycle-DPNblVcJ.js";
-import { d as privateStatusError, l as createPrivateTransport, m as PrivateTransportError, n as DEFAULT_PRIVATE_IDLE_TIMEOUT_MS, o as DEFAULT_PRIVATE_TOTAL_TIMEOUT_MS, t as DEFAULT_PRIVATE_FRAME_BYTES, u as iteratePrivateSse } from "./private-transport-BQshWFmk.js";
+import { d as privateStatusError, l as createPrivateTransport, m as PrivateTransportError, n as DEFAULT_PRIVATE_IDLE_TIMEOUT_MS, o as DEFAULT_PRIVATE_TOTAL_TIMEOUT_MS, t as DEFAULT_PRIVATE_FRAME_BYTES, u as iteratePrivateSse } from "./private-transport-DvkyFFK_.js";
 import { ANTIGRAVITY_WIRE_ORIGIN } from "./wire-identity.js";
-import { t as classifyPrivateFailure } from "./private-failure-DaQoTCkz.js";
+import { t as classifyPrivateFailure } from "./private-failure-nHkfjLiA.js";
 import { resolveModelWithTier } from "@cortexkit/antigravity-auth-core";
 import z from "@deepseek-ai/schemastery";
 import { WebError } from "@deepseek-ai/dsh-web";
@@ -127,10 +127,19 @@ function apply(ctx, config = {
 		auth,
 		id: "search",
 		enabled: () => current().enabled,
-		register: () => candidate.web.registerSearchProvider(new AntigravitySearchProvider({
-			auth,
-			settings: () => current()
-		})),
+		register: () => {
+			const web = candidate.web;
+			const previousProviderId = web.searchProviderId;
+			web.searchProviderId = ANTIGRAVITY_SEARCH_PROVIDER_ID;
+			const unregister = web.registerSearchProvider(new AntigravitySearchProvider({
+				auth,
+				settings: () => current()
+			}));
+			return () => {
+				if (web.searchProviderId === "antigravity") web.searchProviderId = previousProviderId;
+				unregister();
+			};
+		},
 		ownsAuth: auth !== provided,
 		label: "antigravity-search: provider lifecycle"
 	});

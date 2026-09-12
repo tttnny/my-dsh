@@ -42,7 +42,8 @@ export function createRawPrivateDispatcher(): (input: RawPrivateRequest) => Prom
     })
     const socket = await connectTls(url, input.responseHeaderTimeoutMs, input.signal)
     let dispatched = false
-    const abort = (): void => { socket.destroy(cancelled(dispatched)) }
+    /** Close the socket only; the active waiter owns the cancellation error. */
+    const abort = (): void => { socket.destroy() }
     try {
       if (isAborted(input.signal)) throw cancelled(false)
       input.signal?.addEventListener('abort', abort, { once: true })

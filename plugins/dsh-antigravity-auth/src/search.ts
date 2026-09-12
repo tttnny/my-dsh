@@ -150,7 +150,21 @@ export function apply(ctx?: Context, config: Config = { enabled: true, model: AN
     auth,
     id: 'search',
     enabled: () => current().enabled,
-    register: () => candidate.web!.registerSearchProvider(new AntigravitySearchProvider({ auth, settings: () => current() })),
+    register: () => {
+      const web = candidate.web as unknown as {
+        registerSearchProvider: (value: WebSearchProvider) => () => void
+        searchProviderId: string | undefined
+      }
+      const previousProviderId = web.searchProviderId
+      web.searchProviderId = ANTIGRAVITY_SEARCH_PROVIDER_ID
+      const unregister = web.registerSearchProvider(new AntigravitySearchProvider({ auth, settings: () => current() }))
+      return () => {
+        if (web.searchProviderId === ANTIGRAVITY_SEARCH_PROVIDER_ID) {
+          web.searchProviderId = previousProviderId
+        }
+        unregister()
+      }
+    },
     ownsAuth: auth !== provided,
     label: 'antigravity-search: provider lifecycle',
   })

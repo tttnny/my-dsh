@@ -98,7 +98,7 @@ export declare const en: {
     readonly quotaRefresh: "Refresh quota";
     readonly quotaFiveHour: "Five-hour window";
     readonly quotaWeekly: "Weekly window";
-    readonly searchCardIntro: "Google Antigravity Search Provider used by the stock web_search tool.";
+    readonly searchCardIntro: "Google Antigravity Search Provider used by the stock web_search tool. While enabled and authenticated, it takes over as that tool's backend instead of the host default provider.";
     readonly imageCardIntro: "Durable image generation tools for image-capable models (gemini-3.1-flash-image).";
     readonly videoCardIntro: "Workspace MP4 video understanding tools for multimodal models (gemini-3.7-flash).";
     readonly privacyNotice: "Share Antigravity login state and model routing.";

@@ -7,6 +7,7 @@ const socketState = vi.hoisted(() => ({
   proxyRequest: '',
   proxyResponse: new Uint8Array(),
   holdProxyResponse: false,
+  holdResponse: false,
   streamBody: false,
   socketClosed: false,
 }))
@@ -49,7 +50,7 @@ vi.mock('node:tls', async () => {
     override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
       socketState.request += chunk.toString('latin1')
       callback()
-      if (!this.replied) {
+      if (!this.replied && !socketState.holdResponse) {
         this.replied = true
         queueMicrotask(() => {
           this.push(socketState.response)
@@ -83,6 +84,7 @@ beforeEach(() => {
   socketState.request = ''
   socketState.proxyRequest = ''
   socketState.holdProxyResponse = false
+  socketState.holdResponse = false
   socketState.streamBody = false
   socketState.socketClosed = false
   socketState.proxyResponse = Buffer.from('HTTP/1.1 200 Connection established\r\n\r\n', 'latin1')
@@ -192,6 +194,23 @@ describe('fixed private raw transport', () => {
     await expect(pending).rejects.toMatchObject({ code: 'cancelled', accepted: false })
     expect(socketState.proxyRequest).not.toContain('private-access-fixture')
     expect(socketState.request).toBe('')
+  })
+
+  it('aborts while waiting for response headers without unhandled socket error', async () => {
+    socketState.holdResponse = true
+    const controller = new AbortController()
+    const pending = createPrivateTransport().request({
+      url: ANTIGRAVITY_GENERATE_ENDPOINT,
+      accessToken: 'access-secret',
+      body: '{}',
+      signal: controller.signal,
+    })
+    await new Promise<void>(resolve => setImmediate(resolve))
+    controller.abort()
+
+    await expect(pending).rejects.toMatchObject({ code: 'cancelled', accepted: true })
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(socketState.socketClosed).toBe(true)
   })
 
   it('closes an active fixed-length body when cancelled before its first read', async () => {
