@@ -1,18 +1,18 @@
 # minimal-fs — 极简文件测试模式
 
-> 官方 `minimal`（极简模式）的**身份 ＋ 那个持久 shell**，再并入文件工具三件套（`read` / `write` / `edit`）。工具目录就是这四行：没有 `glob` / `grep`、没有 `read_image`、没有 skills / 计划 / 目标 / 子代理 / 网页。专门用来做**模型能力对照测试**——排除一切工具编排与环境侦察的便利，只看模型靠「shell + 读文件 + 写文件」能走多远。
+> 官方 `minimal`（极简模式）的**身份**，并入文件工具三件套（`read` / `write` / `edit`）——**没有 shell**。工具目录就是这三行：没有 `bash` / `pwsh`、没有 `glob` / `grep`、没有 `read_image`、没有 skills / 计划 / 目标 / 子代理 / 网页。专门用来做**模型能力对照测试**——排除一切命令执行与工具编排的便利，只看模型靠「读文件 + 写文件」能走多远。
 
 ## 与官方极简模式的异同
 
 | | 官方 `minimal`（极简模式） | 本 preset（极简-文件） |
 | --- | --- | --- |
 | persona | `prefix` 即完整系统提示词（`complete: true`）、关闭运行时快照 | **逐字相同** |
-| shell | 持久 shell（`bash`，Windows 下 `pwsh`） | **同一组行原样搬入**（连 isolate realm 与两套 description 一起） |
+| shell | 持久 shell（`bash`，Windows 下 `pwsh`） | **整组不含**（PTY 服务、终端后端与工具行都没有） |
 | 文件工具 | 无（宿主那条 `tool-fs` 行被 web 层禁用） | `read` / `write` / `edit`（`read_image` 已移出模型可见目录） |
 | 上下文压缩 | 无 | 无 |
 | 指令文件（`AGENTS.md`） | 不加载 | 不加载 |
 
-身份与 shell 与官方极简模式逐字一致：固定提示词、无运行时快照、无工具指引段落。差别只在于官方极简模式把文件访问完全交给 shell（`cat` / `sed` / heredoc），这里额外给了三个文件工具，便于把「模型会不会优先选结构化的读写工具」也纳入对照。
+身份与官方极简模式逐字一致：固定提示词、无运行时快照、无工具指引段落。差别在于官方极简模式把文件访问完全交给 shell（`cat` / `sed` / heredoc），这里把 shell 整个拿掉，只留三个结构化文件工具——模型没有别的执行通道，读、写、改都只能走这三个工具。
 
 ## 组成
 
@@ -24,7 +24,7 @@ minimal-fs/
 └── plugins/tool-filter/index.js        # 目录过滤行（随 preset 目录走）
 ```
 
-顶层三行：`persona`（身份）、`persistent-shell`（官方极简模式那组 shell，含 `isolate: { terminals: true }` realm）、`tool-fs` + `tool-filter`（文件工具与其目录过滤）。sandbox、审批、`fs` 服务与观察策略（写前必须读）都留在宿主组合里。
+顶层三行：`persona`（身份）、`tool-fs`、`tool-filter`（文件工具与其目录过滤）。没有 agent 自有服务，所以也没有 `isolate` realm；sandbox、审批、`fs` 服务与观察策略（写前必须读）都留在宿主组合里。
 
 ### 为什么过滤点在 `system-prompt/assemble`
 
@@ -45,6 +45,7 @@ minimal-fs/
 mkdir -p ~/.dsh/.agent-presets/minimal-fs
 
 # 2. 复制组合文件、元数据与随附插件（无需复制 README.md）
+cd presets   # 本仓库的 presets/ 目录
 cp minimal-fs/agent.cordis.yml minimal-fs/preset.yml ~/.dsh/.agent-presets/minimal-fs/
 cp -R minimal-fs/plugins ~/.dsh/.agent-presets/minimal-fs/
 ```
@@ -53,7 +54,7 @@ cp -R minimal-fs/plugins ~/.dsh/.agent-presets/minimal-fs/
 
 ## 验证
 
-- **挂载验证**：`agentPresets.standingKeyFor('minimal-fs')` → mounted OK，且各行 `fiberState` 均已激活（没有行被静默跳过）。注意这只证明组合能装载，**不证明工具目录就是那四个**。
+- **挂载验证**：`agentPresets.standingKeyFor('minimal-fs')` → mounted OK，且各行 `fiberState` 均已激活（没有行被静默跳过）。注意这只证明组合能装载，**不证明工具目录就是那三个**。
 - **工具目录验证（唯一可信的那条）**：开一个本 preset 的真会话发一句话，然后读该会话日志里 `request/header` 记录的 `header.tools`——那是**真正发给模型**的工具清单：
 
   ```bash
@@ -70,7 +71,6 @@ cp -R minimal-fs/plugins ~/.dsh/.agent-presets/minimal-fs/
   "
   ```
 
-  期望输出 `['bash', 'edit', 'read', 'write']`（Windows 上是 `['edit', 'pwsh', 'read', 'write']`）。UI 的「工具」面板只反映装配期的定义解析，不等于模型实际收到的目录——**以会话日志为准**。
-- 当前基线（实测于本机 `0.1.5-rc.2`）：工具目录 `['bash', 'edit', 'read', 'write']`，装配出的系统提示词只有 `You are a helpful software engineer assistant.` 一句。
-- 其它同样值得确认的点：`AGENTS.md`、技能目录、运行时快照都不出现。
-- 改完 `plugins/` 后要**重启 DSH**：preset 的挂载在进程内只装载一次，改文件不会热更已挂载的那一份（实测：同进程里开新会话跑到的仍是旧组合）。
+  期望输出 `['edit', 'read', 'write']`——`bash` / `pwsh` 不出现，模型没有任何命令执行通道。UI 的「工具」面板只反映装配期的定义解析，不等于模型实际收到的目录——**以会话日志为准**。
+- 其它同样值得确认的点：系统提示词只有 `You are a helpful software engineer assistant.` 一句，`AGENTS.md`、技能目录、运行时快照都不出现。
+- 改完 `agent.cordis.yml` 或 `plugins/` 后要**重启 DSH**：preset 的挂载在进程内只装载一次，改文件不会热更已挂载的那一份（实测：同进程里开新会话跑到的仍是旧组合）。

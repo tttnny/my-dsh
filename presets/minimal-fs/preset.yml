@@ -1,2 +1,2 @@
 name: 极简-文件
-description: 官方极简模式的身份与持久 shell（bash / Windows 下 pwsh）＋ 文件工具（read / write / edit）。工具目录就是这四个：没有检索、没有 read_image、没有 skills / 计划 / 目标 / 子代理，专门用来对照测试模型在近乎零工具下的能力。
+description: 官方极简模式的身份 ＋ 文件工具（read / write / edit），不含任何 shell。工具目录就是这三个：没有 bash / pwsh、没有检索 / read_image、没有 skills / 计划 / 目标 / 子代理，专门用来对照测试模型在近乎零工具、无命令执行下的能力。
