@@ -36,7 +36,15 @@ export declare class AntigravitySearchProvider implements WebSearchProvider {
     available(): boolean;
     search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>;
 }
-export declare function buildGroundedSearchPayload(query: string, credential: Pick<HostCredential, 'projectId'>, model?: string): Record<string, unknown>;
+/**
+ * Build the dedicated grounded request.
+ *
+ * Field order, envelope identity, and the system instruction mirror the audited
+ * community capture, because that shape is the one observed to return an answer
+ * alongside `groundingMetadata`. `generationConfig` pins temperature 0 so repeats
+ * of one query stay stable.
+ */
+export declare function buildGroundedSearchPayload(query: string, credential: Pick<HostCredential, 'projectId'>, model?: string, now?: number): Record<string, unknown>;
 /** Mount only the public Web Search seam; no fetch provider is registered. */
 export declare function apply(ctx?: Context, config?: Config): void;
 //# sourceMappingURL=search.d.ts.map

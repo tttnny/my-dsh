@@ -43,6 +43,35 @@ describe('grounded Antigravity Search', () => {
     expect(buildGroundedSearchPayload('query', { projectId: 'project-id' })).not.toHaveProperty('accessToken')
   })
 
+  it('builds the captured outer envelope the endpoint needs to also generate an answer', () => {
+    const payload = buildGroundedSearchPayload('gold price', { projectId: 'project-id' }, 'antigravity-gemini-3.7-flash', 1_700_000_000_000)
+    const request = payload.request as Record<string, unknown>
+
+    expect(payload.project).toBe('project-id')
+    expect(payload.userAgent).toBe('antigravity')
+    expect(payload.requestType).toBe('agent')
+    expect(String(payload.requestId)).toMatch(/^agent\/[0-9a-f-]{36}\/1700000000000\/[0-9a-f-]{36}\/2$/u)
+    expect(String(request.sessionId)).toMatch(/^search-[a-z0-9]+-\d+$/u)
+    expect(request.generationConfig).toEqual({ temperature: 0, topP: 1 })
+    expect(request.tools).toEqual([{ googleSearch: {} }])
+    expect(request.contents).toEqual([{ role: 'user', parts: [{ text: 'gold price' }] }])
+    const instruction = request.systemInstruction as { parts: readonly { text: string }[] }
+    expect(instruction.parts[0]?.text).toContain('expert web search assistant')
+    expect(typeof payload.model).toBe('string')
+  })
+
+  it('captures the answer text the captured response shape carries', async () => {
+    const transport = {
+      request: vi.fn(async () => new Response('data: {"response":{"candidates":[{"content":{"parts":[{"text":"今日金价 940 元/克。"}],"role":"model"},"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://www.sge.com.cn/","title":"sge.com.cn"}}]}}]}}\n\ndata: [DONE]\n\n')),
+    }
+    const provider = new AntigravitySearchProvider({ auth, transport })
+
+    await expect(provider.search({ query: 'gold price' })).resolves.toMatchObject({
+      content: '今日金价 940 元/克。',
+      sources: [{ url: 'https://www.sge.com.cn/', title: 'sge.com.cn' }],
+    })
+  })
+
   it('fails closed when the provider returns no sources or the capability is disabled', async () => {
     const transport = { request: vi.fn(async () => new Response('{"response":{"parts":[{"text":"answer"}]}}')) }
     const empty = new AntigravitySearchProvider({ auth, transport })

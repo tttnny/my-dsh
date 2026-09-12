@@ -1,7 +1,8 @@
 /** Dedicated grounded Web Search provider and independently mounted Search row. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { resolveModelWithTier } from '@cortexkit/antigravity-auth-core'
+import { randomUUID } from 'node:crypto'
+import { SEARCH_SYSTEM_INSTRUCTION, resolveModelWithTier } from '@cortexkit/antigravity-auth-core'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-settings'
 import { WebError } from '@deepseek-ai/dsh-web'
@@ -195,15 +196,58 @@ async function resolvePublishedSources(
   return published
 }
 
-export function buildGroundedSearchPayload(query: string, credential: Pick<HostCredential, 'projectId'>, model = ANTIGRAVITY_SEARCH_MODEL): Record<string, unknown> {
+/**
+ * Outer-envelope identity the private endpoint requires before it will generate
+ * an answer instead of grounding alone. Captured from the audited community
+ * implementation (`packages/opencode/src/plugin/search.ts`): without `requestId`,
+ * `userAgent`, `requestType`, and a request `sessionId`, the same call returns
+ * grounding chunks with no `candidates[].content.parts[].text`.
+ */
+const SEARCH_REQUEST_ID_PREFIX = 'agent'
+const SEARCH_REQUEST_ID_SUFFIX = '2'
+const SEARCH_USER_AGENT = 'antigravity'
+const SEARCH_REQUEST_TYPE = 'agent'
+const SEARCH_SESSION_PREFIX = `search-${Date.now().toString(36)}`
+let searchSessionCounter = 0
+
+/** One search call's session id, in the captured `search-<base36>-<n>` shape. */
+function nextSearchSessionId(): string {
+  searchSessionCounter += 1
+  return `${SEARCH_SESSION_PREFIX}-${String(searchSessionCounter)}`
+}
+
+/** Captured `agent/<uuid>/<epoch ms>/<uuid>/2` request-id shape. */
+function buildSearchRequestId(now: number): string {
+  return `${SEARCH_REQUEST_ID_PREFIX}/${randomUUID()}/${String(now)}/${randomUUID()}/${SEARCH_REQUEST_ID_SUFFIX}`
+}
+
+/**
+ * Build the dedicated grounded request.
+ *
+ * Field order, envelope identity, and the system instruction mirror the audited
+ * community capture, because that shape is the one observed to return an answer
+ * alongside `groundingMetadata`. `generationConfig` pins temperature 0 so repeats
+ * of one query stay stable.
+ */
+export function buildGroundedSearchPayload(
+  query: string,
+  credential: Pick<HostCredential, 'projectId'>,
+  model = ANTIGRAVITY_SEARCH_MODEL,
+  now = Date.now(),
+): Record<string, unknown> {
   return {
     project: credential.projectId,
-    model: resolveModelWithTier(model, { cli_first: false }).actualModel,
+    requestId: buildSearchRequestId(now),
     request: {
+      systemInstruction: { parts: [{ text: SEARCH_SYSTEM_INSTRUCTION }] },
       contents: [{ role: 'user', parts: [{ text: query }] }],
       tools: [{ googleSearch: {} }],
-      systemInstruction: { parts: [{ text: 'Return a concise grounded answer with only sources supplied by the provider.' }] },
+      generationConfig: { temperature: 0, topP: 1 },
+      sessionId: nextSearchSessionId(),
     },
+    model: resolveModelWithTier(model, { cli_first: false }).actualModel,
+    userAgent: SEARCH_USER_AGENT,
+    requestType: SEARCH_REQUEST_TYPE,
   }
 }
 
@@ -262,7 +306,10 @@ function collectSearchFacts(
     if (root.candidates.length > 512) throw new WebError('Antigravity Search returned too many candidates', 'ANTIGRAVITY_SEARCH_PROTOCOL_DRIFT')
     for (const candidate of root.candidates) {
       if (!isRecord(candidate)) continue
-      texts.push(findText(candidate))
+      // `findText` also reads `content.parts`, so probing the candidate itself is
+      // limited to a candidate-local `parts` array; otherwise the answer is
+      // appended twice for the captured `candidates[].content.parts[]` shape.
+      if (Array.isArray(candidate.parts)) texts.push(findText(candidate))
       if (isRecord(candidate.content)) texts.push(findText(candidate.content))
       metadataValues.push(candidate.groundingMetadata, candidate.grounding_metadata)
     }
