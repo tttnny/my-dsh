@@ -130,6 +130,16 @@ const GROUNDING_REDIRECT_PATH = '/grounding-api-redirect/'
 const MAX_SOURCE_RESOLUTIONS = 10
 /** Cooperative budget for one redirect read. */
 const SOURCE_RESOLUTION_TIMEOUT_MS = 2_500
+/** Upper bound on publisher pages read for a title; the rest keep their label. */
+const MAX_TITLE_FETCHES = 8
+/** Bytes read from one publisher page before giving up on its `<title>`. */
+const MAX_TITLE_BYTES = 64 * 1024
+/** Cooperative budget for one publisher page read. */
+const TITLE_FETCH_TIMEOUT_MS = 3_000
+/** Longest page title accepted as a source label. */
+const MAX_TITLE_LENGTH = 300
+/** A label made only of host labels is a host name, not a page title. */
+const HOSTNAME_LABEL = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/u
 
 /** Whether one grounding URI hides its publisher behind a redirect token. */
 function isOpaqueGroundingRedirect(value: string): boolean {
@@ -143,6 +153,24 @@ function isOpaqueGroundingRedirect(value: string): boolean {
   }
 }
 
+/** Whether a source is still labelled by its host name instead of a page title. */
+function isHostnameLabel(label: string | undefined): boolean {
+  if (label === undefined) return true
+  const trimmed = label.trim()
+  return trimmed.length === 0 || HOSTNAME_LABEL.test(trimmed.toLowerCase())
+}
+
+/** The public probe used by every enrichment step; absence simply skips it. */
+function publicProbe(): typeof globalThis.fetch | undefined {
+  return typeof globalThis.fetch === 'function' ? globalThis.fetch : undefined
+}
+
+/** Combine the caller's cancellation with one step's own time budget. */
+function scopedSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const budget = AbortSignal.timeout(timeoutMs)
+  return signal === undefined ? budget : AbortSignal.any([signal, budget])
+}
+
 /**
  * Read the publisher URL behind one opaque grounding redirect.
  *
@@ -153,12 +181,10 @@ function isOpaqueGroundingRedirect(value: string): boolean {
  * readability of one citation and never the search itself.
  */
 async function resolvePublishedUrl(value: string, signal: AbortSignal | undefined): Promise<string> {
-  const probe = typeof globalThis.fetch === 'function' ? globalThis.fetch : undefined
+  const probe = publicProbe()
   if (probe === undefined) return value
-  const budget = AbortSignal.timeout(SOURCE_RESOLUTION_TIMEOUT_MS)
-  const scope = signal === undefined ? budget : AbortSignal.any([signal, budget])
   try {
-    const response = await probe(value, { method: 'HEAD', redirect: 'manual', signal: scope })
+    const response = await probe(value, { method: 'HEAD', redirect: 'manual', signal: scopedSignal(signal, SOURCE_RESOLUTION_TIMEOUT_MS) })
     await response.body?.cancel().catch(() => {})
     const location = response.headers.get('location')
     if (location === null || location.length === 0 || location.length > 8192) return value
@@ -170,19 +196,102 @@ async function resolvePublishedUrl(value: string, signal: AbortSignal | undefine
   }
 }
 
+/** Read at most `maxBytes` of a page, stopping early once its title closed. */
+async function readTitleBytes(body: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder('utf-8', { fatal: false })
+  let text = ''
+  let bytes = 0
+  try {
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done === true) break
+      bytes += chunk.value.byteLength
+      text += decoder.decode(chunk.value, { stream: true })
+      if (bytes >= MAX_TITLE_BYTES || /<\/title[\s>]/iu.test(text)) break
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
+  return text
+}
+
+/** Extract one usable `<title>` from a page prefix. */
+function extractPageTitle(html: string): string | undefined {
+  const match = /<title[^>]*>([\s\S]*?)<\/title\s*>/iu.exec(html)
+  if (match === null) return undefined
+  const decoded = (match[1] ?? '')
+    .replace(/<[^>]*>/gu, ' ')
+    .replace(/&lt;/giu, '<')
+    .replace(/&gt;/giu, '>')
+    .replace(/&quot;/giu, '"')
+    .replace(/&#0*39;|&apos;/giu, "'")
+    .replace(/&nbsp;/giu, ' ')
+    .replace(/&amp;/giu, '&')
+    .replace(/\s+/gu, ' ')
+    .trim()
+  return decoded.length === 0 || decoded.length > MAX_TITLE_LENGTH || hasControl(decoded) ? undefined : decoded
+}
+
 /**
- * Replace every opaque grounding redirect with the publisher URL it points at,
- * keeping first-occurrence order and dropping sources that collapse onto the
- * same publisher. Sources are enriched concurrently; anything unresolved keeps
- * its original URI.
+ * Read one publisher page's title, so a source reads like a search result
+ * rather than a bare host name.
+ *
+ * Grounding returns the host name in `web.title`, which is the one visible
+ * difference from a stock search result. Only the page head is read, the request
+ * carries no credentials, and every failure returns `undefined` so the caller
+ * keeps the host-name label.
+ */
+async function fetchPageTitle(url: string, signal: AbortSignal | undefined): Promise<string | undefined> {
+  const probe = publicProbe()
+  if (probe === undefined) return undefined
+  try {
+    const response = await probe(url, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { accept: 'text/html,application/xhtml+xml' },
+      signal: scopedSignal(signal, TITLE_FETCH_TIMEOUT_MS),
+    })
+    if (response.body === null) return undefined
+    return extractPageTitle(await readTitleBytes(response.body))
+  } catch {
+    return undefined
+  }
+}
+
+/** Replace host-name labels with the publisher page titles, concurrently and bounded. */
+async function enrichSourceTitles(
+  sources: readonly WebSearchSource[],
+  signal: AbortSignal | undefined,
+): Promise<WebSearchSource[]> {
+  const targets = sources
+    .filter(source => !isOpaqueGroundingRedirect(source.url) && isHostnameLabel(source.title) && isHttpUrl(source.url))
+    .slice(0, MAX_TITLE_FETCHES)
+  if (targets.length === 0) return [...sources]
+  const titles = new Map(await Promise.all(targets.map(async source => (
+    [source.url, await fetchPageTitle(source.url, signal)] as const
+  ))))
+  return sources.map(source => {
+    const title = titles.get(source.url)
+    return title === undefined ? source : { ...source, title }
+  })
+}
+
+/**
+ * Turn grounding output into a stock-looking result list: every opaque redirect
+ * becomes the publisher URL it points at, sources collapsing onto the same
+ * publisher are dropped, and host-name labels are replaced by page titles.
+ *
+ * Sources are enriched concurrently and every step is best-effort: an unresolved
+ * redirect or an unreadable page only costs that one citation's readability.
  */
 async function resolvePublishedSources(
   sources: readonly WebSearchSource[],
   signal: AbortSignal | undefined,
 ): Promise<WebSearchSource[]> {
-  const targets = sources.filter(source => isOpaqueGroundingRedirect(source.url))
-  if (targets.length === 0) return [...sources]
-  const resolutions = await Promise.all(targets.slice(0, MAX_SOURCE_RESOLUTIONS)
+  const resolutions = await Promise.all(sources
+    .filter(source => isOpaqueGroundingRedirect(source.url))
+    .slice(0, MAX_SOURCE_RESOLUTIONS)
     .map(async source => [source.url, await resolvePublishedUrl(source.url, signal)] as const))
   const resolved = new Map(resolutions)
   const published: WebSearchSource[] = []
@@ -193,7 +302,7 @@ async function resolvePublishedSources(
     seen.add(url)
     published.push(url === source.url ? source : { ...source, url })
   }
-  return published
+  return await enrichSourceTitles(published, signal)
 }
 
 /**
