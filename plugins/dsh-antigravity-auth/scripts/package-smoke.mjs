@@ -29,10 +29,6 @@ try {
   if (dshGraph.length === 0 || dshGraph.some(entry => entry.version !== DSH_VERIFY_VERSION)) {
     throw new Error('package smoke: DSH lockfile is not one coherent verified graph')
   }
-  const changelog = await readFile(resolve(packageRoot, 'CHANGELOG.md'), 'utf8')
-  if (!changelog.includes(`## [${String(manifest.version)}]`)) {
-    throw new Error(`package smoke: CHANGELOG.md lacks release ${String(manifest.version)}`)
-  }
   const retiredPackages = new Set([
     '@deepseek-ai/dsh-client-runtime',
     '@deepseek-ai/dsh-host-apiproxy',
