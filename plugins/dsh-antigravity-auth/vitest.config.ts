@@ -17,5 +17,7 @@ export default defineConfig({
     include: ['tests/**/*.spec.{ts,tsx}'],
     pool: 'forks',
     restoreMocks: true,
+    // Keeps every test away from a real Antigravity credential store.
+    setupFiles: ['tests/setup-isolate-data-home.ts'],
   },
 })

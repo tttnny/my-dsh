@@ -14,15 +14,30 @@ function groundedResponse(count: number): Response {
   return new Response(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`)
 }
 
-/** A redirect probe answering `location` for every URL, or a transport failure. */
-function stubProbe(location: (url: string) => string | undefined) {
-  const probe = vi.fn(async (url: string) => {
-    const target = location(url)
-    if (target === undefined) throw new Error('probe failed')
-    return new Response(null, { status: 302, headers: { location: target } })
+/** A public probe answering both enrichment steps; records each by method. */
+function stubProbe(handlers: {
+  redirect?: (url: string) => string | undefined
+  title?: (url: string) => string | undefined
+}) {
+  const head: string[] = []
+  const get: string[] = []
+  const probe = vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'HEAD') {
+      head.push(url)
+      const target = handlers.redirect?.(url)
+      if (target === undefined) throw new Error('redirect probe failed')
+      return new Response(null, { status: 302, headers: { location: target } })
+    }
+    get.push(url)
+    const title = handlers.title?.(url)
+    if (title === 'throw') throw new Error('page fetch failed')
+    return new Response(
+      title === undefined ? '<html><head><meta charset="utf-8"></head><body>no title</body></html>' : `<html><head><title>${title}</title></head><body>x</body></html>`,
+      { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } },
+    )
   })
   vi.stubGlobal('fetch', probe)
-  return probe
+  return { probe, head, get }
 }
 
 afterEach(() => {
@@ -61,6 +76,8 @@ describe('grounded Antigravity Search', () => {
   })
 
   it('captures the answer text the captured response shape carries', async () => {
+    // No page title is served, so the host-name label survives untouched.
+    stubProbe({ title: () => undefined })
     const transport = {
       request: vi.fn(async () => new Response('data: {"response":{"candidates":[{"content":{"parts":[{"text":"今日金价 940 元/克。"}],"role":"model"},"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://www.sge.com.cn/","title":"sge.com.cn"}}]}}]}}\n\ndata: [DONE]\n\n')),
     }
@@ -73,6 +90,7 @@ describe('grounded Antigravity Search', () => {
   })
 
   it('keeps reasoning parts out of the grounded answer text', async () => {
+    stubProbe({ title: () => undefined })
     const parts = '[{"text":"先想一下该查什么。","thought":true},{"text":"今日金价 940 元/克。"}]'
     const transport = {
       request: vi.fn(async () => new Response(`data: {"response":{"candidates":[{"content":{"parts":${parts},"role":"model"},"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://www.sge.com.cn/","title":"sge.com.cn"}}]}}]}}\n\ndata: [DONE]\n\n`)),
@@ -95,38 +113,84 @@ describe('grounded Antigravity Search', () => {
 
 describe('published source resolution', () => {
   it('replaces an opaque grounding redirect with the publisher URL without following it', async () => {
-    const probe = stubProbe(() => 'https://www.sge.com.cn/')
+    const probe = stubProbe({ redirect: () => 'https://www.sge.com.cn/', title: () => '上海黄金交易所' })
     const transport = { request: vi.fn(async () => groundedResponse(1)) }
     const provider = new AntigravitySearchProvider({ auth, transport })
 
     const result = await provider.search({ query: 'gold price' })
 
-    expect(result.sources).toEqual([{ url: 'https://www.sge.com.cn/', title: 'site-0.example' }])
-    expect(probe).toHaveBeenCalledOnce()
-    const [url, init] = probe.mock.calls[0] as unknown as [string, RequestInit]
+    expect(result.sources).toEqual([{ url: 'https://www.sge.com.cn/', title: '上海黄金交易所' }])
+    expect(probe.head).toEqual([`${REDIRECT_PREFIX}token-0`])
+    expect(probe.get).toEqual(['https://www.sge.com.cn/'])
+    const [url, init] = probe.probe.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe(`${REDIRECT_PREFIX}token-0`)
     expect(init.method).toBe('HEAD')
     expect(init.redirect).toBe('manual')
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 
-  it('keeps the opaque URI when the probe fails, returns no location, or hops to another token', async () => {
+  it('reads the page title behind a host-name label, so a source lists like a search result', async () => {
+    const probe = stubProbe({ title: () => '9月12日主要金店黄金报价：周大福为1312元/克' })
+    const transport = {
+      request: vi.fn(async () => new Response('data: {"response":{"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://finance.jrj.com.cn/a.shtml","title":"jrj.com.cn"}}]}}}\n\ndata: [DONE]\n\n')),
+    }
+    const provider = new AntigravitySearchProvider({ auth, transport })
+
+    await expect(provider.search({ query: 'gold price' })).resolves.toMatchObject({
+      sources: [{ url: 'https://finance.jrj.com.cn/a.shtml', title: '9月12日主要金店黄金报价：周大福为1312元/克' }],
+    })
+    expect(probe.head).toHaveLength(0)
+    expect(probe.get).toEqual(['https://finance.jrj.com.cn/a.shtml'])
+  })
+
+  it('keeps the host-name label when the page has no title, the fetch fails, or the label is already a title', async () => {
+    const cases: Array<{ title: (url: string) => string | undefined; expected: string }> = [
+      { title: () => undefined, expected: 'jrj.com.cn' },
+      { title: () => 'throw', expected: 'jrj.com.cn' },
+      { title: () => '   ', expected: 'jrj.com.cn' },
+      { title: () => 'x'.repeat(400), expected: 'jrj.com.cn' },
+    ]
+    for (const item of cases) {
+      const probe = stubProbe({ title: item.title })
+      const transport = {
+        request: vi.fn(async () => new Response('data: {"response":{"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://jrj.com.cn/a.shtml","title":"jrj.com.cn"}}]}}}\n\ndata: [DONE]\n\n')),
+      }
+      const provider = new AntigravitySearchProvider({ auth, transport })
+      const result = await provider.search({ query: 'gold price' })
+      expect(result.sources).toEqual([{ url: 'https://jrj.com.cn/a.shtml', title: item.expected }])
+      expect(probe.get).toHaveLength(1)
+    }
+
+    const titled = stubProbe({ title: () => '不该被取用' })
+    const transport = {
+      request: vi.fn(async () => new Response('data: {"response":{"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://jrj.com.cn/a.shtml","title":"已经是一篇文章标题了"}}]}}}\n\ndata: [DONE]\n\n')),
+    }
+    const provider = new AntigravitySearchProvider({ auth, transport })
+    await expect(provider.search({ query: 'gold price' })).resolves.toMatchObject({
+      sources: [{ url: 'https://jrj.com.cn/a.shtml', title: '已经是一篇文章标题了' }],
+    })
+    expect(titled.probe).not.toHaveBeenCalled()
+  })
+
+  it('keeps the opaque URI when the redirect probe fails, returns no location, or hops to another token', async () => {
     const cases: Array<(url: string) => string | undefined> = [
       () => undefined,
       () => '',
       url => `${REDIRECT_PREFIX}second-${url.slice(-1)}`,
     ]
-    for (const location of cases) {
-      stubProbe(location)
+    for (const redirect of cases) {
+      const probe = stubProbe({ redirect })
       const transport = { request: vi.fn(async () => groundedResponse(1)) }
       const provider = new AntigravitySearchProvider({ auth, transport })
       const result = await provider.search({ query: 'gold price' })
       expect(result.sources).toEqual([{ url: `${REDIRECT_PREFIX}token-0`, title: 'site-0.example' }])
+      // An unresolved token is never read as a page.
+      expect(probe.get).toHaveLength(0)
     }
   })
 
   it('never probes a source that is not an opaque grounding redirect', async () => {
-    const probe = stubProbe(() => 'https://publisher.example/')
+    const probe = stubProbe({ redirect: () => 'https://publisher.example/' })
     const transport = {
       request: vi.fn(async () => new Response('data: {"response":{"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://www.sge.com.cn/","title":"sge"}}]}}}\n\ndata: [DONE]\n\n')),
     }
@@ -135,13 +199,15 @@ describe('published source resolution', () => {
     await expect(provider.search({ query: 'gold price' })).resolves.toMatchObject({
       sources: [{ url: 'https://www.sge.com.cn/', title: 'sge' }],
     })
-    expect(probe).not.toHaveBeenCalled()
+    expect(probe.probe).not.toHaveBeenCalled()
   })
 
   it('drops sources that collapse onto the same publisher and caps how many it probes', async () => {
-    const probe = stubProbe(url => url.endsWith('token-0') || url.endsWith('token-1')
-      ? 'https://www.sge.com.cn/'
-      : `https://publisher.example/${url.slice(url.lastIndexOf('-') + 1)}`)
+    const probe = stubProbe({
+      redirect: url => url.endsWith('token-0') || url.endsWith('token-1')
+        ? 'https://www.sge.com.cn/'
+        : `https://publisher.example/${url.slice(url.lastIndexOf('-') + 1)}`,
+    })
     const transport = { request: vi.fn(async () => groundedResponse(14)) }
     const provider = new AntigravitySearchProvider({
       auth,
@@ -154,6 +220,9 @@ describe('published source resolution', () => {
     expect(result.sources).toHaveLength(13)
     expect(result.sources[0]?.url).toBe('https://www.sge.com.cn/')
     expect(result.sources.some(source => source.url.startsWith(REDIRECT_PREFIX))).toBe(true)
-    expect(probe).toHaveBeenCalledTimes(10)
+    expect(probe.head).toHaveLength(10)
+    // Title reads are capped independently, and never target an unresolved token.
+    expect(probe.get).toHaveLength(8)
+    expect(probe.get.every(url => !url.startsWith(REDIRECT_PREFIX))).toBe(true)
   })
 })
