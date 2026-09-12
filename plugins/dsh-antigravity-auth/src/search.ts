@@ -1,6 +1,7 @@
 /** Dedicated grounded Web Search provider and independently mounted Search row. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { SEARCH_SYSTEM_INSTRUCTION, resolveModelWithTier } from '@cortexkit/antigravity-auth-core'
 import z from '@deepseek-ai/schemastery'
@@ -197,28 +198,53 @@ async function resolvePublishedUrl(value: string, signal: AbortSignal | undefine
 }
 
 /** Read at most `maxBytes` of a page, stopping early once its title closed. */
-async function readTitleBytes(body: ReadableStream<Uint8Array>): Promise<string> {
+async function readTitleBytes(body: ReadableStream<Uint8Array>): Promise<Uint8Array> {
   const reader = body.getReader()
-  const decoder = new TextDecoder('utf-8', { fatal: false })
-  let text = ''
+  const chunks: Uint8Array[] = []
+  // The title markers are ASCII in every HTML encoding, so the early-stop check
+  // reads a latin1 view while the bytes stay undecoded for charset sniffing.
+  let ascii = ''
   let bytes = 0
   try {
     for (;;) {
       const chunk = await reader.read()
       if (chunk.done === true) break
+      chunks.push(chunk.value)
       bytes += chunk.value.byteLength
-      text += decoder.decode(chunk.value, { stream: true })
-      if (bytes >= MAX_TITLE_BYTES || /<\/title[\s>]/iu.test(text)) break
+      ascii += Buffer.from(chunk.value).toString('latin1')
+      if (bytes >= MAX_TITLE_BYTES || /<\/title[\s>]/iu.test(ascii)) break
     }
   } finally {
     await reader.cancel().catch(() => {})
   }
-  return text
+  return Buffer.concat(chunks, bytes)
+}
+
+/**
+ * Decode a page prefix with the charset it declares.
+ *
+ * Chinese finance pages still ship GBK/GB2312, so decoding every page as UTF-8
+ * turns their titles into replacement characters. The declaration is ASCII in
+ * every encoding, so it is read from a latin1 view and the bytes are then decoded
+ * with that label; an unknown label falls back to UTF-8.
+ */
+function decodePagePrefix(bytes: Uint8Array): string {
+  const declaration = /<meta[^>]+charset\s*=\s*["']?\s*([a-z0-9_:.-]+)/iu
+    .exec(Buffer.from(bytes.subarray(0, 4096)).toString('latin1'))
+  for (const label of [declaration?.[1], 'utf-8']) {
+    if (label === undefined) continue
+    try {
+      return new TextDecoder(label, { fatal: false }).decode(bytes)
+    } catch {
+      // An unusable label only costs this attempt; UTF-8 remains.
+    }
+  }
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
 }
 
 /** Extract one usable `<title>` from a page prefix. */
-function extractPageTitle(html: string): string | undefined {
-  const match = /<title[^>]*>([\s\S]*?)<\/title\s*>/iu.exec(html)
+function extractPageTitle(bytes: Uint8Array): string | undefined {
+  const match = /<title[^>]*>([\s\S]*?)<\/title\s*>/iu.exec(decodePagePrefix(bytes))
   if (match === null) return undefined
   const decoded = (match[1] ?? '')
     .replace(/<[^>]*>/gu, ' ')

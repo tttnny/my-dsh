@@ -18,6 +18,8 @@ function groundedResponse(count: number): Response {
 function stubProbe(handlers: {
   redirect?: (url: string) => string | undefined
   title?: (url: string) => string | undefined
+  /** Raw page bytes, when a case needs a non-UTF-8 encoding. */
+  page?: (url: string) => Uint8Array | undefined
 }) {
   const head: string[] = []
   const get: string[] = []
@@ -29,6 +31,9 @@ function stubProbe(handlers: {
       return new Response(null, { status: 302, headers: { location: target } })
     }
     get.push(url)
+    const raw = handlers.page?.(url)
+    // A raw page is served as bytes so a case can pin a non-UTF-8 encoding.
+    if (raw !== undefined) return new Response(raw as unknown as BodyInit, { status: 200, headers: { 'content-type': 'text/html' } })
     const title = handlers.title?.(url)
     if (title === 'throw') throw new Error('page fetch failed')
     return new Response(
@@ -38,6 +43,12 @@ function stubProbe(handlers: {
   })
   vi.stubGlobal('fetch', probe)
   return { probe, head, get }
+}
+
+/** One grounded response carrying a single already-resolved source. */
+function groundedSource(url: string, title: string): Response {
+  const payload = { response: { groundingMetadata: { groundingChunks: [{ web: { uri: url, title } }] } } }
+  return new Response(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`)
 }
 
 afterEach(() => {
@@ -141,6 +152,25 @@ describe('published source resolution', () => {
     })
     expect(probe.head).toHaveLength(0)
     expect(probe.get).toEqual(['https://finance.jrj.com.cn/a.shtml'])
+  })
+
+  it('honours the charset a page declares instead of forcing UTF-8', async () => {
+    // Latin-1 bytes: 0xE9 is 'é' in windows-1252 and an invalid UTF-8 byte.
+    const bytes = Buffer.from('<html><head><meta charset="windows-1252"><title>Caf\xE9 Prix</title></head></html>', 'latin1')
+    const probe = stubProbe({ page: () => bytes })
+    const transport = { request: vi.fn(async () => groundedSource('https://prix.example/a', 'prix.example')) }
+    const provider = new AntigravitySearchProvider({ auth, transport })
+
+    await expect(provider.search({ query: 'gold price' })).resolves.toMatchObject({
+      sources: [{ url: 'https://prix.example/a', title: 'Café Prix' }],
+    })
+    expect(probe.get).toEqual(['https://prix.example/a'])
+  })
+
+  it('supports the charset labels Chinese finance pages declare', () => {
+    for (const label of ['gbk', 'gb2312', 'gb18030', 'big5']) {
+      expect(() => new TextDecoder(label)).not.toThrow()
+    }
   })
 
   it('keeps the host-name label when the page has no title, the fetch fails, or the label is already a title', async () => {
