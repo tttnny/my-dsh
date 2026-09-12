@@ -61,11 +61,11 @@ const checkBuilt = (file) => {
 
 ;['client.js', 'package/lib/client.js'].forEach(checkBuilt)
 
-// 两处迁移消费检查（忽略 // 注释行，避免文档提及被判为残留）
-// #520 落地 B：标题行星星与反馈图标用 HoverTip(mode=mouse) 承载悬停介绍，恢复本条。
+// 迁移消费检查（忽略 // 注释行，避免文档提及被判为残留）
+// 鼠标悬浮这一档原本只有设置页标题行的星星/反馈图标在用；那两个上游入口已整组移除，
+// SettingsPage 不再有任何 HoverTip，故此处只留锚点悬浮一处消费方。
 const migrants = [
   { file: 'src/client/floating/SkillFloatList.js', re: /HoverTip.*mode.*anchor/, msg: 'SkillFloatList 以 HoverTip(mode=anchor) 承载锚点悬浮' },
-  { file: 'src/client/views/SettingsPage.js', re: /HoverTip.*mode.*mouse/, msg: 'SettingsPage 以 HoverTip(mode=mouse) 承载鼠标悬浮' },
 ]
 migrants.forEach(m => {
   try {
