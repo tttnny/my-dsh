@@ -2,8 +2,8 @@
 // 用法: node tests/verify-build-artifacts.js
 // 验证：
 //   1) client.js / host.js 必须以 // AUTO-GENERATED 开头（防手改产物被下次 build 覆盖）
-//   2) 4 个产物必须被 .gitignore 忽略（仓库只见 src 为真源）
-//   3) package/lib 产物与根产物同为构建产物（prepare 兜底）
+//   2) 5 个产物必须被 .gitignore 忽略（仓库只见 src 为真源）
+//   3) package/lib 与 package/shared 产物与根产物同为构建产物（prepare 兜底）
 // 解释给新手：
 //   - 产物 = 机器炒好的菜（client.js 等），菜谱 = src/
 //   - 手改盘子里的菜，下次机器一炒就没了，所以加检查员看盘子上有没有“机器做的”标签
@@ -33,10 +33,20 @@ for (const p of ['package/lib/client.js', 'package/lib/index.js']) {
   check(txt.length > 1000, p + ' 非空（构建产物）')
 }
 
+// 1b) profile 同步必须有 link: 自复制护栏：合集把开发副本直接链到仓库的 package/，
+//     此时 dst 与 src 同一 realpath，「先 rm 再 cp」会把刚构建出的产物整体删掉。
+try {
+  const src = fs.readFileSync(path.resolve('scripts/build.mjs'), 'utf8')
+  const i = src.indexOf("realpathSync(profileBase)")
+  check(i > 0 && src.indexOf('rmSync(dst', i) > i, 'build.mjs 在 rm 产物前先比对 profile 与 package/ 的 realpath（link: 副本不自毁）')
+} catch (e) {
+  check(false, 'build.mjs 护栏检查失败：' + e.message)
+}
+
 // 2) gitignore
 try {
-  const out = execSync('git check-ignore -v client.js host.js package/lib/client.js package/lib/index.js', { encoding: 'utf8' })
-  check(out.includes('.gitignore'), '4 个产物均被 .gitignore 忽略（仓库只见 src）')
+  const out = execSync('git check-ignore -v client.js host.js package/lib/client.js package/lib/index.js package/shared/labels.js', { encoding: 'utf8' })
+  check(out.includes('.gitignore'), '5 个产物均被 .gitignore 忽略（仓库只见 src）')
   console.log('    gitignore 命中:\n    ' + out.trim().split('\n').join('\n    '))
 } catch (e) {
   check(false, '产物 gitignore 检查失败（应被忽略）：' + e.message)
@@ -44,13 +54,13 @@ try {
 
 // 3) 未跟踪（git ls-files 不应含产物）
 try {
-  const tracked = execSync('git ls-files --cached | grep -E "^(client\\.js|host\\.js|package/lib/)" || true', { encoding: 'utf8', shell: 'bash' }).trim()
+  const tracked = execSync('git ls-files --cached | grep -E "^(client\\.js|host\\.js|package/lib/|package/shared/)" || true', { encoding: 'utf8', shell: 'bash' }).trim()
   // Windows 上 bash 可能不存在，改用 Node 方式
   if (!tracked) {
     // fallback: 用 git ls-files --cached 直接检查
     const all = execSync('git ls-files --cached', { encoding: 'utf8' })
-    const bad = all.split('\n').filter(l => l === 'client.js' || l === 'host.js' || l.startsWith('package/lib/'))
-    check(bad.length === 0, '产物未被 git 跟踪（git ls-files 无 client.js/host.js/package/lib/）')
+    const bad = all.split('\n').filter(l => l === 'client.js' || l === 'host.js' || l.startsWith('package/lib/') || l.startsWith('package/shared/'))
+    check(bad.length === 0, '产物未被 git 跟踪（git ls-files 无 client.js/host.js/package/lib/、package/shared/）')
     if (bad.length) console.log('    被跟踪的产物:', bad.join(', '))
   } else {
     check(tracked.length === 0, '产物未被 git 跟踪')

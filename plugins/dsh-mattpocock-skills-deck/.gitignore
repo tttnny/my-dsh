@@ -3,6 +3,7 @@ node_modules/
 
 # 临时工作区/调测产物（不入库）
 .scratch/
+# research/ 是本机调研草稿的落点，长期忽略；被脚本读的契约 fixture 一律放 tests/fixtures/ 并入库
 research/
 .bug-investigate/
 .tmp-screenshots/
@@ -29,6 +30,7 @@ research/
 /client.js
 /host.js
 /package/lib/
+/package/shared/
 
 # ===== teach skill teaching workspace (ignored, durable across resets) =====
 /MISSION.md
@@ -38,7 +40,4 @@ research/
 /lessons/
 /reference/
 /learning-records/
-/assets/teach.css
-/assets/quiz.js
 .env
-.wizard-release.env
