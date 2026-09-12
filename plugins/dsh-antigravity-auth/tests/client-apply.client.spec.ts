@@ -51,6 +51,7 @@ function bench(isLoopback = true) {
         return () => {}
       },
     },
+    connection: { isLoopback, rpc: { call } },
     get(service: string) {
       if (service === 'connection') return { isLoopback, rpc: { call } }
       if (service === 'locale') return ctx.locale

@@ -2389,8 +2389,7 @@ window.__ModuleLoader__.load({
 				zh,
 				en
 			}), "antigravity-auth: copy dictionaries");
-			const connection = ctx.get("connection");
-			if (!connection) return;
+			const connection = ctx.connection;
 			const rpc = createAntigravityAuthRpcClient(connection.rpc);
 			const t = ctx.locale.bind(NS);
 			const settingsScope = ctx.settingsScope;

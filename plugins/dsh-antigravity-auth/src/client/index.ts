@@ -36,8 +36,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'antigravity-auth: copy dictionaries')
 
-  const connection = ctx.get('connection') as unknown as ConnectionHandle | undefined
-  if (!connection) return
+  const connection = (ctx as any).connection as ConnectionHandle
   const rpc = createAntigravityAuthRpcClient(connection.rpc)
   const t = ctx.locale.bind(NS) as AntigravityAuthSettingsProps['t']
   const settingsScope = (ctx as ClientContext & { settingsScope?: { bind<T>(spec: { namespace: string; decode?: (value: unknown) => T | undefined }): SettingsScope<T> } }).settingsScope
