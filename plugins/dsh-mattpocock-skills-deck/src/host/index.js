@@ -10,8 +10,7 @@
  *   4. 轮询：timer 60s 刷新缓存 + 与上次 stats diff（P2 toast 预留字段）。
  *   5. 检查链快照（#228/#284）：wf.chain —— 通用链 + 当前后端链求值快照，替代九格目录视图。
  *   6. 技能判装多通道并联（#296）：注册表未命中时并联探标准根（DSH fs 服务 + 插件只读直读）。
- *      直读是对「探测零 OS 直碰」的限定例外——只读、仅技能标准根候选路径，契约见
- *      docs/adr/20260828-skill-probe-union-channels.md。
+ *      直读是对「探测零 OS 直碰」的限定例外——只读、仅技能标准根候选路径。
  *
  * 已验证（.charting/verify.js，真实数据 PASS）：分组 frontier/claimed/blocked 与 GitHub 页面一致；
  * 9 张 open map 中仅 4 张有 Destination —— body 解析全部容错。

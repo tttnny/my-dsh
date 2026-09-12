@@ -4,7 +4,7 @@
  * 契约：本文件为模块真源（ESM 导出）；scripts/build.mjs 在构建时去掉每行行首
  * export 关键字，把声明体文本拼回 src/client/index.js 的拼接标记处（apply 闭包内
  * 原位），与 ctx.js/seam 同模式，一源两物，src 零复制。
- * 接口冻结清单见 docs/architecture/kernel-contract.md（G3 · #91 拍板）。
+ * 接口冻结清单见 tests/verify-kernel.js（G3 · #91 拍板）。
  */
     // #361 原入口：行级「在新会话打开」保留（rowActionText 文本 + 票标题命名）
     // 2026-08-30 hardening: newSessionTitle throws on non-numeric number (prevent silent MapDetail new-session no-op), rowActionText falls back to #number when url missing

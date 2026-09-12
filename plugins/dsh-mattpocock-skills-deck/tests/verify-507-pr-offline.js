@@ -6,7 +6,7 @@
  * 只覆盖验收房：本文件与说明文档，不碰后端房与快照组装与界面实现。
  * 运行：node --no-warnings tests/verify-507-pr-offline.js
  *
- * 每组用例配一条日志链指纹（只用已有事件名与白名单字段，见 research/489-appendix.md 第 1 章）：
+ * 每组用例配一条日志链指纹（只用已有事件名与白名单字段，见 tests/fixtures/489-appendix.md 第 1 章）：
  * 契约三字段=纯形状无日志；双路降级=graphql.fallback+issues.fallback+fallback.chain；
  * 快照三态=snapshot.cache.miss 常驻；前端四验收与评论只读与失败空态=复用快照链路无新增。
  * 脱敏：指纹只记原因枚举与通道名与计数，不记令牌原文与仓库地址原文与标题原文。

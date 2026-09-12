@@ -5,7 +5,7 @@ export function createBootstrap(deps) {
   const { ctx } = deps
     // === T2 #389 bundled 兜底 provider（rank 600，trustedHost，ctx.effect 托管）===
     // 零代码声明：无需 env 晚置，直接 registerProvider；list 返回 package/bundled-skills 的 25 个，rank 600 兜底，bundled 随包消失
-    // 选择 provider 而非 env 的依据见 R1 研究（env 构造时一次性读，晚置失效）；参见 docs/adr/20260828-skill-probe-union-channels.md 的 trustedHost 约束
+    // 选择 provider 而非 env 的依据见 R1 研究（env 构造时一次性读，晚置失效）；trustedHost 约束见 src/host/skillProbe.js 的探针注释
     ;(() => {
       try {
         const skills = ctx.get('skills')

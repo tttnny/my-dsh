@@ -65,12 +65,12 @@
 
 第三方（Jira/Linear/Gitea/自建等，非一等后端）**不在** `src/host/tracker/backends` 内，按 `examples/demo-mini/` 样板照抄：
 
-- 四件套 `BackendModule{id/label/create/matches}` + Proxy 自动桩（缺 op → `unsupported`）+ `matches:boolean` + `Disposable/on/describe/MIGRATE_KEY`，见 `src/host/tracker/registryCore.js`（装配与仲裁；形状包桩在 `registryShape.js`、只读视图在 `registryViews.js`，V1 #461 拆分）与 `docs/architecture/third-party-tracker.md` §3-4。
+- 四件套 `BackendModule{id/label/create/matches}` + Proxy 自动桩（缺 op → `unsupported`）+ `matches:boolean` + `Disposable/on/describe/MIGRATE_KEY`，见 `src/host/tracker/registryCore.js`（装配与仲裁；形状包桩在 `registryShape.js`、只读视图在 `registryViews.js`，V1 #461 拆分）。
 - 探测 `cwd/.demo/config.json` 或 `.scratch/map.md`（`platform.fs`，超时 3000ms 由 registry 托管，`pending:true` 不静默 Other），能力字段 `EMPTY vs MISSING`（`src/shared/tracker/shape.js` + `host/tracker/capability.js`）。
 - 契约测试即公开验收面：`tests/tracker-contract/harness.js` + `runner/runPlayback` + `examples/demo-mini/fixtures/demo-real/`，织入 `tests/verify-tracker-contract.js`（`359/4/OK`）。
 - 打包：`examples/` 不进 `files` 白名单，`dsh.contributes.trackers` 预留，`Disposable` 按代隔离 HMR。
 
-详见 **第三方指南**：`docs/architecture/third-party-tracker.md`（主入口，含注册/探测/能力/测试/打包/更新六章 + 接真实工具 Checklist）。
+本节即**第三方后端指南**的主入口：注册 / 探测 / 能力 / 测试 / 打包四要点如上，接真实工具按上面四条逐项对齐。
 
 ## 访问 OS 只经 platform（#113）
 

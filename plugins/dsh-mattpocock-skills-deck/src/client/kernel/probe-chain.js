@@ -4,7 +4,7 @@
  * 契约：本文件为模块真源（ESM 导出）；scripts/build.mjs 在构建时去掉每行行首
  * export 关键字，把声明体文本拼回 src/client/index.js 的拼接标记处（apply 闭包内
  * 原位），与 ctx.js/seam 同模式，一源两物，src 零复制。
- * 接口冻结清单见 docs/architecture/kernel-contract.md（G3 · #91 拍板）。
+ * 接口冻结清单见 tests/verify-kernel.js（G3 · #91 拍板）。
  */
     // #228/#284 链渲染器主机侧数据：wf.chain 全链快照（通用链 + 后端链，按后端动态，refresh 联动）
     // #284 迁移：九格目录视图（wf.status/checks）退役，全部读数点位改从链快照派生。

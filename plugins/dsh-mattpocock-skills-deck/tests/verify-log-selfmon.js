@@ -113,7 +113,7 @@ const settingsSrc = readSrc(path.join('src', 'client', 'views', 'SettingsPage.js
 
 // 八、附录 1.6 与枚举字面（实现与附录逐字锁死）。
 {
-  const appendix = readSrc(path.join('research', '489-appendix.md'))
+  const appendix = readSrc(path.join('tests', 'fixtures', '489-appendix.md'))
   check(appendix.includes('### 1.6'), '附录有 1.6 自监控节')
   for (const w of ['host.dispatch.error', 'log.persist.fail', 'log.forward.summary', 'log.switch.watchdog', 'log.export.fail']) {
     check(appendix.includes(w), '附录 1.6 含 ' + w)
