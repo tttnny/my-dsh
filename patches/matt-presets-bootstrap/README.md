@@ -87,7 +87,7 @@ Each round the user answers reshapes the tree: settled decisions push the fronti
 
 Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, etc.), dispatch a sub-agent to find it; don't ask the user for anything you could look up yourself. The _decisions_ are the user's: put each to them and wait.   # ③
 
-> **Sub-agent rounds：** 如果你在某轮派遣了子代理，先在消息文本里列出每个子代理的任务（各自去干什么），然后立刻结束回合。主代理不得自己制造等待，如：bash sleep、查状态的 list_agents、任何阻塞型 / wait: true 的调用、以及「先小睡一下再检查」的折中，全部禁止。等**全部**已派遣子代理结算后，再问 frontier（包括未受阻的问题）。   # ④
+> **Sub-agent rounds：** 如果你在某轮派遣了子代理，先在消息文本里列出每个子代理的任务（各自去干什么），然后立刻结束回合。主代理不得自己制造等待，如：bash sleep以及「先小睡一下再检查」的折中，全部禁止。等**全部**已派遣子代理结算后，再问 frontier（包括未受阻的问题）。   # ④
 
 The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Do not act on it until the user confirms you have reached a shared understanding.
 ````
@@ -137,7 +137,7 @@ Each round the user answers reshapes the tree: settled decisions push the fronti
 
 Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, etc.), dispatch a sub-agent to find it; don't ask the user for anything you could look up yourself. The _decisions_ are the user's: put each to them and wait.   # ③
 
-> **Sub-agent rounds：** 如果你在某轮派遣了子代理，先在消息文本里列出每个子代理的任务（各自去干什么），然后立刻结束回合。主代理不得自己制造等待，如：bash sleep、查状态的 list_agents、任何阻塞型 / wait: true 的调用、以及「先小睡一下再检查」的折中，全部禁止。等**全部**已派遣子代理结算后，再问 frontier（包括未受阻的问题）。   # ④
+> **Sub-agent rounds：** 如果你在某轮派遣了子代理，先在消息文本里列出每个子代理的任务（各自去干什么），然后立刻结束回合。主代理不得自己制造等待，如：bash sleep以及「先小睡一下再检查」的折中，全部禁止。等**全部**已派遣子代理结算后，再问 frontier（包括未受阻的问题）。   # ④
 
 The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Do not act on it until the user confirms you have reached a shared understanding.
 ````
@@ -147,7 +147,7 @@ The session is done when the frontier is empty: every branch of the design tree 
 - **①** 上游格式块用 emoji 问号/箭头标记、且正文占位含 `including multiple choices`（诱导把选项塞进题干）；本改动把模板改写为纯文本并**把选项独立成 `Options:` 块**（`Qn.` 标题 / 正文占位不含选项 / `Options:` 列 A/B/C / `Recommended:`），引导行保留上游英文 `Format a round like so:`。**原因**：模板是模型最可能整段照抄的样例——emoji 会被抄进输出、『选项塞正文』的占位会诱导模型把 A/B/C 写进题干；选项独立成块后与投递字段一一对应，模型照模板组织即可。
 - **②** 在格式块后新增旁注「**DSH delivery**」整段（中文）：轮次投递 = **先在消息文本里按模板以散文预告本轮全部问题（标题/正文/选项/推荐），在同一回合内紧接着把同一轮作为一次 `ask_user_grilling` 调用发出、让用户在表单中作答**；预告与投递必须**同一轮、一一对应**（不得另起一套；轮末补充题由代码自动追加，不计入一一对应）；提问一律走 `ask_user_grilling`（本 preset 的提问工具——`tool-ask-user` 行原位换成了它，见 §一 改动②）。字段组织细节（title→`header`、body→`question`、选项→`options`、推荐加标记）不写进旁注，由模板与工具描述承载、让模型自行判断。**matt-ptc**：投递纪律整段按 PTC 形态表述（见上文示例二）——预告照常写在消息文本里，投递写成 `run_code` 程序内的 `tools.ask_user_grilling({ questions: [...] })`，（`tool-ask-user` 行同样原位替换）。**原因**：纯散文让用户拿到不可点击文本、丢失表单；纯工具又让用户看不到正文里的问题陈述——散文预告 + 工具表单各司其职，且必须成对出现；PTC 形态只属于 PTC preset，不进入非 PTC 版本。
 - **③** 上游事实段含 "Don't block on it … ask the rest of the frontier now." 一句（鼓励先问其余轮次），**整句删除**；段末以 "The _decisions_ are the user's: put each to them and wait." 收尾。**原因**：本地「等齐再问」纪律（见④）与上游句「先把其余 frontier 问完」直接冲突——`ask_user_grilling` 不设硬闸门、不会拦下抢先提问，冲突只能靠删上游句消解。
-- **④** 事实段后新增旁注「**Sub-agent rounds**」整段（中文）：派遣子代理后先在消息文本里列出各代理任务（各自去干什么），然后**立刻结束回合**；禁止主代理自己制造等待——`bash sleep`、查状态的 `list_agents`、任何阻塞型 / `wait: true` 调用、「先小睡一下再检查」的折中一律不许；等**全部**已派遣子代理结算后再问 frontier（包括未受阻的问题）。**判据**：禁令点到**具体调用名**——写成「不要轮询」会被读成「不要反复轮询」，单次 sleep + 单次检查即被当成合规。**生效范围**：仅加载了本技能的会话；普通会话的同一诱因不在本文处理。**边界**：文字级软纪律、无闸门拦截，只写在这条旁注里——插件不承载纪律（工具描述与原生 `ask_user_question` 逐字一致）。
+- **④** 事实段后新增旁注「**Sub-agent rounds**」整段（中文）：派遣子代理后先在消息文本里列出各代理任务（各自去干什么），然后**立刻结束回合**；主代理不得自己制造等待——点名 `bash sleep` 与「先小睡一下再检查」这类折中，一律禁止；等**全部**已派遣子代理结算后再问 frontier（包括未受阻的问题）。**判据**：禁令点到**具体调用**而非「不要轮询」——后者会被读成「不要反复轮询」，于是单次 sleep 折中被当成合规。**生效范围**：仅加载了本技能的会话；普通会话的同一诱因不在本文处理。**边界**：文字级软纪律、无闸门拦截，只写在这条旁注里——插件不承载纪律（工具描述与原生 `ask_user_question` 逐字一致）。
 
 ## 三、其余文件（无本地改动或自写）
 
