@@ -79,11 +79,84 @@ var AntigravitySearchProvider = class {
 		if (sources.length === 0) throw new WebError("Antigravity Search returned no validated grounding sources", "ANTIGRAVITY_SEARCH_NO_SOURCES");
 		return {
 			...content.length === 0 ? {} : { content: content.join("").slice(0, 65536) },
-			sources,
+			sources: await resolvePublishedSources(sources, signal),
 			truncated
 		};
 	}
 };
+/**
+* Hostname serving Google's opaque grounding redirects. A grounded response
+* carries only these token URLs, so the publisher is invisible in a citation
+* until the redirect is read.
+*/
+const GROUNDING_REDIRECT_HOSTNAME = "vertexaisearch.cloud.google.com";
+const GROUNDING_REDIRECT_PATH = "/grounding-api-redirect/";
+/** Upper bound on resolutions per search; the remainder keep their opaque URI. */
+const MAX_SOURCE_RESOLUTIONS = 10;
+/** Cooperative budget for one redirect read. */
+const SOURCE_RESOLUTION_TIMEOUT_MS = 2500;
+/** Whether one grounding URI hides its publisher behind a redirect token. */
+function isOpaqueGroundingRedirect(value) {
+	try {
+		const url = new URL(value);
+		return url.protocol === "https:" && url.hostname === GROUNDING_REDIRECT_HOSTNAME && url.pathname.startsWith(GROUNDING_REDIRECT_PATH);
+	} catch {
+		return false;
+	}
+}
+/**
+* Read the publisher URL behind one opaque grounding redirect.
+*
+* `redirect: 'manual'` exposes the `Location` header without following it, so
+* this contacts only the redirect service and never the publisher. Every failure
+* — timeout, cancellation, transport error, a missing or still-opaque target —
+* keeps the original token, so an unreachable redirect service can only cost the
+* readability of one citation and never the search itself.
+*/
+async function resolvePublishedUrl(value, signal) {
+	const probe = typeof globalThis.fetch === "function" ? globalThis.fetch : void 0;
+	if (probe === void 0) return value;
+	const budget = AbortSignal.timeout(SOURCE_RESOLUTION_TIMEOUT_MS);
+	const scope = signal === void 0 ? budget : AbortSignal.any([signal, budget]);
+	try {
+		const response = await probe(value, {
+			method: "HEAD",
+			redirect: "manual",
+			signal: scope
+		});
+		await response.body?.cancel().catch(() => {});
+		const location = response.headers.get("location");
+		if (location === null || location.length === 0 || location.length > 8192) return value;
+		const target = new URL(location, value).toString();
+		return isHttpUrl(target) && !isOpaqueGroundingRedirect(target) ? target : value;
+	} catch {
+		return value;
+	}
+}
+/**
+* Replace every opaque grounding redirect with the publisher URL it points at,
+* keeping first-occurrence order and dropping sources that collapse onto the
+* same publisher. Sources are enriched concurrently; anything unresolved keeps
+* its original URI.
+*/
+async function resolvePublishedSources(sources, signal) {
+	const targets = sources.filter((source) => isOpaqueGroundingRedirect(source.url));
+	if (targets.length === 0) return [...sources];
+	const resolutions = await Promise.all(targets.slice(0, MAX_SOURCE_RESOLUTIONS).map(async (source) => [source.url, await resolvePublishedUrl(source.url, signal)]));
+	const resolved = new Map(resolutions);
+	const published = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const source of sources) {
+		const url = resolved.get(source.url) ?? source.url;
+		if (seen.has(url)) continue;
+		seen.add(url);
+		published.push(url === source.url ? source : {
+			...source,
+			url
+		});
+	}
+	return published;
+}
 function buildGroundedSearchPayload(query, credential, model = ANTIGRAVITY_SEARCH_MODEL) {
 	return {
 		project: credential.projectId,
