@@ -1,13 +1,6 @@
 /**
  * views/SettingsPage.js — 配置页（TPL 表 + 设置，5.9）真源 ESM，build 拼回 src/client/index.js leaf
  */
-// 增-2（#520）：底部作者其他插件清单（4 个，2026-09-06 已验真；写死网址，不拉取不新增网络请求）
-const MORE_PLUGINS = [
-  { slug: 'dsh-mattpocock-skills-deck', url: 'https://github.com/FeatherHunter/dsh-mattpocock-skills-deck', descKey: 'more.desc.deck' },
-  { slug: 'dsh-opencode-palette', url: 'https://github.com/FeatherHunter/dsh-opencode-palette', descKey: 'more.desc.palette' },
-  { slug: 'dsh-prompt', url: 'https://github.com/FeatherHunter/dsh-prompt', descKey: 'more.desc.prompt' },
-  { slug: 'dsh-im-companion', url: 'https://github.com/FeatherHunter/dsh-im-companion', descKey: 'more.desc.companion' },
-]
 export     const SettingsPage = (props) => {
       const cx = React.useContext(DswsCtx)
       const h = cx ? cx.h : React.createElement
@@ -146,12 +139,6 @@ export     const SettingsPage = (props) => {
             h('span', null, tr('cfg.status')),
             h('a', { href: DSW_REPO_URL, target: '_blank', rel: 'noreferrer', style: { fontSize: 11, color: 'var(--dsw-alias-label-caption,#8b8b95)', textDecoration: 'none' } }, (typeof DSW_VERSION === 'string' ? DSW_VERSION.replace(/^v/, '') : '')),
           ]),
-          h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 4 } }, [
-            h(HoverTip, { key: 'star', content: tr('cfg.starTip'), mode: 'mouse', maxWidth: 220 },
-              h('a', { href: 'https://github.com/FeatherHunter/dsh-mattpocock-skills-deck', target: '_blank', rel: 'noreferrer', style: { display: 'inline-flex', alignItems: 'center', padding: 4, borderRadius: 6, color: 'inherit', textDecoration: 'none' } }, [h('span', { 'aria-hidden': 'true', style: { fontSize: 14, lineHeight: 1 } }, '🌟')])),
-            h(HoverTip, { key: 'feedback', content: tr('cfg.feedbackTip'), mode: 'mouse', maxWidth: 220 },
-              h('a', { href: 'https://github.com/FeatherHunter/dsh-mattpocock-skills-deck/issues/new', target: '_blank', rel: 'noreferrer', style: { display: 'inline-flex', alignItems: 'center', padding: 4, borderRadius: 6, color: 'inherit', textDecoration: 'none' } }, [h('span', { 'aria-hidden': 'true', style: { fontSize: 14, lineHeight: 1 } }, '💬')])),
-          ]),
         ]),
         h('div', { className: 'dsws-cfg-sub' }, tr('cfg.sub')),
         // v1.4：打开位置（rightbar 列 / better-sidebar）—— better-sidebar 未装时仅显示 dock 选项
@@ -201,16 +188,6 @@ export     const SettingsPage = (props) => {
             ]),
           ]) : null,
         ]),
-        // 增-2（#520）：底部作者其他插件独立区域（默认展开，每行点开跳对应仓库首页；不新增本地存档键）
-        h('div', { className: 'dsws-cfg-group' }, [
-          h('div', { className: 'dsws-cfg-gtitle' }, [Ic({ n: 'skills', size: 13 }), h('span', null, tr('more.title'))]),
-        ].concat(MORE_PLUGINS.map(function (p) {
-          return h('a', { key: p.slug, href: p.url, target: '_blank', rel: 'noreferrer', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 4px', textDecoration: 'none', color: 'inherit' } }, [
-            h('span', { style: { fontFamily: 'Consolas,Menlo,monospace', fontSize: 12, fontWeight: 650, flex: 'none' } }, p.slug),
-            h('span', { style: { flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--dsw-alias-label-secondary,#a1a1aa)' } }, tr(p.descKey)),
-            Ic({ n: 'external-link', size: 12 }),
-          ])
-        }))),
         // T2 HoverTip 迁移：移除 sharedSt.cfgTip 全局 portal，改由 HoverTip 统一（行为零变化，翻转/样式走契约）
         null,
       ])
