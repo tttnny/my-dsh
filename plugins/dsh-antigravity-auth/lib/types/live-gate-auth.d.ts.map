@@ -1,0 +1,1 @@
+{"version":3,"file":"live-gate-auth.d.ts","sourceRoot":"","sources":["../../src/live-gate-auth.ts"],"names":[],"mappings":"AAAA,oFAAoF;AAEpF,OAAO,KAAK,EAAE,sBAAsB,EAAE,MAAM,mBAAmB,CAAA;AAC/D,OAAO,KAAK,EAAE,cAAc,EAAE,MAAM,iBAAiB,CAAA;AAKrD,wBAAsB,WAAW,CAC/B,IAAI,EAAE,sBAAsB,EAC5B,MAAM,EAAE,CAAC,IAAI,EAAE,MAAM,KAAK,IAAI,GAC7B,OAAO,CAAC,cAAc,CAAC,CAkBzB"}

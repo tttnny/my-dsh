@@ -1,0 +1,1 @@
+{"version":3,"file":"account-routes.d.ts","sourceRoot":"","sources":["../../src/account-routes.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,oBAAoB,EAAE,oBAAoB,EAAE,MAAM,oCAAoC,CAAA;AAEpG,8EAA8E;AAC9E,wBAAgB,qBAAqB,CACnC,UAAU,EAAE,oBAAoB,EAChC,SAAS,EAAE,MAAM,EACjB,SAAS,EAAE,SAAS,MAAM,EAAE,EAC5B,OAAO,EAAE,oBAAoB,GAC5B,MAAM,OAAO,CAAC,IAAI,CAAC,CA2BrB"}

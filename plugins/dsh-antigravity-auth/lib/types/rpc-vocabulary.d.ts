@@ -1,0 +1,7 @@
+/** Closed, browser-safe RPC error vocabulary shared by Host and client. */
+import { type LoginErrorCode } from './login-types.ts';
+export declare const SAFE_RPC_ERROR_CODES: readonly ["bad-request", "invalid-method", "invalid-path", "invalid-host", "duplicate-parameter", "invalid-parameters", "missing-state", "state-mismatch", "missing-code", "oauth-error", "no-pending-flow", "expired", "cancelled", "port-conflict", "token-exchange-failed", "project-unavailable", "project-authentication-failed", "project-forbidden", "project-rate-limited", "project-offline", "project-malformed", "project-protocol-drift", "project-validation-failed", "persistence-failed", "credential-conflict", "invalid-callback-url", "risk-acknowledgement-required", "internal", "loopback-required", "invalid-grant", "network", "timeout", "rate-limited", "server-error", "http-error", "invalid-response", "conflict", "storage"];
+export type SafeRpcErrorCode = (typeof SAFE_RPC_ERROR_CODES)[number];
+export declare function isSafeRpcErrorCode(value: unknown): value is SafeRpcErrorCode;
+export declare function safeRpcErrorMessage(code: SafeRpcErrorCode | LoginErrorCode): string;
+//# sourceMappingURL=rpc-vocabulary.d.ts.map

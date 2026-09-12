@@ -50,7 +50,7 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-workspace-tree</code></td>
     </tr>
     <tr>
-      <td rowspan="2"><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
+      <td rowspan="3"><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
       <td><a href="./plugins/dsh-a6api"><code>@lynn123411/dsh-a6api</code></a></td>
       <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 侧边栏快捷模型卡片 + 账户余额 / 价格波动 / 模型市场胶囊行</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-a6api</code></td>
@@ -59,6 +59,11 @@
       <td><a href="./plugins/dsh-llm-agentrouter"><code>@lynn123411/dsh-llm-agentrouter</code></a></td>
       <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉 <code>aqiu817/dsh-llm-agentrouter</code>：沿用 <code>llm-agentrouter</code> 命名空间；宿主沿用 <code>ctx.settings.installSection</code>，端点卡片与 <code>dsh-a6api</code> 同挂共享设置页「API中转」，已在 <code>0.1.5-rc.1</code> 逐项实证兼容</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter</code></td>
+    </tr>
+    <tr>
+      <td><a href="./plugins/dsh-antigravity-auth"><code>@lynn123411/dsh-antigravity-auth</code></a></td>
+      <td><b>Antigravity 全套权益接入</b><br>· Google Antigravity 私有能力包：Gemini 2.5/3.1/3.7、Claude 3.5/3.7 与 GPT-OSS 原生模型接入<br>· 突破 127.0.0.1 严格回环限制，支持全网卡监听（0.0.0.0）与远程手动授权回调换票<br>· 搭载 Google Search Grounding 联网搜索、多模态生图与视频分析工具<br>· 设置卡片无缝挂载于共享页「<b>API中转</b>」（order 30，Tab: Antigravity）</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-antigravity-auth</code></td>
     </tr>
     <tr>
       <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
