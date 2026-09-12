@@ -35,7 +35,7 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-smooth-stream"><code>@lynn123411/dsh-smooth-stream</code></a></td>
-      <td><b>丝滑流式渲染</b><br>· 自适应揭示引擎：按积压深度调速，折行单帧位移 ≤ 8px<br>· 二阶阻尼弹簧跟随：合成层 <code>translate3d</code> 补偿，零重排<br>· 闭环背压 + 掉帧自愈；思考块自动展开、回合结算自动折叠<br>· <b>工具卡片内部不逐字揭示</b>：工具行保留入场与跟随，卡片文本即时完整呈现（翻译插件写入的译文块仍逐字流入）<br>· 设置项与另两个阅读插件共用「<b>阅读体验</b>」设置页（先到先得当选页面宿主）<br>· 上游分叉 <code>Laplace-bit/dsh-smooth-stream</code> v0.6.0：单内核适配 <code>0.1.5-rc.1</code>，改名 <code>lynn-smooth-stream</code> 命名空间</td>
+      <td><b>丝滑流式渲染</b><br>· 自适应揭示引擎：按积压深度调速，折行单帧位移 ≤ 8px<br>· 二阶阻尼弹簧跟随：合成层 <code>translate3d</code> 补偿，零重排<br>· 闭环背压 + 掉帧自愈；思考块自动展开、回合结算自动折叠<br>· <b>工具卡片内部不逐字揭示</b>：工具行保留入场与跟随，卡片文本即时完整呈现（翻译插件写入的译文块仍逐字流入）<br>· 设置项与另两个阅读插件共用「<b>阅读体验</b>」设置页（先到先得当选页面宿主）<br>· 上游分叉 v0.6.0：单内核适配 <code>0.1.5-rc.1</code>，改名 <code>lynn-smooth-stream</code> 命名空间</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-smooth-stream</code></td>
     </tr>
     <tr>
@@ -57,7 +57,7 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-llm-agentrouter"><code>@lynn123411/dsh-llm-agentrouter</code></a></td>
-      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉 <code>aqiu817/dsh-llm-agentrouter</code>：沿用 <code>llm-agentrouter</code> 命名空间；宿主沿用 <code>ctx.settings.installSection</code>，端点卡片与 <code>dsh-a6api</code> 同挂共享设置页「API中转」，已在 <code>0.1.5-rc.1</code> 逐项实证兼容</td>
+      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉：沿用 <code>llm-agentrouter</code> 命名空间；宿主沿用 <code>ctx.settings.installSection</code>，端点卡片与 <code>dsh-a6api</code> 同挂共享设置页「API中转」，已在 <code>0.1.5-rc.1</code> 逐项实证兼容</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter</code></td>
     </tr>
     <tr>
@@ -73,7 +73,7 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-mattpocock-skills-deck"><code>@lynn123411/dsh-mattpocock-skills-deck</code></a></td>
-      <td><b>Matt 技能控制面板（Deck）</b><br>· wayfinder 地图 / 票务 / 进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）<br>· 上游分叉 <code>FeatherHunter/dsh-mattpocock-skills-deck</code>：技能判装识别 <code>~/.dsh/.agent-presets/&lt;id&gt;/skills/</code> 根并<b>按当前会话生效 preset 门控</b>（没选 Matt preset 不虚报「环境 10/10」，选了不误报缺失）<br>· 移除上游随包全局技能 provider</td>
+      <td><b>Matt 技能控制面板（Deck）</b><br>· wayfinder 地图 / 票务 / 进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）<br>· 上游分叉：技能判装识别 <code>~/.dsh/.agent-presets/&lt;id&gt;/skills/</code> 根并<b>按当前会话生效 preset 门控</b>（没选 Matt preset 不虚报「环境 10/10」，选了不误报缺失）<br>· 移除上游随包全局技能 provider</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck</code></td>
     </tr>
     <tr>

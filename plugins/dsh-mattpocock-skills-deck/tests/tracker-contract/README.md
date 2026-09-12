@@ -49,7 +49,7 @@ const backendCtx = await createRunnerContext({ cwd: '/repo', os: 'linux' })
 const tracker = githubModule.create(backendCtx) // 或 createRegistry 后 wrap，但直连亦可
 
 // 3) 选仓库与夹具
-const repo = { backend: 'github', refId: 'FeatherHunter/dsh-mattpocock-skills-deck', name: 'deck', url: '' }
+const repo = { backend: 'github', refId: 'tttnny/my-dsh', name: 'deck', url: '' }
 const fixturesDir = 'tests/tracker-contract/fixtures/github-real'
 
 // 4a) Live 模式（需网络 + gh 已登录 + ctx.exec 已注入真实 exec）：会调 list/get/getDependencies 并比对采样
@@ -70,7 +70,7 @@ console.log(pb.results.filter(r=>!r.ok))
 ### GitHub
 
 ```bash
-node scripts/generate-github-fixtures.js --repo FeatherHunter/dsh-mattpocock-skills-deck --issue 173 --out tests/tracker-contract/fixtures/github-real
+node scripts/generate-github-fixtures.js --repo tttnny/my-dsh --issue 173 --out tests/tracker-contract/fixtures/github-real
 ```
 
 来源记录于 `fixtures/github-real/metadata.json`：
