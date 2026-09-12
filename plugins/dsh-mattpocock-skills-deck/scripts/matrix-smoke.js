@@ -15,7 +15,7 @@
  * 用法：node scripts/matrix-smoke.js [--os=win32|darwin|linux|all]（默认 all）
  * 前置：node scripts/build.mjs
  * 期望：58/58 PASS（双闸8 + I2 10 + 3 OS 各 13-14）且 EXIT 0；单机注入即可跑通三端
- * 参考：docs/architecture/matrix.md §2
+ * 参考：scripts/matrix-full.js 的完整矩阵
  */
 const fs = require('fs')
 const path = require('path')

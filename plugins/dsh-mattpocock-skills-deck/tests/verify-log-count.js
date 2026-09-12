@@ -25,12 +25,12 @@ const SELFMON = ['host.dispatch.error', 'log.persist.fail', 'log.forward.summary
 // 一、附录修订版字面：读工作区本地文件（退役线已合入主线，附录随主线走，不再引用分支）。
 let appendix = ''
 try {
-  const appendixPath = path.join(ROOT, 'research', '489-appendix.md')
-  check(fs.existsSync(appendixPath), '附录修订版存在（工作区 research/489-appendix.md）')
+  const appendixPath = path.join(ROOT, 'tests', 'fixtures', '489-appendix.md')
+  check(fs.existsSync(appendixPath), '附录修订版存在（工作区 tests/fixtures/489-appendix.md）')
   appendix = fs.readFileSync(appendixPath, 'utf8')
   check(appendix.length > 1000, '附录修订版非空')
 } catch (e) {
-  check(false, '附录修订版存在（工作区缺 research/489-appendix.md：' + ((e && e.message) || e) + '）')
+  check(false, '附录修订版存在（工作区缺 tests/fixtures/489-appendix.md：' + ((e && e.message) || e) + '）')
 }
 if (appendix) {
   check(appendix.includes('常驻 29 条、按需 20 条、自监控 5 条、总数 54 条'), '附录 counts 字面为常驻 29 条、按需 20 条、自监控 5 条、总数 54 条')

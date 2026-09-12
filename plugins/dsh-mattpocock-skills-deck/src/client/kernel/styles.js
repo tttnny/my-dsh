@@ -4,7 +4,7 @@
  * 契约：本文件为模块真源（ESM 导出）；scripts/build.mjs 在构建时去掉每行行首
  * export 关键字，把声明体文本拼回 src/client/index.js 的拼接标记处（apply 闭包内
  * 原位），与 ctx.js/seam 同模式，一源两物，src 零复制。
- * 接口冻结清单见 docs/architecture/kernel-contract.md（G3 · #91 拍板）。
+ * 接口冻结清单见 tests/verify-kernel.js（G3 · #91 拍板）。
  */
     export const STYLE_TEXT = [
       '.dsws-panel{position:fixed;left:16px;top:76px;width:460px;max-height:calc(100vh - 24px);display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-2,#16181d);border:1px solid var(--dsw-alias-border-l1,#2a2d35);border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.45);z-index:9999;font-family:var(--dsw-font-family);font-size:13px;color:var(--dsw-alias-label-primary,#e6edf3);line-height:1.6;overflow:hidden}',

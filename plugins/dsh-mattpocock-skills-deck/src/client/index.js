@@ -74,7 +74,7 @@ export default {
     // 契约：ctx.locale（dsh-client-locale）：register(ns, {zh, en}) + bind(ns) 稳定引用，调用时读当前语言；
     // 所有 outlet 在 locale 切换时自动重渲染（useLocaleRevision），模块级 t 即可生效。
     // v1.5：全部 prompt（GUIDE_LINE/MAP_EXECUTE/COMPLETE/FIXATE/TPL_DEFAULT/setup/newWayfinder/mapHead）
-    //   集中为 L 字典 prompt.*（zh/en 双语跟随 DSH 语言），审阅与优化见 docs/prompts-review.md。
+    //   集中为 L 字典 prompt.*（zh/en 双语跟随 DSH 语言）。
     // ============================================================
     // ==== kernel:localePanel (spliced by build) ====
     // ==== kernel:localeFlow (spliced by build) ====
@@ -137,7 +137,7 @@ export default {
     //   每条：{ version, placeholders, use, zh, en }；运行时按当前语言经 promptText(id, params) 取用
     //   占位符契约：文本内 {x} 必须声明在 placeholders；promptText 只替换已声明参数（未知保留）
     //   原则：所有 prompt 相对所引用技能（wayfinder/grilling/triage 等）只做「追加扩展要求」，绝不覆盖技能自身规则。
-    //   审阅：docs/reviews/prompts-review-v1.5.html / .md · 契约校验：tests/verify-prompts.js
+    //   契约校验：tests/verify-prompts.js
     // ============================================================
     // ==== kernel:prompts (spliced by build) ====
     // ==== kernel:config (spliced by build) ====

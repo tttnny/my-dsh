@@ -11,7 +11,7 @@
  *
  * 定版依据：issue #127（完整数据形状 + capability-by-fill）+
  * `C:\Users\辰辰洋洋\AppData\Local\Temp\dsh-tracker-contract-issue-map-design.md`。
- * 由 `docs/architecture/tracker-layer-directory-architecture.md` + `tracker-backend-normalized-model.md` 派生。
+ * 派生自 tracker 分层目录架构与后端归一化模型；形状契约由 tests/tracker-contract/ 把守。
  */
 
 import { STATE, ISSUE_TYPE } from './constants.js'

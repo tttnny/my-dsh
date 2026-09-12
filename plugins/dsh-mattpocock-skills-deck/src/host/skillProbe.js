@@ -95,7 +95,7 @@ export function createSkillProbe(deps) {
       } catch {}
       return false
     }
-    // #296 多通道并联探针（契约修订见 docs/adr/20260828-skill-probe-union-channels.md）：
+    // #296 多通道并联探针（契约修订）：
     // 判装口径从「注册表唯一绿」修订为「任一通道有效即已安装」——修复协议（installSkills 提示词以
     // ~/.agents/skills 盘上齐全为成功）与检测口径必须用同一把尺；通道全空才红，红时附各通道判据。
     // 通道：REGISTRY（probeSkill 上游已查）· FS_USER/FS_PROJECT（DSH fs 服务读用户/项目标准根）

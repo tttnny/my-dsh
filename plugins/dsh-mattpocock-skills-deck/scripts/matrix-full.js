@@ -3,7 +3,7 @@
  *
  * 回溯链：
  *   #131 145+32 + #171 6处 + 三底座100% + #139 #142 #145 三后端13ops + #173 harness + #113 契约
- * 推导不变量 I1/I2/I3/I4/I5（见 docs/architecture/matrix.md 1.2）
+ * 推导不变量 I1/I2/I3/I4/I5（在本脚本内定义并逐条断言）
  *
  * 矩阵：3 OS (win32/darwin/linux) × 3 后端 (github/markdown/gitlab) = 9 cells
  * 每个 cell：
@@ -17,7 +17,7 @@
  *   node scripts/matrix-full.js [--os=win32|darwin|linux|all] [--backend=github|markdown|gitlab|all]
  * 前置：node scripts/build.mjs
  * 期望：112/112 PASS 且 EXIT 0；单机注入可判全矩阵；有 token 自动走 live 真链
- * 参考：docs/architecture/matrix.md §3
+ * 参考：本脚本的矩阵推导与不变量断言
  */
 const fs = require('fs')
 const path = require('path')

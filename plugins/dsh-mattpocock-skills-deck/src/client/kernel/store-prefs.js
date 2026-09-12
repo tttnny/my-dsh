@@ -4,7 +4,7 @@
  * 契约：本文件为模块真源（ESM 导出）；scripts/build.mjs 在构建时去掉每行行首
  * export 关键字，把声明体文本拼回 src/client/index.js 的拼接标记处（apply 闭包内
  * 原位），与 ctx.js/seam 同模式，一源两物，src 零复制。
- * 接口冻结清单见 docs/architecture/kernel-contract.md（G3 · #91 拍板）。
+ * 接口冻结清单见 tests/verify-kernel.js（G3 · #91 拍板）。
  */
     export const DEFAULT_PANEL_H = (function () {
       try { return Math.max(240, Math.round((window.innerHeight || 800) * 0.5)) } catch (e) { return 400 }

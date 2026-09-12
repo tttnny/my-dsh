@@ -2,7 +2,7 @@
  * tests/verify-dirwritable.js — dirWritable 原语契约（2026-08-29 研究实锤「md:scratchWritable 名不符实」修复验收）
  *
  * 背景：md:scratchWritable 原用 FILE_EXISTS 只判「存在」、从不测「可写」（research 笔记
- *   docs/research/environment-checks-platform-layer-20260829.md）；新增 PRIMITIVE_KIND.DIR_WRITABLE
+ *   见本文件的 D1-D4 断言）；新增 PRIMITIVE_KIND.DIR_WRITABLE
  *   （写探测：往目标目录写 2 字节探针并尽力清理）作为跨 OS 唯一可靠的「可写」判据。
  *
  * 本文件断言：
