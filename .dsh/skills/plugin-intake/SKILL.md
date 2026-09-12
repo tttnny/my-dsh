@@ -27,7 +27,6 @@ user-invocable: true
 - `src/`、`tests/` — 上游测试是行为契约，先整体带走，编译不过再逐条判定
 - `tsconfig*.json`、`tsdown.config.ts` / `build.mjs`、`vitest.config.ts`、`build/`
 - `package.json`（重写身份）、`cordis.patch.yml`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`
-- `LICENSE` — 上游带的版权声明是分叉的授权依据，必须留；**缺 `LICENSE` 的分叉是待补项**，不等于「本来就可以不要」
 - 第 2 步证明**被真实引用**的 `assets/`、`scripts/`、`examples/`、`wizard/`
 - `README.md` — 按我们三段式重写，可留一句上游分叉署名
 
@@ -42,7 +41,8 @@ user-invocable: true
 | 只服务原仓库的发布流程 | 断言 `CHANGELOG` / `.github` 模板 / `docs/releases/` 的发布门禁与配套向导：在分叉里恒红，整条链（向导、向导库、独占它的测试）一起删，别留半条 |
 | 多语言 README | `README.zh.md`、`README.<locale>.md` — 本仓库只留 `README.md` |
 | 营销素材及其工具链 | README 配图、截图、作者联系二维码、聊天记录截图，以及只为生成这些图而存在的脚本与测试（`star-history` 那类） |
-| 构建产物 | `build` 脚本生成、被 `files` 收录的镜像目录（`package/shared/` 这类）——取消跟踪、补 `.gitignore`，并把这条接进产物门禁 |
+| 许可文书 | 上游带来的 `LICENSE` 直接删——**本库任何层级都不放 LICENSE 文件**（仓库根也不放）：许可只由各包 `package.json` 的 `license` 字段声明，分叉归属由 README 首段署名行承担 |
+| 构建产物 | `build` 脚本生成、被 `files` 收录的镜像目录（`package/shared/` 这类）——取消跟踪、补 `.gitignore`，并把这条接进产物门禁；删 `LICENSE` 后 `files` 里的 `"LICENSE"` 条目同样要撤，否则清单指向不存在的文件 |
 | 悬挂条目 | 指向以上一切的 `files` / `scripts` / `.gitignore` / 注释与提示文字里的路径 |
 
 营销素材有两步容易漏：README 换成我们的之后配图成孤儿，但文件还躺在 `assets/` 里随仓库走；图删了，**生成图的脚本**还留着并读写已不存在的 `docs/*.json`。第 2 步的引用检查管前者，第 5 步管后者。
@@ -60,10 +60,10 @@ git ls-files plugins | grep -iE '(^|/)(CHANGELOG|HISTORY|CONTRIBUTING|SECURITY|S
 git ls-files plugins | grep -E '/(package|dist|_pkg|out)/(lib|shared)/|^(client|host)\.js$'
 ```
 
-再查功能内容里的上游地址。owner 从各插件 README 的分叉署名行与 `LICENSE` 版权行现取，别凭记忆列：
+再查功能内容里的上游地址。owner 从各插件 README 首段的分叉署名行现取，别凭记忆列（本库不放任何 `LICENSE` 文件，那里没有可取的版权行）：
 
 ```bash
-git grep -hoE 'github\.com/[A-Za-z0-9_.-]+' -- 'plugins/*/README.md' 'plugins/*/LICENSE' | cut -d/ -f3 | sort -u
+git grep -hoE 'github\.com/[A-Za-z0-9_.-]+' -- 'plugins/*/README.md' | cut -d/ -f2 | sort -u
 git grep -cI "<owner>" -- plugins | sort -t: -k2 -rn    # 按文件列命中数，再逐文件判下表的三类
 ```
 
@@ -73,4 +73,4 @@ git grep -cI "<owner>" -- plugins | sort -t: -k2 -rn    # 按文件列命中数�
 | --- | --- |
 | 仓库装饰物：沿革、调研文档、CI/编辑器配置、营销配图、作者联系二维码 | 删 |
 | **功能内容**：设置页或界面里渲染的上游仓库链接（尤其「去上游提 issue」这类把用户导向别人仓库的入口）、默认值、示例列表 | **交给人定**——这是产品内容，改它等于改行为，别顺手替换成我们的地址 |
-| 溯源与真实数据：`LICENSE` 版权、README 分叉署名、代码注释里的实测来源、抓取自真实 API 的 fixture | 留——改了 fixture 就成了假数据，注释与署名是依据 |
+| 溯源与真实数据：README 的分叉署名行、代码注释里的实测来源、抓取自真实 API 的 fixture | 留——改了 fixture 就成了假数据，注释与署名是依据 |
