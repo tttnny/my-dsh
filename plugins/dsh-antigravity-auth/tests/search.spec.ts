@@ -72,6 +72,18 @@ describe('grounded Antigravity Search', () => {
     })
   })
 
+  it('keeps reasoning parts out of the grounded answer text', async () => {
+    const parts = '[{"text":"先想一下该查什么。","thought":true},{"text":"今日金价 940 元/克。"}]'
+    const transport = {
+      request: vi.fn(async () => new Response(`data: {"response":{"candidates":[{"content":{"parts":${parts},"role":"model"},"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://www.sge.com.cn/","title":"sge.com.cn"}}]}}]}}\n\ndata: [DONE]\n\n`)),
+    }
+    const provider = new AntigravitySearchProvider({ auth, transport })
+
+    await expect(provider.search({ query: 'gold price' })).resolves.toMatchObject({
+      content: '今日金价 940 元/克。',
+    })
+  })
+
   it('fails closed when the provider returns no sources or the capability is disabled', async () => {
     const transport = { request: vi.fn(async () => new Response('{"response":{"parts":[{"text":"answer"}]}}')) }
     const empty = new AntigravitySearchProvider({ auth, transport })
