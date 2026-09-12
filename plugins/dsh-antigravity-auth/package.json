@@ -95,8 +95,7 @@
     "lib/types/**/*.d.ts.map",
     "cordis.patch.yml",
     "scripts/live-gates.mjs",
-    "README.md",
-    "LICENSE"
+    "README.md"
   ],
   "scripts": {
     "build": "node scripts/clean.mjs && tsc -p tsconfig.build.host.json && tsc -p tsconfig.build.client.json && tsdown",

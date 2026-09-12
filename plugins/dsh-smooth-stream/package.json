@@ -45,8 +45,7 @@
     "src/**/*.tsx",
     "src/**/*.css",
     "cordis.patch.yml",
-    "README.md",
-    "LICENSE"
+    "README.md"
   ],
   "dsh": {
     "bundle": {

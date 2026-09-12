@@ -116,4 +116,4 @@
 
 ## 📄 许可证
 
-[MIT](./plugins/dsh-workspace-tree/LICENSE) 
+本仓库与 `plugins/` 各目录都不附带 `LICENSE` 文件：许可只由各包 `package.json` 的 `license` 字段声明（MIT）。 

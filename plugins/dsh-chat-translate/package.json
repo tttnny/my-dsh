@@ -54,8 +54,7 @@
     "lib",
     "docs",
     "cordis.patch.yml",
-    "README.md",
-    "LICENSE"
+    "README.md"
   ],
   "scripts": {
     "build": "node build.mjs",
