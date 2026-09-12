@@ -96,8 +96,15 @@ const clientBundle: UserConfig = {
         cssModules: { pattern: '[hash]_[local]' },
         minify: true,
       })
+      // lightningcss hands back its exports map in an order that varies between
+      // runs. Emitting it as-is churns the tracked bundle: two builds of the same
+      // source differ by a pure reordering of the class map (same key set), which
+      // makes `git diff` on lib/client.js meaningless. Sort before emitting.
       const classMap: Record<string, string> = {}
-      for (const [local, exp] of Object.entries(cssExports ?? {})) classMap[local] = exp.name
+      const classEntries = Object.entries(cssExports ?? {})
+        .map(([local, exp]) => [local, exp.name] as const)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      for (const [local, name] of classEntries) classMap[local] = name
       return [
         `const css = ${JSON.stringify(code.toString())};`,
         `const tagId = ${JSON.stringify(`${PACKAGE_ID}/${basename(fileId)}`)};`,
