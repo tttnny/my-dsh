@@ -1,6 +1,6 @@
-# The `minimal-fs` agent preset: the shipped minimal identity and its single
-# persistent shell, plus a file toolset — a deliberately tiny, fixed catalog
-# for measuring what a model can do with almost nothing.
+# The `minimal-fs` agent preset: the shipped minimal identity plus a file
+# toolset — a deliberately tiny, fixed catalog for measuring what a model can do
+# with almost nothing, and with no shell at all.
 #
 # This file is an AGENT-PLANE composition: the roster composes it for one
 # agent, under that agent's scope, so every tool and prompt section here
@@ -8,8 +8,9 @@
 # must not own: the registries themselves, the sandbox and approval stack,
 # persistence, and the model route.
 #
-# A service row here MUST sit inside a group carrying an `isolate` realm: the
-# shell registry below is agent-owned and does.
+# No row here publishes an agent-owned service, so no row needs an `isolate`
+# realm either: every row is a tool (or a prompt waterfall) registering into
+# this preset's scope and consuming host-owned services.
 
 # ── identity ────────────────────────────────────────────────────────────────
 
@@ -17,75 +18,13 @@
 # system prompt, so global identity, Web orientation, tool guidance, and later
 # assembly listeners cannot add prompt text, and the model receives no
 # runtime-context snapshots. What a model does with a fixed prompt and a
-# four-tool catalog is exactly what this preset exists to measure.
+# three-tool catalog is exactly what this preset exists to measure.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
     prefix: You are a helpful software engineer assistant.
     complete: true
     includeRuntimeContext: false
-
-# ── shell ───────────────────────────────────────────────────────────────────
-
-# Lifted verbatim from the shipped `minimal` preset — same realm, same rows,
-# same per-platform gates and descriptions: the persistent PTY registry, the
-# terminal backend, and the model-facing tool (`bash` on POSIX, `pwsh` on
-# win32). `minimal` calls this "the persistent shell" and it is what makes that
-# preset a single-tool coding agent; that one tool is exactly what a
-# model-capability baseline needs back.
-#
-# The PTY registry is an agent-owned service, so it lives in an entry-local
-# realm. The backend still consumes the host sandbox policy and subprocess
-# implementation, while the tool registers into this agent's scoped catalog.
-- id: persistent-shell
-  name: cordis:group
-  group: true
-  isolate:
-    terminals: true
-  config:
-    - id: pty
-      name: '@deepseek-ai/dsh-terminal'
-
-    - id: terminal-bash
-      name: '@deepseek-ai/dsh-terminal-bash'
-      disabled: !!js process.platform === 'win32'
-      config:
-        timeoutMs: 300000
-
-    - id: persistent-bash
-      name: '@deepseek-ai/dsh-tool-bash-persistent'
-      disabled: !!js process.platform === 'win32'
-      config:
-        timeoutMs: 300000
-        description: |-
-          Run commands in a bash shell
-          * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
-          * Network access depends on the task environment. Prefer configured mirrors/proxies when they are available.
-          * State is persistent across command calls and discussions with the user.
-          * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
-          * Please avoid commands that may produce a very large amount of output.
-          * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.
-
-    - id: terminal-pwsh
-      name: '@deepseek-ai/dsh-terminal-bash'
-      disabled: !!js process.platform !== 'win32'
-      config:
-        shellDialect: pwsh
-        timeoutMs: 300000
-
-    - id: persistent-pwsh
-      name: '@deepseek-ai/dsh-tool-pwsh-persistent'
-      disabled: !!js process.platform !== 'win32'
-      config:
-        timeoutMs: 300000
-        description: |-
-          Run commands in a PowerShell shell
-          * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
-          * You don't have access to the internet via this tool.
-          * State is persistent across command calls and discussions with the user.
-          * Use native Windows paths (C:\...) and $env:NAME variables; this is PowerShell, not bash.
-          * Please avoid commands that may produce a very large amount of output.
-          * Please run long lived commands in the background, e.g. 'Start-Job' or start a process with Start-Process.
 
 # ── filesystem ──────────────────────────────────────────────────────────────
 
