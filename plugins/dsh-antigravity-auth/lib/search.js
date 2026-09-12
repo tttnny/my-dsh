@@ -313,7 +313,7 @@ function findText(value) {
 	const output = [];
 	let length = 0;
 	for (const part of parts) {
-		if (!isRecord(part) || typeof part.text !== "string" || hasControl(part.text)) continue;
+		if (!isRecord(part) || isReasoningPart(part) || typeof part.text !== "string" || hasControl(part.text)) continue;
 		const text = part.text.slice(0, 65536 - length);
 		output.push(text);
 		length += text.length;
@@ -323,6 +323,10 @@ function findText(value) {
 }
 function safeSourceText(value, max) {
 	return typeof value === "string" && value.length > 0 && value.length <= max && !hasControl(value) ? value : void 0;
+}
+/** Whether one response part carries reasoning rather than the grounded answer. */
+function isReasoningPart(part) {
+	return part.thought === true || part.thinking === true || part.reasoning === true;
 }
 function hasControl(value) {
 	for (const character of value) {

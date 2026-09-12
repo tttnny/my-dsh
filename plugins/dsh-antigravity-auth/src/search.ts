@@ -351,7 +351,9 @@ function findText(value: Record<string, unknown>): string | undefined {
   const output: string[] = []
   let length = 0
   for (const part of parts) {
-    if (!isRecord(part) || typeof part.text !== 'string' || hasControl(part.text)) continue
+    // A reasoning part is not the grounded answer; the default search model is a
+    // thinking model, so its thoughts must never become the answer text.
+    if (!isRecord(part) || isReasoningPart(part) || typeof part.text !== 'string' || hasControl(part.text)) continue
     const text = part.text.slice(0, 64 * 1024 - length)
     output.push(text)
     length += text.length
@@ -362,6 +364,11 @@ function findText(value: Record<string, unknown>): string | undefined {
 
 function safeSourceText(value: unknown, max: number): string | undefined {
   return typeof value === 'string' && value.length > 0 && value.length <= max && !hasControl(value) ? value : undefined
+}
+
+/** Whether one response part carries reasoning rather than the grounded answer. */
+function isReasoningPart(part: Record<string, unknown>): boolean {
+  return part.thought === true || part.thinking === true || part.reasoning === true
 }
 
 function hasControl(value: string): boolean {
