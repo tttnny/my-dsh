@@ -1,4 +1,4 @@
-import { m as PrivateTransportError } from "./private-transport-BQshWFmk.js";
+import { m as PrivateTransportError } from "./private-transport-DvkyFFK_.js";
 //#region src/private-failure.ts
 /** One closed classifier shared by every capability's public error vocabulary. */
 function classifyPrivateFailure(error) {

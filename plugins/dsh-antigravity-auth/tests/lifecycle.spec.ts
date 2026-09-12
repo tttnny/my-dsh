@@ -175,6 +175,66 @@ describe('bootstrap lifecycle boundary', () => {
     await cleanup?.()
   })
 
+  it('pins the Antigravity search provider only while its gate is ready and restores the previous pin', async () => {
+    let statusListener: (() => void) | undefined
+    const auth = {
+      credential: vi.fn(),
+      status: vi.fn(async () => gateStatus('search', 'poc-pending')),
+      watchStatus: vi.fn((listener: () => void) => { statusListener = listener; return vi.fn() }),
+      dispose: vi.fn(),
+    }
+    let cleanup: (() => Promise<void>) | undefined
+    const web = { registerSearchProvider: vi.fn(() => vi.fn()), searchProviderId: 'deepseek-official' as string | undefined }
+    const ctx = {
+      web,
+      get: vi.fn(() => auth),
+      inject: vi.fn(),
+      effect: vi.fn((setup: () => () => Promise<void>) => { cleanup = setup() }),
+    }
+
+    applySearch(ctx as never, { enabled: true, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(web.searchProviderId).toBe('deepseek-official')
+
+    auth.status.mockResolvedValue(gateStatus('search', 'available'))
+    statusListener?.()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(web.searchProviderId).toBe('antigravity')
+
+    auth.status.mockResolvedValue(gateStatus('search', 'protocol-drift'))
+    statusListener?.()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(web.searchProviderId).toBe('deepseek-official')
+
+    await cleanup?.()
+  })
+
+  it('leaves the host search provider pin untouched while the capability stays disabled', async () => {
+    let statusListener: (() => void) | undefined
+    const auth = {
+      credential: vi.fn(),
+      status: vi.fn(async () => gateStatus('search', 'available')),
+      watchStatus: vi.fn((listener: () => void) => { statusListener = listener; return vi.fn() }),
+      dispose: vi.fn(),
+    }
+    let cleanup: (() => Promise<void>) | undefined
+    const web = { registerSearchProvider: vi.fn(() => vi.fn()), searchProviderId: undefined as string | undefined }
+    const ctx = {
+      web,
+      get: vi.fn(() => auth),
+      inject: vi.fn(),
+      effect: vi.fn((setup: () => () => Promise<void>) => { cleanup = setup() }),
+    }
+
+    applySearch(ctx as never, { enabled: false, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
+    statusListener?.()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(web.registerSearchProvider).not.toHaveBeenCalled()
+    expect(web.searchProviderId).toBeUndefined()
+
+    await cleanup?.()
+  })
+
   it('ignores a stale available status that resolves after a newer pending gate read', async () => {
     let statusListener: (() => void) | undefined
     const pending: Array<(value: ReturnType<typeof gateStatus>) => void> = []

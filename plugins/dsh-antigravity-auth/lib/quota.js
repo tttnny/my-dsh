@@ -1,6 +1,6 @@
-import { d as privateStatusError, i as DEFAULT_PRIVATE_RESPONSE_BYTES, l as createPrivateTransport, m as PrivateTransportError, p as readPrivateText } from "./private-transport-BQshWFmk.js";
+import { d as privateStatusError, i as DEFAULT_PRIVATE_RESPONSE_BYTES, l as createPrivateTransport, m as PrivateTransportError, p as readPrivateText } from "./private-transport-DvkyFFK_.js";
 import { ANTIGRAVITY_WIRE_ORIGIN } from "./wire-identity.js";
-import { t as classifyPrivateFailure } from "./private-failure-DaQoTCkz.js";
+import { t as classifyPrivateFailure } from "./private-failure-nHkfjLiA.js";
 //#region src/quota.ts
 /** Single-account Antigravity quota normalization and bounded Host service. */
 const ANTIGRAVITY_QUOTA_ENDPOINT = `${ANTIGRAVITY_WIRE_ORIGIN}/v1internal:retrieveUserQuotaSummary`;

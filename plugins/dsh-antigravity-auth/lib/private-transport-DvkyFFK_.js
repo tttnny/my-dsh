@@ -36,8 +36,9 @@ function createRawPrivateDispatcher() {
 		});
 		const socket = await connectTls(url, input.responseHeaderTimeoutMs, input.signal);
 		let dispatched = false;
+		/** Close the socket only; the active waiter owns the cancellation error. */
 		const abort = () => {
-			socket.destroy(cancelled(dispatched));
+			socket.destroy();
 		};
 		try {
 			if (isAborted$1(input.signal)) throw cancelled(false);
