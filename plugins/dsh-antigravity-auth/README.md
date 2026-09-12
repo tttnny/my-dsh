@@ -1,0 +1,18 @@
+# @lynn123411/dsh-antigravity-auth
+
+Google Antigravity OAuth 权益接入能力包：单账号集成 Gemini、Claude 与 GPT-OSS 私有模型推理，支持联网搜索（Google Search Grounding）、多模态图片生成与本地视频分析，打破 127.0.0.1 严格回环限制，完美适配全网卡绑定（0.0.0.0）与远程手动授权回调。
+
+## 特性
+
+- **全模型聚合接入**：提供 `google-antigravity` LLM 供应商，支持 Gemini 2.5/3.1/3.7、Claude 3.5/3.7 以及 GPT-OSS 等系列模型的原生流式推理与思考块保留（Thinking signature）。
+- **解除回环限制与远程支持**：去除严格限定 `127.0.0.1` 的门禁，临时 OAuth 回调服务绑定 `0.0.0.0:51121`，支持 Docker 端口映射与局域网访问；针对跨机远程访问场景，提供手动粘贴授权回调链接输入通道，无缝完成凭据换发与登录闭环。
+- **联网搜索增强**：注册 `antigravity` 搜索服务，依托 Google Search Grounding 提供带真实证据引用的联网搜索能力。
+- **多模态工具支持**：向 Agent 注入 `generate_image`（文本生图与参考图修改，生成图像自动存入 DSH 附件系统）与 `analyze_video`（本地 MP4 视频多模态分析）工具。
+- **用量与配额监控**：实时展示当前 Antigravity 账号的项目 ID、各模型用量配额占比与重置倒计时。
+- **API中转页无缝集成**：作为「API中转」共享设置页（order 120）的参与者挂载于 `relay.settings.item`，遵循先到先得选举机制，在页内提供独立的 Antigravity 配置卡片。
+
+## 安装
+
+```bash
+dsh plugin --profile web add @lynn123411/dsh-antigravity-auth
+```
