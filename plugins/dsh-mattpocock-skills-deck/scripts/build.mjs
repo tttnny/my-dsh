@@ -17,7 +17,7 @@
  *
  * 用法：node scripts/build.mjs [--dev-only|--pkg-only] [--out-dir DIR]
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync, cpSync, utimesSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync, cpSync, utimesSync, realpathSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import vm from 'node:vm'
@@ -196,7 +196,7 @@ function wireCtx(body) {
 }
 
 // ---------- Kernel 模块组合（阶段 2 内核迁移 · #96 T3）----------
-/** 内核模块清单（docs/architecture/kernel-contract.md · G3 冻结 · 迁移完成即全活跃）。
+/** 内核模块清单（tests/verify-kernel.js · G3 冻结 · 迁移完成即全活跃）。
  *  index.js 中每模块原位置留标记 `// ==== kernel:<name> (spliced by build) ====`，
  *  构建时把模块文件声明体（去行首 export）拼回标记处 —— 闭包内原位，行为零变化。 */
 const KERNEL_MODULES = [
@@ -557,15 +557,23 @@ if (!args.includes('--no-sync')) {
           ['package/README.md', 'README.md'],
           ['cordis.patch.yml', 'cordis.patch.yml']
         ]
-        for (const [srcRel, dstRel] of syncPairs) {
-          const src = resolve(ROOT, srcRel)
-          const dst = resolve(profileBase, dstRel)
-          if (!existsSync(src)) continue
-          rmSync(dst, { recursive: true, force: true })
-          mkdirSync(dirname(dst), { recursive: true })
-          cpSync(src, dst, { recursive: true })
+        // 【link: 开发副本护栏】profile 条目可以就是仓库的 package/ 软链（合集约定：链接到实际包目录）。
+        // 此时 src 与 dst 同一 realpath，下面的「先 rm 再 cp」会把刚构建出的产物整体删掉。相同即跳过同步。
+        let sameTree = false
+        try { sameTree = realpathSync(profileBase) === realpathSync(resolve(ROOT, 'package')) } catch {}
+        if (sameTree) {
+          console.log('[build] 跳过 profile 同步：profile 条目是 package/ 的 link: 开发副本（同一 realpath），改仓库文件即生效')
+        } else {
+          for (const [srcRel, dstRel] of syncPairs) {
+            const src = resolve(ROOT, srcRel)
+            const dst = resolve(profileBase, dstRel)
+            if (!existsSync(src)) continue
+            rmSync(dst, { recursive: true, force: true })
+            mkdirSync(dirname(dst), { recursive: true })
+            cpSync(src, dst, { recursive: true })
+          }
+          console.log(`[build] 已同步 profile → ${profileBase}`)
         }
-        console.log(`[build] 已同步 profile → ${profileBase}`)
 
         // 全树 hash 校验：逐文件 sha256 比对（排除 node_modules）
         const hashTree = (base) => {
