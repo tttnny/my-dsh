@@ -115,12 +115,19 @@ function stubSlots({ sectionEntries = [] } = {}) {
  *
  * @param {object} options - context options.
  * @param {object} options.scope - the settings scope stub the card writes through.
+ * @param {object} options.routeScope - the `llm-pi-ai` scope stub the model list reads.
  * @param {object[]} options.sectionEntries - pre-existing `settings.section` rows.
+ * @param {object} options.llm - the optional `remote.llm` face, when the runtime has one.
+ * @param {object} options.settings - the optional `remote.settings` face.
  * @returns {object} the context plus the slot registry it carries.
  */
-function stubContext({ scope, sectionEntries = [] } = {}) {
+function stubContext({ scope, routeScope, sectionEntries = [], llm, settings } = {}) {
   const { slots, registrations, injections, itemEntries, commit } = stubSlots({ sectionEntries })
   const declared = new Set(['slots', 'locale', 'settingsScope'])
+  const optional = {}
+  if (llm !== undefined) optional['remote.llm'] = llm
+  if (settings !== undefined) optional['remote.settings'] = settings
+  const waiting = []
   const services = {
     slots,
     locale: {
@@ -129,14 +136,24 @@ function stubContext({ scope, sectionEntries = [] } = {}) {
       getSnapshot: () => ({ revision: 1 }),
       subscribe: () => () => {},
     },
-    settingsScope: { bind: () => scope },
+    // Two namespaces are bound: the plugin's own endpoint section and the
+    // adapter's route section the card edits models in.
+    settingsScope: { bind: (spec) => (spec.namespace === 'llm-pi-ai' ? routeScope : scope) },
   }
   const base = {
     ...services,
     // `ctx.get` is how an OPTIONAL service is read without tripping the guard;
     // it must stay callable on the stub or the shell cannot read `locale`.
-    get: (name) => services[name],
+    get: (name) => services[name] ?? optional[name],
     effect: (factory) => factory(),
+    // The kernel's optional-dependency seam: the callback runs while the deps are
+    // available. The stub re-runs a pending callback whenever a face it names is
+    // mounted, which is what the card's capability store observes.
+    inject: (deps, callback) => {
+      waiting.push({ deps, callback })
+      if (deps.every((dep) => dep in services || dep in optional)) callback(base)
+      return () => {}
+    },
   }
   const ctx = new Proxy(base, {
     get: (target, property) => {
@@ -147,7 +164,17 @@ function stubContext({ scope, sectionEntries = [] } = {}) {
       return target[property]
     },
   })
-  return { ctx, registrations, injections, itemEntries, commit }
+  /**
+   * Mount one optional Remote face, the way the Client assembly does after this
+   * plugin has already activated.
+   */
+  const provide = (name, service) => {
+    optional[name] = service
+    for (const entry of waiting) {
+      if (entry.deps.includes(name)) entry.callback(base)
+    }
+  }
+  return { ctx, registrations, injections, itemEntries, commit, provide }
 }
 
 /**
@@ -178,6 +205,182 @@ function stubScope(overrides = {}) {
     },
     unset: () => Promise.resolve(),
   }
+}
+
+/**
+ * The models the bundle patch declares, as the resolved `llm-pi-ai` section
+ * carries them. Two entries are enough to cover both shapes the card must
+ * preserve: one declaring every level, one withholding `off` entirely.
+ */
+const ROUTE_MODELS = [
+  {
+    id: 'claude-opus-5',
+    name: 'Claude Opus 5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    input: ['text', 'image'],
+    reasoningEfforts: { off: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
+  },
+  {
+    id: 'glm-5.3',
+    name: 'GLM 5.3',
+    contextWindow: 1000000,
+    maxTokens: 131072,
+    reasoningEfforts: { low: 'low', high: 'high', max: 'max' },
+  },
+]
+
+/** The relay host the route's `baseURL` names; the fence rewrites it on the wire. */
+const SENTINEL_BASE_URL = 'https://relay.agentrouter.internal/v1'
+
+/**
+ * The `llm-pi-ai` scope stub: the adapter's own section, read by the model list.
+ * @param {object} options - snapshot options.
+ * @param {object[]} options.models - the models the resolved route serves.
+ * @param {object} options.user - the raw user layer, present only when it owns the list.
+ * @param {object} options.snapshot - further snapshot field overrides.
+ * @returns {object} the scope stub.
+ */
+function stubRouteScope({ models = ROUTE_MODELS, user, snapshot = {} } = {}) {
+  const value = {
+    providers: {
+      agentrouter: {
+        displayName: 'AgentRouter',
+        api: 'openai-completions',
+        baseURL: SENTINEL_BASE_URL,
+        models,
+      },
+    },
+  }
+  const state = {
+    status: 'ready',
+    value,
+    base: value,
+    user,
+    revision: 7,
+    writable: true,
+    mode: 'host',
+    ...snapshot,
+  }
+  return { getSnapshot: () => state, subscribe: () => () => {} }
+}
+
+/**
+ * The `remote.llm` face, answering one model listing.
+ * @param {object[]} models - the models the relay lists.
+ * @param {object} outcome - a full RemoteResult overriding the success default.
+ * @returns {object} the face plus the calls it recorded.
+ */
+function stubLlm(models, outcome) {
+  const calls = []
+  return {
+    calls,
+    discoverModels: (ns, request) => {
+      calls.push({ ns, request })
+      return Promise.resolve(outcome ?? { ok: true, value: models })
+    },
+  }
+}
+
+/**
+ * The `remote.settings` face, answering one write.
+ * @param {object} outcome - a full RemoteResult overriding the success default.
+ * @returns {object} the face plus the calls it recorded.
+ */
+function stubSettings(outcome) {
+  const calls = []
+  return {
+    calls,
+    mutate: (ns, ops, revision) => {
+      calls.push({ ns, ops, revision })
+      return Promise.resolve(outcome ?? { ok: true, value: { ns, revision: 8, writable: true, value: {} } })
+    },
+  }
+}
+
+/**
+ * A translator that keeps `%s` placeholders, so a rendered diagnostic can be
+ * asserted together with the Host message it carries.
+ */
+const MESSAGE_TEMPLATES = {
+  refreshAdded: 'refreshAdded(%s,%s)',
+  refreshNone: 'refreshNone(%s)',
+  refreshFailed: 'refreshFailed(%s)',
+  saveConflict: 'saveConflict(%s)',
+  saveFailed: 'saveFailed(%s)',
+  invalidId: 'invalidId(%s)',
+  invalidDuplicate: 'invalidDuplicate(%s)',
+  invalidNumber: 'invalidNumber(%s,%s)',
+  invalidEffort: 'invalidEffort(%s,%s)',
+}
+
+/**
+ * The bound translator the card is rendered with.
+ * @param {string} key - dictionary key.
+ * @returns {string} the key, or its message template.
+ */
+function stubT(key) {
+  return MESSAGE_TEMPLATES[key] ?? key
+}
+
+/**
+ * Render the model list on its own.
+ * @param {object} exports_ - the loaded bundle's exports.
+ * @param {object} routeScope - the `llm-pi-ai` scope stub.
+ * @param {object} operations - the normalized Host operations the card calls.
+ * @returns {Promise<object>} the react-test-renderer tree.
+ */
+async function renderList(exports_, routeScope, operations) {
+  let tree
+  await act(async () => {
+    tree = create(createElement(exports_.ModelList, { routeScope, operations, t: stubT }))
+  })
+  return tree
+}
+
+/**
+ * One control inside a rendered tree.
+ * @param {object} tree - a rendered tree.
+ * @param {Function} predicate - node predicate.
+ * @returns {object} the first matching node.
+ */
+function find(tree, predicate) {
+  return tree.root.find(predicate)
+}
+
+/** The action button with the given `data-action`, when it exists. */
+function actionOf(tree, name) {
+  return find(tree, (node) => node.type === 'button' && node.props['data-action'] === name)
+}
+
+/** One model row by the id its draft row currently shows, when it exists. */
+function rowOf_(tree, id) {
+  return tree.root.findAll((node) => node.type === 'li' && node.props['data-model-id'] === id).at(0)
+}
+
+/** One field input of one row, addressed the way the card renders it. */
+function inputOf(tree, index, field) {
+  return find(
+    tree,
+    (node) => node.type === 'input'
+      && node.props['data-model'] === String(index)
+      && node.props['data-field'] === field,
+  )
+}
+
+/** The status line's rendered text and kind. */
+function statusOf(tree) {
+  const node = find(tree, (child) => child.type === 'p' && child.props.className === 'dshAr_status' && child.props.role !== undefined)
+  return { kind: node.props['data-kind'], text: node.props.children }
+}
+
+/**
+ * The models array one recorded write set, for payload assertions.
+ * @param {object} call - one recorded `remote.settings.mutate` call.
+ * @returns {object[]} the drafted models.
+ */
+function modelsOfWrite(call) {
+  return call.ops[0].value
 }
 
 /**
@@ -435,4 +638,443 @@ test('an unwritable or unreadable section offers no write', async () => {
     })
     assert.deepEqual(scope.writes, [], `${where} must write nothing`)
   }
+})
+
+test('the model list shows the route’s own models and their declared parameters', async () => {
+  const { exports } = loadBundle()
+  const tree = await renderList(exports, stubRouteScope(), {})
+
+  const rows = tree.root.findAll((node) => node.type === 'li')
+  assert.deepEqual(
+    rows.map((node) => node.props['data-model-id']),
+    ['claude-opus-5', 'glm-5.3'],
+    'one row per model the route serves, in declared order',
+  )
+  assert.equal(inputOf(tree, 0, 'contextWindow').props.value, '1000000', 'a capacity is edited as what it resolves to')
+  assert.equal(inputOf(tree, 1, 'maxTokens').props.value, '131072')
+
+  // Off is offered only where the route declares it, and its wire box only opens
+  // then — an unoffered level cannot carry a value the relay would never get.
+  const effort = (index, level, attribute) => find(
+    tree,
+    (node) => node.type === 'input'
+      && node.props[attribute] === level
+      && node.props['data-model'] === String(index),
+  )
+  assert.equal(effort(0, 'off', 'data-effort').props.checked, true)
+  assert.equal(effort(1, 'off', 'data-effort').props.checked, false, 'glm-5.3 always thinks')
+  assert.equal(effort(1, 'off', 'data-wire').props.disabled, true)
+  assert.equal(effort(0, 'xhigh', 'data-wire').props.value, 'xhigh', 'the wire spelling is editable, not implied')
+
+  const modality = (index, name) => find(
+    tree,
+    (node) => node.type === 'input'
+      && node.props['data-modality'] === name
+      && node.props['data-model'] === String(index),
+  )
+  assert.equal(modality(0, 'image').props.checked, true)
+  assert.equal(modality(1, 'image').props.checked, false, 'a model declaring no modalities claims none')
+})
+
+test('update merges the relay’s listing and seeds only the new models with the defaults', async () => {
+  const { exports } = loadBundle()
+  const asked = []
+  const operations = {
+    discover: (request) => {
+      asked.push(request)
+      return Promise.resolve({ ok: true, models: [{ id: 'claude-opus-5' }, { id: 'gpt-6-astra' }] })
+    },
+    // The card is wired with both faces; a merge that cannot be saved would be a
+    // dead end, so 更新 is offered only alongside the ability to write.
+    write: () => Promise.resolve({ ok: true, revision: 8 }),
+  }
+  const tree = await renderList(exports, stubRouteScope(), operations)
+  await act(async () => {
+    actionOf(tree, 'refresh').props.onClick()
+  })
+
+  assert.deepEqual(
+    asked,
+    [{ provider: 'agentrouter', baseURL: SENTINEL_BASE_URL, api: 'openai-completions' }],
+    'the probe names the route and the endpoint the route resolves to',
+  )
+  assert.deepEqual(
+    tree.root.findAll((node) => node.type === 'li').map((node) => node.props['data-model-id']),
+    ['claude-opus-5', 'glm-5.3', 'gpt-6-astra'],
+    'a listed model is kept once, a missing one is appended — never a wholesale replace',
+  )
+  assert.equal(inputOf(tree, 2, 'contextWindow').props.value, '1048576', 'a discovered model starts from the documented defaults')
+  assert.equal(inputOf(tree, 2, 'maxTokens').props.value, '131072')
+  assert.equal(inputOf(tree, 0, 'contextWindow').props.value, '1000000', 'an existing model keeps what it had')
+  assert.equal(
+    find(tree, (node) => node.type === 'input' && node.props['data-effort'] === 'xhigh' && node.props['data-model'] === '2').props.checked,
+    true,
+    'every level is offered by default',
+  )
+  assert.deepEqual(statusOf(tree), { kind: 'info', text: 'refreshAdded(2,1)' })
+})
+
+test('saving writes the drafted list as the route’s models, fenced by the revision it read', async () => {
+  const { exports } = loadBundle()
+  const settings = stubSettings()
+  const operations = {
+    discover: () => Promise.resolve({ ok: true, models: [{ id: 'gpt-6-astra' }] }),
+    write: (ops, revision) => settings.mutate('llm-pi-ai', ops, revision).then(
+      (response) => (response.ok
+        ? { ok: true, revision: response.value.revision }
+        : { ok: false, code: response.error.code, message: response.error.message }),
+    ),
+  }
+  const tree = await renderList(exports, stubRouteScope(), operations)
+  await act(async () => {
+    actionOf(tree, 'refresh').props.onClick()
+  })
+  await act(async () => {
+    inputOf(tree, 0, 'contextWindow').props.onChange({ target: { value: '4096' } })
+  })
+  await act(async () => {
+    find(tree, (node) => node.type === 'input' && node.props['data-modality'] === 'image' && node.props['data-model'] === '0')
+      .props.onChange()
+  })
+  await act(async () => {
+    actionOf(tree, 'save').props.onClick()
+  })
+
+  assert.equal(settings.calls.length, 1, 'one atomic write for the whole list')
+  const call = settings.calls[0]
+  assert.equal(call.ns, 'llm-pi-ai', 'the list lives on the adapter’s route, not in this plugin’s namespace')
+  assert.deepEqual(call.ops.map((op) => [op.op, op.path]), [['set', ['providers', 'agentrouter', 'models']]])
+  assert.equal(call.revision, 7, 'the write is fenced by the revision the draft was opened at')
+  const models = modelsOfWrite(call)
+  assert.deepEqual(models.map((model) => model.id), ['claude-opus-5', 'glm-5.3', 'gpt-6-astra'])
+  assert.equal(models[0].contextWindow, 4096, 'an edited capacity is written as a number')
+  assert.deepEqual(models[0].input, ['text'], 'an unchecked modality is dropped')
+  assert.deepEqual(models[1].reasoningEfforts, { low: 'low', high: 'high', max: 'max' }, 'an untouched model is written exactly as it stood')
+  assert.deepEqual(models[2], {
+    id: 'gpt-6-astra',
+    name: 'gpt-6-astra',
+    contextWindow: 1048576,
+    maxTokens: 131072,
+    input: ['text', 'image'],
+    reasoningEfforts: { off: null, minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
+  }, 'a discovered model carries the documented defaults, with `off` sending nothing')
+  assert.deepEqual(statusOf(tree), { kind: 'info', text: 'saveDone' })
+})
+
+test('a draft the adapter would refuse never reaches the Host', async () => {
+  const { exports } = loadBundle()
+  const written = []
+  const operations = {
+    write: (ops, revision) => {
+      written.push({ ops, revision })
+      return Promise.resolve({ ok: true, revision: 9 })
+    },
+  }
+  const tree = await renderList(exports, stubRouteScope(), operations)
+  const save = async () => {
+    await act(async () => {
+      actionOf(tree, 'save').props.onClick()
+    })
+  }
+
+  await act(async () => {
+    inputOf(tree, 1, 'id').props.onChange({ target: { value: '' } })
+  })
+  await save()
+  assert.deepEqual(written, [], 'an empty id is refused before the wire')
+  assert.deepEqual(statusOf(tree), { kind: 'error', text: 'invalidId(2)' })
+
+  await act(async () => {
+    inputOf(tree, 1, 'id').props.onChange({ target: { value: 'claude-opus-5' } })
+  })
+  await save()
+  assert.deepEqual(written, [])
+  assert.deepEqual(statusOf(tree), { kind: 'error', text: 'invalidDuplicate(claude-opus-5)' })
+
+  await act(async () => {
+    inputOf(tree, 1, 'id').props.onChange({ target: { value: 'glm-5.3' } })
+    inputOf(tree, 1, 'contextWindow').props.onChange({ target: { value: '-1' } })
+  })
+  await save()
+  assert.deepEqual(written, [], 'a capacity the schema would refuse is caught here')
+  assert.deepEqual(statusOf(tree), { kind: 'error', text: 'invalidNumber(2,fieldContext)' })
+
+  await act(async () => {
+    inputOf(tree, 1, 'contextWindow').props.onChange({ target: { value: '1000000' } })
+    find(tree, (node) => node.type === 'input' && node.props['data-effort'] === 'medium' && node.props['data-model'] === '1')
+      .props.onChange()
+  })
+  await save()
+  assert.deepEqual(written, [], 'an offered level with no wire value is caught here')
+  assert.deepEqual(statusOf(tree), { kind: 'error', text: 'invalidEffort(2,medium)' })
+})
+
+test('a refused write keeps the draft and shows the Host’s own diagnostic', async () => {
+  const { exports } = loadBundle()
+  const operations = {
+    write: () => Promise.resolve({ ok: false, code: 'settings/refused', message: 'agentrouter: model "x" declares no protocol' }),
+  }
+  const tree = await renderList(exports, stubRouteScope(), operations)
+  await act(async () => {
+    inputOf(tree, 0, 'name').props.onChange({ target: { value: 'Renamed' } })
+  })
+  await act(async () => {
+    actionOf(tree, 'save').props.onClick()
+  })
+  assert.deepEqual(
+    statusOf(tree),
+    { kind: 'error', text: 'saveFailed(agentrouter: model "x" declares no protocol)' },
+    'the adapter’s own refusal is what the user reads',
+  )
+  assert.equal(inputOf(tree, 0, 'name').props.value, 'Renamed', 'a refused draft is not thrown away')
+})
+
+test('a stale revision reads as a conflict rather than a generic refusal', async () => {
+  const { exports } = loadBundle()
+  const operations = {
+    write: () => Promise.resolve({ ok: false, code: 'settings/conflict', message: 'revision 9 stands' }),
+  }
+  const tree = await renderList(exports, stubRouteScope(), operations)
+  await act(async () => {
+    inputOf(tree, 0, 'name').props.onChange({ target: { value: 'Renamed' } })
+  })
+  await act(async () => {
+    actionOf(tree, 'save').props.onClick()
+  })
+  assert.deepEqual(statusOf(tree), { kind: 'error', text: 'saveConflict(revision 9 stands)' })
+})
+
+test('reset removes a user-owned list, and otherwise only drops the draft', async () => {
+  const { exports } = loadBundle()
+  const written = []
+  const operations = {
+    write: (ops, revision) => {
+      written.push({ ops, revision })
+      return Promise.resolve({ ok: true, revision: 12 })
+    },
+  }
+
+  // The user layer owns the list: reset clears that override so the composition
+  // (the bundle patch's hand-declared models) serves again. The route dict holds
+  // nothing but `models`, so removing the list would leave it empty — and a reset
+  // that leaves an empty dict behind keeps the route looking user-owned.
+  const owned = await renderList(
+    exports,
+    stubRouteScope({ user: { providers: { agentrouter: { models: [{ id: 'glm-5.3' }] } } } }),
+    operations,
+  )
+  await act(async () => {
+    actionOf(owned, 'reset').props.onClick()
+  })
+  assert.deepEqual(written, [{
+    ops: [
+      { op: 'unset', path: ['providers', 'agentrouter', 'models'] },
+      { op: 'unset', path: ['providers', 'agentrouter'] },
+      { op: 'unset', path: ['providers'] },
+    ],
+    revision: 7,
+  }])
+  assert.deepEqual(statusOf(owned), { kind: 'info', text: 'resetDone' })
+
+  // A sibling the user set through another surface keeps its ancestor alive.
+  const shared = await renderList(
+    exports,
+    stubRouteScope({
+      user: { providers: { agentrouter: { models: [{ id: 'glm-5.3' }], maxTokens: 4096 } } },
+    }),
+    operations,
+  )
+  await act(async () => {
+    actionOf(shared, 'reset').props.onClick()
+  })
+  assert.deepEqual(
+    written.at(-1).ops,
+    [{ op: 'unset', path: ['providers', 'agentrouter', 'models'] }],
+    'an ancestor holding another field is never removed',
+  )
+
+  // No stored override: there is nothing to unset, so a draft is simply dropped.
+  const drafted = await renderList(exports, stubRouteScope(), operations)
+  assert.equal(actionOf(drafted, 'reset').props.disabled, true, 'nothing to reset before an edit')
+  await act(async () => {
+    inputOf(drafted, 0, 'name').props.onChange({ target: { value: 'Renamed' } })
+  })
+  assert.equal(actionOf(drafted, 'reset').props.disabled, false, 'a draft is resettable without any stored override')
+  const before = written.length
+  await act(async () => {
+    actionOf(drafted, 'reset').props.onClick()
+  })
+  assert.equal(written.length, before, 'dropping a draft writes nothing')
+  assert.equal(inputOf(drafted, 0, 'name').props.value, 'Claude Opus 5', 'the dropped draft re-reads the section')
+})
+
+test('an unwritable or unreadable route section offers no edit, probe, or write', async () => {
+  const { exports } = loadBundle()
+  const written = []
+  let probed = 0
+  const operations = {
+    discover: () => {
+      probed += 1
+      return Promise.resolve({ ok: true, models: [{ id: 'gpt-6-astra' }] })
+    },
+    write: (ops, revision) => {
+      written.push({ ops, revision })
+      return Promise.resolve({ ok: true, revision: 8 })
+    },
+  }
+  for (const snapshot of [{ writable: false }, { status: 'unavailable', value: undefined }, { status: 'loading', value: undefined }]) {
+    const where = JSON.stringify(snapshot)
+    const tree = await renderList(exports, stubRouteScope({ models: [], snapshot }), operations)
+    for (const name of ['refresh', 'save', 'add']) {
+      assert.equal(actionOf(tree, name).props.disabled, true, `${where} must not offer ${name}`)
+    }
+    await act(async () => {
+      actionOf(tree, 'refresh').props.onClick()
+      actionOf(tree, 'save').props.onClick()
+      actionOf(tree, 'add').props.onClick()
+    })
+    assert.equal(probed, 0, `${where} must not probe the relay`)
+    assert.deepEqual(written, [], `${where} must write nothing`)
+  }
+
+  // Disabled chrome is a hint; naming the reason is what the card owes the user.
+  const readOnly = await renderList(exports, stubRouteScope({ snapshot: { writable: false } }), operations)
+  const hints = readOnly.root
+    .findAll((node) => node.type === 'p' && node.props.className === 'dshAr_lead')
+    .map((node) => node.props.children)
+  assert.ok(hints.includes('readOnlyModels'), 'a read-only deployment is named, not silently inert')
+})
+
+test('without the LLM Remote the probe is unavailable and says so, while editing still works', async () => {
+  const { exports } = loadBundle()
+  const written = []
+  const operations = {
+    write: (ops, revision) => {
+      written.push({ ops, revision })
+      return Promise.resolve({ ok: true, revision: 9 })
+    },
+  }
+  const tree = await renderList(exports, stubRouteScope(), operations)
+  assert.equal(actionOf(tree, 'refresh').props.disabled, true)
+  const hints = tree.root
+    .findAll((node) => node.type === 'p' && node.props.className === 'dshAr_lead')
+    .map((node) => node.props.children)
+  assert.ok(hints.includes('refreshUnavailable'), 'the missing capability is named')
+
+  await act(async () => {
+    inputOf(tree, 0, 'name').props.onChange({ target: { value: 'Renamed' } })
+  })
+  await act(async () => {
+    actionOf(tree, 'save').props.onClick()
+  })
+  assert.equal(written.length, 1, 'the write face is independent of the probe face')
+})
+
+test('apply binds the adapter namespace and unwraps the Remote results the card consumes', async () => {
+  const llm = stubLlm([{ id: 'gpt-6-astra' }])
+  const settings = stubSettings({ ok: false, error: { code: 'settings/conflict', message: 'stale revision' } })
+  const scope = stubScope()
+  const routeScope = stubRouteScope()
+  const { registrations } = applyBundle({ scope, routeScope, llm, settings })
+
+  const card = registrations.find((entry) => entry.options.name === ITEM_SLOT)
+  const injected = card.options.inject()
+  assert.equal(injected.scope, scope, 'the endpoint switch keeps its own namespace')
+  assert.equal(injected.routeScope, routeScope, 'the model list reads the adapter’s namespace')
+  assert.equal(injected.operations.available(), true, 'the probe face is reported present')
+
+  const found = await injected.operations.discover({ provider: 'agentrouter', baseURL: SENTINEL_BASE_URL })
+  assert.deepEqual(found, { ok: true, models: [{ id: 'gpt-6-astra' }] }, 'a Remote success becomes the card’s own outcome shape')
+  assert.deepEqual(llm.calls, [{ ns: 'llm-pi-ai', request: { provider: 'agentrouter', baseURL: SENTINEL_BASE_URL } }])
+
+  const refused = await injected.operations.write([{ op: 'unset', path: ['providers', 'agentrouter', 'models'] }], 7)
+  assert.deepEqual(refused, { ok: false, code: 'settings/conflict', message: 'stale revision' }, 'a Remote refusal keeps its code')
+  assert.deepEqual(settings.calls.map((call) => call.ns), ['llm-pi-ai'])
+})
+
+test('a runtime without the optional Remotes still mounts the card', async () => {
+  // The two Host faces are optional reads, so their absence must not trip the
+  // inject guard and take the whole plugin off the page — and a click in that
+  // state answers with a reason instead of throwing.
+  const { registrations } = applyBundle({ scope: stubScope(), routeScope: stubRouteScope() })
+  const card = registrations.find((entry) => entry.options.name === ITEM_SLOT)
+  const injected = card.options.inject()
+  assert.equal(injected.operations.available(), false)
+  assert.deepEqual(
+    await injected.operations.discover({}),
+    { ok: false, message: 'settings.agentrouter:refreshUnavailable' },
+  )
+  assert.deepEqual(
+    await injected.operations.write([], 1),
+    { ok: false, code: 'settings/unavailable', message: 'settings.agentrouter:readOnlyModels' },
+  )
+})
+
+test('a Remote face that mounts after activation turns 更新 on without a reload', async () => {
+  // The namespaces install asynchronously, so a face captured at activation could
+  // read as absent for the whole session; the card must pick it up when it lands.
+  const { exports } = loadBundle()
+  const routeScope = stubRouteScope()
+  const context = stubContext({ scope: stubScope(), routeScope })
+  exports.apply(context.ctx)
+  const card = context.registrations.find((entry) => entry.options.name === ITEM_SLOT)
+  const injected = card.options.inject()
+  assert.equal(injected.operations.available(), false, 'nothing is mounted yet')
+
+  let tree
+  await act(async () => {
+    tree = create(createElement(exports.ModelList, {
+      routeScope,
+      operations: injected.operations,
+      t: stubT,
+    }))
+  })
+  assert.equal(actionOf(tree, 'refresh').props.disabled, true, 'no probe face, no probe')
+
+  await act(async () => {
+    context.provide('remote.llm', stubLlm([{ id: 'gpt-6-astra' }]))
+  })
+  assert.equal(actionOf(tree, 'refresh').props.disabled, false, 'the announcement re-renders into the new capability')
+  await act(async () => {
+    actionOf(tree, 'refresh').props.onClick()
+  })
+  assert.deepEqual(
+    tree.root.findAll((node) => node.type === 'li').map((node) => node.props['data-model-id']),
+    ['claude-opus-5', 'glm-5.3', 'gpt-6-astra'],
+    'the probe works once its face arrives',
+  )
+})
+
+test('the card renders the model list under the endpoint choices when the route scope is injected', async () => {
+  const { exports } = loadBundle()
+  const routeScope = stubRouteScope()
+  let tree
+  await act(async () => {
+    tree = create(createElement(exports.EndpointCard, {
+      scope: stubScope(),
+      t: stubT,
+      routeScope,
+      operations: { write: () => Promise.resolve({ ok: true, revision: 8 }) },
+    }))
+  })
+  assert.equal(choicesOf(tree).size, 2, 'the endpoint switch is unchanged by the new section')
+  assert.ok(rowOf_(tree, 'claude-opus-5') !== undefined, 'the route’s models are listed in the same tab')
+
+  // A card rendered without the route scope (an older caller) shows only the switch.
+  const legacy = await renderCard(exports, stubScope())
+  assert.deepEqual(
+    legacy.root.findAll((node) => node.props['data-model-list'] !== undefined),
+    [],
+    'the model list is additive, never a precondition for the endpoint switch',
+  )
+})
+
+test('the inject guard every other case relies on really throws', () => {
+  // A guard that stopped guarding would make the whole file pass while a real
+  // page break (reading an undeclared service) went unnoticed, so the gate gets
+  // its own counter-example.
+  const { ctx } = stubContext({ scope: stubScope(), routeScope: stubRouteScope() })
+  assert.throws(() => ctx.remote, /cannot get property "remote" without inject/)
+  assert.throws(() => ctx.llm, /cannot get property "llm" without inject/)
+  assert.equal(ctx.get('remote.llm'), undefined, 'the optional read the card uses stays legal')
 })

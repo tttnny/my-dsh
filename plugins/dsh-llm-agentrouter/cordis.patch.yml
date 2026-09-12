@@ -5,7 +5,7 @@
 # row below overrides the dormant zero-route entry dsh-base mounts.
 #
 # WHY ONE ROUTE AND NOT TWO
-# The relay serves the same three models at a domestic and an international
+# The relay serves the same models at a domestic and an international
 # endpoint; only the origin differs. Declaring a route per endpoint put every
 # model in the picker twice and made "which endpoint" a choice the user had to
 # re-make on every model switch. It is not a model property — it is one
@@ -30,16 +30,26 @@
 # both endpoints because it is one relay account.
 #
 # MODEL CATALOG
-# pi-ai's installed catalog describes all three models, but under their vendor
+# This list is the COMPOSITION layer: what the route serves until the user layer
+# overrides it. The plugin's settings card (设置 → API中转 → AgentRouter 中转站)
+# edits the route's own `models` — the same document the kernel's Models page
+# writes — and its 重置 action removes that override, which is when the list
+# below serves again. Treat these entries as the reset baseline and the probe
+# record, not as the only way to add a model.
+#
+# pi-ai's installed catalog describes these models, but under their vendor
 # providers (`anthropic`, `openai`) and other protocols — Opus via
 # anthropic-messages, gpt-5.6-sol via openai-responses. A hand-declared route
 # inherits nothing, so capacities, reasoning levels, and compat switches are
 # restated here from that catalog, adjusted for Chat Completions.
 #
 # `reasoningEfforts` keys are the levels the picker offers; each value is the
-# wire spelling sent as `reasoning_effort`. All three models were probed against
-# the live relay: every level below answered 200. `off:` (declared, no value)
-# offers Off and sends nothing, which is what an OpenAI-shaped endpoint wants.
+# wire spelling sent as `reasoning_effort`. Every model below was probed against
+# the live relay: every level it declares answered 200. `off:` (declared, no
+# value) offers Off and sends nothing, which is what an OpenAI-shaped endpoint
+# wants. A model the card discovers starts instead from generic defaults — see
+# `NEW_MODEL` in lib/client.js — so these hand-probed declarations stay the more
+# accurate ones for a model that is already listed.
 # WHY THE PICKER SAYS NOTHING ABOUT THE ENDPOINT
 # The model picker renders no child slots, so a plugin cannot inject anything
 # into that menu; per group it shows only `displayName`, and per model only the
