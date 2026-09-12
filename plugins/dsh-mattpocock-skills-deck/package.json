@@ -7,7 +7,7 @@
     "directory": "plugins/dsh-mattpocock-skills-deck"
   },
   "private": true,
-  "description": "开发壳（不发布）：构建与门禁入口。发布物清单见 package/package.json。上游 verify 链同步自 FeatherHunter/dsh-mattpocock-skills-deck v1.7.14，剔除 bundled 三项，追加分叉门禁 verify-fork-preset-fold 与 verify-preset-registry-gate。",
+  "description": "开发壳（不发布）：构建与门禁入口。发布物清单见 package/package.json。verify 链含 preset 技能根识别与会话门控两项门禁（verify-fork-preset-fold、verify-preset-registry-gate）。",
   "scripts": {
     "build": "node scripts/build.mjs",
     "prepare": "node scripts/build.mjs",

@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-llm-agentrouter",
   "version": "0.3.0",
-  "description": "AgentRouter 中转聚合：一条 pi-ai 路由承载多模型（设置卡片内可从中转站拉取、逐个编辑模型与参数）+ 国内/国际端点一键切换 + 出站请求 User-Agent/402-配额改写围栏。aqiu817/dsh-llm-agentrouter 分叉，适配 0.1.2-alpha.5 起新 settings/slots API，已在 0.1.5-rc.1 逐项实证兼容。",
+  "description": "AgentRouter 中转聚合：一条 pi-ai 路由承载多模型（设置卡片内可从中转站拉取、逐个编辑模型与参数）+ 国内/国际端点一键切换 + 出站请求 User-Agent/402-配额改写围栏。适配 0.1.2-alpha.5 起新 settings/slots API，已在 0.1.5-rc.1 逐项实证兼容。",
   "keywords": [
     "deepseek-harness",
     "dsh-plugin",

@@ -1,16 +1,16 @@
 # @lynn123411/dsh-mattpocock-skills-deck
 
-> 基于 [FeatherHunter/dsh-mattpocock-skills-deck](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck) v1.7.12 的**分叉（fork）**：Matt Pocock 技能套件（[mattpocock/skills](https://github.com/mattpocock/skills)）的 DSH 控制面板（Deck）——把 wayfinder 地图/票务/进度、triage / grilling / handoff 等动作注入 DSH 侧栏。分叉动机：本合集通过 **agent-preset** 分发技能（`presets/matt-*/skills/`，随会话所选 preset 生效），原插件只探测四个标准技能根、看不到 preset 目录里的技能（红条「未检测到核心技能套件」）；本分叉把「识别 preset 技能根 + 按会话生效 preset 门控」做进源码，替代此前 `patches/dsh-mattpocock-skills-deck` 补丁脚本。上游原版说明文档见 [上游仓库 README](https://github.com/FeatherHunter/dsh-mattpocock-skills-deck#readme)（本包内不再附带 docs/，避免 npm 页死链）。
+> Matt Pocock 技能套件（[mattpocock/skills](https://github.com/mattpocock/skills)）的 DSH 控制面板（Deck）：把 wayfinder 地图 / 票务 / 进度与 triage / grilling / handoff 动作注入右侧栏；技能判装识别 agent-preset 技能根，并按会话当前生效的 preset 门控。
 
 ## 特性
 
-- **控制面板（Deck）**：右侧栏（0.1.5-rc.1 起官方槽位名为 `rightbar`，旧名 `details`）注入地图列表 / 票务详情 / 进度契约 / triage 与 grilling 动作按钮 / handoff 交接，支持 GitHub / GitLab / Markdown 三种 issue 后端（数据链路见上游文档，本分叉未改动交互层）。
+- **控制面板（Deck）**：右侧栏（0.1.5-rc.1 起官方槽位名为 `rightbar`，旧名 `details`）注入地图列表 / 票务详情 / 进度契约 / triage 与 grilling 动作按钮 / handoff 交接，支持 GitHub / GitLab / Markdown 三种 issue 后端。
 - **环境检查链（wf.chain）识别 agent-preset 技能根**（`#preset-skill-roots`）：技能判装在四个标准根（`~/.agents/skills`、`~/.dsh/skills`、项目 `.dsh/skills`、项目 `.agents/skills`）之外，追加本合集 preset 的 `~/.dsh/.agent-presets/<id>/skills/<skill>` 候选（FS 服务与插件只读直读双通道；仍需 `SKILL.md` frontmatter `name` 精确匹配才算已安装）。
 - **按会话 preset 门控**（`#preset-session-gating`）：preset 技能只有随**当前会话所选 preset** 分发时才算「已安装」——会话没选 Matt 相关 preset（如内置 `standard`、`ptc-cordis`）时，环境检查如实显示技能未装，不再虚报「环境 10/10」。生效 preset 经 `agentPreset` 会话投影（创建 header 兜底）解析；解析不到会话上下文时回退「枚举全部 preset 目录」的宽松口径（宁绿勿误报）。
 - **链缓存按会话隔离**：服务端与客户端的环境检查链缓存键均加入 preset / 会话维度，同一工作区里不同 preset 的会话不互串链结果。
-- **不随包捆绑技能（与上游差异）**：移除上游 v1.7.12 新增的 `package/bundled-skills` 及向宿主 `skills` 服务全局注册的兜底 provider——它会让所有会话恒判「技能已装」，与按 preset 分发、按会话门控的模型冲突。
-- **输入框上方只留胶囊、默认隐藏（与上游差异 · 用户拍板 2026-09-04）**：`conversation.input.dock` 槽位的横幅整族（后端未选 gate 蓝条 / 正在探测后端 / gh CLI 缺失 / gh 未登录 / 未初始化 / 技能缺失黄条，连同 setupPick 卡片与 status 源 gate 弹窗）代码级移除、任何状态永不渲染；胶囊状态栏出厂默认隐藏（`statusbarHidden` 默认 `true`），仅面板眼睛按钮在**当前会话内**切换显隐，刷新 / 新会话回默认隐藏、不做持久化。后端选择 / 环境补齐引导一律走右侧面板（Checks / Settings 页）；dock 槽位保持挂载，预填输入框与交接两击等注入链路零损失。
-- **完整上游工程链路**：`src/`（真源）→ `node scripts/build.mjs` 双形态产物（dev `client.js`/`host.js` + 发布物 `package/lib/`）、`npm run verify` 40+ 门禁、`npm run test:smoke`；构建末尾自动同步发布物到本机 `~/.dsh/profiles/web/node_modules/@lynn123411/dsh-mattpocock-skills-deck/` 并做 hash 校验。
+- **不随包捆绑技能**：移除 `package/bundled-skills` 及向宿主 `skills` 服务全局注册的兜底 provider——它会让所有会话恒判「技能已装」，与按 preset 分发、按会话门控的模型冲突。
+- **输入框上方只留胶囊、默认隐藏**：`conversation.input.dock` 槽位的横幅整族（后端未选 gate 蓝条 / 正在探测后端 / gh CLI 缺失 / gh 未登录 / 未初始化 / 技能缺失黄条，连同 setupPick 卡片与 status 源 gate 弹窗）代码级移除、任何状态永不渲染；胶囊状态栏出厂默认隐藏（`statusbarHidden` 默认 `true`），仅面板眼睛按钮在**当前会话内**切换显隐，刷新 / 新会话回默认隐藏、不做持久化。后端选择 / 环境补齐引导一律走右侧面板（Checks / Settings 页）；dock 槽位保持挂载，预填输入框与交接两击等注入链路零损失。
+- **完整工程链路**：`src/`（真源）→ `node scripts/build.mjs` 双形态产物（dev `client.js`/`host.js` + 发布物 `package/lib/`）、`npm run verify` 40+ 门禁、`npm run test:smoke`；构建末尾自动同步发布物到本机 `~/.dsh/profiles/web/node_modules/@lynn123411/dsh-mattpocock-skills-deck/` 并做 hash 校验。
 
 ## 安装
 
