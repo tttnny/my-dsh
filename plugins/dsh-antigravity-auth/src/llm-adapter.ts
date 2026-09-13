@@ -1248,14 +1248,18 @@ function contextWindowExceededError(status?: number): LlmError {
 
 function parseUsage(value: unknown): TokenUsage | undefined {
   if (!isRecord(value)) return undefined
-  const input = numberValue(value.promptTokenCount ?? value.inputTokenCount)
+  // `promptTokenCount` folds cache hits into one prompt total, while TokenUsage
+  // counts stay disjoint: `inputTokens` must exclude the cached portion.
+  const prompt = numberValue(value.promptTokenCount ?? value.inputTokenCount)
   const output = numberValue(value.candidatesTokenCount ?? value.outputTokenCount)
   const reasoning = numberValue(value.thoughtsTokenCount ?? value.reasoningTokenCount)
   const cached = numberValue(value.cachedContentTokenCount ?? value.cacheReadTokens)
-  if (input === undefined && output === undefined && reasoning === undefined && cached === undefined) return undefined
+  if (prompt === undefined && output === undefined && reasoning === undefined && cached === undefined) return undefined
+  const total = numberValue(value.totalTokenCount ?? value.total_tokens)
   return {
-    inputTokens: input ?? 0,
+    inputTokens: Math.max(0, (prompt ?? 0) - (cached ?? 0)),
     outputTokens: output ?? 0,
+    ...(total === undefined ? {} : { totalTokens: total }),
     ...(cached === undefined ? {} : { cacheReadTokens: cached }),
     ...(reasoning === undefined ? {} : { reasoningTokens: reasoning }),
   }

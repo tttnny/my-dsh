@@ -69,6 +69,36 @@ describe('Antigravity LLM adapter', () => {
     if (finish?.type === 'finish') expect(finish.replayState).toMatchObject({ response: { provider: ANTIGRAVITY_PROVIDER }, blocks: [{ kind: 'text', signature: 'provider-sig' }] })
   })
 
+  it('keeps reported usage counts disjoint when the prompt total already folds cache hits in', async () => {
+    const transport = {
+      request: vi.fn(async () => new Response(
+        'data: {"response":{"parts":[{"text":"hello"}]}}\n\n'
+        + 'data: {"response":{"usageMetadata":{"promptTokenCount":200000,"cachedContentTokenCount":195000,"candidatesTokenCount":300,"thoughtsTokenCount":120,"totalTokenCount":200300},"finishReason":"STOP"}}\n\n'
+        + 'data: [DONE]\n\n',
+      )),
+    }
+    const adapter = new AntigravityAdapter({ auth: { credential: vi.fn(async () => credential('access')) }, transport })
+    const chunks: StreamChunk[] = []
+    for await (const chunk of adapter.stream(options())) chunks.push(chunk)
+    expect(chunks).toContainEqual({
+      type: 'usage',
+      usage: { inputTokens: 5000, outputTokens: 300, totalTokens: 200300, cacheReadTokens: 195000, reasoningTokens: 120 },
+    })
+  })
+
+  it('clamps the uncached input count when a frame reports more cached than prompt tokens', async () => {
+    const transport = {
+      request: vi.fn(async () => new Response(
+        'data: {"response":{"usageMetadata":{"promptTokenCount":10,"cachedContentTokenCount":40,"candidatesTokenCount":3},"finishReason":"STOP"}}\n\n'
+        + 'data: [DONE]\n\n',
+      )),
+    }
+    const adapter = new AntigravityAdapter({ auth: { credential: vi.fn(async () => credential('access')) }, transport })
+    const chunks: StreamChunk[] = []
+    for await (const chunk of adapter.stream(options())) chunks.push(chunk)
+    expect(chunks).toContainEqual({ type: 'usage', usage: { inputTokens: 0, outputTokens: 3, cacheReadTokens: 40 } })
+  })
+
   it('drains the Gemini 3.8 stream after a terminal event instead of cancelling the live body early', async () => {
     const encoder = new TextEncoder()
     let cancelled = false
