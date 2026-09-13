@@ -130,6 +130,7 @@ var A6ApiStore = class {
               return { ...m, probeStatus: "probing" };
             }
             if (local.lastProbedAt && nowMs - local.lastProbedAt < PROBE_RESULT_GUARD_MS) {
+              const routedNewer = (m.lastRoutedAt ?? 0) > (local.lastRoutedAt ?? 0);
               return {
                 ...m,
                 merchant: local.merchant,
@@ -137,9 +138,8 @@ var A6ApiStore = class {
                 probeError: local.probeError,
                 probeLatencyMs: local.probeLatencyMs,
                 lastProbedAt: local.lastProbedAt,
-                // 探测请求本身会写路由日志，本地乐观时效不早于旧快照，优先保留
-                lastRoutedAt: local.lastRoutedAt ?? m.lastRoutedAt,
-                lastRoutedText: local.lastRoutedText ?? m.lastRoutedText
+                lastRoutedAt: routedNewer ? m.lastRoutedAt : local.lastRoutedAt ?? m.lastRoutedAt,
+                lastRoutedText: routedNewer ? m.lastRoutedText : local.lastRoutedText ?? m.lastRoutedText
               };
             }
             if (this.state.probeAllActive && snapshot && snapshot.includes(m.model_name) && !this.probeAllDone.has(m.model_name)) {
@@ -455,7 +455,7 @@ var A6ApiStore = class {
         this.state.probeAllDoneCount = this.probeAllDone.size;
       }
       this.notify();
-      this.refreshBalance().catch(() => {
+      this.fetchState().catch(() => {
       });
     }
   }
