@@ -152,6 +152,10 @@ class A6ApiStore {
               return { ...m, probeStatus: 'probing' as const };
             }
             if (local.lastProbedAt && nowMs - local.lastProbedAt < PROBE_RESULT_GUARD_MS) {
+              // 路由时效取「更新的一侧」：本地乐观值只在捕获到商户时写入，失败/未捕获路径
+              // 的 local 携带的是上一旧快照的过期值，local 优先会压制探测完成后立即补拉的
+              // 新权威值；服务端无值或更旧（在途旧快照）时仍以本地为准，不打回。
+              const routedNewer = (m.lastRoutedAt ?? 0) > (local.lastRoutedAt ?? 0);
               return {
                 ...m,
                 merchant: local.merchant,
@@ -159,9 +163,8 @@ class A6ApiStore {
                 probeError: local.probeError,
                 probeLatencyMs: local.probeLatencyMs,
                 lastProbedAt: local.lastProbedAt,
-                // 探测请求本身会写路由日志，本地乐观时效不早于旧快照，优先保留
-                lastRoutedAt: local.lastRoutedAt ?? m.lastRoutedAt,
-                lastRoutedText: local.lastRoutedText ?? m.lastRoutedText,
+                lastRoutedAt: routedNewer ? m.lastRoutedAt : (local.lastRoutedAt ?? m.lastRoutedAt),
+                lastRoutedText: routedNewer ? m.lastRoutedText : (local.lastRoutedText ?? m.lastRoutedText),
               };
             }
             if (
@@ -515,7 +518,12 @@ class A6ApiStore {
         this.state.probeAllDoneCount = this.probeAllDone.size;
       }
       this.notify();
-      this.refreshBalance().catch(() => {});
+      // 任意探测完成路径（成功/失败/全量批内）立即补拉一次权威状态：服务端 /probe 已
+      // stateMemo.invalidate()，非 force 重拉秒级以新日志重建——「个人最近」等客户端
+      // 乐观写不覆盖的字段（成功未捕获商户、失败但请求已到达网关）当场刷新；
+      // 未到达网关的失败无新日志，停留旧值即真实状态。/state 响应本就含余额与
+      // 最近日志，替代原先只做单项刷新的 refreshBalance。
+      this.fetchState().catch(() => {});
     }
   }
 
