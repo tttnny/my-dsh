@@ -1032,14 +1032,16 @@ function contextWindowExceededError(status) {
 }
 function parseUsage(value) {
 	if (!isRecord(value)) return void 0;
-	const input = numberValue(value.promptTokenCount ?? value.inputTokenCount);
+	const prompt = numberValue(value.promptTokenCount ?? value.inputTokenCount);
 	const output = numberValue(value.candidatesTokenCount ?? value.outputTokenCount);
 	const reasoning = numberValue(value.thoughtsTokenCount ?? value.reasoningTokenCount);
 	const cached = numberValue(value.cachedContentTokenCount ?? value.cacheReadTokens);
-	if (input === void 0 && output === void 0 && reasoning === void 0 && cached === void 0) return void 0;
+	if (prompt === void 0 && output === void 0 && reasoning === void 0 && cached === void 0) return void 0;
+	const total = numberValue(value.totalTokenCount ?? value.total_tokens);
 	return {
-		inputTokens: input ?? 0,
+		inputTokens: Math.max(0, (prompt ?? 0) - (cached ?? 0)),
 		outputTokens: output ?? 0,
+		...total === void 0 ? {} : { totalTokens: total },
 		...cached === void 0 ? {} : { cacheReadTokens: cached },
 		...reasoning === void 0 ? {} : { reasoningTokens: reasoning }
 	};

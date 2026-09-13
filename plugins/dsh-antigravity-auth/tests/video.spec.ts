@@ -36,4 +36,20 @@ describe('gated video understanding POC', () => {
     expect(result).toEqual({ text: 'frame fact', usage: { inputTokens: 2, outputTokens: 3 } })
     expect(JSON.stringify(result)).not.toContain('clip.mp4')
   })
+
+  it('keeps cache hits out of the uncached input count and preserves the provider total', async () => {
+    const tool = createAntigravityVideoTools(options({
+      settings: () => ({ enabled: true, model: 'antigravity-gemini-3.7-flash' }),
+      transport: {
+        request: vi.fn(async () => new Response(JSON.stringify({
+          response: {
+            parts: [{ text: 'frame fact' }],
+            usageMetadata: { promptTokenCount: 1200, cachedContentTokenCount: 1000, candidatesTokenCount: 40, totalTokenCount: 1240 },
+          },
+        }))),
+      },
+    }))[0]!
+    const result = await tool.execute({ path: 'clip.mp4', prompt: 'What is visible?' }, exec)
+    expect(result).toEqual({ text: 'frame fact', usage: { inputTokens: 200, outputTokens: 40, totalTokens: 1240, cacheReadTokens: 1000 } })
+  })
 })

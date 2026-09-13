@@ -217,13 +217,15 @@ function extractUsage(value) {
 		if (!isRecord(item)) return void 0;
 		const raw = isRecord(item.usageMetadata) ? item.usageMetadata : isRecord(item.usage_metadata) ? item.usage_metadata : isRecord(item.usage) ? item.usage : void 0;
 		if (raw !== void 0) {
-			const input = safeCount(raw.promptTokenCount ?? raw.inputTokenCount);
+			const prompt = safeCount(raw.promptTokenCount ?? raw.inputTokenCount);
 			const output = safeCount(raw.candidatesTokenCount ?? raw.outputTokenCount);
 			const cached = safeCount(raw.cachedContentTokenCount ?? raw.cacheReadTokens);
 			const reasoning = safeCount(raw.thoughtsTokenCount ?? raw.reasoningTokenCount);
-			if (input !== void 0 || output !== void 0 || cached !== void 0 || reasoning !== void 0) return {
-				inputTokens: input ?? 0,
+			const total = safeCount(raw.totalTokenCount ?? raw.total_tokens);
+			if (prompt !== void 0 || output !== void 0 || cached !== void 0 || reasoning !== void 0) return {
+				inputTokens: Math.max(0, (prompt ?? 0) - (cached ?? 0)),
 				outputTokens: output ?? 0,
+				...total === void 0 ? {} : { totalTokens: total },
 				...cached === void 0 ? {} : { cacheReadTokens: cached },
 				...reasoning === void 0 ? {} : { reasoningTokens: reasoning }
 			};
@@ -307,6 +309,7 @@ const videoSchema = {
 			properties: {
 				inputTokens: { type: "integer" },
 				outputTokens: { type: "integer" },
+				totalTokens: { type: "integer" },
 				cacheReadTokens: { type: "integer" },
 				reasoningTokens: { type: "integer" }
 			},
