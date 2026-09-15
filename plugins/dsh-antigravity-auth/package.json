@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-antigravity-auth",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Private, single-account, unofficial Antigravity OAuth capability bundle for DeepSeek Harness",
   "type": "module",
   "author": "lynn123411",
