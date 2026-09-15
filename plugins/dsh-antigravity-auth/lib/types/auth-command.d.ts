@@ -2,7 +2,7 @@
 import type { CommandDefinition } from '@deepseek-ai/dsh-commands';
 import type { AntigravityAuthService } from './auth-service.ts';
 import { type LoopbackRpcMode } from './loopback-rpc.ts';
-type AuthCommandService = Pick<AntigravityAuthService, 'status' | 'acknowledgeRisk' | 'startLogin' | 'cancelLogin' | 'logout'>;
+type AuthCommandService = Pick<AntigravityAuthService, 'status' | 'acknowledgeRisk' | 'startLogin' | 'cancelLogin' | 'logout' | 'masterEnabled'>;
 /**
  * Build the slash command shared by every interactive DSH surface.
  * @param service - the shared Host auth service.

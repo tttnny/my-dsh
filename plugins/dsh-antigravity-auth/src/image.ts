@@ -361,7 +361,7 @@ export function apply(ctx?: Context, config: Config = { enabled: true, model: AN
     ctx,
     auth,
     id: 'image',
-    enabled: () => current().enabled,
+    enabled: () => auth.masterEnabled() && current().enabled,
     register: () => registerCapabilitySet(
       createAntigravityImageTools(options),
       tool => candidate.tools!.register(tool),

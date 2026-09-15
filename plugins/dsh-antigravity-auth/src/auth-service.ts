@@ -45,6 +45,12 @@ export interface AntigravityAuthServiceOptions {
   readonly gates?: CapabilityGateRegistry
   readonly gatePath?: string
   readonly autoActivateGates?: boolean
+  /**
+   * Settings-owned master switch every capability row re-reads before
+   * registering. Absent (a row that owns its own service) leaves capabilities
+   * on their own gates, so a composition without the settings row keeps working.
+   */
+  readonly masterGate?: () => boolean
 }
 
 export type { HostCredential } from './credential-coordinator.ts'
@@ -56,6 +62,7 @@ export class AntigravityAuthService implements BootstrapStatusService {
   private readonly quota: QuotaService
   private readonly gates: CapabilityGateRegistry
   private readonly autoActivate: boolean
+  private readonly masterGate: (() => boolean) | undefined
   private riskAcknowledged = false
   private activeFlowGeneration = 0
   private disposed = false
@@ -63,6 +70,7 @@ export class AntigravityAuthService implements BootstrapStatusService {
 
   constructor(options: AntigravityAuthServiceOptions = {}) {
     this.autoActivate = options.autoActivateGates ?? false
+    this.masterGate = options.masterGate
     const storePath = options.storePath ?? defaultAuthStorePath()
     this.store = options.store ?? createAuthStore(storePath)
     this.gates = options.gates ?? (options.gatePath !== undefined
@@ -115,6 +123,24 @@ export class AntigravityAuthService implements BootstrapStatusService {
   watchStatus(listener: () => void): () => void {
     this.statusListeners.add(listener)
     return () => { this.statusListeners.delete(listener) }
+  }
+
+  /**
+   * Read the settings-owned master switch. The owning row resolves it through
+   * {@link AntigravityAuthServiceOptions.masterGate}; a row that created its own
+   * service has no switch above it and keeps its own capability gates.
+   */
+  masterEnabled(): boolean {
+    return this.masterGate?.() ?? true
+  }
+
+  /**
+   * Re-evaluate every capability row after a master-switch change. Rows already
+   * observe this service through `watchStatus`, so one notification re-runs the
+   * registration decision for LLM, search, image, and video together.
+   */
+  publishMasterGate(): void {
+    this.notifyStatus()
   }
 
   async recordGate0(outcome: CapabilityGateOutcome): Promise<void> {

@@ -8,6 +8,7 @@ import type { QuotaStatusView } from '../quota.ts'
 import type { AntigravitySearchSettings } from '../search.ts'
 import type { AntigravityImageSettings } from '../image.ts'
 import type { AntigravityVideoSettings } from '../video.ts'
+import type { AntigravityMasterSettings } from '../capability-master.ts'
 import type { RevokeState } from '../credential-coordinator.ts'
 import type {
   AntigravityStatusView,
@@ -21,6 +22,7 @@ export interface AntigravityAuthSettingsProps {
   rpc: AntigravityAuthRpcClient
   t: (key: AntigravityAuthKey) => string
   subscribe: (listener: () => void) => () => void
+  masterScope?: SettingsScope<AntigravityMasterSettings>
   searchScope?: SettingsScope<AntigravitySearchSettings>
   imageScope?: SettingsScope<AntigravityImageSettings>
   videoScope?: SettingsScope<AntigravityVideoSettings>
@@ -48,11 +50,15 @@ function useUnmountSignal(): () => AbortSignal {
 }
 
 /** One navigable settings section; credentials remain Host-only and actions use typed RPC. */
-export function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageScope, videoScope }: AntigravityAuthSettingsProps): ReactNode {
+export function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, searchScope, imageScope, videoScope }: AntigravityAuthSettingsProps): ReactNode {
   const [status, setStatus] = useState<AntigravityStatusView | null>(null)
+  const masterSettings = useCapabilitySettings(masterScope)
   const searchSettings = useCapabilitySettings(searchScope)
   const imageSettings = useCapabilitySettings(imageScope)
   const videoSettings = useCapabilitySettings(videoScope)
+  // The master switch gates the whole bundle: the model route is unregistered
+  // Host-side, and every capability card here stays visible but paused.
+  const masterEnabled = masterSettings.value?.enabled === true
   const [quota, setQuota] = useState<QuotaStatusView | null>(null)
   const [quotaBusy, setQuotaBusy] = useState(false)
   const [quotaError, setQuotaError] = useState<string | null>(null)
@@ -119,6 +125,10 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageS
   }, [rpc, t])
 
   useEffect(() => {
+    // A paused bundle performs no automatic quota query, so nothing leaves for
+    // Google on its own. The last accepted view stays on screen, and the manual
+    // "refresh status" action below still queries once on explicit request.
+    if (!masterEnabled) return
     if (status?.login.projectAvailable !== true || rpc.usage === undefined) {
       setQuota(null)
       return
@@ -126,7 +136,7 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageS
     const controller = new AbortController()
     void loadQuota(false, controller.signal)
     return () => controller.abort()
-  }, [loadQuota, rpc.usage, status?.login.projectAvailable, resetTick])
+  }, [loadQuota, masterEnabled, rpc.usage, status?.login.projectAvailable, resetTick])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -267,7 +277,12 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageS
           <div className="agy-title-line">
             <h1 id="antigravity-auth-title" className="agy-bundle-title">{t('title')}</h1>
             {isConfigured ? (
-              <span className="agy-status-dot" role="status" aria-label={t('ready')} />
+              <span
+                className="agy-status-dot"
+                data-state={masterEnabled ? 'ready' : 'paused'}
+                role="status"
+                aria-label={masterEnabled ? t('ready') : t('masterPaused')}
+              />
             ) : null}
           </div>
           <p className="agy-bundle-intro">{t('intro')}</p>
@@ -275,6 +290,24 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageS
       </header>
 
       <div className="agy-cards">
+        {/* Card 0: master switch over every capability below */}
+        <article className="agy-card" data-state={masterEnabled ? 'enabled' : 'paused'} aria-labelledby="antigravity-master-card-title">
+          <div className="agy-card-header">
+            <div className="agy-card-identity">
+              <h2 id="antigravity-master-card-title" className="agy-card-title">{t('masterCardTitle')}</h2>
+              <p className="agy-card-intro">{t('masterCardIntro')}</p>
+            </div>
+            <div className="agy-card-action">
+              {/* Always operable: this is a preference, not a live capability. */}
+              <Switch
+                label={t('toggleMaster')}
+                checked={masterEnabled}
+                onChange={next => { void masterScope?.set('enabled', next) }}
+              />
+            </div>
+          </div>
+        </article>
+
         {/* Card 1: Auth & Quota */}
         <article className="agy-card" aria-labelledby="antigravity-auth-card-title">
           <div className="agy-card-header">
@@ -291,6 +324,8 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageS
             onRefresh={() => { void loadQuota(true, unmountSignal()) }}
             t={t}
           />
+
+          {masterEnabled ? null : <p className="agy-card-subtext agy-paused-hint">{t('quotaPausedHint')}</p>}
 
           <div className="agy-action-row">
             {status?.login.phase === 'pending' && typeof status.login.authorizationUrl === 'string' ? (
@@ -380,11 +415,12 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageS
               <Switch
                 label={t('toggleSearch')}
                 checked={searchSettings.value?.enabled ?? false}
-                disabled={!capabilityAvailable(status, 'search') || searchSettings.status !== 'ready' || !searchSettings.writable}
+                disabled={!masterEnabled || !capabilityAvailable(status, 'search') || searchSettings.status !== 'ready' || !searchSettings.writable}
                 onChange={next => { void searchScope?.set('enabled', next) }}
               />
             </div>
           </div>
+          {masterEnabled ? null : <p className="agy-card-subtext agy-paused-hint">{t('masterDisabledHint')}</p>}
         </article>
 
         {/* Card 3: Image Creation */}
@@ -398,11 +434,12 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageS
               <Switch
                 label={t('toggleImage')}
                 checked={imageSettings.value?.enabled ?? false}
-                disabled={!capabilityAvailable(status, 'image') || imageSettings.status !== 'ready' || !imageSettings.writable}
+                disabled={!masterEnabled || !capabilityAvailable(status, 'image') || imageSettings.status !== 'ready' || !imageSettings.writable}
                 onChange={next => { void imageScope?.set('enabled', next) }}
               />
             </div>
           </div>
+          {masterEnabled ? null : <p className="agy-card-subtext agy-paused-hint">{t('masterDisabledHint')}</p>}
         </article>
 
         {/* Card 4: Video Analysis */}
@@ -416,11 +453,12 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageS
               <Switch
                 label={t('toggleVideo')}
                 checked={videoSettings.value?.enabled ?? false}
-                disabled={!capabilityAvailable(status, 'video') || videoSettings.status !== 'ready' || !videoSettings.writable}
+                disabled={!masterEnabled || !capabilityAvailable(status, 'video') || videoSettings.status !== 'ready' || !videoSettings.writable}
                 onChange={next => { void videoScope?.set('enabled', next) }}
               />
             </div>
           </div>
+          {masterEnabled ? null : <p className="agy-card-subtext agy-paused-hint">{t('masterDisabledHint')}</p>}
         </article>
       </div>
     </section>

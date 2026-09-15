@@ -36,6 +36,7 @@ describe('bootstrap lifecycle boundary', () => {
     const inject = vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback({
       connection: { fetch: { register: handle } },
       commands: { register: () => () => {} },
+      settings: { installSection: vi.fn() },
       get: (service: string) => service === 'webServer' ? { host: '127.0.0.1' } : undefined,
     }))
     const fetch = vi.fn()
@@ -65,6 +66,7 @@ describe('bootstrap lifecycle boundary', () => {
     const inject = vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback({
       connection: { fetch: { register: handle } },
       commands: { register: () => () => {} },
+      settings: { installSection: vi.fn() },
       get: (service: string) => service === 'webServer' ? { host: '0.0.0.0' } : undefined,
       logger: { warn },
     }))
@@ -114,6 +116,7 @@ describe('bootstrap lifecycle boundary', () => {
       await gates.recordLlmFamily(subject, 'claude', 'passed')
       await gates.recordLlmFamily(subject, 'gpt-oss', 'passed')
 
+      let masterEnabled = true
       let provided: AntigravityAuthService | undefined
       let cleanup: (() => Promise<void>) | undefined
       const disposeAdapter = vi.fn()
@@ -124,15 +127,37 @@ describe('bootstrap lifecycle boundary', () => {
         llm: { registerAdapter, listProviders: vi.fn(() => []) },
         provide: vi.fn((_name: string, service: AntigravityAuthService) => { provided = service; return vi.fn(async () => {}) }),
         get: vi.fn((service: string) => service === 'webServer' ? { host: '127.0.0.1' } : undefined),
+        // Model the kernel's section attach: the resolved value is authoritative.
+        settings: {
+          installSection: (
+            _owner: unknown,
+            _namespace: string,
+            _schema: unknown,
+            _entry: unknown,
+            hooks: { setSource: (source: () => { enabled: boolean }) => void; onChange: () => void },
+          ) => {
+            hooks.setSource(() => ({ enabled: masterEnabled }))
+            hooks.onChange()
+          },
+        },
         inject: vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback(runtime)),
         effect: vi.fn((setup: () => () => Promise<void>) => { cleanup = setup() }),
       }
 
-      applyAuth(runtime as never)
+      applyAuth(runtime as never, { enabled: true })
       await vi.waitFor(() => expect(registerAdapter).toHaveBeenCalledOnce())
 
-      await provided?.recordLlmFamilyGate('claude', 'protocol-drift')
+      // The master switch disposes the model route live and restores it live.
+      masterEnabled = false
+      provided?.publishMasterGate()
       await vi.waitFor(() => expect(disposeAdapter).toHaveBeenCalledOnce())
+
+      masterEnabled = true
+      provided?.publishMasterGate()
+      await vi.waitFor(() => expect(registerAdapter).toHaveBeenCalledTimes(2))
+
+      await provided?.recordLlmFamilyGate('claude', 'protocol-drift')
+      await vi.waitFor(() => expect(disposeAdapter).toHaveBeenCalledTimes(2))
       await cleanup?.()
     } finally {
       if (previousDataHome === undefined) delete process.env.XDG_DATA_HOME
@@ -149,6 +174,7 @@ describe('bootstrap lifecycle boundary', () => {
       credential: vi.fn(),
       status: vi.fn(async () => gateStatus('search', 'poc-pending')),
       watchStatus: vi.fn((listener: () => void) => { statusListener = listener; return vi.fn() }),
+      masterEnabled: () => true,
       dispose: vi.fn(),
     }
     let cleanup: (() => Promise<void>) | undefined
@@ -181,6 +207,7 @@ describe('bootstrap lifecycle boundary', () => {
       credential: vi.fn(),
       status: vi.fn(async () => gateStatus('search', 'poc-pending')),
       watchStatus: vi.fn((listener: () => void) => { statusListener = listener; return vi.fn() }),
+      masterEnabled: () => true,
       dispose: vi.fn(),
     }
     let cleanup: (() => Promise<void>) | undefined
@@ -215,6 +242,7 @@ describe('bootstrap lifecycle boundary', () => {
       credential: vi.fn(),
       status: vi.fn(async () => gateStatus('search', 'available')),
       watchStatus: vi.fn((listener: () => void) => { statusListener = listener; return vi.fn() }),
+      masterEnabled: () => true,
       dispose: vi.fn(),
     }
     let cleanup: (() => Promise<void>) | undefined
@@ -243,6 +271,7 @@ describe('bootstrap lifecycle boundary', () => {
       credential: vi.fn(),
       status: vi.fn(() => new Promise<ReturnType<typeof gateStatus>>(resolve => { pending.push(resolve) })),
       watchStatus: vi.fn((listener: () => void) => { statusListener = listener; return vi.fn() }),
+      masterEnabled: () => true,
       dispose: vi.fn(),
     }
     const ctx = {
@@ -271,6 +300,7 @@ describe('bootstrap lifecycle boundary', () => {
       credential: vi.fn(),
       status: vi.fn(async () => gateStatus('image', 'available')),
       watchStatus: vi.fn(() => vi.fn()),
+      masterEnabled: () => true,
       dispose: vi.fn(),
     }
     const ctx = {
@@ -295,6 +325,7 @@ describe('bootstrap lifecycle boundary', () => {
       credential: vi.fn(),
       status: vi.fn(async () => gateStatus('video', 'poc-pending')),
       watchStatus: vi.fn(() => vi.fn()),
+      masterEnabled: () => true,
       dispose: vi.fn(),
     }
     const ctx = {
@@ -328,6 +359,7 @@ describe('bootstrap lifecycle boundary', () => {
     const inject = vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback({
       connection: { fetch: { register: handle } },
       commands: { register: (definition: unknown) => { registered = definition as CommandDefinition; return () => {} } },
+      settings: { installSection: vi.fn() },
       get: (service: string) => service === 'webServer' ? { host: '0.0.0.0' } : undefined,
       logger: { warn },
     }))
@@ -352,6 +384,7 @@ describe('bootstrap lifecycle boundary', () => {
       const inject = vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback({
         connection: { fetch: { register: handle } },
         commands: { register: (definition: unknown) => { registered = definition as CommandDefinition; return () => {} } },
+      settings: { installSection: vi.fn() },
         get: (service: string) => service === 'webServer' ? { host: '127.0.0.1' } : undefined,
         logger: { warn },
       }))

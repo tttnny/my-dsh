@@ -1,4 +1,4 @@
-import { i as createAntigravityAuthService, t as mountCapabilityLifecycle } from "./capability-lifecycle-DPNblVcJ.js";
+import { i as createAntigravityAuthService, t as mountCapabilityLifecycle } from "./capability-lifecycle-BsiirqY8.js";
 import { d as privateStatusError, l as createPrivateTransport, m as PrivateTransportError, n as DEFAULT_PRIVATE_IDLE_TIMEOUT_MS, o as DEFAULT_PRIVATE_TOTAL_TIMEOUT_MS, t as DEFAULT_PRIVATE_FRAME_BYTES, u as iteratePrivateSse } from "./private-transport-DvkyFFK_.js";
 import { ANTIGRAVITY_WIRE_ORIGIN } from "./wire-identity.js";
 import { t as classifyPrivateFailure } from "./private-failure-nHkfjLiA.js";
@@ -345,7 +345,7 @@ function apply(ctx, config = {
 		ctx,
 		auth,
 		id: "search",
-		enabled: () => current().enabled,
+		enabled: () => auth.masterEnabled() && current().enabled,
 		register: () => {
 			const web = candidate.web;
 			const previousProviderId = web.searchProviderId;

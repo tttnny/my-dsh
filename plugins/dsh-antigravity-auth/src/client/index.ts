@@ -11,6 +11,7 @@ import { AntigravityAuthSettings } from './AntigravityAuthSettings.tsx'
 import { claimRelaySettingsPage, RELAY_ITEM_SLOT } from './relay-settings-page.js'
 import { en, zh, type AntigravityAuthKey } from './locales.ts'
 import type { AntigravityAuthSettingsProps } from './AntigravityAuthSettings.tsx'
+import type { AntigravityMasterSettings } from '../capability-master.ts'
 import type { AntigravitySearchSettings } from '../search.ts'
 import type { AntigravityImageSettings } from '../image.ts'
 import type { AntigravityVideoSettings } from '../video.ts'
@@ -40,6 +41,10 @@ export function apply(ctx: ClientContext): void {
   const rpc = createAntigravityAuthRpcClient(connection.rpc)
   const t = ctx.locale.bind(NS) as AntigravityAuthSettingsProps['t']
   const settingsScope = (ctx as ClientContext & { settingsScope?: { bind<T>(spec: { namespace: string; decode?: (value: unknown) => T | undefined }): SettingsScope<T> } }).settingsScope
+  // Namespace literals are the one thing that cannot be shared by value with the
+  // Host half without pulling its modules into this bundle; tests assert each
+  // literal against its Host constant.
+  const masterScope = settingsScope?.bind<AntigravityMasterSettings>({ namespace: 'antigravity-master', decode: decodeMasterSettings })
   const searchScope = settingsScope?.bind<AntigravitySearchSettings>({ namespace: 'antigravity-search', decode: decodeSearchSettings })
   const imageScope = settingsScope?.bind<AntigravityImageSettings>({ namespace: 'antigravity-image', decode: decodeImageSettings })
   const videoScope = settingsScope?.bind<AntigravityVideoSettings>({ namespace: 'antigravity-video', decode: decodeVideoSettings })
@@ -62,8 +67,13 @@ export function apply(ctx: ClientContext): void {
     id: 'antigravity-auth',
     order: 30,
     label: () => t('tabNav'),
-    inject: (): AntigravityAuthSettingsProps => ({ rpc, t, subscribe, searchScope, imageScope, videoScope }),
+    inject: (): AntigravityAuthSettingsProps => ({ rpc, t, subscribe, masterScope, searchScope, imageScope, videoScope }),
   }, AntigravityAuthSettings))
+}
+
+function decodeMasterSettings(value: unknown): AntigravityMasterSettings | undefined {
+  if (!isRecord(value) || typeof value.enabled !== 'boolean') return undefined
+  return { enabled: value.enabled }
 }
 
 function decodeSearchSettings(value: unknown): AntigravitySearchSettings | undefined {

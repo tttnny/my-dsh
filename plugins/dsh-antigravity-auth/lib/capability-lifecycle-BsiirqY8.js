@@ -1592,12 +1592,14 @@ var AntigravityAuthService = class {
 	quota;
 	gates;
 	autoActivate;
+	masterGate;
 	riskAcknowledged = false;
 	activeFlowGeneration = 0;
 	disposed = false;
 	statusListeners = /* @__PURE__ */ new Set();
 	constructor(options = {}) {
 		this.autoActivate = options.autoActivateGates ?? false;
+		this.masterGate = options.masterGate;
 		const storePath = options.storePath ?? defaultAuthStorePath();
 		this.store = options.store ?? createAuthStore(storePath);
 		this.gates = options.gates ?? (options.gatePath !== void 0 ? createFileCapabilityGates(options.gatePath) : options.store === void 0 ? createFileCapabilityGates(defaultCapabilityGatePath(storePath)) : createMemoryCapabilityGates());
@@ -1645,6 +1647,22 @@ var AntigravityAuthService = class {
 		return () => {
 			this.statusListeners.delete(listener);
 		};
+	}
+	/**
+	* Read the settings-owned master switch. The owning row resolves it through
+	* {@link AntigravityAuthServiceOptions.masterGate}; a row that created its own
+	* service has no switch above it and keeps its own capability gates.
+	*/
+	masterEnabled() {
+		return this.masterGate?.() ?? true;
+	}
+	/**
+	* Re-evaluate every capability row after a master-switch change. Rows already
+	* observe this service through `watchStatus`, so one notification re-runs the
+	* registration decision for LLM, search, image, and video together.
+	*/
+	publishMasterGate() {
+		this.notifyStatus();
 	}
 	async recordGate0(outcome) {
 		const subject = gateSubject(await this.requireRecord());

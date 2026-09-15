@@ -1,4 +1,4 @@
-import { _ as defaultAuthStorePath, a as maskEmail, c as defaultCapabilityGatePath, d as ANTIGRAVITY_TOKEN_ENDPOINT, f as CredentialOperationError, g as credentialErrorMessage, h as createGoogleRevokeTransport, i as createAntigravityAuthService, l as OAuthFlowError, m as createGoogleRefreshTransport, o as createFileCapabilityGates, p as createCredentialCoordinator, r as AntigravityAuthService, s as createMemoryCapabilityGates, t as mountCapabilityLifecycle, u as ANTIGRAVITY_REVOKE_ENDPOINT } from "./capability-lifecycle-DPNblVcJ.js";
+import { _ as defaultAuthStorePath, a as maskEmail, c as defaultCapabilityGatePath, d as ANTIGRAVITY_TOKEN_ENDPOINT, f as CredentialOperationError, g as credentialErrorMessage, h as createGoogleRevokeTransport, i as createAntigravityAuthService, l as OAuthFlowError, m as createGoogleRefreshTransport, o as createFileCapabilityGates, p as createCredentialCoordinator, r as AntigravityAuthService, s as createMemoryCapabilityGates, t as mountCapabilityLifecycle, u as ANTIGRAVITY_REVOKE_ENDPOINT } from "./capability-lifecycle-BsiirqY8.js";
 import { a as DEFAULT_PRIVATE_RESPONSE_HEADER_TIMEOUT_MS, c as assertPrivateEndpoint, d as privateStatusError, f as readPrivateBytes, i as DEFAULT_PRIVATE_RESPONSE_BYTES, l as createPrivateTransport, m as PrivateTransportError, n as DEFAULT_PRIVATE_IDLE_TIMEOUT_MS, o as DEFAULT_PRIVATE_TOTAL_TIMEOUT_MS, p as readPrivateText, r as DEFAULT_PRIVATE_REQUEST_BYTES, s as MAX_PRIVATE_REQUEST_BYTES, t as DEFAULT_PRIVATE_FRAME_BYTES, u as iteratePrivateSse } from "./private-transport-DvkyFFK_.js";
 import { AGY_PROVIDER_USER_AGENT, ANTIGRAVITY_WIRE_ORIGIN, ANTIGRAVITY_WIRE_ORIGINS, ANTIGRAVITY_WIRE_PATHS, DSH_ATTRIBUTION_HEADER, WireIdentityError, assertWireIdentityInvariant, buildWireIdentityHeaders, createWireIdentity } from "./wire-identity.js";
 import { PROJECT_DISCOVERY_ENDPOINT, PROJECT_DISCOVERY_PATH, ProjectDiscoveryError, createProjectContext, createProjectDiscovery, normalizeProjectId } from "./project-context.js";
@@ -11,6 +11,7 @@ import { DEFAULT_INLINE_IMAGE_BYTES, DEFAULT_VIDEO_BYTES, IMAGE_HANDLE_PATTERN, 
 import { LIVE_ACKNOWLEDGEMENT, LIVE_GATE_IDS, runLiveGateCli } from "./live-gates.js";
 import { spawn } from "node:child_process";
 import { clientRequestSchema } from "@deepseek-ai/dsh-client-connection";
+import z from "@deepseek-ai/schemastery";
 //#region src/loopback-rpc.ts
 const LOOPBACK_REQUIRED_MESSAGE = "Antigravity account controls require a loopback-bound DSH Host";
 /**
@@ -153,14 +154,15 @@ async function openAuthorizationUrl(url, spawnFn = spawn, platform = process.pla
 function errorMessage(error) {
 	return error instanceof Error ? error.message : String(error);
 }
-function formatStatus(status) {
+function formatStatus(status, masterEnabled) {
 	const login = status.login;
 	const parts = [login.configured ? "configured" : "not configured", login.projectAvailable ? "project available" : "no project"];
 	if (login.maskedEmail !== void 0) parts.push(login.maskedEmail);
 	if (login.phase === "pending") parts.push("authorization pending");
 	else if (login.phase !== "idle" && login.phase !== "success") parts.push(`phase ${login.phase}`);
 	if (login.errorCode !== void 0) parts.push(`error ${login.errorCode}`);
-	const available = status.capabilities.filter((capability) => capability.state === "available").map((capability) => capability.id);
+	if (!masterEnabled) parts.push("master switch off, capabilities paused");
+	const available = masterEnabled ? status.capabilities.filter((capability) => capability.state === "available").map((capability) => capability.id) : [];
 	if (available.length > 0) parts.push(`available: ${available.join(", ")}`);
 	return `Antigravity auth: ${parts.join("; ")}`;
 }
@@ -191,7 +193,7 @@ function createAntigravityAuthCommand(service, accountMode, openUrl = openAuthor
 			if (operation === "status") try {
 				return {
 					kind: "success",
-					text: formatStatus(await service.status())
+					text: formatStatus(await service.status(), service.masterEnabled())
 				};
 			} catch (error) {
 				return {
@@ -428,14 +430,37 @@ function isRecord(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 //#endregion
+//#region src/capability-master.ts
+const ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE = "antigravity-master";
+/** Registry default: the switch resolves paused, so a fresh install opts in. */
+const ANTIGRAVITY_MASTER_DEFAULT_ENABLED = false;
+const Config = z.object({ enabled: z.boolean().default(false) });
+//#endregion
 //#region src/index.ts
 const name = "antigravity-auth";
 const inject = ["llm", "attachments"];
-/** Mount the Host-only OAuth service and its guarded account RPC channel. */
-function apply(ctx) {
+/** Mount the Host-only OAuth service, its guarded account RPC channel, and the master switch. */
+function apply(ctx, config = { enabled: false }) {
+	let masterSource = () => config;
+	let masterInstalled = false;
+	const masterGate = () => masterInstalled ? masterSource().enabled : true;
 	const service = createAntigravityAuthService({
 		storePath: defaultAuthStorePath(),
-		autoActivateGates: true
+		autoActivateGates: true,
+		masterGate
+	});
+	ctx.inject(["settings"], (settingsCtx) => {
+		settingsCtx.settings.installSection(ctx, ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE, Config, config, {
+			setSource: (source) => {
+				masterSource = source;
+				service.publishMasterGate();
+			},
+			onChange: () => {
+				service.publishMasterGate();
+			}
+		});
+		masterInstalled = true;
+		service.publishMasterGate();
 	});
 	let accountMode = "enabled";
 	const runtime = ctx;
@@ -466,7 +491,7 @@ function apply(ctx) {
 		ctx,
 		auth: service,
 		id: "auth-llm",
-		enabled: () => runtime.llm?.registerAdapter !== void 0,
+		enabled: () => masterGate() && runtime.llm?.registerAdapter !== void 0,
 		register: () => {
 			if (runtime.llm?.registerAdapter === void 0) return void 0;
 			if (runtime.llm.listProviders?.().some((provider) => provider.id === "google-antigravity")) return void 0;
@@ -480,10 +505,13 @@ function apply(ctx) {
 			};
 		},
 		ownsAuth: true,
-		cleanup: unprovide,
+		cleanup: async () => {
+			masterInstalled = false;
+			await unprovide();
+		},
 		label: "antigravity-auth: OAuth and LLM operations"
 	});
 	ctx.inject(["commands"], (commandCtx) => commandCtx.commands.register(createAntigravityAuthCommand(service, () => accountMode)));
 }
 //#endregion
-export { AGY_PROVIDER_USER_AGENT, ANTIGRAVITY_AUTH_RPC_CHANNEL, ANTIGRAVITY_AUTH_RPC_NAMESPACE, ANTIGRAVITY_AVAILABLE_MODELS_ENDPOINT, ANTIGRAVITY_GENERATE_ENDPOINT, ANTIGRAVITY_LLM_ROUTE, ANTIGRAVITY_MODEL_CATALOG_STATES, ANTIGRAVITY_PLUGIN_ID, ANTIGRAVITY_PROVIDER, ANTIGRAVITY_QUOTA_ENDPOINT, ANTIGRAVITY_REPLAY_VERSION, ANTIGRAVITY_REVOKE_ENDPOINT, ANTIGRAVITY_STREAM_ENDPOINT, ANTIGRAVITY_TOKEN_ENDPOINT, ANTIGRAVITY_WIRE_ORIGIN, ANTIGRAVITY_WIRE_ORIGINS, ANTIGRAVITY_WIRE_PATHS, AntigravityAdapter, AntigravityAuthService, CAPABILITY_GATE_OUTCOMES, CAPABILITY_ROW_IDS, CredentialOperationError, DEFAULT_INLINE_IMAGE_BYTES, DEFAULT_PRIVATE_FRAME_BYTES, DEFAULT_PRIVATE_IDLE_TIMEOUT_MS, DEFAULT_PRIVATE_REQUEST_BYTES, DEFAULT_PRIVATE_RESPONSE_BYTES, DEFAULT_PRIVATE_RESPONSE_HEADER_TIMEOUT_MS, DEFAULT_PRIVATE_TOTAL_TIMEOUT_MS, DEFAULT_VIDEO_BYTES, DSH_ATTRIBUTION_HEADER, IMAGE_HANDLE_PATTERN, LIVE_ACKNOWLEDGEMENT, LIVE_GATE_IDS, LLM_FAMILY_IDS, MAX_PRIVATE_REQUEST_BYTES, MediaAdmissionError, PROJECT_DISCOVERY_ENDPOINT, PROJECT_DISCOVERY_PATH, PrivateTransportError, ProjectDiscoveryError, QUOTA_REFRESH_MIN_INTERVAL_MS, QuotaNormalizationError, WireIdentityError, admitBase64Image, admitImageBytes, admitSessionImage, admitWorkspaceImage, admitWorkspaceVideo, antigravityModelFamily, apply, assertPrivateEndpoint, assertWireIdentityInvariant, buildAntigravityGeneratePayload, buildFunctionDeclarations, buildWireIdentityHeaders, compatibleReplayState, createAntigravityAuthRpcClient, createAntigravityAuthService, createCredentialCoordinator, createFileCapabilityGates, createGoogleRefreshTransport, createGoogleRevokeTransport, createMemoryCapabilityGates, createPrivateTransport, createProjectContext, createProjectDiscovery, createQuotaService, createReplayState, createStatusView, createWireIdentity, credentialErrorMessage, defaultCapabilityGatePath, detectImageMediaType, imageHandle, inject, isMp4, iteratePrivateSse, maskEmail, name, normalizeProjectId, normalizeQuotaResponse, parseModelCatalogResult, parseStatusResult, parseUsageResult, privateStatusError, readPrivateBytes, readPrivateText, runLiveGateCli, sanitizeToolSchemas, sessionImageCatalog };
+export { AGY_PROVIDER_USER_AGENT, ANTIGRAVITY_AUTH_RPC_CHANNEL, ANTIGRAVITY_AUTH_RPC_NAMESPACE, ANTIGRAVITY_AVAILABLE_MODELS_ENDPOINT, ANTIGRAVITY_GENERATE_ENDPOINT, ANTIGRAVITY_LLM_ROUTE, ANTIGRAVITY_MASTER_DEFAULT_ENABLED, ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE, ANTIGRAVITY_MODEL_CATALOG_STATES, ANTIGRAVITY_PLUGIN_ID, ANTIGRAVITY_PROVIDER, ANTIGRAVITY_QUOTA_ENDPOINT, ANTIGRAVITY_REPLAY_VERSION, ANTIGRAVITY_REVOKE_ENDPOINT, ANTIGRAVITY_STREAM_ENDPOINT, ANTIGRAVITY_TOKEN_ENDPOINT, ANTIGRAVITY_WIRE_ORIGIN, ANTIGRAVITY_WIRE_ORIGINS, ANTIGRAVITY_WIRE_PATHS, AntigravityAdapter, AntigravityAuthService, CAPABILITY_GATE_OUTCOMES, CAPABILITY_ROW_IDS, Config, CredentialOperationError, DEFAULT_INLINE_IMAGE_BYTES, DEFAULT_PRIVATE_FRAME_BYTES, DEFAULT_PRIVATE_IDLE_TIMEOUT_MS, DEFAULT_PRIVATE_REQUEST_BYTES, DEFAULT_PRIVATE_RESPONSE_BYTES, DEFAULT_PRIVATE_RESPONSE_HEADER_TIMEOUT_MS, DEFAULT_PRIVATE_TOTAL_TIMEOUT_MS, DEFAULT_VIDEO_BYTES, DSH_ATTRIBUTION_HEADER, IMAGE_HANDLE_PATTERN, LIVE_ACKNOWLEDGEMENT, LIVE_GATE_IDS, LLM_FAMILY_IDS, MAX_PRIVATE_REQUEST_BYTES, MediaAdmissionError, PROJECT_DISCOVERY_ENDPOINT, PROJECT_DISCOVERY_PATH, PrivateTransportError, ProjectDiscoveryError, QUOTA_REFRESH_MIN_INTERVAL_MS, QuotaNormalizationError, WireIdentityError, admitBase64Image, admitImageBytes, admitSessionImage, admitWorkspaceImage, admitWorkspaceVideo, antigravityModelFamily, apply, assertPrivateEndpoint, assertWireIdentityInvariant, buildAntigravityGeneratePayload, buildFunctionDeclarations, buildWireIdentityHeaders, compatibleReplayState, createAntigravityAuthRpcClient, createAntigravityAuthService, createCredentialCoordinator, createFileCapabilityGates, createGoogleRefreshTransport, createGoogleRevokeTransport, createMemoryCapabilityGates, createPrivateTransport, createProjectContext, createProjectDiscovery, createQuotaService, createReplayState, createStatusView, createWireIdentity, credentialErrorMessage, defaultCapabilityGatePath, detectImageMediaType, imageHandle, inject, isMp4, iteratePrivateSse, maskEmail, name, normalizeProjectId, normalizeQuotaResponse, parseModelCatalogResult, parseStatusResult, parseUsageResult, privateStatusError, readPrivateBytes, readPrivateText, runLiveGateCli, sanitizeToolSchemas, sessionImageCatalog };

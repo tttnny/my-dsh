@@ -604,6 +604,23 @@ window.__ModuleLoader__.load({
   flex: none;
 }
 
+/* Logged in but paused by the master switch: a green "ready" dot would lie. */
+.agy-status-dot[data-state="paused"] {
+  background: var(--dsw-alias-label-tertiary, #8b949e);
+  box-shadow: none;
+}
+
+.agy-paused-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, #8b949e);
+}
+
+.agy-card[data-state="paused"] {
+  border-style: dashed;
+}
+
 .agy-bundle-intro,
 .agy-card-intro {
   margin: 4px 0 0;
@@ -1279,11 +1296,13 @@ window.__ModuleLoader__.load({
 			return (0, react.useCallback)(() => controller.current.signal, []);
 		}
 		/** One navigable settings section; credentials remain Host-only and actions use typed RPC. */
-		function AntigravityAuthSettings({ rpc, t, subscribe, searchScope, imageScope, videoScope }) {
+		function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, searchScope, imageScope, videoScope }) {
 			const [status, setStatus] = (0, react.useState)(null);
+			const masterSettings = useCapabilitySettings(masterScope);
 			const searchSettings = useCapabilitySettings(searchScope);
 			const imageSettings = useCapabilitySettings(imageScope);
 			const videoSettings = useCapabilitySettings(videoScope);
+			const masterEnabled = masterSettings.value?.enabled === true;
 			const [quota, setQuota] = (0, react.useState)(null);
 			const [quotaBusy, setQuotaBusy] = (0, react.useState)(false);
 			const [quotaError, setQuotaError] = (0, react.useState)(null);
@@ -1347,6 +1366,7 @@ window.__ModuleLoader__.load({
 				}
 			}, [rpc, t]);
 			(0, react.useEffect)(() => {
+				if (!masterEnabled) return;
 				if (status?.login.projectAvailable !== true || rpc.usage === void 0) {
 					setQuota(null);
 					return;
@@ -1356,6 +1376,7 @@ window.__ModuleLoader__.load({
 				return () => controller.abort();
 			}, [
 				loadQuota,
+				masterEnabled,
 				rpc.usage,
 				status?.login.projectAvailable,
 				resetTick
@@ -1523,8 +1544,9 @@ window.__ModuleLoader__.load({
 							children: t("title")
 						}), isConfigured ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "agy-status-dot",
+							"data-state": masterEnabled ? "ready" : "paused",
 							role: "status",
-							"aria-label": t("ready")
+							"aria-label": masterEnabled ? t("ready") : t("masterPaused")
 						}) : null]
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: "agy-bundle-intro",
@@ -1533,6 +1555,34 @@ window.__ModuleLoader__.load({
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "agy-cards",
 					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("article", {
+							className: "agy-card",
+							"data-state": masterEnabled ? "enabled" : "paused",
+							"aria-labelledby": "antigravity-master-card-title",
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "agy-card-header",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "agy-card-identity",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+										id: "antigravity-master-card-title",
+										className: "agy-card-title",
+										children: t("masterCardTitle")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: "agy-card-intro",
+										children: t("masterCardIntro")
+									})]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "agy-card-action",
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Switch, {
+										label: t("toggleMaster"),
+										checked: masterEnabled,
+										onChange: (next) => {
+											masterScope?.set("enabled", next);
+										}
+									})
+								})]
+							})
+						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("article", {
 							className: "agy-card",
 							"aria-labelledby": "antigravity-auth-card-title",
@@ -1559,6 +1609,10 @@ window.__ModuleLoader__.load({
 										loadQuota(true, unmountSignal());
 									},
 									t
+								}),
+								masterEnabled ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: "agy-card-subtext agy-paused-hint",
+									children: t("quotaPausedHint")
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: "agy-action-row",
@@ -1705,9 +1759,9 @@ window.__ModuleLoader__.load({
 								})
 							]
 						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("article", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("article", {
 							className: "agy-card",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "agy-card-header",
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: "agy-card-identity",
@@ -1723,17 +1777,20 @@ window.__ModuleLoader__.load({
 									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Switch, {
 										label: t("toggleSearch"),
 										checked: searchSettings.value?.enabled ?? false,
-										disabled: !capabilityAvailable(status, "search") || searchSettings.status !== "ready" || !searchSettings.writable,
+										disabled: !masterEnabled || !capabilityAvailable(status, "search") || searchSettings.status !== "ready" || !searchSettings.writable,
 										onChange: (next) => {
 											searchScope?.set("enabled", next);
 										}
 									})
 								})]
-							})
+							}), masterEnabled ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: "agy-card-subtext agy-paused-hint",
+								children: t("masterDisabledHint")
+							})]
 						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("article", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("article", {
 							className: "agy-card",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "agy-card-header",
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: "agy-card-identity",
@@ -1749,17 +1806,20 @@ window.__ModuleLoader__.load({
 									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Switch, {
 										label: t("toggleImage"),
 										checked: imageSettings.value?.enabled ?? false,
-										disabled: !capabilityAvailable(status, "image") || imageSettings.status !== "ready" || !imageSettings.writable,
+										disabled: !masterEnabled || !capabilityAvailable(status, "image") || imageSettings.status !== "ready" || !imageSettings.writable,
 										onChange: (next) => {
 											imageScope?.set("enabled", next);
 										}
 									})
 								})]
-							})
+							}), masterEnabled ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: "agy-card-subtext agy-paused-hint",
+								children: t("masterDisabledHint")
+							})]
 						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("article", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("article", {
 							className: "agy-card",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "agy-card-header",
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: "agy-card-identity",
@@ -1775,13 +1835,16 @@ window.__ModuleLoader__.load({
 									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Switch, {
 										label: t("toggleVideo"),
 										checked: videoSettings.value?.enabled ?? false,
-										disabled: !capabilityAvailable(status, "video") || videoSettings.status !== "ready" || !videoSettings.writable,
+										disabled: !masterEnabled || !capabilityAvailable(status, "video") || videoSettings.status !== "ready" || !videoSettings.writable,
 										onChange: (next) => {
 											videoScope?.set("enabled", next);
 										}
 									})
 								})]
-							})
+							}), masterEnabled ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: "agy-card-subtext agy-paused-hint",
+								children: t("masterDisabledHint")
+							})]
 						})
 					]
 				})]
@@ -2221,6 +2284,12 @@ window.__ModuleLoader__.load({
 			searchCardIntro: "Google Antigravity Search Provider used by the stock web_search tool. While enabled and authenticated, it takes over as that tool's backend instead of the host default provider.",
 			imageCardIntro: "Durable image generation tools for image-capable models (gemini-3.1-flash-image).",
 			videoCardIntro: "Workspace MP4 video understanding tools for multimodal models (gemini-3.7-flash).",
+			masterCardTitle: "Master switch",
+			masterCardIntro: "Turning this off pauses the Antigravity models, web search, image generation, and video understanding. The Google login is kept, so nothing has to be re-authorized.",
+			toggleMaster: "Enable Antigravity capabilities",
+			masterDisabledHint: "Paused by the master switch.",
+			masterPaused: "Paused",
+			quotaPausedHint: "The master switch is off, so automatic quota queries are paused. Use \"Refresh status\" to query once manually.",
 			privacyNotice: "Share Antigravity login state and model routing.",
 			relogin: "Log in again with Google",
 			authCardTitle: "Login",
@@ -2348,6 +2417,12 @@ window.__ModuleLoader__.load({
 			searchCardIntro: "供内置 web_search 工具使用的 Google Antigravity 全局搜索能力；开启且账号就绪后接管为搜索后端，取代宿主默认提供方。",
 			imageCardIntro: "面向支持图片模型的持久化 generate_image 工具（gemini-3.1-flash-image）。",
 			videoCardIntro: "面向本地 MP4 视频文件的多模态 analyze_video 理解工具。",
+			masterCardTitle: "总开关",
+			masterCardIntro: "关闭后停用 Antigravity 的模型、网页搜索、图片生成与视频理解；Google 登录状态保留，无需重新授权。",
+			toggleMaster: "启用 Antigravity 能力",
+			masterDisabledHint: "已被总开关停用。",
+			masterPaused: "已暂停",
+			quotaPausedHint: "总开关已关闭，自动查询额度已暂停；点「刷新状态」可手动查询一次。",
 			privacyNotice: "共享 Antigravity 登录态与模型路由。",
 			relogin: "重新登录 Google",
 			authCardTitle: "登录",
@@ -2393,6 +2468,10 @@ window.__ModuleLoader__.load({
 			const rpc = createAntigravityAuthRpcClient(connection.rpc);
 			const t = ctx.locale.bind(NS);
 			const settingsScope = ctx.settingsScope;
+			const masterScope = settingsScope?.bind({
+				namespace: "antigravity-master",
+				decode: decodeMasterSettings
+			});
 			const searchScope = settingsScope?.bind({
 				namespace: "antigravity-search",
 				decode: decodeSearchSettings
@@ -2428,11 +2507,16 @@ window.__ModuleLoader__.load({
 					rpc,
 					t,
 					subscribe,
+					masterScope,
 					searchScope,
 					imageScope,
 					videoScope
 				})
 			}, AntigravityAuthSettings));
+		}
+		function decodeMasterSettings(value) {
+			if (!isRecord(value) || typeof value.enabled !== "boolean") return void 0;
+			return { enabled: value.enabled };
 		}
 		function decodeSearchSettings(value) {
 			if (!isRecord(value) || typeof value.enabled !== "boolean" || typeof value.model !== "string" || value.model.length === 0 || !positiveInteger(value.maxResults) || value.maxResults > 50) return void 0;

@@ -101,6 +101,12 @@ export declare const en: {
     readonly searchCardIntro: "Google Antigravity Search Provider used by the stock web_search tool. While enabled and authenticated, it takes over as that tool's backend instead of the host default provider.";
     readonly imageCardIntro: "Durable image generation tools for image-capable models (gemini-3.1-flash-image).";
     readonly videoCardIntro: "Workspace MP4 video understanding tools for multimodal models (gemini-3.7-flash).";
+    readonly masterCardTitle: "Master switch";
+    readonly masterCardIntro: "Turning this off pauses the Antigravity models, web search, image generation, and video understanding. The Google login is kept, so nothing has to be re-authorized.";
+    readonly toggleMaster: "Enable Antigravity capabilities";
+    readonly masterDisabledHint: "Paused by the master switch.";
+    readonly masterPaused: "Paused";
+    readonly quotaPausedHint: "The master switch is off, so automatic quota queries are paused. Use \"Refresh status\" to query once manually.";
     readonly privacyNotice: "Share Antigravity login state and model routing.";
     readonly relogin: "Log in again with Google";
     readonly authCardTitle: "Login";

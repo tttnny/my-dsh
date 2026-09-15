@@ -163,6 +163,9 @@ check('page exposes one tab per registered card', tabs.length === 1 && tabs[0]?.
 check('tab label resolves to Antigravity', tabs[0]?.label === 'Antigravity')
 
 check('locale dictionaries registered', locales.includes('settings.antigravityAuth'))
+check('binds the master switch namespace', injects.includes('bind:antigravity-master'))
+check('binds every capability namespace', ['antigravity-search', 'antigravity-image', 'antigravity-video']
+  .every(namespace => injects.includes(`bind:${namespace}`)))
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 

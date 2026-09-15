@@ -6,10 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AntigravityAuthSettings } from '../src/client/AntigravityAuthSettings.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import type { AntigravityAuthRpcClient } from '../src/rpc-contract.ts'
+import type { AntigravityMasterSettings } from '../src/capability-master.ts'
 import type { AntigravitySearchSettings } from '../src/search.ts'
+import type { AntigravityImageSettings } from '../src/image.ts'
+import type { AntigravityVideoSettings } from '../src/video.ts'
 import { createStatusView } from '../src/status.ts'
 import type { LoginStatusView } from '../src/status.ts'
 import type { CredentialStatusView, RevokeStatusView } from '../src/credential-coordinator.ts'
+
+const CHECKED_AT = '2026-09-10T00:00:00.000Z'
 
 function rpcFixture(
   login: LoginStatusView = { phase: 'idle', configured: false, projectAvailable: false },
@@ -41,7 +46,7 @@ function rpcFixture(
 
 class ReceiverBoundSettingsScope<T> implements SettingsScope<T> {
   private readonly listeners = new Set<() => void>()
-  private readonly snapshot: SettingsScopeSnapshot<T>
+  private snapshot: SettingsScopeSnapshot<T>
 
   constructor(value: T) {
     this.snapshot = {
@@ -53,6 +58,12 @@ class ReceiverBoundSettingsScope<T> implements SettingsScope<T> {
       writable: true,
       mode: 'host',
     }
+  }
+
+  /** Test-only: publish a new Host section as the settings transport would. */
+  push(value: T): void {
+    this.snapshot = { ...this.snapshot, value, revision: (this.snapshot.revision ?? 0) + 1 }
+    for (const listener of Array.from(this.listeners)) listener()
   }
 
   getSnapshot(): SettingsScopeSnapshot<T> {
@@ -73,6 +84,56 @@ afterEach(() => {
   vi.useRealTimers()
   document.body.innerHTML = ''
 })
+
+function masterScope(enabled: boolean): ReceiverBoundSettingsScope<AntigravityMasterSettings> {
+  return new ReceiverBoundSettingsScope<AntigravityMasterSettings>({ enabled })
+}
+
+/** A logged-in Host with every live gate passed, plus the master switch. */
+function renderWithMaster(enabled: boolean, copy: typeof en = en) {
+  const status = createStatusView(
+    true,
+    { phase: 'success', configured: true, projectAvailable: true },
+    { state: 'logged-in', configured: true },
+    { state: 'idle' },
+    {
+      gate0: { outcome: 'passed', checkedAt: CHECKED_AT },
+      llmFamilies: {
+        gemini: { outcome: 'passed', checkedAt: CHECKED_AT },
+        claude: { outcome: 'passed', checkedAt: CHECKED_AT },
+        'gpt-oss': { outcome: 'passed', checkedAt: CHECKED_AT },
+      },
+      capabilities: {
+        search: { outcome: 'passed', checkedAt: CHECKED_AT },
+        image: { outcome: 'passed', checkedAt: CHECKED_AT },
+        video: { outcome: 'passed', checkedAt: CHECKED_AT },
+      },
+    },
+  )
+  const rpc = rpcFixture(
+    { phase: 'success', configured: true, projectAvailable: true },
+    true,
+    { state: 'logged-in', configured: true },
+    { state: 'idle' },
+  )
+  rpc.status = vi.fn().mockResolvedValue({ ok: true, value: { status } })
+  const master = masterScope(enabled)
+  const search = new ReceiverBoundSettingsScope<AntigravitySearchSettings>({ enabled: true, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
+  const image = new ReceiverBoundSettingsScope<AntigravityImageSettings>({ enabled: true, model: 'antigravity-gemini-3.1-flash-image', n: 1 })
+  const video = new ReceiverBoundSettingsScope<AntigravityVideoSettings>({ enabled: true, model: 'antigravity-gemini-3.7-flash', maxBytes: 1024 })
+  const view = render(
+    <AntigravityAuthSettings
+      rpc={rpc}
+      t={key => copy[key]}
+      subscribe={() => () => {}}
+      masterScope={master}
+      searchScope={search}
+      imageScope={image}
+      videoScope={video}
+    />,
+  )
+  return { ...view, rpc, master, search, image, video }
+}
 
 describe('Antigravity bootstrap settings', () => {
   it('renders settings shell without secret controls and starts login directly', async () => {
@@ -179,11 +240,67 @@ describe('Antigravity bootstrap settings', () => {
       },
     })
 
-    render(<AntigravityAuthSettings rpc={rpc} t={key => en[key]} subscribe={() => () => {}} />)
+    render(
+      <AntigravityAuthSettings
+        rpc={rpc}
+        t={key => en[key]}
+        subscribe={() => () => {}}
+        masterScope={masterScope(true)}
+      />,
+    )
 
     expect(await screen.findByRole('heading', { name: en.authCardTitle })).toBeTruthy()
     expect(await screen.findByText('GEMINI MODELS')).toBeTruthy()
     expect(screen.getByText('85.00%')).toBeTruthy()
+  })
+
+  it('pauses the entire bundle and its automatic quota queries when the master switch is off', async () => {
+    const { rpc, master, search } = renderWithMaster(false)
+
+    // Paused: no automatic quota query leaves for Google while the switch is off.
+    expect(await screen.findByRole('heading', { name: en.authCardTitle })).toBeTruthy()
+    await waitFor(() => expect(rpc.status).toHaveBeenCalled())
+    expect(rpc.usage).not.toHaveBeenCalled()
+    expect(screen.getByText(en.quotaPausedHint)).toBeTruthy()
+    expect(screen.getAllByText(en.masterDisabledHint)).toHaveLength(3)
+
+    // The switch itself stays operable; the capability cards keep their values but pause.
+    const masterSwitch = screen.getByRole('checkbox', { name: en.toggleMaster })
+    expect(masterSwitch).toHaveProperty('checked', false)
+    expect(masterSwitch).toHaveProperty('disabled', false)
+    expect(screen.getByRole('checkbox', { name: en.toggleSearch })).toHaveProperty('checked', true)
+    for (const key of ['toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
+      expect(screen.getByRole('checkbox', { name: en[key] })).toHaveProperty('disabled', true)
+    }
+
+    // A logged-in account still reads paused rather than ready.
+    expect(screen.getByRole('status', { name: en.masterPaused })).toBeTruthy()
+    expect(screen.queryByRole('status', { name: en.ready })).toBeNull()
+
+    // Turning the switch on writes the master namespace and re-enables the cards.
+    const setSpy = vi.spyOn(master, 'set')
+    fireEvent.click(masterSwitch)
+    await waitFor(() => expect(setSpy).toHaveBeenCalledWith('enabled', true))
+
+    master.push({ enabled: true })
+    await waitFor(() => expect(screen.getByRole('status', { name: en.ready })).toBeTruthy())
+    for (const key of ['toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
+      expect(screen.getByRole('checkbox', { name: en[key] })).toHaveProperty('disabled', false)
+    }
+    expect(screen.queryByText(en.quotaPausedHint)).toBeNull()
+    // The per-capability choices survived the pause.
+    expect(search.getSnapshot().value?.enabled).toBe(true)
+  })
+
+  it('queries quota once on the explicit refresh action while paused', async () => {
+    const { rpc } = renderWithMaster(false)
+
+    expect(await screen.findByRole('heading', { name: en.authCardTitle })).toBeTruthy()
+    await waitFor(() => expect(rpc.status).toHaveBeenCalled())
+    expect(rpc.usage).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: en.refreshStatus }))
+    await waitFor(() => expect(rpc.usage).toHaveBeenCalled())
   })
 
   describe.each([
@@ -223,8 +340,14 @@ describe('Antigravity bootstrap settings', () => {
         },
       })
 
-      render(<AntigravityAuthSettings rpc={rpc} t={key => copy[key]} subscribe={() => () => {}} />)
-
+      render(
+        <AntigravityAuthSettings
+          rpc={rpc}
+          t={key => copy[key]}
+          subscribe={() => () => {}}
+          masterScope={masterScope(true)}
+        />,
+      )
       expect(await screen.findByText(`22% ${copy.remaining} · ${resetPrefix}${expected}${resetSuffix}`)).toBeTruthy()
       expect(screen.getByText(`85% ${copy.remaining} · ${resetPrefix}5h 0m${resetSuffix}`)).toBeTruthy()
     })
@@ -244,30 +367,31 @@ describe('Antigravity bootstrap settings', () => {
       { state: 'logged-in', configured: true },
     )
     const subscribe = () => () => {}
+    const master = masterScope(true)
     const { container, rerender } = render(
-      <AntigravityAuthSettings rpc={rpc} t={key => en[key]} subscribe={subscribe} />,
+      <AntigravityAuthSettings rpc={rpc} t={key => en[key]} subscribe={subscribe} masterScope={master} />,
     )
 
     expect(await screen.findByRole('status', { name: 'Ready' })).toBeTruthy()
     expect(screen.getByText(en.intro)).toBeTruthy()
-    for (const key of ['authCardIntro', 'searchCardIntro', 'imageCardIntro', 'videoCardIntro'] as const) {
+    for (const key of ['authCardIntro', 'searchCardIntro', 'imageCardIntro', 'videoCardIntro', 'masterCardIntro'] as const) {
       expect(screen.getByText(en[key])).toBeTruthy()
     }
-    for (const key of ['toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
+    for (const key of ['toggleMaster', 'toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
       expect(screen.getByRole('checkbox', { name: en[key] })).toBeTruthy()
     }
     expect(container.textContent).not.toMatch(/\p{Script=Han}/u)
 
-    rerender(<AntigravityAuthSettings rpc={rpc} t={key => zh[key]} subscribe={subscribe} />)
+    rerender(<AntigravityAuthSettings rpc={rpc} t={key => zh[key]} subscribe={subscribe} masterScope={master} />)
 
     expect(await screen.findByRole('status', { name: '就绪' })).toBeTruthy()
     expect(screen.queryByRole('status', { name: 'Ready' })).toBeNull()
     expect(screen.queryByText(en.intro)).toBeNull()
     expect(screen.getByText(zh.intro)).toBeTruthy()
-    for (const key of ['authCardIntro', 'searchCardIntro', 'imageCardIntro', 'videoCardIntro'] as const) {
+    for (const key of ['authCardIntro', 'searchCardIntro', 'imageCardIntro', 'videoCardIntro', 'masterCardIntro'] as const) {
       expect(screen.getByText(zh[key])).toBeTruthy()
     }
-    for (const key of ['toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
+    for (const key of ['toggleMaster', 'toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
       expect(screen.getByRole('checkbox', { name: zh[key] })).toBeTruthy()
     }
   })
