@@ -67,6 +67,7 @@ function emptyService() {
     logout: vi.fn(),
     startLogin: vi.fn(),
     status: vi.fn(),
+    masterEnabled: vi.fn(() => true),
   }
 }
 
@@ -106,6 +107,20 @@ describe('Antigravity auth command', () => {
     await expect(command.handler({ rawInput: 'status' } as never)).resolves.toEqual({
       kind: 'success',
       text: 'Antigravity auth: configured; project available; z***@gmail.com; available: auth-llm',
+    })
+  })
+
+  it('reports the master switch instead of passing gates as available capabilities', async () => {
+    const service = {
+      ...emptyService(),
+      status: vi.fn(async (): Promise<AntigravityStatusView> => configuredStatus()),
+      masterEnabled: vi.fn(() => false),
+    }
+    const { command } = makeHarness(service)
+
+    await expect(command.handler({ rawInput: 'status' } as never)).resolves.toEqual({
+      kind: 'success',
+      text: 'Antigravity auth: configured; project available; z***@gmail.com; master switch off, capabilities paused',
     })
   })
 

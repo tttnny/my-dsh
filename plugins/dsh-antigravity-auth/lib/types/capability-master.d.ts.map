@@ -1,0 +1,1 @@
+{"version":3,"file":"capability-master.d.ts","sourceRoot":"","sources":["../../src/capability-master.ts"],"names":[],"mappings":"AAAA;;;;;;;;GAQG;AAGH,OAAO,CAAC,MAAM,0BAA0B,CAAA;AAExC,eAAO,MAAM,qCAAqC,uBAAuB,CAAA;AAEzE,gFAAgF;AAChF,eAAO,MAAM,kCAAkC,QAAQ,CAAA;AAEvD,eAAO,MAAM,MAAM;;;;GAEjB,CAAA;AAEF,MAAM,WAAW,yBAAyB;IACxC,QAAQ,CAAC,OAAO,EAAE,OAAO,CAAA;CAC1B"}

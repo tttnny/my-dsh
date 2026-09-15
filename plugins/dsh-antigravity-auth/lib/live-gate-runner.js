@@ -1,5 +1,5 @@
 import { t as isBoundedSafeText } from "./safe-text-AlEyN8q_.js";
-import { _ as defaultAuthStorePath, c as defaultCapabilityGatePath, i as createAntigravityAuthService, o as createFileCapabilityGates } from "./capability-lifecycle-DPNblVcJ.js";
+import { _ as defaultAuthStorePath, c as defaultCapabilityGatePath, i as createAntigravityAuthService, o as createFileCapabilityGates } from "./capability-lifecycle-BsiirqY8.js";
 import { ANTIGRAVITY_PROVIDER, AntigravityAdapter } from "./llm-adapter.js";
 import { AntigravitySearchProvider } from "./search.js";
 import { ANTIGRAVITY_IMAGE_MODEL, createAntigravityImageTools } from "./image.js";

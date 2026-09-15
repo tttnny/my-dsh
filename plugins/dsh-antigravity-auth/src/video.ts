@@ -166,7 +166,7 @@ export function apply(ctx?: Context, config: Config = { enabled: true, model: AN
     ctx,
     auth,
     id: 'video',
-    enabled: () => current().enabled,
+    enabled: () => auth.masterEnabled() && current().enabled,
     register: () => {
       const disposers = createAntigravityVideoTools({ auth, fs: candidate.fs!, settings: () => current() }).map(tool => candidate.tools!.register(tool))
       return () => { for (const dispose of disposers.reverse()) dispose() }

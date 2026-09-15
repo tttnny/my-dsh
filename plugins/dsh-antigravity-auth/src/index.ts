@@ -16,15 +16,36 @@ import {
   commandAccountMode, createLoopbackRpcGuard, type LoopbackRpcMode,
 } from './loopback-rpc.ts'
 import { mountCapabilityLifecycle } from './capability-lifecycle.ts'
+import {
+  ANTIGRAVITY_MASTER_DEFAULT_ENABLED,
+  ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE,
+  Config as MasterConfig,
+  type AntigravityMasterSettings,
+} from './capability-master.ts'
 
 export const name = 'antigravity-auth'
 export const inject = ['llm', 'attachments']
 
-/** Mount the Host-only OAuth service and its guarded account RPC channel. */
-export function apply(ctx: Context): void {
+/** Mount the Host-only OAuth service, its guarded account RPC channel, and the master switch. */
+export function apply(ctx: Context, config: AntigravityMasterSettings = { enabled: ANTIGRAVITY_MASTER_DEFAULT_ENABLED }): void {
+  // Resolved master switch. Until the settings section is registered there is no
+  // switch above the rows, so they keep their own gates: a composition without
+  // the settings service must not silently disable every capability.
+  let masterSource = (): AntigravityMasterSettings => config
+  let masterInstalled = false
+  const masterGate = (): boolean => (masterInstalled ? masterSource().enabled : true)
   const service = createAntigravityAuthService({
     storePath: defaultAuthStorePath(),
     autoActivateGates: true,
+    masterGate,
+  })
+  ctx.inject(['settings'], settingsCtx => {
+    settingsCtx.settings.installSection(ctx, ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE, MasterConfig, config, {
+      setSource: source => { masterSource = source; service.publishMasterGate() },
+      onChange: () => { service.publishMasterGate() },
+    })
+    masterInstalled = true
+    service.publishMasterGate()
   })
   // Account-control activation for the slash command. A terminal composition
   // composes no public WebServer, so the command starts enabled (local-only
@@ -61,7 +82,7 @@ export function apply(ctx: Context): void {
     ctx,
     auth: service,
     id: 'auth-llm',
-    enabled: () => runtime.llm?.registerAdapter !== undefined,
+    enabled: () => masterGate() && runtime.llm?.registerAdapter !== undefined,
     register: () => {
       if (runtime.llm?.registerAdapter === undefined) return undefined
       if (runtime.llm.listProviders?.().some(provider => provider.id === ANTIGRAVITY_PROVIDER)) return undefined
@@ -71,7 +92,11 @@ export function apply(ctx: Context): void {
       }
     },
     ownsAuth: true,
-    cleanup: unprovide,
+    cleanup: async () => {
+      // The switch leaves with this row; any surviving row falls back to its own gates.
+      masterInstalled = false
+      await unprovide()
+    },
     label: 'antigravity-auth: OAuth and LLM operations',
   })
   ctx.inject(['commands'], commandCtx => commandCtx.commands.register(createAntigravityAuthCommand(service, () => accountMode)))
@@ -90,4 +115,5 @@ export * from './quota.ts'
 export * from './media-admission.ts'
 export * from './model-catalog.ts'
 export * from './capability-gates.ts'
+export * from './capability-master.ts'
 export * from './live-gates.ts'

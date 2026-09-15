@@ -26,6 +26,7 @@ function bench(kind: 'search' | 'image' | 'video') {
       projectAvailable: false,
     })),
     watchStatus: vi.fn(() => vi.fn()),
+    masterEnabled: () => true,
     dispose: vi.fn(),
   }
   const ctx = {
@@ -98,6 +99,7 @@ describe('alpha.5 Host Settings registration', () => {
         capabilities: [{ id: 'search', state: 'available', reasonCode: 'capability-ready' }],
       })),
       watchStatus: vi.fn(() => vi.fn()),
+    masterEnabled: () => true,
       dispose: vi.fn(),
     }
     const initial: AntigravitySearchSettings = { enabled: true, model: 'initial-model', maxResults: 10 }

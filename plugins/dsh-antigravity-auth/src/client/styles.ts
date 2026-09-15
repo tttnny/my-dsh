@@ -55,6 +55,23 @@ export const SETTINGS_CSS = `
   flex: none;
 }
 
+/* Logged in but paused by the master switch: a green "ready" dot would lie. */
+.agy-status-dot[data-state="paused"] {
+  background: var(--dsw-alias-label-tertiary, #8b949e);
+  box-shadow: none;
+}
+
+.agy-paused-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, #8b949e);
+}
+
+.agy-card[data-state="paused"] {
+  border-style: dashed;
+}
+
 .agy-bundle-intro,
 .agy-card-intro {
   margin: 4px 0 0;

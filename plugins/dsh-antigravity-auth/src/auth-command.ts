@@ -7,14 +7,14 @@ import type { AntigravityStatusView } from './status.ts'
 
 type AuthCommandService = Pick<
   AntigravityAuthService,
-  'status' | 'acknowledgeRisk' | 'startLogin' | 'cancelLogin' | 'logout'
+  'status' | 'acknowledgeRisk' | 'startLogin' | 'cancelLogin' | 'logout' | 'masterEnabled'
 >
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function formatStatus(status: AntigravityStatusView): string {
+function formatStatus(status: AntigravityStatusView, masterEnabled: boolean): string {
   const login = status.login
   const parts = [
     login.configured ? 'configured' : 'not configured',
@@ -27,9 +27,12 @@ function formatStatus(status: AntigravityStatusView): string {
     parts.push(`phase ${login.phase}`)
   }
   if (login.errorCode !== undefined) parts.push(`error ${login.errorCode}`)
-  const available = status.capabilities
-    .filter(capability => capability.state === 'available')
-    .map(capability => capability.id)
+  // A passed gate is not a registration while the master switch is off, so the
+  // command must not call a paused capability "available".
+  if (!masterEnabled) parts.push('master switch off, capabilities paused')
+  const available = masterEnabled
+    ? status.capabilities.filter(capability => capability.state === 'available').map(capability => capability.id)
+    : []
   if (available.length > 0) parts.push(`available: ${available.join(', ')}`)
   return `Antigravity auth: ${parts.join('; ')}`
 }
@@ -63,7 +66,7 @@ export function createAntigravityAuthCommand(
       const operation = rawInput.trim() || 'status'
       if (operation === 'status') {
         try {
-          return { kind: 'success', text: formatStatus(await service.status()) }
+          return { kind: 'success', text: formatStatus(await service.status(), service.masterEnabled()) }
         } catch (error) {
           return { kind: 'error', text: `reading Antigravity auth status failed: ${errorMessage(error)}` }
         }

@@ -18,6 +18,12 @@ export interface AntigravityAuthServiceOptions {
     readonly gates?: CapabilityGateRegistry;
     readonly gatePath?: string;
     readonly autoActivateGates?: boolean;
+    /**
+     * Settings-owned master switch every capability row re-reads before
+     * registering. Absent (a row that owns its own service) leaves capabilities
+     * on their own gates, so a composition without the settings row keeps working.
+     */
+    readonly masterGate?: () => boolean;
 }
 export type { HostCredential } from './credential-coordinator.ts';
 export declare class AntigravityAuthService implements BootstrapStatusService {
@@ -27,6 +33,7 @@ export declare class AntigravityAuthService implements BootstrapStatusService {
     private readonly quota;
     private readonly gates;
     private readonly autoActivate;
+    private readonly masterGate;
     private riskAcknowledged;
     private activeFlowGeneration;
     private disposed;
@@ -36,6 +43,18 @@ export declare class AntigravityAuthService implements BootstrapStatusService {
     acknowledgeRisk(): Promise<RiskAcknowledgementResult>;
     /** Observe value-safe gate changes so capability rows can register without polling secrets. */
     watchStatus(listener: () => void): () => void;
+    /**
+     * Read the settings-owned master switch. The owning row resolves it through
+     * {@link AntigravityAuthServiceOptions.masterGate}; a row that created its own
+     * service has no switch above it and keeps its own capability gates.
+     */
+    masterEnabled(): boolean;
+    /**
+     * Re-evaluate every capability row after a master-switch change. Rows already
+     * observe this service through `watchStatus`, so one notification re-runs the
+     * registration decision for LLM, search, image, and video together.
+     */
+    publishMasterGate(): void;
     recordGate0(outcome: CapabilityGateOutcome): Promise<void>;
     recordLlmFamilyGate(family: LlmFamilyId, outcome: CapabilityGateOutcome): Promise<void>;
     recordCapabilityGate(id: CapabilityRowId, outcome: CapabilityGateOutcome): Promise<void>;

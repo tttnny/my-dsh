@@ -3,6 +3,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { apply, inject } from '../src/client/index.ts'
+import { ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE } from '../src/capability-master.ts'
 import type { AntigravityAuthKey } from '../src/client/locales.ts'
 import { createStatusView } from '../src/status.ts'
 
@@ -20,6 +21,14 @@ function bench(isLoopback = true) {
   const dictionaries = new Map<string, { zh: Record<AntigravityAuthKey, string>; en: Record<AntigravityAuthKey, string> }>()
   const slots: SlotRecord[] = []
   const listeners = new Set<() => void>()
+  const binds: string[] = []
+  const scope = {
+    getSnapshot: () => ({ status: 'ready', value: undefined, base: undefined, user: undefined, revision: 1, writable: true, mode: 'host' }),
+    subscribe: () => () => {},
+    set: async () => {},
+    unset: async () => {},
+    mutate: async () => {},
+  }
 
   const ctx = {
     locale: {
@@ -52,6 +61,12 @@ function bench(isLoopback = true) {
       },
     },
     connection: { isLoopback, rpc: { call } },
+    settingsScope: {
+      bind(spec: { namespace: string }) {
+        binds.push(spec.namespace)
+        return scope
+      },
+    },
     get(service: string) {
       if (service === 'connection') return { isLoopback, rpc: { call } }
       if (service === 'locale') return ctx.locale
@@ -76,6 +91,7 @@ function bench(isLoopback = true) {
     dictionaries,
     listeners,
     slots,
+    binds,
     dispose: () => { for (const dispose of disposers.reverse()) dispose() },
   }
 }
@@ -90,10 +106,15 @@ describe('Antigravity client apply', () => {
       expect.objectContaining({ name: 'relay.settings.item', id: 'antigravity-auth', order: 30 }),
     ])
     const settings = b.slots.find(s => s.options.id === 'antigravity-auth')
-    const props = (settings?.options.inject as (() => { rpc: { status: () => Promise<unknown> }; t: (key: AntigravityAuthKey) => string }) | undefined)?.()
+    const props = (settings?.options.inject as (() => { rpc: { status: () => Promise<unknown> }; t: (key: AntigravityAuthKey) => string; masterScope: unknown }) | undefined)?.()
     await props?.rpc.status()
     expect(b.call).toHaveBeenCalledWith('/api', 'antigravity-auth/status', {}, undefined)
     expect(props?.t('title')).toBe('Antigravity Auth')
+    // The bundle reads one settings namespace per capability plus the master switch,
+    // and the client literal must match the namespace the Host row registers.
+    expect(b.binds).toEqual(['antigravity-master', 'antigravity-search', 'antigravity-image', 'antigravity-video'])
+    expect(b.binds[0]).toBe(ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE)
+    expect(props?.masterScope).toBeDefined()
 
     b.dispose()
     expect(b.slots).toHaveLength(0)

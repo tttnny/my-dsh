@@ -1,4 +1,4 @@
-import { i as createAntigravityAuthService, n as registerCapabilitySet, t as mountCapabilityLifecycle } from "./capability-lifecycle-DPNblVcJ.js";
+import { i as createAntigravityAuthService, n as registerCapabilitySet, t as mountCapabilityLifecycle } from "./capability-lifecycle-BsiirqY8.js";
 import { d as privateStatusError, i as DEFAULT_PRIVATE_RESPONSE_BYTES, l as createPrivateTransport, m as PrivateTransportError, p as readPrivateText } from "./private-transport-DvkyFFK_.js";
 import { ANTIGRAVITY_WIRE_ORIGIN } from "./wire-identity.js";
 import { t as classifyPrivateFailure } from "./private-failure-nHkfjLiA.js";
@@ -419,7 +419,7 @@ function apply(ctx, config = {
 		ctx,
 		auth,
 		id: "image",
-		enabled: () => current().enabled,
+		enabled: () => auth.masterEnabled() && current().enabled,
 		register: () => registerCapabilitySet(createAntigravityImageTools(options), (tool) => candidate.tools.register(tool)),
 		ownsAuth: auth !== provided,
 		label: "antigravity-image: tool lifecycle"

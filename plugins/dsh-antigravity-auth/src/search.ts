@@ -405,7 +405,7 @@ export function apply(ctx?: Context, config: Config = { enabled: true, model: AN
     ctx,
     auth,
     id: 'search',
-    enabled: () => current().enabled,
+    enabled: () => auth.masterEnabled() && current().enabled,
     register: () => {
       const web = candidate.web as unknown as {
         registerSearchProvider: (value: WebSearchProvider) => () => void
