@@ -27,6 +27,25 @@
       }
       openTextInNewSession(st, text, title)
     }
+    // ==== 会话导航 / 改名单点（DSH 0.1.6 契约）====
+    // 0.1.6 起官方把「打开会话」收归 uiWorkspace（sessions.open 已移除），且 scope(id) 只读
+    // 已租用作用域、不再为会话物化（改名必须显式租用 sessions.using）。两处都用可选能力探测
+    // （ctx.get + 缺省分支），不写进 inject 硬依赖。
+    export const openSessionById = function (sid) {
+      if (!sid) return false
+      try {
+        const uiWs = ctx.get('uiWorkspace')
+        if (uiWs && typeof uiWs.openSession === 'function') { uiWs.openSession(sid); return true }
+      } catch (eWs) {}
+      return false
+    }
+    export const renameSessionById = function (sessions, sid, title) {
+      if (!sessions || !sid || typeof sessions.using !== 'function') return Promise.resolve(null)
+      return Promise.resolve(sessions.using(sid, { source: 'dswsNaming' }, function (ref) {
+        const face = ref && ref.binding && ref.binding.session
+        return (face && typeof face.rename === 'function') ? face.rename(title) : null
+      })).catch(function () { return null })
+    }
     // 彻底移除：extractIssueRefs 已移除（#345）
     export const inject = (st, text) => {
       if (st.injector) { st.injector(text); flash(st, tr('toast.injected'), 'ok') }

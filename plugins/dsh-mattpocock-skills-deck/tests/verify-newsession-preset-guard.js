@@ -38,6 +38,31 @@ function extractFactoryBlock(src) {
   return src.slice(start, end)
 }
 
+/** 按名字切出一段 `[export ]const <name> = function (...) {...}`（括号配平，dev/pkg 双形态通用） */
+function sliceFnDecl(src, name) {
+  const m = new RegExp('(?:export\\s+)?const\\s+' + name + '\\s*=\\s*function').exec(src)
+  if (!m) throw new Error('切片锚点缺失: ' + name)
+  const start = m.index
+  const open = src.indexOf('{', m.index + m[0].length)
+  if (open < 0) throw new Error('切片失败: ' + name)
+  let depth = 0
+  for (let i = open; i < src.length; i++) {
+    const ch = src[i]
+    if (ch === '{') depth++
+    else if (ch === '}') { depth--; if (depth === 0) return src.slice(start, i + 1).replace(/^export\s+/, '') }
+  }
+  throw new Error('切片括号不平衡: ' + name)
+}
+
+/** DSH 0.1.6 会话动作替身：打开 = uiWorkspace.openSession（0.1.6 起 sessions.open 已移除），
+ *  改名 = sessions.using 租用作用域后 rename（scope(id) 不再物化）。 */
+const uiWorkspaceStub016 = (rec) => ({ openSession: (sid) => { rec.opened = sid } })
+const sessionsActions016 = (rec, createFn, listSnap) => ({
+  create: createFn,
+  using: (sid, opts, op) => Promise.resolve(op({ binding: { session: { rename: async (t) => ({ ok: true, value: { title: t } }) } } })),
+  list: { getSnapshot: () => listSnap },
+})
+
 let failed = false
 let total = 0
 function check(ok, msg) {
@@ -227,7 +252,7 @@ async function testFile(file) {
   try {
     // 复用 openSrc 沙箱：需注入 isReusableBlank 等 helper
     let factory = factoryBlock.replace(/^\s*export\s+/gm, '')
-    const helpersSrc = factory.slice(factory.indexOf('const getRowPreset'), factory.indexOf('const buildCreateOpts')) + presetGuardSrc.replace(/^\s*export\s+/gm, '')
+    const helpersSrc = factory.slice(factory.indexOf('const getRowPreset'), factory.indexOf('const buildCreateOpts')) + presetGuardSrc.replace(/^\s*export\s+/gm, '') + ';\n' + sliceFnDecl(src, 'openSessionById') + ';\n' + sliceFnDecl(src, 'renameSessionById')
     let open = openSrc
     // 替换裸 pendingDraft 为可观测
     open = open.replace(/\bpendingDraft\b/g, '__dbg.pendingDraft')
@@ -238,20 +263,14 @@ async function testFile(file) {
     async function runWithSnap(snapById, curSid, cwd) {
       const rec = { created: null, opened: null }
       const dbg = { pendingDraft: null, pendingDraftTargetSid: null }
-      const sessionsStub = {
-        create: async (opts)=>{ rec.created = JSON.parse(JSON.stringify(opts)); return 'sid-new' },
-        scope: (sid)=>({sessionId: sid}),
-        sessionOf: ()=>({ rename: async (t)=>({ok:true, value:{title:t}}) }),
-        open: (sid)=>{ rec.opened = sid },
-        list: { getSnapshot: ()=>({ byId: snapById }) }
-      }
+      const sessionsStub = sessionsActions016(rec, async (opts)=>{ rec.created = JSON.parse(JSON.stringify(opts)); return 'sid-new' }, { byId: snapById })
       const workspacesStub = { list: { getSnapshot: ()=>({ items: [{ workspaceId: 'ws1', path: cwd }] }) }, create: async ()=>({workspaceId: 'ws1'}) }
       const st = { sessionId: curSid, cwd: cwd, snapshot: null }
       const fn = new Function('st','text','title','ctx','host','__dbg','inject','flash','tr','getCwdSync','keyOf','storeOf','hydrateFromCache','getCachedSnapshot','namingHintOf','isNewPlaceholderTitle','namingGuardianKick',
         helpersSrc + ';\n' + open + '; return openTextInNewSession'
       )
       const openFn = fn(st,'/wayfinder https://github.com/x/issues/1','[#1] test',
-        { get:(k)=> k==='sessions'?sessionsStub:k==='workspaces'?workspacesStub:null },
+        { get:(k)=> k==='sessions'?sessionsStub:k==='workspaces'?workspacesStub:k==='uiWorkspace'?uiWorkspaceStub016(rec):null },
         { call: async ()=>({ok:true}) }, dbg,
         ()=>{}, ()=>{}, (k)=>k, ()=>null, keyOf, ()=>({cwd, snapshot:null}), ()=>false, ()=>null, ()=>null, (t)=>/^\\[New\\] /.test(String(t)), ()=>{}
       )
@@ -302,21 +321,16 @@ async function testFile(file) {
       const rec = { created: [], opened: null, closed: [], injected: null, flashes: [] }
       const dbg = { pendingDraft: null, pendingDraftTargetSid: null }
       let n = 0
-      const sessionsStub = {
-        create: async (opts)=>{ rec.created.push(JSON.parse(JSON.stringify(opts))); return sids[Math.min(n++, sids.length - 1)] },
+      const sessionsStub = Object.assign(sessionsActions016(rec, async (opts)=>{ rec.created.push(JSON.parse(JSON.stringify(opts))); return sids[Math.min(n++, sids.length - 1)] }, { byId: snapById }), {
         close: async (sid)=>{ rec.closed.push(sid); return { ok: true } },
-        scope: (sid)=>({sessionId: sid}),
-        sessionOf: ()=>({ rename: async (t)=>({ok:true, value:{title:t}}) }),
-        open: (sid)=>{ rec.opened = sid },
-        list: { getSnapshot: ()=>({ byId: snapById }) }
-      }
+      })
       const workspacesStub = { list: { getSnapshot: ()=>({ items: [{ workspaceId: 'ws1', path: cwd }] }) }, create: async ()=>({workspaceId: 'ws1'}) }
       const st = { sessionId: curSid, cwd: cwd, snapshot: null }
       const fn = new Function('st','text','title','ctx','host','__dbg','inject','flash','tr','getCwdSync','keyOf','storeOf','hydrateFromCache','getCachedSnapshot','namingHintOf','isNewPlaceholderTitle','namingGuardianKick',
         helpersSrc + ';\n' + open + '; return openTextInNewSession'
       )
       const openFn = fn(st,'/wayfinder https://github.com/x/issues/1','[#1] test',
-        { get:(k)=> k==='sessions'?sessionsStub:k==='workspaces'?workspacesStub:null },
+        { get:(k)=> k==='sessions'?sessionsStub:k==='workspaces'?workspacesStub:k==='uiWorkspace'?uiWorkspaceStub016(rec):null },
         { call: async ()=>({ok:true}) }, dbg,
         (t)=>{ rec.injected = t }, (m,k)=>{ rec.flashes.push(String(m) + '|' + k) }, (k)=>k, ()=>null, keyOf, ()=>({cwd, snapshot:null}), ()=>false, ()=>null, ()=>null, (t)=>/^\\[New\\] /.test(String(t)), ()=>{}
       )

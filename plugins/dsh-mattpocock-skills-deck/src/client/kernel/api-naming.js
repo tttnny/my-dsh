@@ -199,18 +199,7 @@ export let pendingDraftTargetSid = null
       if (!target || target === cur) { try { log('info', 'naming.guard', { sidHash: dswsLogHash(sid), outcome: 'renamed', hintHash: dswsLogHash(o.hint || '') }) } catch (eL) {}; reportNamingResult(sid, 'renamed', { title: cur || target }); return }  // 已在位（如上次改名落定但回报失败）→ 收敛记账
       try {
         const sessions = ctx.get('sessions')
-        if (!sessions || typeof sessions.scope !== 'function' || typeof sessions.sessionOf !== 'function') return
-        const scope = sessions.scope(sid)
-        const face = scope ? sessions.sessionOf(scope) : null
-        if (!face || typeof face.rename !== 'function') return
-        // #315 防御：若面对象暴露会话标识，校验必须与订单 sid 一致，防止跨会话错写（宿主对非当前会话面解析回退到当前会话时拦截）
-        try {
-          const faceSid = (face && (face.sessionId || face.id || face.sid)) || (scope && (scope.sessionId || scope.id || scope.sid))
-          if (faceSid && String(faceSid) !== String(sid)) {
-            reportNamingResult(sid, 'failed', { error: 'session face mismatch: expected ' + sid + ' got ' + faceSid })
-            return
-          }
-        } catch (eFaceCheck) {}
+        if (!sessions) return
         // 二次校验：执行前再次确认当前标题仍为判定时的 cur，防止并发改名竞态错写
         try {
           const cur2 = namingCurrentTitleOf(sid)
@@ -219,7 +208,8 @@ export let pendingDraftTargetSid = null
             return
           }
         } catch (eCur2) {}
-        Promise.resolve(face.rename(target)).then(function (r) {
+        // 0.1.6 契约：经 sessions.using 显式租用会话作用域后改名（scope(id) 不再物化，见 renameSessionById）
+        Promise.resolve(renameSessionById(sessions, sid, target)).then(function (r) {
           try { log('info', 'naming.guard', { sidHash: dswsLogHash(sid), outcome: (r && r.ok) ? 'renamed' : 'failed', hintHash: dswsLogHash(o.hint || '') }) } catch (eL) {}
           if (r && r.ok) reportNamingResult(sid, 'renamed', { title: (r.value && r.value.title) || target })
           else reportNamingResult(sid, 'failed', { error: (r && r.error && r.error.message) || 'rename failed' })

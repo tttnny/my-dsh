@@ -67,6 +67,27 @@ function keyOf(raw) {
   return s
 }
 
+/** 按名字切出一段 `[export ]const <name> = function (...) {...}`（括号配平，dev/pkg 双形态通用） */
+function sliceFnDecl(src, name) {
+  const m = new RegExp('(?:export\\s+)?const\\s+' + name + '\\s*=\\s*function').exec(src)
+  if (!m) throw new Error('切片锚点缺失: ' + name)
+  const start = m.index
+  const open = src.indexOf('{', m.index + m[0].length)
+  if (open < 0) throw new Error('切片失败: ' + name)
+  let depth = 0
+  for (let i = open; i < src.length; i++) {
+    const ch = src[i]
+    if (ch === '{') depth++
+    else if (ch === '}') { depth--; if (depth === 0) return src.slice(start, i + 1).replace(/^export\s+/, '') }
+  }
+  throw new Error('切片括号不平衡: ' + name)
+}
+
+/** DSH 0.1.6 会话动作替身：打开 = uiWorkspace.openSession（0.1.6 起 sessions.open 已移除），
+ *  改名 = sessions.using 租用作用域后 rename（scope(id) 不再物化）。 */
+const uiWorkspaceStub016 = (rec) => ({ openSession: (sid) => { rec.opened = sid } })
+const usingStub016 = (renameImpl) => (sid, opts, op) => Promise.resolve(op(({ binding: { session: { rename: renameImpl } } })))
+
 async function testFile(file) {
   console.log('--- ' + file + ' ---')
   if (!testExists(file)) { check(false, file + ' 存在'); return }
@@ -81,6 +102,9 @@ async function testFile(file) {
   let ensureSrc
   try { ensureSrc = extractEnsureWorkspaceId(src) } catch(e) { check(false, file + ' ensureWorkspaceId 可提取 — ' + e.message); return }
   check(true, file + ' ensureWorkspaceId 可提取')
+  let opHelpersSrc
+  try { opHelpersSrc = sliceFnDecl(src, 'openSessionById') + ';\n' + sliceFnDecl(src, 'renameSessionById') } catch(e) { check(false, file + ' 会话动作单点 helper 可提取 — ' + e.message); return }
+  check(true, file + ' 会话动作单点 helper（openSessionById/renameSessionById）可提取')
 
   // a) 静態：ensureWorkspaceId 含 #364 矩阵与双参试探（注释在函数前，扫全文件）
   check(src.indexOf('#364')>=0 && src.indexOf('工作区回退')>=0, file + ' ensureWorkspaceId 含 #364 矩阵注释')
@@ -302,7 +326,7 @@ async function testFile(file) {
     let open = openSrc
     open = open.replace(/\bpendingDraft\b/g, '__dbg.pendingDraft')
     open = open.replace(/\bpendingDraftTargetSid\b/g, '__dbg.pendingDraftTargetSid')
-    const fullOpenHelpers = helpersSrc + ';\n' + factory.slice(factory.indexOf('const buildCreateOpts'), factory.indexOf('// ============ 命名守护'))
+    const fullOpenHelpers = opHelpersSrc + ';\n' + helpersSrc + ';\n' + factory.slice(factory.indexOf('const buildCreateOpts'), factory.indexOf('// ============ 命名守护'))
 
     async function runOpen(stOverrides, sessionsStub, workspacesStub) {
       const rec = { created: null, opened: null, injected: null, flashed: null }
@@ -310,19 +334,17 @@ async function testFile(file) {
       const defaultWorkspacesStub = workspacesStub || { list: { getSnapshot: ()=>({ items: [{ path: 'D:/my-app', workspaceId: 'ws1' }] }) }, create: async()=>({workspaceId:'ws1'}) }
       const defaultSessionsStub = sessionsStub || {
         create: async (opts)=>{ rec.created = JSON.parse(JSON.stringify(opts)); return 'sid-new' },
-        scope: (sid)=>({sessionId: sid}),
-        sessionOf: ()=>({ rename: async (t)=>({ok:true, value:{title:t}}) }),
-        open: (sid)=>{ rec.opened = sid },
+        using: usingStub016(async (t)=>({ok:true, value:{title:t}})),
         list: { getSnapshot: ()=>({ byId: {} }) }
       }
       const st = Object.assign({ sessionId: 'sess-1', cwd: 'D:/my-app', snapshot: null }, stOverrides)
       // host 实现 wf.cwd 兜底
       const hostStub = { call: async (m, args)=>{ if(m==='wf.cwd') return {ok:true, cwd:'D:/my-app'}; if(m==='wf.registerNewSessionWatcher') return {}; return {ok:true} } }
       const fn = new Function('st','text','title','ctx','host','__dbg','inject','flash','tr','getCwdSync','keyOf','storeOf','hydrateFromCache','getCachedSnapshot','namingHintOf','isNewPlaceholderTitle','namingGuardianKick',
-        helpersSrc + ';\n' + fullOpenHelpers + ';\n' + open + '; return openTextInNewSession'
+        opHelpersSrc + ';\n' + helpersSrc + ';\n' + fullOpenHelpers + ';\n' + open + '; return openTextInNewSession'
       )
       const openFn = fn(st,'/wayfinder https://github.com/x/issues/1','[#1] test',
-        { get:(k)=> k==='sessions'?defaultSessionsStub:k==='workspaces'?defaultWorkspacesStub:null },
+        { get:(k)=> k==='sessions'?defaultSessionsStub:k==='workspaces'?defaultWorkspacesStub:k==='uiWorkspace'?uiWorkspaceStub016(rec):null },
         hostStub, dbg,
         (s, txt)=>{ rec.injected = txt }, (s, msg, lvl)=>{ rec.flashed = lvl }, (k)=>k, ()=>null, keyOf, ()=>({cwd: 'D:/my-app', snapshot:null}), ()=>false, ()=>null, ()=>null, (t)=>/^\[New\] /.test(String(t)), ()=>{}
       )
@@ -335,9 +357,7 @@ async function testFile(file) {
     {
       const sessionsStub = {
         create: async (opts)=>{ return 'sid-new' },
-        scope: (sid)=>({sessionId: sid}),
-        sessionOf: ()=>({ rename: async(t)=>({ok:true,value:{title:t}}) }),
-        open: ()=>{},
+        using: usingStub016(async(t)=>({ok:true,value:{title:t}})),
         list: { getSnapshot: ()=>({ byId: {} }) }
       }
       const workspacesStub = { list: { getSnapshot: ()=>({ items: [] }) }, create: async()=>({workspaceId:'ws'})}
@@ -350,10 +370,10 @@ async function testFile(file) {
       const rec = { created:null, injected:null }
       const dbg = { pendingDraft:null, pendingDraftTargetSid:null }
       const fn = new Function('st','text','title','ctx','host','__dbg','inject','flash','tr','getCwdSync','keyOf','storeOf','hydrateFromCache','getCachedSnapshot','namingHintOf','isNewPlaceholderTitle','namingGuardianKick',
-        helpers + ';\n' + factoryAll + ';\n' + openA + '; return openTextInNewSession')
+        opHelpersSrc + ';\n' + helpers + ';\n' + factoryAll + ';\n' + openA + '; return openTextInNewSession')
       const st = { sessionId: 's1', cwd: '', snapshot: null }
       const openFn = fn(st, '/wayfinder https://github.com/x/issues/1','[#1] test',
-        { get:(k)=> k==='sessions'?sessionsStub:k==='workspaces'?workspacesStub:null },
+        { get:(k)=> k==='sessions'?sessionsStub:k==='workspaces'?workspacesStub:k==='uiWorkspace'?uiWorkspaceStub016(rec):null },
         { call: async()=>({ok:false}) }, dbg,
         (s, txt)=>{ rec.injected = txt }, ()=>{}, (k)=>k, ()=>null, keyOf, ()=>({}), ()=>false, ()=>null, ()=>null, (t)=>/\[New\]/.test(String(t)), ()=>{}
       )
@@ -370,8 +390,7 @@ async function testFile(file) {
           if (opts.cwd==='D:/my-app' && opts.agentPreset==='ptc' && !opts.workspaceId) return 'sid-cwd'
           throw new Error('unexpected opts '+JSON.stringify(opts))
         },
-        scope:(sid)=>({sessionId:sid}), sessionOf:()=>({rename: async(t)=>({ok:true,value:{title:t}})}),
-        open:(sid)=>{},
+        using: usingStub016(async(t)=>({ok:true,value:{title:t}})),
         list:{ getSnapshot: ()=>({ byId: {} }) }
       }
       const workspacesStub = {
@@ -385,17 +404,16 @@ async function testFile(file) {
       const dbg = { pendingDraft:null, pendingDraftTargetSid:null }
       const st = { sessionId:'s1', cwd:'D:/my-app', snapshot:null }
       const fn = new Function('st','text','title','ctx','host','__dbg','inject','flash','tr','getCwdSync','keyOf','storeOf','hydrateFromCache','getCachedSnapshot','namingHintOf','isNewPlaceholderTitle','namingGuardianKick',
-        helpers + ';\n' + factoryAll + ';\n' + openB + '; return openTextInNewSession')
+        opHelpersSrc + ';\n' + helpers + ';\n' + factoryAll + ';\n' + openB + '; return openTextInNewSession')
       let createdSid=null
       const sessionsStub2 = {
         create: async (opts)=>{ rec.created = opts; createdSid = 'sid-cwd'; return createdSid },
-        scope:(sid)=>({sessionId:sid}), sessionOf:()=>({rename: async(t)=>({ok:true,value:{title:t}})}),
-        open:(sid)=>{ rec.opened=sid },
+        using: usingStub016(async(t)=>({ok:true,value:{title:t}})),
         list:{ getSnapshot: ()=>({ byId: {} }) }
       }
       const hostStub = { call: async()=>({ok:true}) }
       const openFn = fn(st, '/wayfinder https://github.com/x/issues/1','[#1] test',
-        { get:(k)=> k==='sessions'?sessionsStub2:k==='workspaces'?workspacesStub:null },
+        { get:(k)=> k==='sessions'?sessionsStub2:k==='workspaces'?workspacesStub:k==='uiWorkspace'?uiWorkspaceStub016(rec):null },
         hostStub, dbg,
         ()=>{}, ()=>{}, (k)=>k, ()=>null, keyOf, ()=>({cwd:'D:/my-app'}), ()=>false, ()=>null, ()=>null, (t)=>/\[New\]/.test(String(t)), ()=>{}
       )
@@ -416,15 +434,14 @@ async function testFile(file) {
       const st = { sessionId:'s1', cwd:'D:/my-app', snapshot:null }
       let openC = openSrc.replace(/\bpendingDraft\b/g, '__dbg.pendingDraft').replace(/\bpendingDraftTargetSid\b/g, '__dbg.pendingDraftTargetSid')
       const fn = new Function('st','text','title','ctx','host','__dbg','inject','flash','tr','getCwdSync','keyOf','storeOf','hydrateFromCache','getCachedSnapshot','namingHintOf','isNewPlaceholderTitle','namingGuardianKick',
-        helpersSrc + ';\n' + factory.slice(factory.indexOf('const buildCreateOpts'), factory.indexOf('// ============ 命名守护')) + ';\n' + openC + '; return openTextInNewSession')
+        opHelpersSrc + ';\n' + helpersSrc + ';\n' + factory.slice(factory.indexOf('const buildCreateOpts'), factory.indexOf('// ============ 命名守护')) + ';\n' + openC + '; return openTextInNewSession')
       const sessionsStub = {
         create: async (opts)=>{ rec.created=opts; return 'sid-wid' },
-        scope:(sid)=>({sessionId:sid}), sessionOf:()=>({rename: async(t)=>({ok:true,value:{title:t}})}),
-        open:(sid)=>{ rec.opened=sid },
+        using: usingStub016(async(t)=>({ok:true,value:{title:t}})),
         list:{ getSnapshot: ()=>({ byId: {} }) }
       }
       const openFn = fn(st,'/wayfinder https://github.com/x/issues/1','[#1] test',
-        { get:(k)=> k==='sessions'?sessionsStub:k==='workspaces'?workspacesStub:null },
+        { get:(k)=> k==='sessions'?sessionsStub:k==='workspaces'?workspacesStub:k==='uiWorkspace'?uiWorkspaceStub016(rec):null },
         { call: async()=>({ok:true}) }, dbg,
         ()=>{}, ()=>{}, (k)=>k, ()=>null, keyOf, ()=>({}), ()=>false, ()=>null, ()=>null, (t)=>/\[New\]/.test(String(t)), ()=>{}
       )

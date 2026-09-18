@@ -18,7 +18,7 @@ export     const DetailsDock = (props) => {
       //   `slot entry crashed in 'rightbar'`，右侧面板整个不挂载。
       //   官方渲染器的 maybeObservableHook 已保证 useSessions「absent 时也返回一个 hook、不改变
       //   hook 调用顺序」（dsh-client-ui-renderer/lib/client.js），故 sid 判断一律移进 selector。
-      const hookCurrent = (props && typeof props.useSessions === 'function') ? props.useSessions(function (x) { return x.current }) : undefined
+      const hookCurrent = (props && typeof props.useSessions === 'function') ? props.useSessions(function (x) { return currentSessionIdOf(x) }) : undefined
       const propSid = props && (props.sessionId || (props.scope && props.scope.sessionId) || (props.session && props.session.id))
       const sid = propSid || hookCurrent
       const cx = React.useContext(DswsCtx)

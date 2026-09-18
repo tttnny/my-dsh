@@ -5,7 +5,7 @@
  */
     // ---- 5.8 主面板（可拖动 · 8 向缩放 · 三视图 · v14 跟随当前会话 + 刷新遮罩）----
 export     const OverlayPanel = (props) => {
-      const cur = props.useSessions((x) => x.current)
+      const cur = props.useSessions((x) => currentSessionIdOf(x))
       const cx = React.useContext(DswsCtx)
       const h = cx ? cx.h : React.createElement
       const s = cx ? cx.storeSvc.useStore(cur) : useStore(cur)
