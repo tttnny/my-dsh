@@ -37,24 +37,14 @@ export function createSkillProbe(deps) {
     function ensureSkillsInvalidateSubscription() {
       if (_skillsInvalidateSub) return
       try {
-        const skills = ctx.get('skills')
-        if (!skills) return
-        let off = null
-        if (typeof skills.onDidInvalidate === 'function') {
-          off = skills.onDidInvalidate(() => { invalidateSkillProbeCaches() })
-          _skillsInvalidateSub = off
-        } else if (typeof skills.on === 'function') {
-          const handler = () => { invalidateSkillProbeCaches() }
-          try { skills.on('invalidate', handler); _skillsInvalidateSub = () => { try { skills.off && skills.off('invalidate', handler) } catch {} } } catch {}
-          if (!_skillsInvalidateSub) {
-            try { skills.on('didInvalidate', handler); _skillsInvalidateSub = () => { try { skills.off && skills.off('didInvalidate', handler) } catch {} } } catch {}
-          }
-        } else if (typeof skills.subscribe === 'function') {
-          try { off = skills.subscribe(() => { invalidateSkillProbeCaches() }); _skillsInvalidateSub = off } catch {}
-        }
-        if (_skillsInvalidateSub) {
-          try { ctx.effect(() => () => { try { if (typeof _skillsInvalidateSub === 'function') _skillsInvalidateSub(); } catch {} _skillsInvalidateSub = null }) } catch {}
-        }
+        // 0.1.6-alpha.2：失效通知是 cordis 事件 skills/change（SkillRegistry 没有 onDidInvalidate/subscribe）。
+        // 事件到达即清本侧缓存，下一次 skills.get 从注册表重新取值（注册表自身不缓存探测结果）。
+        if (typeof ctx.on !== 'function') return
+        const handler = () => { invalidateSkillProbeCaches() }
+        const off = ctx.on('skills/change', handler)
+        _skillsInvalidateSub = (typeof off === 'function')
+          ? off
+          : () => { try { if (typeof ctx.off === 'function') ctx.off('skills/change', handler) } catch {} }
       } catch {}
     }
     function isSkillCardValid(skillText, expectedName) {

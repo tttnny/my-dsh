@@ -88,19 +88,6 @@ export function createLogStore(deps) {
     if (platform && platform.fs && typeof platform.fs.writeText === 'function') return await platform.fs.writeText(target, text)
     throw new Error('文件服务不可写')
   }
-  async function ensureLogDir(logDir) {
-    // 真正的建目录由写文件内部自动完成，这里建不上也不报错。
-    try {
-      const platform = typeof getPlatform === 'function' ? await getPlatform() : null
-      if (platform && platform.fs && typeof platform.fs.mkdir === 'function') {
-        try { await platform.fs.mkdir(logDir) } catch (e) {}
-        return
-      }
-    } catch (e) {}
-    try {
-      if (fs !== undefined && fs !== null && typeof fs.mkdir === 'function') await fs.mkdir(logDir)
-    } catch (e2) {}
-  }
   // 读当前级别是否允许产生日志；关闭时调用处直接返回。错误与告警始终允许。
   function isEnabled(level) {
     if (level === 'error' || level === 'warn') return true
@@ -169,7 +156,7 @@ export function createLogStore(deps) {
       const dir = typeof getCacheDir === 'function' ? await getCacheDir() : null
       if (!dir) { dropped += lines.length; notePersistFail('writeBatch', 'no-dir', ''); return false }
       const logDir = await joinLogPath(dir, LOG_DIR_NAME); failDir = logDir
-      await ensureLogDir(logDir)
+      // 内核 fs 服务没有 mkdir：日志目录必须已存在；缺失时下面的 writeText 直接抛错，由本函数计数并记失败。
       const fileName = formatLogFileName(new Date())
       const target = await resolveTarget(await joinLogPath(logDir, fileName))
       let existing = ''
@@ -307,14 +294,8 @@ export function createLogStore(deps) {
   async function deleteOneFile(logDir, name) {
     try {
       const target = await resolveTarget(await joinLogPath(logDir, name))
-      try {
-        if (fs && typeof fs.unlink === 'function') { await fs.unlink(target); return true }
-      } catch (e) {}
-      try {
-        const platform = typeof getPlatform === 'function' ? await getPlatform() : null
-        if (platform && platform.fs && typeof platform.fs.unlink === 'function') { await platform.fs.unlink(target); return true }
-      } catch (e2) {}
-      try { await writeTarget(target, ''); return true } catch (e3) { return false }
+      // 内核 fs 服务没有 unlink：清空按覆写为空文件执行。
+      try { await writeTarget(target, ''); return true } catch (e) { return false }
     } catch (e) { return false }
   }
   // 开关读电话：入参无；回参开关值与采样率。

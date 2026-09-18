@@ -27,7 +27,7 @@ export default {
     const fs = ctx.get('fs')
     if (subprocess === undefined || timer === undefined) return
 
-    // H1 #445：原 31–215 行（bundled provider）已搬到 ./bootstrap.js，下见动态接线。
+    // H1 #445：启动期装配在 ./bootstrap.js（分叉整改后只留技能名单惰性加载）。
     // B3 rpc host 侧 shim：harness.handle('wf.x') → Map + connection.rpc.handle('/dsws') dispatch
     // 方案 C 原样复制后 pkg 入口不再经 build.mjs 注入 shim，改为源文件自带，避免 ReferenceError: harness is not defined
     const __DSW_HANDLERS__ = new Map()

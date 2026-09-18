@@ -200,13 +200,14 @@ async function testFile(file) {
     check(helpers.isReusableBlank(brokenSame, normTarget) === false, file + ' isReusableBlank broken 同区 → 不可复用（#478）')
     check(helpers.isHealthyPreset('') === false && helpers.isHealthyPreset(null) === false && helpers.isHealthyPreset(undefined) === false, file + ' isHealthyPreset 空/缺 → 不健康（#478）')
     // #478 创建后验语义：明确 code/broken 判 bad，读不到判 unknown（快照滞后不阻断）
-    const mkSess = (byId, live) => ({ get: (live === undefined ? undefined : function () { return live }), list: { getSnapshot: () => ({ byId: byId }) } })
+    const mkSess = (byId) => ({ list: { getSnapshot: () => ({ byId: byId }) } })
     check(helpers.verifyFreshPreset(mkSess({ s1: { projectionValues: { agentPreset: 'code' } } }), 's1') === 'bad', file + ' verifyFreshPreset code 行 → bad（#478）')
     check(helpers.verifyFreshPreset(mkSess({ s1: { projectionValues: { agentPreset: 'broken' } } }), 's1') === 'bad', file + ' verifyFreshPreset broken 行 → bad（#478）')
     check(helpers.verifyFreshPreset(mkSess({ s1: { projectionValues: { agentPreset: 'ptc' } } }), 's1') === 'ok', file + ' verifyFreshPreset ptc 行 → ok（#478）')
-    check(helpers.verifyFreshPreset(mkSess({}, undefined), 's9') === 'unknown', file + ' verifyFreshPreset 快照无此行 → unknown（#478 快照滞后不阻断）')
+    check(helpers.verifyFreshPreset(mkSess({}), 's9') === 'unknown', file + ' verifyFreshPreset 快照无此行 → unknown（#478 快照滞后不阻断）')
     check(helpers.verifyFreshPreset({}, 's9') === 'unknown', file + ' verifyFreshPreset 无快照能力 → unknown（#478）')
-    check(helpers.verifyFreshPreset(mkSess({ s1: { projectionValues: { agentPreset: 'ptc' } } }, { agentPreset: 'code' }), 's1') === 'bad', file + ' verifyFreshPreset 实时对象 code 覆盖快照 → bad（#478）')
+    const spySess = { get: function () { throw new Error('sessions.get must not be called') }, list: { getSnapshot: () => ({ byId: { s1: { projectionValues: { agentPreset: 'ptc' } } } }) } }
+    check(helpers.verifyFreshPreset(spySess, 's1') === 'ok', file + ' verifyFreshPreset 不读 sessions.get，只取快照（0.1.6）')
     check(helpers.tryQuarantineSession({ close: function () { return { ok: true } } }, 's1') === true, file + ' tryQuarantineSession 有 close 能力 → 隔离 true（#478）')
     check(helpers.tryQuarantineSession({}, 's1') === false, file + ' tryQuarantineSession 无关闭能力 → false 但不抛（#478）')
     check(helpers.tryQuarantineSession(null, 's1') === false, file + ' tryQuarantineSession 空 sessions → false（#478）')

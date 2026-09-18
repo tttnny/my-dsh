@@ -255,23 +255,11 @@
               if (row && typeof row.cwd === 'string' && row.cwd) return row.cwd
             }
           } catch (e2) {}
-          if (typeof sessions.get === 'function') {
-            const s = sessions.get(sid)
-            if (s) {
-              const header = s.header || s.meta
-              const cwd = header && (header.cwd || header.path || header.worktree || header.projectDir || header.directory)
-              if (typeof cwd === 'string' && cwd) return cwd
-              const meta = s.meta
-              const cwd2 = meta && (meta.cwd || meta.path || meta.worktree || meta.projectDir || meta.directory)
-              if (typeof cwd2 === 'string' && cwd2) return cwd2
-              if (typeof s.cwd === 'string' && s.cwd) return s.cwd
-            }
-          }
         }
       } catch (e) { /* 忽略 */ }
       return ''
     }
-    // 分叉 preset 门控：读当前会话生效 preset（与 getCwdSync 同形，先活对象后快照行）。
+    // 分叉 preset 门控：读当前会话生效 preset（0.1.6-alpha.2 无 sessions.get，只读 sessions.list 快照行）。
     // 返回 string（已知）/ null（明确无 preset）/ undefined（未知→宿主自行解析或回退）。
     export const readSessionPreset = function (sid) {
       try {
@@ -280,20 +268,6 @@
         if (!sessions) return undefined
         let seenNull = false
         const pick = function (v) { if (typeof v === 'string' && v) return v; if (v === null) seenNull = true; return null }
-        try {
-          if (typeof sessions.get === 'function') {
-            const s = sessions.get(sid)
-            if (s) {
-              const hit = pick(s.agentPreset) || pick(s.preset)
-              if (hit) return hit
-              try { const pv = s.projections && s.projections.values && s.projections.values.agentPreset; const h2 = pick(pv); if (h2) return h2 } catch (eP) {}
-              try { const h3 = pick(s.projectionValues && s.projectionValues.agentPreset); if (h3) return h3 } catch (eP2) {}
-              const header = s.header || s.meta
-              const hp = pick(header && header.agentPreset)
-              if (hp) return hp
-            }
-          }
-        } catch (e3) {}
         try {
           if (sessions.list && typeof sessions.list.getSnapshot === 'function') {
             const snap = sessions.list.getSnapshot()
