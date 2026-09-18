@@ -20,7 +20,7 @@ apply(state, event) {
 
 ——`init` 不接第二个参数，`apply` 折叠全部事件。`dsh-session-projection` 明确把「精确的 fork 继承切点」作为 `init(header, inheritedEventCount)` 的第二参交给投影，这里没有用它；投影折叠的是 `session.snapshotEvents()`（含继承前缀）。结果是：分叉子会话一建好，队列里就带着源会话那条未认领的消息——用户发的第一条消息只能排在它后面，而那条幽灵消息先被 `claim()` 认领、作为子会话第一轮输入发给模型。
 
-0.1.5-alpha.1 之前，inbox 是「只重放 `session.ownEvents()`」（跳过继承前缀）的类；本补丁恢复的正是这个语义。
+inbox 应有的语义是「只重放该会话自己的事件」（跳过继承前缀）；本补丁让它回到这个语义。
 
 ## 修复方案
 
@@ -45,8 +45,8 @@ const inboxProjectionDefinition = {
 /** Standard fold that reconstructs pending input and rejects invalid durable splice history. */
 // local patch (user): a seeded (forked) child must not replay the fork parent's
 // `agent/inbox/spliced` events. `init` receives the exact inherited cut; keep it
-// beside the state so `apply` ignores every splice before it — the semantics the
-// pre-0.1.5-alpha.1 `session.ownEvents()` replay had.
+// beside the state so `apply` ignores every splice before it — the fork-child
+// replay semantics this projection must keep.
 const inboxInheritedCut = /* @__PURE__ */ new WeakMap();
 const inboxProjectionDefinition = {
 ```
