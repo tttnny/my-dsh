@@ -22,6 +22,22 @@ const readTestSrc = (file) => file.indexOf('（拼合）') >= 0 ? API_SRC_FILES.
 const testExists = (file) => file.indexOf('（拼合）') >= 0 ? API_SRC_FILES.every((f) => fs.existsSync(f)) : fs.existsSync(file) // #457 K4：三文件全存在才算存在
 
 // ---- 提取真实函数源码 ----
+/** 按名字切出一段 `[export ]const <name> = function (...) {...}`（括号配平，dev/pkg 双形态通用） */
+function sliceFnDecl(src, name) {
+  const m = new RegExp('(?:export\\s+)?const\\s+' + name + '\\s*=\\s*function').exec(src)
+  if (!m) throw new Error('切片锚点缺失: ' + name)
+  const start = m.index
+  const open = src.indexOf('{', m.index + m[0].length)
+  if (open < 0) throw new Error('切片失败: ' + name)
+  let depth = 0
+  for (let i = open; i < src.length; i++) {
+    const ch = src[i]
+    if (ch === '{') depth++
+    else if (ch === '}') { depth--; if (depth === 0) return src.slice(start, i + 1).replace(/^export\s+/, '') }
+  }
+  throw new Error('切片括号不平衡: ' + name)
+}
+
 function extractOpenFn(src) {
   const marker = 'const openTextInNewSession = function (st, text, title) {'
   const src2 = src.indexOf(marker) >= 0 ? src : src.replace(/export const openTextInNewSession/, 'const openTextInNewSession')
@@ -35,7 +51,7 @@ function extractOpenFn(src) {
 // ---- 沙箱执行（b 分支用 faceNoPrompt 变体）----
 // pendingDraft / pendingDraftTargetSid 是模块级 let：观察侧把源码中的裸标识符重写为
 // __dbg.*（可变对象字段），赋值可观测且行为与原型一致。
-function runSandbox(fnSrc, faceVariant) {
+function runSandbox(src, fnSrc, faceVariant) {
   let replaced = fnSrc
   replaced = replaced.replace(/\bpendingDraft\b/g, '__dbg.pendingDraft')
   replaced = replaced.replace(/\bpendingDraftTargetSid\b/g, '__dbg.pendingDraftTargetSid')
@@ -44,12 +60,12 @@ function runSandbox(fnSrc, faceVariant) {
   const face = faceVariant === 'no-prompt'
     ? { rename: async (t) => ({ ok: true, value: { title: t } }) }
     : { rename: async (t) => ({ ok: true, value: { title: t } }), prompt: async (content, mode) => { rec.promptCalls.push({ content: JSON.parse(JSON.stringify(content)), mode }); return { ok: true } } }
+  // DSH 0.1.6 契约：打开会话 = uiWorkspace.openSession；改名 = sessions.using 租用作用域后 rename
   const sessionsStub = {
     create: async (opts) => { rec.created = JSON.parse(JSON.stringify(opts || {})); return 'sid-1' },
-    scope: (sid) => ({ sessionId: sid }),
-    sessionOf: () => face,
-    open: (sid) => { rec.opened = sid },
+    using: (sid, opts, op) => Promise.resolve(op({ binding: { session: face } })),
   }
+  const uiWorkspaceStub = { openSession: (sid) => { rec.opened = sid } }
   const workspacesStub = { list: { getSnapshot: () => ({ items: [{ workspaceId: 'ws9', path: 'D:/repo' }] }) } }
   const st = { sessionId: 'src-sess', cwd: 'D:/repo', snapshot: null }
   const fn = new Function(
@@ -57,10 +73,10 @@ function runSandbox(fnSrc, faceVariant) {
     'inject', 'flash', 'tr', 'getCwdSync', 'keyOf', 'storeOf', 'hydrateFromCache',
     'getCachedSnapshot', 'issueRefNumbersFrom', 'recordIssuePath', 'namingHintOf',
     'isNewPlaceholderTitle', 'namingGuardianKick',
-    replaced + '; return openTextInNewSession'
+    sliceFnDecl(src, 'openSessionById') + ';\n' + sliceFnDecl(src, 'renameSessionById') + ';\n' + replaced + '; return openTextInNewSession'
   )
   const openFn = fn(
-    st, '', '', { get: (k) => (k === 'sessions' ? sessionsStub : k === 'workspaces' ? workspacesStub : null) },
+    st, '', '', { get: (k) => (k === 'sessions' ? sessionsStub : k === 'workspaces' ? workspacesStub : k === 'uiWorkspace' ? uiWorkspaceStub : null) },
     { call: async () => ({ ok: true }) }, dbg,
     () => {}, () => {}, (k) => k, () => null, (s) => String(s),
     (sid) => ({ cwd: 'D:/repo', snapshot: null }), () => false, () => null,
@@ -101,7 +117,7 @@ for (const file of files) {
   check(fnSrc.indexOf('#315 回滚') >= 0 || fnSrc.indexOf('先填草稿') >= 0, file + ' 源码含回滚注释（可追溯）')
 
   // a) 有 prompt 能力的面对象：也不应调用 prompt（草稿-only）
-  const env = runSandbox(fnSrc, 'with-prompt')
+  const env = runSandbox(src, fnSrc, 'with-prompt')
   await sleep(40)
   check(env.rec.created && env.rec.created.workspaceId === 'ws9', file + ' 创建调用携带 workspaceId（同工作区）')
   check(env.rec.opened === 'sid-1', file + ' 创建后 open 切换到新会话')
@@ -109,7 +125,7 @@ for (const file of files) {
   check(env.dbg.pendingDraft === '/wayfinder 调查 #315 的提示词' && env.dbg.pendingDraftTargetSid === 'sid-1', file + ' 有 prompt 能力时仍挂草稿（pendingDraft + target sid）')
 
   // b) 无 prompt 能力 → 同样挂草稿
-  const env2 = runSandbox(fnSrc, 'no-prompt')
+  const env2 = runSandbox(src, fnSrc, 'no-prompt')
   await sleep(40)
   check(env2.rec.promptCalls.length === 0, file + ' 无 prompt 能力时不调用 prompt')
   check(env2.dbg.pendingDraft === '/wayfinder 调查 #315 的提示词' && env2.dbg.pendingDraftTargetSid === 'sid-1', file + ' 回退原预填草稿路径（pendingDraft + target sid）')

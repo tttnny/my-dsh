@@ -1,5 +1,11 @@
 /**
- * dsh-workspace-tree — browser half (v1.9.2 墓碑物理自愈版)。
+ * dsh-workspace-tree — browser half (v1.9.10)。
+ *
+ * 内核契约基线：DSH 0.1.6。
+ *  - 主视图当前会话读 sessions.list 行上的 retainedBy.mainView（快照已无 current）；
+ *  - 会话导航走 uiWorkspace：打开 openSession、清空主视图 clearMain；
+ *  - 重命名经 sessions.using() 租用会话作用域（binding(id) 只读已租用代）；
+ *  - 等待交互与完成未读取 useSessionStatus 座位（会话行上无 pendingInteraction/completed）。
  *
  * 核心设计（第一性原理对齐）：
  *  - 会话空间归属与归档状态正交；官方列表返回的会话一律可见（含空白草稿），
@@ -42,11 +48,11 @@ window.__ModuleLoader__.load({
     /** Cordis 插件名（与 patch 行 id 一致）。 */
     const name = "dsh-workspace-tree";
     /**
-     * 依赖的客户端服务。注意：uiWorkspace（新版 DSH 独立出的会话/目录导航服务，旧版在
-     * workspaces 上）**不声明为硬依赖**——cordis 的 inject 声明会等待服务就绪才激活插件，
-     * 旧版 DSH 永远不注册该服务会导致整个插件静默不加载。改为运行时探测（resolveUiWorkspace）。
+     * 依赖的客户端服务。uiWorkspace（会话/目录导航服务）**不声明为硬依赖**：cordis 的
+     * inject 声明会等该服务就绪才激活插件，而插件激活与 slot 注入的时刻都可能早于它注册；
+     * 改为运行时探测（resolveUiWorkspace），到调用点再解析。
      */
-    const inject = ["slots", "sessions", "workspaces", "connection"];
+    const inject = ["slots", "sessions", "workspaces"];
 
     const LS_MODE = "dsh-workspace-tree.mode";
     const LS_DIRS = "dsh-workspace-tree.dirs";
@@ -293,16 +299,29 @@ window.__ModuleLoader__.load({
      */
     const PENDING_LABEL = { "approval": "等待审批", "plan-review": "等待计划复核", "question": "等待回答提问" };
     /**
-     * 从官方 pending 座位（`useSessionPendingInteraction` 的快照，Map<SessionId, {kind}>）
-     * 取一条待处理交互。注意：客户端 `SessionSummary` 上**没有** pendingInteraction 字段，
-     * 这个数据只走座位——本插件 v1.9.3 之前误读 row.pendingInteraction（恒 undefined），
-     * 导致「等待审批的会话"可归档」与状态点 warning 态永不出现。
+     * 官方会话状态座位（`useSessionStatus` 的快照，Map<SessionId,
+     * { running, pendingInteraction, completionUnread }>）里的单行状态项。
+     * 注意：客户端 SessionSummary 行上**没有** pendingInteraction / completed 字段，
+     * 这两项数据只走座位。
      */
-    function pendingKindOf(pendingInteractions, sid) {
-      if (!pendingInteractions || typeof pendingInteractions.get !== "function") return null;
-      const entry = pendingInteractions.get(sid) || pendingInteractions.get(String(sid));
-      const kind = entry && entry.kind;
+    function sessionStatusEntryOf(sessionStatus, sid) {
+      if (!sessionStatus || typeof sessionStatus.get !== "function") return null;
+      return sessionStatus.get(sid) || sessionStatus.get(String(sid)) || null;
+    }
+    /**
+     * 取一条待处理交互的 kind（审批 / 计划复核 / 提问）。
+     */
+    function pendingKindOf(sessionStatus, sid) {
+      const entry = sessionStatusEntryOf(sessionStatus, sid);
+      const kind = entry && entry.pendingInteraction && entry.pendingInteraction.kind;
       return (kind && Object.prototype.hasOwnProperty.call(PENDING_LABEL, kind)) ? kind : null;
+    }
+    /**
+     * 完成未读提醒位（会话跑完但人还没看）：0.1.6 起行上不再有 `completed` 字段。
+     */
+    function completionUnreadOf(sessionStatus, sid) {
+      const entry = sessionStatusEntryOf(sessionStatus, sid);
+      return !!(entry && entry.completionUnread === true);
     }
     /**
      * 归档门槛的 Host 权威判据。官方 workspace/archiveSession 在 Host 侧没有运行态守卫
@@ -396,14 +415,14 @@ window.__ModuleLoader__.load({
       // （live mode 可为 archive 且不持久化，设置页拿不到它）
       return {
         // 注意：此处版本号为手写常量，发版改 package.json 时同步改这里
-        plugin: "dsh-workspace-tree@1.9.9",
+        plugin: "dsh-workspace-tree@1.9.10",
         t: new Date().toISOString(),
         ...(noSnap ? { warning: "snapshots unavailable（ctx 未就绪或已释放）" } : {}),
         defaultMode,
         sessions: {
           phase: sessions ? (sessions.phase || null) : null,
           idsCount: sessions && Array.isArray(sessions.ids) ? sessions.ids.length : 0,
-          current: sessions ? (sessions.current ?? null) : null,
+          current: currentSessionIdOf(sessions),
           rowsTruncated: !!(sessions && Array.isArray(sessions.ids) && sessions.ids.length > 60),
           rows: (sessions && Array.isArray(sessions.ids) ? sessions.ids : []).slice(0, 60).map((sid) => {
             const row = byId[sid] || null;
@@ -596,13 +615,13 @@ window.__ModuleLoader__.load({
       });
     }
 
-    function sessionState(row, current, pendingKind) {
+    function sessionState(row, current, pendingKind, completionUnread) {
       if (!row) return "done";
       // 等待人回复（审批/计划复核/提问）优先于运行态：这种会话在动，但卡在人身上。
-      // pendingKind 由官方 pending 座位传入（row 上没有该字段，见 pendingKindOf 注释）。
+      // pendingKind / completionUnread 均由官方会话状态座位传入（row 上没有这两个字段）。
       if (pendingKind) return "warning";
       if (row.running) return "ongoing";
-      if (row.completed && !current) return "done-reminder";
+      if (completionUnread && !current) return "done-reminder";
       return "done";
     }
 
@@ -756,11 +775,31 @@ window.__ModuleLoader__.load({
       return set;
     }
 
+    /**
+     * 列表快照里的「主视图当前会话」。
+     * DSH 0.1.6 起 `sessions.list` 快照不再携带 `current`：主视图持有者改由行上的
+     * `retainedBy.mainView` 计数标识（与内核 mainSessionId 同款判据）。按快照对象缓存，
+     * 避免逐行渲染时反复遍历 byId。
+     */
+    const currentSessionIdCache = new WeakMap();
+    function currentSessionIdOf(sessions) {
+      if (!sessions || typeof sessions !== "object") return null;
+      if (currentSessionIdCache.has(sessions)) return currentSessionIdCache.get(sessions);
+      let current = null;
+      const byId = sessions.byId || {};
+      for (const id of Object.keys(byId)) {
+        const row = byId[id];
+        if (row && row.retainedBy && (row.retainedBy.mainView ?? 0) > 0) { current = id; break; }
+      }
+      currentSessionIdCache.set(sessions, current);
+      return current;
+    }
+
     /** 可见会话 ID 列表投影。 */
     function visibleSessionIds(ids, sessions, archived, hardDeleted) {
       if (!Array.isArray(ids)) return [];
       const byId = (sessions && sessions.byId) || {};
-      const cur = sessions ? sessions.current : null;
+      const cur = currentSessionIdOf(sessions);
       return ids.filter((sid) => {
         const row = byId[sid];
         return sessionVisible(row, cur, archived, hardDeleted);
@@ -772,20 +811,20 @@ window.__ModuleLoader__.load({
     function aggPriority(st) {
       return AGG_PRIO[st] || 0;
     }
-    function aggOfSessionIds(ids, sessions, archived, hardDeleted, pendingInteractions) {
+    function aggOfSessionIds(ids, sessions, archived, hardDeleted, sessionStatus) {
       const byId = (sessions && sessions.byId) || {};
-      const cur = sessions ? sessions.current : null;
+      const cur = currentSessionIdOf(sessions);
       let best = null;
       for (const sid of ids || []) {
         const row = byId[sid];
         if (!sessionVisible(row, cur, archived, hardDeleted)) continue;
-        const st = sessionState(row, sid === cur, pendingKindOf(pendingInteractions, sid));
+        const st = sessionState(row, sid === cur, pendingKindOf(sessionStatus, sid), completionUnreadOf(sessionStatus, sid));
         if (aggPriority(st) > aggPriority(best)) best = st;
         if (best === "warning") return best;
       }
       return best;
     }
-    function decorateAgg(node, wsOf, childrenOf, sessions, archived, hardDeleted, pendingInteractions) {
+    function decorateAgg(node, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus) {
       let best = null;
       let running = false;
       let hasSessions = false;
@@ -793,14 +832,14 @@ window.__ModuleLoader__.load({
       if (w) {
         const vis = visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted);
         if (vis.length > 0) hasSessions = true;
-        best = aggOfSessionIds(w.sessionIds, sessions, archived, hardDeleted, pendingInteractions);
+        best = aggOfSessionIds(w.sessionIds, sessions, archived, hardDeleted, sessionStatus);
         const byId = (sessions && sessions.byId) || {};
         for (const sid of vis) {
           if (byId[sid] && byId[sid].running) { running = true; break; }
         }
       }
       for (const c of childrenOf(node)) {
-        const cs = decorateAgg(c, wsOf, childrenOf, sessions, archived, hardDeleted, pendingInteractions);
+        const cs = decorateAgg(c, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus);
         if (aggPriority(cs) > aggPriority(best)) best = cs;
         if (c.aggRunning) running = true;
         if (c.aggHasSessions) hasSessions = true;
@@ -930,16 +969,15 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 工作区模式：会话行 ══════════════
-    function SessionRow({ sid, sessions, pendingKind, depth, indent, now, onOpen, onRename, onArchive }) {
+    function SessionRow({ sid, sessions, pendingKind, completionUnread, depth, indent, now, onOpen, onRename, onArchive }) {
       const row = (sessions && sessions.byId) ? sessions.byId[sid] : null;
       if (!row) return null;
-      const selected = sid === sessions.current;
-      const dotState = sessionState(row, selected, pendingKind);
-      // v1.9.0 归档门槛：运行中/等待回复审批的会话不允许归档（进区后才可能删不掉的历史
+      const selected = sid === currentSessionIdOf(sessions);
+      const dotState = sessionState(row, selected, pendingKind, completionUnread);
+      // 归档门槛：运行中/等待回复审批的会话不允许归档（进区后才可能删不掉的历史
       // 守卫已整体移除；归档区删除零守卫，因此门槛只需保证「运行态不进区」）。
-      // v1.9.5：判据改读真实数据源——运行态取 row.running，等待交互取官方 pending 座位
-      // （row.pendingInteraction 不存在，恒 undefined）；置灰只是提示，真正的门槛在
-      // onArchiveSession（那里复查，并再向 Host 要一次 agents 状态）。
+      // 判据读真实数据源——运行态取 row.running，等待交互取官方会话状态座位；置灰
+      // 只是提示，真正的门槛在 onArchiveSession（那里复查，并再向 Host 要一次 agents 状态）。
       const canArchive = !row.running && !pendingKind;
       return h("div", {
         className: "dswt-session" + (selected ? " dswt-selected" : ""),
@@ -1033,7 +1071,7 @@ window.__ModuleLoader__.load({
     function ArchiveSessionRow({ sid, sessions, onOpen, onRestore, onDelete, busy }) {
       const row = (sessions && sessions.byId) ? sessions.byId[sid] : null;
       if (!row) return null;
-      const selected = sessions && sessions.current === sid;
+      const selected = !!sessions && currentSessionIdOf(sessions) === sid;
       return h("div", {
         className: "dswt-session dswt-archivedRow" + (selected ? " dswt-selected" : ""),
         role: "treeitem",
@@ -1395,7 +1433,7 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 工作区模式：组 ══════════════
-    function WorkspaceGroup({ node, depth, indent, showAgg, sessions, pendingInteractions, archived, hardDeleted, expandedGroups, toggleGroup, onNewSession, onOpenInIde, onRenameWs, onHideWs, onOpen, onRenameSession, onArchiveSession, now }) {
+    function WorkspaceGroup({ node, depth, indent, showAgg, sessions, sessionStatus, archived, hardDeleted, expandedGroups, toggleGroup, onNewSession, onOpenInIde, onRenameWs, onHideWs, onOpen, onRenameSession, onArchiveSession, now }) {
       const w = node.w;
       const gkey = w.workspaceId;
       const groupOpen = expandedGroups.has(gkey);
@@ -1429,11 +1467,12 @@ window.__ModuleLoader__.load({
         ]),
         groupOpen && h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": (16 + depth * indent) + "px" } }, [
           sids.map((sid) => h(SessionRow, {
-            key: "s:" + sid, sid, sessions, pendingKind: pendingKindOf(pendingInteractions, sid), depth: depth + 1, indent, now, onOpen,
+            key: "s:" + sid, sid, sessions, depth: depth + 1, indent, now, onOpen,
+            pendingKind: pendingKindOf(sessionStatus, sid), completionUnread: completionUnreadOf(sessionStatus, sid),
             onRename: onRenameSession, onArchive: onArchiveSession
           })),
           (node.children || []).map((child) => h(WorkspaceGroup, {
-            key: child.w.workspaceId, node: child, depth: depth + 1, indent, showAgg, sessions, pendingInteractions, archived, hardDeleted,
+            key: child.w.workspaceId, node: child, depth: depth + 1, indent, showAgg, sessions, sessionStatus, archived, hardDeleted,
             expandedGroups, toggleGroup, onNewSession, onOpenInIde, onRenameWs, onHideWs,
             onOpen, onRenameSession, onArchiveSession, now
           }))
@@ -1443,13 +1482,13 @@ window.__ModuleLoader__.load({
 
     // ══════════════ 主组件 ══════════════
     function WorkspaceTreeBrowser(props) {
-      const { wide, useSessions, useWorkspaces, useSessionPendingInteraction, liveSessionRow, renderSlot, startSession, connectWorkspace, open, clearSession, renameSession, renameWorkspace, archiveSession, createWorkspace, deleteWorkspace, pickDirectory, listDirectory, createDirectory, refreshSessions, adoptSession } = props;
+      const { wide, useSessions, useWorkspaces, useSessionStatus, liveSessionRow, renderSlot, startSession, connectWorkspace, open, clearSession, renameSession, renameWorkspace, archiveSession, createWorkspace, deleteWorkspace, pickDirectory, listDirectory, createDirectory, refreshSessions, adoptSession } = props;
       const sessions = useSessions((s) => s);
       const workspaces = useWorkspaces((s) => s);
-      // 官方「等待人回复」座位（数据源在 dsh-client-ui-session 的 pendingInteractions，
-      // Map<SessionId, {kind}>）。旧版 DSH 没有这个座位：缺席时按「无待处理交互」降级。
-      const pendingInteractions = typeof useSessionPendingInteraction === "function"
-        ? useSessionPendingInteraction((s) => s)
+      // 官方会话状态座位（数据源在 dsh-client-ui-session：运行中 / 待处理交互 /
+      // 完成未读，Map<SessionId, { running, pendingInteraction, completionUnread }>）。
+      const sessionStatus = typeof useSessionStatus === "function"
+        ? useSessionStatus((s) => s)
         : null;
 
       const [mode, setMode] = useState(initialMode);
@@ -1952,7 +1991,7 @@ window.__ModuleLoader__.load({
         // 若照常判定会把真有会话的工作区误判为空 → 永久注销，故一律按占用处理。
         if (!sessions || sessions.phase !== "ready") return true;
         const byId = (sessions && sessions.byId) || {};
-        const cur = sessions ? sessions.current : null;
+        const cur = currentSessionIdOf(sessions);
         for (const raw of w.sessionIds || []) {
           const id = String(raw);
           const row = byId[id] || null;
@@ -2049,7 +2088,7 @@ window.__ModuleLoader__.load({
           showAlert("会话正在运行，结束后才能归档", "无法归档");
           return;
         }
-        const pendingKind = pendingKindOf(pendingInteractions, sessionId);
+        const pendingKind = pendingKindOf(sessionStatus, sessionId);
         if (pendingKind) {
           showAlert("会话正在" + PENDING_LABEL[pendingKind] + "，处理完才能归档", "无法归档");
           return;
@@ -2066,11 +2105,12 @@ window.__ModuleLoader__.load({
         } catch (error) {
           showAlert(String((error && error.message) || error), "归档会话失败");
         }
-      }, [archiveSession, showAlert, sessions, liveSessionRow, pendingInteractions, refreshSessions]);
+      }, [archiveSession, showAlert, sessions, liveSessionRow, sessionStatus, refreshSessions]);
 
       const isCurrentArchived = useMemo(() => {
-        if (!sessions || !sessions.current) return false;
-        return archived.has(String(sessions.current));
+        const current = currentSessionIdOf(sessions);
+        if (!current) return false;
+        return archived.has(String(current));
       }, [sessions, archived]);
 
       useEffect(() => {
@@ -2170,7 +2210,8 @@ window.__ModuleLoader__.load({
             if (!r.ok) throw new Error(r.error || "删除失败");
             const deleted = Array.isArray(r.deleted) ? r.deleted : toDelete;
             if (deleted.length > 0) rememberDeleted(deleted);
-            if (sessions && sessions.current && deleted.some((id) => String(id) === String(sessions.current))) {
+            const current = currentSessionIdOf(sessions);
+            if (current && deleted.some((id) => String(id) === String(current))) {
               startSession();
             }
             refreshSessions();
@@ -2299,11 +2340,11 @@ window.__ModuleLoader__.load({
         // 归档用全量森林：被“移除显示”的工作区的归档会话也必须可见可恢复，
         // 否则隐藏即永久失联（与“仅移除显示、归属不变”的承诺冲突）
         const archiveForest = buildWorkspaceForest(items);
-        for (const n of dirForest) decorateAgg(n, (x) => x.ws, (x) => x.children, sessions, archived, hardDeleted, pendingInteractions);
-        for (const n of wsForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, pendingInteractions);
-        for (const n of archiveForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, pendingInteractions);
+        for (const n of dirForest) decorateAgg(n, (x) => x.ws, (x) => x.children, sessions, archived, hardDeleted, sessionStatus);
+        for (const n of wsForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus);
+        for (const n of archiveForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus);
         return { dirForest, wsForest, archiveForest };
-      }, [visibleItems, items, sessions, archived, hardDeleted, pendingInteractions]);
+      }, [visibleItems, items, sessions, archived, hardDeleted, sessionStatus]);
 
       const dirForest = aggCtx.dirForest;
       const wsForest = aggCtx.wsForest;
@@ -2414,7 +2455,7 @@ window.__ModuleLoader__.load({
         // 工作区模式：全部会话均归属于某工作区（无归属者由后台自动收编），故无「未分组」区块
         body = h("div", { key: "l", className: "dswt-list", role: "tree", "aria-label": "工作区" }, [
           wsForest.map((node) => h(WorkspaceGroup, {
-            key: node.w.workspaceId, node, depth: 0, indent: cfg.indent, showAgg: cfg.showAgg, sessions, pendingInteractions, archived, hardDeleted,
+            key: node.w.workspaceId, node, depth: 0, indent: cfg.indent, showAgg: cfg.showAgg, sessions, sessionStatus, archived, hardDeleted,
             expandedGroups, toggleGroup,
             onNewSession: (wid) => newSessionInDir(wid, node.w.path),
             onOpenInIde: openInIde,
@@ -2698,7 +2739,7 @@ window.__ModuleLoader__.load({
     // ══════════════ 归档只读底部栏 ══════════════
     function ReadonlyArchivedComposerBanner(props) {
       const { sessionId, ctx } = props;
-      const sid = sessionId || (ctx?.sessions?.list?.getSnapshot ? ctx.sessions.list.getSnapshot().current : null);
+      const sid = sessionId || (ctx?.sessions?.list?.getSnapshot ? currentSessionIdOf(ctx.sessions.list.getSnapshot()) : null);
       const [busy, setBusy] = useState(false);
 
       const onRestore = useCallback(async () => {
@@ -2770,11 +2811,10 @@ window.__ModuleLoader__.load({
         try { return ctx.uiWorkspace || null; } catch { return null; }
       }
 
-      // 允许阅览已归档会话：
-      // - 新版 DSH：官方 UiWorkspaceService 通过 clearArchivedCurrent() 清除当前归档会话，patch 为无操作；
-      // - 旧版 DSH：回退 patch WorkspaceRuntime.project 中当 sessions.current 属于归档时自动 clear() 的投影。
-      // uiWorkspace 未声明为硬依赖，apply 时刻可能早于其注册：立即尝试 patch，
-      // 未就绪则监听 cordis 的 internal/service 注册事件，服务出现后补 patch。
+      // 允许阅览已归档会话：官方 UiWorkspaceService 的 clearArchivedCurrent() 会在当前
+      // 会话被归档时把它清出主视图，patch 为无操作以保留阅览。uiWorkspace 未声明为硬依赖，
+      // apply 时刻可能早于其注册：立即尝试 patch，未就绪则监听 cordis 的 internal/service
+      // 注册事件，服务出现后补 patch。
       const patchUiWorkspaceArchivedView = () => {
         const svc = resolveUiWorkspace();
         if (svc && typeof svc.clearArchivedCurrent === "function") {
@@ -2805,7 +2845,9 @@ window.__ModuleLoader__.load({
         name: "conversation.composer",
         priority: -100,
         select: (owner) => {
-          const cur = ctx.sessions?.list?.getSnapshot ? ctx.sessions.list.getSnapshot().current : null;
+          // chain 座位把当前会话作为 ownerProps 传进来；快照兜底只用于 owner 缺 sessionId 的场景。
+          const cur = (owner && owner.sessionId)
+            || (ctx.sessions?.list?.getSnapshot ? currentSessionIdOf(ctx.sessions.list.getSnapshot()) : null);
           if (!cur) return null;
           const wsList = ctx.workspaces?.list?.getSnapshot ? ctx.workspaces.list.getSnapshot() : null;
           const archivedIds = (wsList && wsList.archivedSessionIds) || [];
@@ -2819,24 +2861,24 @@ window.__ModuleLoader__.load({
       // ══════════════ 官方目录对话框的「借道渲染」 ══════════════
       /**
        * 内核「添加工作区只有一条路」把交互挂在 sidebar.workspaces.directoryFlow 子槽上，而槽位
-       * 账本（SlotCore.register）一个子键只允许**一个** entry 声明：被本插件顶掉的内核
-       * WorkspaceBrowser entry 仍然注册着、仍然持有该声明，所以 v1.9.5 只能自持一份等价对话框。
-       *
-       * 但渲染授权看的是 entry 自己的 children 表（boundRenderSlot: `entry.children?.[key]`），
-       * 不是账本里"谁声明了"。于是存在一个不破坏内核不变量的借道办法：让本插件这次 register
-       * 别抛错、把 children 写进我们 entry 的 options，账本继续记在内核 entry 名下。
-       * 代价是必须碰 slots._core 这些**非公开内部**，所以整块做成「探测 → 试探 → 任何一步失败
-       * 即整体放弃、回退自持对话框」，并且补丁作用域收到最小：
-       *  - 只在 armed 窗口（我们那一次注册）临时清掉冲突 record 的 spec，注册后立刻还原；
-       *  - 压制该次合成的 notifyDeclaration（否则占位者会被重新唤醒，在 single 槽里重复注册）；
-       *  - 我们 entry 卸载时跳过对该子键的级联清理（否则会把官方占位者一起掀掉）。
+       * 账本（SlotCore.register）一个子键只允许**一个** entry 声明，且被本插件顶掉的内核
+       * WorkspaceBrowser entry 仍持有该声明。渲染授权看的是 entry 自己的 children 表
+       * （boundRenderSlot: `entry.children?.[key]`），与账本里"谁声明了"无关，于是走「借道」：
+       * 本插件这次注册**不带** children 表进账本（不声明、不通知、不可能冲突），注册完再把
+       * children 表挂到自己的 entry 上——只作渲染授权，声明权始终留给内核 entry。两个注册
+       * 无论谁先落地都不冲突：本插件 dsh.client.immediately 会先于 ui-workspace 激活，
+       * 而旧实现假定内核先注册，于是自己抢先声明、让内核那次注册抛 already declared。
+       * 代价是碰 slots._core 这些**非公开内部**，所以整块做成「探测 → 试探 → 任何一步失败
+       * 即整体放弃、回退自持对话框」，补丁作用域收到最小：
+       *  - 只在 armed 窗口（我们那一次注册）把 children 摘出账本再挂回 entry；
+       *  - 我们 entry 卸载时跳过对该子键的级联清理（否则会把内核的声明一起掀掉）。
        */
       const officialFlowBridge = (() => {
         const hole = "sidebar.workspaces.directoryFlow";
         try {
           const core = ctx.slots ? ctx.slots._core : null;
           if (!core || typeof core.register !== "function" || typeof core.releaseEntry !== "function"
-            || typeof core.notifyDeclaration !== "function" || !(core.records instanceof Map)) {
+            || !(core.records instanceof Map)) {
             return { ok: false, reason: "slots._core 形状不符" };
           }
           const own = new Set();
@@ -2844,29 +2886,23 @@ window.__ModuleLoader__.load({
           const origRegister = core.register;
           const origRelease = core.releaseEntry;
           core.register = function (options, component) {
-            if (!armed) return origRegister.call(core, options, component);
-            const saved = [];
-            const keys = (options && options.children) ? Object.keys(options.children) : [];
-            for (const key of keys) {
-              const rec = core.records.get(key);
-              if (rec !== undefined && rec.spec !== undefined) {
-                saved.push({ rec: rec, spec: rec.spec, declaredBy: rec.declaredBy, parent: rec.parent, epoch: rec.declarationEpoch });
-                rec.spec = undefined;
-              }
-            }
-            const notify = core.notifyDeclaration;
-            if (saved.length > 0) core.notifyDeclaration = function () {};
-            try {
+            if (!armed || !options || options.children === undefined) {
               return origRegister.call(core, options, component);
-            } finally {
-              core.notifyDeclaration = notify;
-              for (const item of saved) {
-                item.rec.spec = item.spec;
-                item.rec.declaredBy = item.declaredBy;
-                item.rec.parent = item.parent;
-                item.rec.declarationEpoch = item.epoch;
-              }
             }
+            const declared = options.children;
+            const stripped = { ...options };
+            delete stripped.children;
+            const dispose = origRegister.call(core, stripped, component);
+            // 授权表只挂在 entry 上、不进账本：声明权留给内核 entry（先到后到都安全）。
+            const rec = core.records.get(options.name);
+            const entry = (rec && Array.isArray(rec.entries))
+              ? rec.entries.find((candidate) => candidate.component === component)
+              : undefined;
+            if (entry !== undefined) {
+              entry.children = declared;
+              own.add(entry);
+            }
+            return dispose;
           };
           core.releaseEntry = function (entry) {
             if (own.has(entry) && entry && entry.children !== undefined
@@ -2884,20 +2920,14 @@ window.__ModuleLoader__.load({
           return {
             ok: true,
             hole: hole,
-            /** 在放行窗口里执行我们那次 register，并登记我们的 entry（卸载时不级联）。 */
+            /** 在放行窗口里执行我们那次 register（children 表摘出账本、挂回自己 entry）。 */
             register: (options, component) => {
               armed = true;
-              let dispose;
               try {
-                dispose = ctx.slots.register(options, component);
+                return ctx.slots.register(options, component);
               } finally {
                 armed = false;
               }
-              const rows = core.records.get("sidebar.workspaces");
-              if (rows && Array.isArray(rows.entries)) {
-                for (const entry of rows.entries) if (entry.component === component) own.add(entry);
-              }
-              return dispose;
             },
             /** 槽位当前是否有占位者——没有占位者就没有官方交互可渲染。 */
             occupied: () => {
@@ -2939,54 +2969,37 @@ window.__ModuleLoader__.load({
             return {
               startSession: (workspaceId) => {
                 const uiWs = resolveUiWorkspace();
-                if (uiWs && typeof uiWs.startSession === "function") {
-                  uiWs.startSession(workspaceId);
+                if (!uiWs || typeof uiWs.startSession !== "function") {
+                  console.warn("[dsh-workspace-tree] uiWorkspace.startSession 不可用，无法新建会话");
                   return;
                 }
-                if (workspaceId && ctx.sessions && typeof ctx.sessions.create === "function") {
-                  ctx.sessions.create({ workspaceId }).then((sessionId) => {
-                    if (typeof ctx.sessions.open === "function") ctx.sessions.open(sessionId);
-                  }).catch((err) => {
-                    console.warn("[dsh-workspace-tree] startSession fallback failed:", err);
-                  });
-                } else if (ctx.sessions && typeof ctx.sessions.clear === "function") {
-                  ctx.sessions.clear();
-                }
+                uiWs.startSession(workspaceId);
               },
               connectWorkspace: async (workspaceId) => {
                 const uiWs = resolveUiWorkspace();
                 if (uiWs && typeof uiWs.connectWorkspace === "function") {
                   return await uiWs.connectWorkspace(workspaceId);
                 }
-                if (ctx.sessions && typeof ctx.sessions.create === "function") {
-                  return await ctx.sessions.create({ workspaceId });
-                }
-                throw new Error("会话创建服务不可用");
+                // uiWorkspace 缺席时退到官方会话创建原语（无导航副作用）。
+                return await ctx.sessions.create({ workspaceId });
               },
               open: (sessionId) => {
-                if (ctx.sessions && typeof ctx.sessions.open === "function") {
-                  ctx.sessions.open(sessionId);
-                }
+                // 打开会话是 uiWorkspace 的导航职责（0.1.6 已移除 sessions.open）。
+                const uiWs = resolveUiWorkspace();
+                if (uiWs && typeof uiWs.openSession === "function") uiWs.openSession(sessionId);
               },
               clearSession: () => {
-                try {
-                  if (typeof ctx.sessions?.clear === "function") ctx.sessions.clear();
-                } catch { /* ignore */ }
+                // 清空主视图（0.1.6 已移除 sessions.clear）。
+                const uiWs = resolveUiWorkspace();
+                if (uiWs && typeof uiWs.clearMain === "function") uiWs.clearMain();
               },
               renameSession: async (sessionId, title) => {
-                const activeSession = ctx.sessions?.binding?.(sessionId)?.session;
-                if (activeSession) {
-                  const result = await activeSession.rename(title);
+                // 0.1.6 契约：重命名先经 sessions.using() 租用会话作用域——binding(id)
+                // 只读已租用代，不再为其物化 scope。
+                await ctx.sessions.using(sessionId, { source: "workspaceOperation" }, async (reference) => {
+                  const result = await reference.binding.session.rename(title);
                   if (!result.ok) throw new Error(result.error?.message || "重命名失败");
-                  return;
-                }
-                // 历史兜底已移除（2026-09-10 审计）：ctx.connection.api 在
-                // 0.1.3-alpha.2 与 0.1.5-rc.1 的 connection handle 上都**不存在**
-                // （handle 只有 isLoopback/generation/state/rpc/reconnect/
-                // registerGenerationSource/start），该分支恒为假。
-                // 主路径 ctx.sessions.binding(id).session.rename() 覆盖所有
-                // host 列表内的会话（binding 会为其物化 scope），保持不变。
-                throw new Error("无法连接到会话重命名服务");
+                });
               },
               renameWorkspace: async (workspaceId, title) => {
                 if (ctx.workspaces && typeof ctx.workspaces.rename === "function") {

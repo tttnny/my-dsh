@@ -187,3 +187,20 @@
         return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
       } catch (e) { return 'latest' }
     }
+    // ==== 列表快照的「主视图当前会话」（DSH 0.1.6 契约）====
+    // 0.1.6 起 sessions.list 快照不再携带 current：主视图持有者由行上的 retainedBy.mainView
+    // 计数标识（与内核 mainSessionId 同款判据）。按快照对象缓存，避免多次渲染重复遍历 byId。
+    const currentSessionIdCache = new WeakMap()
+    export const currentSessionIdOf = function (list) {
+      if (!list || typeof list !== 'object') return undefined
+      if (currentSessionIdCache.has(list)) return currentSessionIdCache.get(list)
+      let current
+      const byId = list.byId || {}
+      const ids = Object.keys(byId)
+      for (let i = 0; i < ids.length; i++) {
+        const row = byId[ids[i]]
+        if (row && row.retainedBy && (row.retainedBy.mainView || 0) > 0) { current = ids[i]; break }
+      }
+      currentSessionIdCache.set(list, current)
+      return current
+    }

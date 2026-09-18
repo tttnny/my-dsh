@@ -237,8 +237,12 @@ async function settle(component, props, rounds = 8) {
  * child key that already has a spec (the exact error the real kernel throws), and
  * `releaseEntry` clears every declared child's spec AND cascades into its occupants.
  * Without emulating the refusal, the dual-track patch assertions would be vacuous.
+ * `kernelFirst` models which registration lands first: true = the shadowed kernel
+ * WorkspaceBrowser already holds the `directoryFlow` declaration; false = the plugin
+ * registers first (the real boot order, since `dsh.client.immediately` activates it
+ * ahead of ui-workspace) and the kernel declares the hole afterwards.
  */
-const makeLedgerCore = (hole, occupant) => {
+const makeLedgerCore = (hole, occupant, kernelFirst = true) => {
   const records = new Map()
   const record = (key, init = {}) => {
     const rec = { spec: undefined, declaredBy: undefined, parent: undefined, declarationEpoch: 0, entries: [], declared: 0, ...init }
@@ -246,13 +250,15 @@ const makeLedgerCore = (hole, occupant) => {
     return rec
   }
   record('sidebar.workspaces', { spec: { kind: 'single', scope: 'root' }, declaredBy: '(the shell)', declarationEpoch: 1, entries: [] })
-  record(hole, {
-    spec: { kind: 'single', scope: 'root' },
-    declaredBy: 'an entry in "sidebar.workspaces" (kernel WorkspaceBrowser)',
-    parent: 'sidebar.workspaces',
-    declarationEpoch: 1,
-    entries: occupant === undefined ? [] : [occupant],
-  })
+  if (kernelFirst) {
+    record(hole, {
+      spec: { kind: 'single', scope: 'root' },
+      declaredBy: 'an entry in "sidebar.workspaces" (kernel WorkspaceBrowser)',
+      parent: 'sidebar.workspaces',
+      declarationEpoch: 1,
+      entries: occupant === undefined ? [] : [occupant],
+    })
+  }
   let notifyCount = 0
   const core = {
     records,
@@ -331,8 +337,11 @@ const textOf = (node) => {
 
 // ───────────────────────────── guarded cordis context ─────────────────────────────
 
-/** uiWorkspace stub: the official surfaces the plugin consumes (native + browse). */
+/** uiWorkspace stub: the official navigation + directory surfaces the plugin consumes. */
 const makeUiWorkspace = (override = {}) => ({
+  startSession: () => {},
+  openSession: () => {},
+  clearMain: () => {},
   pickDirectory: async () => null,
   listDirectory: async () => ({ path: '/home/tny', home: '/home/tny', crumbs: [], entries: [], truncated: false }),
   createDirectory: async (path, name) => `${path}/${name}`,
@@ -350,9 +359,11 @@ const makeServices = (registrations, uiWorkspace, calls, state) => ({
       return () => {}
     },
     register: (options, component) => {
-      registrations.push({ ...options, component })
+      const record = { ...options, component }
+      registrations.push(record)
       // Delegate into the ledger so the patch (and its failure modes) really runs.
       const dispose = state.core === undefined ? () => {} : state.core.register(options, component)
+      record.dispose = () => dispose()
       return () => dispose()
     },
     entries: (key) => (state.core === undefined ? [] : (state.core.records.get(key)?.entries ?? [])),
@@ -363,8 +374,15 @@ const makeServices = (registrations, uiWorkspace, calls, state) => ({
     // running bit between a render and a click (the render-snapshot staleness window).
     list: { getSnapshot: () => state.sessionSnapshot },
     create: async (input) => { calls.sessionCreate.push(input); return 'session-id' },
-    open: () => {},
-    clear: () => {},
+    // 0.1.6 rename contract: an explicit scope rental through `using`. The controller no
+    // longer exposes `open` / `clear` / a materializing `binding`, so the harness omits
+    // them on purpose — reverting to those calls fails here instead of only in the profile.
+    using: async (sessionId, options, operation) => {
+      calls.sessionUsing.push({ sessionId, source: options?.source })
+      return await operation({
+        binding: { session: { rename: async (title) => { calls.sessionRename.push({ sessionId, title }); return { ok: true } } } },
+      })
+    },
     refresh: () => {},
   },
   workspaces: {
@@ -374,7 +392,6 @@ const makeServices = (registrations, uiWorkspace, calls, state) => ({
     rename: async () => {},
     archiveSession: async (sessionId) => { calls.archived.push(String(sessionId)); },
   },
-  connection: { isLoopback: true, rpc: { call: async () => ({ ok: true, value: {} }) } },
   uiWorkspace,
 })
 
@@ -408,9 +425,9 @@ let harnessSeq = 0
  *  `hostFacts.native` = this host can serve the macOS Finder chooser (`/picker/native` → supported). */
 async function boot(makeOverrides = {}, ledgerOption, hostFacts = {}) {
   const registrations = []
-  const calls = { injects: [], errors: [], workspaceCreate: [], sessionCreate: [], listDirectory: [], createDirectory: [], pickDirectory: 0, archived: [], guardChecks: [], renderSlot: [] }
+  const calls = { injects: [], errors: [], workspaceCreate: [], sessionCreate: [], sessionUsing: [], sessionRename: [], listDirectory: [], createDirectory: [], pickDirectory: 0, archived: [], guardChecks: [], renderSlot: [], navOpen: [], navClear: 0 }
   const moduleIds = []
-  const state = { sessionSnapshot: { ids: [], byId: {}, current: undefined, phase: 'ready' }, core: ledgerOption }
+  const state = { sessionSnapshot: { ids: [], byId: {}, phase: 'ready' }, core: ledgerOption }
   const uiWorkspace = makeUiWorkspace(typeof makeOverrides === 'function' ? makeOverrides(calls) : makeOverrides)
 
   globalThis.window.__ModuleLoader__ = {
@@ -457,32 +474,37 @@ const renderSlotStub = (calls) => (key, owner) => {
   return { type: 'official-flow-marker', props: { key, owner } }
 }
 
-const sidebarProps = (face, wide, state = { sessionSnapshot: { ids: [], byId: {}, current: undefined, phase: 'ready' } }, calls) => ({
+const sidebarProps = (face, wide, state = { sessionSnapshot: { ids: [], byId: {}, phase: 'ready' } }, calls) => ({
   ...face,
   wide,
   ...(calls === undefined ? {} : { renderSlot: renderSlotStub(calls) }),
   useSessions: (select) => select(state.sessionSnapshot),
   useWorkspaces: (select) => select({ items: [], archivedSessionIds: [], phase: 'ready' }),
+  useSessionStatus: (select) => select(new Map()),
 })
 
 /** Sidebar props carrying one workspace with the given session rows (archive-gate audit). */
-const sidebarPropsWith = (face, rows, current, state, calls) => {
+const sidebarPropsWith = (face, rows, state, calls) => {
   const ids = rows.map((row) => row.id)
   // Publishing into the mutable store keeps `useSessions` and the plugin's `liveSessionRow`
   // reading one source, exactly like the shipped controller does.
   state.sessionSnapshot = {
     ids,
     byId: Object.fromEntries(rows.map((row) => [row.id, row])),
-    current,
     phase: 'ready',
   }
   return {
     ...face,
     wide: true,
     ...(calls === undefined ? {} : { renderSlot: renderSlotStub(calls) }),
-    // The kernel's pending-interaction seat (Map<SessionId, {kind}>), exactly as the
-    // shipped `dsh-client-ui-session` contributes it to every `sidebar.workspaces` entry.
-    useSessionPendingInteraction: (select) => select(new Map(rows.filter((row) => row.pending !== undefined).map((row) => [row.id, row.pending]))),
+    // The kernel's session-status seat (Map<SessionId, { running, pendingInteraction,
+    // completionUnread }>), exactly as the shipped `dsh-client-ui-session` contributes it
+    // to every `sidebar.workspaces` entry.
+    useSessionStatus: (select) => select(new Map(rows.map((row) => [row.id, {
+      running: row.running === true,
+      pendingInteraction: row.pending,
+      completionUnread: row.completionUnread === true,
+    }]))),
     useSessions: (select) => select(state.sessionSnapshot),
     useWorkspaces: (select) => select({
       items: [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ids }],
@@ -499,14 +521,13 @@ const sidebarPropsWithWorkspaces = (face, rows, items, state, calls) => {
   state.sessionSnapshot = {
     ids: rows.map((row) => row.id),
     byId: Object.fromEntries(rows.map((row) => [row.id, row])),
-    current: undefined,
     phase: 'ready',
   }
   return {
     ...face,
     wide: true,
     ...(calls === undefined ? {} : { renderSlot: renderSlotStub(calls) }),
-    useSessionPendingInteraction: (select) => select(new Map()),
+    useSessionStatus: (select) => select(new Map()),
     useSessions: (select) => select(state.sessionSnapshot),
     useWorkspaces: (select) => select({ items, archivedSessionIds: [], phase: 'ready' }),
   }
@@ -707,7 +728,7 @@ const listing = (path, entries, crumbs) => ({
     running: false, blank: false, updatedAt: Date.now(), ...over,
   })
   const archiveButtonOf = (tree) => archiveButton(tree)
-  const propsWith = (rows) => sidebarPropsWith(face, rows, undefined, harness.state)
+  const propsWith = (rows) => sidebarPropsWith(face, rows, harness.state)
 
   let tree = await settle(Browser, propsWith([row({ running: true })]))
   let button = archiveButtonOf(tree)
@@ -724,6 +745,19 @@ const listing = (path, entries, crumbs) => ({
     button !== undefined && button.props.disabled === true)
   check('audit: the warning status dot is driven by the real seat',
     findNode(tree, (n) => n?.props?.['data-state'] === 'warning') !== undefined)
+
+  // Completion-unread rides the same seat: the summary row no longer carries `completed`.
+  tree = await settle(Browser, propsWith([row({ running: false, completionUnread: true })]))
+  check('audit: a completed-unread row shows the reminder dot',
+    findNode(tree, (n) => n?.props?.['data-state'] === 'done-reminder') !== undefined)
+
+  // The current session comes from retainedBy.mainView: the list snapshot has no `current`.
+  tree = await settle(Browser, propsWith([row({ retainedBy: { mainView: 1 } })]))
+  check('audit: the main-view holder renders as the selected row',
+    findNode(tree, (n) => hasClass(n, 'dswt-selected')) !== undefined)
+  tree = await settle(Browser, propsWith([row()]))
+  check('audit: a row without main-view retention is not selected',
+    findNode(tree, (n) => hasClass(n, 'dswt-selected')) === undefined)
 
   // A greyed row's own guard short-circuits the click; nothing may reach the official RPC.
   tree = await settle(Browser, propsWith([row({ running: false, pending: { kind: 'approval' } })]))
@@ -776,11 +810,62 @@ const listing = (path, entries, crumbs) => ({
     harness.calls.archived.length === 2)
 
   const source = readFileSync(join(root, 'lib/client.js'), 'utf8')
-  check('audit: the pending-interaction seat is consumed', source.includes('useSessionPendingInteraction'))
+  check('audit: the session-status seat is consumed', source.includes('useSessionStatus'))
   check('audit: the dead row.pendingInteraction read is gone', !/if \(row\.pendingInteraction\)/.test(source))
   check('audit: the archive action re-checks running state',
     /onArchiveSession = useCallback[\s\S]{0,1600}?live\.running/.test(source))
   check('audit: the host guard route is wired', readFileSync(join(root, 'lib/index.js'), 'utf8').includes('guardCheck'))
+
+  // 0.1.6 contract guards: the removed controller/row surfaces must not come back.
+  check('audit: no removed sessions.open/clear call remains', !/ctx\.sessions\??\.(open|clear)\b/.test(source))
+  check('audit: the pending-interaction seat name is not referenced', !source.includes('useSessionPendingInteraction'))
+  check('audit: the list snapshot current field is not read', !/sessions\.current/.test(source))
+  check('audit: the row completed field is not read', !/row\.completed/.test(source))
+  check('audit: the current session is derived from retainedBy.mainView', source.includes('retainedBy.mainView'))
+  check('audit: rename rents a session scope through sessions.using', source.includes('sessions.using('))
+}
+
+// ─────── navigation contract: open / new-session / rename ride the 0.1.6 surfaces ───────
+
+{
+  const harness = await boot((calls) => ({
+    openSession: (sessionId) => { calls.navOpen.push(String(sessionId)) },
+    clearMain: () => { calls.navClear += 1 },
+  }))
+  const { face, Browser } = mount(harness)
+  const row = (over = {}) => ({
+    id: 'session-nav', displayTitle: 'nav row', cwd: '/home/tny/work',
+    running: false, blank: false, updatedAt: Date.now(), ...over,
+  })
+  const props = sidebarPropsWith(face, [row()], harness.state, harness.calls)
+  let tree = await settle(Browser, props)
+
+  // A session click opens through uiWorkspace (the controller no longer has open()).
+  findNode(tree, (n) => hasClass(n, 'dswt-session')).props.onClick()
+  check('nav: a session click opens through uiWorkspace.openSession',
+    harness.calls.navOpen.length === 1 && harness.calls.navOpen[0] === 'session-nav')
+
+  // 「新建会话」 clears the main view through uiWorkspace.clearMain (no clear() on the controller).
+  const newSession = findNode(tree, (n) => n?.props?.type === 'button' && /^新建会话/.test(String(n?.props?.title ?? '')))
+  await newSession.props.onClick()
+  check('nav: the new-session button clears the main view through uiWorkspace',
+    harness.calls.navClear === 1 && harness.calls.navOpen.length === 1)
+
+  // Renaming rents a session scope through sessions.using and renames inside it.
+  const renameButton = findNode(tree, (n) => n?.props?.type === 'button' && n?.props?.title === '重命名')
+  renameButton.props.onClick()
+  tree = await settle(Browser, props)
+  findNode(tree, (n) => hasClass(n, 'dswt-modalInput')).props.onChange({ target: { value: 'renamed title' } })
+  tree = await settle(Browser, props)
+  findNode(tree, (n) => hasClass(n, 'dswt-modalBtnPrimary') && /确认/.test(textOf(n))).props.onClick()
+  tree = await settle(Browser, props)
+  check('nav: rename rents a session scope through sessions.using',
+    harness.calls.sessionUsing.length === 1
+    && harness.calls.sessionUsing[0].sessionId === 'session-nav'
+    && harness.calls.sessionUsing[0].source === 'workspaceOperation')
+  check('nav: the rename lands on the rented binding',
+    harness.calls.sessionRename.length === 1 && harness.calls.sessionRename[0].title === 'renamed title')
+  check('nav: apply stayed error-free', harness.calls.errors.length === 0)
 }
 
 
@@ -804,7 +889,7 @@ const listing = (path, entries, crumbs) => ({
   check('dual-track: apply stayed error-free', harness.calls.errors.length === 0)
 
   // The component must render the official occupant's hole and drive it through owner props.
-  const props = sidebarPropsWith(face, [], undefined, harness.state, harness.calls)
+  const props = sidebarPropsWith(face, [], harness.state, harness.calls)
   const tree = await settle(Browser, props)
   const marker = findNode(tree, (n) => n?.type === 'official-flow-marker')
   check('dual-track: the official flow is rendered into the sidebar', marker !== undefined)
@@ -824,7 +909,7 @@ const listing = (path, entries, crumbs) => ({
     && pickerPanel(after) === undefined && harness.calls.pickDirectory === 0)
 
   // Releasing our entry must not cascade the official occupant away.
-  for (const dispose of harness.registrations.disposers ?? []) dispose()
+  for (const record of harness.registrations) if (record.name === 'sidebar.workspaces') record.dispose?.()
   const afterRelease = core.records.get(hole)
   check('dual-track: releasing our entry keeps the declaration and the occupant',
     afterRelease.spec !== undefined
@@ -833,11 +918,41 @@ const listing = (path, entries, crumbs) => ({
 }
 
 {
+  // Real boot order: `dsh.client.immediately` activates this plugin before ui-workspace, so
+  // our entry lands with NO conflicting declaration yet. The bridge must not declare the
+  // child itself — otherwise the kernel's later registration throws "already declared".
+  const core = makeLedgerCore('sidebar.workspaces.directoryFlow', undefined, false)
+  const harness = await boot({}, core)
+  const { entry } = mount(harness)
+  const hole = 'sidebar.workspaces.directoryFlow'
+
+  check('order: our entry still carries the auth table', entry.children !== undefined && entry.children[hole] !== undefined)
+  check('order: the bridge declared nothing in the ledger', core.records.get(hole) === undefined)
+  check('order: apply stayed error-free', harness.calls.errors.length === 0)
+
+  // The kernel's ui-workspace registration must then succeed and own the declaration.
+  let lateError = null
+  const kernelDispose = (() => {
+    try { return core.register({ name: 'sidebar.workspaces', children: { [hole]: { kind: 'single', scope: 'root' } } }, () => null) } catch (error) { lateError = error; return () => {} }
+  })()
+  check('order: the kernel\'s later declaration succeeds', lateError === null)
+  check('order: the ledger declaration is the kernel\'s',
+    core.records.get(hole)?.spec !== undefined
+    && core.records.get(hole)?.declaredBy === 'an entry in "sidebar.workspaces"')
+
+  for (const record of harness.registrations) if (record.name === 'sidebar.workspaces') record.dispose?.()
+  check('order: releasing our entry keeps the kernel declaration',
+    core.records.get(hole)?.spec !== undefined
+    && core.records.get(hole)?.declaredBy === 'an entry in "sidebar.workspaces"')
+  kernelDispose()
+}
+
+{
   // No ledger internals: the plugin must fall back to the self-held dialog, unchanged.
   const harness = await boot({})
   const { entry, face } = mount(harness)
   check('fallback: no child slot is declared without the bridge', entry.children === undefined)
-  const props = sidebarPropsWith(face, [], undefined, harness.state, harness.calls)
+  const props = sidebarPropsWith(face, [], harness.state, harness.calls)
   const tree = await settle(mount(harness).Browser, props)
   check('fallback: no official flow marker is rendered', findNode(tree, (n) => n?.type === 'official-flow-marker') === undefined)
   check('fallback: apply stayed error-free', harness.calls.errors.length === 0)

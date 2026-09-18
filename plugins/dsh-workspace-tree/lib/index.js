@@ -1,5 +1,5 @@
 /**
- * dsh-workspace-tree — node half (v1.9.2 墓碑物理自愈版；归档删除零守卫契约不变)。
+ * dsh-workspace-tree — node half (v1.9.10)。
  *
  * 核心功能：
  *  - GET  /debug               工作区注册表投影（诊断用）

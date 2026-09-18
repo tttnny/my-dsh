@@ -72,7 +72,7 @@
             if (sessions && typeof sessions.create === 'function') {
               const createOpts = (typeof buildCreateOpts === 'function') ? buildCreateOpts(null, cwd) : { cwd: cwd, agentPreset: 'ptc' }
               const p = (typeof createPTCSession === 'function') ? createPTCSession(sessions, null, cwd, text) : sessions.create(createOpts).then(function(sid){ pendingDraft=text; pendingDraftTargetSid=sid; return sid })
-              p.then(function(sid){ try{ sessions.open(sid) }catch(e){} }).catch(function(){ try{ inject(st,text) }catch(e2){} })
+              p.then(function(sid){ openSessionById(sid) }).catch(function(){ try{ inject(st,text) }catch(e2){} })
             } else { inject(st, text) }
           } catch(e3){ try{ inject(st,text)}catch(e4){} }
         }
@@ -87,8 +87,9 @@
     }
 
     // #361：在新会话中打开 —— 同 cwd + 自动命名 + 预填指令
-    //   契约（dsh-client-runtime ISessions）：create({cwd}) → SessionId；scope(sid) → AgentContext；
-    //   sessionOf(ctx) → SessionFace.rename(title)；open(sid) 切换。任一步失败降级为当前会话注入 + 提醒。
+    //   契约（DSH 0.1.6）：create({cwd|workspaceId}) → SessionId；改名经 renameSessionById（sessions.using
+    //   租用作用域 + binding.session.rename）；打开经 openSessionById（uiWorkspace.openSession）。
+    //   任一步失败降级为当前会话注入 + 提醒。
     export const openTextInNewSession = function (st, text, title) {
       const sessions = ctx.get('sessions')
       const workspaces = ctx.get('workspaces')
@@ -237,8 +238,6 @@
             // 彻底移除：issuePath 锚点记账已移除（#345）
             const __placeholderTitle = title
             try {
-              const scopeCtx = sessions.scope(sid)
-              const face = scopeCtx ? sessions.sessionOf(scopeCtx) : undefined
               const registerTracked = function (acceptedTitle) {
                 try {
                   const name0 = acceptedTitle || __placeholderTitle
@@ -250,7 +249,7 @@
                 } catch (eReg) {}
               }
               const needRename = (function(){ try { const curTitle = (typeof namingCurrentTitleOf==='function'? namingCurrentTitleOf(sid) : null); return curTitle !== title; } catch(e){ return true; }})()
-              const runRename = needRename && face && typeof face.rename === 'function' ? Promise.resolve(face.rename(title)) : Promise.resolve(null)
+              const runRename = needRename ? renameSessionById(sessions, sid, title) : Promise.resolve(null)
               runRename.then(function (rRename) {
                 const accepted = (rRename && rRename.ok && rRename.value && rRename.value.title) ? rRename.value.title : null
                 registerTracked(accepted)
@@ -275,7 +274,7 @@
                 pendingDraftTargetSid = sid
               }
             } catch (eName) {}
-            try { if (typeof sessions.open === 'function') sessions.open(sid) } catch(eOpen){}
+            openSessionById(sid)
             flash(st, tr('toast.newSessionOpened'), 'ok')
             return
           }
@@ -315,8 +314,6 @@
           // 附面包屑语义线索；此后常驻渲染钩子按计划单执行草稿档升级，值比对锁守护手改。
           const __placeholderTitle = title
           try {
-            const scopeCtx = sessions.scope(sid)
-            const face = scopeCtx ? sessions.sessionOf(scopeCtx) : undefined
             const registerTracked = function (acceptedTitle) {
               try {
                 const name0 = acceptedTitle || __placeholderTitle
@@ -329,7 +326,7 @@
                 }
               } catch (eReg) {}
             }
-            const runRename = (face && typeof face.rename === 'function') ? Promise.resolve(face.rename(title)) : Promise.resolve(null)
+            const runRename = renameSessionById(sessions, sid, title)
             runRename.then(function (rRename) {
               const accepted = (rRename && rRename.ok && rRename.value && rRename.value.title) ? rRename.value.title : null
               registerTracked(accepted)
@@ -341,7 +338,7 @@
             pendingDraft = text
             pendingDraftTargetSid = sid
           } catch (eName) { /* 命名失败忽略 */ }
-          sessions.open(sid)
+          openSessionById(sid)
           flash(st, tr('toast.newSessionOpened'), 'ok')
         }).catch(function (err) { try { if (String((err && err.message) || '').indexOf('preset-blocked') >= 0) flash(st, tr('toast.newSessionPresetBlocked'), 'warn') } catch (eF) {} doFallback() })
         })
