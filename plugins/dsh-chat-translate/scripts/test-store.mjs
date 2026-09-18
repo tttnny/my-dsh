@@ -41,10 +41,10 @@ function test(name, fn) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Client-shape fake of the settingsScope service (mirror + writes). */
+/** Client-shape fake of the settingsScope service (mirror + path writes). */
 function makeScope(initialValue) {
   const listeners = new Set();
-  const sets = [];
+  const mutations = [];
   let value = { ...initialValue };
   return {
     getSnapshot: () => ({ status: 'ready', value, writable: true }),
@@ -52,18 +52,18 @@ function makeScope(initialValue) {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    set: async (field, v) => {
-      sets.push([field, v]);
-      value = { ...value, [field]: v };
+    mutate: async (ops) => {
+      for (const op of ops) {
+        mutations.push(op);
+        if (op.op === 'set') value = { ...value, [op.path[0]]: op.value };
+        else {
+          const { [op.path[0]]: _drop, ...rest } = value;
+          value = rest;
+        }
+      }
       for (const l of [...listeners]) l();
     },
-    unset: async (field) => {
-      sets.push([field, undefined]);
-      const { [field]: _drop, ...rest } = value;
-      value = rest;
-      for (const l of [...listeners]) l();
-    },
-    sets,
+    mutations,
   };
 }
 
@@ -121,12 +121,12 @@ await testAsync('update applies locally and writes through the scope debounced',
   settingsStore.update({ model: 'm1' });
   assert.equal(settingsStore.getState().baseUrl, 'http://ab', 'optimistic local state');
 
-  assert.equal(scope.sets.length, 0, 'no write before the debounce window elapses');
+  assert.equal(scope.mutations.length, 0, 'no write before the debounce window elapses');
   await sleep(350);
-  assert.deepEqual(scope.sets, [
-    ['baseUrl', 'http://ab'],
-    ['model', 'm1'],
-  ], 'trailing debounce collapses keystrokes into one write per field');
+  assert.deepEqual(scope.mutations, [
+    { op: 'set', path: ['baseUrl'], value: 'http://ab' },
+    { op: 'set', path: ['model'], value: 'm1' },
+  ], 'trailing debounce collapses keystrokes into one batched path mutation');
 });
 
 await testAsync('saveApiKey writes through credentials Remote and refreshes status', async () => {

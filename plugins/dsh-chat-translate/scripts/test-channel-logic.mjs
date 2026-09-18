@@ -225,11 +225,11 @@ await testAsync('Legacy config migrates into the settings namespace and the file
     'utf-8'
   );
   const scope = createFakeSettingsScope();
-  // The migration entry takes the settings-service face (ns + patch); the
-  // scope itself takes a single-arg patch — adapt one to the other.
+  // The migration entry takes the provider-level face (namespace + path ops);
+  // the fake scope exposes the same mutate contract.
   const settingsFace = {
     describe: () => scope.describe(),
-    update: (ns, patch) => scope.update(patch),
+    mutate: (ns, ops, revision) => scope.mutate(ns, ops, revision),
   };
   const migrated = await migrateLegacyConfigFile(settingsFace, legacyPath);
   assert.equal(migrated, true, 'legacy values must be reported as migrated');
@@ -255,7 +255,7 @@ await testAsync('Migration sanitizes per-field: bad values skipped, valid ones m
   const scope = createFakeSettingsScope();
   const settingsFace = {
     describe: () => scope.describe(),
-    update: (ns, patch) => scope.update(patch),
+    mutate: (ns, ops, revision) => scope.mutate(ns, ops, revision),
   };
   const migrated = await migrateLegacyConfigFile(settingsFace, legacyPath);
   assert.equal(migrated, true, 'valid fields still migrate when others are rejected');
@@ -278,7 +278,7 @@ await testAsync('Migration keeps the file when the provider write fails (retry n
   const scope = createFakeSettingsScope();
   const failingFace = {
     describe: () => scope.describe(),
-    update: async () => {
+    mutate: async () => {
       throw new Error('provider is read-only');
     },
   };
@@ -296,7 +296,7 @@ await testAsync('Migration never overwrites an existing user layer', async () =>
 
   const settingsFace = {
     describe: () => scope.describe(),
-    update: (ns, patch) => scope.update(patch),
+    mutate: (ns, ops, revision) => scope.mutate(ns, ops, revision),
   };
   const migrated = await migrateLegacyConfigFile(settingsFace, legacyPath);
   assert.equal(migrated, false, 'nothing migrated when a user layer exists');

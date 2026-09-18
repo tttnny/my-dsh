@@ -11,7 +11,12 @@ import { DEFAULT_CONFIG, SETTINGS_NAMESPACE } from '../src/server/config.ts';
 export function createFakeSettingsScope(initial = {}) {
   let config = { ...DEFAULT_CONFIG, ...initial };
   let userLayer = undefined;
+  let revision = 1;
   const listeners = new Set();
+  const commit = () => {
+    revision += 1;
+    for (const listener of [...listeners]) listener(config);
+  };
   return {
     get: () => ({ ...config }),
     watch: (listener) => {
@@ -21,13 +26,35 @@ export function createFakeSettingsScope(initial = {}) {
     update: async (patch) => {
       userLayer = { ...(userLayer ?? {}), ...patch };
       config = { ...config, ...patch };
-      for (const listener of [...listeners]) listener(config);
+      commit();
+    },
+    // Provider-level path write the legacy migration uses: one revision fence
+    // covers every op in the batch.
+    mutate: async (ns, ops, expectedRevision) => {
+      if (expectedRevision !== undefined && expectedRevision !== revision) {
+        throw new Error(`settings conflict: expected ${expectedRevision}, at ${revision}`);
+      }
+      const next = structuredClone(userLayer ?? {});
+      for (const op of ops) {
+        let node = next;
+        for (let i = 0; i < op.path.length - 1; i++) {
+          const key = op.path[i];
+          if (typeof node[key] !== 'object' || node[key] === null) node[key] = {};
+          node = node[key];
+        }
+        const leaf = op.path[op.path.length - 1];
+        if (op.op === 'set') node[leaf] = op.value;
+        else delete node[leaf];
+      }
+      userLayer = next;
+      config = { ...DEFAULT_CONFIG, ...next };
+      commit();
     },
     // Minimal settings-service face for migration tests. Mirrors the real
     // service: the `user` key is OMITTED (not undefined) while no user layer
     // exists.
     describe: () => [
-      { ns: SETTINGS_NAMESPACE, ...(userLayer === undefined ? {} : { user: userLayer }) },
+      { ns: SETTINGS_NAMESPACE, revision, ...(userLayer === undefined ? {} : { user: userLayer }) },
     ],
     setUserLayer: (user) => {
       userLayer = user;

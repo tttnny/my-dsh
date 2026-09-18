@@ -26,7 +26,7 @@ import { LruDiskCache } from '../src/server/cache.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
 import { ClientCache } from '../src/client/translate/client-cache.ts';
 import { NonDestructiveTranslationMount } from '../src/client/translate/mount.ts';
-import { createHttpHandler } from '../src/server/router.ts';
+import { createFetchRoutes, TRANSLATE_ROUTE_PATH, TEST_CHANNEL_ROUTE_PATH } from '../src/server/router.ts';
 import { createFakeSettingsScope, createFakeCredentials } from './test-helpers.mjs';
 
 let passed = 0;
@@ -584,110 +584,69 @@ test('Mounts translation without destroying child nodes or event listeners', () 
 });
 
 // -------------------------------------------------------------
-// Suite 6: HttpRouter 1MB DoS Protection & API Endpoints
+// Suite 6: Connection exact Fetch routes (translation proxy surface)
 // -------------------------------------------------------------
-console.log('\n--- Suite 6: HttpRouter 1MB DoS Protection & API Endpoints ---');
+console.log('\n--- Suite 6: Connection exact Fetch routes ---');
 
-await testAsync('Router rejects bodies exceeding 1MB with 413 Payload Too Large', async () => {
+function makeRoutes() {
   const cfg = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   const dispatcher = new TranslationDispatcher(cfg, cache);
-  const handler = createHttpHandler(cfg, dispatcher);
+  return { cfg, dispatcher, routes: createFetchRoutes(dispatcher) };
+}
 
-  // Construct mock large request (> 1MB)
-  const hugeChunk = Buffer.alloc(1024 * 1024 + 100, 'a');
-  let responseStatus = 0;
-  let responseData = '';
-
-  const mockReq = {
-    url: '/api/dsh-chat-translate/translate',
+function post(path, body) {
+  return new Request('http://127.0.0.1' + path, {
     method: 'POST',
-    on: (evt, cb) => {
-      if (evt === 'data') cb(hugeChunk);
-      if (evt === 'end') cb();
-    },
-  };
-
-  const mockRes = {
-    writeHead: (status, headers) => { responseStatus = status; },
-    end: (data) => { responseData = data; },
-  };
-
-  await handler(mockReq, mockRes);
-  assert.equal(responseStatus, 413, 'Over-limit body must return 413 Payload Too Large');
-});
-
-await testAsync('Retired config/credentials endpoints return 404', async () => {
-  const cfg = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
-  const cache = new LruDiskCache();
-  const dispatcher = new TranslationDispatcher(cfg, cache);
-  const handler = createHttpHandler(cfg, dispatcher);
-
-  const mockReq = (url, method, body) => ({
-    url,
-    method,
-    on: (evt, cb) => {
-      if (evt === 'data' && body) cb(Buffer.from(JSON.stringify(body)));
-      if (evt === 'end') cb();
-    },
+    headers: { 'content-type': 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
   });
-  const mockRes = () => {
-    let status = 0;
-    let body = null;
-    return {
-      get status() { return status; },
-      get body() { return body; },
-      writeHead: (s) => { status = s; },
-      end: (data) => { body = data ? JSON.parse(data) : null; },
-    };
-  };
+}
 
-  // Since 1.2 config/credentials live on DSH's own surfaces, not this router.
-  for (const [url, method, body] of [
-    ['/api/dsh-chat-translate/config', 'GET', null],
-    ['/api/dsh-chat-translate/config', 'POST', { concurrency: 8 }],
-    ['/api/dsh-chat-translate/credentials', 'POST', { apiKey: 'sk-x' }],
-  ]) {
-    const res = mockRes();
-    await handler(mockReq(url, method, body), res);
-    assert.equal(res.status, 404, `${method} ${url} must be retired (404)`);
-    assert.equal(res.body.ok, false);
-  }
+test('Fetch routes own exact POST paths with buffered bodies', () => {
+  const { routes } = makeRoutes();
+  assert.deepEqual(
+    routes.map((route) => ({ path: route.path, methods: route.methods, requestBody: route.requestBody })),
+    [
+      { path: TRANSLATE_ROUTE_PATH, methods: ['POST'], requestBody: 'buffered' },
+      { path: TEST_CHANNEL_ROUTE_PATH, methods: ['POST'], requestBody: 'buffered' },
+    ]
+  );
 });
 
-await testAsync('Router POST /translate still proxies to the dispatcher', async () => {
-  const cfg = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
-  const cache = new LruDiskCache();
-  const dispatcher = new TranslationDispatcher(cfg, cache);
+await testAsync('Translate route answers a POST with dispatcher results', async () => {
+  const { cfg, dispatcher, routes } = makeRoutes();
   dispatcher.adapters.set('mock', {
     id: 'mock',
     name: 'Mock',
     isAvailable: () => true,
-    translate: async (t) => `译:${t}`,
+    translate: async (t) => '译:' + t,
   });
-  // Only the injected mock is active — real channels must not leak into the test.
+  // Only the injected mock is active - real channels must not leak into the test.
   await cfg.updateConfig({ aiEnabled: false, bingEnabled: false });
-  const handler = createHttpHandler(cfg, dispatcher);
+  const route = routes.find((r) => r.path === TRANSLATE_ROUTE_PATH);
+  const res = await route.fetch(post(TRANSLATE_ROUTE_PATH, { texts: ['Hello'] }));
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.results[0].translated, '译:Hello');
+});
 
-  let responseStatus = 0;
-  let responseBody = null;
-  const mockReq = {
-    url: '/api/dsh-chat-translate/translate',
-    method: 'POST',
-    on: (evt, cb) => {
-      if (evt === 'data') cb(Buffer.from(JSON.stringify({ texts: ['Hello'] })));
-      if (evt === 'end') cb();
-    },
-  };
-  const mockRes = {
-    writeHead: (status) => { responseStatus = status; },
-    end: (data) => { responseBody = JSON.parse(data); },
-  };
+await testAsync('Translate route answers a malformed body with 400', async () => {
+  const { routes } = makeRoutes();
+  const route = routes.find((r) => r.path === TRANSLATE_ROUTE_PATH);
+  const res = await route.fetch(post(TRANSLATE_ROUTE_PATH, '{not json'));
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).ok, false);
+});
 
-  await handler(mockReq, mockRes);
-  assert.equal(responseStatus, 200);
-  assert.equal(responseBody.ok, true);
-  assert.equal(responseBody.results[0].translated, '译:Hello');
+await testAsync('Test-channel route proxies the probe through the dispatcher', async () => {
+  const { dispatcher, routes } = makeRoutes();
+  dispatcher.testChannel = async (id) => ({ ok: id === 'bing', latencyMs: 1 });
+  const route = routes.find((r) => r.path === TEST_CHANNEL_ROUTE_PATH);
+  const res = await route.fetch(post(TEST_CHANNEL_ROUTE_PATH, { channel: 'bing' }));
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, latencyMs: 1 });
 });
 
 console.log('\n======================================================');

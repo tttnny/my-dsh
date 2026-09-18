@@ -1,3 +1,4 @@
+import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
 import z from '@deepseek-ai/schemastery';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
 import {
@@ -8,21 +9,24 @@ import {
   MAX_CONCURRENCY,
   AI_TIMEOUT_MIN,
   AI_TIMEOUT_MAX,
+  type SettingsMigrationTarget,
 } from './server/config.ts';
 import { CredentialsReader, TRANSLATE_API_KEY_REF } from './server/credentials.ts';
 import { LruDiskCache } from './server/cache.ts';
 import { TranslationDispatcher } from './server/dispatcher.ts';
-import { createHttpHandler } from './server/router.ts';
+import { createFetchRoutes } from './server/router.ts';
 
 /** Stable Cordis loader name. */
 export const name = 'dsh-chat-translate';
 
 /**
- * Hard dependencies: webServer serves the translation proxy; settings and
- * credentials are the DSH-owned config/secret surfaces this plugin now rides
- * on (no standalone config file since 1.2).
+ * Hard dependencies: settings and credentials are the DSH-owned config/secret
+ * surfaces this plugin rides on (no standalone config file since 1.2). The
+ * translation routes register through the connection service when a Web
+ * carrier composes it, so apply takes that service through ctx.inject and the
+ * plugin still loads in compositions without one.
  */
-export const inject = ['webServer', 'settings', 'credentials'];
+export const inject = ['settings', 'credentials'];
 
 /** Settings namespace schema: defaults + bounds, resolved by DSH itself. */
 const CONFIG_SCHEMA = z.object({
@@ -38,21 +42,13 @@ const CONFIG_SCHEMA = z.object({
 });
 
 interface HostContext {
-  webServer?: {
-    register(route: {
-      kind: 'prefix' | 'exact';
-      path: string;
-      handler: (req: any, res: any) => Promise<void> | void;
-    }): () => void;
-  };
-  settings: {
+  connection: HostConnectionHandle;
+  settings: SettingsMigrationTarget & {
     register(ns: string, schema: unknown): {
       get(): any;
       watch(listener: (config: any) => void): () => void;
       update(patch: Record<string, unknown>): Promise<unknown>;
     };
-    describe(): Array<{ ns: string; user?: unknown }>;
-    update(ns: string, patch: Record<string, unknown>): Promise<unknown>;
   };
   credentials: {
     resolve(ref: string): Promise<{ value: string; source?: string } | undefined>;
@@ -61,8 +57,8 @@ interface HostContext {
     unset(ref: string): Promise<void>;
   };
   on(event: string, listener: (...args: any[]) => void): () => void;
-  effect(factory: () => void | (() => void), label: string): void;
-  get?(serviceName: string): any;
+  /** Optional-service injection: the callback runs once connection is present. */
+  inject(names: string[], callback: (ctx: HostContext) => void | (() => void)): void;
 }
 
 /** Mount the host half; provides the translation proxy and rides DSH config. */
@@ -91,31 +87,19 @@ export function apply(ctx: HostContext): void {
     }
   });
 
-  const webServer = ctx.webServer || (ctx.get ? ctx.get('webServer') : null);
-  if (webServer && typeof webServer.register === 'function') {
-    const rawHandler = createHttpHandler(configManager, dispatcher);
-    const handler = async (req: any, res: any) => {
-      await initPromise;
-      return rawHandler(req, res);
-    };
-
-    ctx.effect(
-      () => {
-        const unregister = webServer.register({
-          kind: 'prefix',
-          path: '/api/dsh-chat-translate',
-          handler,
-        });
-        return () => {
-          if (typeof unregister === 'function') {
-            unregister();
-          }
-          cache.dispose().catch((err) => {
-            console.warn('[dsh-chat-translate] Dispose cache error:', err);
-          });
-        };
-      },
-      'dsh-chat-translate: translation API routes'
+  // The routes ride Connection's authenticated /api transport, which a Web
+  // carrier composes; a composition without one keeps the plugin loaded and
+  // simply has no translation endpoint.
+  ctx.inject(['connection'], (connectionCtx) => {
+    const disposers = createFetchRoutes(dispatcher, initPromise).map((route) =>
+      connectionCtx.connection.fetch.register(route)
     );
-  }
+    return () => {
+      void Promise.all(disposers.map((dispose) => dispose()))
+        .then(() => cache.dispose())
+        .catch((err) => {
+          console.warn('[dsh-chat-translate] Dispose translation routes error:', err);
+        });
+    };
+  });
 }
