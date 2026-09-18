@@ -15,8 +15,8 @@ tmp/
 # 本机开发工具（与 docs/ 同为 local-only）；锚定根目录，避免误伤 plugins/*/scripts/
 /scripts/
 
-# 仓库根 node_modules 不放依赖安装，只放指向当前 DSH 版本内核包的软链接
-# （link: 开发插件的宿主半边要靠它解析 @deepseek-ai/*，见 docs/rules/plugins.md 第 4 条）
+# 仓库根不放依赖安装，也不放 link: 插件的内核包软链接——内核包由 DSH 自身路由供给
+# （见 docs/rules/plugins.md 第 4 条）；node_modules 一律不入库
 node_modules/
 
 # secrets & local credentials
