@@ -40,16 +40,16 @@ try {
   }
   const clientInject = manifest.dsh?.client?.inject
   if (!Array.isArray(clientInject) || clientInject.some(dependency => retiredPackages.has(dependency))) {
-    throw new Error('package smoke: client injection retains a removed alpha.5 package')
+    throw new Error('package smoke: client injection retains a removed package')
   }
   for (const [dependency, range] of Object.entries(manifest.peerDependencies ?? {})) {
     if (dependency.startsWith('@deepseek-ai/dsh-') && range !== DSH_PEER_RANGE) {
-      throw new Error(`package smoke: ${dependency} does not declare both verified DSH prerelease ranges`)
+      throw new Error(`package smoke: ${dependency} does not declare the verified exact DSH version`)
     }
   }
   if (manifest.peerDependencies?.['@deepseek-ai/cordis'] !== '^4.0.2'
     || manifest.peerDependencies?.['@deepseek-ai/schemastery'] !== '^3.18.2') {
-    throw new Error('package smoke: Cordis or Schemastery peer baseline is not alpha.5-coherent')
+    throw new Error('package smoke: Cordis or Schemastery peer baseline is not on the verified DSH line')
   }
   const patch = await readFile(resolve(packageRoot, 'cordis.patch.yml'), 'utf8')
   for (const row of ['antigravity-auth', 'antigravity-search', 'antigravity-image', 'antigravity-video']) {
@@ -123,7 +123,7 @@ try {
 
   const hostEntrySource = await readFile(resolve(packageRoot, 'lib/index.js'), 'utf8')
   if (!hostEntrySource.includes('loopback-required')) {
-    throw new Error('package smoke: Host entry lacks the alpha.5 account RPC guard')
+    throw new Error('package smoke: Host entry lacks the account RPC guard')
   }
   for (const marker of ['dsh-client-runtime', 'dsh-host-apiproxy']) {
     if (hostEntrySource.includes(marker)) throw new Error(`package smoke: Host entry retains ${marker}`)
