@@ -71,13 +71,14 @@ export class OpenAiCompatibleAdapter implements ITranslationAdapter {
             content:
               `You are a professional translator. Translate the user's message into ${langName}. ` +
               `Output ONLY the translated text — no explanations, no quotation marks, no extra words. ` +
-              // Placeholders are described, never shown: a literal sample in the
-              // prompt makes small models hallucinate a placeholder next to any
-              // similar-looking word and ship it into the translation.
-              `Some parts of the message are replaced by opaque placeholder markers ` +
-              `(an uppercase token starting with "DSH" surrounded by double underscores). ` +
-              `Copy every such marker into your output character-for-character, unchanged and in place. ` +
-              `Never invent a marker that is not present in the message and never remove one.`,
+              // The placeholder is described by its shape alone. Naming any of
+              // its characters gives a small model something to echo: the old
+              // prompt spelled the marker out and the UI filled up with that
+              // word repeated once per protected fragment.
+              `Some fragments of the message are opaque code between the bracket ` +
+              `characters U+27E6 and U+27E7. Copy each such fragment into your output ` +
+              `character-for-character, keeping its position in the sentence. ` +
+              `Never invent such a fragment and never remove one.`,
           },
           { role: 'user', content: text },
         ],

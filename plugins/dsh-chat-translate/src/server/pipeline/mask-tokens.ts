@@ -1,24 +1,24 @@
 /**
  * Mask placeholder tokens — single source of truth for the wire format, the
- * tolerant matcher and the leftover detector.
+ * matcher and the leftover detector.
  *
- * Wire format: `__DSHMASKx<letters>_<index>__` (e.g. `__DSHMASKxkbdt_3__`).
+ * Wire format: `⟦xkbdt3⟧` — U+27E6/U+27E7 (mathematical white square brackets)
+ * around `<4-letter random id><index>`.
  *
- * Design constraints, each one a measured failure of the previous
- * `__DSH_MASK_<index>__` format against real MT engines:
+ * Design constraints, each one a measured failure of an earlier format against
+ * real MT engines:
  *
- *  - No underscore between `DSH` and `MASK`. Small models routinely drop that
- *    one separator (`__DSH_MASK_1__` -> `__DSHMASK_1__`), which defeated the
- *    old strict unmask regex and leaked the raw token into the UI.
- *  - A random letter run (`x<letters>`) makes the token collision-free against
- *    the source text and unambiguous to parse: the index is the digit run after
- *    the last `_`, so no lookbehind is needed.
- *  - The leading/trailing `__` stay: they survive MT and mark the token as
- *    emphasis to the model.
- *
- * `matchMaskToken` stays tolerant of the *legacy* format and of the spacing /
- * casing / separator damage observed in the wild, because poisoned translations
- * already sit in the on-disk and browser caches.
+ *  - No letters spelling a pronounceable word and no underscores. The previous
+ *    `__DSHMASKxkbdt_3__` format named a token that small models abbreviated
+ *    back to its recognizable core: the UI showed bare `DSH` runs instead of
+ *    the protected fragments.
+ *  - Random letters keep two mask passes in the same session from colliding and
+ *    make the token unambiguous in the translated text.
+ *  - `matchMaskToken` accepts exactly what this module emits (plus the same
+ *    token with a dropped closing bracket, an engine rewrite seen in practice).
+ *    It deliberately does NOT accept anything else: a translation that damaged
+ *    a token beyond recognition is discarded rather than repaired, because
+ *    repairing it is what put mixed or duplicated text on screen.
  */
 
 /** Random part of the token. Letters only: never confuses the index scan. */
@@ -43,94 +43,118 @@ export function createMaskTokenFormat(): MaskTokenFormat {
   const id = randomTokenId();
   return {
     id,
-    token: (index: number) => `__DSHMASKx${id}_${index}__`,
+    token: (index: number) => `⟦${id}${index}⟧`,
   };
 }
 
 /**
- * Loose matcher covering every observed engine rewrite:
- *
- *   __DSHMASKxkbdt_3__      exact
- *   __DSHMASKXKBDT_3__      case folded
- *   __DSH MASK xkbdt _ 3__  spaces inserted around the structural underscores
- *   __DSHMASKkbdt_3__       the `x` id separator eaten
- *   _DSHMASKxkbdt_3_        one boundary underscore dropped
- *   __DSH_MASK_3__ / __dsh_mask_3__  legacy format (no random id)
- *
- * Both boundaries and the internal separators are optional, and the `x` id
- * separator may be replaced by whitespace/dot/hyphen. The two index branches
- * stay unambiguous: an id is always a letter run, the index always digits.
- * Capture groups: `[1] = legacy index` (undefined for the current format),
- * `[2] = token id` (undefined for the legacy format), `[3] = current index`.
+ * Scanner for complete tokens of this format. A token whose closing bracket the
+ * engine dropped is still resolved (see `matchMaskToken`), but it is not
+ * recognized as a complete token here: the space `mask()` inserts sits outside
+ * that token, and matching a truncated one would strip a space of the
+ * translation's own.
  */
-export const MASK_TOKEN_PATTERN_SOURCE =
-  '_*\\s*DSH\\s*_*\\s*MASK\\s*(?:_?\\s*(\\d+)|_*[xX]?[\\s._-]*([a-z]{2,8})\\s*_+\\s*(\\d+))(?:_{0,2}(?=[^\\w]|$))?';
+export const MASK_TOKEN_PATTERN_SOURCE = '⟦([a-z]{4})(\\d+)⟧';
+
+/**
+ * The opening bracket, the id and the index of a token, without its closing
+ * bracket. Used to resolve a token the engine truncated.
+ */
+export const MASK_TOKEN_PREFIX_PATTERN_SOURCE = '⟦\\s*([a-z]{4})(\\d+)';
+
+/**
+ * Retired `__DSH_MASK_<index>__` / `__DSHMASKx<id>_<index>__` tokens. Nothing
+ * emits them anymore: `mask()` rewrites any that appear in the source into the
+ * current format, and the detectors below evict cache entries written by
+ * releases that emitted them.
+ */
+const LEGACY_MASK_PATTERN_SOURCE =
+  '_{1,2}DSH\\s*_*\\s*MASKx?\\s*(?:_?\\s*\\d+|_*([a-z]{2,8})\\s*_+\\s*(\\d+))_{0,2}';
+
+/** Regex source for one retired-format token, for text that still contains one. */
+export const LEGACY_MASK_TOKEN_PATTERN_SOURCE = LEGACY_MASK_PATTERN_SOURCE;
 
 export interface MaskTokenMatch {
+  /** Index into the mask list of the `mask()` call that produced the token. */
   index: number;
-  /** false when the token carried an id from a different `mask()` call. */
-  acceptsId: boolean;
   /** Length of the matched token in characters. */
   length: number;
+  /** True when the closing bracket was missing and only the prefix matched. */
+  truncated: boolean;
 }
 
 /**
- * Match a single mask token at `start` in `text`.
+ * Match exactly one mask token of this format at `start` in `text`.
  *
- * `acceptsId` is false when the token's random id belongs to another masking
- * pass — the caller must then leave the token untouched, because its index
- * would resolve to unrelated content.
+ * The id must match the id of the masking pass that owns the token: every mask
+ * pass carries its own random id, so a token carrying another id belongs to
+ * another call and must not be resolved here.
  */
 export function matchMaskToken(text: string, start: number, id: string): MaskTokenMatch | null {
-  const anchored = new RegExp(`^(?:${MASK_TOKEN_PATTERN_SOURCE})`, 'i').exec(text.slice(start));
-  if (!anchored) return null;
+  const complete = new RegExp(`^(?:${MASK_TOKEN_PATTERN_SOURCE})`, 'iu').exec(text.slice(start));
+  // The closing bracket is optional here so a token the engine truncated is
+  // still resolved; the id and index inside must survive intact.
+  const truncated = complete
+    ? null
+    : new RegExp(`^(?:${MASK_TOKEN_PREFIX_PATTERN_SOURCE})`, 'iu').exec(text.slice(start));
 
-  // Group 1 is the legacy index, group 2 the random id, group 3 the current
-  // index. Whichever index group matched, `parseInt` reads it as a plain
-  // number: "0" and "xabcd_0" both resolve to 0.
-  const index = Number.parseInt(anchored[1] ?? anchored[3] ?? '', 10);
+  const anchored = complete ?? truncated;
+  if (!anchored) return null;
+  if (anchored[1].toLowerCase() !== id.toLowerCase()) return null;
+
+  const index = Number.parseInt(anchored[2], 10);
   if (Number.isNaN(index)) return null;
 
-  const tokenId = anchored[2];
-  const acceptsId = tokenId === undefined || tokenId.toLowerCase() === id.toLowerCase();
-  return { index, acceptsId, length: anchored[0].length };
+  return { index, length: anchored[0].length, truncated: complete === null };
 }
 
-/** True when translated text still carries a mask token of any format. */
+/** Every token of this format in `text`, left to right. */
+export function findMaskTokens(text: string): Array<{ match: MaskTokenMatch; raw: string }> {
+  const found: Array<{ match: MaskTokenMatch; raw: string }> = [];
+  const pattern = new RegExp(MASK_TOKEN_PATTERN_SOURCE, 'giu');
+  let candidate = pattern.exec(text);
+  while (candidate) {
+    const id = candidate[1].toLowerCase();
+    const index = Number.parseInt(candidate[2], 10);
+    if (!Number.isNaN(index)) {
+      found.push({
+        match: { index, length: candidate[0].length, truncated: false },
+        raw: candidate[0],
+      });
+    }
+    if (pattern.lastIndex === candidate.index) pattern.lastIndex++;
+    candidate = pattern.exec(text);
+  }
+  return found;
+}
+
+/** True when `text` still carries a token of the current format. */
 export function hasMaskResidue(text: string): boolean {
   if (!text) return false;
-  return new RegExp(MASK_TOKEN_PATTERN_SOURCE, 'i').test(text);
+  return new RegExp(MASK_TOKEN_PATTERN_SOURCE, 'iu').test(text);
 }
 
-/** Every mask-token-looking fragment in `text`, verbatim. */
-export function maskResidues(text: string): string[] {
-  if (!text) return [];
-  return text.match(new RegExp(MASK_TOKEN_PATTERN_SOURCE, 'gi')) ?? [];
+/** True when `text` carries a token of a retired format. */
+export function hasLegacyMaskResidue(text: string): boolean {
+  if (!text) return false;
+  return new RegExp(LEGACY_MASK_PATTERN_SOURCE, 'iu').test(text);
 }
 
 /**
- * True when `translatedText` exposes a mask token that was NOT already part of
- * `originalText`.
- *
- * A placeholder surviving the round trip is a leak; but a source text that
- * legitimately talks *about* placeholders (this plugin's own documentation,
- * say) must survive translation, so tokens the source already carried are not
- * treated as residue.
+ * Residue test for a value that must never be shown or cached: either a
+ * current-format token or any retired-format token.
  */
-export function hasNewMaskResidue(originalText: string, translatedText: string): boolean {
-  const residues = maskResidues(translatedText);
-  if (residues.length === 0) return false;
+export function hasAnyMaskResidue(text: string): boolean {
+  return hasMaskResidue(text) || hasLegacyMaskResidue(text);
+}
 
-  const presentInSource = new Map<string, number>();
-  for (const fragment of maskResidues(originalText)) {
-    const key = fragment.toLowerCase();
-    presentInSource.set(key, (presentInSource.get(key) ?? 0) + 1);
-  }
-  for (const fragment of residues) {
-    const key = fragment.toLowerCase();
-    const remaining = presentInSource.get(key) ?? 0;
-    if (remaining === 0) return true;
-    presentInSource.set(key, remaining - 1);
-  }
-  return false;
+/**
+ * Retired-format tokens inside source text, so `mask()` can protect them with a
+ * current-format token of their own. A source that talks about the old
+ * placeholder format must survive translation, and the unmask step rejects any
+ * retired-format token it sees.
+ */
+export function findLegacyMaskTokens(text: string): string[] {
+  if (!text) return [];
+  return text.match(new RegExp(LEGACY_MASK_TOKEN_PATTERN_SOURCE, 'giu')) ?? [];
 }
