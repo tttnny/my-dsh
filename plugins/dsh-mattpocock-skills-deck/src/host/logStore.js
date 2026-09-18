@@ -4,7 +4,7 @@
 // 它只做五件事：内存队列、级别判断、按天文件名、单写者刷盘、失败计数。宿主是唯一的落盘者。
 // 防抖窗口 1000 毫秒（设计 2.2 字面：窗口内多次调用合并为一次读改写）。
 export const LOG_DEBOUNCE_MS = 1000
-// 缓存目录下的独立日志子目录名（设计 2.1：.dsh-mattskillsdeck-cache/logs/）。
+// 缓存目录下的独立日志子目录名（设计 2.1：落点 <DSH_HOME>/dsh-mattpocock-skills-deck/logs/）。
 export const LOG_DIR_NAME = 'logs'
 // 开关持久化文件名（设计 1.3：与命名守护 naming-guardian.json 同例，全文覆写，失败不抛错）。
 export const LOG_SWITCH_FILE = 'log-switch.json'

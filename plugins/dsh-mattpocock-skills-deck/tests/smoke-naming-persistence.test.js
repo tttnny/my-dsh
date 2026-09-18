@@ -74,7 +74,7 @@ try {
   const reg = await callHandler(d1.fn, 'namingRegister', { sessionId: 'io-s1', baselineTitle: '[New] 新建需求', cwd: '', hint: '续跑线索样例' })
   check(reg.ok === true, 'namingRegister 受理')
 
-  const stateFile = pathMod.join(process.cwd(), '.dsh-mattskillsdeck-cache', 'naming-guardian.json')
+  const stateFile = pathMod.join(tmp, '.dsh', 'dsh-mattpocock-skills-deck', 'naming-guardian.json')
   check(existsSync(stateFile), '注册后账目文件立即存在于既有缓存目录（即时持久化，无防抖窗口）')
   if (existsSync(stateFile)) {
     const j = JSON.parse(readFileSync(stateFile, 'utf8'))

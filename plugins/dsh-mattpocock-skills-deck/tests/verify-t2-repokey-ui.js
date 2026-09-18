@@ -7,10 +7,11 @@ const { chromium } = require('playwright')
 const fsx = require('fs')
 const fsp = fsx.promises
 const path = require('path')
+const os = require('os')
 
 const DSH = process.env.DSH_URL || 'http://127.0.0.1:59519/'
 const TARGET_WS_NAME = 'dsh-im'
-const OUT = process.argv[2] || path.join(process.cwd(), '.dsh-mattskillsdeck-cache', 'shots-t2')
+const OUT = process.argv[2] || path.join(os.tmpdir(), 'dsh-mattskillsdeck-shots-t2')
 
 const sleep = ms => new Promise(res => setTimeout(res, ms))
 

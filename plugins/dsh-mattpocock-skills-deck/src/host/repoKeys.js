@@ -163,27 +163,54 @@ export function createRepoKeys(deps) {
       }
       return repoRoots[key]
     }
-    // 缓存目录：<DSH 进程 cwd>/.dsh-mattskillsdeck-cache/（T9 修复：fs 沙箱 workspace-write 只允许 cwd 下，
-    //   ~/.dsh 在沙箱外被拒 → 缓存永不写入；改用 process.cwd() 落点，跨重启秒开；v1.6.17 更名 waystation → MattSkillsDeck）
+    // 插件缓存落点：<DSH_HOME>/dsh-mattpocock-skills-deck/（DSH_HOME 优先，缺省 <主目录>/.dsh；与 ~/.dsh/dsh-chat-translate 同例）。
+    // 为什么直用原生 node:fs：DSH fs 沙箱在 workspace-write 下只放行会话工作区与平台临时根，~/.dsh 在栅栏外会被拒；
+    //   插件自有状态与其它插件一致落 ~/.dsh，不再借用模型面 fs 服务（本文件对 .git/config 的读仍走 DSH fs，读不受栅栏限制）。
+    const CACHE_DIR_NAME = 'dsh-mattpocock-skills-deck'
+    let _nodeFsP = null
+    function nodeFs() { if (!_nodeFsP) _nodeFsP = import('node:fs/promises').then(function (m) { return m.default || m }); return _nodeFsP }
+    let _nodePathP = null
+    function nodePath() { if (!_nodePathP) _nodePathP = import('node:path').then(function (m) { return m.default || m }); return _nodePathP }
     async function getCacheDir() {
       if (cacheDirResolved) return cacheDirResolved
       const platform = await getPlatform()
-      const cwd0 = (typeof process !== 'undefined' && process.cwd) ? process.cwd() : DEFAULT_CWD
-      if (!cwd0) return null
-      cacheDirResolved = platform.path.join(cwd0, '.dsh-mattskillsdeck-cache')
-      try { const pfs = platform.fs; if (pfs !== undefined && typeof pfs.mkdir === 'function') await pfs.mkdir(cacheDirResolved) } catch (e) { /* 已存在或不可建，writeText 会自建 */ }
+      const pathMod = await nodePath()
+      let dshHome = ''
+      try {
+        if (platform && platform.env && typeof platform.env.get === 'function') {
+          const v = platform.env.get('DSH_HOME')
+          if (v != null && String(v).trim()) dshHome = String(v).trim()
+        }
+      } catch (eEnv) {}
+      if (!dshHome && platform && typeof platform.getHome === 'function') {
+        const home = await platform.getHome()
+        if (home) dshHome = pathMod.join(String(home), '.dsh')
+      }
+      if (!dshHome) return null
+      cacheDirResolved = pathMod.join(dshHome, CACHE_DIR_NAME)
       return cacheDirResolved
+    }
+    // 缓存 IO 适配器：与 DSH fs 服务同形（resolve/readText/writeText/mkdir/listDir/unlink），但走原生 fs、不受 workspace-write 栅栏限制。
+    // 供 logStore/namingGuardian 经 index 以 fs 依赖注入（它们只把 fs 用于缓存目录）；路径可为普通字符串或 DSH resolve() 目标对象。
+    function asPath(t) { if (typeof t === 'string') return t; if (t && typeof t === 'object') { const c = t.displayPath || t.path || t.__target || t.target || t.targetKey; if (typeof c === 'string' && c) return c } return String(t) }
+    const cacheFs = {
+      getCacheDir: getCacheDir,
+      async resolve(p) { return String(p) },
+      async readText(p) { const fsMod = await nodeFs(); const t = await fsMod.readFile(asPath(p), 'utf8'); return t == null ? '' : String(t) },
+      async writeText(p, text) { const fsMod = await nodeFs(); const pathMod = await nodePath(); const f = asPath(p); await fsMod.mkdir(pathMod.dirname(f), { recursive: true }); await fsMod.writeFile(f, String(text == null ? '' : text), 'utf8') },
+      async mkdir(p) { const fsMod = await nodeFs(); await fsMod.mkdir(asPath(p), { recursive: true }) },
+      async listDir(p) { const fsMod = await nodeFs(); return await fsMod.readdir(asPath(p)) },
+      async unlink(p) { const fsMod = await nodeFs(); await fsMod.unlink(asPath(p)) },
     }
     function cacheFileName(repo) {
       return (repo && repo.owner && repo.name) ? repo.owner + '__' + repo.name + '.json' : null
     }
     async function readDiskCache(repo) {
       try {
-        if (fs === undefined || typeof fs.readText !== 'function' || typeof fs.resolve !== 'function') return null
         const dir = await getCacheDir(); if (!dir) return null
         const fn = cacheFileName(repo); if (!fn) return null
-        const p = await fs.resolve(fn, { cwd: dir })
-        const txt = await fs.readText(p)
+        const platform = await getPlatform()
+        const txt = await cacheFs.readText(platform.path.join(dir, fn))
         if (!txt) return null
         const j = JSON.parse(txt)
         // cacheFormat 3 之后才可读（2→3：1.7.5 新增 map 五区块解析；旧快照缺 decisions/fog/outOfScope,destination,notes，
@@ -194,14 +221,11 @@ export function createRepoKeys(deps) {
     }
     async function writeDiskCache(repo, snap) {
       try {
-        if (fs === undefined || typeof fs.writeText !== 'function' || typeof fs.resolve !== 'function') return
         const dir = await getCacheDir(); if (!dir) return
         const fn = cacheFileName(repo); if (!fn) return
-        // T9 修复：fs 服务的 writeText 要求 resolve() 返回的 target 对象（{targetKey,displayPath}），不能直接传路径字符串
         const platform = await getPlatform()
-        const t = await platform.fs.resolve(platform.path.join(dir, fn))
         // 缓存格式版本 3：1.7.5 map 五区块（见上），旧格式一律视为不新鲜
-        await fs.writeText(t, JSON.stringify(Object.assign({}, snap, { cacheFormat: 3 })))
+        await cacheFs.writeText(platform.path.join(dir, fn), JSON.stringify(Object.assign({}, snap, { cacheFormat: 3 })))
       } catch (e) { /* 写失败不影响主流程 */ }
     }
 
@@ -246,5 +270,5 @@ export function createRepoKeys(deps) {
       try { if (logCtx) logCtx.fire('info', 'repo.resolve.tier', { tier: 3, ok: true, latencyMs: Date.now() - rkT0 }) } catch (eL) {}
       return repoKeys[key]
     }
-  return { resolveGh, resetGhCache, runGh, execProc, resolveGit, getHome, canonicalKey, getRepoRoot, getCacheDir, cacheFileName, readDiskCache, writeDiskCache, getRepoKey }
+  return { resolveGh, resetGhCache, runGh, execProc, resolveGit, getHome, canonicalKey, getRepoRoot, getCacheDir, getCacheFs: function () { return cacheFs }, cacheFileName, readDiskCache, writeDiskCache, getRepoKey }
 }

@@ -4,8 +4,8 @@
 export function createNamingGuardian(deps) {
   const { fs, timer, DEFAULT_CWD, getCacheDir, getPlatform, getRepoKey, runGh, logCtx } = deps
   // ============ 命名守护（#265 · 草稿档垂直线 · host 半）============
-  // 分工（#264 D2）：本侧为常驻轻量任务 —— 持跟踪态（落盘 .dsh-mattskillsdeck-cache/naming-guardian.json，
-  // 写入方式与现缓存一致：platform.fs.resolve + fs.writeText）并维护状态；「待办改名计划单」经
+  // 分工（#264 D2）：本侧为常驻轻量任务 —— 持跟踪态（落盘 ~/.dsh/dsh-mattpocock-skills-deck/naming-guardian.json，
+  // 经注入的原生 fs 适配器（repoKeys.cacheFs）读写，不受 workspace-write 栅栏限制）并维护状态；「待办改名计划单」经
   // wf.namingPlan 供界面侧渲染钩子拉取。纯判定真源 = ../shared/naming-titles.js 等 3 个文件（运行时引用合并，
   // 与 check-catalog 同模式），本文件不含第二处命名实现。
   let _namingCore = null
@@ -38,7 +38,7 @@ export function createNamingGuardian(deps) {
         const dir = await getCacheDir()
         if (dir) {
           const platform2 = await getPlatform()
-          const t = await platform2.fs.resolve(platform2.path.join(dir, NAMING_STATE_FILE))
+          const t = platform2.path.join(dir, NAMING_STATE_FILE)
           const txt = await fs.readText(t)
           if (txt) {
             const j = JSON.parse(txt)
@@ -57,7 +57,7 @@ export function createNamingGuardian(deps) {
       if (fs === undefined || typeof fs.writeText !== 'function' || typeof fs.resolve !== 'function') return
       const dir = await getCacheDir(); if (!dir) return
       const platform2 = await getPlatform()
-      const t = await platform2.fs.resolve(platform2.path.join(dir, NAMING_STATE_FILE))
+      const t = platform2.path.join(dir, NAMING_STATE_FILE)
       await fs.writeText(t, JSON.stringify(_namingState || namingDefaultState()))
     } catch (ePersist) { /* 写失败不影响主流程，下轮 tick 重试 */ }
   }
