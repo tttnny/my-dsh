@@ -1,6 +1,6 @@
 # matt-cordis — Matt 创造模式
 
-> 基底为官方 `cordis` 组合（persona 保持官方原样，含 `tool-cordis` 动态插件工具集与双平面引导）＋ **Matt Pocock 的 25 个技能**并入 `skills/`（与 cordis 随附 2 技能共 27 个）＋ **grilling 投递插件** [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/)。
+官方 `cordis` 组合（persona 保持官方原样，含 `tool-cordis` 动态插件工具集与双平面引导）＋ Matt Pocock 的 25 个技能并入 `skills/`（与 cordis 随附 2 个技能共 27 个）＋ grilling 投递插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md)。行为要点与 matt-standard 相同：grilling 轮次先以散文预告、再以 `ask_user_grilling` 表单投递作答。
 
 ## 安装与启用
 
@@ -8,23 +8,16 @@
 # 1. 创建 preset 目录（preset id 必须为 matt-cordis）
 mkdir -p ~/.dsh/.agent-presets/matt-cordis
 
-# 2. 复制 preset 配置文件与技能目录（无需复制 README.md）
+# 2. 复制 preset 配置文件与技能目录
 cp matt-cordis/agent.cordis.yml matt-cordis/preset.yml ~/.dsh/.agent-presets/matt-cordis/
 cp -R matt-cordis/skills ~/.dsh/.agent-presets/matt-cordis/
 
-# 3. 安装 grilling 投递插件（matt-standard 已装则跳过）
+# 3. 安装 grilling 投递插件
 dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 ```
 
-重启 DSH 后，在新建会话界面选择「Matt 创造模式」即可。
+重启 DSH 后，在新建会话界面选择「Matt 创造模式」即可。单独使用本 preset 无需任何额外补丁；同进程与官方 `cordis` / `ptc-cordis` 混用时的共存要求见 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md)。
 
-## 与官方 cordis preset 的共存注意事项
+## 详细说明
 
-`@deepseek-ai/dsh-tool-cordis` 向全局单例 `ctx.cordisInspect` 注册 Host inspect provider 时**没有幂等处理**。同一 DSH 进程内先后挂载两个含 `tool-cordis` 的 preset（官方 `cordis`、`ptc-cordis`、本预设任意两个）会触发 `already registered` 异常。若你确实需要同进程混用，按 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md) 执行（**纯文档补丁，无脚本**，由 AI 按文操作）。仅使用本预设则无需任何补丁。
-
-## 验证
-
-- `agentPresets.standingKeyFor('matt-cordis')` → mounted OK；
-- 真会话检查：工具清单含 `ask_user_grilling` / `cordis_define`；技能目录 27 个；grilling 轮次「散文预告 + 一次表单投递」成对出现（只预告不投递即为失守）。
-
-> 插件功能与投递协议详见 [plugins/dsh-ask-user-grilling/README.md](../../plugins/dsh-ask-user-grilling/README.md)；维护与改动点说明见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)。
+配置细节、实现原理与使用说明一律见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)：官方基线与逐处改动清单、`agent.cordis.yml` 两处改动块（本 preset 官方自带 `customSkillDirs`，只余工具行替换）、`skills/grilling/SKILL.md` 成品全文、cordis 随附技能的来源、插件的注册安装要求、同步与校验步骤、DSH 或技能上游升级后的重打流程。本目录不含 README.md 之外的自有配置：`agent.cordis.yml` / `preset.yml` / `skills/` 就是成品，直接同步即用。
