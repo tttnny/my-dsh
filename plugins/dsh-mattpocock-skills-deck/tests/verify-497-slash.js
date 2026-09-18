@@ -55,9 +55,9 @@ async function main() {
   {
     const captured = []
     const plat = await platMod.composePlatform(makeCtx(captured), 'win32', win32Adapter, {})
-    const res = await plat.openFolder('D:/0Tools/DSH Desktop/.dsh-mattskillsdeck-cache/logs', 'D:/base')
+    const res = await plat.openFolder('D:/0Tools/DSH Desktop/.dsh/dsh-mattpocock-skills-deck/logs', 'D:/base')
     check(res && res.ok === true, 'win32 开目录成功（含空格真机路径）')
-    check(JSON.stringify(captured[0]) === JSON.stringify(['C:\\Windows\\System32\\cmd.exe', '/c', 'start', '', '/max', 'D:\\0Tools\\DSH Desktop\\.dsh-mattskillsdeck-cache\\logs']), 'win32 开目录走 cmd start 显式可视且斜杠已归一（实得 ' + JSON.stringify(captured[0]) + '）')
+    check(JSON.stringify(captured[0]) === JSON.stringify(['C:\\Windows\\System32\\cmd.exe', '/c', 'start', '', '/max', 'D:\\0Tools\\DSH Desktop\\.dsh\\dsh-mattpocock-skills-deck\\logs']), 'win32 开目录走 cmd start 显式可视且斜杠已归一（实得 ' + JSON.stringify(captured[0]) + '）')
   }
 
   // win32 开文件（名内无空格）：先切目录再按名选中。

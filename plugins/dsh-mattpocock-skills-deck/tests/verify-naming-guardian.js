@@ -153,7 +153,7 @@ console.log('\n— 单一真源守卫 —')
   check(hostSrc.includes('core.attributeNewNumbers') && hostSrc.includes('core.isNumberAwaitStage'), 'host 索引差值/候选取样走共享核心纯函数')
   check(hostSrc.includes('function namingSweepNow()') && hostSrc.includes('function namingSweepSoon('), 'host 索引差值结算 + 即时推进存在')
   check(!hostSrc.includes('newSessionWatchers'), '旧 #211 内存轮询结构（newSessionWatchers Map）已退役（职责并入持久化守护）')
-  check(hostSrc.includes('.dsh-mattskillsdeck-cache') && hostSrc.includes("naming-guardian.json"), '跟踪态落盘既有缓存目录')
+  check(hostSrc.includes('dsh-mattpocock-skills-deck') && hostSrc.includes("naming-guardian.json"), '跟踪态落盘 ~/.dsh 插件缓存目录')
   check(hostSrc.includes('startNamingGuardianLoop()'), 'host 常驻轻量任务随 apply 启动')
 
   const buildSrc = readFileSync(join(ROOT, 'scripts/build.mjs'), 'utf8')
