@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
+import { isMaskLeak } from './pipeline/masking.ts';
 
 /** Entries older than this are treated as expired. */
 const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -57,10 +58,12 @@ export class LruDiskCache {
         for (const [k, raw] of Object.entries(obj)) {
           if (typeof raw === 'string') {
             // Legacy entry from an older release — keep it, no known timestamp.
-            this.cache.set(k, { t: 0, v: raw });
+            if (!isMaskLeak(raw)) this.cache.set(k, { t: 0, v: raw });
           } else if (raw && typeof raw === 'object' && typeof (raw as CacheEntry).v === 'string') {
             const entry = raw as CacheEntry;
-            if (typeof entry.t === 'number' && Number.isFinite(entry.t)) {
+            // Poisoned translations written before the mask-leak guard existed
+            // must not survive a restart: drop them so the text is re-translated.
+            if (typeof entry.t === 'number' && Number.isFinite(entry.t) && !isMaskLeak(entry.v)) {
               this.cache.set(k, entry);
             }
           }
@@ -84,6 +87,12 @@ export class LruDiskCache {
       this.cache.delete(key);
       return undefined;
     }
+    // Safety net for entries that entered the in-memory map before the
+    // mask-leak guard (e.g. a warm cache written this session).
+    if (isMaskLeak(entry.v)) {
+      this.cache.delete(key);
+      return undefined;
+    }
     // Refresh key in LRU order (re-insert at the end)
     this.cache.delete(key);
     this.cache.set(key, entry);
@@ -91,6 +100,10 @@ export class LruDiskCache {
   }
 
   set(key: string, value: string): void {
+    if (isMaskLeak(value)) {
+      console.warn('[dsh-chat-translate] refusing to cache a translation with a leaked mask placeholder');
+      return;
+    }
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else if (this.cache.size >= this.maxEntries) {

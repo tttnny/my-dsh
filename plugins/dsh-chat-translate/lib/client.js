@@ -34,6 +34,18 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
+// src/server/pipeline/mask-tokens.ts
+var MASK_TOKEN_PATTERN_SOURCE = "_*\\s*DSH\\s*_*\\s*MASK\\s*(?:_?\\s*(\\d+)|_*[xX]?[\\s._-]*([a-z]{2,8})\\s*_+\\s*(\\d+))(?:_{0,2}(?=[^\\w]|$))?";
+function hasMaskResidue(text) {
+  if (!text) return false;
+  return new RegExp(MASK_TOKEN_PATTERN_SOURCE, "i").test(text);
+}
+
+// src/server/pipeline/masking.ts
+function isMaskLeak(translatedText) {
+  return hasMaskResidue(translatedText);
+}
+
 // src/client/translate/client-cache.ts
 var CACHE_KEY = "dsh-chat-translate:cache";
 var MAX_LOCAL_ENTRIES = 500;
@@ -69,6 +81,12 @@ var ClientCache = class {
     const key = text.trim().toLowerCase();
     const entry = this.memCache.get(key);
     if (entry === void 0) return void 0;
+    if (typeof entry.v === "string" && isMaskLeak(entry.v)) {
+      this.memCache.delete(key);
+      this.dirty = true;
+      this.scheduleSave();
+      return void 0;
+    }
     if (entry.v && entry.v.trim().toLowerCase() === key) {
       this.memCache.delete(key);
       this.dirty = true;

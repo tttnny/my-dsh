@@ -6,7 +6,7 @@ import type { LruDiskCache } from './cache.ts';
 import type { KeyReader } from './credentials.ts';
 import { BingWebAdapter } from './adapters/bing.ts';
 import { OpenAiCompatibleAdapter } from './adapters/openai.ts';
-import { ContentMaskingPipeline } from './pipeline/masking.ts';
+import { ContentMaskingPipeline, isMaskLeakAgainst } from './pipeline/masking.ts';
 
 type CircuitStateEnum = 'closed' | 'open' | 'half-open';
 
@@ -152,6 +152,18 @@ export class TranslationDispatcher {
           const cleaned = translatedMasked?.trim();
           if (cleaned && cleaned.length > 0) {
             const finalTranslated = unmask(cleaned);
+            // A leftover placeholder means the engine rewrote it beyond repair:
+            // never show `__DSHMASK…__` to the user and never cache it. Treat
+            // the whole response as a failed attempt and fall through to the
+            // next channel (the caller then keeps the original text). Tokens
+            // the source text already carried are legitimate content, not leaks.
+            if (isMaskLeakAgainst(text, finalTranslated)) {
+              this.recordFailure(chId);
+              console.warn(
+                `[dsh-chat-translate] channel ${chId} leaked a mask placeholder, discarding its result | text: ${text.slice(0, 60)}`
+              );
+              continue;
+            }
             this.recordSuccess(chId);
             this.cache.set(cacheKey, finalTranslated);
             return {

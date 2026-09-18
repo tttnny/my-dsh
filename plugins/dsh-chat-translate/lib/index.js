@@ -996,6 +996,134 @@ var CredentialsReader = class {
 // src/server/cache.ts
 import * as fs2 from "node:fs/promises";
 import * as path from "node:path";
+
+// src/server/pipeline/mask-tokens.ts
+var RANDOM_LETTERS = "abcdefghijklmnopqrstuvwxyz";
+function randomTokenId() {
+  let out = "";
+  for (let i = 0; i < 4; i++) {
+    out += RANDOM_LETTERS[Math.floor(Math.random() * RANDOM_LETTERS.length)];
+  }
+  return out;
+}
+function createMaskTokenFormat() {
+  const id = randomTokenId();
+  return {
+    id,
+    token: (index) => `__DSHMASKx${id}_${index}__`
+  };
+}
+var MASK_TOKEN_PATTERN_SOURCE = "_*\\s*DSH\\s*_*\\s*MASK\\s*(?:_?\\s*(\\d+)|_*[xX]?[\\s._-]*([a-z]{2,8})\\s*_+\\s*(\\d+))(?:_{0,2}(?=[^\\w]|$))?";
+function matchMaskToken(text, start, id) {
+  const anchored = new RegExp(`^(?:${MASK_TOKEN_PATTERN_SOURCE})`, "i").exec(text.slice(start));
+  if (!anchored) return null;
+  const index = Number.parseInt(anchored[1] ?? anchored[3] ?? "", 10);
+  if (Number.isNaN(index)) return null;
+  const tokenId = anchored[2];
+  const acceptsId = tokenId === void 0 || tokenId.toLowerCase() === id.toLowerCase();
+  return { index, acceptsId, length: anchored[0].length };
+}
+function hasMaskResidue(text) {
+  if (!text) return false;
+  return new RegExp(MASK_TOKEN_PATTERN_SOURCE, "i").test(text);
+}
+function maskResidues(text) {
+  if (!text) return [];
+  return text.match(new RegExp(MASK_TOKEN_PATTERN_SOURCE, "gi")) ?? [];
+}
+function hasNewMaskResidue(originalText, translatedText) {
+  const residues = maskResidues(translatedText);
+  if (residues.length === 0) return false;
+  const presentInSource = /* @__PURE__ */ new Map();
+  for (const fragment of maskResidues(originalText)) {
+    const key = fragment.toLowerCase();
+    presentInSource.set(key, (presentInSource.get(key) ?? 0) + 1);
+  }
+  for (const fragment of residues) {
+    const key = fragment.toLowerCase();
+    const remaining = presentInSource.get(key) ?? 0;
+    if (remaining === 0) return true;
+    presentInSource.set(key, remaining - 1);
+  }
+  return false;
+}
+
+// src/server/pipeline/masking.ts
+var MASK_MARKER = /DSH\s*_?\s*MASK/i;
+var MAX_UNMASK_PASSES = 1e4;
+var ContentMaskingPipeline = class {
+  mask(text) {
+    if (!text || typeof text !== "string") {
+      return {
+        maskedText: text,
+        unmask: (t) => t
+      };
+    }
+    const masks = [];
+    const format = createMaskTokenFormat();
+    const addMask = (match) => {
+      if (MASK_MARKER.test(match)) return match;
+      const idx = masks.length;
+      masks.push(match);
+      return format.token(idx);
+    };
+    let processed = text;
+    processed = processed.replace(/(?:```|~~~)[\s\S]*?(?:```|~~~)/g, (m) => addMask(m));
+    processed = processed.replace(/`[^`\n]+`/g, (m) => addMask(m));
+    processed = processed.replace(/https?:\/\/[^\s)\];,;"'<>]+/g, (m) => addMask(m));
+    processed = processed.replace(
+      /(?:\/[\w.\-\\\/]+|(?<=[\w.\-])\.\.?[\\\/][\w.\-\\\/]+|(?<=^|[\s([{"'`])[a-zA-Z]:[\\\/][\w.\-\\\/]+|(?<![^\s([{"'`])\b(?:[\w.\-]+\/)+[\w.\-]+\.[a-zA-Z0-9]+\b|(?<![^\s([{"'`])\b[\w.\-]+\.(?:ts|tsx|js|jsx|json|ya?ml|md|py|go|rs|c|cpp|h|hpp|css|scss|html|sh|bash|mjs|cjs|toml|lock|log|env|svg|png|jpe?g|gif|tar|gz|zip|xml|sql)\b)/g,
+      (m) => addMask(m)
+    );
+    processed = processed.replace(
+      /(?<=^|[\s(\[{"'])((?:--[a-zA-Z0-9_\-]+(?:=[^\s"'<>]+)?)|(?:-[a-zA-Z0-9]+))(?=[\s)\]}",:;!?]|$)/g,
+      (m) => addMask(m)
+    );
+    const unmask = (translatedText) => {
+      if (!translatedText || masks.length === 0) {
+        return translatedText;
+      }
+      return replaceMaskTokens(
+        translatedText,
+        format.id,
+        (index) => index >= 0 && index < masks.length ? masks[index] : void 0
+      );
+    };
+    return {
+      maskedText: processed,
+      unmask
+    };
+  }
+};
+function replaceMaskTokens(text, id, resolve3) {
+  const pattern2 = new RegExp(MASK_TOKEN_PATTERN_SOURCE, "i");
+  let out = "";
+  let cursor = 0;
+  let passes = 0;
+  while (cursor < text.length && passes++ < MAX_UNMASK_PASSES) {
+    const candidate = pattern2.exec(text.slice(cursor));
+    if (!candidate) break;
+    const start = cursor + candidate.index;
+    const match = matchMaskToken(text, start, id);
+    const length = match?.length ?? candidate[0].length;
+    if (length <= 0) {
+      cursor = start + 1;
+      continue;
+    }
+    const replacement = match?.acceptsId ? resolve3(match.index) : void 0;
+    out += text.slice(cursor, start) + (replacement ?? text.slice(start, start + length));
+    cursor = start + length;
+  }
+  return out + text.slice(cursor);
+}
+function isMaskLeak(translatedText) {
+  return hasMaskResidue(translatedText);
+}
+function isMaskLeakAgainst(originalText, translatedText) {
+  return hasNewMaskResidue(originalText, translatedText);
+}
+
+// src/server/cache.ts
 var TTL_MS = 7 * 24 * 60 * 60 * 1e3;
 var LruDiskCache = class {
   cache = /* @__PURE__ */ new Map();
@@ -1031,10 +1159,10 @@ var LruDiskCache = class {
       if (obj && typeof obj === "object") {
         for (const [k, raw] of Object.entries(obj)) {
           if (typeof raw === "string") {
-            this.cache.set(k, { t: 0, v: raw });
+            if (!isMaskLeak(raw)) this.cache.set(k, { t: 0, v: raw });
           } else if (raw && typeof raw === "object" && typeof raw.v === "string") {
             const entry = raw;
-            if (typeof entry.t === "number" && Number.isFinite(entry.t)) {
+            if (typeof entry.t === "number" && Number.isFinite(entry.t) && !isMaskLeak(entry.v)) {
               this.cache.set(k, entry);
             }
           }
@@ -1054,11 +1182,19 @@ var LruDiskCache = class {
       this.cache.delete(key);
       return void 0;
     }
+    if (isMaskLeak(entry.v)) {
+      this.cache.delete(key);
+      return void 0;
+    }
     this.cache.delete(key);
     this.cache.set(key, entry);
     return entry.v;
   }
   set(key, value) {
+    if (isMaskLeak(value)) {
+      console.warn("[dsh-chat-translate] refusing to cache a translation with a leaked mask placeholder");
+      return;
+    }
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else if (this.cache.size >= this.maxEntries) {
@@ -1320,7 +1456,7 @@ var OpenAiCompatibleAdapter = class {
         messages: [
           {
             role: "system",
-            content: `You are a professional translator. Translate the user's message into ${langName}. Output ONLY the translated text \u2014 no explanations, no quotation marks, no extra words. Preserve every placeholder like __DSH_MASK_0__ exactly as-is.`
+            content: `You are a professional translator. Translate the user's message into ${langName}. Output ONLY the translated text \u2014 no explanations, no quotation marks, no extra words. Some parts of the message are replaced by opaque placeholder markers (an uppercase token starting with "DSH" surrounded by double underscores). Copy every such marker into your output character-for-character, unchanged and in place. Never invent a marker that is not present in the message and never remove one.`
           },
           { role: "user", content: text }
         ]
@@ -1343,55 +1479,6 @@ var OpenAiCompatibleAdapter = class {
       throw new Error("OpenAI-compatible API returned empty content");
     }
     return translated;
-  }
-};
-
-// src/server/pipeline/masking.ts
-var ContentMaskingPipeline = class {
-  mask(text) {
-    if (!text || typeof text !== "string") {
-      return {
-        maskedText: text,
-        unmask: (t) => t
-      };
-    }
-    const masks = [];
-    const addMask = (match) => {
-      const idx = masks.length;
-      masks.push(match);
-      return `__DSH_MASK_${idx}__`;
-    };
-    let processed = text;
-    processed = processed.replace(/(?:```|~~~)[\s\S]*?(?:```|~~~)/g, (m) => addMask(m));
-    processed = processed.replace(/`[^`\n]+`/g, (m) => addMask(m));
-    processed = processed.replace(/https?:\/\/[^\s)\];,;"'<>]+/g, (m) => addMask(m));
-    processed = processed.replace(
-      /(?:(?:\/|[a-zA-Z]:[\\\/]|\.\.?[\\\/])[\w.\-\\\/]+|\b(?:[\w.\-]+\/)+[\w.\-]+\.[a-zA-Z0-9]+\b|\b[\w.\-]+\.(?:ts|tsx|js|jsx|json|ya?ml|md|py|go|rs|c|cpp|h|hpp|css|scss|html|sh|bash|mjs|cjs|toml|lock|log|env|svg|png|jpe?g|gif|tar|gz|zip|xml|sql)\b)/g,
-      (m) => addMask(m)
-    );
-    processed = processed.replace(
-      /(?<=^|[\s(\[{"'])((?:--[a-zA-Z0-9_\-]+(?:=[^\s"'<>]+)?)|(?:-[a-zA-Z0-9]+))(?=[\s)\]}",:;!?]|$)/g,
-      (m) => addMask(m)
-    );
-    const unmask = (translatedText) => {
-      if (!translatedText || masks.length === 0) {
-        return translatedText;
-      }
-      return translatedText.replace(
-        /__\s*DSH\s*_\s*MASK\s*_\s*(\d+)\s*__/gi,
-        (_fullMatch, indexStr) => {
-          const idx = parseInt(indexStr, 10);
-          if (!Number.isNaN(idx) && idx >= 0 && idx < masks.length) {
-            return masks[idx];
-          }
-          return _fullMatch;
-        }
-      );
-    };
-    return {
-      maskedText: processed,
-      unmask
-    };
   }
 };
 
@@ -1493,6 +1580,13 @@ var TranslationDispatcher = class {
           const cleaned = translatedMasked?.trim();
           if (cleaned && cleaned.length > 0) {
             const finalTranslated = unmask(cleaned);
+            if (isMaskLeakAgainst(text, finalTranslated)) {
+              this.recordFailure(chId);
+              console.warn(
+                `[dsh-chat-translate] channel ${chId} leaked a mask placeholder, discarding its result | text: ${text.slice(0, 60)}`
+              );
+              continue;
+            }
             this.recordSuccess(chId);
             this.cache.set(cacheKey, finalTranslated);
             return {
