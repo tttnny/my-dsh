@@ -6,7 +6,8 @@ import type { LruDiskCache } from './cache.ts';
 import type { KeyReader } from './credentials.ts';
 import { BingWebAdapter } from './adapters/bing.ts';
 import { OpenAiCompatibleAdapter } from './adapters/openai.ts';
-import { ContentMaskingPipeline, isMaskLeakAgainst } from './pipeline/masking.ts';
+import { ContentMaskingPipeline, MaskRestoreError } from './pipeline/masking.ts';
+import { findLegacyMaskTokens, hasMaskResidue } from './pipeline/mask-tokens.ts';
 
 type CircuitStateEnum = 'closed' | 'open' | 'half-open';
 
@@ -122,7 +123,9 @@ export class TranslationDispatcher {
     }
 
     // Mask code blocks, inline code, paths, urls, flags
-    const { maskedText, unmask } = this.masking.mask(text);
+    const { maskedText, unmask, legacyFragments } = this.masking.mask(text);
+    // Retired-format tokens the source documented come back on purpose.
+    const documentedLegacy = new Set(legacyFragments.map((fragment) => fragment.toLowerCase()));
 
     // 3. Queue task with concurrency limit
     const taskPromise = this.enqueueTask(async () => {
@@ -151,16 +154,21 @@ export class TranslationDispatcher {
 
           const cleaned = translatedMasked?.trim();
           if (cleaned && cleaned.length > 0) {
+            // Restore every protected fragment. `unmask` throws when the engine
+            // did not hand the whole token sequence back, and the leftover check
+            // covers the same ground on the finished string; either way the
+            // translation is discarded and the next channel is tried, so a
+            // damaged placeholder is never rendered or cached.
             const finalTranslated = unmask(cleaned);
-            // A leftover placeholder means the engine rewrote it beyond repair:
-            // never show `__DSHMASK…__` to the user and never cache it. Treat
-            // the whole response as a failed attempt and fall through to the
-            // next channel (the caller then keeps the original text). Tokens
-            // the source text already carried are legitimate content, not leaks.
-            if (isMaskLeakAgainst(text, finalTranslated)) {
+            // Retired-format tokens the source documented are content; anything
+            // else token-shaped reaching the finished string is a leak.
+            const legacyLeftovers = findLegacyMaskTokens(finalTranslated).filter(
+              (fragment) => !documentedLegacy.has(fragment.toLowerCase())
+            );
+            if (hasMaskResidue(finalTranslated) || legacyLeftovers.length > 0) {
               this.recordFailure(chId);
               console.warn(
-                `[dsh-chat-translate] channel ${chId} leaked a mask placeholder, discarding its result | text: ${text.slice(0, 60)}`
+                `[dsh-chat-translate] channel ${chId} left a mask placeholder in the translation, discarding its result | text: ${text.slice(0, 60)}`
               );
               continue;
             }
@@ -182,8 +190,12 @@ export class TranslationDispatcher {
           );
         } catch (err: any) {
           this.recordFailure(chId);
+          const detail =
+            err instanceof MaskRestoreError
+              ? ` (protected fragments expected ${err.expectedCount}, restored ${err.foundCount})`
+              : '';
           console.warn(
-            `[dsh-chat-translate] channel ${chId} failed: ${describeError(err)} | text: ${text.slice(0, 60)}`
+            `[dsh-chat-translate] channel ${chId} failed: ${describeError(err)}${detail} | text: ${text.slice(0, 60)}`
           );
           // Continue to next channel
         }

@@ -19,7 +19,8 @@ import { JSDOM } from 'jsdom';
 const TMP_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-chat-translate-test-'));
 process.env.DSH_HOME = TMP_HOME;
 
-import { ContentMaskingPipeline, isMaskLeak, isMaskLeakAgainst } from '../src/server/pipeline/masking.ts';
+import { ContentMaskingPipeline, MaskRestoreError, isMaskLeak } from '../src/server/pipeline/masking.ts';
+import { hasLegacyMaskResidue, hasMaskResidue } from '../src/server/pipeline/mask-tokens.ts';
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { ConfigManager } from '../src/server/config.ts';
 import { LruDiskCache } from '../src/server/cache.ts';
@@ -66,11 +67,9 @@ console.log('--- Suite 1: ContentMaskingPipeline Placeholder Protection ---');
 const pipeline = new ContentMaskingPipeline();
 
 // The wire token carries a random id, so tests must derive it from the masked
-// text instead of hard-coding a literal — that is exactly what regressed in 1.3.1
-// (the engine dropped one underscore and the strict unmask regex gave up).
+// text instead of hard-coding a literal.
 function tokenIndexIn(maskedText, index) {
-  const tokens = [...maskedText.matchAll(/__(?:DSH\s*_?\s*MASK)[\s._-]*[xX]?([a-z]{2,8})_(\d+)__/gi)];
-  const hit = tokens.find((m) => Number(m[2]) === index);
+  const hit = [...maskedText.matchAll(/⟦([a-z]{4})(\d+)⟧/gi)].find((m) => Number(m[2]) === index);
   if (!hit) throw new Error(`mask token #${index} not found in ${JSON.stringify(maskedText)}`);
   return hit[0];
 }
@@ -121,76 +120,86 @@ test('Round-trips every masked construct through an unchanged translation', () =
   }
 });
 
-test('Unmasks engine-mangled tokens: case, spacing, dropped separators and boundaries', () => {
+test('Resolves a token whose closing bracket the engine dropped', () => {
   const input = 'Let me check these host-side service names in 0.1.6: `webServer`, `storageDomain`, `settings`';
   const { maskedText, unmask } = pipeline.mask(input);
   assert.equal(unmask(maskedText), input);
 
-  const id = /__DSHMASKx([a-z]{4})_0__/.exec(maskedText)[1];
-  const token = (i) => `__DSHMASKx${id}_${i}__`;
-  const expected = '让我检查这些主机端服务名称：`webServer`, `storageDomain`, `settings`';
-  const variants = [
-    expected.replace(token(0), `__DSHMASKX${id.toUpperCase()}_0__`),
-    expected.replace(token(0), `__DSH MASK x${id} _ 0__`),
-    expected.replace(token(0), `__DSHMASK${id}_0__`), // `x` separator eaten
-    expected.replace(token(0), `__DSHMASK${id}_0__`.replace('_0', '0')), // id and index fused
-    expected.replace(token(0), `_DSHMASKx${id}_0_`), // one boundary underscore left
-    expected.replace(token(0), `__DSH_MASK_0__`), // legacy format
-    expected.replace(token(0), `__dsh_mask_0__`), // legacy, case folded
-  ];
-  for (const variant of variants) {
-    const unmasked = unmask(variant);
-    assert.equal(unmasked, expected, `failed for ${JSON.stringify(variant)}`);
-    assert.equal(isMaskLeak(unmasked), false);
+  const id = /⟦([a-z]{4})0⟧/.exec(maskedText)[1];
+  const opened = maskedText.replace(`⟦${id}0⟧`, `⟦${id}0`);
+  assert.equal(unmask(opened), input);
+});
+
+test('Rejects a translation that rewrote, dropped, duplicated or invented a token', () => {
+  const input = 'Read src/server/dispatcher.ts and fix docs/rules/plugins.md';
+  const { maskedText, unmask } = pipeline.mask(input);
+  const id = /⟦([a-z]{4})0⟧/.exec(maskedText)[1];
+  const token = (i) => `⟦${id}${i}⟧`;
+
+  const healthy = `阅读 ${token(0)} 并修复 ${token(1)}`;
+  assert.equal(unmask(healthy), '阅读 src/server/dispatcher.ts 并修复 docs/rules/plugins.md');
+
+  const poisoned = {
+    'token abbreviated to a bare word': '阅读 DSH 并修复 DSH',
+    'token core kept, id and index lost': '阅读 DSHMASK 并修复 DSHMASK',
+    'index dropped': `阅读 ⟦${id}⟧ 并修复 ⟦${id}⟧`,
+    'one token dropped': `阅读 ${token(0)} 并修复`,
+    'one token duplicated': `阅读 ${token(0)} 并修复 ${token(1)} ${token(1)}`,
+    'foreign pass id': `阅读 ⟦zzzz0⟧ 并修复 ${token(1)}`,
+    'out-of-range index': `阅读 ${token(0)} 并修复 ⟦${id}9⟧`,
+    'retired placeholder format': '阅读 __DSH_MASK_0__ 并修复 __DSH_MASK_1__',
+  };
+  for (const [name, out] of Object.entries(poisoned)) {
+    assert.throws(() => unmask(out), MaskRestoreError, `accepted: ${name} — ${JSON.stringify(out)}`);
   }
 });
 
-test('Leaves a token carrying a foreign masking-pass id untouched', () => {
-  const { unmask } = pipeline.mask('Locate `DSH_HOME` directory');
-  assert.equal(unmask('定位 __DSHMASKxzzzz_0__ 目录'), '定位 __DSHMASKxzzzz_0__ 目录');
-});
-
-test('Out-of-range token indexes are kept verbatim', () => {
-  const { maskedText, unmask } = pipeline.mask('Please execute `pnpm run build` before releasing.');
-  const foreign = maskedText.replace(/__DSHMASKx([a-z]{4})_0__/, '__DSHMASKx$1_99__');
-  assert.equal(unmask(foreign), foreign);
-});
-
-test('isMaskLeak flags hallucinated and leaked placeholders only', () => {
-  assert.equal(isMaskLeak('查找 __DSH_MASK_0__ 中的归属使用情况'), true);
-  assert.equal(isMaskLeak('比较 __DSHMASK_1__ 和 __DSH _ MASK _ 2__'), true);
-  assert.equal(isMaskLeak('定位 _DSH_MASK_0 目录'), true);
+test('isMaskLeak flags tokens of the current and of retired formats only', () => {
+  assert.equal(isMaskLeak('查看 ⟦abcd3⟧ 中的归属使用情况'), true);
+  assert.equal(isMaskLeak('查看 __DSH_MASK_0__ 中的归属使用情况'), true);
+  assert.equal(isMaskLeak('查看 __DSHMASKxkbdt_3__ 中的归属使用情况'), true);
   assert.equal(isMaskLeak('正常的一段译文。'), false);
   assert.equal(isMaskLeak('dshmask 不是占位符'), false);
+  assert.equal(isMaskLeak('the dsh mask utility'), false);
 });
 
-test('isMaskLeakAgainst spares text that legitimately talks about placeholders', () => {
-  // A source that itself documents the placeholder must round-trip.
-  const source = 'The user reports `_DSH_MASK_0` placeholders leaking into translations';
-  const translated = '用户反馈 `_DSH_MASK_0` 占位符泄漏进译文';
-  assert.equal(isMaskLeak(translated), true, 'the bare predicate cannot tell the two apart');
-  assert.equal(isMaskLeakAgainst(source, translated), false, 'a pre-existing token is not a leak');
+test('A source that documents a placeholder still round-trips', () => {
+  const source = 'The user reports `__DSH_MASK_0__` placeholders leaking into translations';
+  const { maskedText, unmask } = pipeline.mask(source);
+  assert.equal(unmask(maskedText), source);
+  assert.equal(hasMaskResidue(unmask(maskedText)), false);
+});
 
-  // A hallucinated token introduces one the source never had.
-  assert.equal(isMaskLeakAgainst('find attribution usage in dsh-llm', '查找 __DSH_MASK_0__ 中的归属使用情况'), true);
-  // Repeated occurrences are counted: one in the source, two in the translation.
-  assert.equal(isMaskLeakAgainst('about `_DSH_MASK_0`', '关于 `_DSH_MASK_0` 和 __DSH_MASK_0__'), true);
+test('hasLegacyMaskResidue requires a token-shaped legacy match', () => {
+  assert.equal(hasLegacyMaskResidue('__DSH_MASK_0__'), true);
+  assert.equal(hasLegacyMaskResidue('__DSHMASKxkbdt_12__'), true);
+  assert.equal(hasLegacyMaskResidue('prose about the dsh mask feature'), false);
+  assert.equal(hasLegacyMaskResidue('DSH MASK env var'), false);
+});
+
+test('isMaskLeak flags tokens of the current and of retired formats only', () => {
+  assert.equal(isMaskLeak('查看 ⟦abcd3⟧ 中的归属使用情况'), true);
+  assert.equal(isMaskLeak('查看 __DSH_MASK_0__ 中的归属使用情况'), true);
+  assert.equal(isMaskLeak('查看 __DSHMASKxkbdt_3__ 中的归属使用情况'), true);
+  assert.equal(isMaskLeak('正常的一段译文。'), false);
+  assert.equal(isMaskLeak('dshmask 不是占位符'), false);
+  assert.equal(isMaskLeak('the dsh mask utility'), false);
 });
 
 test('Mask rules never swallow an already-inserted token (no nested masks)', () => {
   const input = 'See https://example.com/a/b.ts and node_modules/.pnpm/x@1.0.0/node_modules/y/index.js';
   const { maskedText } = pipeline.mask(input);
-  const tokens = maskedText.match(/__DSHMASKx[a-z]{4}_\d+__/g) ?? [];
+  const tokens = maskedText.match(/⟦[a-z]{4}\d+⟧/g) ?? [];
   assert.equal(tokens.length, new Set(tokens).size, 'a duplicated/nested token was produced');
   for (const token of tokens) {
-    assert.ok(!token.includes('__DSHMASKx', 2), 'token contains a nested token');
+    assert.ok(!token.slice(1).includes('⟦'), 'token contains a nested token');
   }
 });
 
 test('A path is masked as one unit, never split mid-path', () => {
   const { maskedText } = pipeline.mask('Edit src/server/dispatcher.ts to fix the bug');
-  assert.ok(!maskedText.includes('src__DSHMASK'), `path was split: ${JSON.stringify(maskedText)}`);
-  assert.equal((maskedText.match(/__DSHMASKx/g) ?? []).length, 1);
+  assert.ok(!maskedText.includes('src⟦'), `path was split: ${JSON.stringify(maskedText)}`);
+  assert.equal((maskedText.match(/⟦[a-z]{4}\d+⟧/g) ?? []).length, 1);
 });
 
 test('Masks file paths (Linux, Windows, relative, source files)', () => {
@@ -213,16 +222,35 @@ test('Masks CLI flags and options', () => {
   assert.equal(unmasked, input);
 });
 
-test('Robust unmasking handles MT engine spacing and casing changes', () => {
+test('A token touching a Latin word is spaced out so the engine cannot merge it', () => {
+  const input = 'Fix src/server/dispatcher.ts now';
+  const { maskedText, unmask } = pipeline.mask(input);
+  const id = /⟦([a-z]{4})0⟧/.exec(maskedText)[1];
+
+  assert.ok(maskedText.includes(` ⟦${id}0⟧ `), `token stayed glued to the source: ${JSON.stringify(maskedText)}`);
+  assert.equal(unmask(maskedText), input);
+  // The engine keeps the spaced token but rewrites the surrounding words; the
+  // inserted spaces go away with the token and no word is welded to another.
+  assert.equal(unmask(`修复 ⟦${id}0⟧ 立即`), '修复 src/server/dispatcher.ts 立即');
+});
+
+test('A token dropped or rewritten by the engine rejects the whole translation', () => {
   const input = 'Locate `DSH_HOME` directory';
   const { maskedText, unmask } = pipeline.mask(input);
+  const id = /⟦([a-z]{4})0⟧/.exec(maskedText)[1];
+  assert.equal(unmask(maskedText), input);
+  // Closing bracket dropped: still resolvable.
+  assert.equal(unmask(`定位 ⟦${id}0 目录`), '定位 `DSH_HOME` 目录');
+  // Token gone entirely, and a token whose id was rewritten.
+  assert.throws(() => unmask('定位 目录'), MaskRestoreError);
+  assert.throws(() => unmask('定位 ⟦zzzz0⟧ 目录'), MaskRestoreError);
+  assert.throws(() => unmask('定位 ⟦⟧ 目录'), MaskRestoreError);
+});
 
-  // Machine translation engines often lowercase tokens or insert spaces around placeholders
-  const altered1 = '定位 __dsh_mask_0__ 目录';
-  assert.equal(unmask(altered1), '定位 `DSH_HOME` 目录');
-
-  const altered2 = '定位 __DSH _ MASK _ 0__ 目录';
-  assert.equal(unmask(altered2), '定位 `DSH_HOME` 目录');
+test('A model that reproduces a retired placeholder is treated as a damaged translation', () => {
+  const { unmask } = pipeline.mask('Locate `DSH_HOME` directory');
+  // The engine dropped the current token and shipped the retired format instead.
+  assert.throws(() => unmask('定位 __DSH_MASK_0__ 目录'), MaskRestoreError);
 });
 
 // -------------------------------------------------------------
@@ -315,12 +343,13 @@ await testAsync('Circuit Breaker trips to OPEN after 3 failures and resets on re
   assert.equal(circuitState.failureCount, 0);
 });
 
-await testAsync('A channel that leaks a mask placeholder is discarded, never cached', async () => {
+await testAsync('A channel that mangles a mask token is discarded, never cached', async () => {
   const config = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   cache.cache.clear();
   const dispatcher = new TranslationDispatcher(config, cache);
 
+  const source = 'Read src/server/dispatcher.ts';
   let calls = 0;
   const leakyAdapter = {
     id: 'leaky',
@@ -328,18 +357,42 @@ await testAsync('A channel that leaks a mask placeholder is discarded, never cac
     isAvailable: () => true,
     translate: async () => {
       calls++;
-      // Simulates an engine rewrite that defeats placeholder restoration.
-      return '查找 __DSHMASK_abcd_0__ 中的内容';
+      // Simulates an engine rewrite that defeats placeholder restoration: the
+      // protected fragment is replaced by the first word of the old marker.
+      return '阅读 DSH 里的内容';
     },
   };
   dispatcher.adapters.set('leaky', leakyAdapter);
   await config.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
 
-  const result = await dispatcher.translateOne('find things in the content');
-  assert.equal(result.channel, 'fallback', 'a leaked mask must not be reported as a translation');
-  assert.equal(result.translated, 'find things in the content', 'the original text must survive');
-  assert.equal(cache.get('find things in the content'), undefined, 'a leaked mask must not be cached');
+  const result = await dispatcher.translateOne(source);
+  assert.equal(result.channel, 'fallback', 'a mangled mask must not be reported as a translation');
+  assert.equal(result.translated, source, 'the original text must survive');
+  assert.equal(cache.get(source), undefined, 'a mangled mask must not be cached');
   assert.equal(calls, 1);
+});
+
+await testAsync('A channel that drops a mask token keeps its fragment out of the cache', async () => {
+  const config = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const cache = new LruDiskCache();
+  cache.cache.clear();
+  const dispatcher = new TranslationDispatcher(config, cache);
+
+  const source = 'Read src/server/dispatcher.ts';
+  const dropping = {
+    id: 'dropping',
+    name: 'Dropping',
+    isAvailable: () => true,
+    // The engine translated the sentence but swallowed the protected fragment.
+    translate: async () => '阅读文件',
+  };
+  dispatcher.adapters.set('dropping', dropping);
+  await config.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+
+  const result = await dispatcher.translateOne(source);
+  assert.equal(result.channel, 'fallback');
+  assert.equal(result.translated, source);
+  assert.equal(cache.get(source), undefined);
 });
 
 await testAsync('A translated string without masks but with a hallucinated placeholder is discarded', async () => {
@@ -362,28 +415,30 @@ await testAsync('A translated string without masks but with a hallucinated place
   assert.equal(result.translated, 'find attribution usage in dsh-llm');
 });
 
-await testAsync('A translation that legitimately keeps a placeholder from the source is accepted', async () => {
+await testAsync('A translation that keeps a placeholder the source documented is accepted', async () => {
   const config = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   cache.cache.clear();
   const dispatcher = new TranslationDispatcher(config, cache);
 
+  const source = 'The user reports `__DSH_MASK_0__` placeholders leaking into translations';
+  const { maskedText, unmask } = pipeline.mask(source);
+  assert.equal(unmask(maskedText), source, 'a documented placeholder must round-trip');
+  assert.ok(!maskedText.includes('__DSH_MASK_0__'), 'the retired token is protected, not sent raw');
+
   const faithful = {
     id: 'faithful',
     name: 'Faithful',
     isAvailable: () => true,
-    translate: async () => '用户反馈 `_DSH_MASK_0` 占位符泄漏进译文',
+    // A faithful engine returns the token it was given, in place.
+    translate: async (text) => `用户反馈 \`${/⟦[a-z]{4}\d+⟧/.exec(text)[0]}\` 占位符泄漏进译文`,
   };
   dispatcher.adapters.set('faithful', faithful);
   await config.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
 
-  const source = 'The user reports `_DSH_MASK_0` placeholders leaking into translations';
   const result = await dispatcher.translateOne(source);
-  assert.equal(result.channel, 'faithful', 'a placeholder already present in the source is not a leak');
-  assert.equal(result.translated, '用户反馈 `_DSH_MASK_0` 占位符泄漏进译文');
-  // The disk cache has no access to the source text, so it stays conservative
-  // and keeps such a value out; the text is simply re-translated next time.
-  assert.equal(cache.get(source), undefined);
+  assert.equal(result.channel, 'faithful', 'a placeholder the source documented is not a leak');
+  assert.equal(result.translated, '用户反馈 `__DSH_MASK_0__` 占位符泄漏进译文');
 });
 
 // -------------------------------------------------------------
