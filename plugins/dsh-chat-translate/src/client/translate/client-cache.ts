@@ -1,3 +1,5 @@
+import { isMaskLeak } from '../../server/pipeline/masking.ts';
+
 const CACHE_KEY = 'dsh-chat-translate:cache';
 const MAX_LOCAL_ENTRIES = 500;
 /** Entries older than this are treated as expired. */
@@ -44,6 +46,14 @@ export class ClientCache {
     const key = text.trim().toLowerCase();
     const entry = this.memCache.get(key);
     if (entry === undefined) return undefined;
+    // A translation still showing a mask placeholder leaked from an older
+    // release — evict it so the text is requested again instead of rendered.
+    if (typeof entry.v === 'string' && isMaskLeak(entry.v)) {
+      this.memCache.delete(key);
+      this.dirty = true;
+      this.scheduleSave();
+      return undefined;
+    }
     // Drop dirty fallback entries where value equals key
     if (entry.v && entry.v.trim().toLowerCase() === key) {
       this.memCache.delete(key);
