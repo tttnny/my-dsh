@@ -595,11 +595,9 @@ function isSubagentChildHeader(header) {
 /**
  * 规范化会话日志文件名（与 DSH 的 sessionFormatLogFilename 同构）。
  *
- * 0.1.5-rc.1 起 DSH 把日志名从固定的 `session.jsonl[.zstd]` 改为带格式版本号的
- * `session.v<N>.jsonl[.zstd]`（`SESSION_FORMAT_VERSION = 3`；v0 即无版本号的旧名）。
- * 同一会话目录内可并存多个版本（迁移期实测 v2 与 v3 同时存在），因此**不能**再用
- * 单一 existsSync 探测固定名称——必须枚举目录、取版本最高者。此前用固定名探测导致
- * 拓扑扫描恒空，级联删除 Subagent 静默失效。
+ * DSH 的会话日志名带格式版本号：`session.v<N>.jsonl[.zstd]`（`SESSION_FORMAT_VERSION = 3`；
+ * v0 即无版本号的名字）。同一会话目录内可并存多个版本，因此**不能**用单一 existsSync
+ * 探测固定名称——必须枚举目录、取版本最高者。
  */
 const SESSION_LOG_BASENAME = /^session(?:\.v(\d+))?\.jsonl(\.zstd)?$/;
 
@@ -656,8 +654,8 @@ async function scanSessionTopology() {
         if (!sDir.isDirectory()) continue;
         const targetSessionDir = join(projectPath, sDir.name);
 
-        // 枚举目录取规范日志文件（版本最高者），不能再用固定名 existsSync 探测：
-        // 0.1.5-rc.1 起实际文件名是 session.v<N>.jsonl[.zstd]，且同目录可并存多个版本。
+        // 枚举目录取规范日志文件（版本最高者）：实际文件名是 session.v<N>.jsonl[.zstd]，
+        // 同目录可并存多个版本，固定名探测不可靠。
         const picked = await pickSessionLogFile(targetSessionDir);
         if (!picked) continue;
 
