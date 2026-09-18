@@ -102,9 +102,9 @@ const fsSvc = {
 }
 function makeSkills() { return { async get() { return undefined }, async list() { return [] } } }
 // host 通道说明：apply 在内部声明同名 harness，把注册收进内部 Map，再经 /api/dsws 精确 Fetch 路由
-// 对外分发（0.1.5-rc.1 起从 connection.rpc.handle 改为 connection.fetch.register，原因见
-// src/host/rpcChannel.js）。老写法用 new Function 捕获外层 harness.handle 永远收不到注册（#472），
-// 且分包形态下动态 import('./publishFlow.js') 在 new Function 里没有模块基址，所以走标准分发通道。
+// 对外分发经 connection.fetch.register 注册精确 Fetch 路由（原因见 src/host/rpcChannel.js）。
+// 若用 new Function 捕获外层 harness.handle，永远收不到注册（#472）；且分包形态下
+// 动态 import('./publishFlow.js') 在 new Function 里没有模块基址，所以走标准分发通道。
 async function loadPlugin(services) {
   const modRaw = await import('../package/lib/index.js')
   const mod = modRaw.default ?? modRaw

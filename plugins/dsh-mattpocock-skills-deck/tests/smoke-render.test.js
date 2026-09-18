@@ -83,7 +83,7 @@ const ctx = {
   effect: (fn) => { const r = fn(); return typeof r === 'function' ? r : () => {} },
 }
 
-// 线上传输（0.1.5-rc.1）：客户端经同源 fetch POST /api/dsws 调宿主（见 src/host/rpcChannel.js），
+// 线上传输：客户端经同源 fetch POST /api/dsws 调宿主（见 src/host/rpcChannel.js），
 // jsdom 无 fetch，这里 stub 出与宿主路由同形的 { ok, value } 信封。
 window.fetch = async () => ({
   ok: true,

@@ -1,6 +1,6 @@
 // smoke-host-dispatch.test.js — host seam dispatch 端到端验证
 // 验证 harness.handle 注册的 handler 能经 /api/dsws 精确 Fetch 路由被调用
-//   （0.1.5-rc.1 起通道从 connection.rpc.handle 改为 connection.fetch.register；原因见 src/host/rpcChannel.js）：
+//   （通道经 connection.fetch.register 注册为精确 Fetch 路由；原因见 src/host/rpcChannel.js）：
 //   wf.logGetSwitch → logGetSwitch 端点 → { ok: true, enabled, sampleRate }（#498 退役 wf.ping，探活改走免参开关读电话）
 import { readFileSync } from 'node:fs'
 

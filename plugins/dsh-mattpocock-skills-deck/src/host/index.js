@@ -328,7 +328,7 @@ export default {
     // #265 常驻轻量任务启动（H6 #450 后由命名模块持有，入口防火即发，脏账落盘心跳语义不变）。
     _naming().then(function(h){ try { h.startNamingGuardianLoop() } catch (eLoop) {} }).catch(function(){})
 
-    // B3 rpc 通道注册（0.1.5-rc.1 适配）：精确 Fetch 路由 /api/dsws → dispatch 表。
+    // B3 rpc 通道注册：精确 Fetch 路由 /api/dsws → dispatch 表。
     // 实现搬到 ./rpcChannel.js（H8：本文件已顶 350 行上限）；仍是 apply 后首个微任务内挂载，远早于客户端首调。
     // 为什么不能再用 connection.rpc.handle、以及 /api 载体的鉴权语义，见该文件头部注释。
     let _rpcP = null

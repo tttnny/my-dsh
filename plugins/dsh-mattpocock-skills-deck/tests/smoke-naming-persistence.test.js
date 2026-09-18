@@ -42,8 +42,8 @@ function makeCtx(capture) {
   return { get: (k) => services[k], effect: (fn) => { const r = fn(); return typeof r === 'function' ? r : () => {} } }
 }
 
-// 0.1.5-rc.1：通道注册走动态 import（D7 禁止静态 import）且形态改为 /api/dsws 精确 Fetch 路由
-//   （connection.rpc.handle 对本版兄弟插件不可用，见 src/host/rpcChannel.js）。
+// 通道注册走动态 import（D7 禁止静态 import），注册形态是 /api/dsws 精确 Fetch 路由
+//   （见 src/host/rpcChannel.js）。
 //   bootPlugin = apply + 等模块落地 + 把路由包成原来的 dispatch(endpoint, args) → {ok,value} 信封。
 async function bootPlugin(mod, capture) {
   ;((mod.apply ?? mod.default?.apply))(makeCtx(capture))
