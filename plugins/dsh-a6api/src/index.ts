@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { fetchBalance, fetchTokenModels, fetchRecentLogs, fetchPriceFluctuation, formatRelativeTime, fetchMarketplacePins, fetchTokens, fetchChannelDetails, marketplacePin, marketplaceUnpin, marketplaceDisableChannel, marketplaceRestoreChannel } from './server/a6api-client.js';
 import { getKnownMerchantsFromLogs, probeSingleModel } from './server/probe.js';
 import type { ProbeResult } from './server/probe.js';
@@ -8,7 +9,7 @@ import type { A6ApiConfig, A6ApiStateResponse, MarketplacePin, MerchantChannelIn
 import { validateReasoningEfforts } from './types.js';
 
 export const name = '@lynn123411/dsh-a6api';
-export const inject = ['webServer'];
+export const inject = ['webServer', 'connection'];
 
 export {
   fetchBalance,
@@ -31,6 +32,23 @@ export {
 export { createConfigAccess, A6API_CRED_REF, A6API_TOKEN_REF, A6API_USER_REF } from './server/sync.js';
 
 const PREFIX = '/api/dsh-a6api';
+
+/** 写操作通道：connection.fetch 精确路由，路径位于 /api 之下，由 /api 载体统一鉴权 */
+const WRITE_CHANNEL = `${PREFIX}/write`;
+
+/**
+ * 只读端点：webServer 精确路由。
+ * 不能再用 PREFIX 前缀注册 —— webServer 按最长前缀命中，该前缀会遮蔽 connection 挂在
+ * /api 上的写操作通道，使写操作请求根本到不了 connection 的分发。
+ */
+const READ_PATHS = [
+  `${PREFIX}/state`,
+  `${PREFIX}/balance`,
+  `${PREFIX}/logs`,
+  `${PREFIX}/price-fluctuation`,
+  `${PREFIX}/pins`,
+  `${PREFIX}/catalog`,
+];
 
 /** 全量探测（POST /probe，无 modelName 或 modelName='all'）的总预算与并发上限 */
 const PROBE_ALL_DEADLINE_MS = 5 * 60 * 1000;
@@ -85,24 +103,47 @@ async function parseJsonBody(req: any): Promise<any> {
   }
 }
 
-// ===== 写操作端点 loopback 护栏 =====
-//
-// 本插件的 HTTP 路由由 webServer.register 自行注册，不经过 DSH 的会话认证
-// （实测无 cookie 亦可访问）。保守加固：只有来自本机回环地址的写操作才被接受。
-// 当前 webServer 仅监听 127.0.0.1，浏览器与本机脚本的 remoteAddress 恒为回环地址，
-// 因此该护栏对现有行为零影响；它的作用是未来放宽监听面（0.0.0.0 / 反向代理）时，
-// 阻止非本机来源改动配置、固定/禁用商家或重写 settings.yaml。
-//
-// 残余风险：同源 CSRF。从本机页面发起的请求 remoteAddress 同样是回环地址，本护栏
-// 无法区分；现有 Content-Type: application/json 强制校验已阻断跨站表单（表单无法
-// 伪造该头，且未下发 ACAO 时跨源预检天然失败），但同源 XSS / 恶意浏览器扩展仍可
-// 借道写配置。如需彻底防护，应将该路由改走 connection.rpc（走 DSH 会话认证），
-// 而不是继续加固自行注册的 HTTP 路由。
-const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+/**
+ * 写操作通道的请求适配：把 connection 精确 Fetch 路由收到的 Request 还原成既有端点体
+ * 期望的 (req, res) 形态。请求体以 Readable 呈现，响应收集 writeHead/end 后构造 Response。
+ * 通道请求体形如 { endpoint, payload }，endpoint 为 PREFIX 下的端点相对路径。
+ */
+async function dispatchChannelWrite(
+  handler: (req: any, res: any) => Promise<void>,
+  request: Request,
+): Promise<Response> {
+  let envelope: any;
+  try {
+    envelope = await request.json();
+  } catch {
+    return Response.json({ ok: false, error: '请求体不是合法 JSON' }, { status: 400 });
+  }
+  const endpoint = typeof envelope?.endpoint === 'string' ? envelope.endpoint : '';
+  if (!/^[A-Za-z0-9_$][A-Za-z0-9_$./-]*$/.test(endpoint) || endpoint.includes('..')) {
+    return Response.json({ ok: false, error: '缺少合法的 endpoint' }, { status: 400 });
+  }
 
-/** 仅接受本机回环来源（IPv4 / IPv6 / IPv4-mapped IPv6 三种形态） */
-function isLoopbackRequest(req: any): boolean {
-  return LOOPBACK_ADDRESSES.has(String(req?.socket?.remoteAddress || ''));
+  const req = Object.assign(Readable.from([JSON.stringify(envelope.payload ?? {})]), {
+    url: `${PREFIX}/${endpoint}`,
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+  });
+  let status = 200;
+  let headers: Record<string, string> = {};
+  let body = '';
+  const res = {
+    writeHead(nextStatus: number, nextHeaders?: Record<string, string>) {
+      status = nextStatus;
+      if (nextHeaders) headers = { ...headers, ...nextHeaders };
+      return res;
+    },
+    end(chunk?: unknown) {
+      if (chunk !== undefined && chunk !== null) body += String(chunk);
+    },
+  };
+
+  await handler(req, res);
+  return new Response(body.length > 0 ? body : null, { status, headers });
 }
 
 // In-memory cache for merchant cards to avoid duplicate log calls
@@ -472,35 +513,18 @@ export function apply(ctx: any): void {
   const configAccess = createConfigAccess(ctx);
   void configAccess.ensureMigrated();
 
-  // Register Web API routes
-  const webServer = ctx.webServer || (ctx.get ? ctx.get('webServer') : null);
-  if (webServer && typeof webServer.register === 'function') {
+  // 只读端点仍由 webServer 承载；写操作通道走 connection.fetch，两者共用同一份端点体
+  if (ctx.webServer && typeof ctx.webServer.register === 'function') {
     ctx.effect(() => {
-      const unregister = webServer.register({
-        kind: 'prefix',
-        path: PREFIX,
-        handler: async (req: any, res: any) => {
+      const api = {
+        async handle(req: any, res: any): Promise<void> {
           const url = new URL(req.url || '/', 'http://localhost');
           const pathname = url.pathname.replace(PREFIX, '') || '/';
 
-          // CORS preflight：同源策略下无需放行跨源（移除 ACAO 后跨源预检天然失败）
-          if (req.method === 'OPTIONS') {
-            res.writeHead(204);
-            return res.end();
-          }
-
-          // CSRF 面：同源 POST 一律要求 JSON Content-Type（跨站表单无法伪造该头）；
-          // 客户端全部 POST 已带 application/json（含无 body 的 fetch-models/clear）
+          // 同源策略下无需放行跨源；写操作通道由 connection 的 /api 载体统一施加 Host/Origin
+          // 栅栏与浏览器会话鉴权，因此这里不再按 socket.remoteAddress 判断回环来源。
           if (req.method === 'POST' && !String(req.headers['content-type'] || '').toLowerCase().includes('application/json')) {
             return sendJson(res, 415, { ok: false, error: 'Content-Type must be application/json' });
-          }
-
-          // loopback 护栏：写操作端点（POST /config、/probe、/sync-models、/pin、/unpin、
-          // /disable、/restore、/catalog/clear、/catalog/fetch-models、/catalog/query-openrouter、
-          // /catalog/update）仅接受本机回环来源，非回环直接 403。
-          // GET 只读端点不设限（本机浏览器/脚本行为不变）。
-          if (req.method === 'POST' && !isLoopbackRequest(req)) {
-            return sendJson(res, 403, { ok: false, error: 'Forbidden: 写操作仅允许本机回环调用' });
           }
 
           try {
@@ -1062,11 +1086,26 @@ export function apply(ctx: any): void {
             return sendJson(res, 500, { ok: false, error: err?.message || String(err) });
           }
         },
+      };
+
+      // 只读端点：逐条注册 webServer 精确路由
+      const readDisposers = READ_PATHS.map((path) =>
+        ctx.webServer.register({ kind: 'exact', path, handler: api.handle }),
+      );
+      // 写操作端点：connection.fetch 精确路由，由 /api 载体统一施加栅栏与会话鉴权
+      const writeUnregister = ctx.connection.fetch.register({
+        path: WRITE_CHANNEL,
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: (request: Request) => dispatchChannelWrite(api.handle, request),
       });
 
       return () => {
-        if (typeof unregister === 'function') unregister();
+        for (const dispose of readDisposers) {
+          if (typeof dispose === 'function') dispose();
+        }
+        void writeUnregister();
       };
-    }, 'dsh-a6api: web API router');
+    }, 'dsh-a6api: web API routes');
   }
 }
