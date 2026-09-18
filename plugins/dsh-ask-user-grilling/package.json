@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-ask-user-grilling",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Form-presentation variant of the native ask_user_question: same tool and parameter descriptions verbatim, forced multi-select, plus an auto-appended round-end supplement question.",
   "type": "module",
   "main": "lib/index.js",
@@ -15,10 +15,11 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-user-questions": "^0.1.5-rc.1"
+    "@deepseek-ai/dsh-tools": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-user-questions": "0.1.6-alpha.2"
   },
   "engines": {
+    "dsh": "0.1.6-alpha.2",
     "node": "^22.19 || >=24"
   },
   "publishConfig": {

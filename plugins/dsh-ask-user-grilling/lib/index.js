@@ -143,6 +143,7 @@ function apply(ctx) {
           rejected: true,
           violations,
           error: "Question ids must not use the reserved prefix __grill_ (reserved for the round-end supplement question). Fix the ids and call this tool again.",
+          answers: [],
         };
       }
 
