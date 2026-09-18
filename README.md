@@ -28,14 +28,9 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-ui-beam-orbs</code></td>
     </tr>
     <tr>
-      <td rowspan="3"><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
-      <td><a href="./plugins/dsh-oil-sticky-prompt"><code>@lynn123411/dsh-oil-sticky-prompt</code></a></td>
-      <td><b>对话吸顶提示</b><br>· 最近一条用户 Prompt 悬浮固定在对话流顶部，告别长对话迷路<br>· 点击平滑回滚至对应消息<br>· 纯 DOM 观察、零服务依赖<br>· 新增「启用 / 停用」设置，并入共享的「<b>阅读体验</b>」设置页</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-oil-sticky-prompt</code></td>
-    </tr>
-    <tr>
+      <td rowspan="2"><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-smooth-stream"><code>@lynn123411/dsh-smooth-stream</code></a></td>
-      <td><b>丝滑流式渲染</b><br>· 自适应揭示引擎：按积压深度调速，折行单帧位移 ≤ 8px<br>· 二阶阻尼弹簧跟随：合成层 <code>translate3d</code> 补偿，零重排<br>· 闭环背压 + 掉帧自愈；思考块自动展开、回合结算自动折叠<br>· <b>工具卡片内部不逐字揭示</b>：工具行保留入场与跟随，卡片文本即时完整呈现（翻译插件写入的译文块仍逐字流入）<br>· 设置项与另两个阅读插件共用「<b>阅读体验</b>」设置页（先到先得当选页面宿主）<br>· 上游分叉 v0.6.0：单内核适配 <code>0.1.5-rc.1</code>，改名 <code>lynn-smooth-stream</code> 命名空间</td>
+      <td><b>丝滑流式渲染</b><br>· 自适应揭示引擎：按积压深度调速，折行单帧位移 ≤ 8px<br>· 二阶阻尼弹簧跟随：合成层 <code>translate3d</code> 补偿，零重排<br>· 闭环背压 + 掉帧自愈；思考块自动展开、回合结算自动折叠<br>· <b>工具卡片内部不逐字揭示</b>：工具行保留入场与跟随，卡片文本即时完整呈现（翻译插件写入的译文块仍逐字流入）<br>· 设置项与另一个阅读插件共用「<b>阅读体验</b>」设置页（先到先得当选页面宿主）<br>· 上游分叉 v0.6.0：单内核适配 <code>0.1.5-rc.1</code>，改名 <code>lynn-smooth-stream</code> 命名空间</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-smooth-stream</code></td>
     </tr>
     <tr>
@@ -77,12 +72,7 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck</code></td>
     </tr>
     <tr>
-      <td rowspan="2"><b>📱 设备访问</b><br><i>跨设备与本机外部应用接入</i></td>
-      <td><a href="./plugins/dsh-qr-access"><code>@lynn123411/dsh-qr-access</code></a></td>
-      <td><b>扫码访问</b><br>· 设置页分区实时生成<b>带 token 的当前实例访问地址</b>二维码，手机扫码直达、免复制粘贴<br>· 双数据源：DSH Desktop 桌面接口优先（局域网 HTTPS + 本地 CA 证书码），<b>任意 dsh 实例</b>走插件自带宿主路由（<code>/api</code> 栅栏 + 会话鉴权），列出当前页面 / 本机 / 局域网 / <code>--trusted-host</code> 受信主机地址<br>· 地址现取当前宿主代（token 随重启轮换自动跟随，30s 轮询 + 刷新按钮 + 页面可见即刷新）<br>· 形态：bundle 型插件，宿主半区只注册一条只读路由，不新增端口与凭据面</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-qr-access</code></td>
-    </tr>
-    <tr>
+      <td><b>📱 设备访问</b><br><i>跨设备与本机外部应用接入</i></td>
       <td><a href="./plugins/dsh-web-auth-url"><code>@lynn123411/dsh-web-auth-url</code></a></td>
       <td><b>GUI 鉴权地址</b><br>· 把当前实例<b>带 token 的访问地址</b>交给模型与 shell：托管 <code>DSH_WEB_AUTH_URL</code>，每次 shell 调用即时解析，token 随重启轮换自动跟随<br>· 贡献一段紧随 <code>app:web-surface</code> 的提示词，交代「第一次请求 303 换 cookie、之后复用同一个 jar」这一必需用法（token 只对 <code>GET /</code> 有效，之后全靠 Set-Cookie，故 <code>curl -c/-b</code> 是唯一可行路径）<br>· <b>secret 不进提示词与 transcript</b>：默认只报变量名，<code>inline</code> 档才把带 token 的地址写进提示词<br>· 形态：bundle 型插件，无客户端半边、不新增端口与凭据</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-web-auth-url</code></td>

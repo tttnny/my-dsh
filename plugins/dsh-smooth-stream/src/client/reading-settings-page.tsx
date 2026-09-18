@@ -19,7 +19,7 @@
  * mounted but hidden, so a card's local state survives a tab switch.
  *
  * Keep this file identical across the participating plugins
- * (`dsh-smooth-stream`, `dsh-oil-sticky-prompt`, `dsh-chat-translate`).
+ * (`dsh-smooth-stream`, `dsh-chat-translate`).
  * Participants own their own card component, locale dictionaries, settings
  * namespace and Host half — only the page shell below is shared, because
  * cross-plugin value imports are forbidden by the client bundle purity gate.

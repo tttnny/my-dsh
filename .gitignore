@@ -9,6 +9,8 @@ docs/
 # 注：插件目录若将来需入库 AGENTS.md 之类文件，须另开显式 ! 例外（第 5 行 AGENTS.md 匹配任意层级）
 !plugins/*/docs/
 !plugins/*/docs/**
+!archive/plugins/*/docs/
+!archive/plugins/*/docs/**
 .agent-teams/
 tmp/
 
