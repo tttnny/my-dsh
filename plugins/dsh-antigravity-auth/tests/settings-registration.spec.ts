@@ -45,7 +45,7 @@ function bench(kind: 'search' | 'image' | 'video') {
   return { ctx, installSection }
 }
 
-describe('alpha.5 Host Settings registration', () => {
+describe('Host Settings registration', () => {
   it.each([
     {
       kind: 'search' as const,
