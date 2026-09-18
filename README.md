@@ -52,7 +52,7 @@
     <tr>
       <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
       <td><a href="./plugins/dsh-ask-user-grilling"><code>@lynn123411/dsh-ask-user-grilling</code></a></td>
-      <td><b>提问表单变体</b><br>· <code>ask_user_grilling</code>：原生 <code>ask_user_question</code> 的呈现变体——同一条 <code>userQuestions</code> seam，工具描述与全部参数描述<b>与原生逐字一致</b>，只强制多选、并自动追加一道轮末补充题（多选刻意不写进描述）<br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次表单投递作答<br>· ⚠️ 形态：普通 Cordis 插件（preset 工具行消费，非 bundle），严禁加入 profile <code>package.json</code> 的 <code>dsh.profile.bundles</code></td>
+      <td><b>提问表单变体</b><br>· <code>ask_user_grilling</code>：原生 <code>ask_user_question</code> 的呈现变体——同一条 <code>userQuestions</code> seam，工具描述与共有参数描述<b>与原生逐字一致</b>（另有可选题号参数 <code>number</code>，由代码并进 <code>header</code>），只强制多选、并自动追加一道轮末补充题（多选刻意不写进描述）<br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次表单投递作答<br>· ⚠️ 形态：普通 Cordis 插件（preset 工具行消费，非 bundle），严禁加入 profile <code>package.json</code> 的 <code>dsh.profile.bundles</code></td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling</code></td>
     </tr>
     <tr>
@@ -77,9 +77,9 @@
 | --- | --- |
 | [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份与持久 shell（`prefix` 即完整系统提示词、关闭运行时快照；shell 那组行含 isolate realm 原样搬入）＋ 文件工具 `read` / `write` / `edit`。工具目录就是这四个——没有检索、`read_image`、技能、计划、目标、子代理。随附一行 preset 目录内的 `tool-filter` 插件在 `system-prompt/assemble` 处把 `read_image` 移出模型可见目录（`tools.restrict()` 只筛继承工具、兄弟行包注册表又输给 loader 的并发装载，两条路都已实测不成立） |
 | [ptc-cordis](./presets/ptc-cordis) | **PTC-Cordis 混合模式**：融合 PTC（`mode: ptc`：模型只见 `run_code`，全部工具经 SDK 以脚本调用）与 Cordis 动态插件编辑（`cordis_define`/`run`），含 `cordis-plugin-development` / `editing-cordis-compositions` 随附技能，开箱与官方 `standard` / `ptc` / `cordis` 并列可选 |
-| [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：官方 `standard` 组合（persona 零改动）+ Matt Pocock 25 个工程/生产力技能（[mattpocock/skills](https://github.com/mattpocock/skills)）+ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答；达成共识后不自动进入 plan mode |
-| [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式（实验性）**：官方 `ptc` 组合（persona 零改动，`mode: ptc` 下模型只见 `run_code`）+ 25 个 Matt 技能 + grilling 投递插件（grilling 轮次经 `run_code` 内的 `tools.ask_user_grilling` 投递） |
-| [matt-cordis](./presets/matt-cordis) | **Matt 创造模式**：官方 `cordis` 组合（persona 零改动，含 `tool-cordis` 动态插件工具集、两个随附技能、双平面引导）+ 25 个 Matt 技能并入 skills/ + grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答 |
+| [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：官方 `standard` 组合（persona 零改动）+ Matt Pocock 26 个技能（[mattpocock/skills](https://github.com/mattpocock/skills)）+ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答；达成共识后不自动进入 plan mode |
+| [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式（实验性）**：官方 `ptc` 组合（persona 零改动，`mode: ptc` 下模型只见 `run_code`）+ 26 个 Matt 技能 + grilling 投递插件（grilling 轮次经 `run_code` 内的 `tools.ask_user_grilling` 投递） |
+| [matt-cordis](./presets/matt-cordis) | **Matt 创造模式**：官方 `cordis` 组合（persona 零改动，含 `tool-cordis` 动态插件工具集、两个随附技能、双平面引导）+ 26 个 Matt 技能并入 skills/ + grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答 |
 
 ---
 

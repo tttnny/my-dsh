@@ -1,6 +1,6 @@
 # matt-ptc — Matt PTC 模式（实验性）
 
-官方 `ptc` 组合（persona 保持官方原样，`mode: ptc` 下模型只见 `run_code`）＋ Matt Pocock 的 25 个技能（`skills/`）＋ grilling 投递插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md)（经 SDK 折叠为脚本调用）。行为要点：grilling 轮次经 `run_code` 内的 `tools.ask_user_grilling` 投递，没有原生表单交互体验；需要原生交互请改用 [matt-standard](../matt-standard/README.md)。
+官方 `ptc` 组合（persona 保持官方原样，`mode: ptc` 下模型只见 `run_code`）＋ Matt Pocock 的 26 个技能（`skills/`）＋ grilling 投递插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md)（经 SDK 折叠为脚本调用）。行为要点：grilling 轮次经 `run_code` 内的 `tools.ask_user_grilling` 投递，没有原生表单交互体验；需要原生交互请改用 [matt-standard](../matt-standard/README.md)。
 
 ## 安装与启用
 

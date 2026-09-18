@@ -90,7 +90,7 @@
 # carries whatever the deployment registered globally (repository plugins).
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
-  # MATT-ADD: discover the 25 vendored mattpocock skills shipped in ./skills/.
+  # MATT-ADD: discover the 26 vendored mattpocock skills shipped in ./skills/.
   config:
     customSkillDirs:
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
