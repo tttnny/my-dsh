@@ -6,7 +6,28 @@
  */
 
 import assert from 'node:assert/strict';
-import { apply, Config, inject, name } from '../lib/index.js';
+import { registerHooks } from 'node:module';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+// lib/index.js 依赖 @deepseek-ai/schemastery；仓库检出里没有 node_modules，而 DSH 运行目录带一份。
+// 把该名字路由到运行目录里的真实实现——自检要真跑 schema 校验，不能用桩件假造它的行为。
+const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+const schemasteryEntry = join(dshHome, 'profiles', 'node_modules', '@deepseek-ai', 'schemastery', 'lib', 'index.mjs');
+if (!existsSync(schemasteryEntry)) {
+  throw new Error(`schemastery 未找到：${schemasteryEntry}（把 DSH_HOME 指向 DSH 主目录后重试）`);
+}
+const schemasteryUrl = pathToFileURL(schemasteryEntry).href;
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === '@deepseek-ai/schemastery') return { url: schemasteryUrl, shortCircuit: true };
+    return nextResolve(specifier, context);
+  },
+});
+
+const { apply, Config, inject, name } = await import('../lib/index.js');
 
 const PORT = 3080;
 const TOKEN = 'launch-token-example';
