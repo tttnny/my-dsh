@@ -1088,8 +1088,8 @@ async function handlePruneStaleArchives(ctx, req, res) {
 
 /**
  * 从 sessionController.list() 结果提取可信存活 ID 集。
- * 注意信封形状：host 的 list() 返回 { items: [...] }（见 dsh-api-session-controller），
- * 不是裸数组；两种形状都兼容，缺 id 的项直接丢弃。
+ * 注意信封形状：host 的 list() 返回裸数组（见 dsh-api-session-controller 的 list()），
+ * 每项带 sessionId；同时兼容 { items } 形状，缺 id 的项直接丢弃。
  * 形状校验：空数组/全缺 id 视为不可信，返回 null（调用方必须拒绝执行，
  * 不能把“未知”当成“全死了”——否则一次畸形返回会清空全工作区归属）。
  */
