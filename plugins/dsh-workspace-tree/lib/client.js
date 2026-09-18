@@ -2863,12 +2863,6 @@ window.__ModuleLoader__.load({
           if (name === "uiWorkspace") patchUiWorkspaceArchivedView();
         }));
       }
-      // 历史兼容块已移除（2026-09-10 审计）：此处曾 patch ctx.workspaces.project，
-      // 但 dsh-api-workspace-controller 的 WorkspaceController 在 0.1.3-alpha.2 与
-      // 0.1.5-rc.1 **两个版本都没有 project 方法**，两处 typeof 守卫恒为假 →
-      // 整块是永不执行的死代码（且内部用的是旧 WorkspaceRuntime 的
-      // this.manager / this.sessions.list 形状）。已阅览归档会话仍由上面的
-      // patchUiWorkspaceArchivedView() 承担。
 
       // 启用开关走有效配置（Host 就绪即读 settings，否则回退 LS）。
       // 注意：apply 时刻 scope 可能仍在 loading，此处是启动快照；运行中关闭
@@ -3096,10 +3090,7 @@ window.__ModuleLoader__.load({
                 if (uiWs && typeof uiWs.pickDirectory === "function") {
                   return await uiWs.pickDirectory();
                 }
-                // 历史兜底已移除（2026-09-10 审计）：ctx.directoryPicker 从来不是
-                // cordis 服务（全仓无 provide("directoryPicker")），0.1.5-rc.1 里它
-                // 是 Remote 命名空间下的 remote.directoryPicker。主路径
-                // uiWorkspace.pickDirectory() 在两版都可用，保持不变。
+                // 没有可用的目录选择服务时报错；调用方走 uiWorkspace.pickDirectory()。
                 throw new Error("目录选择服务不可用");
               },
               listDirectory: (path, signal) => {
