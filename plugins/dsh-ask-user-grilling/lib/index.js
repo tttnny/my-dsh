@@ -4,11 +4,13 @@ import "@deepseek-ai/dsh-user-questions";
 /**
  * @lynn123411/dsh-ask-user-grilling — a presentation variant of the native
  * `ask_user_question` (`@deepseek-ai/dsh-tool-ask-user`). Same capability seam
- * (ctx.userQuestions) and the same tool/parameter descriptions verbatim; only
- * the rendered form differs.
+ * (ctx.userQuestions), the same tool description and the same descriptions for
+ * the shared parameters verbatim; only the rendered form differs.
  *
  * ask_user_grilling:
  *   - forces multi-select on every question — the schema offers no opt-out
+ *   - merges the optional `number` into the header as "<number> · <header>",
+ *     so a form page carries the same Q-number the round announced in prose
  *   - appends a round-end supplement question; per-question supplement goes
  *     through the built-in custom input ("Type your answer" / "输入你的答案"),
  *     so no extra per-question option is added (it would duplicate that field)
@@ -54,6 +56,10 @@ function apply(ctx) {
             header: {
               type: "string",
               description: "Optional short heading for the question, such as \"Confirm\" or \"Choose Mode\".",
+            },
+            number: {
+              type: "string",
+              description: "Optional question number, e.g. \"Q2\". Rendered before the header as \"Q2 · <header>\"; use the same Q-number you announced in the message text.",
             },
             options: {
               type: "array",
@@ -147,19 +153,27 @@ function apply(ctx) {
         };
       }
 
-      // 2. transform: force multi-select; per-question supplement is via the built-in custom input ("Type your answer"/"输入你的答案") — no extra option is added to avoid duplication with that field
-      const questions = args.questions.map((question) => ({
-        id: question.id,
-        question: question.question,
-        ...(question.header !== undefined ? { header: question.header } : {}),
-        options: [
-          ...(question.options ?? []).map((option) => ({
-            label: option.label,
-            ...(option.description !== undefined ? { description: option.description } : {}),
-          })),
-        ],
-        multiSelect: true,
-      }));
+      // 2. transform: force multi-select; merge the optional number into the
+      //    header; per-question supplement is via the built-in custom input
+      //    ("Type your answer"/"输入你的答案") — no extra option is added to
+      //    avoid duplication with that field
+      const questions = args.questions.map((question) => {
+        const header = [question.number, question.header]
+          .filter((part) => part !== undefined && part !== "")
+          .join(" · ");
+        return {
+          id: question.id,
+          question: question.question,
+          ...(header !== "" ? { header } : {}),
+          options: [
+            ...(question.options ?? []).map((option) => ({
+              label: option.label,
+              ...(option.description !== undefined ? { description: option.description } : {}),
+            })),
+          ],
+          multiSelect: true,
+        };
+      });
 
       // 3. round-end supplement question — single "无需补充" option; supplement is via custom input, so no "I have something to add" option (duplicates that field)
       questions.push({

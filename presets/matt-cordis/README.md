@@ -1,6 +1,6 @@
 # matt-cordis — Matt 创造模式
 
-官方 `cordis` 组合（persona 保持官方原样，含 `tool-cordis` 动态插件工具集与双平面引导）＋ Matt Pocock 的 25 个技能并入 `skills/`（与 cordis 随附 2 个技能共 27 个）＋ grilling 投递插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md)。行为要点与 matt-standard 相同：grilling 轮次先以散文预告、再以 `ask_user_grilling` 表单投递作答。
+官方 `cordis` 组合（persona 保持官方原样，含 `tool-cordis` 动态插件工具集与双平面引导）＋ Matt Pocock 的 26 个技能并入 `skills/`（与 cordis 随附 2 个技能共 28 个）＋ grilling 投递插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md)。行为要点与 matt-standard 相同：grilling 轮次先以散文预告、再以 `ask_user_grilling` 表单投递作答。
 
 ## 安装与启用
 

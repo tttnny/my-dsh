@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-ask-user-grilling",
-  "version": "0.2.8",
-  "description": "Form-presentation variant of the native ask_user_question: same tool and parameter descriptions verbatim, forced multi-select, plus an auto-appended round-end supplement question.",
+  "version": "0.3.0",
+  "description": "Form-presentation variant of the native ask_user_question: same tool description and shared-parameter descriptions verbatim, forced multi-select, an optional question number merged into the header, plus an auto-appended round-end supplement question.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

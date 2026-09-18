@@ -1,6 +1,6 @@
 # matt-standard — Matt 标准工程模式
 
-官方 `standard` 组合（persona 保持官方原样）＋ Matt Pocock 的 25 个技能（`skills/`）＋ grilling 投递插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md)。行为要点：grilling 轮次先以散文预告本轮问题、再以 `ask_user_grilling` 表单投递作答；达成共识后不自动进入 plan mode。
+官方 `standard` 组合（persona 保持官方原样）＋ Matt Pocock 的 26 个技能（`skills/`）＋ grilling 投递插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md)。行为要点：grilling 轮次先以散文预告本轮问题、再以 `ask_user_grilling` 表单投递作答；达成共识后不自动进入 plan mode。
 
 ## 安装与启用
 
