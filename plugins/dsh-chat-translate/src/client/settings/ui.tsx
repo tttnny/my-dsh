@@ -310,9 +310,9 @@ export function setupSettingsUi(ctx: any): void {
     const slots = ctx?.slots || (ctx?.get ? ctx.get('slots') : null);
     if (!slots || typeof slots.inject !== 'function') return;
 
-    // 共享「阅读体验」设置页：本插件与 dsh-smooth-stream、dsh-oil-sticky-prompt
+    // 共享「阅读体验」设置页：本插件与 dsh-smooth-stream
     // 共用一页，内核不允许 settings.section 的同一 id 被注册两次、也不允许子 slot
-    // 被声明两次，因此三家携带同一份页壳、先到先得当选：当选者注册页面并声明
+    // 被声明两次，因此各参与者携带同一份页壳、先到先得当选：当选者注册页面并声明
     // reading.settings.item 子 slot，未当选者只把卡片注册进该子 slot 等页面出现。
     // 共享页壳需要真 ctx：它用 ctx.slots 读注册表，并用 ctx.get('locale') 在语言
     // 切换时重读 tab 标签（可选服务，必须走 ctx.get，不能用 ctx.locale）。
