@@ -2,3 +2,6 @@ node_modules/
 .DS_Store
 *.log
 *.tgz
+
+# lib/ 是 build 生成的镜像产物，不入库；发布物由 prepack 现打
+/lib/
