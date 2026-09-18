@@ -1,5 +1,6 @@
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import "@deepseek-ai/dsh-user-questions";
+import { normalizeOption } from "./recommendation.js";
 
 /**
  * @lynn123411/dsh-ask-user-grilling — a presentation variant of the native
@@ -11,6 +12,10 @@ import "@deepseek-ai/dsh-user-questions";
  *   - forces multi-select on every question — the schema offers no opt-out
  *   - merges the optional `number` into the header as "<number> · <header>",
  *     so a form page carries the same Q-number the round announced in prose
+ *   - normalizes the recommendation marker into the one form the client renders,
+ *     a trailing "（推荐）" on the label: an explicit `recommended` flag, or a
+ *     loose marker at the end of the label or the description, is moved there —
+ *     the client reads only the label and accepts only the bracketed suffix
  *   - appends a round-end supplement question; per-question supplement goes
  *     through the built-in custom input ("Type your answer" / "输入你的答案"),
  *     so no extra per-question option is added (it would duplicate that field)
@@ -76,6 +81,10 @@ function apply(ctx) {
                   description: {
                     type: "string",
                     description: "One sentence explaining the tradeoff or impact.",
+                  },
+                  recommended: {
+                    type: "boolean",
+                    description: "Set true on the option you recommend (alternative to the \"(Recommended)\" label suffix).",
                   },
                 },
               },
@@ -154,23 +163,32 @@ function apply(ctx) {
       }
 
       // 2. transform: force multi-select; merge the optional number into the
-      //    header; per-question supplement is via the built-in custom input
+      //    header; move the recommendation marker to the label suffix the client
+      //    renders; per-question supplement is via the built-in custom input
       //    ("Type your answer"/"输入你的答案") — no extra option is added to
       //    avoid duplication with that field
+      const labelRestore = new Map();
       const questions = args.questions.map((question) => {
         const header = [question.number, question.header]
           .filter((part) => part !== undefined && part !== "")
           .join(" · ");
+        const restore = new Map();
+        const options = (question.options ?? []).map((option) => {
+          const normalized = normalizeOption(option);
+          if (normalized.label !== normalized.originalLabel) {
+            restore.set(normalized.label, normalized.originalLabel);
+          }
+          return {
+            label: normalized.label,
+            ...(normalized.description !== undefined ? { description: normalized.description } : {}),
+          };
+        });
+        labelRestore.set(question.id, restore);
         return {
           id: question.id,
           question: question.question,
           ...(header !== "" ? { header } : {}),
-          options: [
-            ...(question.options ?? []).map((option) => ({
-              label: option.label,
-              ...(option.description !== undefined ? { description: option.description } : {}),
-            })),
-          ],
+          options,
           multiSelect: true,
         };
       });
@@ -188,11 +206,14 @@ function apply(ctx) {
         signal: exec.signal,
       });
       return {
-        answers: answer.answers.map((entry) => ({
-          id: entry.id,
-          selected: [...entry.selected],
-          ...(entry.custom !== undefined ? { custom: entry.custom } : {}),
-        })),
+        answers: answer.answers.map((entry) => {
+          const restore = labelRestore.get(entry.id);
+          return {
+            id: entry.id,
+            selected: entry.selected.map((label) => restore?.get(label) ?? label),
+            ...(entry.custom !== undefined ? { custom: entry.custom } : {}),
+          };
+        }),
       };
     },
   }));
