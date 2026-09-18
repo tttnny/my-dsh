@@ -17,17 +17,6 @@
   </thead>
   <tbody>
     <tr>
-      <td rowspan="2"><b>🎨 视觉皮肤</b><br><i>只改表现，关掉即回官方原版</i></td>
-      <td><a href="./plugins/dsh-ui-deepseek-bg"><code>@lynn123411/dsh-ui-deepseek-bg</code></a></td>
-      <td><b>背景引擎</b><br>· 仿 DSH 官网风格：极光（WebGL2 流体）/ 粒子鲸鱼 / 星座网格 + 鼠标跟随交互<br>· 内置「背景特效」面板（性能档位 / 特效开关 / GPU 调优）<br>· 建议与界面皮肤层成对安装，还原完整官网观感</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-ui-deepseek-bg</code></td>
-    </tr>
-    <tr>
-      <td><a href="./plugins/dsh-ui-beam-orbs"><code>@lynn123411/dsh-ui-beam-orbs</code></a></td>
-      <td><b>界面皮肤层</b><br>· 玻璃拟态 + Border Beam 五态边框流光 + Thinking Orbs 几何光球 + Pulse 任务框 + 发送按钮微动效<br>· 内置「界面特效」面板，与背景引擎叠加还原完整沉浸感<br>· 浅色主题自动回退官方原版</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-ui-beam-orbs</code></td>
-    </tr>
-    <tr>
       <td rowspan="2"><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-smooth-stream"><code>@lynn123411/dsh-smooth-stream</code></a></td>
       <td><b>丝滑流式渲染</b><br>· 自适应揭示引擎：按积压深度调速，折行单帧位移 ≤ 8px<br>· 二阶阻尼弹簧跟随：合成层 <code>translate3d</code> 补偿，零重排<br>· 闭环背压 + 掉帧自愈；思考块自动展开、回合结算自动折叠<br>· <b>工具卡片内部不逐字揭示</b>：工具行保留入场与跟随，卡片文本即时完整呈现（翻译插件写入的译文块仍逐字流入）<br>· 设置项与另一个阅读插件共用「<b>阅读体验</b>」设置页（先到先得当选页面宿主）<br>· 上游分叉 v0.6.0：单内核适配 <code>0.1.5-rc.1</code>，改名 <code>lynn-smooth-stream</code> 命名空间</td>
