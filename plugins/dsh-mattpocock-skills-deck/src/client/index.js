@@ -49,6 +49,8 @@
 
 // ===== 规范方言（dynamic dialect）：host/styles/React/timer 为自由变量；pkg entry 提供 shim =====
 export default {
+  // 浏览器半边 inject 声明真源：scripts/build.mjs 读出后写入产物 exports.inject（服务名与内核注入一致）。
+  inject: ['connection', 'slots', 'locale', 'workspaces', 'sessions'],
   apply(ctx) {
     const slots = ctx.get('slots')
     if (slots === undefined) return

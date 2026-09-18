@@ -31,26 +31,20 @@ function buildOpContextBase(cwd, platform, fs, timers, exec) {
 
 /**
  * 判定工作区是否已空（#297 失效维度）。
- * 依据：目录本身存在但 listDir/readdir 后 meaningful 为空 → 视为“全部文件已删”，此前持久化选择应失效。
+ * 依据：目录本身存在但 listDir 后 meaningful 为空 → 视为“全部文件已删”，此前持久化选择应失效。
  * 过滤常见无意义占位（.DS_Store 等），保留 .git/.scratch 等有意义条目；平台或 fs 不可用时保守返回 false（不误判 stale，保 #247 防抖）。
- * 兼容多种 fs 形态：优先 listDir+resolve，回退 readdir/readdirSync/lstat 探针，避免单接口缺失导致永远不 stale。
+ * 只走内核 fs 服务的 resolve + listDir；接口不可用时保守返回 false。
  */
 async function isWorkspaceEmpty(cwd, platform) {
   try {
     if (!cwd) return false
     const fs = platform && platform.fs
     if (!fs) return false
-    // 尝试列目录：优先 listDir+resolve，回退 readdir
+    // 列目录只走内核 fs 的 resolve + listDir
     let entries = null
     try {
       if (typeof fs.listDir === 'function' && typeof fs.resolve === 'function') {
-        let target
-        try { target = await fs.resolve(cwd) } catch { target = cwd }
-        entries = await fs.listDir(target)
-      } else if (typeof fs.readdir === 'function') {
-        entries = await fs.readdir(cwd)
-      } else if (typeof fs.listDir === 'function') {
-        entries = await fs.listDir(cwd)
+        entries = await fs.listDir(await fs.resolve(cwd))
       }
     } catch {}
     if (Array.isArray(entries)) {

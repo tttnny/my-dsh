@@ -26,7 +26,6 @@ export async function matches(handle, ctx){
       const fs=ctx&&ctx.platform?ctx.platform.fs:(ctx&&ctx.fs)||(ctx&&typeof ctx.get==='function'?ctx.get('fs'):null)
       let entries=[]
       if(fs&&typeof fs.resolve==='function'&&typeof fs.listDir==='function'){try{const t=await fs.resolve(root);entries=await fs.listDir(t)}catch{}}
-      else if(fs&&typeof fs.readdir==='function'){try{entries=await fs.readdir(root)}catch{}}
       for(const e of entries){
         const name=typeof e==='string'?e:(e&&e.name)||''
         if(!name||name.startsWith('.'))continue
@@ -85,7 +84,6 @@ export function createMarkdownBackend(ctx){
             const fs=c&&c.platform?c.platform.fs:(c&&c.fs)||(c&&typeof c.get==='function'?c.get('fs'):null)
             let entries=[]
             if(fs&&typeof fs.resolve==='function'&&typeof fs.listDir==='function'){try{const t=await fs.resolve(root);entries=await fs.listDir(t)}catch{}}
-            else if(fs&&typeof fs.readdir==='function'){try{entries=await fs.readdir(root)}catch{}}
             for(const e of entries){
               const name=typeof e==='string'?e:(e&&e.name)||''
               if(!name||name.startsWith('.'))continue

@@ -17,24 +17,9 @@
     }
     export const verifyFreshPreset = function(sessions, sid) {
       // #478 创建后验：只对“明确读到 code/broken”判 bad；读不到判 unknown（快照滞后时不得阻断创建）。
-      // 读取两路：实时会话对象（若宿主暴露 sessions.get）与列表快照行；任一路明确为 code/broken 即 bad。
+      // 0.1.6-alpha.2 会话接口没有 sessions.get：读取只走 sessions.list 快照行。
       try {
         const readings = []
-        try {
-          if (sessions && typeof sessions.get === 'function') {
-            const live = sessions.get(sid)
-            if (live) {
-              if (typeof live.agentPreset === 'string' && live.agentPreset) readings.push(live.agentPreset)
-              if (typeof live.preset === 'string' && live.preset) readings.push(live.preset)
-              try {
-                if (live.projections && live.projections.values && typeof live.projections.values.agentPreset === 'string' && live.projections.values.agentPreset) readings.push(live.projections.values.agentPreset)
-              } catch (eP) {}
-              try {
-                if (live.projectionValues && typeof live.projectionValues.agentPreset === 'string' && live.projectionValues.agentPreset) readings.push(live.projectionValues.agentPreset)
-              } catch (eP2) {}
-            }
-          }
-        } catch (eG) {}
         try {
           if (sessions && sessions.list && typeof sessions.list.getSnapshot === 'function') {
             const snap = sessions.list.getSnapshot()

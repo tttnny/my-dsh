@@ -218,6 +218,8 @@ console.log('\n— 验收2：轻探分拣 缺失 vs 名片无效（永不绿） 
       if (k === 'sessions') return { get: () => null }
       return undefined
     },
+    on(event, handler) { if (event === 'skills/change') invalidateHandler = handler; return () => { if (invalidateHandler === handler) invalidateHandler = null } },
+    off(event, handler) { if (invalidateHandler === handler) invalidateHandler = null },
     effect: (fn) => { try { const d = fn(); return typeof d==='function'?d:()=>{} } catch { return ()=>{} } },
     set: () => {}
   }
@@ -367,6 +369,8 @@ console.log('\n— 验收3：标准根外有效副本 绿+来源行 —')
       if(k==='sessions') return { get: ()=>null }
       return undefined
     },
+    on(){ return ()=>{} },
+    off(){},
     effect: (fn)=>{ try{ const d=fn(); return typeof d==='function'?d:()=>{} } catch{return ()=>{}} },
     set: ()=>{},
   }
@@ -458,6 +462,8 @@ console.log('\n— 验收3.5：多通道并联 — 注册表未命中时任一�
       if(k==='sessions') return { get: ()=>null }
       return undefined
     },
+    on(event, handler) { if (event === 'skills/change') invalidateHandler5 = handler; return () => { if (invalidateHandler5 === handler) invalidateHandler5 = null } },
+    off(event, handler) { if (invalidateHandler5 === handler) invalidateHandler5 = null },
     effect: (fn)=>{ try{ const d=fn(); return typeof d==='function'?d:()=>{} } catch{return ()=>{}} },
     set: ()=>{},
   }
@@ -579,6 +585,8 @@ console.log('\n— 验收3.6：BOM 名片 — Windows 编辑器另存的合法�
       if(k==='sessions') return { get: ()=>null }
       return undefined
     },
+    on(event, handler) { if (event === 'skills/change') invalidateHandler6 = handler; return () => { if (invalidateHandler6 === handler) invalidateHandler6 = null } },
+    off(event, handler) { if (invalidateHandler6 === handler) invalidateHandler6 = null },
     effect: (fn)=>{ try{ const d=fn(); return typeof d==='function'?d:()=>{} } catch{return ()=>{}} },
     set: ()=>{},
   }
@@ -660,6 +668,8 @@ console.log('\n— 验收4：等待态 有界推进 + 失效广播 + 封顶失�
       if(k==='sessions') return { get: ()=>null }
       return undefined
     },
+    on(event, handler) { if (event === 'skills/change') capturedHandler = handler; return () => { if (capturedHandler === handler) capturedHandler = null } },
+    off(event, handler) { if (capturedHandler === handler) capturedHandler = null },
     effect: (fn)=>{ try{ const d=fn(); return typeof d==='function'?d:()=>{} } catch{return ()=>{}} },
     set: ()=>{},
   }
