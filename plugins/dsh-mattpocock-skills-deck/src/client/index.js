@@ -161,10 +161,9 @@ export default {
     // ==== kernel:probeChain (spliced by build) ====
     // ==== kernel:probeSnapshot (spliced by build) ====
     // ==== kernel:probeAuto (spliced by build) ====
-    // 打开形式（#373 用户拍板 2026-08-14）：仅右侧栏（0.1.5-rc.1 起官方名为 rightbar，旧名 details）一种形式。
-    //   已移除：① Document PiP 独立小窗（Electron 无法创建 PiP 窗口、曾致桌面卡死 —— 代码不再含 pip 形态）；
-    //   ② 停靠/悬浮双模式记忆（PANEL_MODE_KEY）；③ 状态栏「停靠」seg 与右栏「悬浮」按钮。
-    //   打开一律走 layout.openRightbar(true, false)（0.1.5-rc.1 新名；旧版回退 openDetails()）；
+    // 打开形式（#373 用户拍板 2026-08-14）：仅官方右侧栏（槽位名 rightbar）一种形式。
+    //   代码不含 Document PiP 独立小窗、停靠/悬浮双模式记忆（PANEL_MODE_KEY）、状态栏「停靠」seg 与右栏「悬浮」按钮。
+    //   打开一律走 layout.openRightbar(true, false)；
     //   layout 服务不可用时退回页内悬浮面板（仅兜底，无任何入口按钮）。
     // ==== kernel:router (spliced by build) ====
 

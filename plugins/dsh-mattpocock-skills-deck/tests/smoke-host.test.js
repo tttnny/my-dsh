@@ -1,8 +1,7 @@
 // smoke-host.test.js — T0 阶段 0 验收·host 半冒烟
 // 加载 package/lib/index.js（ESM），用宿主 stub ctx 调用 apply，断言：
 //   1) name / inject 正确
-//   2) apply 注册 /api/dsws 精确 Fetch 路由（connection.fetch.register；0.1.5-rc.1 起不再用
-//      connection.rpc.handle —— 该 API 在本版对兄弟插件不可用，见 src/host/rpcChannel.js 头部注释）
+//   2) apply 注册 /api/dsws 精确 Fetch 路由（connection.fetch.register；见 src/host/rpcChannel.js 头部注释）
 //   3) 请求信封契约：缺 endpoint → bad-request；未注册 endpoint → not-found
 // 用法: node tests/smoke-host.test.js
 import { readFileSync } from 'node:fs'

@@ -56,10 +56,9 @@ function extractPluginBody(srcPath) {
 const PKG_CLIENT_SHIMS = `    // ===================== seam shims（pkg 方言绑定 · B3 rpc / B2 style / B4 timer） =====================
     const React = require('react')
     let __DSW_CTX__ = null
-    // 0.1.5-rc.1 适配：不再走 conn.rpc.call('/dsws', ...)。Host 侧 connection.rpc.handle 在本版对
-    //   兄弟插件不可用（owner.webServer 解析不到，详见 src/host/rpcChannel.js 头部注释），通道永远挂不上，
-    //   请求会落到静态兜底处理器拿 HTTP 405。改走 connection 的精确 Fetch 路由 /api/dsws：
-    //   鉴权与 Host/Origin 栅栏由 /api 载体统一施加，客户端因此不再需要持有 connection 服务。
+    // pkg 方言经同源 POST /api/dsws 调宿主：/api/dsws 是 connection 暴露的精确 Fetch 路由，
+    //   鉴权与 Host/Origin 栅栏由 /api 载体统一施加，客户端因此不持有 connection 服务。
+    //   宿主侧为何走精确 Fetch 路由、而非 connection.rpc.handle，见 src/host/rpcChannel.js 头部注释。
     const __rpcCall = async function (endpoint, args) {
       const resp = await fetch('/api/dsws', {
         method: 'POST',

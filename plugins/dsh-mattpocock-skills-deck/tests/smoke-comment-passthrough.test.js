@@ -44,7 +44,7 @@ const ctx = { get: (k) => services[k], effect: (fn) => { const r = fn(); return 
 const modRaw = await import('../package/lib/index.js')
 const mod = modRaw.default ?? modRaw
 ;(mod.apply ?? mod.default?.apply)(ctx)
-// 0.1.5-rc.1：通道注册走动态 import，形态改为 /api/dsws 精确 Fetch 路由（见 src/host/rpcChannel.js）
+// 通道注册走动态 import，注册形态是 /api/dsws 精确 Fetch 路由（见 src/host/rpcChannel.js）
 await new Promise((res) => setTimeout(res, 300))
 const registered = registeredRoute ? { fn: async function (endpoint, args) {
   const resp = await registeredRoute.fetch(new Request('http://dsh.internal/api/dsws', {

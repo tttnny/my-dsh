@@ -1,4 +1,4 @@
-// src/host/rpcChannel.js —— B3 rpc 通道注册（0.1.5-rc.1 从 host/index.js 搬出，逻辑原样）。
+// src/host/rpcChannel.js —— B3 rpc 通道注册（独立模块，由 host/index.js 动态 import）。
 // 以后谁改它：改 RPC 通道挂载方式 / 线上请求响应协议的人。预估约 60 行，超 350 打回。
 // 接线：由 index.js 动态 import 加载（D7 禁止静态 import）；依赖全部显式传入；本文件不引用其他新文件。
 

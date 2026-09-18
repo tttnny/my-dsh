@@ -41,11 +41,10 @@
     }
     // 打开面板（运行期兜底形态）：deck 自带**悬浮面板**（openPagePanel）。
     //
-    // 【1.8.8】不再走 layout.openRightbar：0.1.5-rc.1 的 rightbar 是**官方右栏框架本身**
-    //   （列宽 / 推挤动画 / 折叠按钮 / dockkit 标签宿主都由官方 RightbarRoot 渲染），
-    //   deck 已撤回对该格子的注册（见 panelAssembly.js 的撤回说明）——再调 openRightbar
-    //   只会打开官方右栏并显示官方标签页，deck 面板并不在其中，用户看到的是「点了没反应」。
-    // 【1.9】官方右侧边栏改用**标签页**扩展点接入（openInRightbar），本形态只剩「两种载体都不可用」
+    // 这里不调 layout.openRightbar：rightbar 是**官方右栏框架本身**（列宽 / 推挤动画 / 折叠按钮 /
+    //   dockkit 标签宿主都由官方 RightbarRoot 渲染），deck 不向该格子注册（见 panelAssembly.js）——
+    //   调 openRightbar 只会打开官方右栏并显示官方标签页，deck 面板并不在其中，用户看到的是「点了没反应」。
+    // 官方右侧边栏经**标签页**扩展点接入（openInRightbar），本形态只剩「两种载体都不可用」
     //   时的兜底（未装 dsh-better-sidebar 且官方 sidebarRight 服务缺席/无法注册/无会话面板挂载）。
     export const openDockPanel = function (st) {
       openPagePanel(st)

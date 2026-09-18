@@ -4,7 +4,7 @@
 
 ## 特性
 
-- **控制面板（Deck）**：右侧栏（0.1.5-rc.1 起官方槽位名为 `rightbar`，旧名 `details`）注入地图列表 / 票务详情 / 进度契约 / triage 与 grilling 动作按钮 / handoff 交接，支持 GitHub / GitLab / Markdown 三种 issue 后端。
+- **控制面板（Deck）**：右侧栏（官方槽位名 `rightbar`）注入地图列表 / 票务详情 / 进度契约 / triage 与 grilling 动作按钮 / handoff 交接，支持 GitHub / GitLab / Markdown 三种 issue 后端。
 - **环境检查链（wf.chain）识别 agent-preset 技能根**（`#preset-skill-roots`）：技能判装在四个标准根（`~/.agents/skills`、`~/.dsh/skills`、项目 `.dsh/skills`、项目 `.agents/skills`）之外，追加本合集 preset 的 `~/.dsh/.agent-presets/<id>/skills/<skill>` 候选（FS 服务与插件只读直读双通道；仍需 `SKILL.md` frontmatter `name` 精确匹配才算已安装）。
 - **按会话 preset 门控**（`#preset-session-gating`）：preset 技能只有随**当前会话所选 preset** 分发时才算「已安装」——会话没选 Matt 相关 preset（如内置 `standard`、`ptc-cordis`）时，环境检查如实显示技能未装，不再虚报「环境 10/10」。生效 preset 经 `agentPreset` 会话投影（创建 header 兜底）解析；解析不到会话上下文时回退「枚举全部 preset 目录」的宽松口径（宁绿勿误报）。
 - **链缓存按会话隔离**：服务端与客户端的环境检查链缓存键均加入 preset / 会话维度，同一工作区里不同 preset 的会话不互串链结果。

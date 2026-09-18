@@ -87,15 +87,11 @@
     __injectOnce('settings.plugins.tab', function () {
       return slots.register({ name: 'settings.plugins.tab', id: 'dsws-settings', order: 40, label: function () { return tr('panel.title') } }, withCx(SettingsPage))
     })
-    // 【1.8.8 撤回】不再向 rightbar 槽位注册。
-    //
-    // 历史：1.8.6 把 DetailsDock 改名注册到 rightbar，并沿用旧版 `priority: -1`（「低者胜出」），
-    //   意图是「替换内置右栏面板」。该意图在 0.1.5-rc.1 上是错的：
-    //   官方 rightbar 条目**就是右栏框架本身**（dsh-client-ui-sidebar-right 的 RightbarRoot）——
-    //   列宽（P3OORG_panel 的 style.width 720px）、推挤动画、折叠按钮、dockkit 标签宿主全由它渲染。
-    //   被顶掉后：① 右栏列宽恒为 0，用户「点右侧边栏按钮面板直接消失」；
-    //            ② dsh-better-sidebar 注册的 sidebar.right.pane.tab 标签全部失去宿主。
-    //   真机 A/B 实证：临时禁用本注册后，P3OORG_panel / data-sidebar-right-panel 立即回归。
+    // deck 不向 rightbar 槽位注册：官方 rightbar 条目**就是右栏框架本身**
+    //   （dsh-client-ui-sidebar-right 的 RightbarRoot）——列宽（P3OORG_panel 的 style.width 720px）、
+    //   推挤动画、折叠按钮、dockkit 标签宿主全由它渲染。顶掉该条目会令右栏列宽恒为 0
+    //   （点右侧边栏按钮面板直接消失），并让 dsh-better-sidebar 注册的 sidebar.right.pane.tab 标签失去宿主。
+    //   真机 A/B 实证：禁用本注册后，P3OORG_panel / data-sidebar-right-panel 立即回归。
     //
     // 官方槽位结构（扩展点只有第三个）：
     //   rightbar（框架）→ rightbar.session（kind: single，标签宿主）

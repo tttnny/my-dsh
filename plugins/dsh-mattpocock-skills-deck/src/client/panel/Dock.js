@@ -1,17 +1,16 @@
 /**
- * panel/Dock.js — 右侧停靠容器（DetailsDock，5.8b；tabs 行改用共享 Tabs.js）
+ * panel/Dock.js — 右侧停靠容器（DetailsDock，5.8b；tabs 行使用共享 Tabs.js）
  * 契约：模块真源（ESM 导出）；scripts/build.mjs 构建时剥行首 export 拼回
  * src/client/index.js 的 `// ==== leaf:... (spliced by build) ====` 标记处（一源两物）。
  */
     // ---- 5.8b 右侧停靠（rightbar 槽位 · 三视图完整内容；开合/拖拽/宽度记忆由壳管理）----
-    // 契约：rightbar 槽 = 壳右侧第三列（AppFrame grid），scope session；关闭 = ctx.layout.closeDetails()
-    //   （占位者 props 亦注入 closeDetails）；宽度 300-520px 可拖拽；关闭时子树不卸载（状态保留）。
+    // 契约：rightbar 槽 = 壳右侧第三列（AppFrame grid），scope session；关闭 = ctx.layout.closeRightbar()
+    //   （占位者 props 亦注入 closeRightbar）；宽度 300-520px 可拖拽；关闭时子树不卸载（状态保留）。
     // issue #15：tabs 行内容放不下时折叠为纯图标（内容自适应 + 滞回防抖）
 export     const DetailsDock = (props) => {
-      // #45 回归：切绘画/工作区后右面板串台——原实现挂载仅跑一次副作用（deps []）且直接取 props.sessionId（宿主 details 槽常空 → 退回 shared 单例），
+      // #45 回归：切绘画/工作区后右面板串台——挂载仅跑一次副作用（deps []）且直接取 props.sessionId（宿主槽常空 → 退回 shared 单例）时，
       //   切会话不重跑水合、非 current 快照经 shared 广播串台；修复 = 跟随 useSessions 权威信号（hookCurrent）+ 精确 cwd（summaryCwd），副作用 deps 随 [sid]/[sid,summaryCwd] 重跑。
-      // 【0.1.5-rc.1 修复】hook 调用次数必须跨渲染恒定：原第 18 行是
-      //   `... && sid) ? props.useSessions(...) : undefined`——把 hook 挂在 `sid` 上。
+      // hook 调用次数必须跨渲染恒定：若把 hook 挂在 `sid` 的判空条件上（`... && sid) ? props.useSessions(...) : undefined`），
       //   sid 由空变有值（会话建立/切换）时 hook 数 1→2，其后所有 hook（useStore/useRef/
       //   useState/useEffect/useDockSync）整体错位，React 的 areHookInputsEqual 读到 undefined.deps
       //   抛 `Cannot read properties of undefined (reading 'length')`，被 slot 错误边界捕获 →
@@ -40,9 +39,9 @@ export     const DetailsDock = (props) => {
       }, [])
       // #179 加固与污染自愈已搬 DockSync.js（useDockSync），此处单调供装配（同闭包拼回）
       useDockSync(s, sid, summaryCwd, props)
-      // 关闭按钮：先认 better-sidebar 标签页（deck 现在的**主形态**，见 panelAssembly.js 撤回说明），
-      //   再回退悬浮面板。原实现只认 closeRightbar/closeDetails——但 deck 已不占官方右栏，
-      //   在 better-sidebar 标签里点「关闭」会去关**无关的官方右栏**，属错位。
+      // 关闭按钮：先认 better-sidebar 标签页（deck 的**主形态**，见 panelAssembly.js），
+      //   再回退悬浮面板。若只认 closeRightbar，在 better-sidebar 标签里点「关闭」
+      //   会去关**无关的官方右栏**，属错位。
       const closeDock = function () {
         try {
           const bs = ctx.get('betterSidebar')

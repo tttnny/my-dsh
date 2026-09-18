@@ -17,9 +17,9 @@ function check(ok, msg, detail='') {
   else { failed = true; console.log('  FAIL ' + msg + (detail ? ' — ' + String(detail).slice(0,800) : '')) }
 }
 
-// 0.1.5-rc.1：宿主通道从 connection.rpc.handle('/dsws') 改为 connection.fetch 的 /api/dsws 精确 Fetch 路由
-// （见 src/host/rpcChannel.js）。mkRoute 把路由包成与旧 handle 同签名的 dispatch(endpoint, args) → {ok,value}
-// 信封，各调用点的 handlers['/dsws'] 用法无需改动；注册走动态 import，故每段 apply 后必须留等待。
+// 宿主通道经 connection.fetch 注册 /api/dsws 精确 Fetch 路由（见 src/host/rpcChannel.js）。
+// mkRoute 把路由包成 dispatch(endpoint, args) → {ok,value} 信封，各调用点沿用 handlers['/dsws']；
+// 注册走动态 import，故每段 apply 后必须留等待。
 function mkRoute(sink) {
   return (route) => {
     sink['/dsws'] = async (endpoint, args) => {
