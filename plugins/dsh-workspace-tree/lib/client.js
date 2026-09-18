@@ -10,10 +10,12 @@
  * 核心设计（第一性原理对齐）：
  *  - 会话空间归属与归档状态正交；官方列表返回的会话一律可见（含空白草稿），
  *    工作区模式显示活跃会话、归档区显示已归档会话。
- *  - 无「未分组」：会话失去工作区归属（如 DSH 升级重置注册表）时后台自动收编
- *    ——将其 cwd 注册为工作区（幂等）并挂载会话，未分组区块不再存在。收编前按
- *    物理存在性过一遍：官方列表仍返回、目录却已消失的已删会话写入删除墓碑并跳过，
- *    既不让幽灵复活成活会话，也不把刚真注销的工作区按 cwd 原地建回来。
+ *  - 工作区模式无「未分组」：会话失去工作区归属（如 DSH 升级重置注册表）时后台
+ *    自动收编——将其 cwd 注册为工作区（幂等）并挂载会话。**已归档会话不参与收编**
+ *    （归档态与工作区归属正交，官方归档也允许无归属），故归档区保留一个「未分组」
+ *    分组兜住这类会话。收编前按物理存在性过一遍：官方列表仍返回、目录却已消失的
+ *    已删会话写入删除墓碑并跳过，既不让幽灵复活成活会话，也不把刚真注销的工作区
+ *    按 cwd 原地建回来。
  *  - 工作区管理默认「移除显示」而非「删除注册」：仅隐藏工作区节点（localStorage 记忆），
  *    注册与会话归属不变；重新添加同一目录后工作区连同会话一起恢复显示。
  *    例外：名下已无任何可见会话与归档会话的空工作区，移除时自动走官方 workspace/delete
@@ -1383,6 +1385,12 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 归档视图：按工作区分组（深度递归收集，全量展示） ══════════════
+    /**
+     * 归档集合是注册表全局的：官方 workspace/archiveSession 明确「工作区归属可有可无」，
+     * 归档只往 archivedSessionIds 追加、从不改 sessionIds。本插件的自动收编又对已归档
+     * 会话显式跳过（见下方 effect），于是「无归属的归档会话」会长期存在，必须单独成组，
+     * 否则官方「已归档会话」可见、本插件归档区却永远看不到。
+     */
     function ArchiveView({ sessions, wsForest, archived, hardDeleted, onOpen, onRestoreOne, onDeleteOne, onRestoreGroup, onDeleteGroup, onRestoreAll, onDeleteAll, busy }) {
       const byId = (sessions && sessions.byId) || {};
 
@@ -1391,7 +1399,12 @@ window.__ModuleLoader__.load({
         for (const node of forest || []) {
           const sids = (node.w.sessionIds || []).filter((id) => archivedSessionVisible(byId[id], archived, hardDeleted));
           if (sids.length > 0) {
-            allGroups.push({ node, sids });
+            allGroups.push({
+              key: "ws:" + String(node.w.workspaceId),
+              workspaceId: node.w.workspaceId,
+              title: node.w.title || baseName(node.w.path),
+              sids
+            });
           }
           if (node.children && node.children.length > 0) {
             traverseForest(node.children);
@@ -1399,7 +1412,22 @@ window.__ModuleLoader__.load({
         }
       })(wsForest);
 
-      // 未分组归档不再存在：无归属的会话由主组件后台自动收编到其 cwd 工作区。
+      // 「未分组」：归档集合里不属于任何工作区 sessionIds 的会话。顺序沿用官方列表
+      // （sessions.ids），与 onConfirmArchiveConfirm 的 deleteGroup(null) 口径一致。
+      const accounted = new Set();
+      (function collectAccounted(forest) {
+        for (const node of forest || []) {
+          for (const sid of node.w.sessionIds || []) accounted.add(String(sid));
+          if (node.children && node.children.length > 0) collectAccounted(node.children);
+        }
+      })(wsForest);
+      const ungroupedSids = (sessions && Array.isArray(sessions.ids) ? sessions.ids : [])
+        .map(String)
+        .filter((sid) => !accounted.has(sid) && archivedSessionVisible(byId[sid], archived, hardDeleted));
+      if (ungroupedSids.length > 0) {
+        allGroups.push({ key: "ungrouped", workspaceId: null, title: "未分组", sids: ungroupedSids });
+      }
+
       const total = allGroups.reduce((acc, g) => acc + g.sids.length, 0);
       const hasAny = total > 0;
 
@@ -1417,17 +1445,17 @@ window.__ModuleLoader__.load({
             h("button", { key: "da", type: "button", className: "dswt-archiveBtn dswt-archiveBtnDanger", disabled: !!busy, title: "一键删除所有", onClick: onDeleteAll }, "一键删除所有")
           ])
         ]),
-        hasAny ? null : h("div", { key: "empty", className: "dswt-empty" }, "归档区为空 — 归档的会话会在此按工作区分组显示"),
-        allGroups.map(({ node, sids }) => h("div", { key: node.w.workspaceId, className: "dswt-groupSection" }, [
+        hasAny ? null : h("div", { key: "empty", className: "dswt-empty" }, "归档区为空 — 归档的会话会在此分组显示（无归属者归入「未分组」）"),
+        allGroups.map((group) => h("div", { key: group.key, className: "dswt-groupSection" }, [
           h("div", { key: "hd", className: "dswt-projectRow" }, [
             h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" }, h(Icon, { name: "folderOpenFilled", size: 16, className: "dswt-folderSvg" })),
-            h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, (node.w.title || baseName(node.w.path)) + " · " + sids.length + " 条")),
+            h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, group.title + " · " + group.sids.length + " 条")),
             h("span", { key: "ac", className: "dswt-rowActions", style: { display: "inline-flex" } }, [
-              h("button", { key: "rs", type: "button", className: "dswt-iconButton", title: "恢复该工作区全部", disabled: !!busy, onClick: () => onRestoreGroup(node.w.workspaceId) }, h(Icon, { name: "restore", size: 14 })),
-              h("button", { key: "dl", type: "button", className: "dswt-iconButton dswt-danger", title: "永久删除该工作区全部", disabled: !!busy, onClick: () => onDeleteGroup(node.w.workspaceId) }, h(Icon, { name: "trash", size: 14 }))
+              h("button", { key: "rs", type: "button", className: "dswt-iconButton", title: group.workspaceId === null ? "恢复未分组全部" : "恢复该工作区全部", disabled: !!busy, onClick: () => onRestoreGroup(group.workspaceId) }, h(Icon, { name: "restore", size: 14 })),
+              h("button", { key: "dl", type: "button", className: "dswt-iconButton dswt-danger", title: group.workspaceId === null ? "永久删除未分组全部" : "永久删除该工作区全部", disabled: !!busy, onClick: () => onDeleteGroup(group.workspaceId) }, h(Icon, { name: "trash", size: 14 }))
             ])
           ]),
-          h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": "16px" } }, sids.map((sid) => h(ArchiveSessionRow, { key: sid, sid, sessions, busy, onOpen, onRestore: onRestoreOne, onDelete: onDeleteOne })))
+          h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": "16px" } }, group.sids.map((sid) => h(ArchiveSessionRow, { key: sid, sid, sessions, busy, onOpen, onRestore: onRestoreOne, onDelete: onDeleteOne })))
         ]))
       ]);
     }
@@ -2452,7 +2480,8 @@ window.__ModuleLoader__.load({
           })
         ]);
       } else {
-        // 工作区模式：全部会话均归属于某工作区（无归属者由后台自动收编），故无「未分组」区块
+        // 工作区模式：可见会话均被后台自动收编到某工作区，故无「未分组」区块；
+        // 无归属的已归档会话不在此视图（它们由归档区以「未分组」分组兜住）。
         body = h("div", { key: "l", className: "dswt-list", role: "tree", "aria-label": "工作区" }, [
           wsForest.map((node) => h(WorkspaceGroup, {
             key: node.w.workspaceId, node, depth: 0, indent: cfg.indent, showAgg: cfg.showAgg, sessions, sessionStatus, archived, hardDeleted,
@@ -2470,8 +2499,14 @@ window.__ModuleLoader__.load({
         if (!archiveConfirm) return { open: false, title: "", desc: "", confirmText: "确认", danger: false };
         const k = archiveConfirm.kind;
         if (k === "deleteOne") return { open: true, title: "永久删除会话", desc: "确定要永久删除会话 “" + (archiveConfirm.title || "") + "” 吗？此操作将彻底删除会话数据与关联的全部子智能体（Subagent）日志，无法恢复。", confirmText: "永久删除", danger: true };
-        if (k === "restoreGroup") return { open: true, title: "恢复工作区归档", desc: "确定要恢复工作区 “" + (archiveConfirm.title || "") + "” 的全部归档会话吗？", confirmText: "恢复全部", danger: false };
-        if (k === "deleteGroup") return { open: true, title: "删除工作区归档", desc: "确定要永久删除工作区 “" + (archiveConfirm.title || "") + "” 的全部归档会话吗？此操作不可恢复。", confirmText: "永久删除", danger: true };
+        if (k === "restoreGroup") {
+          const label = archiveConfirm.workspaceId === null ? "未分组" : "工作区 “" + (archiveConfirm.title || "") + "”";
+          return { open: true, title: "恢复" + (archiveConfirm.workspaceId === null ? "未分组归档" : "工作区归档"), desc: "确定要恢复" + label + "的全部归档会话吗？", confirmText: "恢复全部", danger: false };
+        }
+        if (k === "deleteGroup") {
+          const label = archiveConfirm.workspaceId === null ? "未分组" : "工作区 “" + (archiveConfirm.title || "") + "”";
+          return { open: true, title: "删除" + (archiveConfirm.workspaceId === null ? "未分组归档" : "工作区归档"), desc: "确定要永久删除" + label + "的全部归档会话吗？此操作不可恢复。", confirmText: "永久删除", danger: true };
+        }
         if (k === "restoreAll") return { open: true, title: "恢复全部归档", desc: "确定要恢复全部 " + (archived.size || 0) + " 条归档会话吗？", confirmText: "恢复全部", danger: false };
         if (k === "deleteAll") return { open: true, title: "删除全部归档", desc: "确定要永久删除全部 " + (archived.size || 0) + " 条归档会话吗？此操作不可恢复。", confirmText: "永久删除", danger: true };
         return { open: false, title: "", desc: "", confirmText: "确认", danger: false };

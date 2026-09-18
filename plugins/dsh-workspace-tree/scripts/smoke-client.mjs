@@ -77,6 +77,8 @@ let guardCalls = []
 let tombstoneAlive = []
 let tombstoneFailure = null
 let tombstoneCalls = []
+/** Archive action calls (`/archive/unarchiveAll` / `/archive/deleteAll`) — archive-view regression. */
+let archiveCalls = []
 /** Native (macOS Finder) picker knobs: support probe answer and the POST result.
  *  Default false = a host that cannot serve the Finder chooser; the macOS scenarios
  *  opt in explicitly (see the merged 「添加工作区」 cases at the end). */
@@ -97,6 +99,13 @@ globalThis.fetch = async (url, init) => {
     if (tombstoneFailure !== null) throw new Error(tombstoneFailure)
     const body = typeof tombstoneAlive === 'function' ? tombstoneAlive(tombstoneCalls) : { ok: true, alive: tombstoneAlive }
     return { json: async () => body }
+  }
+  if (path.endsWith('/archive/pruneStale')) {
+    return { json: async () => ({ ok: true, pruned: [] }) }
+  }
+  if (path.endsWith('/archive/unarchiveAll') || path.endsWith('/archive/deleteAll')) {
+    archiveCalls.push({ path, body: JSON.parse(init?.body ?? '{}') })
+    return { json: async () => ({ ok: true, restored: [], deleted: [], failed: [] }) }
   }
   if (path.endsWith('/picker/native')) {
     if (init?.method === 'GET') {
@@ -445,6 +454,7 @@ async function boot(makeOverrides = {}, ledgerOption, hostFacts = {}) {
   tombstoneCalls = []
   tombstoneFailure = null
   tombstoneAlive = []
+  archiveCalls = []
   nativeSupported = hostFacts.native === true
   nativePickCalls = 0
   nativeProbeFailure = null
@@ -530,6 +540,23 @@ const sidebarPropsWithWorkspaces = (face, rows, items, state, calls) => {
     useSessionStatus: (select) => select(new Map()),
     useSessions: (select) => select(state.sessionSnapshot),
     useWorkspaces: (select) => select({ items, archivedSessionIds: [], phase: 'ready' }),
+  }
+}
+
+/** Sidebar props in archive mode: explicit workspace list plus the registry-global archive set. */
+const sidebarPropsWithArchive = (face, rows, items, archivedIds, state, calls) => {
+  state.sessionSnapshot = {
+    ids: rows.map((row) => row.id),
+    byId: Object.fromEntries(rows.map((row) => [row.id, row])),
+    phase: 'ready',
+  }
+  return {
+    ...face,
+    wide: true,
+    ...(calls === undefined ? {} : { renderSlot: renderSlotStub(calls) }),
+    useSessionStatus: (select) => select(new Map()),
+    useSessions: (select) => select(state.sessionSnapshot),
+    useWorkspaces: (select) => select({ items, archivedSessionIds: archivedIds, phase: 'ready' }),
   }
 }
 
@@ -1102,6 +1129,54 @@ const listing = (path, entries, crumbs) => ({
   check('adopt: an unreachable probe fails open instead of blocking adoption',
     offlineCreated.length >= 1 && offlineCreated.every((input) => input.path === '/home/tny/offline'))
   tombstoneFailure = null
+}
+
+// ── 归档区兜住「无归属」归档：归档集合是注册表全局的，无归属必须单独成组（回归） ──
+
+{
+  storage.delete('dsh-workspace-tree.mode')
+
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const row = (over = {}) => ({
+    id: 'session-arch', displayTitle: 'arch row', cwd: '/home/tny/work',
+    running: false, blank: false, updatedAt: Date.now(), ...over,
+  })
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ['session-arch-ws'] }]
+  const rows = [
+    row({ id: 'session-arch-ws', displayTitle: 'attached row' }),
+    row({ id: 'session-arch-ungrouped', displayTitle: 'ungrouped row', cwd: '/home/tny/other' }),
+    row({ id: 'session-arch-blank', displayTitle: 'blank row', blank: true }),
+    row({ id: 'session-live-ungrouped', displayTitle: 'live row' }),
+  ]
+  const archivedIds = ['session-arch-ws', 'session-arch-ungrouped', 'session-arch-blank']
+  const props = sidebarPropsWithArchive(face, rows, items, archivedIds, harness.state, harness.calls)
+
+  let tree = await settle(Browser, props)
+  findNode(tree, (n) => n?.props?.type === 'button' && n?.props?.title === '归档区').props.onClick()
+  tree = await settle(Browser, props)
+
+  check('archive: workspace-attached archived session renders',
+    findNode(tree, (n) => n?.props?.title === 'attached row') !== undefined)
+  check('archive: ungrouped archived session renders under a 「未分组」 group',
+    findNode(tree, (n) => n?.props?.title === 'ungrouped row') !== undefined
+    && /未分组 · 1 条/.test(textOf(tree)))
+  check('archive: the toolbar counts every visible archived session',
+    /共 2 条有效归档/.test(textOf(tree)))
+  check('archive: blank archived sessions stay hidden',
+    findNode(tree, (n) => n?.props?.title === 'blank row') === undefined)
+  check('archive: unarchived sessions stay out of the archive area',
+    findNode(tree, (n) => n?.props?.title === 'live row') === undefined)
+
+  // Group-level restore of the ungrouped bucket must post workspaceId null (official 「未分组」口径).
+  findNode(tree, (n) => n?.props?.type === 'button' && n?.props?.title === '恢复未分组全部').props.onClick()
+  tree = await settle(Browser, props)
+  check('archive: the ungrouped group names its own restore confirm',
+    /恢复未分组归档/.test(textOf(tree)))
+  findNode(tree, (n) => hasClass(n, 'dswt-modalBtnPrimary') && /恢复全部/.test(textOf(n))).props.onClick()
+  tree = await settle(Browser, props)
+  check('archive: restoring the ungrouped group calls unarchiveAll with workspaceId null',
+    archiveCalls.some((c) => c.path.endsWith('/archive/unarchiveAll') && c.body.workspaceId === null))
 }
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`)
