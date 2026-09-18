@@ -230,8 +230,8 @@
         backgroundMode: one-shot
         maxDepth: provider-managed
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 
@@ -272,7 +272,7 @@
 
 # ── presentation ────────────────────────────────────────────────────────────
 
-# PTC mode for this agent alone. The row waits for the host's `codeRuntime`
+# PTC mode for this agent alone. The row waits for the host's `ptcRuntime`
 # rather than assuming it: a deployment that composes no TypeScript runtime
 # fails this preset at mount, naming this id, instead of at the first request.
 - id: tool-presentation
@@ -282,3 +282,7 @@
 
 - id: present
   name: '@deepseek-ai/dsh-tool-present'
+
+- id: tool-plugin-manager
+  name: '@deepseek-ai/dsh-plugin-manager/tools'
+  disabled: true

@@ -52,9 +52,19 @@
 
       Two planes decide where an edit belongs. The HOST composition holds the registries and anything shared across sessions — persistence, the sandbox and approval stack, the model route, the subagent registry and its backends. An AGENT PRESET holds what one session contributes to those registries: its tools, its persona, its prompt sections. A row that publishes a service belongs in the host composition, or inside an `isolate` realm if the preset genuinely owns that service and nothing outside one agent reads it.
 
-      Presets you author live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/<id>/`; the roster reports each preset's real path, so take the one you edit from there. NEVER edit or delete the shipped preset install (the `agent-presets` directory beside the deployment's own config): it belongs to the deployment, an upgrade overwrites it, and corrupting the `cordis` preset would disable this very mode. To change what a shipped preset does, copy its composition into a new preset directory and edit the copy.
+      Presets you author live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/<id>/`. Load `editing-cordis-compositions` for file discovery and copying instructions. NEVER edit or delete the shipped preset install (the `agent-presets` directory beside the deployment's own config): it belongs to the deployment, an upgrade overwrites it, and corrupting the `cordis` preset would disable this very mode. To change what a shipped preset does, copy its composition into a new preset directory and edit the copy.
 
       Load the `editing-cordis-compositions` skill before writing or changing a composition — and remember: in this session you reach every tool, including exit_plan_mode, through `tools.<name>(...)` inside `run_code({ code, description })`. For exit_plan_mode, build the plan markdown as a template literal inside the program (avoid backticks and ${ sequences in the plan text — use indented code blocks instead of fenced ones) and submit it in the same program: assign the template literal to a `plan` variable, then `return await tools.exit_plan_mode({ plan })`.
+
+      Use plugin_manager for persistent bundle installation, removal and enablement in the current profile. Author plugin code and configuration as ordinary workspace bundle files. Changes affect every session in that profile. Read saved-state and activation outcomes separately; restart-required means the new capability is not available yet.
+
+      In Creator mode, requests to make a visual object, decoration, or widget mean creating an installed UI plugin that displays it in this Harness Web UI, unless the user specifies another destination. Choose reasonable visual details and proceed. Load cordis-plugin-development, inspect the Client slots, build the plugin in the workspace, and install it with plugin_manager. Install a minimal working version before visual refinement; use the connected page as its preview. Verify that the open page renders it; a standalone image or HTML file does not complete an in-app creation request.
+
+      Load the cordis-plugin-development skill before authoring an installed plugin. Use cordis_inspect_list to discover Host and Client providers, then cordis_inspect_query to read exact Service, Event, Tool, Theme or Slot APIs. These tools are read-only; queries do not invoke business methods.
+
+      To connect an MCP server, create a configuration-only bundle whose patch inserts @deepseek-ai/dsh-mcp-client, then install it with plugin_manager. Load cordis-plugin-development for the package and YAML examples. After successful activation, call one of the newly available mcp__<serverName>__<tool> tools to verify the connection.
+
+      Use installed bundles for new plugin code. Package installation may require explicit user approval for build scripts. Preserve returned failures and pending states; only report success after observing the requested capability.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -249,8 +259,8 @@
         backgroundMode: one-shot
         maxDepth: provider-managed
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 
@@ -286,7 +296,7 @@
 
 # PTC mode for this agent alone (from the official `ptc` preset): the model
 # sees only `run_code` and reaches every tool through the generated SDK. The
-# row waits for the host's `codeRuntime` rather than assuming it: a deployment
+# row waits for the host's `ptcRuntime` rather than assuming it: a deployment
 # that composes no TypeScript runtime fails this preset at mount, naming this
 # id, instead of at the first request.
 - id: tool-presentation
@@ -296,3 +306,6 @@
 
 - id: present
   name: '@deepseek-ai/dsh-tool-present'
+
+- id: tool-plugin-manager
+  name: '@deepseek-ai/dsh-plugin-manager/tools'

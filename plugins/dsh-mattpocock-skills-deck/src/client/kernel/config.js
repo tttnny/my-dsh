@@ -8,19 +8,28 @@
  */
     export const CFG_KEY = 'dsws.cfg'
     // 功能配置（用户拍板 2026-08-14：外观图标/动作词由设计定死，不提供配置项）
-    // v1.4：打开位置 cfg.openIn —— 检测到 dsh-better-sidebar 已装则默认 'sidebar'，否则 'dock'；
-    //   localStorage 已有值则尊重用户选择（不覆盖）
+    // v1.9：打开位置 cfg.openIn —— 只支持两种官方载体：
+    //   'sidebar'  = dsh-better-sidebar 标签页（第三方侧边栏插件，装了才可选）
+    //   'rightbar' = DSH 官方右侧边栏标签页（官方扩展点 sidebar.right.pane.tab，见 router.js）
+    //   旧值 'dock'（插件自带悬浮面板）已从选项与默认值中移除：存量存档按当前载体情况归一化；
+    //   悬浮面板只作两种载体都不可用时的运行期兜底，不落盘、不进设置页。
+    export const OPEN_IN_MODES = ['sidebar', 'rightbar']
+    // 载体就绪探测（可选能力一律 ctx.get + 缺省分支：未声明的服务在客户端半边会抛错，见 AGENTS.md 硬约束 3）
+    export const betterSidebarReady = function () {
+      try { const bs = ctx.get('betterSidebar'); return !!(bs && typeof bs.registerTab === 'function') } catch (e) { return false }
+    }
+    export const defaultOpenIn = function () { return betterSidebarReady() ? 'sidebar' : 'rightbar' }
     export const cfg = (function () {
-      const bsInstalled = !!(ctx.get('betterSidebar') && typeof ctx.get('betterSidebar').registerTab === 'function')
-      const d = { withWayfinder: true, openIn: bsInstalled ? 'sidebar' : 'dock' }
+      const d = { withWayfinder: true, openIn: defaultOpenIn() }
       try {
         const raw = localStorage.getItem(CFG_KEY)
         if (raw) {
           const saved = JSON.parse(raw)
-          if (typeof saved.openIn === 'string') d.openIn = saved.openIn  // 用户已选过 → 尊重
-          else d.openIn = bsInstalled ? 'sidebar' : 'dock'              // 首次 → 按安装情况默认
+          // 用户已选过且仍是受支持的模式 → 尊重；首次或旧值（'dock' 及任何未知值）→ 按当前载体情况归一化
+          if (typeof saved.openIn === 'string' && OPEN_IN_MODES.indexOf(saved.openIn) >= 0) d.openIn = saved.openIn
+          else d.openIn = defaultOpenIn()
         }
-        return Object.assign({ withWayfinder: true, openIn: 'dock' }, d)
+        return Object.assign({ withWayfinder: true, openIn: defaultOpenIn() }, d)
       } catch (e) { try { log('warn', 'storage.fail', { key: CFG_KEY, op: 'read' }) } catch (eL) {} }
       return d
     })()

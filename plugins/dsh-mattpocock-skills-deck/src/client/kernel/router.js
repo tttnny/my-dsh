@@ -6,8 +6,9 @@
  * 原位），与 ctx.js/seam 同模式，一源两物，src 零复制。
  * 接口冻结清单见 tests/verify-kernel.js（G3 · #91 拍板）。
  */
-    export const openPagePanel = function (st) {
-      // #58 缓存优先：先同步补 cwd + 水合 per-cwd 缓存，实现切换面板秒开（无 loading 遮罩）
+    // 打开面板的公共水合段（三种载体的面板打开后都走这一条）：#58 缓存优先，先同步补 cwd +
+    //   水合 per-cwd 缓存 → 数据新鲜直接展示 / 过期秒开 + 后台静默 / 首开才 loading，不弹全屏遮罩。
+    export const hydrateOpenState = function (st) {
       if (!st.cwd) {
         const sync = getCwdSync(st.sessionId)
         if (sync) { st.cwd = sync; hydrateFromCache(st) }
@@ -16,7 +17,6 @@
       }
       const hasCache = !!(st.snapshot || getCachedSnapshot(st.cwd))
       const isReal = st.snapMode === 'real' || !!st.snapshot || !!getCachedSnapshot(st.cwd)
-      st.open = true
       if (isReal && snapFresh(st)) {
         // v1.3.3 #5：数据新鲜直接展示，不 loading 不刷新（用户不再白等）
         // #58 若本 store 尚未设置 snapshot 但 per-cwd 缓存存在，已在 hydrateFromCache 秒开
@@ -35,20 +35,25 @@
         loadSnapshot(st, false)
       }
     }
-    // 打开面板（兜底形态）：deck 自带**悬浮面板**（openPagePanel，含 #58 缓存优先秒开）。
+    export const openPagePanel = function (st) {
+      st.open = true
+      hydrateOpenState(st)
+    }
+    // 打开面板（运行期兜底形态）：deck 自带**悬浮面板**（openPagePanel）。
     //
     // 【1.8.8】不再走 layout.openRightbar：0.1.5-rc.1 的 rightbar 是**官方右栏框架本身**
     //   （列宽 / 推挤动画 / 折叠按钮 / dockkit 标签宿主都由官方 RightbarRoot 渲染），
     //   deck 已撤回对该格子的注册（见 panelAssembly.js 的撤回说明）——再调 openRightbar
     //   只会打开官方右栏并显示官方标签页，deck 面板并不在其中，用户看到的是「点了没反应」。
-    //
-    // 本路径的触发场景：未装 dsh-better-sidebar，或用户在设置里显式选了 openIn='dock'。
-    // 装了 better-sidebar 且未显式选择时走上方的 openInSidebar（better-sidebar 标签页）。
+    // 【1.9】官方右侧边栏改用**标签页**扩展点接入（openInRightbar），本形态只剩「两种载体都不可用」
+    //   时的兜底（未装 dsh-better-sidebar 且官方 sidebarRight 服务缺席/无法注册/无会话面板挂载）。
     export const openDockPanel = function (st) {
       openPagePanel(st)
     }
-    // v1.4：打开位置可选 —— cfg.openIn: 'dock'（rightbar 列，默认）/ 'sidebar'（dsh-better-sidebar tab）
-    //   better-sidebar 已装时可用；未装或服务不可用 → 回退 rightbar 列
+    // v1.9：打开位置只有两种官方载体（cfg.openIn，见 config.js）：
+    //   'sidebar'  = dsh-better-sidebar 标签页（下方 ensureSidebarTab + openInSidebar）
+    //   'rightbar' = DSH 官方右侧边栏标签页（下方 ensureRightbarTab + openInRightbar）
+    //   两种都不可用才落到 openDockPanel（自带悬浮面板）——它不再是用户选项。
     // v1.4.1 修复「切侧边栏没反应」：
     //   ① ensureSidebarTab 幂等注册 —— better-sidebar 的 client 可能晚于本模块加载（未声明 inject 依赖），
     //      注册必须可重试；openTab 前 ensure 一次保证已注册（否则 openTab 静默 no-op）。
@@ -87,50 +92,107 @@
     export const openInSidebar = function (st) {
       const bs = ctx.get('betterSidebar')
       if (bs && typeof bs.openTab === 'function') {
-        if (!ensureSidebarTab()) { openDockPanel(st); return }  // 注册失败 → 回退 rightbar 列
+        if (!ensureSidebarTab()) { openDockPanel(st); return }  // 注册失败 → 落到自带悬浮面板
         // #2-fix（2026-08-19 用户反馈「新会话点状态栏面板不开」）：必须传 scope={sessionId}。
         //   better-sidebar 的 openTab(seed, scope) 内部 `targetSessionId = scope?.sessionId ?? store.getSnapshot().sessionId`；
         //   新会话时宿主尚未 setSession(该 id) → store sessionId 为 undefined → openTab 静默 return，面板不开。
         //   显式传当前 store 的 sessionId 后走 reduceFor(scope.sessionId) 路径（按给定 id 初始化布局），面板正常展开。
         //   仅当 st.sessionId 有值时传 scope（无值时传 {sessionId:undefined} 会令 targetsInactiveSession=true 走错分支）。
         bs.openTab({ type: 'deck:map', path: 'deck:map' }, st.sessionId ? { sessionId: st.sessionId } : undefined)  // path seed → 内容型打开 → 自动展开面板
-        // 打开 tab 即视为面板已开（数据新鲜直接展示）
-        // #58 缓存优先：与 openPagePanel 同逻辑，含 per-cwd 水合
-        if (!st.cwd) {
-          const sync = getCwdSync(st.sessionId)
-          if (sync) { st.cwd = sync; hydrateFromCache(st) }
-        } else { hydrateFromCache(st) }
-        const hasCache2 = !!(st.snapshot || getCachedSnapshot(st.cwd))
-        const isReal2 = st.snapMode === 'real' || !!st.snapshot || !!getCachedSnapshot(st.cwd)
-        if (isReal2 && snapFresh(st)) {
-          if (!st.snapshot && getCachedSnapshot(st.cwd)) { st.snapshot = getCachedSnapshot(st.cwd); st.snapMode = 'real' }
-          emit(st); return
-        }
-        if (isReal2 || hasCache2) {
-          if (!st.snapshot && getCachedSnapshot(st.cwd)) { st.snapshot = getCachedSnapshot(st.cwd); st.snapMode = 'real' }
-          emit(st); loadSnapshot(st, false); return
-        }
-        loadSnapshot(st, false)
+        // 打开 tab 即视为面板已开（数据新鲜直接展示；#58 缓存优先与另两个载体走同一段）
+        hydrateOpenState(st)
         return
       }
-      openDockPanel(st)  // better-sidebar 不可用 → 回退 rightbar 列
+      openDockPanel(st)  // better-sidebar 不可用 → 自带悬浮面板
+    }
+    // ---- 官方右侧边栏（DSH rightbar）标签页 ----
+    // 与官方 Files / Browser / Terminal 同一条两段式公开路径（官方 ui-sidebar-documentpreview 是同类活样本）：
+    //   ① ctx.sidebarRightTabs.register({ id, kind, title, guide }) —— 类型声明（谁、叫什么、指南页入口卡）
+    //   ② 经 __injectOnce 包装的 slots.register —— 标签体（name = sidebar.right.pane.tab，key = 类型 id）
+    // 导航一律走 ctx.sidebarRight.openTab(kind)：官方自己合成页面地址 sidebar://<kind>、去重、展开整列
+    //   （内容看不见就不算打开）并记录导航 —— deck 不碰官方布局，与官方标签并列共存。
+    // 两个服务都是可选能力：一律 ctx.get + 缺省分支（未声明的服务在客户端半边会抛错，见 AGENTS.md 硬约束 3）。
+    export const RIGHTBAR_TAB_KIND = 'dsws-deck'
+    export const RIGHTBAR_TAB_ID = '@lynn123411/dsh-mattpocock-skills-deck'
+    export let rightbarTabDisposer = null
+    export let rightbarTabRetry = null
+    export const rightbarReady = function () {
+      try {
+        const tabs = ctx.get('sidebarRightTabs')
+        const sr = ctx.get('sidebarRight')
+        return !!(tabs && typeof tabs.register === 'function' && sr && typeof sr.openTab === 'function')
+      } catch (e) { return false }
+    }
+    // 指南页入口卡的图标：官方 IconProps 是 { size, className }，这里转给本插件 Ic
+    export const DeckGuideIcon = function (props) {
+      return Ic({ n: 'map', size: (props && props.size) || 14 })
+    }
+    export const DeckRightbarTab = function (props) {
+      // 官方 session 作用域槽位把 sessionId 作为标准 props 直接交给标签体（官方 ui-session 的 BUILTIN_SOURCE）
+      const sessionId = props && props.sessionId
+      return h('div', { style: { height: '100%', overflow: 'hidden' } }, h(DetailsDock, { sessionId: sessionId }))
+    }
+    export const ensureRightbarTab = function () {
+      if (rightbarTabDisposer) return true
+      try {
+        const tabs = ctx.get('sidebarRightTabs')
+        if (!(tabs && typeof tabs.register === 'function')) return false
+        try {
+          rightbarTabDisposer = tabs.register({
+            id: RIGHTBAR_TAB_ID,
+            kind: RIGHTBAR_TAB_KIND,
+            title: function () { return tr('panel.title') },
+            guide: [{
+              id: 'deck',
+              order: 60,
+              title: function () { return tr('panel.title') },
+              description: function () { return tr('cfg.openInRightbarDesc') },
+              icon: DeckGuideIcon,
+            }],
+          })
+        } catch (eReg) {
+          // HMR / 重装：上一实例的类型注册若还在（disposer 未及清理），同 id 再注册会抛（官方注册表按 id 唯一）。
+          //   该 kind 已有在册实现即视为已注册，继续挂标签体；否则是真失败。
+          if (!(typeof tabs.get === 'function' && tabs.get(RIGHTBAR_TAB_KIND))) throw eReg
+          rightbarTabDisposer = function () {}
+        }
+        // 标签体座位：#298 幂等闸门（与 ensureSidebarTab 同构，二次 apply / HMR 不增生）
+        __injectOnce('sidebar.right.pane.tab', function () {
+          return slots.register({ name: 'sidebar.right.pane.tab', key: RIGHTBAR_TAB_ID }, withCx(DeckRightbarTab))
+        })
+  return true
+      } catch (e) { rightbarTabDisposer = null; return false }
+    }
+    export const openInRightbar = function (st) {
+      const sr = ctx.get('sidebarRight')
+      if (sr && typeof sr.openTab === 'function') {
+        if (!ensureRightbarTab()) { openDockPanel(st); return }   // 类型注册失败 → 自带悬浮面板
+        try {
+          sr.openTab(RIGHTBAR_TAB_KIND)
+        } catch (e) {
+          // 官方 openTab → require()：没有会话面板挂载时抛错（宁可抛也不写没人画的面板）→ 落到自带悬浮面板
+          try { log('warn', 'host.call.fail', { method: 'sidebarRight.openTab', kind: 'rightbar', errorHash: dswsLogHash(dswsLogTrunc(String((e && e.message) || e), 120, 'error')) }) } catch (eL) {}
+          openDockPanel(st)
+          return
+        }
+        hydrateOpenState(st)
+        return
+      }
+      openDockPanel(st)  // 官方 sidebarRight 服务缺席 → 自带悬浮面板
     }
     export const openPanel = function (st) {
-      // #2-fix（2026-08-19 用户反馈「新会话点状态栏按钮右侧面板不开」）：
-      //   cfg.openIn 在 apply 时固化；装配竞态（better-sidebar 晚于本模块加载）会令 bsInstalled=false → openIn 误判为 'dock'，
-      //   点击永远走 openDockPanel（宿主 rightbar 列），better-sidebar 面板不展开 → 用户看不到列表（数据其实一直在渲染）。
-      //   实时检测：better-sidebar 当前可用（openTab 存在）且用户未显式选过 dock → 走 sidebar 展开 better-sidebar。
-      const bs = ctx.get('betterSidebar')
-      const bsReady = !!(bs && typeof bs.openTab === 'function')
-      const explicitDock = (function () {
-        try {
-          const raw = localStorage.getItem(CFG_KEY)
-          if (!raw) return false
-          return JSON.parse(raw).openIn === 'dock'
-        } catch (e) { return false }
-      })()
-      try { const m = (cfg.openIn === 'sidebar' || (bsReady && cfg.openIn === 'dock' && !explicitDock)) ? 'sidebar' : 'dock'; const _keyHash = dswsLogHash((typeof keyOf === 'function' ? keyOf(st.cwd || '') : String(st.cwd || ''))); const _snapVer = (typeof getSnapshotVersion === 'function' ? getSnapshotVersion(st.cwd) : '') || (st.snapshot && st.snapshot.version) || ''; const _bid = String((st.selection && st.selection.backendId) || ''); log('info', 'panel.open', { mode: m, hasCache: !!(st.snapshot || (typeof getCachedSnapshot === 'function' && getCachedSnapshot(st.cwd))), snapFresh: (typeof snapFresh === 'function' ? snapFresh(st) : false), keyHash: _keyHash, snapVersion: _snapVer, backendId: _bid }) } catch (eL) {} // 串门自证（#495）：单行 #36 即可定罪——工作区键散列对上哪家、快照是哪个版本、后端是哪一个
-      if (cfg.openIn === 'sidebar' || (bsReady && cfg.openIn === 'dock' && !explicitDock)) openInSidebar(st)
+      // 打开位置 = cfg.openIn 指定的载体；该载体当前不可用就换另一个，两个都不可用才落自带悬浮面板。
+      //   cfg 在 apply 时固化，而载体可能晚于本模块加载（未声明 inject 依赖）→ 一律按实时探测判定，
+      //   不拿装配时的一次性结论当准（历史 #2-fix：误判导致点击「没反应」）。
+      const bsReady = betterSidebarReady()
+      const rbReady = rightbarReady()
+      const want = (cfg.openIn === 'sidebar' || cfg.openIn === 'rightbar') ? cfg.openIn : defaultOpenIn()
+      const mode = want === 'sidebar'
+        ? (bsReady ? 'sidebar' : (rbReady ? 'rightbar' : 'dock'))
+        : (rbReady ? 'rightbar' : (bsReady ? 'sidebar' : 'dock'))
+      try { const _keyHash = dswsLogHash((typeof keyOf === 'function' ? keyOf(st.cwd || '') : String(st.cwd || ''))); const _snapVer = (typeof getSnapshotVersion === 'function' ? getSnapshotVersion(st.cwd) : '') || (st.snapshot && st.snapshot.version) || ''; const _bid = String((st.selection && st.selection.backendId) || ''); log('info', 'panel.open', { mode: mode, hasCache: !!(st.snapshot || (typeof getCachedSnapshot === 'function' && getCachedSnapshot(st.cwd))), snapFresh: (typeof snapFresh === 'function' ? snapFresh(st) : false), keyHash: _keyHash, snapVersion: _snapVer, backendId: _bid }) } catch (eL) {} // 串门自证（#495）：单行 #36 即可定罪——工作区键散列对上哪家、快照是哪个版本、后端是哪一个
+      if (mode === 'sidebar') openInSidebar(st)
+      else if (mode === 'rightbar') openInRightbar(st)
       else openDockPanel(st)
     }
     export const togglePanel = function (st) {
