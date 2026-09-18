@@ -43,6 +43,24 @@ export interface SettingsScopeLike {
 }
 
 /**
+ * One path-addressed edit to a settings namespace's user section, matching
+ * DSH's `SettingsPathOp` wire shape.
+ */
+export type SettingsPathOpLike =
+  | { op: 'set'; path: string[]; value: unknown }
+  | { op: 'unset'; path: string[] };
+
+/**
+ * Provider-level write face the legacy migration needs: the settings service
+ * itself (not the per-namespace owner scope), whose `mutate` applies path ops
+ * under one revision fence.
+ */
+export interface SettingsMigrationTarget {
+  describe(): Array<{ ns: string; user?: unknown; revision?: number }>;
+  mutate(ns: string, ops: readonly SettingsPathOpLike[], expectedRevision?: number): Promise<unknown>;
+}
+
+/**
  * Config facade over the DSH `ctx.settings` service. No file I/O lives here
  * anymore: persistence, atomic writes, external-edit hot reload and the
  * browser-facing describe/mutate API are all owned by DSH itself.
@@ -130,10 +148,7 @@ export function sanitizePatch(input: Record<string, unknown>): Partial<PluginCon
  * @returns whether any legacy values were migrated.
  */
 export async function migrateLegacyConfigFile(
-  settings: {
-    describe(): Array<{ ns: string; user?: unknown }>;
-    update(ns: string, patch: Record<string, unknown>): Promise<unknown>;
-  },
+  settings: SettingsMigrationTarget,
   legacyPath: string
 ): Promise<boolean> {
   let raw: string;
@@ -169,14 +184,21 @@ export async function migrateLegacyConfigFile(
   // `channels` drop by construction), type-mismatched values skipped, numeric
   // bounds clamped — one bad field never blocks the rest of the migration.
   const patch = sanitizePatch(record);
-  if (Object.keys(patch).length === 0) {
+  const ops: SettingsPathOpLike[] = Object.entries(patch).map(([field, value]) => ({
+    op: 'set',
+    path: [field],
+    value,
+  }));
+  if (ops.length === 0) {
     // Nothing migratable — retire the file and keep schema defaults.
     await fs.unlink(legacyPath).catch(() => {});
     return false;
   }
 
   try {
-    await settings.update(SETTINGS_NAMESPACE, patch);
+    // Revision-fenced path write: a concurrent user edit between the describe
+    // above and this commit is refused instead of overwritten.
+    await settings.mutate(SETTINGS_NAMESPACE, ops, descriptor?.revision);
   } catch (err) {
     // The patch is already sanitized, so a rejection here is a provider-level
     // failure (read-only document, disk trouble). Keep the file so the next

@@ -1,68 +1,64 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection';
 import { describeError } from '../describe-error.ts';
-import type { ConfigManager } from './config.ts';
 import type { TranslationDispatcher } from './dispatcher.ts';
 
-const MAX_BODY_BYTES = 1024 * 1024; // 1MB body limit to prevent DoS
-
 /**
- * HTTP surface for the translation proxy only.
+ * Translation proxy surface, carried by Connection's exact Fetch routes below
+ * the shared `/api` channel.
  *
- * Config and credentials no longer have HTTP endpoints: since 1.2 the
- * settings panel reads/writes through DSH's own channels — the
- * `settingsScope` client service and the `credentials` Remote API — so the
- * plugin exposes exactly one route family to the browser: translation.
+ * Config and credentials have no HTTP endpoints: since 1.2 the settings panel
+ * reads and writes through DSH's own channels — the client `SettingsScope`
+ * service and the `credentials` Remote API — so the plugin owns exactly two
+ * routes: batch translation and the channel probe.
  */
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  const json = JSON.stringify(body);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(json),
-  });
-  res.end(json);
-}
+/** Batch-translation route path. */
+export const TRANSLATE_ROUTE_PATH = '/api/dsh-chat-translate/translate';
 
-function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalLength = 0;
+/** Single-channel probe route path. */
+export const TEST_CHANNEL_ROUTE_PATH = '/api/dsh-chat-translate/test-channel';
 
-    req.on('data', (chunk) => {
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      totalLength += buf.length;
-      if (totalLength > MAX_BODY_BYTES) {
-        if (typeof req.destroy === 'function') {
-          req.destroy();
-        }
-        reject(new Error('Request body exceeded maximum allowed size (1MB)'));
-        return;
-      }
-      chunks.push(buf);
-    });
-
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-    req.on('error', reject);
+function sendJson(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
   });
 }
 
-export function createHttpHandler(configManager: ConfigManager, dispatcher: TranslationDispatcher) {
-  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    const url = new URL(req.url || '/', 'http://localhost');
-    const pathParts = url.pathname.split('/').filter(Boolean);
-    // pathParts will start with ['api', 'dsh-chat-translate', ...]
-    const endpoint = pathParts[2] || '';
+/**
+ * Decode one buffered JSON request body.
+ * @returns the parsed value, or the 400 response the caller must return.
+ */
+async function readJson(request: Request): Promise<
+  { ok: true; value: any } | { ok: false; response: Response }
+> {
+  try {
+    return { ok: true, value: await request.json() };
+  } catch {
+    return { ok: false, response: sendJson(400, { ok: false, error: 'Invalid JSON body' }) };
+  }
+}
 
-    try {
-      if (endpoint === 'translate' && req.method === 'POST') {
-        const raw = await readBody(req);
-        let parsed: any;
-        try {
-          parsed = JSON.parse(raw || '{}');
-        } catch {
-          sendJson(res, 400, { ok: false, error: 'Invalid JSON body' });
-          return;
-        }
+/**
+ * Build the plugin's exact Fetch routes.
+ * @param dispatcher - translation coordinator the routes proxy to.
+ * @param ready - settles once host-side async resources are usable; every
+ * request waits for it before touching the dispatcher.
+ */
+export function createFetchRoutes(
+  dispatcher: TranslationDispatcher,
+  ready: Promise<unknown> = Promise.resolve()
+): ConnectionFetchRoute[] {
+  const translate: ConnectionFetchRoute = {
+    path: TRANSLATE_ROUTE_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: async (request) => {
+      await ready;
+      try {
+        const body = await readJson(request);
+        if (!body.ok) return body.response;
+        const parsed = body.value;
         const rawTexts: unknown = parsed.texts !== undefined ? parsed.texts : parsed.text;
 
         let texts: string[] = [];
@@ -75,34 +71,34 @@ export function createHttpHandler(configManager: ConfigManager, dispatcher: Tran
         const forceRefresh = Boolean(parsed.forceRefresh);
 
         if (texts.length === 0) {
-          sendJson(res, 200, { ok: true, results: [] });
-          return;
+          return sendJson(200, { ok: true, results: [] });
         }
 
         const results = await dispatcher.translateBatch(texts, forceRefresh);
-        sendJson(res, 200, { ok: true, results });
-        return;
+        return sendJson(200, { ok: true, results });
+      } catch (err: any) {
+        return sendJson(500, { ok: false, error: describeError(err) });
       }
-
-      if (endpoint === 'test-channel' && req.method === 'POST') {
-        const raw = await readBody(req);
-        let parsed: any;
-        try {
-          parsed = JSON.parse(raw || '{}');
-        } catch {
-          sendJson(res, 400, { ok: false, error: 'Invalid JSON body' });
-          return;
-        }
-        const channelId = typeof parsed.channel === 'string' ? parsed.channel : '';
-        const result = await dispatcher.testChannel(channelId);
-        sendJson(res, 200, result);
-        return;
-      }
-
-      sendJson(res, 404, { ok: false, error: 'Endpoint not found' });
-    } catch (err: any) {
-      const status = err?.message?.includes('exceeded maximum allowed size') ? 413 : 500;
-      sendJson(res, status, { ok: false, error: describeError(err) });
-    }
+    },
   };
+
+  const testChannel: ConnectionFetchRoute = {
+    path: TEST_CHANNEL_ROUTE_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: async (request) => {
+      await ready;
+      try {
+        const body = await readJson(request);
+        if (!body.ok) return body.response;
+        const channelId = typeof body.value.channel === 'string' ? body.value.channel : '';
+        const result = await dispatcher.testChannel(channelId);
+        return sendJson(200, result);
+      } catch (err: any) {
+        return sendJson(500, { ok: false, error: describeError(err) });
+      }
+    },
+  };
+
+  return [translate, testChannel];
 }

@@ -22,6 +22,10 @@ export const TRANSLATE_API_KEY_REF = 'TRANSLATE_API_KEY';
  * `credentials` Remote namespace. Keeping them structural keeps this bundle
  * free of host-service imports and lets tests inject fakes.
  */
+export type SettingsPathOpLike =
+  | { op: 'set'; path: string[]; value: unknown }
+  | { op: 'unset'; path: string[] };
+
 export interface SettingsScopeLike {
   getSnapshot(): {
     status: string;
@@ -29,8 +33,7 @@ export interface SettingsScopeLike {
     writable: boolean;
   };
   subscribe(listener: () => void): () => void;
-  set(field: string, value: unknown): Promise<unknown>;
-  unset(field: string): Promise<unknown>;
+  mutate(ops: readonly SettingsPathOpLike[]): Promise<unknown>;
 }
 
 /** Shape of every DSH client Remote call: {ok, value} / {ok, error} wrapper. */
@@ -61,8 +64,9 @@ const DEFAULT_STATE: ClientSettingsState = {
  *
  * Since 1.2 there is no localStorage overlay and no custom config HTTP
  * endpoint: the store derives from the bound `settingsScope` (which mirrors
- * the host document and folds every write answer back), and writes go
- * through `scope.set` — serialized, revision-checked, persisted by DSH.
+ * the host document and folds every write answer back), and each debounced
+ * flush commits its touched fields as one `scope.mutate` batch — one
+ * revision fence, serialized and persisted by DSH.
  * Without a bound scope (e.g. non-loopback pages, unit tests) it degrades to
  * an in-memory store with the same semantics DSH itself uses for memory
  * persistence.
@@ -206,11 +210,13 @@ class SettingsStore {
     if (!this.scope) return;
     const fields = [...this.pendingFields];
     this.pendingFields.clear();
-    const writes: Promise<unknown>[] = [];
-    for (const field of fields) {
-      writes.push(this.scope.set(field, this.state[field as keyof ClientSettingsState]));
-    }
-    await Promise.all(writes).catch(() => {});
+    if (fields.length === 0) return;
+    const ops: SettingsPathOpLike[] = fields.map((field) => ({
+      op: 'set',
+      path: [field],
+      value: this.state[field as keyof ClientSettingsState],
+    }));
+    await this.scope.mutate(ops).catch(() => {});
   }
 
   async testChannel(channel: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
