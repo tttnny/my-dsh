@@ -1,16 +1,14 @@
-# The `cordis` agent preset: the standard coding agent, plus the ability to
-# read and write the runtime it is running in.
+# TRUST: Plugin Manager installs persistent, profile-wide code that runs in the Host
+# process outside the workspace sandbox. Every call needs Full access or single-call
+# approval; granting a call does not change the session permission mode.
+# The `cordis` agent preset adds runtime inspection and persistent plugin management.
 #
 # It exists so a person can ask an agent to author another agent. Everything in
-# `standard` is here unchanged; what is added is the self-referential Cordis
-# toolset, a skill that teaches composition authoring, and a persona that says
-# which of the two planes an edit belongs to.
+# `standard` is here unchanged; Creator adds persistent plugin management,
+# runtime inspection, composition-authoring skills, and a persona that explains
+# where profile and preset changes belong.
 #
-# TRUST: `cordis_mount` evaluates model-written JavaScript against the live
-# runtime, and a composition this agent writes becomes a preset other sessions
-# mount. Treat a session on this preset as shell access — the toolset's own
-# documentation makes the same statement.
-
+# Profile management persists configuration shared by every session in that profile.
 
 # The preset's own persona, shadowing the deployment default for this agent.
 # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
@@ -225,8 +223,15 @@
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
 
+    # Off by default with the base row it mirrors: the tool description
+    # restricts `ralph` to runs the human explicitly asked for, and completion
+    # is a worker self-report, not an independent evaluation. Preset files take
+    # no patches, so a session that wants it duplicates this preset under a new
+    # id and drops `disabled`; the shipped root shadows a copy that reuses this
+    # id.
     - id: tool-ralph
       name: '@deepseek-ai/dsh-tool-ralph'
+      disabled: true
       config:
         subagentProvider: spawn
         maxRounds: 64
@@ -256,8 +261,7 @@
 
 # ── self-modification ───────────────────────────────────────────────────────
 
-# Read the live runtime, mount a temporary plugin, unmount it. The toolset is a
-# trust boundary, not a sandbox — see this file's header.
+# Discover the Host and Client APIs used by installed plugins.
 - id: tool-cordis
   name: '@deepseek-ai/dsh-tool-cordis'
 

@@ -6,7 +6,7 @@
 
 ## 零、当前基线
 
-- 官方基底：**DSH 0.1.5-rc.1** / `@deepseek-ai/dsh-agent-presets@0.1.5-rc.1`。官方正文位置：安装目录 `node_modules/.pnpm/@deepseek-ai+dsh-agent-presets@<ver>*/node_modules/@deepseek-ai/dsh-agent-presets/presets/{standard,ptc,cordis,minimal}/agent.cordis.yml`。
+- 官方基底：**DSH 0.1.6-alpha.2** / `@deepseek-ai/dsh-agent-presets@0.1.6-alpha.2`。官方正文位置：安装目录 `node_modules/.pnpm/@deepseek-ai+dsh-agent-presets@<ver>*/node_modules/@deepseek-ai/dsh-agent-presets/presets/{standard,ptc,cordis,minimal}/agent.cordis.yml`。
 - 成品与官方正文的差异**恰为** §一 那两处改动块 + §二 的 grilling 技能正文；多一处都是官方漂移或漏派生。
 - 两处改动块：`customSkillDirs` 插入（块首行 `# MATT-ADD:`），以及 `tool-ask-user` 行的原位替换（行上一行 `# MATT-DEL:` + 四行 `# MATT-ADD:`）。
 - persona 行逐字取官方正文，仓库不保留旧写法（官方偶有键级改名）。
