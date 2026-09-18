@@ -16,4 +16,3 @@ DSH Web GUI 的访问鉴权补位：把当前实例**带 token 的访问地址**
 dsh plugin --profile web add @lynn123411/dsh-web-auth-url
 ```
 
-本地开发按仓库规则用 `link:`——`cd ~/.dsh/profiles/web && pnpm add "link:/Users/tny/Desktop/work/my-dsh/plugins/dsh-web-auth-url" --offline`，并在 profile `package.json` 的 `dsh.profile.bundles` 里登记本包（`dsh plugin add` 会自动登记，手工 link 不会）。宿主半边只在 DSH 启动时装载，改完须重启实例；自检 `npm test` 跑 `scripts/smoke-host.mjs`。

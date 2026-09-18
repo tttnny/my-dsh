@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-web-auth-url",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "把当前 Web 实例的带 token 访问地址交给模型与 shell：托管 DSH_WEB_AUTH_URL（每次 shell 调用即时解析，跟随重启后的 token 轮换），并贡献一段紧随 web-surface 的提示词说明 cookie jar 用法，secret 不进提示词与 transcript。",
   "type": "module",
   "main": "lib/index.js",
@@ -45,6 +45,7 @@
     }
   },
   "engines": {
+    "dsh": "0.1.6-alpha.2",
     "node": "^22.19 || >=24"
   },
   "publishConfig": {
