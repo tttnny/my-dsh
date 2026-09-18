@@ -82,12 +82,11 @@
 }
 
 .thinkBody {
+  min-width: 0;
   padding: 4px 0 4px 22px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 14px;
   line-height: 24px;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 /*

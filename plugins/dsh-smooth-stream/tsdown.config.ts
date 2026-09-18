@@ -11,7 +11,7 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
 /**
  * Specifiers resolved from the Web shell module table. Everything else is
  * inlined so a require() the table cannot answer never reaches the browser.
- * DSH 0.1.5-rc.1 seeds exactly react, react-dom, `@deepseek-ai/cordis`,
+ * The Web shell seeds exactly react, react-dom, `@deepseek-ai/cordis`,
  * `@deepseek-ai/dsh-client-store`, `@deepseek-ai/dsh-client-ui-slots`,
  * `@deepseek-ai/dsh-client-ui-primitives`, and `@deepseek-ai/dsh-client-ui-dockkit`;
  * every other `@deepseek-ai/*` row is a composed graph edge instead.

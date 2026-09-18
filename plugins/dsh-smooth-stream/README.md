@@ -8,7 +8,7 @@
 - **零重排跟随（Follow Engine）**：二阶阻尼弹簧（$k=130, c=24, m=1$）在合成层做 `translate3d` 补偿，真实滚动容器始终锚定底部，跟随过程不读写触发 Layout 的属性。
 - **闭环背压**：跟随滞后逼近预留空间时反向给揭示引擎施加阻尼（最低 0.55 倍速），防止文字增长冲出视口弹簧范围。
 - **工具卡片内部即时呈现**：`tool-call` 行依旧被包装，保留 220ms 入场/增长滑行与滚动跟随，但卡片里的文本以完整长度落盘、不再逐字揭示 —— 所以展开工具、看命令输出时没有打字机延迟。唯一例外是 `dsh-chat-translate` 挂上译文的 `.dsh-tidy-translated-block`：译文仍逐字从左到右流入（工具摘要与思考折叠摘要都会挂这个块），其余文本即时落盘。
-- **单内核适配**：只面向 DSH `0.1.5-rc.1` 及以上的接缝 —— `ClientContext` 用 cordis `Context`、Chat 节点契约取自 `@deepseek-ai/dsh-client-ui-chat/client`、图片走内核的 `conversation.message.images` slot、客户端 store 静态取自模块表 seed，不含旧内核的兼容探针。
+- **单内核适配**：只使用当前 DSH 内核提供的接缝 —— `ClientContext` 用 cordis `Context`、Chat 节点类型取自 `@deepseek-ai/dsh-client-ui-chat/client`、图片走内核的 `conversation.message.images` slot、客户端 store 静态取自模块表 seed，不含旧内核的兼容探针。
 - **原生设置命名空间**：偏好读写走 DSH 的 `settingsScope` 服务（命名空间 `lynn-smooth-stream`）；仅「版本 + 一键更新」保留一条极小的插件 RPC。
 - **共享「阅读体验」设置页**：本插件的卡片与 `dsh-chat-translate` 等参与者一起挂在同一个设置页里（`settings.section` id `reading`，参与者可增删）。内核不允许一页被多个插件共同声明，因此每个参与者各持一份逐字节相同的页壳，**先加载者当选页面宿主**、其余只注册卡片；当选者被卸载后下次启动自动改选。做法与约束见仓库 `docs/rules/shared-settings-page.md`。
 - **动效偏好三态**：`auto`（跟随系统 reduce-motion）/ `force-smooth` / `force-reduced`。
@@ -26,7 +26,7 @@ dsh plugin --profile web add @lynn123411/dsh-smooth-stream
 ```bash
 cd plugins/dsh-smooth-stream
 pnpm install
-pnpm check          # typecheck + 构建 + 客户端装配自检
+pnpm check          # typecheck + 构建 + 客户端装配自检 + 产物门禁
 # 然后在 ~/.dsh/profiles/web 里以本地路径依赖加入本包，并写进 dsh.profile.bundles
 ```
 

@@ -7,10 +7,10 @@
  * both of which need the Host process and the profile manifest — stay here.
  */
 
-/** Dedicated RPC channel registered by the Host half. */
-export const STREAM_RPC_CHANNEL = '/lynn-smooth-stream'
+/** Exact `/api` route the Host half registers for this plugin. */
+export const STREAM_RPC_PATH = '/api/lynn-smooth-stream'
 
-/** Endpoints accepted by {@link STREAM_RPC_CHANNEL}. */
+/** Endpoints accepted by {@link STREAM_RPC_PATH}. */
 export const STREAM_RPC = {
   info: 'plugin.info',
   upgrade: 'plugin.upgrade',

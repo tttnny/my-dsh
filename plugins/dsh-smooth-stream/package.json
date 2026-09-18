@@ -1,11 +1,12 @@
 {
   "name": "@lynn123411/dsh-smooth-stream",
-  "version": "1.1.1",
-  "description": "丝滑流式渲染与零重排跟随引擎。单内核适配 DSH 0.1.5-rc.1；工具卡片内部即时呈现，不逐字揭示。",
+  "version": "1.1.2",
+  "description": "丝滑流式渲染与零重排跟随引擎。工具卡片内部即时呈现，不逐字揭示。",
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": "0.1.6-alpha.2"
   },
   "repository": {
     "type": "git",
@@ -63,7 +64,8 @@
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "smoke": "node scripts/smoke-client.mjs",
-    "check": "pnpm typecheck && pnpm build && pnpm smoke"
+    "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
+    "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm assert:lib-untracked"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
@@ -81,19 +83,19 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-client-connection": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-locale": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-store": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-attachment": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-chat": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings-plugins": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-host-webserver": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-settings": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-connection": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-locale": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-store": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-attachment": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-chat": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-host-webserver": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-settings": "0.1.6-alpha.2",
     "@deepseek-ai/schemastery": "3.18.2",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",

@@ -1,6 +1,6 @@
 import { createElement, useSyncExternalStore, type ComponentType } from 'react'
-// DSH 0.1.5-rc.1 dropped the separate client-runtime package: a browser plugin
-// is a plain cordis Context consumer, and the `slots` service is augmented onto
+// A browser plugin is a plain cordis Context consumer: the separate
+// client-runtime package is gone, and the `slots` service is augmented onto
 // Context by the UI renderer.
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -236,7 +236,7 @@ export function apply(ctx: ClientContext): void {
     const connection = settingsCtx.get('connection') as unknown as ConnectionHandle | undefined
     const card = new SmoothStreamCardController({
       scope,
-      pluginApi: connection === undefined ? undefined : createSmoothStreamPluginApi(connection),
+      pluginApi: connection === undefined ? undefined : createSmoothStreamPluginApi(),
       isLoopback: connection?.isLoopback === true,
     })
     const detachSettings = settings.attach(scope)
@@ -326,7 +326,7 @@ export function apply(ctx: ClientContext): void {
         name: 'conversation.chat.node',
         key: 'assistant-step',
         priority: -100,
-        // 0.1.5-rc.1 carries the Chat node's dictionary namespace as `chat`.
+        // The Chat node's dictionary namespace is `chat`.
         locale: 'chat',
         registrant: '@lynn123411/dsh-smooth-stream',
       }, configured)

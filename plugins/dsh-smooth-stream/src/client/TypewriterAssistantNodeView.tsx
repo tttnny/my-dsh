@@ -1,9 +1,9 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode, type RefObject } from 'react'
 import { IconThinkOutline14, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-// 0.1.5-rc.1 carries the Chat node's owner and view contracts — and therefore
-// the turn-process fold decision — in `dsh-client-ui-chat`. Images are no
-// longer a component import: the kernel hands the renderer down as
-// `renderMessageImages`, and it renders the `conversation.message.images` slot.
+// `dsh-client-ui-chat` carries the Chat node's owner and view contracts — and
+// therefore the turn-process fold decision. Images are no longer a component
+// import: the kernel hands the renderer down as `renderMessageImages`, and it
+// renders the `conversation.message.images` slot.
 import type { ChatNodeViewProps, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { AnimatedDisclosure } from './AnimatedDisclosure.tsx'
@@ -488,6 +488,7 @@ function AnimatedReasoning({
   shouldHoldBack,
   followSpeedCpsRef,
   followRevealScaleRef,
+  labels,
   t,
 }: {
   text: string
@@ -498,6 +499,7 @@ function AnimatedReasoning({
   shouldHoldBack: () => boolean
   followSpeedCpsRef?: { current: number } | undefined
   followRevealScaleRef?: { current: number } | undefined
+  labels: MarkdownProps['labels']
   t: AssistantProps['t']
 }) {
   const reduced = motionReduced
@@ -587,7 +589,9 @@ function AnimatedReasoning({
             </>
           )}
         >
-          <div className={css.thinkBody}>{shown}</div>
+          <div className={css.thinkBody}>
+            <MarkdownText text={shown} streaming={running && !reduced} labels={labels} variant="compact" />
+          </div>
         </AnimatedDisclosure>
       </div>
     </div>
@@ -736,6 +740,7 @@ export const TypewriterAssistantNodeView = memo(function TypewriterAssistantNode
               shouldHoldBack={shouldHoldBack}
               followSpeedCpsRef={reasoningOwnsSpeed && index === last ? rootSpeedRef : undefined}
               followRevealScaleRef={reasoningOwnsSpeed && index === last ? rootRevealScaleRef : undefined}
+              labels={markdownLabels}
               t={t}
             />
           </FoldableReasoning>,

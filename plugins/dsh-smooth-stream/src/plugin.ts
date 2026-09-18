@@ -4,13 +4,12 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-settings'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import Schema from '@deepseek-ai/schemastery'
-import { DEFAULT_STREAM_CONFIG, type StreamConfig } from './config.ts'
-import { injectStreamConfig } from './boot-config.ts'
+import { DEFAULT_STREAM_CONFIG, STREAM_BOOT_GLOBAL, type StreamConfig } from './config.ts'
 import { STREAM_PACKAGE_NAME, STREAM_PACKAGE_VERSION } from './package-meta.ts'
 import { inspectProfileInstallation, updateNpmProfilePackage } from './profile-installation.ts'
 import {
   STREAM_RPC,
-  STREAM_RPC_CHANNEL,
+  STREAM_RPC_PATH,
   type StreamPluginInfoView,
 } from './settings-api.ts'
 import {
@@ -18,6 +17,13 @@ import {
   STREAM_SETTINGS_NS,
   type StreamSettings,
 } from './settings.ts'
+
+/** Narrow an unknown JSON value to a plain record. */
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
 
 /** Display name shown by the Host loader while the plugin is mounted. */
 export const name = '@lynn123411/dsh-smooth-stream'
@@ -93,15 +99,17 @@ export function apply(ctx: Context, config: Config): void {
     + `maxScroll=${config.maxScrollSpeedPxPerSec}px/s`,
   )
   ctx.inject(['webServer'], (httpCtx) => {
-    httpCtx.effect(
-      () => httpCtx.webServer.tapIndex(html => injectStreamConfig(html, config)),
-      'dsh-smooth-stream: boot config bridge',
-    )
+    // The webServer emits this event on every index render; the listener
+    // lifecycle rides the webServer injection fiber, so no extra effect is
+    // needed. The global row is rendered into <head> ahead of the entry module.
+    httpCtx.on('webserver/index-inject', (table) => {
+      table.push({ kind: 'global', name: STREAM_BOOT_GLOBAL, value: config })
+    })
   })
   ctx.inject(['settings'], (settingsCtx) => {
     // The namespace is a compile-time constant matching the kernel's
-    // /^[a-z][a-z0-9-]*$/ pattern; 0.1.5-rc.1 takes the literal directly and
-    // no longer ships the rc-era `settingsNamespace()` brand helper.
+    // /^[a-z][a-z0-9-]*$/ pattern; the kernel accepts the literal directly and
+    // ships no namespace brand helper.
     settingsCtx.settings.register(STREAM_SETTINGS_NS, StreamSettingsSchema, { applies: 'live' })
     settingsCtx.inject(['connection'], (connectionCtx) => {
       let upgrade: Promise<void> | undefined
@@ -137,13 +145,37 @@ export function apply(ctx: Context, config: Config): void {
         }
         return { ok: false, error: { code: 'internal', message: `unknown smooth-stream endpoint ${JSON.stringify(endpoint)}`, details: {} } }
       }
-      // 0.1.5-rc.1 `rpc.handle(channel, handler)` takes no authority option;
-      // every registered channel already sits behind Connection's trust and
-      // browser authentication. The update command runs on the Host's own
-      // machine, so the card offers it only for a loopback page.
+      // The exact /api route accepts POST only; the request body names the
+      // endpoint and carries its payload. Connection's /api carrier already
+      // applies its trust fence and browser authentication. The update command
+      // runs on the Host's own machine, so the card offers it only for a
+      // loopback page.
       connectionCtx.effect(
-        () => connectionCtx.connection.rpc.handle(STREAM_RPC_CHANNEL, handle),
-        'dsh-smooth-stream: plugin info RPC',
+        () => connectionCtx.connection.fetch.register({
+          path: STREAM_RPC_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body: unknown
+            try {
+              body = await request.json()
+            } catch {
+              return Response.json(
+                { ok: false, error: { code: 'bad-request', message: 'invalid request body: body is not JSON', details: {} } },
+                { status: 400 },
+              )
+            }
+            const endpoint = record(body)?.endpoint
+            if (typeof endpoint !== 'string' || endpoint.length === 0) {
+              return Response.json(
+                { ok: false, error: { code: 'bad-request', message: 'invalid request body: missing endpoint', details: {} } },
+                { status: 400 },
+              )
+            }
+            return Response.json(await handle(endpoint, record(body)?.payload, request.signal))
+          },
+        }),
+        'dsh-smooth-stream: plugin info route',
       )
     })
   })

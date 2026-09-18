@@ -1,9 +1,9 @@
-/** Browser adapter for the plugin-owned Host channel (version and update). */
+/** Browser adapter for the plugin-owned Host route (version and update). */
 
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection/client'
 import {
   STREAM_RPC,
-  STREAM_RPC_CHANNEL,
+  STREAM_RPC_PATH,
   type StreamPluginInfoView,
   type StreamUpgradeView,
 } from '../settings-api.ts'
@@ -35,9 +35,25 @@ function upgradeView(value: unknown): StreamUpgradeView {
   return { restartRequired: true }
 }
 
-function accepted(result: Awaited<ReturnType<ConnectionHandle['rpc']['call']>>): unknown {
+function accepted(result: ConnectionRpcResult<unknown>): unknown {
   if (!result.ok) throw new Error(result.error.message)
   return result.value
+}
+
+/**
+ * Post one endpoint to the plugin's exact `/api` route. The route's request
+ * body names the endpoint and carries its payload, matching the host handler.
+ */
+async function callRpc(endpoint: string): Promise<ConnectionRpcResult<unknown>> {
+  const response = await fetch(STREAM_RPC_PATH, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ endpoint, payload: {} }),
+  })
+  if (!response.ok) {
+    throw new Error(`dsh-smooth-stream: transport failure for ${endpoint}: HTTP ${response.status}`)
+  }
+  return await response.json() as ConnectionRpcResult<unknown>
 }
 
 /** Narrow client contract consumed by the staged settings-card controller. */
@@ -46,14 +62,14 @@ export interface SmoothStreamPluginApi {
   upgrade(): Promise<StreamUpgradeView>
 }
 
-/** Build the typed facade over the generic Connection RPC service. */
-export function createSmoothStreamPluginApi(connection: ConnectionHandle): SmoothStreamPluginApi {
+/** Build the typed facade over the plugin's exact `/api` route. */
+export function createSmoothStreamPluginApi(): SmoothStreamPluginApi {
   return {
     async info(): Promise<StreamPluginInfoView> {
-      return infoView(accepted(await connection.rpc.call(STREAM_RPC_CHANNEL, STREAM_RPC.info, {})))
+      return infoView(accepted(await callRpc(STREAM_RPC.info)))
     },
     async upgrade(): Promise<StreamUpgradeView> {
-      return upgradeView(accepted(await connection.rpc.call(STREAM_RPC_CHANNEL, STREAM_RPC.upgrade, {})))
+      return upgradeView(accepted(await callRpc(STREAM_RPC.upgrade)))
     },
   }
 }
