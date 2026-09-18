@@ -46,10 +46,12 @@ const check = function (file) {
   // v26 移除 sidebar.footer.action 后：shell.overlay / conversation.input.dock / tool.view.cordis / settings.plugins.tab / details = 5。
   // 分叉收敛：移除 settings.section 双入口（6→5）。
   // 1.8.8 撤回 rightbar 注册（改走 better-sidebar 标签页；抢官方右栏会让列宽恒 0）：5→4。
+  // 1.9 官方侧边栏（openIn='rightbar'）经 sidebar.right.pane.tab 座位接入官方右侧边栏标签：4→5
+  //   （仍不占 rightbar 列外壳本体；该座位与文件/终端标签同类，是多标签的正确扩展点）。
   // #298 幂等：5 槽位经 __injectOnce 注入，底层 slots.inject 仅剩 helper 内 1 处（变量式调用，不计入字面量 ' 统计）；此处校验幂等注册数
   const nOnce = (src.match(/__injectOnce\s*\('/g) || []).length
   const nRaw = (src.match(/slots\.inject\('/g) || []).length
-  const expectInject = 4
+  const expectInject = 5
   if (nOnce !== expectInject) problems.push('__injectOnce 注册数异常 ' + nOnce + '（期望 ' + expectInject + '）')
   if (nRaw !== 0) problems.push('slots.inject\' 裸露数异常 ' + nRaw + '（期望 0，#298 后应经 __injectOnce）')
   if (problems.length) { console.log('  FAIL', file, problems.join('；')); failed = true }

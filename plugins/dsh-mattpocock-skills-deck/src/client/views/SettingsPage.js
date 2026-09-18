@@ -7,7 +7,14 @@ export     const SettingsPage = (props) => {
       // T5 修订：订阅 store（设置页独立于面板 dock，需自己订阅 shared 才能渲染 flash toast）
       const sharedSt = cx ? cx.storeSvc.useStore(props && props.sessionId) : useStore(props && props.sessionId)
       // T2 悬停提示迁移：设置提示框的定位、翻转、挂顶显示已统一交给 HoverTip（mode='mouse'）负责，显示悬停提示、移动悬停提示、隐藏悬停提示三个旧函数（showCfgTip/moveCfgTip/hideCfgTip）已经下线，移除了全局显示时序，翻转阈值与样式走统一配置表，页面行为没有变化
-      const [openIn, setOpenIn] = React.useState(cfg.openIn || 'dock')
+      const [openIn, setOpenIn] = React.useState(cfg.openIn || 'sidebar')
+      // v1.9：打开位置只有两种官方载体 —— 侧边栏（dsh-better-sidebar 标签页）/ 官方侧边栏（DSH rightbar 标签页）。
+      //   各自未就绪就不渲染该项（可选能力一律 ctx.get + 缺省分支，见 kernel/router.js rightbarReady）。
+      const bsReady = betterSidebarReady()
+      const rbReady = rightbarReady()
+      // 已存位置对应的载体当前不在 → 高亮实际会生效的那个（router.js openPanel 的同一套换载判定）
+      const shownOpenIn = (openIn === 'sidebar' && !bsReady && rbReady) ? 'rightbar'
+        : (openIn === 'rightbar' && !rbReady && bsReady) ? 'sidebar' : openIn
       const [openInNote, setOpenInNote] = React.useState(false)
       const [foldVer, setFoldVer] = React.useState(0)
       // #492调试分组：开关秒显宿主值，经 wf.logSetSwitch 写宿主，底座广播刷新；四键走宿主电话
@@ -141,22 +148,20 @@ export     const SettingsPage = (props) => {
           ]),
         ]),
         h('div', { className: 'dsws-cfg-sub' }, tr('cfg.sub')),
-        // v1.4：打开位置（rightbar 列 / better-sidebar）—— better-sidebar 未装时仅显示 dock 选项
+        // v1.9：打开位置（侧边栏 = dsh-better-sidebar / 官方侧边栏 = DSH rightbar）—— 载体未就绪的项不渲染
         h('div', { className: 'dsws-cfg-group' }, [
           h('div', { className: 'dsws-cfg-gtitle' }, [Ic({ n: 'map', size: 13 }), h('span', null, tr('cfg.openIn'))]),
           h('div', { className: 'dsws-cfg-gdesc' }, tr('cfg.openInDesc')),
-          h('div', { className: 'dsws-cfg-row' }, [
+          (bsReady || rbReady) ? h('div', { className: 'dsws-cfg-row' }, [
             h('span', { className: 'dsws-cfg-label' }, tr('cfg.openInLabel')),
             h('div', { className: 'dsws-cfg-seg' }, [
-              h('button', { key: 'dock', className: openIn === 'dock' ? 'on' : '', onClick: function () { pickOpenIn('dock') } }, tr('cfg.openInDock')),
-              (function () { try { return !!ctx.get('betterSidebar') } catch (e) { return false } })()
-                ? h('button', { key: 'sidebar', className: openIn === 'sidebar' ? 'on' : '', onClick: function () { pickOpenIn('sidebar') } }, tr('cfg.openInSidebar'))
-                : null,
+              bsReady ? h('button', { key: 'sidebar', className: shownOpenIn === 'sidebar' ? 'on' : '', onClick: function () { pickOpenIn('sidebar') } }, tr('cfg.openInSidebar')) : null,
+              rbReady ? h('button', { key: 'rightbar', className: shownOpenIn === 'rightbar' ? 'on' : '', onClick: function () { pickOpenIn('rightbar') } }, tr('cfg.openInRightbar')) : null,
             ]),
             // 收-1（#521）：常驻小字，长期可见的确定性答案（原 2.6 秒闪现保留，不依赖它传达）
             h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, tr('cfg.openInSavedHint')),
             openInNote ? h('div', { style: { fontSize: 11, color: '#4ade80', marginTop: 6 } }, tr('cfg.openInHint')) : null,
-          ]),
+          ]) : null,
         ]),
         // #155 Q1 改：只读全局总览（wf.bindings + workspaces.list + wf.registry 色值，不可改；不调 wf.bind）
         // 分组渲染收进 views/SettingsWorkspaces.js 的 renderWsOverview（纯结构搬移，行为零变化）

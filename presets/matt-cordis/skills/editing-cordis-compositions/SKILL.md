@@ -86,10 +86,10 @@ When a preset genuinely owns a service, wrap the provider **and every consumer t
   name: cordis:group
   group: true
   isolate:
-    workflows: true
+    workflowEngine: true
   config:
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
     - id: tool-workflow

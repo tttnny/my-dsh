@@ -101,12 +101,14 @@
     //   rightbar（框架）→ rightbar.session（kind: single，标签宿主）
     //     → sidebar.right.pane.tab（kind: keyed ← 多标签正确扩展点）/ .title
     //
-    // deck 现在的两种形态都不占官方右栏，与 better-sidebar 零冲突：
-    //   主形态 = better-sidebar 标签页（下方 ensureSidebarTab + router.js openInSidebar；
-    //            cfg.openIn 检测到 better-sidebar 即默认 'sidebar'）
-    //   兜底   = 自带悬浮面板（router.js openDockPanel → openPagePanel）
+    // deck 的三种形态都不占官方 rightbar 槽位本身（占它等于顶掉整列外壳，与 better-sidebar 互斥）：
+    //   载体一 = better-sidebar 标签页（下方 ensureSidebarTab + router.js openInSidebar）
+    //   载体二 = 官方右侧边栏标签页（下方 ensureRightbarTab + router.js openInRightbar；
+    //            走官方的 sidebar.right.pane.tab 标签座位，与官方 Files / Terminal 并列，不碰列外壳）
+    //   兜底   = 自带悬浮面板（router.js openDockPanel → openPagePanel；运行期兜底，不是用户选项）
 
     // v1.4.1：apply 时尽力注册 better-sidebar tab（MattSkillsDeck）；better-sidebar 服务未就绪（加载晚于本模块）→ 定时重试（最多 10 次）
+    // v1.9：官方 rightbar 标签类型同理（官方 ui-sidebar-right 也可能晚于本模块加载）
     //   卸载（HMR / 插件禁用）时清理 disposer + 重试定时器
     if (!ensureSidebarTab()) {
       let tries = 0
@@ -115,13 +117,23 @@
         if (ensureSidebarTab() || tries >= 10) { clearInterval(sidebarTabRetry); sidebarTabRetry = null }
       }, 1000)
     }
+    if (!ensureRightbarTab()) {
+      let triesRb = 0
+      rightbarTabRetry = setInterval(function () {
+        triesRb++
+        if (ensureRightbarTab() || triesRb >= 10) { clearInterval(rightbarTabRetry); rightbarTabRetry = null }
+      }, 1000)
+    }
     ctx.effect(function () {
       return function () {
         try { if (sidebarTabDisposer) sidebarTabDisposer() } catch (e) { /* 忽略 */ }
         sidebarTabDisposer = null
         if (sidebarTabRetry) { clearInterval(sidebarTabRetry); sidebarTabRetry = null }
+        try { if (rightbarTabDisposer) rightbarTabDisposer() } catch (e) { /* 忽略 */ }
+        rightbarTabDisposer = null
+        if (rightbarTabRetry) { clearInterval(rightbarTabRetry); rightbarTabRetry = null }
       }
-    }, 'dsh-mattpocock-skills-deck: better-sidebar tab')
+    }, 'dsh-mattpocock-skills-deck: better-sidebar / rightbar tab')
 
     // #490 client 日志底座：开关启动对账（本地秒显已在 log.js 顶层同步完成；
     //   此处再向宿主读开关，以宿主为准；宿主不可用就保持本地值，不阻断启动）。
