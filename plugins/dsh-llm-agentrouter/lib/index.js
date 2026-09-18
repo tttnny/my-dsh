@@ -293,7 +293,7 @@ function apply(ctx, config) {
   if (config.announce) {
     const table = routingTable(config)
     ctx.logger.info(
-      'llm-agentrouter: endpoint %c (%c), sending %c',
+      'llm-agentrouter: endpoint %s (%s), sending %s',
       config.endpoint,
       table.get(config.sentinel.trim().toLowerCase()) ?? 'unrouted',
       config.userAgent,
