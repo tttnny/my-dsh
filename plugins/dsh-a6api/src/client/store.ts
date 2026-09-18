@@ -9,6 +9,18 @@ import type {
   MarketplacePin,
 } from '../types.js';
 
+/** 写操作通道：宿主 connection.fetch 的精确路由，由 DSH 的 /api 载体统一施加会话鉴权 */
+const WRITE_CHANNEL = '/api/dsh-a6api/write';
+
+/** 统一构造写操作请求：通道以 endpoint 派发，payload 为原有请求体 */
+function writeFetch(endpoint: string, payload: unknown = {}): Promise<Response> {
+  return fetch(WRITE_CHANNEL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint, payload }),
+  });
+}
+
 function formatRelativeNow(tsSec: number): string {
   const diff = Math.floor(Date.now() / 1000) - tsSec;
   if (diff < 60) return '刚刚';
@@ -204,11 +216,7 @@ class A6ApiStore {
 
   public async saveConfig(config: Partial<A6ApiConfig>): Promise<boolean> {
     try {
-      const res = await fetch('/api/dsh-a6api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
+      const res = await writeFetch('config', config);
       if (res.ok) {
         await this.fetchState();
         return true;
@@ -257,11 +265,7 @@ class A6ApiStore {
     this.state.catalogBusy = 'fetch';
     this.notify();
     try {
-      const res = await fetch('/api/dsh-a6api/catalog/fetch-models', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
+      const res = await writeFetch('catalog/fetch-models');
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
         await this.fetchCatalog();
@@ -286,11 +290,7 @@ class A6ApiStore {
     this.state.catalogBusy = 'query';
     this.notify();
     try {
-      const res = await fetch('/api/dsh-a6api/catalog/query-openrouter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelIds }),
-      });
+      const res = await writeFetch('catalog/query-openrouter', { modelIds });
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
         await this.fetchCatalog();
@@ -315,11 +315,7 @@ class A6ApiStore {
     patch: Partial<CatalogModelEntry>,
   ): Promise<{ ok: boolean; error?: string }> {
     try {
-      const res = await fetch('/api/dsh-a6api/catalog/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, ...patch }),
-      });
+      const res = await writeFetch('catalog/update', { id, ...patch });
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
         await this.fetchCatalog();
@@ -338,11 +334,7 @@ class A6ApiStore {
   /** 清空模型目录（随后可重新从 A6API 拉取 / OpenRouter 填充） */
   public async clearCatalog(): Promise<{ ok: boolean; error?: string }> {
     try {
-      const res = await fetch('/api/dsh-a6api/catalog/clear', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
+      const res = await writeFetch('catalog/clear');
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
         await this.fetchCatalog();
@@ -397,11 +389,7 @@ class A6ApiStore {
     modelName: string,
   ): Promise<{ kind: 'ok'; json: any } | { kind: 'http'; status: number } | { kind: 'network'; error: string }> {
     try {
-      const res = await fetch('/api/dsh-a6api/probe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelName }),
-      });
+      const res = await writeFetch('probe', { modelName });
       if (res.ok) {
         const json = await res.json();
         return { kind: 'ok', json };
@@ -604,11 +592,7 @@ class A6ApiStore {
     }
     const newModels = [...currentSet];
     try {
-      const res = await fetch('/api/dsh-a6api/sync-models', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelIds: newModels }),
-      });
+      const res = await writeFetch('sync-models', { modelIds: newModels });
       if (res.ok) {
         const json = await res.json();
         this.state.dshConfiguredModels = json.dshConfiguredModels || newModels;
@@ -639,11 +623,7 @@ class A6ApiStore {
     busySet.add(modelName);
     this.notify();
     try {
-      const res = await fetch(`/api/dsh-a6api/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelName, ...extraBody }),
-      });
+      const res = await writeFetch(endpoint, { modelName, ...extraBody });
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
         if (Array.isArray(json.pins)) {

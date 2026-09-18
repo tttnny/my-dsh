@@ -16,10 +16,10 @@ const RELAY_PAGE_NAV = { zh: 'API中转', en: 'API relay' };
 const NS = 'settings.a6api';
 
 /**
- * Register the shared page's own two titles. Called from inside the
- * `slots.inject` callback so it runs at the same point as the registration it
- * serves and is unwound with it; `ctx.get` keeps the read optional (the client
- * declares `locale`, but a bundle must still tolerate its absence).
+ * Register the shared page's own two titles. Called once at the top of `apply`
+ * so the dictionaries exist whether or not this plugin wins the shared page
+ * election; `ctx.get` keeps the read optional (the client declares `locale`,
+ * but a bundle must still tolerate its absence).
  */
 function registerNavDicts(ctx: any): void {
   const locale = ctx && typeof ctx.get === 'function' ? ctx.get('locale') : undefined;
@@ -231,6 +231,10 @@ function setupGlobalTooltip(): (() => void) | void {
 
 export function apply(ctx: any): void {
   injectStyles();
+  // 字典属于本插件自身的文本，与是否当选共享页宿主无关：放在 apply 顶层注册。
+  // slots.inject 的声明边界会重新执行回调，原先写在回调里会在重声明时重复注册
+  // 同一 (ns, locale) 并抛错（locale 运行时不接受重复注册）。
+  registerNavDicts(ctx);
   if (typeof window !== 'undefined') {
     try {
       ctx.effect(() => {
@@ -270,7 +274,6 @@ export function apply(ctx: any): void {
     // 内核不允许一页被两个插件共同声明，故先激活者当选页面宿主，见 relay-settings-page.js）。
     // 本面板自带「可用模型 / 模型目录 / 账户资产 / 基础配置」四个内层 tab，整体作为外层一张卡片。
     slots.inject('settings.section', () => {
-      registerNavDicts(ctx);
       return claimRelaySettingsPage(ctx, navLabel(ctx, 'pageNav'));
     });
     slots.inject(RELAY_ITEM_SLOT, () => {

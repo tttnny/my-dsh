@@ -1,6 +1,6 @@
 node_modules/
-# lib/types/ 不忽略：package.json exports 的 types 指向它，fresh clone 未构建时也必须存在
-lib/*.map
+# lib/ 是构建产物镜像：由 .gitignore 挡住、留在 files 里，并由 check 的 assert:lib-untracked 断言未被索引跟踪
+lib/
 .DS_Store
 *.log
 

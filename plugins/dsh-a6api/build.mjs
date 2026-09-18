@@ -16,7 +16,7 @@ await build({
   target: ['node22'],
   sourcemap: true,
   logLevel: 'info',
-  external: ['@deepseek-ai/cordis', 'node:*', 'js-yaml'],
+  external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-home-paths', 'node:*'],
 });
 
 // 2. Client build (Browser CJS with ModuleLoader wrapper)
