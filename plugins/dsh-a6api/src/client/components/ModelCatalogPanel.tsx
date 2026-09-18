@@ -333,7 +333,7 @@ export const ModelCatalogPanel: React.FC = () => {
       {catalog.length === 0 ? (
         <div className="dsh-a6-empty-state">
           <span>模型目录为空。</span>
-          <span className="dsh-a6-side-popup-hint">
+          <span className="dsh-a6-hint">
             点击「从 A6API 获取市场模型」拉取全部支持的模型 ID，再用「从 OpenRouter 一键查询」自动填充参数。
           </span>
         </div>

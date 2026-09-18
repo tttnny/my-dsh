@@ -29,7 +29,7 @@ export const MerchantCard: React.FC<{
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimerRef = useRef<any>(null);
 
-  // ===== 探测完成 → 卡片刷新动画（侧边栏浮层与设置页共用本组件，一处生效两处） =====
+  // ===== 探测完成 → 卡片刷新动画（输入框下方浮层与设置页共用本组件，一处生效两处） =====
   // 触发条件：本卡片 probeStatus 由 'probing' 跃迁到终态（success/error），即探测结果回填瞬间。
   // 动画全部基于 box-shadow/::after/子列 opacity-transform，根节点不加 transform/filter，
   // 避免把内部 position:fixed 的固定弹窗裹进动画 containing block。
