@@ -156,7 +156,7 @@
   color: var(--dsw-alias-label-tertiary, #94a3b8);
 }
 
-/* 「模型市场」胶囊(侧边栏浮层):与余额 / 价格波动胶囊同款外观,点击直达官网模型页 */
+/* 「模型市场」胶囊(输入框下方浮层):与余额 / 价格波动胶囊同款外观,点击直达官网模型页 */
 .dsh-a6-market-pill {
   display: inline-flex;
   align-items: center;
@@ -1741,93 +1741,50 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 }
 
 /* ==========================================================================
-   Sidebar Footer Action: 当前会话 A6api 模型卡片入口(左下角设置按钮上方)
+   Composer Dock Action: 当前会话 A6api 模型卡片入口(输入框下方那一行,官方统计胶囊左侧)
    ========================================================================== */
-.dsh-a6-side-btn-wrap {
-  display: flex;
-  min-width: 0;
-  /* footerActions 是行向 flex 容器(width:100%)：拉伸占满,与上方「设置」按钮同宽的一横条 */
-  flex: 1;
-}
-
-/* rail(折叠)态:footerActions 收缩为居中内容宽,wrap 不参与拉伸 */
-.dsh-a6-side-btn-wrap.rail {
-  flex: none;
-  width: auto;
-}
-
-/* 原生风格:对齐设置按钮(42px 透明幽灵按钮,无边框无底色,label-primary 文字,
-   hover 用 shell 交互底色;rail 折叠态 36px 圆) */
-.dsh-a6-side-btn {
+/* 官方输入框下方那套幽灵胶囊(StatsPills 胶囊 / ContextMeter 触发器同款):
+   透明底、无边框、三级文字色,悬停与展开态换成浅色底并把文字提亮到 label-secondary */
+.dsh-a6-dock-btn {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  width: calc(100% + 4px);
-  min-width: 0;
-  height: 42px;
-  margin: 4px -2px;
-  padding: 0 10px 0 8px;
+  max-width: 100%;
+  padding: 1px 8px;
   border: none;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--dsw-alias-label-primary, #0f172a);
+  border-radius: 24px;
+  background: 0 0;
+  color: var(--dsw-alias-label-tertiary, #94a3b8);
   cursor: pointer;
   font-family: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
-  transition: background 0.15s;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: nowrap;
+  transition: background-color 0.1s;
 }
 
-.dsh-a6-side-btn:hover:not(:disabled) {
+.dsh-a6-dock-btn:hover:not(:disabled),
+.dsh-a6-dock-btn[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover, rgba(148, 163, 184, 0.16));
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 
-.dsh-a6-side-btn:disabled {
+.dsh-a6-dock-btn:disabled {
   cursor: default;
   opacity: 0.4;
 }
 
-/* rail(侧边栏折叠)态:36px 圆形单色图标,与设置按钮一致 */
-.dsh-a6-side-btn.rail {
-  width: 36px;
-  height: 36px;
-  margin: 0;
-  padding: 0;
-  justify-content: center;
-  gap: 0;
-  border-radius: 50%;
+.dsh-a6-dock-btn:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-tertiary, #94a3b8);
+  outline-offset: 2px;
 }
 
-.dsh-a6-side-btn.rail:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(148, 163, 184, 0.16));
-}
-
-/* 齿轮图标:与设置按钮同款(currentColor 跟随文字色;rail 态 18px 与设置一致) */
-.dsh-a6-side-btn-badge {
-  flex: none;
-  width: 16px;
-  height: 16px;
-}
-
-.dsh-a6-side-btn.rail .dsh-a6-side-btn-badge {
-  width: 18px;
-  height: 18px;
-}
-
-.dsh-a6-side-btn-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 弹出卡片浮层:锚定按钮,向上展开 */
-.dsh-a6-side-popup {
+/* 弹出卡片浮层:贴按钮上沿向上展开,水平以按钮为中心;高度上限由组件按按钮上方可用空间内联给出 */
+.dsh-a6-dock-popup {
   position: fixed;
   z-index: 2147483000;
+  box-sizing: border-box;
   width: min(500px, calc(100vw - 16px));
-  max-height: calc(100vh - 16px);
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--dsw-alias-bg-layer-1, #ffffff);
@@ -1849,7 +1806,7 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
   }
 }
 
-.dsh-a6-side-popup-empty {
+.dsh-a6-dock-popup-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1860,13 +1817,13 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
   font-size: 13px;
 }
 
-.dsh-a6-side-popup-hint {
+.dsh-a6-hint {
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary, #94a3b8);
 }
 
 /* 非 A6api 会话:模型卡片区域整体置灰(去色 + 降透明度 + 禁交互),顶部账户胶囊不受影响 */
-.dsh-a6-side-card-dimmed {
+.dsh-a6-dock-card-dimmed {
   filter: grayscale(1);
   opacity: 0.45;
   pointer-events: none;
@@ -1874,13 +1831,13 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 }
 
 /* 浮层内禁用 CSS 伪元素 tooltip:JS portal tooltip 有 30ms 延迟,避免双提示且伪元素会被 overflow 裁剪 */
-.dsh-a6-side-popup [data-tooltip]::after,
-.dsh-a6-side-popup [data-tooltip]::before {
+.dsh-a6-dock-popup [data-tooltip]::after,
+.dsh-a6-dock-popup [data-tooltip]::before {
   display: none;
 }
 
 /* 浮层顶部账户速览胶囊行:与设置页头部同款视觉,缩窄紧凑版(余额纯展示 + 价格波动可跳 + 模型市场直达) */
-.dsh-a6-side-pills {
+.dsh-a6-dock-pills {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1890,9 +1847,9 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
   border-bottom: 1px solid var(--dsw-alias-border-l2, #e2e8f0);
 }
 
-.dsh-a6-side-pills .dsh-a6-header-balance-badge,
-.dsh-a6-side-pills .dsh-a6-price-pill,
-.dsh-a6-side-pills .dsh-a6-market-pill {
+.dsh-a6-dock-pills .dsh-a6-header-balance-badge,
+.dsh-a6-dock-pills .dsh-a6-price-pill,
+.dsh-a6-dock-pills .dsh-a6-market-pill {
   padding: 3px 10px;
   min-height: 24px;
   font-size: 11px;
@@ -1901,18 +1858,18 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
   line-height: 1;
 }
 
-.dsh-a6-side-pills .dsh-a6-price-pill-count,
-.dsh-a6-side-pills .dsh-a6-price-pill-label,
-.dsh-a6-side-pills .dsh-a6-hb-amount,
-.dsh-a6-side-pills .dsh-a6-hb-label,
-.dsh-a6-side-pills .dsh-a6-market-pill-label {
+.dsh-a6-dock-pills .dsh-a6-price-pill-count,
+.dsh-a6-dock-pills .dsh-a6-price-pill-label,
+.dsh-a6-dock-pills .dsh-a6-hb-amount,
+.dsh-a6-dock-pills .dsh-a6-hb-label,
+.dsh-a6-dock-pills .dsh-a6-market-pill-label {
   font-size: 12px;
   line-height: 1;
 }
 
 /* 浮层内余额胶囊为纯展示:禁掉设置页的 hover 反馈与手型(需写在通用 hover 规则之后) */
-.dsh-a6-side-balance-pill,
-.dsh-a6-side-balance-pill:hover {
+.dsh-a6-dock-balance-pill,
+.dsh-a6-dock-balance-pill:hover {
   cursor: default;
   border-color: var(--dsw-alias-border-l2, #e2e8f0);
   background: var(--dsw-alias-bg-layer-2, #ffffff);
@@ -2108,7 +2065,7 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
 }
 
 /* ============================================================
- * 探测完成 → 卡片刷新动画（MerchantCard，侧边栏浮层与设置页共用）
+ * 探测完成 → 卡片刷新动画（MerchantCard，输入框下方浮层与设置页共用）
  * 触发：probeStatus 由 probing 跃迁到 success/error 时挂 .dsh-a6-card-refresh
  * refresh-ok = 成功取到商户；refresh-err = 探测失败
  * 根节点仅改 box-shadow/::after（不加 transform/filter），避免把内部

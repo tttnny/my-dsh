@@ -3,8 +3,8 @@
  *
  * Loads the built `lib/client.js` the same way the Web shell does (through a
  * `window.__ModuleLoader__.load` stub), gives it fake cordis services, and
- * asserts every registration the 「API中转」 page and the sidebar card depend
- * on. Run with: node scripts/smoke-client.mjs
+ * asserts every registration the 「API中转」 page and the composer dock entry
+ * depend on, plus one render of that entry. Run with: node scripts/smoke-client.mjs
  *
  * The fake context models the kernel's inject guard, so reading a service the
  * bundle did not declare throws here instead of turning the whole loader entry
@@ -230,9 +230,36 @@ check('tab label resolves through the registration label', tabs[0]?.label === 't
 check('tab roster is subscribable', typeof pageFace?.relayTabs?.subscribe === 'function')
 
 check('shared page name registered in the locale namespace', locales.includes('settings.a6api'))
-check('sidebar card still registered', registrations.some(r => r.name === 'sidebar.footer.action'))
+
+const dock = registrations.find(r => r.name === 'conversation.composer.dock')
+check('composer dock entry registered', dock !== undefined)
+check('composer dock entry keeps its own id', dock?.id === 'dsh-a6api-current-model')
+check('composer dock entry sits left of the official stats pills', dock?.order === -1)
+check('the sidebar footer entry is gone', !registrations.some(r => r.name === 'sidebar.footer.action'))
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
+
+// 渲染自检:输入框下方那一行的组件渲染出「A6api」按钮,点击后贴按钮上沿展开浮层。
+const React = require('react')
+const { act, create } = require('react-test-renderer')
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+check('composer dock entry exposes a component', typeof dock?.component === 'function')
+
+const buttonRect = { left: 600, top: 772, right: 660, bottom: 794, width: 60, height: 22 }
+let tree
+act(() => {
+  tree = create(React.createElement(dock.component, { sessionId: 'session-1' }), {
+    createNodeMock: () => ({ getBoundingClientRect: () => buttonRect, contains: () => false }),
+  })
+})
+const button = tree.root.findByType('button')
+check('dock button carries the A6api text', button.children.join('') === 'A6api')
+check('dock button starts collapsed', button.props['aria-expanded'] === false)
+act(() => button.props.onClick())
+const popups = tree.root.findAll(node => node.props.role === 'dialog')
+check('dock button opens the model card popup', popups.length === 1)
+check('popup height is capped to the space above the button', popups[0]?.props.style?.maxHeight === 772 - 2 * 8)
+act(() => tree.unmount())
 
 // Election case: another participant (dsh-llm-agentrouter) already holds the page.
 registrations.length = 0

@@ -1,6 +1,6 @@
 import React from 'react';
 import { A6ApiSettingsPanel } from './components/A6ApiSettings.js';
-import { A6ApiSidebarCard } from './components/A6ApiSidebarCard.js';
+import { A6ApiComposerCard } from './components/A6ApiComposerCard.js';
 import { RELAY_ITEM_SLOT, claimRelaySettingsPage } from './relay-settings-page.js';
 import mainCss from './styles/main.css';
 import { store } from './store.js';
@@ -247,7 +247,7 @@ export function apply(ctx: any): void {
   }
   if (typeof window === 'undefined') return;
   // 启动预热 + 后台轮询：插件随 DSH 启动即后台拉取一次完整状态（服务端 /state 已并行化），
-  // 之后每 60s 整体刷新 —— 用户打开侧边栏浮层/设置页时数据已就绪，秒开无 spinner。
+  // 之后每 60s 整体刷新 —— 用户打开输入框下方的浮层/设置页时数据已就绪，秒开无 spinner。
   // 必须挂在 ctx.effect 内：卸载 / 热重载（HMR）时清掉启动定时器并停掉 store 的 60s 轮询，
   // 否则每次重新 apply 都会再挂一份无 disposer 的定时器（旧实现 setTimeout 在 effect 之外）。
   // 清理复用 store.stopAutoRefresh()（clear interval 并置空 autoRefreshTimer）；
@@ -290,20 +290,20 @@ export function apply(ctx: any): void {
       );
     });
 
-    // 侧边栏左下角「A6api」按钮:点击向上弹出当前会话 A6api 模型的 MerchantCard 浮层
+    // 输入框下方那一行的「A6api」按钮:点击贴按钮上沿向上弹出当前会话 A6api 模型的 MerchantCard 浮层。
+    // order -1 让按钮排在官方 StatsPills(order 0)左侧;会话身份由该 slot 的会话级标准属性 sessionId 提供。
     // getter 在 apply 闭包创建一次,引用稳定,避免 entry 重渲染触发组件 effect 反复重订阅
     const getModelDirectories = () =>
       ctx && typeof ctx.get === 'function' ? ctx.get('modelDirectories') : undefined;
-    slots.inject('sidebar.footer.action', () => {
+    slots.inject('conversation.composer.dock', () => {
       return slots.register(
         {
-          name: 'sidebar.footer.action',
+          name: 'conversation.composer.dock',
           id: 'dsh-a6api-current-model',
           order: -1,
-          label: () => 'A6api',
         },
         (props: any) =>
-          React.createElement(A6ApiSidebarCard, {
+          React.createElement(A6ApiComposerCard, {
             ...(props || {}),
             getModelDirectories,
           }),

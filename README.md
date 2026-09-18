@@ -36,7 +36,7 @@
     <tr>
       <td rowspan="3"><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
       <td><a href="./plugins/dsh-a6api"><code>@lynn123411/dsh-a6api</code></a></td>
-      <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 侧边栏快捷模型卡片 + 账户余额 / 价格波动 / 模型市场胶囊行</td>
+      <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 输入框下方快捷模型卡片 + 账户余额 / 价格波动 / 模型市场胶囊行</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-a6api</code></td>
     </tr>
     <tr>
