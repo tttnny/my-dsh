@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-smooth-stream",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "丝滑流式渲染与零重排跟随引擎。工具卡片内部即时呈现，不逐字揭示。",
   "license": "MIT",
   "type": "module",

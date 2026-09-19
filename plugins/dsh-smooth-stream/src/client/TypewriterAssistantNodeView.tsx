@@ -11,6 +11,7 @@ import { notifyFollowCommit } from './teleprompterGlide.ts'
 import { useSmoothStreamContent, type StreamSmoothingPreset } from './useSmoothStreamContent.ts'
 import { TRANSLATION_REVEAL_SELECTOR, useProgressiveDomText } from './useProgressiveDomText.ts'
 import { useFpsGuard } from './useFpsGuard.ts'
+import { useLogarithmicFade } from './useLogarithmicFade.ts'
 import { FollowHost } from './FollowHost.tsx'
 import { DEFAULT_STREAM_CONFIG, type StreamMode } from '../config.ts'
 import { DEFAULT_STREAM_SETTINGS, type StreamMotionPreference } from '../settings.ts'
@@ -50,6 +51,7 @@ function useMotionReduced(preference: StreamMotionPreference): boolean {
 
 interface AnimatedMarkdownTextProps extends MarkdownProps {
   streaming: boolean
+  logarithmicFade: boolean
   /** Whether the resolved reduced-motion gate keeps the reveal engine off. */
   motionReduced: boolean
   /** True on the last text block: that block owns conversation follow. */
@@ -312,6 +314,7 @@ function AnimatedMarkdownText({
   labels,
   fileMentions,
   streaming,
+  logarithmicFade,
   motionReduced,
   ownFollow,
   followSpeedCpsRef,
@@ -342,6 +345,7 @@ function AnimatedMarkdownText({
   })
   const shown = reduced ? text : displayed
   const live = typing && !reduced
+  useLogarithmicFade(followRootRef, logarithmicFade && !reduced, live, speedCpsRef)
 
   useEffect(() => {
     const root = followRootRef.current
@@ -485,6 +489,7 @@ function AnimatedReasoning({
   preset,
   thinkAutoExpand,
   motionReduced,
+  logarithmicFade,
   shouldHoldBack,
   followSpeedCpsRef,
   followRevealScaleRef,
@@ -496,6 +501,7 @@ function AnimatedReasoning({
   preset: StreamSmoothingPreset
   thinkAutoExpand: boolean
   motionReduced: boolean
+  logarithmicFade: boolean
   shouldHoldBack: () => boolean
   followSpeedCpsRef?: { current: number } | undefined
   followRevealScaleRef?: { current: number } | undefined
@@ -506,6 +512,9 @@ function AnimatedReasoning({
   const [expanded, setExpanded] = useState(running && thinkAutoExpand)
   const [autoClosed, setAutoClosed] = useState(false)
   const summaryRef = useRef<HTMLSpanElement>(null)
+  const fadeRootRef = useRef<HTMLDivElement>(null)
+  const localFadeSpeedRef = useRef(35)
+  const fadeSpeedRef = followSpeedCpsRef ?? localFadeSpeedRef
   const commitAnchorRef = useRef<HTMLDivElement>(null)
   // The running→false flip is the AUTO-close: it collapses instantly and the
   // follower's settle spring absorbs the height step. A later manual toggle
@@ -514,12 +523,13 @@ function AnimatedReasoning({
     enabled: running && !reduced,
     preset,
     shouldHoldBack,
-    speedCpsRef: followSpeedCpsRef,
+    speedCpsRef: fadeSpeedRef,
     revealScaleRef: followRevealScaleRef,
     onRevealCommit: () => { notifyFollowCommit(commitAnchorRef.current) },
   })
   const shown = running && !reduced ? displayed : text
   const summary = running ? latestLine(shown) : firstLine(text)
+  useLogarithmicFade(fadeRootRef, logarithmicFade && !reduced && expanded, running, fadeSpeedRef)
 
   useLayoutEffect(() => {
     // Only the running state owns disclosure while auto-expand is on; with it
@@ -589,7 +599,7 @@ function AnimatedReasoning({
             </>
           )}
         >
-          <div className={css.thinkBody}>
+          <div ref={fadeRootRef} className={css.thinkBody}>
             <MarkdownText text={shown} streaming={running && !reduced} labels={labels} variant="compact" />
           </div>
         </AnimatedDisclosure>
@@ -615,6 +625,7 @@ export const TypewriterAssistantNodeView = memo(function TypewriterAssistantNode
   scrollSpeedPxPerSec: _scrollSpeedPxPerSec = DEFAULT_STREAM_CONFIG.scrollSpeedPxPerSec,
   maxScrollSpeedPxPerSec: _maxScrollSpeedPxPerSec = DEFAULT_STREAM_CONFIG.maxScrollSpeedPxPerSec,
   thinkAutoExpand = DEFAULT_STREAM_SETTINGS.thinkAutoExpand,
+  logarithmicFade = DEFAULT_STREAM_SETTINGS.logarithmicFade,
   controlScroll = true,
   motionPreference = DEFAULT_STREAM_SETTINGS.motionPreference,
   node,
@@ -631,6 +642,7 @@ export const TypewriterAssistantNodeView = memo(function TypewriterAssistantNode
   scrollSpeedPxPerSec?: number
   maxScrollSpeedPxPerSec?: number
   thinkAutoExpand?: boolean
+  logarithmicFade?: boolean
   controlScroll?: boolean
   motionPreference?: StreamMotionPreference
 }) {
@@ -716,6 +728,7 @@ export const TypewriterAssistantNodeView = memo(function TypewriterAssistantNode
             labels={markdownLabels}
             fileMentions={mentions}
             streaming={streaming}
+            logarithmicFade={logarithmicFade && data.status !== 'interrupted'}
             motionReduced={reduced}
             ownFollow={!streaming && index === lastFollow}
             followSpeedCpsRef={index === lastFollow ? rootSpeedRef : undefined}
@@ -736,6 +749,7 @@ export const TypewriterAssistantNodeView = memo(function TypewriterAssistantNode
               running={streaming && index === last}
               preset={preset}
               thinkAutoExpand={thinkAutoExpand}
+              logarithmicFade={logarithmicFade && data.status !== 'interrupted'}
               motionReduced={reduced}
               shouldHoldBack={shouldHoldBack}
               followSpeedCpsRef={reasoningOwnsSpeed && index === last ? rootSpeedRef : undefined}

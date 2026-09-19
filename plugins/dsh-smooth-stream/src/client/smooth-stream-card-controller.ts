@@ -29,6 +29,7 @@ export interface SmoothStreamCardState {
   controlScroll: boolean
   motionPreference: StreamMotionPreference
   thinkAutoExpand: boolean
+  logarithmicFade: boolean
   debugEnabled: boolean
   debugTuning: StreamDebugTuning
   debugAvailable: boolean
@@ -145,6 +146,7 @@ export class SmoothStreamCardController {
     if (patch.controlScroll !== undefined) next.controlScroll = patch.controlScroll
     if (patch.motionPreference !== undefined) next.motionPreference = patch.motionPreference
     if (patch.thinkAutoExpand !== undefined) next.thinkAutoExpand = patch.thinkAutoExpand
+    if (patch.logarithmicFade !== undefined) next.logarithmicFade = patch.logarithmicFade
     if (patch.debugEnabled !== undefined) next.debugEnabled = patch.debugEnabled
     if (patch.debugTuning !== undefined) {
       next.debugTuning = { ...current.debugTuning, ...patch.debugTuning }

@@ -66,6 +66,7 @@ export const StreamSettingsSchema: Schema<StreamSettings> = Schema.object({
     Schema.const('force-reduced'),
   ] as const).default(DEFAULT_STREAM_SETTINGS.motionPreference),
   thinkAutoExpand: Schema.boolean().default(DEFAULT_STREAM_SETTINGS.thinkAutoExpand),
+  logarithmicFade: Schema.boolean().default(DEFAULT_STREAM_SETTINGS.logarithmicFade),
   debugEnabled: Schema.boolean().default(DEFAULT_STREAM_SETTINGS.debugEnabled),
   debugTuning: Schema.object({
     revealScale: Schema.number().min(0.25).max(2).default(DEFAULT_STREAM_SETTINGS.debugTuning.revealScale),
