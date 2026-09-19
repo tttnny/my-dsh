@@ -1,0 +1,247 @@
+/*
+ * The composer model seat's shape, values, and tokens follow the seat this
+ * plugin takes over; every declaration below is the shipped one so the two
+ * render identically.
+ */
+.root {
+  min-width: 0;
+  position: relative;
+}
+
+.trigger {
+  min-width: 0;
+  max-width: min(360px, 45cqw);
+  height: 28px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: 24px;
+  outline: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  display: flex;
+}
+
+.trigger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.trigger:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+.trigger:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.triggerLabel {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.triggerEffort {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--dsw-alias-label-caption);
+  flex-shrink: 1000;
+  overflow: hidden;
+}
+
+.triggerIcon {
+  flex: none;
+  display: none;
+}
+
+@container (width <= 360px) {
+  .triggerIcon {
+    display: block;
+  }
+
+  .triggerLabel,
+  .triggerEffort {
+    display: none;
+  }
+}
+
+.chevron {
+  color: var(--dsw-alias-label-caption);
+  flex: none;
+  transition: transform .12s;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.menu {
+  z-index: 1100;
+  background: var(--dsw-specific-menu);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  width: max-content;
+  min-width: min(240px, 100vw - 32px);
+  max-width: min(420px, 100vw - 32px);
+  max-height: min(360px, 100vh - 96px);
+  box-shadow: var(--dsw-elevation-prominent);
+  color: var(--dsw-alias-label-primary);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  border: 0;
+  border-radius: 20px;
+  flex-direction: column;
+  padding: 4px;
+  display: flex;
+  position: fixed;
+  overflow: hidden;
+}
+
+.status,
+.empty {
+  color: var(--dsw-alias-label-tertiary);
+  padding: 10px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.error,
+.warning {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+  border-radius: 8px;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 7px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  display: flex;
+}
+
+.warning {
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.retry {
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  flex: none;
+  padding: 0;
+  font-weight: 600;
+}
+
+.groups {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.option {
+  box-sizing: border-box;
+  width: auto;
+  min-width: 100%;
+  min-height: 38px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: 10px;
+  outline: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  display: flex;
+}
+
+.option:hover:not(:disabled),
+.option:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.selected {
+  background: 0 0;
+}
+
+.option:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.optionCopy {
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.modelName {
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  overflow: hidden;
+}
+
+.check {
+  color: var(--dsw-alias-label-primary);
+  flex: 0 0 18px;
+  place-items: center;
+  display: grid;
+}
+
+.cell {
+  box-sizing: border-box;
+  width: auto;
+  min-width: 100%;
+  height: 40px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  text-align: left;
+  background: 0 0;
+  border: none;
+  border-radius: 10px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: 14px;
+  line-height: 22px;
+  display: flex;
+}
+
+.cell:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.cellLabel {
+  white-space: nowrap;
+  flex: none;
+}
+
+.cellValue {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  flex: auto;
+  overflow: hidden;
+}
+
+.cellChevron {
+  color: var(--dsw-alias-label-tertiary);
+  flex: none;
+}

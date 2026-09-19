@@ -50,6 +50,12 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-antigravity-auth</code></td>
     </tr>
     <tr>
+      <td><b>🎛️ 模型选择</b><br><i>输入框里模型选择器的形态</i></td>
+      <td><a href="./plugins/dsh-model-submenu"><code>@lynn123411/dsh-model-submenu</code></a></td>
+      <td><b>模型二级菜单</b><br>· 给输入框模型选择器加上供应商层级：根面板保持原生两行「供应商 / 推理等级」，点「供应商」进供应商列表（当前供应商那行显示它正在使用的模型名并勾选，其余显示模型数量），再点某个供应商进它的模型列表，面板顶部有返回行<br>· 点模型立即提交并关闭；推理等级保持原生——根面板的「推理等级」行进该模型的等级列表，选中即提交，「Default」表示跟随供应商默认<br>· 外观沿用内置弹层与 <code>--dsw-*</code> 主题变量；方向键 / Tab / Escape 与加载、失败、提交被拒的提示照旧<br>· 形态：bundle 型插件，客户端半边以 <code>priority: -100</code> 接管 <code>conversation.input.model</code>，<code>/model</code> 命令面板与设置页不受影响</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-model-submenu</code></td>
+    </tr>
+    <tr>
       <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
       <td><a href="./plugins/dsh-ask-user-grilling"><code>@lynn123411/dsh-ask-user-grilling</code></a></td>
       <td><b>提问表单变体</b><br>· <code>ask_user_grilling</code>：原生 <code>ask_user_question</code> 的呈现变体——同一条 <code>userQuestions</code> seam，工具描述与共有参数描述<b>与原生逐字一致</b>（另有可选参数 <code>number</code>（题号，由代码并进 <code>header</code>）、<code>detail</code>（界面按 markdown 渲染的正文）、<code>recommended</code>（推荐项）），只强制多选、并自动追加一道轮末补充题（多选刻意不写进描述）<br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次表单投递作答<br>· ⚠️ 形态：普通 Cordis 插件（preset 工具行消费，非 bundle），严禁加入 profile <code>package.json</code> 的 <code>dsh.profile.bundles</code></td>
