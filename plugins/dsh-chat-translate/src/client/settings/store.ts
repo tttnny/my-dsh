@@ -7,10 +7,16 @@ export interface ClientSettingsState {
   concurrency: number;
   aiEnabled: boolean;
   bingEnabled: boolean;
+  thinkEnabled: boolean;
+  thinkTimeoutMs: number;
   baseUrl: string;
   model: string;
   aiConfigured: boolean;
 }
+
+/** 思考链翻译超时的取值范围，与宿主半边保持一致。 */
+export const THINK_TIMEOUT_MIN = 500;
+export const THINK_TIMEOUT_MAX = 900000;
 
 /** Settings namespace + credentials ref, mirroring the host constants. */
 export const SETTINGS_NAMESPACE = 'dsh-chat-translate';
@@ -54,6 +60,8 @@ const DEFAULT_STATE: ClientSettingsState = {
   concurrency: 3,
   aiEnabled: true,
   bingEnabled: true,
+  thinkEnabled: true,
+  thinkTimeoutMs: 600000,
   baseUrl: '',
   model: '',
   aiConfigured: false,
@@ -124,6 +132,14 @@ class SettingsStore {
     }
     if (typeof value.aiEnabled === 'boolean') next.aiEnabled = value.aiEnabled;
     if (typeof value.bingEnabled === 'boolean') next.bingEnabled = value.bingEnabled;
+    if (typeof value.thinkEnabled === 'boolean') next.thinkEnabled = value.thinkEnabled;
+    const thinkTimeout = value.thinkTimeoutMs;
+    if (typeof thinkTimeout === 'number' && Number.isFinite(thinkTimeout)) {
+      next.thinkTimeoutMs = Math.min(
+        Math.max(Math.round(thinkTimeout), THINK_TIMEOUT_MIN),
+        THINK_TIMEOUT_MAX
+      );
+    }
     if (typeof value.baseUrl === 'string') next.baseUrl = value.baseUrl;
     if (typeof value.model === 'string') next.model = value.model;
     this.applyState(next);
@@ -138,6 +154,12 @@ class SettingsStore {
         chatTranslateObserver.setEnabled(this.state.enabled);
       } catch {}
     }
+    // 思考链翻译只在总开关、自身开关、AI 通道开关与 AI 配置都齐备时才提供
+    // 按钮；任何一条不满足都会撤掉按钮并还原已挂载的思考正文译文。
+    try {
+      chatTranslateObserver.setThinkEnabled(this.state.enabled && this.state.thinkEnabled);
+      chatTranslateObserver.setThinkConfigured(this.state.aiEnabled && this.state.aiConfigured);
+    } catch {}
     this.notify();
   }
 
@@ -180,15 +202,32 @@ class SettingsStore {
     if (typeof partial.concurrency === 'number' && Number.isFinite(partial.concurrency)) {
       sanitizedConcurrency = Math.min(Math.max(Math.round(partial.concurrency), 1), 100);
     }
+    let sanitizedThinkTimeout = this.state.thinkTimeoutMs;
+    if (typeof partial.thinkTimeoutMs === 'number' && Number.isFinite(partial.thinkTimeoutMs)) {
+      sanitizedThinkTimeout = Math.min(
+        Math.max(Math.round(partial.thinkTimeoutMs), THINK_TIMEOUT_MIN),
+        THINK_TIMEOUT_MAX
+      );
+    }
     const next: ClientSettingsState = {
       ...this.state,
       ...partial,
       concurrency: sanitizedConcurrency,
+      thinkTimeoutMs: sanitizedThinkTimeout,
     };
     this.applyState(next);
 
     if (this.scope) {
-      const fields = ['enabled', 'concurrency', 'aiEnabled', 'bingEnabled', 'baseUrl', 'model'] as const;
+      const fields = [
+        'enabled',
+        'concurrency',
+        'aiEnabled',
+        'bingEnabled',
+        'thinkEnabled',
+        'thinkTimeoutMs',
+        'baseUrl',
+        'model',
+      ] as const;
       for (const field of fields) {
         if (partial[field] !== undefined) {
           this.pendingFields.add(field);

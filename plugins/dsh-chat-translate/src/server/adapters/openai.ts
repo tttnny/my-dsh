@@ -1,4 +1,8 @@
-import type { ITranslationAdapter, PluginConfig } from './base.ts';
+import type {
+  ITranslationAdapter,
+  PluginConfig,
+  TranslateAdapterOptions,
+} from './base.ts';
 import type { KeyReader } from '../credentials.ts';
 
 /**
@@ -27,6 +31,33 @@ const LANG_HINTS: Record<string, string> = {
   it: 'Italian',
 };
 
+/**
+ * The translator instruction. The placeholder is described by its shape alone:
+ * naming any of its characters gives a small model something to echo. The
+ * multi-part variant adds the block markers of a packed think-chain request —
+ * same bracket-shape description, so the model never sees a token it could
+ * reproduce as a word.
+ */
+function buildSystemPrompt(langName: string, mode: 'plain' | 'blocks'): string {
+  const base =
+    `You are a professional translator. Translate the user's message into ${langName}. ` +
+    `Output ONLY the translated text — no explanations, no quotation marks, no extra words. ` +
+    `Some fragments of the message are opaque code between the bracket ` +
+    `characters U+27E6 and U+27E7. Copy each such fragment into your output ` +
+    `character-for-character, keeping its position in the sentence. ` +
+    `Never invent such a fragment and never remove one.`;
+  if (mode === 'plain') return base;
+  return (
+    base +
+    ` The message is a sequence of parts. Each part starts with its own line ` +
+    `holding a marker: an index between the bracket characters U+27EA and ` +
+    `U+27EB. For every part, output its marker line unchanged, then that ` +
+    `part's translation on the following lines. Translate each part on its ` +
+    `own, keep the parts in the original order, and never merge two parts ` +
+    `into one answer.`
+  );
+}
+
 export class OpenAiCompatibleAdapter implements ITranslationAdapter {
   readonly id = 'openai';
   readonly name = 'OpenAI 兼容 (Chat Completions)';
@@ -43,7 +74,12 @@ export class OpenAiCompatibleAdapter implements ITranslationAdapter {
     );
   }
 
-  async translate(text: string, signal: AbortSignal, config: PluginConfig): Promise<string> {
+  async translate(
+    text: string,
+    signal: AbortSignal,
+    config: PluginConfig,
+    options?: TranslateAdapterOptions
+  ): Promise<string> {
     const apiKey = this.credentials.getApiKey();
     if (!apiKey) {
       throw new Error(`TRANSLATE_API_KEY is not configured in ~/.dsh/.credentials.yaml`);
@@ -65,21 +101,9 @@ export class OpenAiCompatibleAdapter implements ITranslationAdapter {
       body: JSON.stringify({
         model,
         temperature: 0,
+        ...(options?.maxTokens === undefined ? {} : { max_tokens: options.maxTokens }),
         messages: [
-          {
-            role: 'system',
-            content:
-              `You are a professional translator. Translate the user's message into ${langName}. ` +
-              `Output ONLY the translated text — no explanations, no quotation marks, no extra words. ` +
-              // The placeholder is described by its shape alone. Naming any of
-              // its characters gives a small model something to echo: the old
-              // prompt spelled the marker out and the UI filled up with that
-              // word repeated once per protected fragment.
-              `Some fragments of the message are opaque code between the bracket ` +
-              `characters U+27E6 and U+27E7. Copy each such fragment into your output ` +
-              `character-for-character, keeping its position in the sentence. ` +
-              `Never invent such a fragment and never remove one.`,
-          },
+          { role: 'system', content: buildSystemPrompt(langName, options?.mode ?? 'plain') },
           { role: 'user', content: text },
         ],
       }),

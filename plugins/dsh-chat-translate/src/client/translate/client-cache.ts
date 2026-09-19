@@ -1,7 +1,11 @@
 import { isMaskLeak } from '../../server/pipeline/masking.ts';
 
-const CACHE_KEY = 'dsh-chat-translate:cache';
-const MAX_LOCAL_ENTRIES = 500;
+/** 工具标题译文的缓存键与容量。 */
+const TITLE_CACHE_KEY = 'dsh-chat-translate:cache';
+const TITLE_MAX_ENTRIES = 500;
+/** 思考正文译文的缓存键与容量：与工具标题分池，互不挤占。 */
+const THINK_CACHE_KEY = 'dsh-chat-translate:think-cache';
+const THINK_MAX_ENTRIES = 300;
 /** Entries older than this are treated as expired. */
 const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -15,15 +19,19 @@ export class ClientCache {
   private memCache = new Map<string, CacheEntry>();
   private dirty = false;
   private saveTimer: number | null = null;
+  private storageKey: string;
+  private maxEntries: number;
 
-  constructor() {
+  constructor(storageKey: string = TITLE_CACHE_KEY, maxEntries: number = TITLE_MAX_ENTRIES) {
+    this.storageKey = storageKey;
+    this.maxEntries = maxEntries;
     this.load();
   }
 
   private load(): void {
     if (typeof localStorage === 'undefined') return;
     try {
-      const raw = localStorage.getItem(CACHE_KEY);
+      const raw = localStorage.getItem(this.storageKey);
       if (raw) {
         const obj = JSON.parse(raw);
         if (obj && typeof obj === 'object') {
@@ -77,7 +85,7 @@ export class ClientCache {
     const key = text.trim().toLowerCase();
     if (this.memCache.has(key)) {
       this.memCache.delete(key);
-    } else if (this.memCache.size >= MAX_LOCAL_ENTRIES) {
+    } else if (this.memCache.size >= this.maxEntries) {
       // Evict least recently used (first item in Map)
       const oldestKey = this.memCache.keys().next().value;
       if (oldestKey !== undefined) {
@@ -105,7 +113,7 @@ export class ClientCache {
       for (const [k, v] of this.memCache.entries()) {
         obj[k] = v;
       }
-      localStorage.setItem(CACHE_KEY, JSON.stringify(obj));
+      localStorage.setItem(this.storageKey, JSON.stringify(obj));
     } catch {
       // Ignore quota error
     }
@@ -122,4 +130,8 @@ export class ClientCache {
   }
 }
 
+/** 工具标题译文缓存。 */
 export const clientCache = new ClientCache();
+
+/** 思考正文译文缓存：独立存储键与容量，不挤占工具标题的缓存。 */
+export const thinkClientCache = new ClientCache(THINK_CACHE_KEY, THINK_MAX_ENTRIES);

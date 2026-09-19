@@ -1,15 +1,48 @@
 import { describeError } from '../describe-error.ts';
-import type { ITranslationAdapter, PluginConfig, TranslateItemResult } from './types.ts';
+import type {
+  ITranslationAdapter,
+  PluginConfig,
+  ThinkBlockResult,
+  TranslateItemResult,
+} from './types.ts';
 import type { ConfigManager } from './config.ts';
-import { MAX_CONCURRENCY } from './config.ts';
-import type { LruDiskCache } from './cache.ts';
+import { MAX_CONCURRENCY, THINK_CACHE_ENTRIES } from './config.ts';
+import { LruDiskCache } from './cache.ts';
 import type { KeyReader } from './credentials.ts';
 import { BingWebAdapter } from './adapters/bing.ts';
 import { OpenAiCompatibleAdapter } from './adapters/openai.ts';
-import { ContentMaskingPipeline, MaskRestoreError } from './pipeline/masking.ts';
+import {
+  ContentMaskingPipeline,
+  MaskRestoreError,
+  type MaskResult,
+} from './pipeline/masking.ts';
 import { findLegacyMaskTokens, hasMaskResidue } from './pipeline/mask-tokens.ts';
+import {
+  buildBatchPayload,
+  createThinkBatchFormat,
+  hasThinkBatchResidue,
+  packPieces,
+  splitBatchTranslation,
+  splitOversizedBlock,
+  THINK_MAX_OUTPUT_TOKENS,
+} from './pipeline/think.ts';
 
 type CircuitStateEnum = 'closed' | 'open' | 'half-open';
+
+/** 思考正文的一个待翻译片段：所属块、块内序号、掩码文本与还原信息。 */
+interface ThinkPiece {
+  block: number;
+  index: number;
+  text: string;
+  mask: MaskResult;
+  /** 源文本本来就有、还原时必须放行的旧格式标记。 */
+  legacy: Set<string>;
+}
+
+/** 片段在结果映射里的键。 */
+function thinkPieceKey(piece: { block: number; index: number }): string {
+  return `${piece.block}:${piece.index}`;
+}
 
 interface CircuitState {
   state: CircuitStateEnum;
@@ -21,6 +54,8 @@ interface CircuitState {
 export class TranslationDispatcher {
   private configManager: ConfigManager;
   private cache: LruDiskCache;
+  /** 思考正文译文的独立缓存池，与工具标题的池互不挤占。 */
+  private thinkCache: LruDiskCache;
   private credentials: KeyReader;
   private masking = new ContentMaskingPipeline();
   private adapters = new Map<string, ITranslationAdapter>();
@@ -28,10 +63,18 @@ export class TranslationDispatcher {
   private inFlightMap = new Map<string, Promise<TranslateItemResult>>();
   private activeCount = 0;
   private queue: Array<() => void> = [];
+  /** 思考链请求的串行队列尾，保证同时最多一个在途请求。 */
+  private thinkTail: Promise<void> = Promise.resolve();
 
-  constructor(configManager: ConfigManager, cache: LruDiskCache, credentials?: KeyReader) {
+  constructor(
+    configManager: ConfigManager,
+    cache: LruDiskCache,
+    credentials?: KeyReader,
+    thinkCache: LruDiskCache = new LruDiskCache(THINK_CACHE_ENTRIES, 'think-cache.json')
+  ) {
     this.configManager = configManager;
     this.cache = cache;
+    this.thinkCache = thinkCache;
     this.credentials = credentials ?? { getApiKey: () => '' };
 
     // AI channel first (primary), Bing second (fallback) — map iteration order
@@ -215,6 +258,198 @@ export class TranslationDispatcher {
         this.inFlightMap.delete(cacheKey);
       }
     }
+  }
+
+  /**
+   * 翻译思考正文的块。整条链路与工具标题翻译分离：只走 AI 通道、独立串行
+   * 队列、独立超时、独立缓存池，Bing 从不参与。
+   *
+   * 每个块先按输入上限切成片段，再各自掩码、相邻片段打包成一个请求；整批
+   * 失败时退回逐片段单发，仍失败的片段保留原文。块内任一片段失败即整块不译，
+   * 避免半中半英的段落。
+   */
+  async translateThinkBlocks(blocks: string[]): Promise<ThinkBlockResult[]> {
+    const results: ThinkBlockResult[] = blocks.map((original) => ({
+      original,
+      translated: original,
+      ok: false,
+      cached: false,
+      channel: 'none',
+    }));
+
+    const config = this.configManager.getConfig();
+    if (!config.enabled || !config.thinkEnabled) return results;
+
+    const adapter = this.adapters.get('openai');
+    if (!adapter || !adapter.isAvailable(config) || this.isChannelCoolingDown('openai')) {
+      return results;
+    }
+
+    const pieces: ThinkPiece[] = [];
+    for (let block = 0; block < blocks.length; block++) {
+      const text = (blocks[block] ?? '').trim();
+      if (!text) continue;
+      const cached = this.thinkCache.get(text.toLowerCase());
+      if (cached) {
+        results[block] = {
+          original: blocks[block]!,
+          translated: cached,
+          ok: true,
+          cached: true,
+          channel: 'cache',
+        };
+        continue;
+      }
+      for (const [index, part] of splitOversizedBlock(text).entries()) {
+        const mask = this.masking.mask(part);
+        pieces.push({
+          block,
+          index,
+          text: mask.maskedText,
+          mask,
+          legacy: new Set(mask.legacyFragments.map((fragment) => fragment.toLowerCase())),
+        });
+      }
+    }
+
+    const translated = new Map<string, string>();
+    for (const batch of packPieces(pieces)) {
+      const outcome = await this.runThinkSerial(() =>
+        this.translateThinkBatch(adapter, batch, config)
+      );
+      for (const [key, value] of outcome) translated.set(key, value);
+    }
+
+    const totals = new Map<number, number>();
+    for (const piece of pieces) totals.set(piece.block, (totals.get(piece.block) ?? 0) + 1);
+
+    for (const [block, total] of totals) {
+      const parts: string[] = [];
+      let complete = true;
+      for (let index = 0; index < total; index++) {
+        const part = translated.get(`${block}:${index}`);
+        if (part === undefined) {
+          complete = false;
+          break;
+        }
+        parts.push(part);
+      }
+      if (!complete) continue;
+      const original = blocks[block]!;
+      const finalText = parts.join('');
+      this.thinkCache.set(original.trim().toLowerCase(), finalText);
+      results[block] = { original, translated: finalText, ok: true, cached: false, channel: 'openai' };
+    }
+
+    return results;
+  }
+
+  /**
+   * 一整批一次请求；失败则该批逐片段单发重试一次，仍失败的片段直接放弃
+   * （保留原文），不在界面上留提示。
+   */
+  private async translateThinkBatch(
+    adapter: ITranslationAdapter,
+    batch: ThinkPiece[],
+    config: PluginConfig
+  ): Promise<Map<string, string>> {
+    try {
+      return await this.requestThinkBatch(adapter, batch, config);
+    } catch (err) {
+      console.warn(
+        `[dsh-chat-translate] think batch of ${batch.length} failed, retrying per block: ${describeError(err)}`
+      );
+    }
+
+    const out = new Map<string, string>();
+    for (const piece of batch) {
+      try {
+        for (const [key, value] of await this.requestThinkBatch(adapter, [piece], config)) {
+          out.set(key, value);
+        }
+      } catch (err) {
+        console.warn(
+          `[dsh-chat-translate] think block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
+        );
+      }
+    }
+    return out;
+  }
+
+  /** 发出一次思考链请求并把结果还原成每个片段的最终译文。 */
+  private async requestThinkBatch(
+    adapter: ITranslationAdapter,
+    batch: ThinkPiece[],
+    config: PluginConfig
+  ): Promise<Map<string, string>> {
+    const timeout = config.thinkTimeoutMs || 600000;
+    const abortCtrl = new AbortController();
+    const timer = setTimeout(() => abortCtrl.abort(), timeout);
+    let answers: string[];
+    try {
+      if (batch.length === 1) {
+        answers = [
+          await adapter.translate(batch[0]!.text, abortCtrl.signal, config, {
+            maxTokens: THINK_MAX_OUTPUT_TOKENS,
+            mode: 'plain',
+          }),
+        ];
+      } else {
+        const format = createThinkBatchFormat();
+        const answer = await adapter.translate(
+          buildBatchPayload(batch.map((piece) => piece.text), format),
+          abortCtrl.signal,
+          config,
+          { maxTokens: THINK_MAX_OUTPUT_TOKENS, mode: 'blocks' }
+        );
+        const parts = splitBatchTranslation(answer, format, batch.length);
+        if (parts === null) {
+          throw new Error('think block markers did not survive the translation');
+        }
+        answers = parts;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const out = new Map<string, string>();
+    batch.forEach((piece, index) => {
+      const answer = (answers[index] ?? '').trim();
+      if (!answer) {
+        throw new Error(`think block ${piece.block} #${piece.index} came back empty`);
+      }
+      if (hasThinkBatchResidue(answer)) {
+        throw new Error('think translation left a block marker behind');
+      }
+      const finalText = piece.mask.unmask(answer);
+      const leftovers = findLegacyMaskTokens(finalText).filter(
+        (fragment) => !piece.legacy.has(fragment.toLowerCase())
+      );
+      if (hasMaskResidue(finalText) || leftovers.length > 0) {
+        throw new Error('think translation left a mask placeholder behind');
+      }
+      out.set(thinkPieceKey(piece), finalText);
+    });
+    return out;
+  }
+
+  /** 串行执行器：同时最多一个在途请求，与工具标题的并发池完全独立。 */
+  private runThinkSerial<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.thinkTail.then(task, task);
+    this.thinkTail = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  }
+
+  /**
+   * 只读判断某通道是否还在熔断冷却期。思考链翻译只借用这个判断避开已经
+   * 出问题的服务，不改动熔断状态本身（那是工具标题通道的记账）。
+   */
+  private isChannelCoolingDown(channelId: string): boolean {
+    const state = this.circuitStates.get(channelId);
+    return state !== undefined && state.state === 'open' && Date.now() < state.openUntil;
   }
 
   async testChannel(channelId: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {

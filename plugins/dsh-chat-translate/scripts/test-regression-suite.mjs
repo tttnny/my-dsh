@@ -27,7 +27,12 @@ import { LruDiskCache } from '../src/server/cache.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
 import { ClientCache } from '../src/client/translate/client-cache.ts';
 import { NonDestructiveTranslationMount } from '../src/client/translate/mount.ts';
-import { createFetchRoutes, TRANSLATE_ROUTE_PATH, TEST_CHANNEL_ROUTE_PATH } from '../src/server/router.ts';
+import {
+  createFetchRoutes,
+  TRANSLATE_ROUTE_PATH,
+  THINK_ROUTE_PATH,
+  TEST_CHANNEL_ROUTE_PATH,
+} from '../src/server/router.ts';
 import { createFakeSettingsScope, createFakeCredentials } from './test-helpers.mjs';
 
 let passed = 0;
@@ -664,6 +669,7 @@ test('Fetch routes own exact POST paths with buffered bodies', () => {
     routes.map((route) => ({ path: route.path, methods: route.methods, requestBody: route.requestBody })),
     [
       { path: TRANSLATE_ROUTE_PATH, methods: ['POST'], requestBody: 'buffered' },
+      { path: THINK_ROUTE_PATH, methods: ['POST'], requestBody: 'buffered' },
       { path: TEST_CHANNEL_ROUTE_PATH, methods: ['POST'], requestBody: 'buffered' },
     ]
   );

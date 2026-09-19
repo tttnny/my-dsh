@@ -83,17 +83,18 @@ export function TidySettingsPanel(_props: PropsRuntime<'reading.settings.item'>)
       {/* 1. 总开关 */}
       <div className="dsh-tidy-card">
         <div className="dsh-tidy-title">
-          <span>工具调用与思考摘要翻译</span>
+          <span>翻译总开关</span>
           <Switch
             checked={state.enabled}
             onChange={() => settingsStore.update({ enabled: !state.enabled })}
-            label="启用工具调用与摘要翻译"
+            label="启用翻译"
           />
         </div>
         <div className="dsh-tidy-desc">
-          自动将当前会话中工具调用标题与思考折叠摘要（如 <code>Locate DSH home directory structure</code>）翻译为中文，
-          点击译文可原地切换原文/译文。思考折叠摘要仅在思考完全结束后才翻译（不翻译流式中间态）。
-          仅作用于当前查看的会话，对话正文永不翻译。
+          自动将当前会话中工具调用标题（如 <code>Locate DSH home directory structure</code>）翻译为中文，
+          点击译文可原地切换原文/译文。思考正文默认不翻译，由 AI 卡片里的「显示思考链翻译按钮」控制：
+          打开后每张思考卡右侧出现按钮，点击才翻译。思考卡折叠起来的那一行摘要永不翻译。
+          仅作用于当前查看的会话，回答正文永不翻译。
         </div>
       </div>
 
@@ -196,6 +197,50 @@ export function TidySettingsPanel(_props: PropsRuntime<'reading.settings.item'>)
                     <span className={`dsh-tidy-test-result ${testing.ok ? 'ok' : 'fail'}`}>{testing.message}</span>
                   )}
                 </div>
+
+                <div className="dsh-tidy-row">
+                  <div className="dsh-tidy-row-info">
+                    <div className="dsh-tidy-row-title">显示思考链翻译按钮</div>
+                    <div className="dsh-tidy-row-desc">
+                      在每张思考卡的「Think」右侧显示一个按钮，点击才翻译这条思考正文（不会自动翻译）；
+                      翻译中按钮转圈，翻好后实心高亮，再点一下整条切回原文（正文里的点击不切换）。代码块与折叠摘要不动，
+                      Bing 通道不参与。关闭此开关会撤掉按钮并还原已翻译内容。
+                    </div>
+                  </div>
+                  <Switch
+                    checked={state.thinkEnabled}
+                    onChange={() => settingsStore.update({ thinkEnabled: !state.thinkEnabled })}
+                    label="显示思考链翻译按钮"
+                  />
+                </div>
+
+                {state.thinkEnabled && (
+                  <div className="dsh-tidy-row">
+                    <div className="dsh-tidy-row-info">
+                      <div className="dsh-tidy-row-title">思考链翻译超时</div>
+                      <div className="dsh-tidy-row-desc">
+                        单位毫秒，范围 500-900000。整块思考可能要几分钟，默认 600000。
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      className="dsh-tidy-input"
+                      min={500}
+                      max={900000}
+                      step={1000}
+                      value={state.thinkTimeoutMs}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!Number.isFinite(val)) return;
+                        settingsStore.update({
+                          thinkTimeoutMs: Math.min(Math.max(val, 500), 900000),
+                        });
+                      }}
+                      style={{ width: '120px' }}
+                      aria-label="思考链翻译超时"
+                    />
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -211,7 +256,8 @@ export function TidySettingsPanel(_props: PropsRuntime<'reading.settings.item'>)
               />
             </div>
             <div className="dsh-tidy-desc">
-              内置免 Key 翻译通道，无需任何配置。AI 未配置或请求失败时自动兜底；AI 与 Bing 同时关闭则不翻译。
+              内置免 Key 翻译通道，无需任何配置，只翻译工具调用标题。AI 未配置或请求失败时自动兜底；
+              思考链翻译永远不走这条通道。AI 与 Bing 同时关闭则工具调用标题也不翻译。
             </div>
           </div>
 

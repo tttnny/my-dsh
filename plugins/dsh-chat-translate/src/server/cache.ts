@@ -20,20 +20,29 @@ export class LruDiskCache {
 
   /** Legacy root-level cache file (<=1.1); moved under the plugin subdir. */
   private legacyPath: string;
+  /** Only the original title cache carries a pre-1.2 root-level predecessor. */
+  private hasLegacyPredecessor: boolean;
 
-  constructor(maxEntries = 1000) {
+  constructor(maxEntries = 1000, fileName = 'cache.json') {
     this.maxEntries = maxEntries;
     // Follow the DSH convention of component-owned home subdirectories
     // (sessions/, storages/, attachments/) instead of polluting ~/.dsh.
     // dshHomePath mirrors resolveDshHome exactly: explicit configured home,
     // then $DSH_HOME (tilde-expanded), then ~/.dsh.
-    this.filePath = dshHomePath('dsh-chat-translate', 'cache.json');
+    this.filePath = dshHomePath('dsh-chat-translate', fileName);
     this.legacyPath = dshHomePath('dsh-chat-translate-cache.json');
+    this.hasLegacyPredecessor = fileName === 'cache.json';
   }
 
   async init(): Promise<void> {
     // One-shot relocation of the pre-1.2 cache file, keeping its value. When
     // the new file already exists (newer cache), the legacy file is retired.
+    // The think-chain pool never had a root-level predecessor: read straight
+    // from its own file.
+    if (!this.hasLegacyPredecessor) {
+      await this.loadFile(this.filePath);
+      return;
+    }
     let readPath = this.filePath;
     try {
       await fs.access(this.filePath);
@@ -51,6 +60,17 @@ export class LruDiskCache {
       }
     }
 
+    await this.loadFile(readPath);
+
+    // Relocation fallback: the legacy file was the read source — retire it
+    // now that its entries are loaded (or proved unreadable).
+    if (readPath !== this.filePath) {
+      await fs.unlink(this.legacyPath).catch(() => {});
+    }
+  }
+
+  /** Load one cache document into memory, dropping poisoned or malformed entries. */
+  private async loadFile(readPath: string): Promise<void> {
     try {
       const content = await fs.readFile(readPath, 'utf-8');
       const obj = JSON.parse(content);
@@ -71,12 +91,6 @@ export class LruDiskCache {
       }
     } catch {
       // Ignore missing or corrupt cache file
-    }
-
-    // Relocation fallback: the legacy file was the read source — retire it
-    // now that its entries are loaded (or proved unreadable).
-    if (readPath !== this.filePath) {
-      await fs.unlink(this.legacyPath).catch(() => {});
     }
   }
 

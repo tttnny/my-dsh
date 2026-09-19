@@ -1,13 +1,15 @@
 import { clientCache } from './client-cache.ts';
 import { lazyQueue } from './lazy.ts';
 import { NonDestructiveTranslationMount } from './mount.ts';
+import { thinkTranslator } from './think.ts';
 
 // Case-insensitive match: DSH builds vary the summary class casing across
-// versions — lowercase "summary" for tool-call rows (MISisG_summary /
-// _48RFeq_summary) vs camelCase "thinkSummary" for the Think card row.
-// Attribute values are matched case-sensitively by default in HTML, which is
-// why the old lowercase-only selector silently missed think summaries.
+// versions (MISisG_summary / _48RFeq_summary). Only tool-call rows are targets;
+// a Think card's collapsed summary is excluded in isToolSummarySpan.
 const TOOL_TITLE_SELECTOR = '[class*="summary" i]';
+
+/** Think cards, the root both renderers mark. */
+const THINK_CARD_SELECTOR = '[data-variant="think"]';
 
 /**
  * Current-session scroll container (the conversation layout re-renders this
@@ -22,6 +24,11 @@ const ROOT_CHECK_INTERVAL_MS = 3000;
 function isToolSummarySpan(span: HTMLElement): boolean {
   if (!span || span.nodeType !== 1) return false;
   if (span.hasAttribute('aria-hidden')) return false;
+
+  // The Think card's collapsed summary — the truncated first line of the
+  // reasoning — is never translated. Its body is handled by thinkTranslator
+  // instead, so exclude the whole card here.
+  if (span.closest(THINK_CARD_SELECTOR)) return false;
 
   // Never match parent rows or containers that contain title, leading icon, chevron or nested summary
   if (span.querySelector?.('[class*="title"], [class*="leading"], [class*="chevron"], [class*="sep"], [class*="summary" i]')) {
@@ -59,25 +66,13 @@ function isToolSummarySpan(span: HTMLElement): boolean {
   return false;
 }
 
-/**
- * DSH's Think card (ReasoningRow) carries `data-state="running"` on its root
- * while the reasoning block is still streaming and flips it to `"ok"` once it
- * has finished. While running, the collapsed summary follows the live tail of
- * the reasoning text (`.summary[data-follow-end]`), so translating it would
- * capture an intermediate line that is replaced by the stable first-line
- * summary when the block ends. Defer instead: the observed `data-state`
- * mutation re-scans this span, at which point the final summary is processed.
- */
-function thinkBlockStillRunning(span: HTMLElement): boolean {
-  const thinkRoot = span.closest<HTMLElement>('[data-variant="think"]');
-  return !!thinkRoot && thinkRoot.dataset.state === 'running';
-}
-
 export class ChatTranslateObserver {
   private observer: MutationObserver | null = null;
   private rootElement: HTMLElement | null = null;
   private rootCheckTimer: number | null = null;
   private isEnabled = true;
+  /** 设置里的思考链开关；与总开关一起决定按钮是否存在。 */
+  private thinkEnabled = false;
 
   constructor() {
     this.handleMutations = this.handleMutations.bind(this);
@@ -85,6 +80,7 @@ export class ChatTranslateObserver {
 
   setEnabled(enabled: boolean): void {
     this.isEnabled = enabled;
+    thinkTranslator.setEnabled(enabled && this.thinkEnabled);
     if (enabled) {
       lazyQueue.setEnabled(true);
       this.start();
@@ -97,10 +93,24 @@ export class ChatTranslateObserver {
 
   private restoreOriginals(): void {
     const scope = this.rootElement ?? document;
-    const spans = scope.querySelectorAll<HTMLElement>('[data-tidy-translated="true"]');
-    for (const span of spans) {
-      NonDestructiveTranslationMount.unmount(span);
-    }
+    NonDestructiveTranslationMount.restore(scope);
+  }
+
+  /**
+   * 设置里的思考链开关：关掉就撤掉所有翻译按钮并还原思考卡里的译文，工具标题
+   * 译文不动。
+   */
+  setThinkEnabled(enabled: boolean): void {
+    this.thinkEnabled = enabled;
+    thinkTranslator.setEnabled(this.isEnabled && enabled);
+  }
+
+  /**
+   * AI 通道的可用性（通道开关打开且 Key / Base URL / 模型齐全）。不可用时同样
+   * 不注入按钮：思考链翻译只能走这条通道。
+   */
+  setThinkConfigured(configured: boolean): void {
+    thinkTranslator.setConfigured(configured);
   }
 
   /**
@@ -140,9 +150,11 @@ export class ChatTranslateObserver {
       const root = this.findRoot(documentRef);
 
       this.rootElement = root;
+      thinkTranslator.setScope(root);
 
-      // 1. Initial scan of existing tool elements
+      // 1. Initial scan of existing tool elements and think cards
       this.scanContainer(root);
+      this.scanThink(root);
 
       // 2. Setup MutationObserver
       if (!this.observer) {
@@ -152,7 +164,15 @@ export class ChatTranslateObserver {
           subtree: true,
           attributes: true,
           characterData: true,
-          attributeFilter: ['data-state', 'data-tool', 'data-variant', 'data-sample', 'aria-expanded'],
+          attributeFilter: [
+            'data-state',
+            'data-tool',
+            'data-variant',
+            'data-sample',
+            'aria-expanded',
+            'data-open',
+            'data-expanded',
+          ],
         });
       }
     };
@@ -192,42 +212,38 @@ export class ChatTranslateObserver {
 
     for (const mutation of mutations) {
       if (mutation.type === 'childList') {
+        let addedElement = false;
         for (let i = 0; i < mutation.addedNodes.length; i++) {
           const node = mutation.addedNodes[i];
           if (node instanceof HTMLElement) {
-            if (
-              node.classList?.contains('dsh-tidy-translated-block') ||
-              node.classList?.contains('dsh-tidy-original-hidden') ||
-              node.classList?.contains('dsh-tidy-original-shown')
-            ) {
-              continue;
-            }
+            if (NonDestructiveTranslationMount.isOwnNode(node)) continue;
+            addedElement = true;
             this.scanNode(node);
+            this.scanThink(node);
+          }
+        }
+        // 只换掉了文本节点（流式重渲染里最常见的一种提交）时，新增节点里没有
+        // 元素，必须回到父元素重扫，否则流式中的新段落永远等不到翻译。
+        const target = mutation.target;
+        if (!addedElement && target instanceof HTMLElement) {
+          if (!NonDestructiveTranslationMount.isOwnNode(target)) {
+            this.scanNode(target);
+            this.scanThink(target);
           }
         }
       } else if (mutation.type === 'attributes') {
         const target = mutation.target;
         if (target instanceof HTMLElement) {
-          if (
-            target.classList?.contains('dsh-tidy-translated-block') ||
-            target.classList?.contains('dsh-tidy-original-hidden') ||
-            target.classList?.contains('dsh-tidy-original-shown')
-          ) {
-            continue;
-          }
+          if (NonDestructiveTranslationMount.isOwnNode(target)) continue;
           this.scanNode(target);
+          this.scanThink(target);
         }
       } else if (mutation.type === 'characterData') {
         const parent = mutation.target.parentElement;
         if (parent instanceof HTMLElement) {
-          if (
-            parent.classList?.contains('dsh-tidy-translated-block') ||
-            parent.classList?.contains('dsh-tidy-original-hidden') ||
-            parent.classList?.contains('dsh-tidy-original-shown')
-          ) {
-            continue;
-          }
+          if (NonDestructiveTranslationMount.isOwnNode(parent)) continue;
           this.scanNode(parent);
+          this.scanThink(parent);
         }
       }
     }
@@ -255,14 +271,23 @@ export class ChatTranslateObserver {
     });
   }
 
-  private processSpan(span: HTMLElement): void {
-    // Think summaries are translated only after the reasoning block has fully
-    // finished streaming — never while `data-state="running"` (the summary is
-    // then a live tail line that would be replaced moments later). The
-    // transition to "ok" triggers a re-scan via the observed data-state
-    // attribute, which is when this span becomes processable.
-    if (thinkBlockStillRunning(span)) return;
+  /**
+   * 交给思考正文翻译控制器：命中节点所在的卡片，以及它下面（或它就是）的
+   * 全部思考卡片。
+   */
+  private scanThink(node: ParentNode): void {
+    if (!thinkTranslator.isEnabled()) return;
+    if (node instanceof HTMLElement) {
+      const card = node.closest<HTMLElement>(THINK_CARD_SELECTOR);
+      if (card) thinkTranslator.syncCard(card);
+    }
+    if (!node.querySelectorAll) return;
+    node.querySelectorAll<HTMLElement>(THINK_CARD_SELECTOR).forEach((card) => {
+      thinkTranslator.syncCard(card);
+    });
+  }
 
+  private processSpan(span: HTMLElement): void {
     if (NonDestructiveTranslationMount.isMounted(span)) {
       const original = NonDestructiveTranslationMount.getOriginal(span);
       if (original) {
