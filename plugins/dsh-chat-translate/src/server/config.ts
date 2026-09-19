@@ -10,6 +10,17 @@ export const AI_TIMEOUT_MIN = 500;
 export const AI_TIMEOUT_MAX = 120000;
 
 /**
+ * Bounds for the think-chain request timeout. A full reasoning block can take
+ * minutes on a local model, so this budget is far larger than the short-text
+ * AI timeout and is bounded separately.
+ */
+export const THINK_TIMEOUT_MIN = 500;
+export const THINK_TIMEOUT_MAX = 900000;
+
+/** Entries kept in the think-chain cache pool, separate from the title pool. */
+export const THINK_CACHE_ENTRIES = 300;
+
+/**
  * The settings namespace this plugin owns. The user-editable layer lives in
  * the DSH-managed document (~/.dsh/settings.yaml) under this key; the
  * standalone ~/.dsh/dsh-chat-translate-config.json file is legacy (<=1.1).
@@ -21,8 +32,10 @@ export const DEFAULT_CONFIG: PluginConfig = {
   concurrency: 3,
   timeoutMs: 2000,
   aiTimeoutMs: 30000,
+  thinkTimeoutMs: 600000,
   aiEnabled: true,
   bingEnabled: true,
+  thinkEnabled: true,
   baseUrl: '',
   model: '',
   targetLang: 'zh-Hans',
@@ -119,6 +132,7 @@ export function sanitizePatch(input: Record<string, unknown>): Partial<PluginCon
   if (typeof input.enabled === 'boolean') next.enabled = input.enabled;
   if (typeof input.aiEnabled === 'boolean') next.aiEnabled = input.aiEnabled;
   if (typeof input.bingEnabled === 'boolean') next.bingEnabled = input.bingEnabled;
+  if (typeof input.thinkEnabled === 'boolean') next.thinkEnabled = input.thinkEnabled;
 
   if (typeof input.concurrency === 'number' && Number.isFinite(input.concurrency)) {
     next.concurrency = Math.min(Math.max(Math.round(input.concurrency), 1), MAX_CONCURRENCY);
@@ -130,6 +144,12 @@ export function sanitizePatch(input: Record<string, unknown>): Partial<PluginCon
     next.aiTimeoutMs = Math.min(
       Math.max(Math.round(input.aiTimeoutMs), AI_TIMEOUT_MIN),
       AI_TIMEOUT_MAX
+    );
+  }
+  if (typeof input.thinkTimeoutMs === 'number' && Number.isFinite(input.thinkTimeoutMs)) {
+    next.thinkTimeoutMs = Math.min(
+      Math.max(Math.round(input.thinkTimeoutMs), THINK_TIMEOUT_MIN),
+      THINK_TIMEOUT_MAX
     );
   }
   if (typeof input.baseUrl === 'string') next.baseUrl = input.baseUrl.trim();

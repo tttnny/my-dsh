@@ -23,9 +23,10 @@ const ledgerByRoot = new WeakMap<HTMLElement, Map<Text, TextRevealRecord>>()
 
 /**
  * Text that keeps revealing inside a host that opted out of pacing:
- * `dsh-chat-translate` mounts a finished translation in this block, and a
- * translation is read as it arrives, so it keeps the left-to-right flow while
- * the surrounding content lands at once.
+ * `dsh-chat-translate` mounts translated think-body paragraphs in this block,
+ * and a translation is read as it arrives, so it keeps the left-to-right flow
+ * while the surrounding content lands at once. The plugin no longer translates
+ * the collapsed think summary.
  */
 export const TRANSLATION_REVEAL_SELECTOR = '.dsh-tidy-translated-block'
 

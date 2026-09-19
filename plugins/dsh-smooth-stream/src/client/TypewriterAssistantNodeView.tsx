@@ -544,12 +544,12 @@ function AnimatedReasoning({
     notifyFollowCommit(commitAnchorRef.current)
   }, [])
   const summarySpeedRef = useRef(35)
-  // A translated Think summary is mounted into this card by `dsh-chat-translate`
-  // once the block stopped running — usually after this row stopped streaming —
-  // so this host always watches and never gates on the live turn: it paces the
-  // translation block and nothing else. Every other text node in the card is
-  // left exactly as React rendered it, so the reasoning feed keeps its own
-  // reveal untouched.
+  // Translated think-body paragraphs are mounted into this card by
+  // `dsh-chat-translate`: settled ones while the block is still streaming, the
+  // last one once thinking ends. This host always watches and never gates on
+  // the live turn, so it paces the translation blocks and nothing else. Every
+  // other text node in the card is left exactly as React rendered it, so the
+  // reasoning feed keeps its own reveal untouched.
   useProgressiveDomText(
     commitAnchorRef,
     true,

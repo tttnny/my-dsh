@@ -29,7 +29,7 @@ interface ClientContext {
 }
 
 /**
- * Mount the tool-call / think-summary translation observer and the settings UI
+ * Mount the tool-call / think-chain translation observer and the settings UI
  * card inside the shared reading-settings page.
  * @param ctx - DSH browser client context.
  */

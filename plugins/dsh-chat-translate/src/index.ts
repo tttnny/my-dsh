@@ -9,6 +9,9 @@ import {
   MAX_CONCURRENCY,
   AI_TIMEOUT_MIN,
   AI_TIMEOUT_MAX,
+  THINK_TIMEOUT_MIN,
+  THINK_TIMEOUT_MAX,
+  THINK_CACHE_ENTRIES,
   type SettingsMigrationTarget,
 } from './server/config.ts';
 import { CredentialsReader, TRANSLATE_API_KEY_REF } from './server/credentials.ts';
@@ -34,8 +37,14 @@ const CONFIG_SCHEMA = z.object({
   concurrency: z.number().min(1).max(MAX_CONCURRENCY).default(DEFAULT_CONFIG.concurrency),
   timeoutMs: z.number().min(500).max(10000).default(DEFAULT_CONFIG.timeoutMs),
   aiTimeoutMs: z.number().min(AI_TIMEOUT_MIN).max(AI_TIMEOUT_MAX).default(DEFAULT_CONFIG.aiTimeoutMs),
+  thinkTimeoutMs: z
+    .number()
+    .min(THINK_TIMEOUT_MIN)
+    .max(THINK_TIMEOUT_MAX)
+    .default(DEFAULT_CONFIG.thinkTimeoutMs),
   aiEnabled: z.boolean().default(DEFAULT_CONFIG.aiEnabled),
   bingEnabled: z.boolean().default(DEFAULT_CONFIG.bingEnabled),
+  thinkEnabled: z.boolean().default(DEFAULT_CONFIG.thinkEnabled),
   baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl),
   model: z.string().default(DEFAULT_CONFIG.model),
   targetLang: z.string().default(DEFAULT_CONFIG.targetLang),
@@ -66,14 +75,16 @@ export function apply(ctx: HostContext): void {
   const credentials = new CredentialsReader(ctx.credentials);
   const configManager = new ConfigManager(ctx.settings.register(SETTINGS_NAMESPACE, CONFIG_SCHEMA), credentials);
   const cache = new LruDiskCache(1000);
-  const dispatcher = new TranslationDispatcher(configManager, cache, credentials);
+  const thinkCache = new LruDiskCache(THINK_CACHE_ENTRIES, 'think-cache.json');
+  const dispatcher = new TranslationDispatcher(configManager, cache, credentials, thinkCache);
 
-  // Initialize async resources: credentials cache, disk cache relocation, and
+  // Initialize async resources: credentials cache, both disk cache pools, and
   // the one-shot migration of the legacy dsh-chat-translate-config.json.
   const legacyConfigPath = dshHomePath('dsh-chat-translate-config.json');
   const initPromise = Promise.all([
     credentials.init(),
     cache.init(),
+    thinkCache.init(),
     migrateLegacyConfigFile(ctx.settings, legacyConfigPath),
   ]).catch((err) => {
     console.warn('[dsh-chat-translate] Initialization error:', err);
@@ -96,7 +107,7 @@ export function apply(ctx: HostContext): void {
     );
     return () => {
       void Promise.all(disposers.map((dispose) => dispose()))
-        .then(() => cache.dispose())
+        .then(() => Promise.all([cache.dispose(), thinkCache.dispose()]))
         .catch((err) => {
           console.warn('[dsh-chat-translate] Dispose translation routes error:', err);
         });
