@@ -249,8 +249,8 @@
 # MATT-DEL: upstream tool-ask-user row removed.
 # MATT-ADD: replaced in place by tool-ask-user-grilling — the same form with
 # forced multi-select and an auto-appended round-end supplement question. Skills
-# ship upstream-verbatim except grilling (DSH-delivery note, see
-# patches/matt-presets-bootstrap/README.md section 2).
+# ship upstream-verbatim except grilling (local notes: template, delivery,
+# sub-agent rounds; see patches/matt-presets-bootstrap/README.md section 2).
 - id: tool-ask-user-grilling
   name: '@lynn123411/dsh-ask-user-grilling'
 

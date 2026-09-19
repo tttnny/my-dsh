@@ -20,4 +20,4 @@ dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 
 ## 详细说明
 
-配置细节、实现原理与使用说明一律见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)：官方基线与逐处改动清单、`agent.cordis.yml` 两处改动块、PTC 形态的 `skills/grilling/SKILL.md` 成品全文（`run_code` 程序内 `tools.ask_user_grilling`）、本 preset 与 matt-standard 的形态差异、插件的注册安装要求、同步与校验步骤、DSH 或技能上游升级后的重打流程。本目录不含 README.md 之外的自有配置：`agent.cordis.yml` / `preset.yml` / `skills/` 就是成品，直接同步即用。
+配置细节、实现原理与使用说明一律见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)：官方基线与逐处改动清单、`agent.cordis.yml` 两处改动块、`skills/grilling/SKILL.md` 四处本地改动的成品块（投递段按 PTC 形态写成 `run_code` 程序内 `tools.ask_user_grilling`）、本 preset 与 matt-standard 的形态差异、插件的注册安装要求、同步与校验步骤、DSH 或技能上游升级后的重打流程。本目录不含 README.md 之外的自有配置：`agent.cordis.yml` / `preset.yml` / `skills/` 就是成品，直接同步即用。
