@@ -87,24 +87,60 @@ export const StatusBar = (props) => {
     const cap = foldRef.current
     if (!cap) return
     const targets = Array.from(cap.querySelectorAll('[data-fold-priority]'))
-    if (!targets.length) return
+    const targets2 = Array.from(cap.querySelectorAll('[data-fold2-priority]'))
+    if (!targets.length && !targets2.length) return
     cap.classList.add('dsws-no-anim')
-    targets.forEach(function (el) { el.classList.remove('dsws-folded') })
-    void cap.offsetWidth
     const items = targets.map(function (el) {
       return { el: el, p: Number(el.getAttribute('data-fold-priority') || 99) }
     }).sort(function (a, b) { return a.p - b.p })
-    for (const it of items) {
-      if (cap.scrollWidth <= cap.clientWidth + 1) break
-      it.el.classList.add('dsws-folded')
+    const items2 = targets2.map(function (el) {
+      return { el: el, p: Number(el.getAttribute('data-fold2-priority') || 99) }
+    }).sort(function (a, b) { return a.p - b.p })
+    // 折叠流程：一级折文字 → 二级整段折（沉淀1 → 交接静态半2 → 诊断3 → BUG4）→ 极窄压缩间距。
+    // 品牌图标、可接、环境与动作图标（刷新 / handoff-open / 技能按钮）不参与折叠。
+    const passes = function () {
+      targets.concat(targets2).forEach(function (el) { el.classList.remove('dsws-folded') })
       void cap.offsetWidth
+      for (const it of items) {
+        if (cap.scrollWidth <= cap.clientWidth + 1) break
+        it.el.classList.add('dsws-folded')
+        void cap.offsetWidth
+      }
+      for (const it of items2) {
+        if (cap.scrollWidth <= cap.clientWidth + 1) break
+        it.el.classList.add('dsws-folded')
+        void cap.offsetWidth
+      }
     }
+    cap.classList.remove('dsws-tight')
+    void cap.offsetWidth
+    passes()
+    // 极窄档：两级折叠用尽仍差几像素时，压缩列间距与左右内边距（保留全部 chip 与动作图标）。
+    const tight = cap.scrollWidth > cap.clientWidth + 1
+    if (tight) {
+      cap.classList.add('dsws-tight')
+      void cap.offsetWidth
+      passes()
+    }
+    cap.dataset.tight = tight ? '1' : '0'
     cap.dataset.fold = String(targets.filter(function (el) {
+      return el.classList.contains('dsws-folded')
+    }).length)
+    cap.dataset.fold2 = String(targets2.filter(function (el) {
       return el.classList.contains('dsws-folded')
     }).length)
     cap.classList.remove('dsws-no-anim')
   }
-  React.useEffect(function () {
+  // 挂载即折叠：胶囊任何一次重新挂载（展开 / 横幅切换导致 wrapper 变更）都在 commit 期先折好，避免「异常→正常」闪一帧。
+  const attachFold = React.useCallback(function (el) {
+    foldRef.current = el
+    if (el) applyFold()
+  }, [])
+  // 分叉：展开/收起总开关已搬进右侧 Deck 面板头部；dock 零按钮——收起后输入框上方无任何输出，恢复入口只在面板。
+  // 分叉报错穿透：异常快照（snapMode==='err'）不受收起影响，横幅照常展示。
+  const deckErr = !!(s && s.snapMode === 'err')
+  const deckFolded = isBannerFolded(s.cwd) && !deckErr
+  React.useLayoutEffect(function () {
     // 第一性原理方案 B：胶囊宽度不再 JS 设像素，完全由 CSS 变量 --dsh-composer-card-max-width 驱动（与输入卡同源）。
     // 旧方案量具体 textarea 卡死 780 的根因已消除；此处仅负责内容折叠（applyFold）对可用宽度的响应。
     // 可用宽 = 胶囊 clientWidth（已由 CSS 随对话框 --dsh-conversation-column-width 自动伸缩），
@@ -126,7 +162,7 @@ export const StatusBar = (props) => {
       window.removeEventListener('resize', applyAll)
       clearInterval(poll)
     }
-  }, [])
+  }, [deckFolded])
   // #196 · 状态栏胶囊移除 backend segment 后不再在此处挂 SwitchConfirmModal（仍由 Dock/Overlay 挂载，状态机保留）
   const _isGatePending = !!(_selSBGate && _selSBGate.pending && !!s.cwd)
   const _gateActive = _isOtherSBGate || _isGatePending
@@ -136,22 +172,18 @@ export const StatusBar = (props) => {
   //   后端确定后才走依赖链引导（ghcli → ghauth → setup → skills）。
   const _backendUndecided = !(_selSBGate && _selSBGate.backendId)
   const firstBlock = (_gateActive || _backendUndecided) ? 'gate' : ghCliBad ? 'ghcli' : ghAuthBad ? 'ghauth' : amber ? 'setup' : skillsBad ? 'skills' : null
-  // 分叉：展开/收起总开关已搬进右侧 Deck 面板头部；dock 零按钮——收起后输入框上方无任何输出，恢复入口只在面板。
-  // 分叉报错穿透：异常快照（snapMode==='err'）不受收起影响，横幅照常展示。
-  const deckErr = !!(s && s.snapMode === 'err')
-  const deckFolded = isBannerFolded(s.cwd) && !deckErr
   if (deckFolded) return null
   // #522：调试开关关闭时小灰点不挂载（胶囊里不留空位）；开时常驻；开关切换经已有的日志开关广播刷新各会话界面，此处只读开关不另加广播。
   let logDotOn = false
   try { logDotOn = !!(typeof logSwitch !== 'undefined' && logSwitch && logSwitch.enabled === true) } catch (eLogDot) {}
   // 优化3：胶囊恒渲染（任何情况下不隐藏）；未选后端时其上方叠加 gate 蓝条引导入口
-  const capsule = h('div', { className: 'dsws-capsule', ref: foldRef, onClick: function () { openPanel(s) }, style: { position: 'relative', width: '100%', boxSizing: 'border-box' } }, [
+  const capsule = h('div', { className: 'dsws-capsule', ref: attachFold, onClick: function () { openPanel(s) }, style: { position: 'relative', width: '100%', boxSizing: 'border-box' } }, [
     h('span', { className: 'dsws-capsule-word', onClick: function (e) { e.stopPropagation(); togglePanel(s) } }, [
       Icon({ scheme: s.ui.icon, size: 14 }),
       h('span', { 'data-fold-priority': 1 }, tr('panel.title')),
     ]),
     h(Tip, { content: tr('nav.takeableTitle') }, seg('target', [h('span', { 'data-fold-priority': 5 }, tr('nav.takeable')), num(String(fr), '2ch')], '#4ade80', function () { s.stateFilter = 'frontier'; s.lblFilters = []; go('list') })),
-    h('span', { ref: bugAnchorRef, style: { position: 'relative', display: 'inline-flex' }, onMouseEnter: showBugMenu, onMouseLeave: function () { scheduleClose(bugCloseRef, closeBugMenu) } }, [
+    h('span', { 'data-fold2-priority': 4, ref: bugAnchorRef, style: { position: 'relative', display: 'inline-flex' }, onMouseEnter: showBugMenu, onMouseLeave: function () { scheduleClose(bugCloseRef, closeBugMenu) } }, [
       h(Tip, { content: tr('nav.bugTitle') }, seg('alert', [h('span', { 'data-fold-priority': 6 }, tr('nav.bug')), num(String(bugN), '2ch')], '#f87171', function () { s.stateFilter = 'open'; s.lblFilters = ['bug']; go('list') })),
       s.bugMenuOpen ? PortalOverlay({ className: 'dsws-bugmenu', onMouseEnter: function () { clearClose(bugCloseRef) }, onMouseLeave: function () { scheduleClose(bugCloseRef, closeBugMenu) }, onClick: function (e) { e.stopPropagation() }, style: { position: 'fixed', left: s.bugMenuPos ? s.bugMenuPos.left : 0, bottom: s.bugMenuPos ? s.bugMenuPos.bottom : 0, padding: 4, zIndex: 2147483000, background: 'var(--dsw-alias-bg-layer-2,#16181d)', border: '1px solid var(--dsw-alias-border-l1,#2a2d35)', borderRadius: 8, boxShadow: '0 8px 30px rgba(0,0,0,.45)' } }, [
         h('div', { onClick: function (e) { e.stopPropagation(); closeBugMenu(); openTextInNewSession(s, newBugWayfinderText(s), newSessionTitleNew('bug')) }, onMouseEnter: function () { if (!s.bugMenuHover) { s.bugMenuHover = true; emit(s) } }, onMouseLeave: function () { if (s.bugMenuHover) { s.bugMenuHover = false; emit(s) } }, style: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: s.bugMenuHover ? '#f87171' : 'var(--dsw-alias-label-primary,#e6edf3)', background: s.bugMenuHover ? 'rgba(248,113,113,.15)' : 'transparent', whiteSpace: 'nowrap' } }, [
@@ -160,10 +192,10 @@ export const StatusBar = (props) => {
         ]),
       ]) : null,
     ]),
-    h(Tip, { content: tr('nav.triageTitle') }, seg('search', [h('span', { 'data-fold-priority': 7 }, tr('nav.triage')), num(String(triageN), '2ch')], '#f59e0b', function () { s.stateFilter = 'open'; s.lblFilters = ['needs-triage']; go('list') })),
-    h(Tip, { content: tr('nav.fixateTitle') }, seg('note', h('span', { 'data-fold-priority': 2 }, tr('nav.word')), '#c084fc', function () { injectFixate(s) })),
+    h(Tip, { content: tr('nav.triageTitle') }, seg('search', [h('span', { 'data-fold-priority': 7 }, tr('nav.triage')), num(String(triageN), '2ch')], '#f59e0b', function () { s.stateFilter = 'open'; s.lblFilters = ['needs-triage']; go('list') }, { 'data-fold2-priority': 3 })),
+    h(Tip, { content: tr('nav.fixateTitle') }, seg('note', h('span', { 'data-fold-priority': 2 }, tr('nav.word')), '#c084fc', function () { injectFixate(s) }, { 'data-fold2-priority': 1 })),
     h('span', { className: 'dsws-split' }, [
-      h(Tip, { content: tr('nav.handoffTitle') }, h('span', { className: 'dsws-split-part', onClick: function (e) { e.stopPropagation(); doHandoff(s) }, 'aria-label': tr('nav.handoffTitle'), style: { color: '#58a6ff' } }, [
+      h(Tip, { content: tr('nav.handoffTitle') }, h('span', { 'data-fold2-priority': 2, className: 'dsws-split-part', onClick: function (e) { e.stopPropagation(); doHandoff(s) }, 'aria-label': tr('nav.handoffTitle'), style: { color: '#58a6ff' } }, [
         Ic({ n: 'handoff', size: 12 }),
         h('span', { 'data-fold-priority': 3 }, tr('nav.handoff')),
       ])),

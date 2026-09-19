@@ -1,4 +1,4 @@
-// verify-capsule-narrow.js — 状态栏胶囊窄屏契约 · issue #16（V2：内容自适应渐进收缩）
+// verify-capsule-narrow.js — 状态栏胶囊窄屏契约 · issue #16（V2 一级文字 + V3 二级整段 + 极窄压缩）
 // 用法: node tests/verify-capsule-narrow.js [file...]（默认 client.js + package/lib/client.js 双源）
 //
 // V2 契约（2026-08-18 复现后重设计，替代 R1-R13 的 data-narrow 阈值体系）：
@@ -7,10 +7,11 @@
 //   3) 内容自适应渐进收缩（仿 #15）：每个可收缩文字 span 打 data-fold-priority（1=最先收…9=最后收），
 //      applyFold 全展开后按 priority 升序逐个加 .dsws-folded，直到 scrollWidth ≤ clientWidth
 //      - 优先级 = 信息价值：品牌(1) → 沉淀(2)/交接(3)/刷新字(4) → 可接(5)/BUG(6)/诊断(7)/环境(8) → 时间(9)
-//      - 图标+数字永不收缩；最窄态 = 图标+数字紧凑条
+//      - 图标+数字核心（品牌/可接/环境/动作图标）永不收缩
 //   4) 点击事件契约：capsule→openPanel / capsule-word→togglePanel / seg/split/timebtn→各自 handler
 //   5) EN locale：i18n 键齐备（panel.title 中英同字 "MattSkills"）
 //   6) 双源同步：client.js ↔ package/lib/client.js 的 capsule CSS 块 + JSX 块一致
+//   7) V3（窄极限三级收缩）：一级文字折光仍溢出时整段折 沉淀 → 交接静态半 → 诊断 → BUG；仍溢出再进极窄压缩档（收窄列间距/左右内边距）
 const fs = require('fs')
 
 const files = process.argv.slice(2).length ? process.argv.slice(2) : ['client.js', 'package/lib/client.js']
@@ -26,10 +27,10 @@ const statChecks = function (src, tag) {
   ok('胶囊 .dsws-capsule CSS max-width 用 100%（跟随输入区宽，非 96vw）', /\.dsws-capsule\s*\{[^}]*max-width:\s*min\(100%,\s*1400px\)/.test(src))
   ok('胶囊 .dsws-capsule CSS 不再含 max-width:min(96vw, ...) （旧 R1 行为已弃）', !/\.dsws-capsule\s*\{[^}]*max-width:\s*min\(96vw/.test(src))
   ok('胶囊 .dsws-capsule CSS 不再含 margin:0 auto（外层 wrapper 负责居中）', !/\.dsws-capsule\s*\{[^}]*margin:\s*0\s+auto/.test(src))
-  ok('外层 wrapper display:flex + flex:\'none\' + justify-content:center 居中胶囊', /display:\s*'flex',\s*flex:\s*'none',\s*justifyContent:\s*'center'/.test(src))
-  ok('外层 wrapper width:100% 跟输入区容器宽', /display:\s*'flex'(?:,\s*flex:\s*'none')?,\s*justifyContent:\s*'center'[\s\S]{0,80}width:\s*'100%'/.test(src))
-  ok('外层 wrapper boxSizing:border-box 防 padding 撑破', /display:\s*'flex'(?:,\s*flex:\s*'none')?,\s*justifyContent:\s*'center'[\s\S]{0,200}boxSizing:\s*'border-box'/.test(src))
-  ok('外层 wrapper 正常路径 overflow:hidden 截 capsule 溢出，缺 ReactDOM 时 visible 降级保留浮层可用性', /display:\s*'flex'(?:,\s*flex:\s*'none')?,\s*justifyContent:\s*'center'[\s\S]{0,250}overflow:\s*RDOM\s*\?\s*'hidden'\s*:\s*'visible'/.test(src))
+  ok('外层 wrapper display:flex + flex:\'none\' + align-items:center 居中胶囊', /display:\s*'flex',\s*flex:\s*'none',\s*flexDirection:\s*'column',\s*alignItems:\s*'center'/.test(src))
+  ok('外层 wrapper width:100% 跟输入区容器宽', /display:\s*'flex'(?:,\s*flex:\s*'none')?,\s*flexDirection:\s*'column'[\s\S]{0,240}width:\s*'100%'/.test(src))
+  ok('外层 wrapper boxSizing:border-box 防 padding 撑破', /display:\s*'flex'(?:,\s*flex:\s*'none')?,\s*flexDirection:\s*'column'[\s\S]{0,240}boxSizing:\s*'border-box'/.test(src))
+  ok('外层 wrapper 正常路径 overflow:hidden 截 capsule 溢出，缺 ReactDOM 时 visible 降级保留浮层可用性', /display:\s*'flex'(?:,\s*flex:\s*'none')?,\s*flexDirection:\s*'column'[\s\S]{0,300}overflow:\s*RDOM\s*\?\s*'hidden'\s*:\s*'visible'/.test(src))
   ok('胶囊 CSS 不再加 overflow:hidden（让 capsule 圆角背景完整，圆角处不漏白）', !/\.dsws-capsule\s*\{[^}]*overflow:\s*hidden/.test(src))
   // 期望 2：children 保持 flex:none + gap 居中
   ok('children 仍 flex:none（capsule-word / seg / timebtn）', /\.dsws-capsule\s+\.dsws-capsule-word[^{]*\{[^}]*flex:none/.test(src) && /\.dsws-capsule\s+\.dsws-seg\{flex:none/.test(src) && /\.dsws-capsule\s+\.dsws-timebtn\{flex:none/.test(src))
@@ -58,8 +59,25 @@ const statChecks = function (src, tag) {
   ok('V2 · applyFold 溢出判定 scrollWidth ≤ clientWidth+1 停止', /scrollWidth\s*<=\s*cap\.clientWidth\s*\+\s*1/.test(src))
   ok('V2 · applyFold 加 .dsws-folded 后强制 reflow', /classList\.add\(['"]dsws-folded['"]\)[\s\S]{0,80}void cap\.offsetWidth/.test(src))
   ok('V2 · applyFold 记录 dataset.fold 折叠数（调试/测试锚点）', /cap\.dataset\.fold\s*=\s*String\(/.test(src))
+  // ---- V3（窄极限二级折叠）：文字折光仍溢出时整段折叠 沉淀 → 交接静态半 → 诊断 → BUG；
+  //   品牌图标 / 可接 / 环境 / 动作图标（刷新、handoff-open）不参与，故最窄态仍有核心计数与入口。 ----
+  ok('V3 · CSS 二级折叠规则存在 [data-fold2-priority].dsws-folded{display:none!important}', src.indexOf('.dsws-capsule [data-fold2-priority].dsws-folded{display:none!important}') >= 0)
+  ok('V3 · CSS 交接静态半折叠时隐藏分隔线（:has）', src.indexOf('.dsws-split:has(.dsws-split-part.dsws-folded) .dsws-split-div{display:none}') >= 0)
+  ok('V3 · CSS 极窄压缩档 .dsws-capsule.dsws-tight 收窄间距/内边距', src.indexOf('.dsws-capsule.dsws-tight{gap:2px 2px;padding-left:2px;padding-right:2px}') >= 0)
+  ok('V3 · applyFold 极窄时加 dsws-tight 并重跑折叠', src.indexOf("cap.classList.add('dsws-tight')") >= 0 && src.indexOf('cap.dataset.tight') >= 0)
+  const near = function (a, b, gap) { const i = src.indexOf(a); const j = i >= 0 ? src.indexOf(b, i) : -1; return i >= 0 && j >= 0 && j <= i + a.length + gap }
+  ok('V3 · 恰好 4 个 data-fold2-priority 绑定（无动作图标混入）', src.split("'data-fold2-priority':").length - 1 === 4)
+  ok('V3 · stage2=1 → 沉淀（nav.word）', near('injectFixate(s)', "'data-fold2-priority': 1", 90))
+  ok('V3 · stage2=2 → 交接静态半（dsws-split-part / doHandoff）', near("'data-fold2-priority': 2", 'dsws-split-part', 40) && near("'data-fold2-priority': 2", 'doHandoff(s)', 140))
+  ok('V3 · stage2=3 → 诊断（nav.triage）', near("seg('search'", "'data-fold2-priority': 3", 360))
+  ok('V3 · stage2=4 → BUG（bugAnchorRef）', near("'data-fold2-priority': 4", 'bugAnchorRef', 40))
+  ok('V3 · applyFold 查询 [data-fold2-priority]', src.indexOf("querySelectorAll('[data-fold2-priority]')") >= 0)
+  ok('V3 · applyFold 二级 pass 按 priority 升序（第二个 sort）', (src.split('sort(function (a, b) { return a.p - b.p })').length - 1) >= 2)
+  ok('V3 · applyFold 记录 dataset.fold2', src.indexOf('cap.dataset.fold2') >= 0)
+  ok('V3 · 二级 pass 位于一级 pass 之后', near('cap.dataset.fold', 'data-fold2-priority', 900) || near("querySelectorAll('[data-fold-priority]')", "querySelectorAll('[data-fold2-priority]')", 120))
   // 3d. foldRef 挂 capsule + ResizeObserver 监听
-  ok('V2 · capsule 根挂 ref: foldRef', /className:\s*['"]dsws-capsule['"][^}]*ref:\s*foldRef/.test(src))
+  ok('V2 · capsule 根挂 ref: attachFold（挂载即折叠，防展开闪）', src.indexOf("className: 'dsws-capsule'") >= 0 && src.indexOf('ref: attachFold') >= 0)
+  ok('V2 · attachFold 挂载时写 foldRef.current 并调 applyFold', src.indexOf('attachFold = React.useCallback') >= 0 && src.indexOf('foldRef.current = el') >= 0 && src.indexOf('if (el) applyFold()') >= 0)
   ok('V2 · foldRef = React.useRef(null)', /foldRef\s*=\s*React\.useRef\(null\)/.test(src))
   ok('V2 · ResizeObserver 监听 foldRef.current 触发 applyFold', /new ResizeObserver\(function\s*\(\)\s*\{\s*applyFold\(\)\s*\}\)[\s\S]{0,200}roFold\.observe\(foldRef\.current\)/.test(src))
   ok('V2 · window resize 触发 applyFold（实时响应）', /window\.addEventListener\(['"]resize['"],\s*applyAll\)/.test(src))
@@ -83,9 +101,9 @@ const statChecks = function (src, tag) {
   ok('R9 · ResizeObserver 监听 foldRef 及其 parent（可用宽变化即折叠）', /new ResizeObserver\(function\s*\(\)\s*\{\s*applyFold\(\)\s*\}\)[\s\S]{0,300}roFold\.observe\(foldRef\.current\)/.test(src) && /roParent\.observe/.test(src))
   ok('R9 · useEffect 清理断开 roFold/roParent（防泄漏）', /roFold\.disconnect\(\)[\s\S]{0,120}roParent\.disconnect\(\)/.test(src))
   ok('R9 · 轮询兜底保留（字体/宿主重排）', /setInterval\(applyAll, 2000\)/.test(src))
-  ok('R12 · !firstBlock 分支 wrapper 含 flex:\'none\'（防 flex-shrink 压矮）', /display:\s*'flex',\s*flex:\s*'none',\s*justifyContent:\s*'center'/.test(src))
+  ok('R12 · !firstBlock 分支 wrapper 含 flex:\'none\'（防 flex-shrink 压矮）', /display:\s*'flex',\s*flex:\s*'none',\s*flexDirection:\s*'column'/.test(src))
   ok('R12 · firstBlock 分支 wrapper 含 flex:\'none\'（横幅 + 胶囊列布局同样防压缩）', /display:\s*'flex',\s*flex:\s*'none',\s*flexDirection:\s*'column'/.test(src))
-  ok('R6b · !firstBlock 分支 wrapper 不再含 alignItems:\'stretch\'', !/display:\s*'flex',\s*justifyContent:\s*'center'[\s\S]{0,200}alignItems:\s*'stretch'/.test(src))
+  ok('R6b · !firstBlock 分支 wrapper 不再含 alignItems:\'stretch\'', !/display:\s*'flex',\s*flex:\s*'none',\s*flexDirection:\s*'column'[\s\S]{0,200}alignItems:\s*'stretch'/.test(src))
 
   // 期望 4：点击事件契约
   ok('capsule onClick → openPanel(s)', /className:\s*['"]dsws-capsule['"][^}]*onClick:\s*function\s*\(\)\s*\{\s*openPanel\(s\)/.test(src))
