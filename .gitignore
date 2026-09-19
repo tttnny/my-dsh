@@ -6,7 +6,7 @@ AGENTS.md
 docs/
 
 # 例外：插件目录自带的 docs/ 属插件内容，须入库（根 docs/ 仍保持 local-only）
-# 注：插件目录若将来需入库 AGENTS.md 之类文件，须另开显式 ! 例外（第 5 行 AGENTS.md 匹配任意层级）
+# 注：插件目录若将来需入库 AGENTS.md 之类文件，须另开显式 ! 例外（上面的 AGENTS.md 那条规则匹配任意层级）
 !plugins/*/docs/
 !plugins/*/docs/**
 !archive/plugins/*/docs/
@@ -18,7 +18,7 @@ tmp/
 /scripts/
 
 # 仓库根不放依赖安装，也不放 link: 插件的内核包软链接——内核包由 DSH 自身路由供给
-# （见 docs/rules/plugins.md 第 4 条）；node_modules 一律不入库
+# （见 docs/rules/dev-copy.md「内核包路由与 --preserve-symlinks」）；node_modules 一律不入库
 node_modules/
 
 # secrets & local credentials
