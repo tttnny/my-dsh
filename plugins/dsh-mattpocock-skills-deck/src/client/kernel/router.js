@@ -56,8 +56,14 @@
     // v1.4.1 修复「切侧边栏没反应」：
     //   ① ensureSidebarTab 幂等注册 —— better-sidebar 的 client 可能晚于本模块加载（未声明 inject 依赖），
     //      注册必须可重试；openTab 前 ensure 一次保证已注册（否则 openTab 静默 no-op）。
-    //   ② openTab 带 path seed 走「内容型打开」→ 侧边栏面板折叠时自动展开
-    //      （类型型打开不展开面板，侧边栏收着就「看不见 = 没反应」）。
+    //   ② 打开时只给类型，不给 path（#594 修复）。
+    //      早先为了让折叠的侧边栏自动展开，这里给 openTab 传了一个假的 path（'deck:map'）。
+    //      better-sidebar 0.19 起，带 path 的打开会被当成「打开一个真实文件」，转发给 DSH 原生
+    //      右侧栏并按文件地址解析；宿主于是拿 deck:map 这个字符串去文件系统里 realpath，
+    //      找不到就抛 cannot resolve target "...\deck:map"，面板打不开，用户只看到这条报错。
+    //      不传 path 才是这个版本的正确用法：better-sidebar 会把 deck:map 当成我们注册的面板
+    //      类型（registerTab 的 id 就是它的 kind），落到 DSH 原生右侧栏；展开由它自己按描述符做
+    //      ——本面板没有 createTab，所以 revealIfOpened 恒为真，折叠状态下也会展开。
     export let sidebarTabDisposer = null
     export let sidebarTabRetry = null
     export const ensureSidebarTab = function () {
@@ -70,10 +76,15 @@
           const sessionId = scope ? scope.sessionId : undefined
           return h('div', { style: { height: '100%', overflow: 'hidden' } }, h(DetailsDock, { sessionId: sessionId }))
         }
-        // 第一性原理：对外品牌为 MattSkillsDeck，单一 tab id = deck:map。
+        // 第一性原理：对外品牌为 MattSkillsDeck，单一 tab id = deck:map —— 只注册这一个面板类型，不注册任何旧名别名。
         // #fix-two-sliders：旧版同时注册 deck:map + waystation:map 两份同 component、同 order、同 single 的注册器，
         //   better-sidebar 按 id 区分 tab 条目，结果 better-sidebar 显示两条 slider（用户报告「MattSkills slider 两个」）。
-        //   修复：只注册 deck:map；旧会话中存的 waystation:map 打开记录由下方 normalizeLegacyTabId() 改写到 deck:map 后再 open。
+        // #598：旧名别名那行注册已整段删除，不再注册。要害在于 hidden: true 只管「+」菜单，管不到 better-sidebar
+        //   设置页的「侧边卡」清单 —— 那份清单按「已注册的面板类型」逐张画卡片，隐藏的也画（只排到最后，见
+        //   SideCardSection.tsx 的 tabOrder），所以别名会让同一个面板在设置里多出一张卡片、多一个开关。
+        //   代价（#598 拍板选改法 A 时已接受）：旧布局里若还开着这个旧名标签，会渲染成 better-sidebar 的占位页
+        //   （OrphanedTab，显示「插件未加载」加类型 id），点关即消失，不影响 deck:map。
+        //   教训：以后想让某个注册「在界面上看不见」，先确认目标界面的过滤规则，别默认 hidden 在哪儿都管用。
         sidebarTabDisposer = bs.registerTab({
           id: 'deck:map',
           title: function () { return tr('panel.title') },
@@ -82,9 +93,6 @@
           single: true,
           component: DeckSidebarTab,
         })
-        // LEGACY 别名：兼容已存的 waystation:map 打开记录（不额外 disposer，单注册器以新 id 为主）
-        // #298 补充：该别名仅为旧会话/旧布局的兼容打开，不应在 better-sidebar 的「+」添加菜单中单独出现；设 hidden:true 隐藏
-        try { bs.registerTab({ id: 'waystation:map', title: function () { return tr('panel.title') }, icon: function () { return Ic({ n: 'map', size: 14 }) }, order: 60, single: true, hidden: true, component: DeckSidebarTab }) } catch (e) {}
   return true
       } catch (e) { return false }
     }
@@ -97,7 +105,9 @@
         //   新会话时宿主尚未 setSession(该 id) → store sessionId 为 undefined → openTab 静默 return，面板不开。
         //   显式传当前 store 的 sessionId 后走 reduceFor(scope.sessionId) 路径（按给定 id 初始化布局），面板正常展开。
         //   仅当 st.sessionId 有值时传 scope（无值时传 {sessionId:undefined} 会令 targetsInactiveSession=true 走错分支）。
-        bs.openTab({ type: 'deck:map', path: 'deck:map' }, st.sessionId ? { sessionId: st.sessionId } : undefined)  // path seed → 内容型打开 → 自动展开面板
+        // #594：只给类型。带上 path 会被 better-sidebar 当成真实文件路径转发给原生右侧栏，
+        // 宿主 realpath 失败即报 cannot resolve target；展开由 better-sidebar 按描述符自己做。
+        bs.openTab({ type: 'deck:map' }, st.sessionId ? { sessionId: st.sessionId } : undefined)
         // 打开 tab 即视为面板已开（数据新鲜直接展示；#58 缓存优先与另两个载体走同一段）
         hydrateOpenState(st)
         return

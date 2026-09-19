@@ -84,9 +84,11 @@ export const PULL_REQUEST_FRAGMENT = [
 ].join(' ')
 
 // 拉取请求列表查询（与 LIST_QUERY 同构：分页取，按更新时间倒序）
+// #599：`states` 必须含 MERGED。GitHub 的拉取请求有三种状态（OPEN / CLOSED / MERGED），
+//   只写 OPEN 与 CLOSED 时已合并的会被整批排除，面板上表现为「本仓 10 条 PR 只出现 5 条」。
 export const LIST_PR_QUERY = `query($owner:String!,$name:String!,$first:Int!,$after:String){
   repository(owner:$owner,name:$name){
-    pullRequests(first:$first, after:$after, states:[OPEN,CLOSED], orderBy:{field:UPDATED_AT, direction:DESC}){
+    pullRequests(first:$first, after:$after, states:[OPEN,CLOSED,MERGED], orderBy:{field:UPDATED_AT, direction:DESC}){
       nodes{ ${PULL_REQUEST_FRAGMENT} }
       pageInfo{ hasNextPage endCursor }
     }

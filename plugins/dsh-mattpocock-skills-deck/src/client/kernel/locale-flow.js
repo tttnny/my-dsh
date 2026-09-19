@@ -22,7 +22,7 @@
         'type.prototype': '原型',
         'type.grilling': '对齐',
         'type.task': '任务',
-        'type.map': '地图',
+        'type.map': '地图', 'type.issue': '普通票', // 普通票 = 没有 wayfinder 类型标签的票（后端归一值就是 issue）；缺了这条，界面上会印出键名本身（#626）
         'list.back': '返回列表',
         'list.mapChip': '地图',
         'list.loadFail': '加载失败',
@@ -58,7 +58,7 @@
         'list.openInGithubTitle': '在 GitHub 上查看 #{n}', // 过渡遗留：清尾批删除
         'list.mapTitle': '查看地图详情',
         'list.issueDetailTitle': '查看 issue 详情',
-        'list.state.all': '全部', 'list.state.open': 'Open', 'list.state.closed': '已关闭', 'list.state.blocked': '阻塞', 'list.state.frontier': '可接',
+        'list.state.all': '全部', 'list.state.open': 'Open', 'list.state.closed': '已关闭', 'list.state.merged': '已合并', 'list.state.blocked': '阻塞', 'list.state.frontier': '可接',
         'list.filterActive': '当前过滤：', 'list.filterClear': '清除全部',
         'list.sort.updatedAt': '更新', 'list.sort.createdAt': '创建', 'list.sort.number': '编号', 'list.sort.title': '标题',
         'map.decisions': 'Decisions so far（{n}）',
@@ -192,7 +192,7 @@
         'type.prototype': 'Prototype',
         'type.grilling': 'Align',
         'type.task': 'Task',
-        'type.map': 'Map',
+        'type.map': 'Map', 'type.issue': 'Issue',
         'list.back': 'Back to list',
         'list.mapChip': 'Map',
         'list.loadFail': 'Failed to load',
@@ -228,7 +228,7 @@
         'list.openInGithubTitle': 'Open #{n} on GitHub', // transitional; removed by sweep commit
         'list.mapTitle': 'View map details',
         'list.issueDetailTitle': 'View issue details',
-        'list.state.all': 'All', 'list.state.open': 'Open', 'list.state.closed': 'Closed', 'list.state.blocked': 'Blocked', 'list.state.frontier': 'Ready',
+        'list.state.all': 'All', 'list.state.open': 'Open', 'list.state.closed': 'Closed', 'list.state.merged': 'Merged', 'list.state.blocked': 'Blocked', 'list.state.frontier': 'Ready',
         'list.filterActive': 'Active filters: ', 'list.filterClear': 'Clear all',
         'list.sort.updatedAt': 'Updated', 'list.sort.createdAt': 'Created', 'list.sort.number': 'Number', 'list.sort.title': 'Title',
         'map.decisions': 'Decisions so far ({n})',

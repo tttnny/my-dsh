@@ -92,9 +92,13 @@ export const IssueDetail = function (props) {
       const assigneesRaw = (src.assignees && src.assignees.nodes) ? src.assignees.nodes : (src.assignees || [])
       const assignees = Array.isArray(assigneesRaw) ? assigneesRaw : []
       const stateRaw = src.state || 'OPEN'
-      const isOpen = String(stateRaw).toUpperCase() !== 'CLOSED'
-      const stateColor = isOpen ? '#3fb950' : '#8b949e'
-      const stateLabel = isOpen ? tr('list.state.open') : tr('list.state.closed')
+      // #599：状态显示三种（打开 / 已关闭 / 已合并）。已合并的拉取请求在快照那条路是「已关闭 + 合并时间有值」，
+      //   详情路可能给 GitHub 原生节点（state 直接写 MERGED）—— 两种都要认，判据收在 views/shared/stateKind.js。
+      const stateKind = (typeof prStateKind === 'function') ? prStateKind({ state: stateRaw, mergedAt: src.mergedAt, isPullRequest: src.isPullRequest }) : (String(stateRaw).toUpperCase() === 'CLOSED' ? 'closed' : 'open')
+      const isOpen = stateKind === 'open'
+      const isMerged = stateKind === 'merged'
+      const stateColor = isOpen ? '#3fb950' : (isMerged ? '#c084fc' : '#8b949e')
+      const stateLabel = isOpen ? tr('list.state.open') : (isMerged ? tr('list.state.merged') : tr('list.state.closed'))
       const title = src.title || ('#' + issueNumber)
       const body = src.body || ''
       const has = function (nm) { return labelArr.some(function (l) { return (l.name || l) === nm }) }
@@ -123,8 +127,8 @@ export const IssueDetail = function (props) {
       // #506 首版只读：拉取请求详情只看评论列表，不给输入框（快照与详情任一来源标为拉取请求即只读；评审合并展示留后续，#507 再验）。
       if ((src && src.isPullRequest === true) || (snapIssue && snapIssue.isPullRequest === true)) canComment = false
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, [
-        // 顶部固定行
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, [
+        // 顶部固定行（#565 粘性固定，随滚动保持可见）
+        h('div', { className: 'dsws-stickybar', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, [
           h('button', { className: 'dsws-btn', onClick: goBack, style: { display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none' } }, [Ic({ n: 'back', size: 12 }), h('span', null, tr('list.back'))]),
           h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', whiteSpace: 'nowrap' } }, '列表 / #' + issueNumber),
           h('span', { style: { flex: 1, minWidth: 8 } }),
@@ -177,7 +181,7 @@ export const IssueDetail = function (props) {
         h('div', { style: { padding: '8px 0', borderTop: '1px solid var(--dsw-alias-border-l1,#2a2d35)', borderBottom: '1px solid var(--dsw-alias-border-l1,#2a2d35)' } }, [
           h('div', { style: { fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary,#a1a1aa)', marginBottom: 4 } }, '描述'),
           (body && String(body).trim())
-            ? h('div', { style: { fontSize: 12, lineHeight: 1.6, color: 'var(--dsw-alias-label-primary,#e6edf3)' } }, (typeof mdToHtml === 'function' ? mdToHtml(body) : String(body)))
+            ? h('div', { style: { fontSize: 12, lineHeight: 1.6, color: 'var(--dsw-alias-label-primary,#e6edf3)' } }, (typeof mdToHtml === 'function' ? mdToHtml(body, { st: st }) : String(body)))
             : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, '无描述'),
         ]),
         // sub-issues
@@ -215,5 +219,7 @@ export const IssueDetail = function (props) {
           h('span', { style: { flex: 1 } }),
           !canComment ? h('span', { style: { fontSize: 10, color: 'var(--dsw-alias-label-caption,#8b8b95)' } }, tr('detail.readOnlyHint')) : null,
         ]),
+        // 图片放大浮层（渲染函数共用，状态放共享 store，点缩略图打开，点空白与关闭与退出键关闭）
+        (typeof mdImgOverlay === 'function' ? mdImgOverlay(st) : null),
       ])
     }

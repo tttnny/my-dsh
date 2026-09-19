@@ -228,14 +228,30 @@ function deriveMergedAt(raw) {
 }
 
 /**
+ * GitHub 原始数据里的状态 → 契约状态（只有打开 / 已关闭两种，见 shared/tracker/shape.js）。
+ *
+ * 为什么要它（#599）：GitHub 的拉取请求有三种状态（OPEN / CLOSED / MERGED），契约只有两种，
+ * 所以要有一处把「已合并」收成「已关闭」：GraphQL 的拉取请求自己写 state=MERGED；
+ * REST 兜底路上 /issues 对已合并的拉取请求也给 state=closed。契约保持两态，
+ * 界面另按合并时间把这类条目显示成「已合并」（判据在 client 的 views/shared/stateKind.js）。
+ */
+export function pullStateOf(raw) {
+  const s = raw && raw.state != null ? String(raw.state).toLowerCase() : ''
+  const mergedAt = deriveMergedAt(raw)
+  const mergedPR = !!mergedAt && !(raw && raw.isPullRequest === false)
+  return (s === 'closed' || s === 'merged' || mergedPR) ? STATE.CLOSED : STATE.OPEN
+}
+
+/**
  * @param {Object} raw GitHub issue 原始对象（GraphQL issue 或 REST issue，或测试桩）
  * @returns {import('../../../../shared/tracker/shape.js').Issue}
  */
 export function normalizeIssue(raw) {
   const key = deriveKey(raw)
   const type = deriveType(raw)
-  const stateRaw = raw && raw.state != null ? String(raw.state).toLowerCase() : 'open'
-  const state = stateRaw === 'closed' ? STATE.CLOSED : STATE.OPEN
+  // 状态：交给 pullStateOf 一处判定（已合并归到已关闭）；合并时间原样留在 mergedAt，界面据此显示「已合并」
+  const state = pullStateOf(raw)
+  const mergedAt = deriveMergedAt(raw)
   const labels = normalizeLabels(raw)
   const assignees = normalizeAssignees(raw)
   const comments = normalizeComments(raw)
@@ -276,7 +292,7 @@ export function normalizeIssue(raw) {
 
   // 拉取请求三字段：本房恒有能力，逐票必带（#505 交接）；缺内容给空值，不省略
   issue.isPullRequest = deriveIsPullRequest(raw)
-  issue.mergedAt = deriveMergedAt(raw)
+  issue.mergedAt = mergedAt
   issue.reviews = normalizeReviews(raw)
 
   return issue

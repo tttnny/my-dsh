@@ -22,6 +22,7 @@
       '.dsws-tabs .dsws-tab.collapsed,.dsws-tabs .dsws-btn.collapsed{padding-left:6px;padding-right:6px;transition:padding .25s ease}',
       '.dsws-tabs.dsws-no-anim *,.dsws-tabs.dsws-no-anim{transition:none!important}',
       '.dsws-body{flex:1;overflow-y:auto;padding:10px 12px}',
+      '.dsws-stickybar{position:sticky;top:-10px;z-index:5;background:var(--dsw-alias-bg-layer-2,#16181d);margin:-10px -12px 6px;padding:10px 12px 8px;border-bottom:1px solid var(--dsw-alias-border-l1,#2a2d35)}',
       '.dsws-rz{position:absolute;z-index:6}',
       '.dsws-rz-n{top:0;left:8px;right:8px;height:5px;cursor:ns-resize}',
       '.dsws-rz-s{bottom:0;left:8px;right:8px;height:5px;cursor:ns-resize}',
@@ -43,6 +44,8 @@
       '.dsws-chip-g{background:rgba(63,185,80,.16);color:#3fb950}',
       '.dsws-chip-t{background:rgba(240,136,62,.16);color:#f0883e}',
       '.dsws-chip-m{background:rgba(188,140,255,.16);color:#bc8cff}',
+      // #626：普通票（没有 wayfinder 类型标签的票）用中性灰，与「已关闭」那类灰同一支
+      '.dsws-chip-i{background:rgba(139,139,149,.14);color:#a1a1aa}',
       '.dsws-trow{display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:6px;border:1px solid transparent}',
       '.dsws-trow:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));border-color:var(--dsw-alias-border-l1,#2a2d35)}',
       '.dsws-trow .dsws-tt{flex:1;min-width:0}',
