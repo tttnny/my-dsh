@@ -3,13 +3,12 @@
 // 判断「徽标是否渲染」的代码不在本仓库，而在 DSH 安装副本的
 // @deepseek-ai/dsh-client-ui-user-questions/lib/client.js 里（函数
 // parseRecommendedLabel）。它的规则只有一条：label 必须以半角或全角的
-// 括号推荐字样收尾。这里把那条规则原样抄成 oracle，断言插件交给界面之前
-// 产出的 label 一定能被它认出来。
+// 括号推荐字样收尾。规则抄在 recommended-label-rule.mjs；scripts/smoke-host.mjs
+// 断言那份抄本与安装副本逐字相同，上游一改就当场失败，而不是测试继续通过、
+// 徽标实际不再渲染。
 import assert from 'node:assert/strict';
 import { normalizeOption } from '../lib/recommendation.js';
-
-// 抄自 client.js:387（parseRecommendedLabel 的 suffix 常量），改动即失效。
-const CLIENT_ACCEPTS = /\s*(?:\((?:recommended|推荐)\)|（(?:recommended|推荐)）)\s*$/i;
+import { CLIENT_ACCEPTS } from './recommended-label-rule.mjs';
 
 let passed = 0;
 let total = 0;

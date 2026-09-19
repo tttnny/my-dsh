@@ -11,7 +11,12 @@ import { normalizeOption } from "./recommendation.js";
  * ask_user_grilling:
  *   - forces multi-select on every question — the schema offers no opt-out
  *   - merges the optional `number` into the header as "<number> · <header>",
- *     so a form page carries the same Q-number the round announced in prose
+ *     so a form page carries the same Q-number the round announced in prose;
+ *     a header that already opens with that number is sent as it is
+ *   - passes the optional `detail` through to the seam: the client renders it as
+ *     markdown under the question, while the question itself is a plain heading
+ *     with no markdown and no line breaks, so a multi-paragraph body belongs in
+ *     `detail`
  *   - normalizes the recommendation marker into the one form the client renders,
  *     a trailing "（推荐）" on the label: an explicit `recommended` flag, or a
  *     loose marker at the end of the label or the description, is moved there —
@@ -19,8 +24,11 @@ import { normalizeOption } from "./recommendation.js";
  *   - appends a round-end supplement question; per-question supplement goes
  *     through the built-in custom input ("Type your answer" / "输入你的答案"),
  *     so no extra per-question option is added (it would duplicate that field)
- *   - rejects question ids using the reserved `__grill_` prefix, so the
- *     auto-appended question can never be shadowed
+ *   - rejects what the form cannot carry: a question id under the reserved
+ *     `__grill_` prefix, a duplicate question id, a blank question text, a blank
+ *     option label, or two options of one question that end up with the same
+ *     label (the client keys selection by label, so a collision cannot be
+ *     restored or even clicked apart)
  */
 const name = "tool-ask-user-grilling";
 const inject = ["tools", "userQuestions"];
@@ -34,6 +42,26 @@ const ROUND_END_QUESTION = {
   ],
   multiSelect: true,
 };
+
+/** 去掉首尾空白后是否为空。空串与纯空白都不值得送进表单。 */
+function isBlank(value) {
+  return typeof value !== "string" || value.trim() === "";
+}
+
+/**
+ * 把题号并进标题：两者都给写作 `<number> · <header>`，只给一个就是那一个；
+ * 标题已经以该题号开头时原样送出去（模型常自己写成 "Q2 · Deadline"）。
+ * @param {string} [number] - 题号。
+ * @param {string} [header] - 标题。
+ * @returns {string} 交给界面的标题；两者都缺时为空串（调用方据此省略该字段）。
+ */
+function mergeNumberIntoHeader(number, header) {
+  const num = isBlank(number) ? undefined : number;
+  const head = isBlank(header) ? undefined : header;
+  if (num === undefined) return head ?? "";
+  if (head === undefined) return num;
+  return head.startsWith(num) ? head : `${num} · ${head}`;
+}
 
 function apply(ctx) {
   ctx.tools.register(defineTool({
@@ -65,6 +93,10 @@ function apply(ctx) {
             number: {
               type: "string",
               description: "Optional question number, e.g. \"Q2\". Rendered before the header as \"Q2 · <header>\"; use the same Q-number you announced in the message text.",
+            },
+            detail: {
+              type: "string",
+              description: "Optional supporting body for this question. Rendered as markdown under the question, so put multi-paragraph context here and keep question to the one line that asks.",
             },
             options: {
               type: "array",
@@ -105,7 +137,7 @@ function apply(ctx) {
           violations: {
             type: "array",
             items: { type: "string" },
-            description: "Validation violations when rejected (reserved id prefix only).",
+            description: "Validation violations when rejected.",
           },
           error: {
             type: "string",
@@ -142,36 +174,57 @@ function apply(ctx) {
       render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }],
     },
     async execute(args, exec) {
-      // 1. input validation: reserved id prefix guard only (the round-end
-      //    question owns __grill_). Stem/option separation is guidance, NOT
-      //    enforced: substring matching would reject legitimate stems (e.g. a
-      //    stem that naturally mentions an option name), so no stem check may
-      //    refuse a round — a bad stem is preferable to a false rejection.
+      // 1. input validation: only what the form cannot represent at all. Stem /
+      //    option separation stays guidance, NOT enforced: substring matching
+      //    would reject legitimate stems (e.g. a stem that naturally mentions an
+      //    option name), so no stem check may refuse a round — a bad stem is
+      //    preferable to a false rejection.
       const violations = [];
-      for (const question of args.questions) {
+      const seenIds = new Set();
+      args.questions.forEach((question, questionIndex) => {
+        const where = `Question ${questionIndex + 1} (id ${JSON.stringify(question.id)})`;
         if (typeof question.id === "string" && question.id.startsWith("__grill_")) {
-          violations.push(`Question id "${question.id}" uses the reserved prefix __grill_`);
+          violations.push(`${where} uses the reserved prefix __grill_ (owned by the round-end supplement question)`);
         }
-      }
+        if (typeof question.id === "string") {
+          if (seenIds.has(question.id)) violations.push(`${where} repeats an id already used in this round; ids must be unique because the answer is keyed by id`);
+          seenIds.add(question.id);
+        }
+        if (isBlank(question.question)) {
+          violations.push(`${where} has an empty question text; write the question itself in question and its body in detail`);
+        }
+        const seenLabels = new Set();
+        (question.options ?? []).forEach((option, optionIndex) => {
+          const label = normalizeOption(option).label;
+          if (isBlank(label)) {
+            violations.push(`${where}, option ${optionIndex + 1} has an empty label; every option needs a label the user can read and pick`);
+            return;
+          }
+          if (seenLabels.has(label)) {
+            violations.push(`${where} has two options that render with the same label ${JSON.stringify(label)}; the form identifies a choice by its label, so make them differ`);
+            return;
+          }
+          seenLabels.add(label);
+        });
+      });
       if (violations.length > 0) {
         return {
           rejected: true,
           violations,
-          error: "Question ids must not use the reserved prefix __grill_ (reserved for the round-end supplement question). Fix the ids and call this tool again.",
+          error: `${violations.length} violation(s) in this round: ids must be unique and must not use the reserved __grill_ prefix, question text must not be blank, and the options of one question must not share a label. Fix them and call this tool again.`,
           answers: [],
         };
       }
 
       // 2. transform: force multi-select; merge the optional number into the
-      //    header; move the recommendation marker to the label suffix the client
-      //    renders; per-question supplement is via the built-in custom input
-      //    ("Type your answer"/"输入你的答案") — no extra option is added to
-      //    avoid duplication with that field
+      //    header; hand detail to the field the client renders as markdown; move
+      //    the recommendation marker to the label suffix the client renders;
+      //    per-question supplement is via the built-in custom input ("Type your
+      //    answer"/"输入你的答案") — no extra option is added to avoid
+      //    duplication with that field
       const labelRestore = new Map();
       const questions = args.questions.map((question) => {
-        const header = [question.number, question.header]
-          .filter((part) => part !== undefined && part !== "")
-          .join(" · ");
+        const header = mergeNumberIntoHeader(question.number, question.header);
         const restore = new Map();
         const options = (question.options ?? []).map((option) => {
           const normalized = normalizeOption(option);
@@ -188,6 +241,7 @@ function apply(ctx) {
           id: question.id,
           question: question.question,
           ...(header !== "" ? { header } : {}),
+          ...(isBlank(question.detail) ? {} : { detail: question.detail }),
           options,
           multiSelect: true,
         };

@@ -36,7 +36,7 @@
   name: '@lynn123411/dsh-ask-user-grilling'
 ```
 
-**原因**：一问一答只留一个工具——所有提问一律走 `ask_user_grilling`（原生 `ask_user_question` 的表单呈现变体：强制多选 + 自动追加轮末补充题 + 可选题号参数 `number`），普通提问工具不再保留，所以直接在原槽位替换。该行放在 planning 组**之外**（普通工具区）即可，因为 `ask_user_grilling` 只消费 host-plane 的 `userQuestions`、无 realm 依赖，也不提供任何 plan-mode 工具（共识达成后交还用户决定下一步）。副作用一并接受：一切提问（plan mode 追问、简单确认）都被强制多选并自动追加轮末补充题；官方 plan-mode 正文两处点名的 `ask_user_question` 悬空（逐字不能改，不管）。
+**原因**：一问一答只留一个工具——所有提问一律走 `ask_user_grilling`（原生 `ask_user_question` 的表单呈现变体：强制多选 + 自动追加轮末补充题 + 可选参数 `number`（题号）与 `detail`（正文）），普通提问工具不再保留，所以直接在原槽位替换。该行放在 planning 组**之外**（普通工具区）即可，因为 `ask_user_grilling` 只消费 host-plane 的 `userQuestions`、无 realm 依赖，也不提供任何 plan-mode 工具（共识达成后交还用户决定下一步）。副作用一并接受：一切提问（plan mode 追问、简单确认）都被强制多选并自动追加轮末补充题；官方 plan-mode 正文两处点名的 `ask_user_question` 悬空（逐字不能改，不管）。
 
 ## 二、`skills/grilling/SKILL.md`：本地适配四处
 
@@ -66,7 +66,7 @@ Q2. **<问题标题>**: <问题正文，可能包含多个段落>
 推荐: <您的推荐答案>
 ```
 
-- **改动 ② 投递纪律旁注**：格式块之后新增一段引用（中文）：每一轮分两步投递——先在消息文本里按模板以散文预告本轮全部问题（标题/正文/选项/推荐），在**同一回合内**紧接着把同一轮作为一次 `ask_user_grilling` 调用发出、让用户在表单中作答；旁注只保留一条 bullet——散文预告与工具投递必须**同一轮、一一对应**（提问工具由前一句点名、轮末补充题由代码自动追加，二者不重复写进旁注）。字段组织细节（题号→`number`、标题→`header`、正文→`question`、选项→`options`、推荐项放首位并在标签末尾加 `(Recommended)`）不写进旁注，由模板与工具的参数描述承载。**原因**：纯散文让用户拿到不可点击文本、丢失表单；纯工具又让用户看不到正文里的问题陈述——散文预告 + 工具表单各司其职，且必须成对出现。
+- **改动 ② 投递纪律旁注**：格式块之后新增一段引用（中文）：每一轮分两步投递——先在消息文本里按模板以散文预告本轮全部问题（标题/正文/选项/推荐），在**同一回合内**紧接着把同一轮作为一次 `ask_user_grilling` 调用发出、让用户在表单中作答；旁注只保留一条 bullet——散文预告与工具投递必须**同一轮、一一对应**（提问工具由前一句点名、轮末补充题由代码自动追加，二者不重复写进旁注）。字段组织细节（题号→`number`、标题→`question`、正文→`detail`、选项→`options`、推荐项放首位并在标签末尾加 `(Recommended)`；`header` 只放分类短标题，题号由插件并进去）不写进旁注，由模板与工具的参数描述承载：界面把 `question` 渲染成无 markdown、不吃换行的标题，`detail` 才走 markdown 正文块——多段正文塞进 `question` 会挤成一坨大标题并把选项区往下顶。**原因**：纯散文让用户拿到不可点击文本、丢失表单；纯工具又让用户看不到正文里的问题陈述——散文预告 + 工具表单各司其职，且必须成对出现。
 
 `matt-standard` / `matt-cordis` 的旁注全文：
 
@@ -99,7 +99,7 @@ Q2. **<问题标题>**: <问题正文，可能包含多个段落>
 
 ## 四、外部材料（非改动、需自带）
 
-- 插件 `@lynn123411/dsh-ask-user-grilling`（`ask_user_question` 的表单呈现变体：同一条 `ctx.userQuestions` seam，工具描述与共有参数描述**与原生逐字一致**，只强制多选、把可选题号参数 `number` 并进 `header`、并自动追加一道轮末补充题；多选刻意不写进描述，避免模型为规避多选而影响出题质量）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖）。**不要手工拷贝进 `node_modules/@lynn123411/`**：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`）——此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**。仓库 `plugins/dsh-ask-user-grilling/` 是事实源；回装前先用 `npm view` 确认 registry 已发布该版本，仓库含未发布改点时先发布再回装。**原因**：§一 改动② 引用的正是这个包，不装则工具行解析失败；它只负责表单呈现（共有描述与原生一致），grilling 纪律全部由技能正文承载。
+- 插件 `@lynn123411/dsh-ask-user-grilling`（`ask_user_question` 的表单呈现变体：同一条 `ctx.userQuestions` seam，工具描述与共有参数描述**与原生逐字一致**；只强制多选、把可选题号参数 `number` 并进 `header`（标题已带同号则不重复）、把可选正文参数 `detail` 交给界面的 markdown 正文位、并自动追加一道轮末补充题；表单装不下的入参——保留前缀 id、同轮重复 id、空题干、空 label、同题两个归一化后同名的选项——就地返回 `rejected` + `violations` 让模型改完重调；多选刻意不写进描述，避免模型为规避多选而影响出题质量）：**必须经注册安装**——`cd ~/.dsh/profiles/web && pnpm add @lynn123411/dsh-ask-user-grilling@<版本>`（写进 package.json 依赖）。**不要手工拷贝进 `node_modules/@lynn123411/`**：未注册的裸拷贝会在任何 pnpm 同步（如插件市场批量更新）时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查（`unresolvableRows`）——此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**。仓库 `plugins/dsh-ask-user-grilling/` 是事实源；回装前先用 `npm view` 确认 registry 已发布该版本，仓库含未发布改点时先发布再回装。**原因**：§一 改动② 引用的正是这个包，不装则工具行解析失败；它只负责表单呈现（共有描述与原生一致，被拒的只有表单表达不了的入参），grilling 纪律全部由技能正文承载。
 - 26 个技能随 mattpocock/skills 上游更新。
 
 ## 五、何时重打
