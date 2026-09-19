@@ -2,7 +2,7 @@
 
 三个 matt preset（`matt-standard` / `matt-ptc` / `matt-cordis`）＝ **官方组合逐字** ＋ **Matt 的 26 个技能** ＋ **grilling 适配插件**（`ask_user_grilling`）－ 普通提问工具（`tool-ask-user` 行原位换成 `ask_user_grilling`，§一 改动②）。本文逐处说明相对官方材料**改了什么、改成什么样、为什么**；本目录为纯文档，由 AI 按本文执行。仓库 `presets/matt-*/` 就是改好的成品，直接同步即用；以下改动点只在「从零组装 / DSH 升级后重打」时需要动手。
 
-改动只发生在两类文件上：`agent.cordis.yml`（官方正文上一处插入、一处工具行原位替换）与 `skills/grilling/SKILL.md`（本地适配两处：格式块与投递旁注，改动内容为中文）。`matt-standard` 与 `matt-cordis` 的 `grilling/SKILL.md` 完全相同；`matt-ptc` 只在投递旁注描述投递的那半句上按 PTC 形态表述（`run_code` 程序内 `tools.ask_user_grilling`，见 §二 改动②），PTC 措辞不进入非 PTC preset。persona 一行不改——grilling 纪律不写进 persona，而是下沉到技能正文的旁注：模型读到技能时正好看到，比 system prompt 里的抽象禁令有效。插件只改表单呈现，工具描述与共有参数描述同原生逐字一致，不承载任何纪律。
+改动只发生在两类文件上：`agent.cordis.yml`（官方正文上一处插入、一处工具行原位替换）与 `skills/grilling/SKILL.md`（本地适配四处：格式块、投递旁注、事实段删上游句、子代理旁注；新增文字为中文）。`matt-standard` 与 `matt-cordis` 的 `grilling/SKILL.md` 完全相同；`matt-ptc` 只在投递旁注描述投递的那半句上按 PTC 形态表述（`run_code` 程序内 `tools.ask_user_grilling`，见 §二 改动②），PTC 措辞不进入非 PTC preset。persona 一行不改——grilling 纪律不写进 persona，而是下沉到技能正文的旁注：模型读到技能时正好看到，比 system prompt 里的抽象禁令有效。插件只改表单呈现，工具描述与共有参数描述同原生逐字一致，不承载任何纪律。
 
 ## 零、当前基线
 
@@ -30,17 +30,17 @@
 # MATT-DEL: upstream tool-ask-user row removed.
 # MATT-ADD: replaced in place by tool-ask-user-grilling — the same form with
 # forced multi-select and an auto-appended round-end supplement question. Skills
-# ship upstream-verbatim except grilling (DSH-delivery note, see
-# patches/matt-presets-bootstrap/README.md section 2).
+# ship upstream-verbatim except grilling (local notes: template, delivery,
+# sub-agent rounds; see patches/matt-presets-bootstrap/README.md section 2).
 - id: tool-ask-user-grilling
   name: '@lynn123411/dsh-ask-user-grilling'
 ```
 
 **原因**：一问一答只留一个工具——所有提问一律走 `ask_user_grilling`（原生 `ask_user_question` 的表单呈现变体：强制多选 + 自动追加轮末补充题 + 可选题号参数 `number`），普通提问工具不再保留，所以直接在原槽位替换。该行放在 planning 组**之外**（普通工具区）即可，因为 `ask_user_grilling` 只消费 host-plane 的 `userQuestions`、无 realm 依赖，也不提供任何 plan-mode 工具（共识达成后交还用户决定下一步）。副作用一并接受：一切提问（plan mode 追问、简单确认）都被强制多选并自动追加轮末补充题；官方 plan-mode 正文两处点名的 `ask_user_question` 悬空（逐字不能改，不管）。
 
-## 二、`skills/grilling/SKILL.md`：本地适配两处
+## 二、`skills/grilling/SKILL.md`：本地适配四处
 
-上游文件逐字保留（frontmatter + 五段英文正文），只改格式块与投递旁注。改动① 的模板占位与改动② 的旁注为中文，上游其余正文英文原样。
+上游文件的 frontmatter 与英文正文原样保留，本地动手四处：① 格式块、② 投递旁注、③ 事实段删上游一句、④ 子代理旁注。① 的模板占位与 ②④ 的新增旁注为中文，③ 是纯删除；除此之外上游英文逐字不动。
 
 - **改动 ① 格式块**：上游 `Format a round like so:` 之后那段用 emoji 标记、题干占位含 `including multiple choices`（诱导把选项塞进题干）；改成纯文本，选项独立成 `Options:` 块、推荐独立一行，并给出英文与中文两份示例（中文示例用 `选项:` / `推荐:` 标签）。**原因**：模板是模型最可能整段照抄的样例——emoji 会被抄进输出、『选项塞正文』的占位会诱导模型把 A/B/C 写进题干；选项独立成块后与投递字段一一对应，两份示例让中文会话也拿到中文标签。成品（三份 preset 相同）：
 
@@ -82,7 +82,15 @@ Q2. **<问题标题>**: <问题正文，可能包含多个段落>
 在**同一回合内**紧接着再在 `run_code` 程序内用 `return await tools.ask_user_grilling({ questions: [...] })` 把**同一轮**作为**一次**调用投出，让用户在表单中作答：
 ```
 
-**上游英文正文不动**：格式块前后的英文正文、以及事实段那句 `Don't block on it: a running exploration is an unsettled prerequisite, so only the questions downstream of it wait for the sub-agent to report; ask the rest of the frontier now.` 均为上游逐字；仓库不保留曾经的「删 Don't block 句 + 子代理等齐旁注」写法。
+- **改动 ③ 事实段删上游一句**：`Finding _facts_ …` 段里那句 `Don't block on it: a running exploration is an unsettled prerequisite, so only the questions downstream of it wait for the sub-agent to report; ask the rest of the frontier now.` **整句删除**，段末直接以 `The _decisions_ are the user's: put each to them and wait.` 收尾（三份 preset 相同）。**原因**：该句「先把其余 frontier 问完」与改动④「等齐再问」是同一条时序上的相反指令，而 `ask_user_grilling` 不设闸门、拦不住抢先提问——冲突只能在正文里消解。代价：随上游覆盖时这句会被带回来，需手工再删一遍（见 §五）。
+
+- **改动 ④ 子代理轮次旁注**：事实段之后新增一段引用（中文），三份 preset 同文（PTC 只换投递旁注那半句，本段一致）。**判据**：禁令点到**具体调用**（`bash sleep` 与「先小睡一下再检查」的折中）而非笼统的「不要轮询」——后者会被读成「不要反复轮询」，单次 sleep 就被当成合规。**生效范围**：仅加载了本技能的会话；普通会话的同一诱因不在本文处理。**边界**：文字级软纪律、无闸门拦截，只写在这条旁注里——插件不承载纪律（工具描述与共有参数描述与原生逐字一致）。成品：
+
+```markdown
+> **Sub-agent rounds：** 如果你在某轮派遣了子代理，派遣完之后，先在消息文本里列出每个子代理的任务（各自去干什么），然后立刻结束回合。主代理不得自己制造等待，如：bash sleep以及「先小睡一下再检查」的折中，全部禁止。等**全部**已派遣子代理结算后，再问 frontier（包括未受阻的问题）。
+```
+
+**其余英文正文不动**：格式块前后的英文段落与收尾段均为上游逐字；本地在英文正文上的唯一动作是改动③ 那一句删除。
 
 ## 三、其余文件（无本地改动或自写）
 
@@ -99,6 +107,6 @@ Q2. **<问题标题>**: <问题正文，可能包含多个段落>
 - **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 以新版官方正文覆盖仓库文件，按第一节重打那两处改动（改动① 的锚点是 `skill-filesystem` 段的 `name:` 行；改动② 的锚点是 `remaining model-facing rows` 里的 `- id: tool-ask-user` 块——官方若改了这两处结构则需手工定位），并**逐行核对官方新增行是否已全部纳入**——官方会在组合里新增工具行，只 diff 这两个改动块看不出来，必须对「官方正文 vs 仓库成品」做**全量 diff**；matt-cordis 的两个 cordis 随附技能如有变，从官方 `cordis/skills/` 覆盖。**persona 行始终逐字取官方正文**，不要保留仓库旧写法。
 - **重打后的校验**：① `diff <官方> <仓库成品>` 的输出必须**恰好**是 §一 那两处改动块——`standard`/`ptc` 各 13 行（改动① 4 行插入；改动② 2 删 7 增，即 `tool-ask-user` 两行换成标记注释与 grilling 行），`cordis` 无改动① 故为 9 行；多一行都意味着漏派生或官方漂移。② 解析后逐条比对：条目总数与官方相同（增 `tool-ask-user-grilling`、减 `tool-ask-user`），共有条目中除 `skill-filesystem` 因改动① 多出 `config`（仅 `standard`/`ptc`）外**逐字段一致**。③ 三份引用的非官方第一方行可解析（`@lynn123411/dsh-ask-user-grilling`、`@deepseek-ai/dsh-tool-present`）。
 - **DSH 升级后（同进程共存）**：官方 `cordis` / `ptc-cordis` / `matt-cordis` 同进程互挂依赖 `dsh-tool-cordis` Host inspect 注册幂等补丁，每次升级/重装后需重打 [`../patch-dsh-cordis-inspect-idempotent/`](../patch-dsh-cordis-inspect-idempotent/README.md)（**纯文档，无脚本**，由 AI 按文执行）。定位目标：从**运行中的 DSH 进程** cmdline 反推 `@deepseek-ai/dsh` 安装目录，再用 Node 自身解析（`require.resolve('@deepseek-ai/dsh-tool-cordis', { paths: [...] })`）取它实际加载的 `lib/index.js`。**不要按固定路径扫**（DSH Desktop 应用包与 dsh-launcher 的 `versions/<ver>/` 是两套互不相干的安装，猜错会「报成功但问题依旧」），**也不要手写 `.pnpm/*` glob**（哈希段随 peer 组合变化）。
-- **Matt 技能上游更新后**：整体覆盖 26 个技能目录（上游 `skills/engineering` 18 个 + `skills/productivity` 7 个 + `skills/in-progress/implement-spec`；matt-cordis 另含两个 cordis 随附技能），再把三份 preset 的 `skills/grilling/SKILL.md` 按 §二 重做——上游逐字 + 改动① + 改动②（`matt-ptc` 用 PTC 形态的旁注）。其余技能无本地改动。
+- **Matt 技能上游更新后**：整体覆盖 26 个技能目录（上游 `skills/engineering` 18 个 + `skills/productivity` 7 个 + `skills/in-progress/implement-spec`；matt-cordis 另含两个 cordis 随附技能），再把三份 preset 的 `skills/grilling/SKILL.md` 按 §二 重做——上游逐字 + 改动①②③④（`matt-ptc` 用 PTC 形态的投递旁注；改动③ 是删句，覆盖上游文件后需手工再删一遍）。其余技能无本地改动。
 
 仓库 `presets/matt-*/` 即上述改动后的成品；日常同步 = 装好插件后把三个目录（`agent.cordis.yml` + `preset.yml` + `skills/`，不含 README.md）同步到 `~/.dsh/.agent-presets/<id>/` 并重启 DSH。
