@@ -2,11 +2,10 @@
  * 扣留队列：工具调用 / 命令行在标题译文就绪之前整行不可见，原文不落屏。
  *
  * 扣留按阅读顺序放行。队首那一行还在等译文时，排在它后面的每个流程条目整条不可见
- * 并挂上 {@link REVEAL_HOLD_ATTRIBUTE}：标记让 smooth-stream 不再推进条目里的逐字
- * 揭示（积压原样留着），`display: none` 让条目里的任何东西都上不了屏——不翻译的行、
- * 宿主直接落盘的文本、已经逐字reveal了一半的正文，都得等轮到它。队首一就绪，它先出现
- * （译文挂载 + 整行对数淡入），再轮到下一条。没有这层顺序，靠后的行会先占住位置，等
- * 靠前的行出现时再被顶下去。
+ * 并挂上 {@link REVEAL_HOLD_ATTRIBUTE}：`display: none` 让条目里的任何东西都上不了屏
+ * ——不翻译的行、宿主直接落盘的文本、已经写入一半的正文，都得等轮到它。队首一就绪，
+ * 它先出现（译文挂载 + 整行入场淡入），再轮到下一条。没有这层顺序，靠后的行会先占住
+ * 位置，等靠前的行出现时再被顶下去。
  *
  * 藏法是整条 `display: none`，不是「占着位置但透明」：条目一旦进入布局就带上了
  * 会话流的 16px 兄弟间距（`.column > :not(:empty) ~ :not(:empty)`），积压几行就是
@@ -33,19 +32,16 @@ export const HOLD_DEADLINE_MS = 5000;
 const RELEASE_BUDGET_MS = 900;
 /** 步长下限：再长的队伍也不快于这个间隔，保住「一行一行」的观感。 */
 const RELEASE_STEP_MIN_MS = 60;
-/** 步长上限：队伍短时让上一行的 240ms 淡入走完再放下一条。 */
+/** 步长上限：队伍短时让上一行的入场淡入走完再放下一条。 */
 const RELEASE_STEP_MAX_MS = 220;
 
 /**
  * 挂起标记：打在会话流条目（`[data-chat-flow-key]`）上，表示「这条还没轮到上屏」。
- * smooth-stream 读它来暂停条目内的揭示引擎，字面量在两边各写一份
- * （`src/client/revealHold.ts`）。
  */
 export const REVEAL_HOLD_ATTRIBUTE = 'data-dsh-reveal-hold';
 
 /**
- * smooth-stream 的行入场包裹层。它用 `data-entrance` 门控整行的对数淡入，
- * 动画定义在它自己的样式里。
+ * 会话流行入场的门控包裹层：`data-entrance` 是行入场淡入动画的开关。
  */
 const ROW_ENTRANCE_HOST_SELECTOR = '[data-entrance]';
 
