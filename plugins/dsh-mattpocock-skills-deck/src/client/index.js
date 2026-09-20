@@ -11,12 +11,12 @@
  *   状态栏胶囊允许换行（窄栏不再截断）。
  *
  * v25 变更（map #364）：
- *   T2a：配置页骨架（settings.plugins.tab「MattSkillsDeck」+ 持久化 + 广播）；
+ *   T2a：配置页骨架（配置页 + 持久化 + 广播）；
  *   T2b：动作模板编辑器 + 占位符保护；
  *   T3（#366）：dsws locale 命名空间 zh/en 字典，全控件文字双语跟随 harness 语言（GitHub 数据不翻译）。
  *
  * v25 变更（map #364 · T2a）：
- *   50. 配置页骨架：settings.plugins.tab「MattSkillsDeck」注册（设置 → 插件可见）；
+ *   50. 配置页骨架：配置页注册（现挂「设置 → 侧边栏」共享页，见 views/SidebarSettingsPage.js）；
  *       三组既有配置迁入（面板默认高度三档 / 开始模板 / 外观）；
  *       配置持久化 dsws.cfg + dsws.templates（旧 dsws.startCfg 自动迁移）；
  *       保存后广播同步所有会话 store（修复外观/尺寸不持久化隐性 bug）；
@@ -246,6 +246,7 @@ export default {
     // ==== leaf:OverlayGate (spliced by build) ==== // ==== leaf:overlay (spliced by build) ====
 
     // ==== leaf:SettingsWorkspaces (spliced by build) ==== // ==== leaf:settingsPage (spliced by build) ====
+    // ==== leaf:SidebarSettingsPage (spliced by build) ====
 
     // ==== leaf:runPanel (spliced by build) ====
 

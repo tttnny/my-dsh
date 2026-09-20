@@ -258,7 +258,7 @@
       '@keyframes dsws-flash-green{0%{background-color:rgba(74,222,128,.20)}100%{background-color:transparent}}',
       '.dsws-row-changed{animation:dsws-flash-amber 2.4s ease-out 1}',
       '.dsws-row-added{animation:dsws-flash-green 2.4s ease-out 1}',
-      // v25 · T2b：配置页（settings.plugins.tab）专用样式
+      // v25 · T2b：配置页专用样式（卡片现在渲染在「设置 → 侧边栏」共享页内）
       '.dsws-cfg{max-width:720px;display:flex;flex-direction:column;gap:12px;padding:2px 2px 4px}',
       '.dsws-cfg-head{display:flex;align-items:center;gap:10px}',
       '.dsws-cfg-head .t{font-size:15px;font-weight:700;letter-spacing:.2px}',

@@ -82,10 +82,15 @@
     __injectOnce('tool.view.cordis', function () {
       return slots.register({ name: 'tool.view.cordis', key: 'self' }, withCx(RunPanel))
     })
-    // 分叉收敛（2026-09-04）：只留插件页内 Tab，移除 settings.section 左侧直达（双入口重复；AGENTS.md 设置项排序规则：自有插件沉底不穿插）
-    // v25-50：配置页（设置 → 插件 → MattSkillsDeck；与 opencode 主题同模式）
-    __injectOnce('settings.plugins.tab', function () {
-      return slots.register({ name: 'settings.plugins.tab', id: 'dsws-settings', order: 40, label: function () { return tr('panel.title') } }, withCx(SettingsPage))
+    // 设置「侧边栏」页（设置 → 侧边栏）：本插件与 dsh-workspace-tree 共用一页——先激活者
+    //   当选页面宿主并声明 sidebar.settings.item 子槽，另一位只把卡片注册进该子槽；两侧壳
+    //   逐行同源（只差行首缩进与 export），判据见仓库 docs/rules/shared-settings-page.md。
+    // v25-50 的「设置 → 插件 → MattSkillsDeck」页内 Tab 随之撤除（同一份配置不再有第二个入口）。
+    __injectOnce('settings.section', function () {
+      return claimSidebarSettingsPage(ctx, function () { return tr('sidebar.pageNav') })
+    })
+    __injectOnce(SIDEBAR_ITEM_SLOT, function () {
+      return slots.register({ name: SIDEBAR_ITEM_SLOT, id: 'dsws-settings', order: 20, label: function () { return tr('panel.title') } }, withCx(SettingsPage))
     })
     // deck 不向 rightbar 槽位注册：官方 rightbar 条目**就是右栏框架本身**
     //   （dsh-client-ui-sidebar-right 的 RightbarRoot）——列宽（P3OORG_panel 的 style.width 720px）、

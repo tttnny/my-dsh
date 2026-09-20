@@ -5,7 +5,8 @@
 ## 特性
 
 - **控制面板（Deck）**：右侧 details 列注入地图列表 / 票务详情 / 进度契约 / triage 与 grilling 动作按钮 / handoff 交接，支持 GitHub / GitLab / Markdown 三种 issue 后端。
-- **打开位置两种官方载体**：面板只在 dsh-better-sidebar 标签页（`侧边栏`）或 DSH 自带右侧边栏标签页（`官方侧边栏`，走官方 `sidebar.right.pane.tab` 座位，与 Files / Terminal 并列，并在右栏指南页留下入口卡）打开，设置 → 插件 → MattSkillsDeck 即时切换；装了 better-sidebar 默认前者，否则默认后者。两者都不可用（服务缺席 / 类型注册失败 / 无会话面板挂载）时才回退插件自带悬浮面板，该兜底不是可选顶。
+- **打开位置两种官方载体**：面板只在 dsh-better-sidebar 标签页（`侧边栏`）或 DSH 自带右侧边栏标签页（`官方侧边栏`，走官方 `sidebar.right.pane.tab` 座位，与 Files / Terminal 并列，并在右栏指南页留下入口卡）打开，设置 → 侧边栏 → MattSkills 即时切换；装了 better-sidebar 默认前者，否则默认后者。两者都不可用（服务缺席 / 类型注册失败 / 无会话面板挂载）时才回退插件自带悬浮面板，该兜底不是可选顶。
+- **设置并入共享「侧边栏」页**：配置卡片挂在设置 → 侧边栏 → MattSkills，与 `dsh-workspace-tree` 同页并列（`settings.section` id `sidebar` 页内一个 tab，参与者可增删）。内核不允许一页被两个插件共同声明，因此每个参与者各持一份逐行同源的页壳，**先加载者当选页面宿主**、另一位只注册卡片；当选者被卸载后下次启动自动改选。做法与约束见仓库 `docs/rules/shared-settings-page.md`。
 - **环境检查链（wf.chain）识别 agent-preset 技能根**（`#preset-skill-roots`）：技能判装在四个标准根（`~/.agents/skills`、`~/.dsh/skills`、项目 `.dsh/skills`、项目 `.agents/skills`）之外，追加本合集 preset 的 `~/.dsh/.agent-presets/<id>/skills/<skill>` 候选（FS 服务与插件只读直读双通道；仍需 `SKILL.md` frontmatter `name` 精确匹配才算已安装）。
 - **按会话 preset 门控**（`#preset-session-gating`）：preset 技能只有随**当前会话所选 preset** 分发时才算「已安装」——会话没选 Matt 相关 preset（如内置 `standard`、`ptc-cordis`）时，环境检查如实显示技能未装，不再虚报「环境 10/10」。生效 preset 经 `agentPreset` 会话投影（创建 header 兜底）解析；解析不到会话上下文时回退「枚举全部 preset 目录」的宽松口径（宁绿勿误报）。
 - **链缓存按会话隔离**：服务端与客户端的环境检查链缓存键均加入 preset / 会话维度，同一工作区里不同 preset 的会话不互串链结果。

@@ -62,6 +62,10 @@ const slots = {
     return () => {}
   },
   inject: (name, fn) => { try { fn() } catch (e) {} },
+  // 共享「侧边栏」页壳靠这三个只读面查选举与订阅 tab 名单（不渲染页壳时只用到 entries）。
+  entries: (name) => registrations.filter((r) => r.meta && r.meta.name === name).map((r) => ({ options: r.meta })),
+  getVersion: () => 0,
+  subscribe: () => () => {},
 }
 // 1.8.8：deck 的主形态 = better-sidebar 标签页（DetailsDock 经 DeckSidebarTab 渲染），
 //   不再向官方 rightbar 槽位注册（那会顶掉官方右栏框架，见 panelAssembly.js 撤回说明）。
@@ -80,6 +84,9 @@ const services = {
 }
 const ctx = {
   get: (k) => services[k],
+  // 声明过的服务在真实 cordis ctx 上也是属性（插件 inject: ['slots', …]）；
+  // 共享「侧边栏」页壳经 ctx.slots 读注册表，故这里同样挂上。
+  slots,
   effect: (fn) => { const r = fn(); return typeof r === 'function' ? r : () => {} },
 }
 
@@ -110,14 +117,19 @@ check(typeof mod.apply === 'function', 'apply 为函数（render smoke）')
 
 try { mod.apply(ctx) } catch (e) { console.log('  WARN apply threw:', e.message) }
 
-check(registrations.length === 4, `slots.register 捕获 4 个插槽（分叉：无 settings.section；1.8.8 撤回 rightbar；实际 ${registrations.length}）`)
+check(registrations.length === 5, `slots.register 捕获 5 个插槽（1.8.8 撤回 rightbar；设置改挂共享「侧边栏」页 = 页壳 + 卡片；实际 ${registrations.length}）`)
 const slotNames = registrations.map(r => r.meta && r.meta.name).join(', ')
 check(slotNames.includes('conversation.input.dock'), `statusbar 插槽已注册（${slotNames}）`)
 // 回归防护：「点右侧边栏按钮面板直接消失」的根因就是 deck 用 priority:-1 抢了官方 rightbar 格子
 //   （官方 rightbar 条目 = 右栏框架本身，列宽/折叠按钮都归它渲染）。这里钉死「不许再抢」。
 check(!slotNames.includes('rightbar'), `不抢官方 rightbar 格子（防回归）：${slotNames}`)
-check(slotNames.includes('settings.plugins.tab'), `settings 插槽已注册（${slotNames}）`)
+check(slotNames.includes('settings.section'), `共享「侧边栏」页已声明（${slotNames}）`)
+check(slotNames.includes('sidebar.settings.item'), `配置卡片已注册进共享页子槽（${slotNames}）`)
+check(!slotNames.includes('settings.plugins.tab'), `不再占插件页内 Tab（单一入口）：${slotNames}`)
 check(slotNames.includes('shell.overlay'), `overlay 插槽已注册（${slotNames}）`)
+const sidebarPage = registrations.find(r => r.meta && r.meta.name === 'settings.section')
+check(sidebarPage.meta.id === 'sidebar' && sidebarPage.meta.order === 130, `共享页 id/order = sidebar/130（实际 ${sidebarPage.meta.id}/${sidebarPage.meta.order}）`)
+check(sidebarPage.meta.children && sidebarPage.meta.children['sidebar.settings.item'] !== undefined, '共享页声明了 sidebar.settings.item 子槽')
 
 // ---- 样式注入已在 smoke-client 验证，这里复核 ----
 const styles = window.document.head.querySelectorAll('style[data-plugin]')
@@ -155,7 +167,7 @@ const StatusBarComp = byName['conversation.input.dock'] || byId['dsh-mattpocock-
 // deck 面板改经 better-sidebar 标签页渲染（1.8.8 主形态）：DeckSidebarTab = 包裹层 + DetailsDock
 const DetailsDockComp = capturedSidebarTab ? capturedSidebarTab.component : null
 const OverlayComp = byName['shell.overlay']
-const SettingsComp = byName['settings.plugins.tab']
+const SettingsComp = byName['sidebar.settings.item']
 
 // ---- StatusBar 渲染（关键路径：capsule / seg / 状态段）----
 if (StatusBarComp) {

@@ -30,7 +30,7 @@
     <tr>
       <td><b>🗂️ 工作区管理</b><br><i>侧栏信息架构与会话资产，含写语义</i></td>
       <td><a href="./plugins/dsh-workspace-tree"><code>@lynn123411/dsh-workspace-tree</code></a></td>
-      <td><b>工作区树</b><br>· 注册工作区按目录嵌套的侧栏树，无归属会话按官方语义落「未分组」<br>· 一键在外部 IDE 打开（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）<br>· 全局重命名 + 安全归档区（归档门槛 / 只读阅览）+ 级联物理删除<br>· 唯一带注册表与文件系统写语义的侧栏插件</td>
+      <td><b>工作区树</b><br>· 注册工作区按目录嵌套的侧栏树，无归属会话按官方语义落「未分组」<br>· 一键在外部 IDE 打开（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）<br>· 全局重命名 + 安全归档区（归档门槛 / 只读阅览）+ 级联物理删除<br>· 唯一带注册表与文件系统写语义的侧栏插件<br>· 设置项与 Matt 技能控制面板共用「<b>侧边栏</b>」设置页（先到先得当选页面宿主）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-workspace-tree</code></td>
     </tr>
     <tr>
@@ -63,7 +63,7 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-mattpocock-skills-deck"><code>@lynn123411/dsh-mattpocock-skills-deck</code></a></td>
-      <td><b>Matt 技能控制面板（Deck）</b><br>· wayfinder 地图 / 票务 / 进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）<br>· 上游分叉：技能判装识别 <code>~/.dsh/.agent-presets/&lt;id&gt;/skills/</code> 根并<b>按当前会话生效 preset 门控</b>（没选 Matt preset 不虚报「环境 10/10」，选了不误报缺失）<br>· 移除上游随包全局技能 provider</td>
+      <td><b>Matt 技能控制面板（Deck）</b><br>· wayfinder 地图 / 票务 / 进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）<br>· 上游分叉：技能判装识别 <code>~/.dsh/.agent-presets/&lt;id&gt;/skills/</code> 根并<b>按当前会话生效 preset 门控</b>（没选 Matt preset 不虚报「环境 10/10」，选了不误报缺失）<br>· 移除上游随包全局技能 provider<br>· 设置项与工作区树共用「<b>侧边栏</b>」设置页（先到先得当选页面宿主）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck</code></td>
     </tr>
     <tr>

@@ -292,6 +292,11 @@ const makeServices = (registrations, uiWorkspace, calls, state) => ({
       record.dispose = () => {}
       return () => {}
     },
+    // 共享「侧边栏」页壳经这三个只读面查选举、订阅 tab 名单（内核真身同形）：
+    // 先到先得当选靠 entries 查表，故此处必须返回真实注册表而不是空数组。
+    entries: (key) => registrations.filter((row) => row.name === key).map((row) => ({ options: row })),
+    getVersion: () => registrations.length,
+    subscribe: () => () => {},
   },
   sessions: {
     // Live store: `liveSessionRow` in the plugin reads this, so the harness can move the
@@ -529,8 +534,23 @@ const listing = (path, entries, crumbs) => ({
   check('apply/inject exported', typeof harness.exported.apply === 'function' && Array.isArray(harness.exported.inject))
   check('sidebar entry keeps the shadowing priority', entry.priority === -1)
   check('sidebar entry declares no child slot', entry.children === undefined)
-  check('other seats still registered', harness.registrations.some((r) => r.name === 'settings.plugins.tab')
+  check('other seats still registered', harness.registrations.some((r) => r.name === 'sidebar.settings.item')
     && harness.registrations.some((r) => r.name === 'conversation.composer'))
+  // 设置「侧边栏」共享页：本插件与 dsh-mattpocock-skills-deck 共用一页，先激活者当选页面宿主
+  // 并声明 sidebar.settings.item 子槽；卡片 id 取本插件的 Host 设置命名空间，页面按它分发面板。
+  const settingsCards = harness.registrations.filter((r) => r.name === 'sidebar.settings.item')
+  check('sidebar settings card registered once', settingsCards.length === 1)
+  check('sidebar settings card id is the Host settings namespace', settingsCards[0].id === 'dsh-workspace-tree')
+  check('sidebar settings card order/label', settingsCards[0].order === 10 && settingsCards[0].label() === 'settings.workspaceTree:title')
+  check('plugin page tab is gone', !harness.registrations.some((r) => r.name === 'settings.plugins.tab'))
+  const settingsPage = harness.registrations.find((r) => r.name === 'settings.section')
+  check('shared settings page claimed as sidebar/130',
+    settingsPage !== undefined && settingsPage.id === 'sidebar' && settingsPage.order === 130)
+  check('shared settings page declares the item slot',
+    settingsPage.children !== undefined && settingsPage.children['sidebar.settings.item'] !== undefined
+    && settingsPage.children['sidebar.settings.item'].kind === 'list')
+  check('shared settings page label is the sidebar nav label', settingsPage.label() === 'settings.workspaceTree:pageNav')
+  check('shared settings page injects the tab roster', typeof settingsPage.inject().sidebarTabs.getSnapshot === 'function')
   check('inject face exposes native + browse directory surfaces',
     typeof face.pickDirectory === 'function' && typeof face.listDirectory === 'function' && typeof face.createDirectory === 'function')
   check('no wiring error during apply', harness.calls.errors.length === 0)

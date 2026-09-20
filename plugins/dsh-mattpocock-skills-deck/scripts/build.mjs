@@ -277,6 +277,7 @@ const LEAF_MODULES = [
   { id: 'checksTab', file: 'src/client/views/ChecksTab.js' },
   { id: 'SettingsWorkspaces', file: 'src/client/views/SettingsWorkspaces.js' },
   { id: 'settingsPage', file: 'src/client/views/SettingsPage.js' },
+  { id: 'SidebarSettingsPage', file: 'src/client/views/SidebarSettingsPage.js' }, // 设置「侧边栏」共享页壳（与 dsh-workspace-tree 的 region 逐行同源）
   { id: 'runPanel', file: 'src/client/views/RunPanel.js' },
   { id: 'DockSync', file: 'src/client/panel/DockSync.js' },
   { id: 'dock', file: 'src/client/panel/Dock.js' },

@@ -49,8 +49,9 @@ const dock = read('src/client/panel/Dock.js')
 check(dock.includes('setBannerFolded') && dock.includes('isBannerFolded'), 'Dock 头部挂功能区显隐总开关')
 check(dock.includes("banner.expandDeck") && dock.includes("banner.foldDeck"), 'Dock 开关复用折叠文案（无新词条）')
 const pa = read('src/client/panelAssembly.js')
-check(!/__injectOnce\('settings\.section'/.test(pa) && !/name:\s*'settings\.section'/.test(pa), 'panelAssembly.js 无 settings.section 注册（只留插件页内 Tab）')
-check(pa.includes('settings.plugins.tab'), 'panelAssembly.js 保留 settings.plugins.tab')
+check(pa.includes("__injectOnce('settings.section'") && pa.includes('claimSidebarSettingsPage'), 'panelAssembly.js 声明共享「侧边栏」页（settings.section id sidebar）')
+check(pa.includes('__injectOnce(SIDEBAR_ITEM_SLOT') && pa.includes('name: SIDEBAR_ITEM_SLOT'), 'panelAssembly.js 把配置卡片注册进共享页子槽')
+check(!pa.includes('settings.plugins.tab'), 'panelAssembly.js 无 settings.plugins.tab 残留（配置只剩一个入口）')
 
 // ---- 3. 构建与 bundled ----
 const bm = read('scripts/build.mjs')
