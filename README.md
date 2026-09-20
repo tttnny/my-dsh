@@ -58,7 +58,7 @@
     <tr>
       <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
       <td><a href="./plugins/dsh-ask-user-grilling"><code>@lynn123411/dsh-ask-user-grilling</code></a></td>
-      <td><b>提问表单变体</b><br>· <code>ask_user_grilling</code>：原生 <code>ask_user_question</code> 的呈现变体——同一条 <code>userQuestions</code> seam，工具描述与共有参数描述<b>与原生逐字一致</b>（另有可选参数 <code>number</code>（题号，由代码并进 <code>header</code>）、<code>detail</code>（界面按 markdown 渲染的正文）、<code>recommended</code>（推荐项）），只强制多选、并自动追加一道轮末补充题（多选刻意不写进描述）<br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次表单投递作答<br>· ⚠️ 形态：普通 Cordis 插件（preset 工具行消费，非 bundle），严禁加入 profile <code>package.json</code> 的 <code>dsh.profile.bundles</code></td>
+      <td><b>提问表单变体</b><br>· <code>ask_user_grilling</code>：原生 <code>ask_user_question</code> 的呈现变体——同一条 <code>userQuestions</code> seam，工具描述与共有参数描述<b>与原生逐字一致</b>（另有可选参数 <code>number</code>（题号，由代码并进 <code>header</code>）、<code>detail</code>（界面按 markdown 渲染的正文）、<code>recommended</code>（推荐项）），只强制多选、并自动追加一道轮末补充题（多选刻意不写进描述）<br>· transcript 卡片由自带浏览器半边画：题号/题干/选项说明之外还把 <code>detail</code> 正文、轮末补充题与被拒的违规清单一起列出来（官方卡只认 id 与题干，遇到轮末补充题会退回原始 JSON）<br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次表单投递作答<br>· ⚠️ 形态：bundle + 客户端半边——工具由 preset 工具行注册，profile <code>dsh.profile.bundles</code> 里的本包载体行（<code>config.carrier: true</code>，什么都不注册）只为让 Web shell 服务卡片 bundle</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling</code></td>
     </tr>
     <tr>

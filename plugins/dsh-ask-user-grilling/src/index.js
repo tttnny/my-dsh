@@ -1,5 +1,6 @@
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import "@deepseek-ai/dsh-user-questions";
+import { RESERVED_ID_PREFIX, ROUND_END_QUESTION, isBlank, mergeNumberIntoHeader } from "./contract.js";
 import { normalizeOption } from "./recommendation.js";
 
 /**
@@ -29,41 +30,45 @@ import { normalizeOption } from "./recommendation.js";
  *     option label, or two options of one question that end up with the same
  *     label (the client keys selection by label, so a collision cannot be
  *     restored or even clicked apart)
+ *
+ * Two rows mount this module. The preset tool row registers the tool (the
+ * default). The profile bundle row, inserted by this package's
+ * `cordis.patch.yml`, exists only so the Web client serves `lib/client.js` —
+ * the browser bundle is served for an enabled Loader entry, and a preset row is
+ * a directly plugged subtree rather than a Loader entry, so the package must be
+ * in `dsh.profile.bundles` for its card to reach the page. That row passes
+ * `config.carrier: true` and registers nothing; without it the tool would also
+ * become a root-layer tool, visible to agents on every other preset.
  */
 const name = "tool-ask-user-grilling";
 const inject = ["tools", "userQuestions"];
 
-const ROUND_END_QUESTION = {
-  id: "__grill_round_supplement__",
-  question: "这轮还有什么要补充或调整的吗？",
-  header: "轮末补充",
-  options: [
-    { label: "无需补充" },
-  ],
-  multiSelect: true,
-};
-
-/** 去掉首尾空白后是否为空。空串与纯空白都不值得送进表单。 */
-function isBlank(value) {
-  return typeof value !== "string" || value.trim() === "";
-}
+/** 载体行认这一个键，认到就整行什么都不注册（浏览器半边的 servable entry，见文件头）。 */
+const CONFIG_KEY = "carrier";
 
 /**
- * 把题号并进标题：两者都给写作 `<number> · <header>`，只给一个就是那一个；
- * 标题已经以该题号开头时原样送出去（模型常自己写成 "Q2 · Deadline"）。
- * @param {string} [number] - 题号。
- * @param {string} [header] - 标题。
- * @returns {string} 交给界面的标题；两者都缺时为空串（调用方据此省略该字段）。
+ * 读这一行的 config。未知键与错类型当场抛：拼错的载体行会静默多注册一个全局工具，
+ * 那比启动失败难查得多。
+ * @param {unknown} config - loader 交给插件行的 config。
+ * @returns {{ carrier: boolean }} 归一化后的配置。
  */
-function mergeNumberIntoHeader(number, header) {
-  const num = isBlank(number) ? undefined : number;
-  const head = isBlank(header) ? undefined : header;
-  if (num === undefined) return head ?? "";
-  if (head === undefined) return num;
-  return head.startsWith(num) ? head : `${num} · ${head}`;
+function readConfig(config) {
+  if (config === undefined || config === null) return { carrier: false };
+  if (typeof config !== "object" || Array.isArray(config)) {
+    throw new TypeError(`${name}: config must be an object with an optional boolean "${CONFIG_KEY}"`);
+  }
+  const unknown = Object.keys(config).filter((key) => key !== CONFIG_KEY);
+  if (unknown.length > 0) {
+    throw new TypeError(`${name}: unknown config key(s) ${unknown.map((key) => JSON.stringify(key)).join(", ")}; the only accepted key is "${CONFIG_KEY}"`);
+  }
+  if (config[CONFIG_KEY] !== undefined && typeof config[CONFIG_KEY] !== "boolean") {
+    throw new TypeError(`${name}: config.${CONFIG_KEY} must be a boolean`);
+  }
+  return { carrier: config[CONFIG_KEY] === true };
 }
 
-function apply(ctx) {
+function apply(ctx, config) {
+  if (readConfig(config).carrier) return;
   ctx.tools.register(defineTool({
     name: "ask_user_grilling",
     description: "Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. Send one or more questions, each with a stable id that will be echoed in the answer.",
@@ -183,8 +188,8 @@ function apply(ctx) {
       const seenIds = new Set();
       args.questions.forEach((question, questionIndex) => {
         const where = `Question ${questionIndex + 1} (id ${JSON.stringify(question.id)})`;
-        if (typeof question.id === "string" && question.id.startsWith("__grill_")) {
-          violations.push(`${where} uses the reserved prefix __grill_ (owned by the round-end supplement question)`);
+        if (typeof question.id === "string" && question.id.startsWith(RESERVED_ID_PREFIX)) {
+          violations.push(`${where} uses the reserved prefix ${RESERVED_ID_PREFIX} (owned by the round-end supplement question)`);
         }
         if (typeof question.id === "string") {
           if (seenIds.has(question.id)) violations.push(`${where} repeats an id already used in this round; ids must be unique because the answer is keyed by id`);
@@ -211,7 +216,7 @@ function apply(ctx) {
         return {
           rejected: true,
           violations,
-          error: `${violations.length} violation(s) in this round: ids must be unique and must not use the reserved __grill_ prefix, question text must not be blank, and the options of one question must not share a label. Fix them and call this tool again.`,
+          error: `${violations.length} violation(s) in this round: ids must be unique and must not use the reserved ${RESERVED_ID_PREFIX} prefix, question text must not be blank, and the options of one question must not share a label. Fix them and call this tool again.`,
           answers: [],
         };
       }
@@ -251,6 +256,7 @@ function apply(ctx) {
       questions.push({
         ...ROUND_END_QUESTION,
         options: ROUND_END_QUESTION.options.map((option) => ({ ...option })),
+        multiSelect: true,
       });
 
       // 4. ask through the userQuestions seam (UI renders from the service)

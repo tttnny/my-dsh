@@ -1,0 +1,11 @@
+# 本包出现在 profile 的 dsh.profile.bundles 里时应用。
+#
+# 这一行只为让 Web shell 服务本包的浏览器半边：客户端 bundle 只对 root loader 的 enabled
+# entry 服务，而 preset 工具行是直接挂的子树、不是 Loader entry（见 dsh-agent-presets 的
+# mount 说明与 client-modules 的 processOne）。所以它必须什么都不注册——工具仍由 preset 行
+# 注册，否则工具会以 root layer 的身份对每一个 preset 的 agent 可见。
+- insert:
+    - id: lynn-ask-user-grilling-carrier
+      name: '@lynn123411/dsh-ask-user-grilling'
+      config:
+        carrier: true

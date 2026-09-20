@@ -48,9 +48,10 @@ function test(name, fn) {
 /**
  * 装配一次插件，拿到注册进真 defineTool 的工具，并留下 seam 的收件箱。
  * @param {{(request: object): {answers: object[]}}} [answerer] - 假 seam 的应答实现。
+ * @param {object} [config] - loader 交给插件行的 config（载体行用 { carrier: true }）。
  * @returns {Promise<{tool: object, asked: object[]}>} 工具与每次调用的送审问题。
  */
-async function assemble(answerer) {
+async function assemble(answerer, config) {
   const asked = [];
   const ctx = {
     tools: { register: () => {} },
@@ -65,7 +66,7 @@ async function assemble(answerer) {
   };
   let tool;
   ctx.tools.register = (registered) => { tool = registered; };
-  plugin.apply(ctx);
+  plugin.apply(ctx, config);
   return { tool, asked };
 }
 
@@ -227,6 +228,27 @@ await test('缺 label 由 defineTool 的入参校验拦住，不进本插件的 
     () => tool.execute({ questions: [{ id: 'a', question: '？', options: [{ description: 'x' }] }] }, exec),
     /missing required property "questions\[0\]\.options\[0\]\.label"/,
   );
+});
+
+// --- 两条行形状：preset 行注册工具，bundle 载体行什么都不注册 ---
+
+await test('缺省 config：preset 行照常注册工具', async () => {
+  const { tool } = await assemble(undefined, undefined);
+  assert.equal(tool.name, 'ask_user_grilling');
+  const withEmpty = await assemble(undefined, {});
+  assert.equal(withEmpty.tool.name, 'ask_user_grilling');
+});
+
+await test('载体行：config.carrier 为 true 时什么都不注册（浏览器 bundle 的 servable entry）', async () => {
+  const { tool, asked } = await assemble(undefined, { carrier: true });
+  assert.equal(tool, undefined);
+  assert.deepEqual(asked, []);
+});
+
+await test('config 校验：拼错的载体行当场抛，不静默多注册一个全局工具', async () => {
+  await assert.rejects(() => assemble(undefined, { carrrier: true }), /unknown config key\(s\) "carrrier"/);
+  await assert.rejects(() => assemble(undefined, { carrier: 'yes' }), /config\.carrier must be a boolean/);
+  await assert.rejects(() => assemble(undefined, 'carrier'), /config must be an object/);
 });
 
 // --- 手抄的界面规则是否还在安装副本里 ---

@@ -7,7 +7,7 @@
 // 断言那份抄本与安装副本逐字相同，上游一改就当场失败，而不是测试继续通过、
 // 徽标实际不再渲染。
 import assert from 'node:assert/strict';
-import { normalizeOption } from '../lib/recommendation.js';
+import { normalizeOption } from '../src/recommendation.js';
 import { CLIENT_ACCEPTS } from './recommended-label-rule.mjs';
 
 let passed = 0;
