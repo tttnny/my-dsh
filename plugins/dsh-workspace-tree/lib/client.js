@@ -624,12 +624,18 @@ window.__ModuleLoader__.load({
       for (const id of memberIds) if (!seen.has(id)) kept.push(id);
       return kept;
     }
-    /** 当前打开的空白草稿恒在最前（官方 pinCurrentBlank）。 */
+    /**
+     * 当前打开的空白草稿恒在最前（官方 pinCurrentBlank）。
+     * 只钉**本账号自己的成员**：当前草稿属于某一个工作区（或「未分组」），
+     * 若不加这道成员检查，它会被钉进每个账号的顺序里，在各个组里各渲染一行幻影。
+     */
     function pinCurrentBlank(order, currentSid, byId) {
       if (!currentSid) return order;
       const row = byId[currentSid];
       if (!row || !row.blank) return order;
-      return [currentSid].concat(order.filter((id) => id !== currentSid));
+      const target = String(currentSid);
+      if (!order.some((id) => String(id) === target)) return order;
+      return [currentSid].concat(order.filter((id) => String(id) !== target));
     }
     /** 一个账号（工作区 / 未分组 / 单一列表）的显示顺序。 */
     function accountOrder(accountKey, memberIds, sessions, view, currentSid) {

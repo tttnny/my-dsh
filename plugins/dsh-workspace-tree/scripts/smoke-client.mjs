@@ -1584,6 +1584,31 @@ const listing = (path, entries, crumbs) => ({
     && harness.calls.wsInsertBefore[0].beforeWorkspaceId === 'ws-1')
 }
 
+// ── 当前空白草稿只钉在本账号里：别的组不会被钉出一行幻影 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const blank = (id, cwd) => ({ id, displayTitle: 'work', cwd, running: false, blank: true, updatedAt: Date.now(), retainedBy: { mainView: 1 } })
+  const normal = (id, cwd, updatedAt) => ({ id, displayTitle: 'session ' + id, cwd, running: false, blank: false, updatedAt })
+  const rows = [
+    blank('s-draft-parent', '/home/tny/work'),
+    normal('s-parent', '/home/tny/work', 5000),
+    normal('s-child', '/home/tny/work/sub', 4000),
+  ]
+  const items = [
+    { workspaceId: 'ws-parent', path: '/home/tny/work', title: 'parent', sessionIds: ['s-draft-parent', 's-parent'] },
+    { workspaceId: 'ws-child', path: '/home/tny/work/sub', title: 'child', sessionIds: ['s-child'] },
+  ]
+  const tree = await settle(Browser, sidebarPropsWithWorkspaces(face, rows, items, harness.state))
+  const drafts = []
+  walk(tree, (n) => { if (hasClass(n, 'dswt-session') && n.props['data-sid'] === 's-draft-parent') drafts.push(n) })
+  check('blank: the provisional row renders once, in its own workspace only', drafts.length === 1)
+  check('blank: the sibling workspace keeps its own rows untouched',
+    findNode(tree, (n) => n?.props?.['data-sid'] === 's-child') !== undefined)
+}
+
+
 // ── 三种分组方式下会话拖拽都要能落地（工作树 / 按工作区 / 单一列表） ──
 
 for (const mode of [null, 'workspace', 'flat']) {
