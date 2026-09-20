@@ -88,6 +88,9 @@ let nativeProbeFailure = null
 let nativePickCalls = 0
 /** POST /picker/native 的请求体（断言行内入口把 startPath 传下去）。 */
 let nativePickBodies = []
+/** 内容检索桩：sessionId → 片段；`searchFailure` 非空时检索整体失败。 */
+let searchHits = {}
+let searchFailure = null
 globalThis.fetch = async (url, init) => {
   const path = String(url)
   if (path.endsWith('/archive/guardCheck')) {
@@ -313,6 +316,16 @@ const makeServices = (registrations, uiWorkspace, calls, state) => ({
       })
     },
     refresh: () => {},
+    // Official content-search controller: bounded result set, abortable per query.
+    searchResultLimit: 20,
+    search: async (query, signal) => {
+      calls.searches.push({ query, aborted: () => signal.aborted })
+      if (searchFailure !== null) return { ok: false, error: { message: searchFailure } }
+      const items = Object.entries(searchHits)
+        .filter(([, snippet]) => String(snippet).toLowerCase().includes(String(query).toLowerCase()))
+        .map(([sessionId, snippet]) => ({ sessionId, snippet }))
+      return { ok: true, value: { items, hasMore: false } }
+    },
   },
   workspaces: {
     list: { getSnapshot: () => ({ items: [], archivedSessionIds: [], phase: 'ready' }) },
@@ -320,6 +333,8 @@ const makeServices = (registrations, uiWorkspace, calls, state) => ({
     delete: async () => {},
     rename: async () => {},
     archiveSession: async (sessionId) => { calls.archived.push(String(sessionId)); },
+    unarchiveSession: async (sessionId) => { calls.unarchived.push(String(sessionId)); },
+    insertBefore: async (workspaceId, beforeWorkspaceId) => { calls.wsInsertBefore.push({ workspaceId, beforeWorkspaceId }); },
   },
   // The settings card registers its own dictionary and reads its tab label
   // through `t`; the bundle hard-injects `locale` for that seat.
@@ -360,12 +375,100 @@ let harnessSeq = 0
 
 /** Boot one fresh module instance of the browser half against a fake host.
  *  `hostFacts.native` = this host can serve the macOS Finder chooser (`/picker/native` → supported). */
-/** Inert stand-in for the ui-primitives baseline module the settings card imports. */
-const primitivesStub = new Proxy({}, { get: (_t, key) => (key === '__esModule' ? true : () => null) })
+/**
+ * Structural stand-ins for the ui-primitives baseline. The shipped components are
+ * styled React elements this harness cannot import, so each stand-in renders the
+ * slots the plugin hands it (anchor/content, children/footer, a native input) —
+ * the wiring under test stays in the tree. Identities are memoized so a test can
+ * address one by component identity as well as by its rendered shape.
+ */
+const primitiveStubs = new Map()
+const stubComponent = (key) => {
+  switch (key) {
+    case 'Button':
+      return (props) => React.createElement('button', {
+        type: 'button',
+        className: props.className,
+        disabled: props.disabled,
+        title: props.title,
+        'data-variant': props.variant,
+        onClick: props.onClick,
+        children: props.children,
+      })
+    case 'Input':
+      return (props) => React.createElement('input', { ...props, children: undefined })
+    case 'Modal':
+      return (props) => (props.open === false ? null : React.createElement('div', {
+        className: 'stub-modal ' + (props.className ?? ''),
+        'data-title': props.title,
+        children: [
+          React.createElement('div', { className: 'stub-modalTitle' }, props.title),
+          props.description ? React.createElement('div', { className: 'stub-modalBody' }, props.description) : null,
+          props.children,
+          props.footer,
+        ],
+      }))
+    case 'HoverCard':
+      return (props) => React.createElement('div', {
+        className: 'stub-hovercard',
+        'data-copy-text': typeof props.copyText === 'string' ? props.copyText : '',
+        children: [props.anchor, props.content],
+      })
+    case 'Menu':
+      return (props) => React.createElement('div', { className: 'stub-menu', 'data-portal': String(props.portal === true) }, [
+        props.anchor,
+        props.open
+          ? React.createElement('div', { className: 'stub-menuList', children: (props.items || []).filter((item) => item.type !== 'separator').map((item) => (
+            item.type === 'label'
+              ? React.createElement('div', { key: item.id, className: 'stub-menuLabel' }, item.text)
+              : React.createElement('button', {
+                key: item.id,
+                type: 'button',
+                'data-menu-id': item.id,
+                'data-selected': String((props.selectedIds || []).includes(item.id)),
+                onClick: () => props.onSelect(item.id),
+                children: item.label,
+              })
+          )) })
+          : null,
+      ])
+    case 'Tooltip':
+      return (props) => React.createElement('span', { className: 'stub-tooltip', 'data-label': props.label, children: props.children })
+    case 'StateDot':
+      return (props) => React.createElement('span', { className: 'stub-statedot', 'data-state': props.state })
+    case 'Switch':
+      return (props) => React.createElement('span', { className: 'stub-switch', 'data-checked': String(props.checked === true) })
+    case 'relativeTime':
+      // The primitive's documented buckets (now/minutes/hours/days/months/years);
+      // the words stay in the plugin, which is what the assertions target.
+      return (at, now) => {
+        const minutes = Math.floor(Math.max(0, now - at) / 60000)
+        if (minutes < 1) return { unit: 'now', n: 0 }
+        if (minutes < 60) return { unit: 'minutes', n: minutes }
+        const hours = Math.floor(minutes / 60)
+        if (hours < 24) return { unit: 'hours', n: hours }
+        const days = Math.floor(hours / 24)
+        if (days < 30) return { unit: 'days', n: days }
+        const months = Math.floor(days / 30)
+        if (months < 12) return { unit: 'months', n: months }
+        return { unit: 'years', n: Math.floor(months / 12) }
+      }
+    default:
+      return () => null
+  }
+}
+const primitivesStub = new Proxy({}, {
+  get: (_t, key) => {
+    if (key === '__esModule') return true
+    if (typeof key !== 'string') return undefined
+    if (!primitiveStubs.has(key)) primitiveStubs.set(key, stubComponent(key))
+    return primitiveStubs.get(key)
+  },
+})
 
 async function boot(makeOverrides = {}, hostFacts = {}) {
   const registrations = []
-  const calls = { injects: [], errors: [], workspaceCreate: [], sessionCreate: [], sessionUsing: [], sessionRename: [], listDirectory: [], createDirectory: [], pickDirectory: 0, archived: [], guardChecks: [], navOpen: [], navClear: 0 }
+  const calls = { injects: [], errors: [], workspaceCreate: [], sessionCreate: [], sessionUsing: [], sessionRename: [], listDirectory: [], createDirectory: [], pickDirectory: 0, archived: [], guardChecks: [], navOpen: [], navClear: 0, searches: [], unarchived: [], wsInsertBefore: [] }
   const moduleIds = []
   const state = { sessionSnapshot: { ids: [], byId: {}, phase: 'ready' } }
   const uiWorkspace = makeUiWorkspace(typeof makeOverrides === 'function' ? makeOverrides(calls) : makeOverrides)
@@ -391,6 +494,9 @@ async function boot(makeOverrides = {}, hostFacts = {}) {
   nativePickCalls = 0
   nativePickBodies = []
   nativeProbeFailure = null
+  storage.delete('dsh-workspace-tree.view')
+  searchHits = {}
+  searchFailure = null
   harnessSeq += 1
   await import(`${pathToFileURL(join(root, 'lib/client.js')).href}?smoke=${harnessSeq}`)
   const exported = globalThis.__smokeExports
@@ -418,6 +524,7 @@ const sidebarProps = (face, wide, state = { sessionSnapshot: { ids: [], byId: {}
   useSessions: (select) => select(state.sessionSnapshot),
   useWorkspaces: (select) => select({ items: [], archivedSessionIds: [], phase: 'ready' }),
   useSessionStatus: (select) => select(new Map()),
+  usePanelInfo: (select) => select({ activePanelId: state.activePanelId ?? null }),
 })
 
 /** Sidebar props carrying one workspace with the given session rows (archive-gate audit). */
@@ -441,6 +548,7 @@ const sidebarPropsWith = (face, rows, state) => {
       pendingInteraction: row.pending,
       completionUnread: row.completionUnread === true,
     }]))),
+    usePanelInfo: (select) => select({ activePanelId: state.activePanelId ?? null }),
     useSessions: (select) => select(state.sessionSnapshot),
     useWorkspaces: (select) => select({
       items: [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ids }],
@@ -463,6 +571,7 @@ const sidebarPropsWithWorkspaces = (face, rows, items, state) => {
     ...face,
     wide: true,
     useSessionStatus: (select) => select(new Map()),
+    usePanelInfo: (select) => select({ activePanelId: state.activePanelId ?? null }),
     useSessions: (select) => select(state.sessionSnapshot),
     useWorkspaces: (select) => select({ items, archivedSessionIds: [], phase: 'ready' }),
   }
@@ -479,6 +588,7 @@ const sidebarPropsWithArchive = (face, rows, items, archivedIds, state) => {
     ...face,
     wide: true,
     useSessionStatus: (select) => select(new Map()),
+    usePanelInfo: (select) => select({ activePanelId: state.activePanelId ?? null }),
     useSessions: (select) => select(state.sessionSnapshot),
     useWorkspaces: (select) => select({ items, archivedSessionIds: archivedIds, phase: 'ready' }),
   }
@@ -583,7 +693,7 @@ const listing = (path, entries, crumbs) => ({
   tree = await settle(Browser, props)
   check('row click navigates one level down', harness.calls.listDirectory[1] === '/home/tny/work')
 
-  findNode(tree, (n) => hasClass(n, 'dswt-modalBtnPrimary') && /选择此文件夹/.test(textOf(n))).props.onClick()
+  findNode(tree, (n) => n?.props?.['data-variant'] === 'primary' && /选择此文件夹/.test(textOf(n))).props.onClick()
   tree = await settle(Browser, props)
   check('commit adopts the current directory', harness.calls.workspaceCreate.length === 1 && harness.calls.workspaceCreate[0].path === '/home/tny/work')
   check('commit closes the browser dialog', pickerPanel(tree) === undefined)
@@ -604,7 +714,7 @@ const listing = (path, entries, crumbs) => ({
     && harness.calls.createDirectory[0].name === 'fresh')
   check('create enters the new directory', harness.calls.listDirectory[harness.calls.listDirectory.length - 1] === '/home/tny/fresh')
 
-  findNode(tree, (n) => n?.props?.type === 'button' && /取消/.test(textOf(n)) && hasClass(n, 'dswt-modalBtn')).props.onClick()
+  findNode(tree, (n) => n?.props?.type === 'button' && /取消/.test(textOf(n)) && n?.props?.type === 'button').props.onClick()
   tree = await settle(Browser, props)
   check('cancel closes the browser dialog', pickerPanel(tree) === undefined)
 
@@ -715,7 +825,7 @@ const listing = (path, entries, crumbs) => ({
   // Completion-unread rides the same seat: the summary row no longer carries `completed`.
   tree = await settle(Browser, propsWith([row({ running: false, completionUnread: true })]))
   check('audit: a completed-unread row shows the reminder dot',
-    findNode(tree, (n) => n?.props?.['data-state'] === 'done-reminder') !== undefined)
+    findNode(tree, (n) => n?.props?.['data-state'] === 'done') !== undefined)
 
   // The current session comes from retainedBy.mainView: the list snapshot has no `current`.
   tree = await settle(Browser, propsWith([row({ retainedBy: { mainView: 1 } })]))
@@ -821,9 +931,9 @@ const listing = (path, entries, crumbs) => ({
   const renameButton = findNode(tree, (n) => n?.props?.type === 'button' && n?.props?.title === '重命名')
   renameButton.props.onClick()
   tree = await settle(Browser, props)
-  findNode(tree, (n) => hasClass(n, 'dswt-modalInput')).props.onChange({ target: { value: 'renamed title' } })
+  findNode(tree, (n) => hasClass(n, 'dswt-fieldInput')).props.onChange({ target: { value: 'renamed title' } })
   tree = await settle(Browser, props)
-  findNode(tree, (n) => hasClass(n, 'dswt-modalBtnPrimary') && /确认/.test(textOf(n))).props.onClick()
+  findNode(tree, (n) => n?.props?.['data-variant'] === 'primary' && /确认/.test(textOf(n))).props.onClick()
   tree = await settle(Browser, props)
   check('nav: rename rents a session scope through sessions.using',
     harness.calls.sessionUsing.length === 1
@@ -922,7 +1032,7 @@ const listing = (path, entries, crumbs) => ({
     subagent({ id: 'sub-2', parentId: 'session-fork', running: forkSubRunning }),
   ], items(), harness.state)
   const rowNode = (tree, text) => findNode(tree, (n) => hasClass(n, 'dswt-session') && textOf(n).includes(text))
-  const isOngoing = (node) => findNode(node, (n) => hasClass(n, 'dswt-matrix')) !== undefined
+  const isOngoing = (node) => findNode(node, (n) => n?.props?.['data-state'] === 'ongoing') !== undefined
 
   let tree = await settle(Browser, propsWith(true))
   check('lineage: an idle parent whose subagent runs shows the running dot', isOngoing(rowNode(tree, 'parent row')))
@@ -932,7 +1042,6 @@ const listing = (path, entries, crumbs) => ({
     /1 个子代理运行中/.test(String(rowNode(tree, 'fork row').props.title))
     && !/2 个子代理运行中/.test(String(rowNode(tree, 'parent row').props.title)))
   check('lineage: subagent rows stay out of the tree', rowNode(tree, 'subagent row') === undefined)
-  check('lineage: the workspace folder turns active', findNode(tree, (n) => hasClass(n, 'dswt-folderActive')) !== undefined)
   check('lineage: the workspace aggregate dot turns ongoing',
     isOngoing(findNode(tree, (n) => hasClass(n, 'dswt-aggSlot'))))
 
@@ -940,12 +1049,56 @@ const listing = (path, entries, crumbs) => ({
   check('lineage: with no running subagent the parent dot is idle again', !isOngoing(rowNode(tree, 'parent row')))
   check('lineage: the tooltip drops the subagent count',
     !/子代理运行中/.test(String(rowNode(tree, 'parent row').props.title)))
-  check('lineage: the folder stays active through the fork child in the same subtree',
-    findNode(tree, (n) => hasClass(n, 'dswt-folderActive')) !== undefined)
-
-  tree = await settle(Browser, propsWith(false, false))
-  check('lineage: with every descendant stopped the folder goes quiet again',
+  check('lineage: the folder highlight follows the current session, not running descendants',
     findNode(tree, (n) => hasClass(n, 'dswt-folderActive')) === undefined)
+}
+
+// ── 悬停标题滚动（官方同款）：指针进入滚到末尾、离开一步归位 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  /** 裁切盒的最小 DOM 面：真实布局在无头环境里不存在，这里只如实记录插件写入的滚动量。 */
+  const clippedTitleElement = () => {
+    const scrollCalls = []
+    const element = { scrollWidth: 480, clientWidth: 120, scrollLeft: 0 }
+    element.scrollTo = (options) => { scrollCalls.push(options); element.scrollLeft = options.left }
+    return { element, scrollCalls }
+  }
+  const hoverCycle = (row) => {
+    const title = findNode(row, (n) => hasClass(n, 'dswt-title'))
+    const { element, scrollCalls } = clippedTitleElement()
+    title.props.ref.current = element
+    row.props.onPointerEnter()
+    const revealed = element.scrollLeft
+    row.props.onPointerLeave()
+    return { revealed, scrollCalls, resting: element.scrollLeft }
+  }
+
+  const rows = [{ id: 'session-hover', displayTitle: 'x'.repeat(120), cwd: '/home/tny/work', running: false, blank: false, updatedAt: Date.now() }]
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ['session-hover'] }]
+
+  let tree = await settle(Browser, sidebarPropsWithWorkspaces(face, rows, items, harness.state))
+  const session = hoverCycle(findNode(tree, (n) => hasClass(n, 'dswt-session')))
+  check('hover: entering a session row scrolls its clipped title to the far end', session.revealed === 360)
+  check('hover: leaving returns the title in one instant step',
+    session.resting === 0 && session.scrollCalls.length === 1
+    && session.scrollCalls[0].left === 0 && session.scrollCalls[0].behavior === 'instant')
+
+  const archivedProps = sidebarPropsWithArchive(face, rows, items, ['session-hover'], harness.state)
+  tree = await settle(Browser, archivedProps)
+  findNode(tree, (n) => n?.props?.type === 'button' && n?.props?.title === '归档区').props.onClick()
+  tree = await settle(Browser, archivedProps)
+  const archived = hoverCycle(findNode(tree, (n) => hasClass(n, 'dswt-archivedRow')))
+  check('hover: the archived row reveals and returns its clipped title the same way',
+    archived.revealed === 360 && archived.resting === 0)
+
+  // 样式表两半缺一不可：滑行归位 + 悬停去掉省略号（装在裁切盒上的排版规则探测不到）。
+  const source = readFileSync(join(root, 'lib/client.js'), 'utf8')
+  check('hover: the stylesheet glides the title and clips the ellipsis while hovered',
+    /\.dswt-session \.dswt-title \{[\s\S]{0,80}?scroll-behavior: smooth/.test(source)
+    && /@media \(hover: hover\) \{\s*\.dswt-session:hover \.dswt-title \{\s*text-overflow: clip/.test(source)
+    && /prefers-reduced-motion: reduce[\s\S]{0,200}?\.dswt-session \.dswt-title \{ scroll-behavior: auto/.test(source))
 }
 
 // ── 归档门槛的后代层：置灰、动作侧、Host 权威计数 ──
@@ -1038,7 +1191,7 @@ const listing = (path, entries, crumbs) => ({
     pickerPanel(tree) !== undefined && harness.calls.listDirectory[0] === '/home/tny/work')
   check('row-add: nothing is registered until a folder is picked', harness.calls.workspaceCreate.length === 0)
 
-  findNode(tree, (n) => hasClass(n, 'dswt-modalBtnPrimary') && /选择此文件夹/.test(textOf(n))).props.onClick()
+  findNode(tree, (n) => n?.props?.['data-variant'] === 'primary' && /选择此文件夹/.test(textOf(n))).props.onClick()
   tree = await settle(Browser, props)
   check('row-add: picking that folder registers it as a workspace',
     harness.calls.workspaceCreate.length === 1 && harness.calls.workspaceCreate[0].path === '/home/tny/work')
@@ -1109,11 +1262,454 @@ const listing = (path, entries, crumbs) => ({
   tree = await settle(Browser, props)
   check('archive: the ungrouped group names its own restore confirm',
     /恢复未分组归档/.test(textOf(tree)))
-  findNode(tree, (n) => hasClass(n, 'dswt-modalBtnPrimary') && /恢复全部/.test(textOf(n))).props.onClick()
+  findNode(tree, (n) => n?.props?.['data-variant'] === 'primary' && /恢复全部/.test(textOf(n))).props.onClick()
   tree = await settle(Browser, props)
   check('archive: restoring the ungrouped group calls unarchiveAll with workspaceId null',
     archiveCalls.some((c) => c.path.endsWith('/archive/unarchiveAll') && c.body.workspaceId === null))
 }
+
+// ── 视图选项与排序：官方 groupBy / orderBy 三档 + 最近更新默认序 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const older = { id: 's-old', displayTitle: 'older row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 1000 }
+  const newer = { id: 's-new', displayTitle: 'newer row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 5000 }
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ['s-old', 's-new'] }]
+  const props = () => sidebarPropsWithWorkspaces(face, [older, newer], items, harness.state)
+  let tree = await settle(Browser, props())
+  const rowIds = (node) => {
+    const ids = []
+    walk(node, (n) => { if (hasClass(n, 'dswt-session') && typeof n.props['data-sid'] === 'string') ids.push(n.props['data-sid']) })
+    return ids
+  }
+  check('view: the default grouping is the workspace tree and rows follow recency',
+    /workspaceTree|按工作区/.test(textOf(findNode(tree, (n) => n?.props?.title === '视图选项') ? tree : tree)) === false
+    && JSON.stringify(rowIds(findNode(tree, (n) => hasClass(n, 'dswt-groupBody')))) === JSON.stringify(['s-new', 's-old']))
+
+  findNode(tree, (n) => n?.props?.title === '视图选项').props.onClick()
+  tree = await settle(Browser, props())
+  check('view: the options popover renders through the portaled official Menu',
+    findNode(tree, (n) => hasClass(n, 'stub-menu')) !== undefined
+    && findNode(tree, (n) => hasClass(n, 'stub-menu')).props['data-portal'] === 'true')
+  findNode(tree, (n) => n?.props?.['data-menu-id'] === 'flat').props.onClick()
+  tree = await settle(Browser, props())
+  check('view: picking 单一列表 renders one flat list of every visible session',
+    findNode(tree, (n) => hasClass(n, 'dswt-flatList')) !== undefined
+    && findNode(tree, (n) => hasClass(n, 'dswt-projectRow')) === undefined)
+
+  findNode(tree, (n) => n?.props?.title === '视图选项').props.onClick()
+  tree = await settle(Browser, props())
+  findNode(tree, (n) => n?.props?.['data-menu-id'] === 'workspaceTree').props.onClick()
+  tree = await settle(Browser, props())
+  check('view: switching back to the workspace tree restores the grouped rows',
+    findNode(tree, (n) => hasClass(n, 'dswt-groupBody')) !== undefined)
+}
+
+// ── 每组会话上限（5 条 + 展开其余）与折叠 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const rows = Array.from({ length: 6 }, (_, i) => ({ id: 's-' + i, displayTitle: 'row ' + i, cwd: '/home/tny/work', running: false, blank: false, updatedAt: 6000 - i }))
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: rows.map((r) => r.id) }]
+  const props = sidebarPropsWithWorkspaces(face, rows, items, harness.state)
+  let tree = await settle(Browser, props)
+  const countRows = (node) => {
+    let n = 0
+    walk(node, (node2) => { if (hasClass(node2, 'dswt-session')) n += 1 })
+    return n
+  }
+  check('collapse: a group shows five ordinary sessions plus a 展开其余 button',
+    countRows(findNode(tree, (n) => hasClass(n, 'dswt-groupBody'))) === 5
+    && /展开其余 1 个会话/.test(textOf(tree)))
+
+  findNode(tree, (n) => hasClass(n, 'dswt-moreBtn')).props.onClick()
+  tree = await settle(Browser, props)
+  check('collapse: expanding reveals the remainder and offers 收起',
+    countRows(findNode(tree, (n) => hasClass(n, 'dswt-groupBody'))) === 6 && /收起/.test(textOf(tree)))
+
+  findNode(tree, (n) => hasClass(n, 'dswt-projectRow')).props.onClick()
+  tree = await settle(Browser, props)
+  check('collapse: folding the workspace hides its body and flips aria-expanded',
+    findNode(tree, (n) => hasClass(n, 'dswt-groupBody')) === undefined
+    && findNode(tree, (n) => hasClass(n, 'dswt-projectRow')).props['aria-expanded'] === false)
+}
+
+// ── usePanelInfo：全局面板打开时不显示当前会话 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const row = (over) => ({ id: 's-cur', displayTitle: 'current row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 2000, ...over })
+  const items = (ids) => [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ids }]
+  const current = row({ retainedBy: { mainView: 1 } })
+  const draft = row({ id: 's-draft', displayTitle: '草稿', blank: true, retainedBy: { mainView: 1 } })
+  let tree = await settle(Browser, sidebarPropsWithWorkspaces(face, [current, draft], items(['s-cur']), harness.state))
+  check('panel: the current session row is marked selected while no panel is open',
+    findNode(tree, (n) => hasClass(n, 'dswt-selected')) !== undefined)
+
+  harness.state.activePanelId = 'panel-1'
+  tree = await settle(Browser, sidebarPropsWithWorkspaces(face, [current, draft], items(['s-cur']), harness.state))
+  check('panel: an active global panel clears the selected row',
+    findNode(tree, (n) => hasClass(n, 'dswt-selected')) === undefined)
+}
+
+// ── 空白草稿文案、重命名钉标题与相对时间分档 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const draft = { id: 's-draft', displayTitle: 'work', cwd: '/home/tny/work', running: false, blank: true, updatedAt: Date.now(), retainedBy: { mainView: 1 } }
+  const itemList = (ids) => [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ids }]
+  const props = sidebarPropsWithWorkspaces(face, [draft], itemList(['s-draft']), harness.state)
+  let tree = await settle(Browser, props)
+  check('blank: the provisional row is labelled 新建会话 instead of the folder name',
+    /新建会话/.test(textOf(findNode(tree, (n) => hasClass(n, 'dswt-session')))))
+
+  findNode(tree, (n) => n?.props?.title === '重命名').props.onClick()
+  tree = await settle(Browser, props)
+  check('blank: the rename dialog opens empty for a provisional row',
+    findNode(tree, (n) => hasClass(n, 'dswt-fieldInput')).props.value === '')
+  findNode(tree, (n) => hasClass(n, 'dswt-fieldInput')).props.onChange({ target: { value: 'pinned title' } })
+  tree = await settle(Browser, props)
+  findNode(tree, (n) => n?.props?.['data-variant'] === 'primary' && /确认/.test(textOf(n))).props.onClick()
+  tree = await settle(Browser, props)
+  check('blank: confirming a typed title renames through the official rented scope',
+    harness.calls.sessionRename.length === 1 && harness.calls.sessionRename[0].title === 'pinned title'
+    && harness.calls.sessionRename[0].sessionId === 's-draft')
+
+  const same = { id: 's-same', displayTitle: 'unchanged title', cwd: '/home/tny/work', running: false, blank: false, updatedAt: Date.now() }
+  const props2 = sidebarPropsWithWorkspaces(face, [same], itemList(['s-same']), harness.state)
+  tree = await settle(Browser, props2)
+  findNode(tree, (n) => n?.props?.title === '重命名').props.onClick()
+  tree = await settle(Browser, props2)
+  findNode(tree, (n) => n?.props?.['data-variant'] === 'primary' && /确认/.test(textOf(n))).props.onClick()
+  await settle(Browser, props2)
+  check('rename: an unchanged session title is still submitted so it pins (official)',
+    harness.calls.sessionRename.length === 2 && harness.calls.sessionRename[1].title === 'unchanged title')
+}
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const now = Date.now()
+  const rows = [
+    { id: 's-min', displayTitle: 'minutes row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: now - 5 * 60000 },
+    { id: 's-day', displayTitle: 'days row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: now - 3 * 86400000 },
+  ]
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ['s-min', 's-day'] }]
+  const tree = await settle(Browser, sidebarPropsWithWorkspaces(face, rows, items, harness.state))
+  const timeOf = (label) => findNode(tree, (n) => hasClass(n, 'dswt-session') && textOf(n).includes(label)).props.children.find((c) => hasClass(c, 'dswt-time')).props.children
+  check('time: bucketing follows the official relativeTime units',
+    timeOf('minutes row') === '5分钟' && timeOf('days row') === '3天')
+}
+
+// ── 活动 Schedule 标记 + Hover 卡（含复制值） ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const rows = [
+    { id: 's-sched', displayTitle: 'scheduled row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 3000, projectionValues: { schedule: [{ id: 'job-1' }] } },
+    { id: 's-plain', displayTitle: 'plain row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 2000 },
+  ]
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', createdAt: 1000, sessionIds: ['s-sched', 's-plain'] }]
+  const tree = await settle(Browser, sidebarPropsWithWorkspaces(face, rows, items, harness.state))
+  const scheduled = findNode(tree, (n) => hasClass(n, 'dswt-session') && textOf(n).includes('scheduled row'))
+  check('schedule: a non-empty schedule projection renders the alarm marker',
+    findNode(scheduled, (n) => hasClass(n, 'dswt-schedule')) !== undefined
+    && findNode(scheduled, (n) => hasClass(n, 'dswt-schedule')).props['aria-label'] === '有活动定时任务')
+  check('schedule: a row without a schedule keeps no marker',
+    findNode(findNode(tree, (n) => hasClass(n, 'dswt-session') && textOf(n).includes('plain row')), (n) => hasClass(n, 'dswt-schedule')) === undefined)
+  const sessionCard = findNode(tree, (n) => hasClass(n, 'stub-hovercard') && n.props['data-copy-text'] === 'scheduled row')
+  check('hover: the session card copies the display title', sessionCard !== undefined)
+  const wsCard = findNode(tree, (n) => hasClass(n, 'stub-hovercard') && n.props['data-copy-text'] === '/home/tny/work')
+  check('hover: the workspace card copies the full directory path', wsCard !== undefined)
+}
+
+// ── 搜索：本地匹配 + 内容命中片段 + 结果导航 ──
+
+{
+  const harness = await boot((calls) => ({
+    openSession: (sessionId) => { calls.navOpen.push(String(sessionId)) },
+  }))
+  const { face, Browser } = mount(harness)
+  const rows = [
+    { id: 's-alpha', displayTitle: 'alpha task', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 4000 },
+    { id: 's-beta', displayTitle: 'beta task', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 3000 },
+  ]
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ['s-alpha', 's-beta'] }]
+  const props = sidebarPropsWithWorkspaces(face, rows, items, harness.state)
+  let tree = await settle(Browser, props)
+  findNode(tree, (n) => n?.props?.title === '搜索会话').props.onClick()
+  tree = await settle(Browser, props)
+  check('search: the header action reveals the query input',
+    findNode(tree, (n) => hasClass(n, 'dswt-searchInput')) !== undefined)
+
+  findNode(tree, (n) => hasClass(n, 'dswt-searchInput')).props.onChange({ target: { value: 'alpha' } })
+  tree = await settle(Browser, props)
+  check('search: the local title match replaces the tree with one result row',
+    findNode(tree, (n) => hasClass(n, 'dswt-searchRow')) !== undefined
+    && findNode(tree, (n) => hasClass(n, 'dswt-projectRow')) === undefined
+    && /alpha task/.test(textOf(tree)) && !/beta task/.test(textOf(tree)))
+
+  searchHits = { 's-beta': 'beta body mentions alpha inside the transcript' }
+  await new Promise((resolveWait) => setTimeout(resolveWait, 320))
+  tree = await settle(Browser, props)
+  check('search: the debounced host search merges content hits with their snippet',
+    harness.calls.searches.length === 1 && harness.calls.searches[0].query === 'alpha'
+    && /beta body mentions alpha/.test(textOf(tree)))
+
+  findNode(tree, (n) => hasClass(n, 'dswt-searchRow') && textOf(n).includes('alpha task')).props.onClick()
+  tree = await settle(Browser, props)
+  check('search: choosing a result opens the session and closes the search',
+    harness.calls.navOpen.includes('s-alpha') && findNode(tree, (n) => hasClass(n, 'dswt-searchInput')) === undefined)
+
+  searchFailure = 'index offline'
+  findNode(tree, (n) => n?.props?.title === '搜索会话').props.onClick()
+  tree = await settle(Browser, props)
+  findNode(tree, (n) => hasClass(n, 'dswt-searchInput')).props.onChange({ target: { value: 'beta' } })
+  tree = await settle(Browser, props)
+  await new Promise((resolveWait) => setTimeout(resolveWait, 320))
+  tree = await settle(Browser, props)
+  check('search: a failed content search keeps the local matches and says so',
+    harness.calls.searches.some((c) => c.query === 'beta')
+    &&
+    /index offline/.test(textOf(tree)) && /beta task/.test(textOf(tree)))
+}
+
+// ── 搜索的退出与「部署未开内容检索」的静默降级 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const rows = [{ id: 's-one', displayTitle: 'one row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 1000 }]
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ['s-one'] }]
+  const props = sidebarPropsWithWorkspaces(face, rows, items, harness.state)
+  let tree = await settle(Browser, props)
+  findNode(tree, (n) => n?.props?.title === '搜索会话').props.onClick()
+  tree = await settle(Browser, props)
+  findNode(tree, (n) => hasClass(n, 'dswt-searchInput')).props.onChange({ target: { value: 'one' } })
+  tree = await settle(Browser, props)
+  check('search: the field carries its own close action while the header actions are hidden',
+    findNode(tree, (n) => n?.props?.title === '关闭搜索') !== undefined)
+  findNode(tree, (n) => n?.props?.title === '关闭搜索').props.onClick()
+  tree = await settle(Browser, props)
+  check('search: closing clears the query and restores the browsing header',
+    findNode(tree, (n) => hasClass(n, 'dswt-searchInput')) === undefined
+    && findNode(tree, (n) => n?.props?.title === '视图选项') !== undefined
+    && findNode(tree, (n) => hasClass(n, 'dswt-projectRow')) !== undefined)
+
+  // The deployment disables the session-query index (openAt: "never"): the plugin must
+  // stop calling content search and keep quiet instead of showing the host's raw error.
+  searchFailure = 'session search failed: SessionQueryError: session search is disabled: this deployment configures the session-query index with openAt "never"'
+  findNode(tree, (n) => n?.props?.title === '搜索会话').props.onClick()
+  tree = await settle(Browser, props)
+  findNode(tree, (n) => hasClass(n, 'dswt-searchInput')).props.onChange({ target: { value: 'one' } })
+  tree = await settle(Browser, props)
+  await new Promise((resolveWait) => setTimeout(resolveWait, 320))
+  tree = await settle(Browser, props)
+  check('search: a deployment without content search degrades to local matches with no warning',
+    /one row/.test(textOf(tree)) && !/session search is disabled/.test(textOf(tree))
+    && findNode(tree, (n) => hasClass(n, 'dswt-searchNote')) === undefined)
+  const callsAfterDisable = harness.calls.searches.length
+  findNode(tree, (n) => hasClass(n, 'dswt-searchInput')).props.onChange({ target: { value: 'on' } })
+  tree = await settle(Browser, props)
+  await new Promise((resolveWait) => setTimeout(resolveWait, 320))
+  await settle(Browser, props)
+  check('search: the disabled index is not retried for the next query',
+    harness.calls.searches.length === callsAfterDisable)
+}
+
+
+// ── 拖拽排序：同账号会话改显示顺序、工作区同层重排走官方注册表 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const rows = [
+    { id: 's-a', displayTitle: 'row A', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 3000 },
+    { id: 's-b', displayTitle: 'row B', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 2000 },
+    { id: 's-c', displayTitle: 'row C', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 1000 },
+  ]
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ['s-a', 's-b', 's-c'] }]
+  const props = sidebarPropsWithWorkspaces(face, rows, items, harness.state)
+  let tree = await settle(Browser, props)
+  const rowOf = (sid) => findNode(tree, (n) => n?.props?.['data-sid'] === sid)
+  const dragPayload = []
+  const dragEvent = (clientY = 0) => ({
+    dataTransfer: {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: (type, value) => { dragPayload.push({ type, value }) },
+    },
+    currentTarget: { getBoundingClientRect: () => ({ top: 0, height: 20 }) },
+    clientY,
+    preventDefault: () => {},
+  })
+  check('drag: ordinary rows and workspace headers are draggable at rest (tree mode)',
+    rowOf('s-a').props.draggable === true
+    && findNode(tree, (n) => hasClass(n, 'dswt-projectRow')).props.draggable === true)
+  rowOf('s-c').props.onDragStart(dragEvent())
+  check('drag: starting a drag writes the source id for the browser',
+    dragPayload.length === 1 && dragPayload[0].value === 's-c')
+  tree = await settle(Browser, props)
+  rowOf('s-a').props.onDragOver(dragEvent(0))
+  tree = await settle(Browser, props)
+  check('drag: the insertion marker shows on a row of the same account',
+    /dswt-dropBefore|dswt-dropAfter/.test(String(findNode(tree, (n) => n?.props?.['data-sid'] === 's-a').props.className)))
+  rowOf('s-a').props.onDrop(dragEvent(0))
+  tree = await settle(Browser, props)
+  const order = []
+  walk(tree, (n) => { if (hasClass(n, 'dswt-session') && typeof n.props['data-sid'] === 'string') order.push(n.props['data-sid']) })
+  check('drag: dropping before the first row moves the source up and switches to manual order',
+    JSON.stringify(order) === JSON.stringify(['s-c', 's-a', 's-b']))
+
+  const wsItems = [
+    { workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: [] },
+    { workspaceId: 'ws-2', path: '/home/tny/other', title: 'other', sessionIds: [] },
+  ]
+  tree = await settle(Browser, sidebarPropsWithWorkspaces(face, [], wsItems, harness.state))
+  const wsRow = (wsid) => findNode(tree, (n) => hasClass(n, 'dswt-projectRow') && n.props['data-wsid'] === wsid)
+  wsRow('ws-2').props.onDragStart(dragEvent())
+  tree = await settle(Browser, sidebarPropsWithWorkspaces(face, [], wsItems, harness.state))
+  wsRow('ws-1').props.onDragOver(dragEvent(0))
+  tree = await settle(Browser, sidebarPropsWithWorkspaces(face, [], wsItems, harness.state))
+  wsRow('ws-1').props.onDrop(dragEvent(0))
+  await settle(Browser, sidebarPropsWithWorkspaces(face, [], wsItems, harness.state))
+  check('drag: a workspace reorder writes the official registry order',
+    harness.calls.wsInsertBefore.length === 1
+    && harness.calls.wsInsertBefore[0].workspaceId === 'ws-2'
+    && harness.calls.wsInsertBefore[0].beforeWorkspaceId === 'ws-1')
+}
+
+// ── 三种分组方式下会话拖拽都要能落地（工作树 / 按工作区 / 单一列表） ──
+
+for (const mode of [null, 'workspace', 'flat']) {
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const rows = [
+    { id: 's-a', displayTitle: 'row A', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 3000 },
+    { id: 's-b', displayTitle: 'row B', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 2000 },
+    { id: 's-c', displayTitle: 'row C', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 1000 },
+  ]
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ['s-a', 's-b', 's-c'] }]
+  const props = () => sidebarPropsWithWorkspaces(face, rows, items, harness.state)
+  let tree = await settle(Browser, props())
+  if (mode !== null) {
+    findNode(tree, (n) => n?.props?.title === '视图选项').props.onClick()
+    tree = await settle(Browser, props())
+    findNode(tree, (n) => n?.props?.['data-menu-id'] === mode).props.onClick()
+    tree = await settle(Browser, props())
+  }
+  const label = mode === null ? 'workspaceTree' : mode
+  const rowOf = (sid) => findNode(tree, (n) => n?.props?.['data-sid'] === sid)
+  const ev = (clientY = 0) => ({
+    dataTransfer: { effectAllowed: '', dropEffect: '', setData: () => {} },
+    currentTarget: { getBoundingClientRect: () => ({ top: 0, height: 20 }) },
+    clientY,
+    preventDefault: () => {},
+  })
+  check(`drag[${label}]: rows carry the draggable attribute`,
+    rowOf('s-a').props.draggable === true)
+  rowOf('s-c').props.onDragStart(ev())
+  tree = await settle(Browser, props())
+  rowOf('s-a').props.onDragOver(ev(0))
+  tree = await settle(Browser, props())
+  check(`drag[${label}]: the marker lands on the same-account target`,
+    /dswt-dropBefore/.test(String(rowOf('s-a').props.className)))
+  rowOf('s-a').props.onDrop(ev(0))
+  tree = await settle(Browser, props())
+  const order = []
+  walk(tree, (n) => { if (hasClass(n, 'dswt-session') && typeof n.props['data-sid'] === 'string') order.push(n.props['data-sid']) })
+  check(`drag[${label}]: the drop commits the manual order`,
+    JSON.stringify(order) === JSON.stringify(['s-c', 's-a', 's-b']))
+}
+
+// ── 树模式下跨账号的行不是落点（会话顺序按账号存，官方同样拒绝） ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const rows = [
+    { id: 's-p1', displayTitle: 'parent one', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 3000 },
+    { id: 's-p2', displayTitle: 'parent two', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 2000 },
+    { id: 's-kid', displayTitle: 'child row', cwd: '/home/tny/work/sub', running: false, blank: false, updatedAt: 1000 },
+  ]
+  const items = [
+    { workspaceId: 'ws-parent', path: '/home/tny/work', title: 'parent', sessionIds: ['s-p1', 's-p2'] },
+    { workspaceId: 'ws-child', path: '/home/tny/work/sub', title: 'child', sessionIds: ['s-kid'] },
+  ]
+  const props = sidebarPropsWithWorkspaces(face, rows, items, harness.state)
+  let tree = await settle(Browser, props)
+  const rowOf = (sid) => findNode(tree, (n) => n?.props?.['data-sid'] === sid)
+  const ev = () => ({
+    dataTransfer: { effectAllowed: '', dropEffect: '', setData: () => {} },
+    currentTarget: { getBoundingClientRect: () => ({ top: 0, height: 20 }) },
+    clientY: 0,
+    preventDefault: () => {},
+  })
+  rowOf('s-p2').props.onDragStart(ev())
+  tree = await settle(Browser, props)
+  rowOf('s-kid').props.onDragOver(ev())
+  tree = await settle(Browser, props)
+  check('drag[tree]: a row of another workspace offers no insertion marker',
+    !/dswt-drop/.test(String(rowOf('s-kid').props.className)))
+  rowOf('s-kid').props.onDrop(ev())
+  tree = await settle(Browser, props)
+  const order = []
+  walk(tree, (n) => { if (hasClass(n, 'dswt-session') && typeof n.props['data-sid'] === 'string') order.push(n.props['data-sid']) })
+  check('drag[tree]: releasing on that row leaves the order untouched',
+    JSON.stringify(order) === JSON.stringify(['s-kid', 's-p1', 's-p2']))
+}
+
+
+// ── 语义对齐：子工作区排在父的会话之前；工作区重名被拦 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const rows = [{ id: 's-parent', displayTitle: 'parent session', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 1000 }]
+  const items = [
+    { workspaceId: 'ws-parent', path: '/home/tny/work', title: 'parent', sessionIds: ['s-parent'] },
+    { workspaceId: 'ws-child', path: '/home/tny/work/sub', title: 'child', sessionIds: [] },
+    { workspaceId: 'ws-sibling', path: '/home/tny/other', title: 'sibling', sessionIds: [] },
+  ]
+  let tree = await settle(Browser, sidebarPropsWithWorkspaces(face, rows, items, harness.state))
+  const body = findNode(tree, (n) => hasClass(n, 'dswt-groupBody') && n.props['data-wsid'] === undefined)
+  const childIndex = textOf(tree).indexOf('child')
+  const parentIndex = textOf(tree).indexOf('parent session')
+  check('tree: a child workspace renders before its parent own sessions',
+    childIndex !== -1 && parentIndex !== -1 && childIndex < parentIndex)
+
+  findNode(tree, (n) => n?.props?.title === '重命名工作区').props.onClick()
+  tree = await settle(Browser, sidebarPropsWithWorkspaces(face, rows, items, harness.state))
+  findNode(tree, (n) => hasClass(n, 'dswt-fieldInput')).props.onChange({ target: { value: 'sibling' } })
+  tree = await settle(Browser, sidebarPropsWithWorkspaces(face, rows, items, harness.state))
+  findNode(tree, (n) => n?.props?.['data-variant'] === 'primary' && /确认/.test(textOf(n))).props.onClick()
+  tree = await settle(Browser, sidebarPropsWithWorkspaces(face, rows, items, harness.state))
+  check('rename: a duplicate workspace name is refused before the write',
+    harness.calls.renameWorkspace === undefined && /已有同名工作区/.test(textOf(tree)))
+}
+
+// ── 恢复走官方控制器（Host 不再自己改注册表） ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const rows = [{ id: 's-arch', displayTitle: 'archived row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: 1000 }]
+  const items = [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: ['s-arch'] }]
+  const props = sidebarPropsWithArchive(face, rows, items, ['s-arch'], harness.state)
+  let tree = await settle(Browser, props)
+  findNode(tree, (n) => n?.props?.type === 'button' && n?.props?.title === '归档区').props.onClick()
+  tree = await settle(Browser, props)
+  findNode(tree, (n) => n?.props?.title === '恢复').props.onClick()
+  await settle(Browser, props)
+  check('archive: restoring one session rides the official workspaces controller',
+    harness.calls.unarchived.length === 1 && harness.calls.unarchived[0] === 's-arch')
+}
+
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`)
 if (failures.length > 0) process.exitCode = 1

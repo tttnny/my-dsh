@@ -3,7 +3,6 @@
  *
  * 核心功能：
  *  - POST /open-ide            在外部 IDE 中打开指定目录 { path, ide, customCommand? }
- *  - POST /archive/unarchive   恢复单条会话 { sessionId }
  *  - POST /archive/unarchiveAll 批量恢复 { workspaceId? } (null=未分组, omit=全部)
  *  - POST /archive/delete      永久删除单条归档会话及其实体文件、关联子孙 Subagents
  *                              与 projcache 缓存 { sessionId } —— 零守卫：进了归档区
@@ -885,22 +884,6 @@ async function readArchivedTargeting(ctx, workspaceId) {
   return archivedTargets(state, table, workspaceId);
 }
 
-async function handleUnarchive(ctx, req, res) {
-  const raw = await parseJsonBody(req);
-  const sessionId = typeof raw.sessionId === "string" ? raw.sessionId.trim() : "";
-  if (!sessionId) return sendJson(res, 200, { ok: false, error: "sessionId 必填" });
-
-  await mutateWorkspaceState(ctx, async (state, table, g) => {
-    const archived = (state.archivedSessionIds || []).map(String);
-    if (!archived.includes(sessionId)) return;
-    const nextArchived = archived.filter((id) => id !== sessionId);
-    const next = { ...state, archivedSessionIds: nextArchived };
-    await g.set(next);
-  });
-
-  sendJson(res, 200, { ok: true });
-}
-
 async function handleUnarchiveAll(ctx, req, res) {
   const raw = await parseJsonBody(req);
   const workspaceId = raw.workspaceId === undefined ? undefined : raw.workspaceId;
@@ -1257,7 +1240,6 @@ function apply(ctx) {
         }
         if (head === "archive" && req.method === "POST") {
           const sub = rest[1];
-          if (sub === "unarchive") return await handleUnarchive(ctx, req, res);
           if (sub === "unarchiveAll") return await handleUnarchiveAll(ctx, req, res);
           if (sub === "delete") return await handleDeleteSession(ctx, req, res);
           if (sub === "deleteAll") return await handleDeleteAll(ctx, req, res);

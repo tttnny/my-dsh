@@ -1,5 +1,5 @@
 /**
- * dsh-workspace-tree — browser half (v2.1.0)。
+ * dsh-workspace-tree — browser half (v2.2.0)。
  *
  * 内核契约基线：DSH 0.1.6。
  *  - 主视图当前会话读 sessions.list 行上的 retainedBy.mainView（快照已无 current）；
@@ -44,10 +44,11 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useRef, useCallback, useMemo } = React;
     // 设置页控件与全部图标走内核基线原语：手绘按钮/开关/输入/图形全部不再自持。
     const {
-      Button, Input, Switch,
+      Button, Input, Switch, Modal, Menu, StateDot, HoverCard, relativeTime,
       IconFolderOpen16, IconFolderOpenOutline16, IconChevronRightOutline14, IconPlusOutline16,
       IconCloseOutline16, IconEditOutline16, IconTrashOutline16, IconArchiveOutline20,
-      IconRefreshOutline14, IconNewChatOutline16, IconProjectAddOutline16, IconCodeOutline16
+      IconRefreshOutline14, IconNewChatOutline16, IconProjectAddOutline16, IconCodeOutline16,
+      IconAlarmClockOutline16, IconSearchOutline16, IconPersonalizationOutline16
     } = require("@deepseek-ai/dsh-client-ui-primitives");
 
     /** Cordis 插件名（与 patch 行 id 一致）。 */
@@ -59,7 +60,8 @@ window.__ModuleLoader__.load({
      */
     const inject = ["slots", "locale", "sessions", "workspaces"];
 
-    const LS_GROUPS = "dsh-workspace-tree.groups";
+    /** 视图状态（分组方式 / 排序方式 / 折叠 / 手选顺序）持久化键。 */
+    const VIEW_KEY = "dsh-workspace-tree.view";
     const LS_CONFIG = "dsh-workspace-tree.config";
     /** 旧 localStorage 配置已迁移到 Host settings 的一次性标记（防迁移回环）。 */
     const LS_MIGRATED = "dsh-workspace-tree.migrated";
@@ -296,6 +298,17 @@ window.__ModuleLoader__.load({
       return !!(entry && entry.completionUnread === true);
     }
     /**
+     * 恢复一条归档会话。归档集合归官方 workspace 控制器管（`unarchiveSession`），
+     * 插件不再自己读写注册表 state，以免两套写路径互相覆盖。
+     */
+    async function unarchiveSessionVia(ctx, sessionId) {
+      const controller = ctx && ctx.workspaces;
+      if (!controller || typeof controller.unarchiveSession !== "function") {
+        throw new Error("会话恢复服务不可用（当前 DSH 版本不支持）");
+      }
+      await controller.unarchiveSession(sessionId);
+    }
+    /**
      * 归档门槛的 Host 权威判据。官方 workspace/archiveSession 在 Host 侧没有运行态守卫
      * （直接写注册表），而客户端 running 位是 Host 转发来的事实（客户端 prompt() 不做乐观
      * 翻转，发送后到状态帧落地之间存在窗口），所以归档前问一次插件自己的 Host 半边：
@@ -334,24 +347,6 @@ window.__ModuleLoader__.load({
      * 墓碑只承担「官方列表收敛前的残留期隐藏」，官方列表不再返回该 id 即摘碑。
      */
 
-    // ══════════════ Modal Scroll Lock 计数器 ══════════════
-    let activeModalsCount = 0;
-    function useModalScrollLock(open) {
-      useEffect(() => {
-        if (!open) return;
-        activeModalsCount++;
-        if (activeModalsCount === 1) {
-          document.body.style.overflow = "hidden";
-        }
-        return () => {
-          activeModalsCount = Math.max(0, activeModalsCount - 1);
-          if (activeModalsCount === 0) {
-            document.body.style.overflow = "";
-          }
-        };
-      }, [open]);
-    }
-
     /** 树的固定层级缩进（8 + depth * INDENT）。 */
     const INDENT = 16;
 
@@ -369,7 +364,10 @@ window.__ModuleLoader__.load({
       restore: IconRefreshOutline14,
       newChat: IconNewChatOutline16,
       folderPlus: IconProjectAddOutline16,
-      ide: IconCodeOutline16
+      ide: IconCodeOutline16,
+      alarm: IconAlarmClockOutline16,
+      search: IconSearchOutline16,
+      options: IconPersonalizationOutline16
     };
     function Icon({ name, size, className }) {
       const Component = ICON_COMPONENTS[name];
@@ -382,23 +380,13 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 状态点 ══════════════
-    const MATRIX_CELLS = [[0, 0], [4, 0], [8, 0], [8, 4], [8, 8], [4, 8], [0, 8], [0, 4]];
-    function StatusDot({ state, size }) {
-      const s = size || 10;
-      if (state === "ongoing") {
-        return h("svg", {
-          width: s, height: s, viewBox: "0 0 10 10", shapeRendering: "crispEdges", className: "dswt-matrix", "aria-hidden": "true"
-        }, MATRIX_CELLS.map(([x, y], i) => h("rect", {
-          key: i, x, y, width: 2, height: 2, className: "dswt-cell",
-          style: { animationDelay: ((i - MATRIX_CELLS.length) * 125) + "ms" }
-        })));
-      }
-      return h("span", {
-        className: "dswt-dot",
-        "data-state": state,
-        style: { width: s, height: s },
-        "aria-hidden": "true"
-      });
+    /**
+     * 插件状态 → 官方 `StateDot` 状态。官方只有 done / warning / ongoing / error / idle
+     * 五档：插件的「完成未读」是官方的绿色 done，静息态是 idle 灰点。
+     */
+    const DOT_STATE = { done: "idle", "done-reminder": "done", warning: "warning", ongoing: "ongoing", error: "error" };
+    function SessionDot({ state, size }) {
+      return h(StateDot, { state: DOT_STATE[state] || "idle", size: size || 10 });
     }
 
     function sessionState(row, current, pendingKind, completionUnread, runningSubagents) {
@@ -413,17 +401,22 @@ window.__ModuleLoader__.load({
       return "done";
     }
 
+    /** 行尾相对时间：分档走官方 relativeTime（同一会话在两个界面档位一致），文案用本插件字典。 */
+    const TIME_LABEL = { now: "刚刚", minutes: "{n}分钟", hours: "{n}小时", days: "{n}天", months: "{n}个月", years: "{n}年" };
     function timeLabel(updatedAt, now) {
       if (!updatedAt) return "";
-      const diff = Math.max(0, now - updatedAt);
-      const m = Math.floor(diff / 60000);
-      if (m < 1) return "刚刚";
-      if (m < 60) return m + "分钟";
-      const hours = Math.floor(m / 60);
-      if (hours < 24) return hours + "小时";
-      const days = Math.floor(hours / 24);
-      if (days < 30) return days + "天";
-      return Math.floor(days / 30) + "月";
+      const bucket = relativeTime(updatedAt, now);
+      const template = TIME_LABEL[bucket.unit];
+      if (template === undefined) return "";
+      return bucket.unit === "now" ? template : template.replace("{n}", String(bucket.n));
+    }
+    /** Hover 卡里的「多久之前」：now 档不带「前」。 */
+    function hoverTimeLabel(updatedAt, now) {
+      if (!updatedAt) return "";
+      const bucket = relativeTime(updatedAt, now);
+      return bucket.unit === "now"
+        ? TIME_LABEL.now
+        : TIME_LABEL[bucket.unit].replace("{n}", String(bucket.n)) + "前";
     }
 
     // ══════════════ 后代子代理谱系（与官方同构） ══════════════
@@ -565,14 +558,108 @@ window.__ModuleLoader__.load({
     }
 
     /** 可见会话 ID 列表投影。 */
-    function visibleSessionIds(ids, sessions, archived, hardDeleted) {
+    function visibleSessionIds(ids, sessions, archived, hardDeleted, cur) {
       if (!Array.isArray(ids)) return [];
       const byId = (sessions && sessions.byId) || {};
-      const cur = currentSessionIdOf(sessions);
+      const current = cur === undefined ? currentSessionIdOf(sessions) : cur;
       return ids.filter((sid) => {
         const row = byId[sid];
-        return sessionVisible(row, cur, archived, hardDeleted);
+        return sessionVisible(row, current, archived, hardDeleted);
       });
+    }
+
+    // ══════════════ 视图状态（分组 / 排序 / 折叠 / 手选顺序） ══════════════
+    /** 账号键：真实工作区用 workspaceId，未分组用 ""，单一列表用 FLAT_KEY。 */
+    const UNGROUPED_KEY = "";
+    const FLAT_KEY = "~flat";
+    const GROUP_BY = { workspace: "workspace", workspaceTree: "workspaceTree", flat: "flat" };
+    const DEFAULT_VIEW = {
+      groupBy: GROUP_BY.workspaceTree,
+      orderBy: "updated",
+      /** 已折叠的组键（官方语义：默认展开，只记折叠）。 */
+      collapsed: [],
+      /** 手选顺序：账号键 → 会话 ID 数组（仅 orderBy === "manual" 时生效）。 */
+      sessionOrder: {},
+      /** 已展开会话上限的组键（每组默认只显示 5 条普通会话）。 */
+      expandedSessions: []
+    };
+    /** 读取持久化视图状态；形状不合法就退回默认（旧版本键不迁移）。 */
+    function loadViewState() {
+      try {
+        const raw = localStorage.getItem(VIEW_KEY);
+        if (!raw) return DEFAULT_VIEW;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return DEFAULT_VIEW;
+        const groupBy = Object.prototype.hasOwnProperty.call(GROUP_BY, parsed.groupBy) ? parsed.groupBy : DEFAULT_VIEW.groupBy;
+        const orderBy = parsed.orderBy === "manual" ? "manual" : "updated";
+        return {
+          groupBy,
+          orderBy,
+          collapsed: Array.isArray(parsed.collapsed) ? parsed.collapsed.map(String) : [],
+          sessionOrder: (parsed.sessionOrder && typeof parsed.sessionOrder === "object") ? parsed.sessionOrder : {},
+          expandedSessions: Array.isArray(parsed.expandedSessions) ? parsed.expandedSessions.map(String) : []
+        };
+      } catch {
+        return DEFAULT_VIEW;
+      }
+    }
+    function saveViewState(view) {
+      try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)); } catch { /* 隐私模式下不可写：本次会话内存态照常 */ }
+    }
+
+    /** 最近更新优先（同刻按 ID 稳定排序，与官方 orderByRecency 同款判据）。 */
+    function recencyOrder(sids, byId) {
+      return sids.slice().sort((a, b) => {
+        const ua = (byId[a] && byId[a].updatedAt) || 0;
+        const ub = (byId[b] && byId[b].updatedAt) || 0;
+        if (ua !== ub) return ub - ua;
+        return a < b ? -1 : a > b ? 1 : 0;
+      });
+    }
+    /** 手选顺序与当前成员对账：留下的按存的顺序，新出现的按当前顺序追加。 */
+    function reconcileManualOrder(memberIds, saved) {
+      const members = new Set(memberIds);
+      const kept = (saved || []).map(String).filter((id) => members.has(id));
+      const seen = new Set(kept);
+      for (const id of memberIds) if (!seen.has(id)) kept.push(id);
+      return kept;
+    }
+    /** 当前打开的空白草稿恒在最前（官方 pinCurrentBlank）。 */
+    function pinCurrentBlank(order, currentSid, byId) {
+      if (!currentSid) return order;
+      const row = byId[currentSid];
+      if (!row || !row.blank) return order;
+      return [currentSid].concat(order.filter((id) => id !== currentSid));
+    }
+    /** 一个账号（工作区 / 未分组 / 单一列表）的显示顺序。 */
+    function accountOrder(accountKey, memberIds, sessions, view, currentSid) {
+      const byId = (sessions && sessions.byId) || {};
+      const saved = view.sessionOrder[accountKey];
+      const ordered = (view.orderBy === "manual" && Array.isArray(saved))
+        ? reconcileManualOrder(memberIds, saved)
+        : recencyOrder(memberIds, byId);
+      return pinCurrentBlank(ordered, currentSid, byId);
+    }
+
+    /** 每组默认显示的普通会话条数（官方 COLLAPSED_SESSION_LIMIT）。 */
+    const COLLAPSED_SESSION_LIMIT = 5;
+    /** 折叠投影：空白草稿不占额度，普通会话超出上限的尾部由「展开其余 N 个」放行。 */
+    function collapsedSessionRows(sids, byId) {
+      let ordinary = 0;
+      const rows = sids.filter((sid) => {
+        const row = byId[sid];
+        if (row && row.blank) return true;
+        if (ordinary >= COLLAPSED_SESSION_LIMIT) return false;
+        ordinary += 1;
+        return true;
+      });
+      return { rows, hiddenCount: sids.length - rows.length };
+    }
+
+    /** 活动 Schedule 标记：列表投影值里的 schedule 非空即为真（官方 hasActiveSchedule）。 */
+    function hasActiveSchedule(row) {
+      return !!row && Array.isArray(row.projectionValues && row.projectionValues.schedule)
+        && row.projectionValues.schedule.length > 0;
     }
 
     // ══════════════ 状态向上透传（聚合） ══════════════
@@ -580,9 +667,9 @@ window.__ModuleLoader__.load({
     function aggPriority(st) {
       return AGG_PRIO[st] || 0;
     }
-    function aggOfSessionIds(ids, sessions, archived, hardDeleted, sessionStatus, lineage) {
+    function aggOfSessionIds(ids, sessions, archived, hardDeleted, sessionStatus, lineage, current) {
       const byId = (sessions && sessions.byId) || {};
-      const cur = currentSessionIdOf(sessions);
+      const cur = current === undefined ? currentSessionIdOf(sessions) : current;
       let best = null;
       for (const sid of ids || []) {
         const row = byId[sid];
@@ -593,22 +680,22 @@ window.__ModuleLoader__.load({
       }
       return best;
     }
-    function decorateAgg(node, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus, lineage) {
+    function decorateAgg(node, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus, lineage, current) {
       let best = null;
       let running = false;
       let hasSessions = false;
       const w = wsOf(node);
       if (w) {
-        const vis = visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted);
+        const vis = visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted, current);
         if (vis.length > 0) hasSessions = true;
-        best = aggOfSessionIds(w.sessionIds, sessions, archived, hardDeleted, sessionStatus, lineage);
+        best = aggOfSessionIds(w.sessionIds, sessions, archived, hardDeleted, sessionStatus, lineage, current);
         const byId = (sessions && sessions.byId) || {};
         for (const sid of vis) {
           if (byId[sid] && (byId[sid].running || runningSubagentsOf(lineage, sid) > 0)) { running = true; break; }
         }
       }
       for (const c of childrenOf(node)) {
-        const cs = decorateAgg(c, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus, lineage);
+        const cs = decorateAgg(c, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus, lineage, current);
         if (aggPriority(cs) > aggPriority(best)) best = cs;
         if (c.aggRunning) running = true;
         if (c.aggHasSessions) hasSessions = true;
@@ -620,17 +707,55 @@ window.__ModuleLoader__.load({
       return best;
     }
 
+    /**
+     * 悬停显示被裁掉的标题尾部（官方 dsh-client-ui-workspace 同款）：标题自身是裁切盒，
+     * 装不下的文本滚到末尾即可读全。离开时用 instant 一步归位——静息态省略号与变窄的
+     * 单元格会在滑行途中迎上文本。装得下的标题没有滚动区间，滑行还是跳变交给样式表。
+     */
+    function revealClippedTitle(title, revealed) {
+      if (revealed) {
+        title.scrollLeft = title.scrollWidth - title.clientWidth;
+        return;
+      }
+      if (typeof title.scrollTo === "function") title.scrollTo({ left: 0, behavior: "instant" });
+      else title.scrollLeft = 0;
+    }
+
+    /** 会话 Hover 卡：标题、「多久之前」、每条状态（点 + 文字），与官方卡片同构。 */
+    function SessionHoverContent({ title, timeText, statusLabels }) {
+      return h("div", { className: "dswt-hoverContent" }, [
+        h("div", { key: "t", className: "dswt-hoverTitle" }, title),
+        timeText !== "" && h("div", { key: "m", className: "dswt-hoverMeta" }, timeText),
+        statusLabels.map((status) => h("div", { key: "s:" + status.label, className: "dswt-hoverStatus" }, [
+          h(SessionDot, { key: "d", state: status.state, size: 10 }),
+          h("span", { key: "l" }, status.label)
+        ]))
+      ]);
+    }
+
+    /** 状态语义名 → hover 卡文案（与官方 status.* 字典同义）。 */
+    function sessionStatusLabels(row, selected, pendingKind, completionUnread, subagents) {
+      const labels = [];
+      if (pendingKind) labels.push({ state: "warning", label: PENDING_LABEL[pendingKind] });
+      if (row.running) labels.push({ state: "ongoing", label: "运行中" });
+      if (subagents > 0) labels.push({ state: "ongoing", label: subagents + " 个子代理运行中" });
+      if (!row.running && subagents === 0 && completionUnread) labels.push({ state: "done", label: "已完成" });
+      if (labels.length === 0) labels.push({ state: "idle", label: "空闲" });
+      return labels;
+    }
+
     // ══════════════ 工作区模式：会话行 ══════════════
-    function SessionRow({ sid, sessions, pendingKind, completionUnread, runningSubagents, depth, indent, now, onOpen, onRename, onArchive }) {
+    function SessionRow({ sid, sessions, pendingKind, completionUnread, runningSubagents, depth, indent, now, currentSid, accountKey, onOpen, onRename, onArchive, drag }) {
+      const titleRef = useRef(null);
       const row = (sessions && sessions.byId) ? sessions.byId[sid] : null;
       if (!row) return null;
-      const selected = sid === currentSessionIdOf(sessions);
+      const selected = sid === currentSid;
       const subagents = runningSubagents || 0;
       const dotState = sessionState(row, selected, pendingKind, completionUnread, subagents);
-      // 标题被省略号截断，悬停提示是它唯一的可见载体：后代子代理在跑时追加状态文案。
-      const titleText = subagents > 0
-        ? row.displayTitle + " · " + subagents + " 个子代理运行中"
-        : row.displayTitle;
+      // 空白草稿是「新建会话」占位行，本地化文案由渲染层给（官方同款）。
+      const title = row.blank ? "新建会话" : row.displayTitle;
+      // 标题被省略号截断：悬停滚到末尾露出尾部（官方同款），原生 tooltip 另带子代理运行数。
+      const titleText = subagents > 0 ? title + " · " + subagents + " 个子代理运行中" : title;
       // 归档门槛：自身运行中、等待回复审批、或**后代子代理正在运行**的会话都不允许归档
       // （归档区删除零守卫，因此门槛只需保证「运行态不进区」）。判据读真实数据源——
       // 运行态取 row.running 与快照谱系，等待交互取官方会话状态座位；置灰只是提示，
@@ -643,19 +768,62 @@ window.__ModuleLoader__.load({
           : subagents > 0
             ? "其后代子代理正在运行，结束后才能归档"
             : "等待处理的交互结束后才能归档";
-      return h("div", {
-        className: "dswt-session" + (selected ? " dswt-selected" : ""),
+      const dragActive = !!drag && drag.kind === "session";
+      const isDragSource = dragActive && drag.sid === sid;
+      // 树模式下同一个组体里混着多个账号（子工作区的行排在父级自己的行前面），
+      // 会话顺序又是按账号存的，因此落点只认同一个账号的行——否则标记会亮在
+      // 落不进去的地方，松手后什么都没发生。「未分组」「单一列表」同理。
+      const droppable = dragActive && !isDragSource && drag.accountKey === accountKey;
+      const marker = droppable && drag.over && drag.over.sid === sid ? drag.over.half : null;
+      const anchor = h("div", {
+        className: "dswt-session"
+          + (selected ? " dswt-selected" : "")
+          + (marker === "before" ? " dswt-dropBefore" : "")
+          + (marker === "after" ? " dswt-dropAfter" : ""),
+        "data-sid": sid,
         style: { paddingLeft: 8 + depth * indent },
         role: "treeitem",
         "aria-selected": selected,
         onClick: () => onOpen(sid),
+        onPointerEnter: () => revealClippedTitle(titleRef.current, true),
+        onPointerLeave: () => revealClippedTitle(titleRef.current, false),
+        draggable: drag && !row.blank ? true : undefined,
+        onDragStart: (e) => {
+          if (!drag || row.blank) return;
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = "move";
+            // Firefox 只有 setData 之后才真的开始拖拽
+            e.dataTransfer.setData("text/plain", sid);
+          }
+          drag.start(sid);
+        },
+        onDragOver: (e) => {
+          if (!droppable || row.blank) return;
+          e.preventDefault();
+          if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+          const rect = e.currentTarget.getBoundingClientRect();
+          drag.hover(sid, e.clientY < rect.top + rect.height / 2 ? "before" : "after");
+        },
+        onDrop: (e) => {
+          if (!droppable) return;
+          e.preventDefault();
+          drag.drop();
+        },
+        onDragEnd: () => { if (drag) drag.end(); },
         title: titleText
       }, [
-        h("span", { key: "st", className: "dswt-slot" }, h(StatusDot, { state: dotState })),
-        h("span", { key: "ti", className: "dswt-title" + (row.blank ? " dswt-blank" : ""), title: titleText }, row.displayTitle),
+        h("span", { key: "st", className: "dswt-slot" }, h(SessionDot, { state: dotState })),
+        h("span", { key: "ti", ref: titleRef, className: "dswt-title" + (row.blank ? " dswt-blank" : ""), title: titleText }, title),
+        hasActiveSchedule(row) && h("span", {
+          key: "sc",
+          className: "dswt-schedule",
+          role: "img",
+          "aria-label": "有活动定时任务",
+          title: "有活动定时任务"
+        }, h(Icon, { name: "alarm", size: 14 })),
         h("span", { key: "tm", className: "dswt-time" }, timeLabel(row.updatedAt, now)),
         h("span", { key: "ac", className: "dswt-rowActions", onClick: (e) => e.stopPropagation() }, [
-          h("button", { key: "rn", type: "button", className: "dswt-iconButton", title: "重命名", onClick: () => onRename(sid, row.displayTitle) }, h(Icon, { name: "edit", size: 14 })),
+          h("button", { key: "rn", type: "button", className: "dswt-iconButton", title: "重命名", onClick: () => onRename(sid, row.blank ? "" : title) }, h(Icon, { name: "edit", size: 14 })),
           h("button", {
             key: "ar",
             type: "button",
@@ -666,85 +834,65 @@ window.__ModuleLoader__.load({
           }, h(Icon, { name: "archive", size: 14 }))
         ])
       ]);
+      return h(HoverCard, {
+        anchor,
+        content: h(SessionHoverContent, {
+          title,
+          timeText: row.blank ? "" : hoverTimeLabel(row.updatedAt, now),
+          statusLabels: sessionStatusLabels(row, selected, pendingKind, completionUnread, subagents)
+        }),
+        disabled: dragActive,
+        copyText: row.blank ? undefined : title,
+        copyLabel: "复制标题",
+        copiedLabel: "已复制"
+      });
     }
 
     // ══════════════ 重命名弹窗（会话/工作区 共用） ══════════════
     function RenameModal({ open, kind, initialTitle, draft, busy, onDraftChange, onCancel, onConfirm }) {
-      const overlayRef = useRef(null);
-      const inputRef = useRef(null);
-      useModalScrollLock(open);
-
-      useEffect(() => {
-        if (!open) return;
-        const onKey = (e) => { if (e.key === "Escape") onCancel(); };
-        document.addEventListener("keydown", onKey);
-        return () => document.removeEventListener("keydown", onKey);
-      }, [open, onCancel]);
-
-      useEffect(() => {
-        if (!open) return;
-        const t = setTimeout(() => { if (inputRef.current) { inputRef.current.focus(); inputRef.current.select(); } }, 20);
-        return () => clearTimeout(t);
-      }, [open, kind]);
-
-      if (!open) return null;
       const title = kind === "workspace" ? "重命名工作区" : "重命名会话";
       const trimmed = (draft || "").trim();
       const initialTrim = (initialTitle || "").trim();
       const canConfirm = !busy && trimmed.length > 0 && trimmed !== initialTrim;
-      const handleOverlay = (e) => { if (e.target === overlayRef.current) onCancel(); };
-      const handleKey = (e) => {
-        if (e.key === "Enter" && canConfirm) { e.preventDefault(); onConfirm(); }
-      };
-
-      return h("div", {
-        ref: overlayRef,
-        className: "dswt-modalOverlay",
-        role: "presentation",
-        onClick: handleOverlay
-      }, [
-        h("div", {
-          key: "panel",
-          className: "dswt-modalPanel",
-          role: "dialog",
-          "aria-modal": "true",
-          "aria-labelledby": "dswt-rename-title",
-          onClick: (e) => e.stopPropagation()
-        }, [
-          h("div", { key: "t", id: "dswt-rename-title", className: "dswt-modalTitle" }, title),
-          h("div", { key: "b", className: "dswt-modalBody" }, kind === "workspace" ? "输入新的工作区名称" : "输入新的会话名称"),
-          h("input", {
-            key: "i",
-            ref: inputRef,
-            className: "dswt-modalInput",
-            value: draft,
-            placeholder: kind === "workspace" ? "工作区名称" : "会话名称",
-            disabled: !!busy,
-            onChange: (e) => onDraftChange(e.target.value),
-            onKeyDown: handleKey
-          }),
-          h("div", { key: "a", className: "dswt-modalActions" }, [
-            h("button", { key: "c", type: "button", className: "dswt-modalBtn", disabled: !!busy, onClick: onCancel }, "取消"),
-            h("button", { key: "o", type: "button", className: "dswt-modalBtn dswt-modalBtnPrimary", disabled: !canConfirm, onClick: onConfirm }, busy ? "保存中…" : "确认")
-          ])
-        ])
-      ]);
+      return h(Modal, {
+        open: !!open,
+        onClose: () => { if (!busy) onCancel(); },
+        title,
+        closeLabel: "关闭",
+        description: kind === "workspace" ? "输入新的工作区名称" : "输入新的会话名称",
+        footer: [
+          h(Button, { key: "c", variant: "outline", size: "sm", disabled: !!busy, onClick: onCancel }, "取消"),
+          h(Button, { key: "o", variant: "primary", size: "sm", disabled: !canConfirm, onClick: onConfirm }, busy ? "保存中…" : "确认")
+        ]
+      }, h(Input, {
+        className: "dswt-fieldInput",
+        value: draft,
+        placeholder: kind === "workspace" ? "工作区名称" : "会话名称",
+        disabled: !!busy,
+        autoFocus: true,
+        onFocus: (e) => e.target.select(),
+        onChange: (e) => onDraftChange(e.target.value),
+        onKeyDown: (e) => { if (e.key === "Enter" && canConfirm) { e.preventDefault(); onConfirm(); } }
+      }));
     }
 
     // ══════════════ 归档视图：会话行 ══════════════
-    function ArchiveSessionRow({ sid, sessions, onOpen, onRestore, onDelete, busy }) {
+    function ArchiveSessionRow({ sid, sessions, onOpen, onRestore, onDelete, busy, currentSid }) {
+      const titleRef = useRef(null);
       const row = (sessions && sessions.byId) ? sessions.byId[sid] : null;
       if (!row) return null;
-      const selected = !!sessions && currentSessionIdOf(sessions) === sid;
+      const selected = currentSid !== undefined ? String(currentSid) === String(sid) : !!sessions && currentSessionIdOf(sessions) === sid;
       return h("div", {
         className: "dswt-session dswt-archivedRow" + (selected ? " dswt-selected" : ""),
         role: "treeitem",
         "aria-selected": selected,
         title: row.displayTitle,
-        onClick: () => { if (!busy && onOpen) onOpen(sid); }
+        onClick: () => { if (!busy && onOpen) onOpen(sid); },
+        onPointerEnter: () => revealClippedTitle(titleRef.current, true),
+        onPointerLeave: () => revealClippedTitle(titleRef.current, false)
       }, [
-        h("span", { key: "st", className: "dswt-slot" }, h(StatusDot, { state: sessionState(row, selected) })),
-        h("span", { key: "ti", className: "dswt-title", title: row.displayTitle }, row.displayTitle),
+        h("span", { key: "st", className: "dswt-slot" }, h(SessionDot, { state: sessionState(row, selected) })),
+        h("span", { key: "ti", ref: titleRef, className: "dswt-title", title: row.displayTitle }, row.displayTitle),
         h("span", { key: "tm", className: "dswt-time" }, timeLabel(row.updatedAt, Date.now())),
         h("span", { key: "ac", className: "dswt-rowActions", onClick: (e) => e.stopPropagation() }, [
           h("button", { key: "rs", type: "button", className: "dswt-iconButton", title: "恢复", disabled: !!busy, onClick: () => { if (!busy) onRestore(sid); } }, h(Icon, { name: "restore", size: 14 })),
@@ -755,65 +903,29 @@ window.__ModuleLoader__.load({
 
     // ══════════════ 统一内部确认弹窗 ══════════════
     function ConfirmModal({ open, title, desc, confirmText, cancelText, danger, busy, onCancel, onConfirm }) {
-      const overlayRef = useRef(null);
-      const confirmBtnRef = useRef(null);
-      useModalScrollLock(open);
-
-      useEffect(() => {
-        if (!open) return;
-        confirmBtnRef.current?.focus();
-        const onKey = (e) => {
-          if (e.key === "Escape" && !busy) onCancel();
-          if (e.key === "Enter" && !busy) { e.preventDefault(); onConfirm(); }
-        };
-        document.addEventListener("keydown", onKey);
-        return () => document.removeEventListener("keydown", onKey);
-      }, [open, busy, onCancel, onConfirm]);
-
-      if (!open) return null;
-      const handleOverlay = (e) => { if (e.target === overlayRef.current && !busy) onCancel(); };
-      return h("div", { ref: overlayRef, className: "dswt-modalOverlay", role: "presentation", onClick: handleOverlay }, [
-        h("div", { key: "panel", className: "dswt-modalPanel", role: "dialog", "aria-modal": "true", onClick: (e) => e.stopPropagation() }, [
-          h("div", { key: "t", className: "dswt-modalTitle" }, title || "确认"),
-          h("div", { key: "b", className: "dswt-modalBody" }, desc || ""),
-          h("div", { key: "a", className: "dswt-modalActions" }, [
-            h("button", { key: "c", type: "button", className: "dswt-modalBtn", disabled: !!busy, onClick: onCancel }, cancelText || "取消"),
-            h("button", { ref: confirmBtnRef, key: "o", type: "button", className: "dswt-modalBtn " + (danger ? "dswt-modalBtnDanger" : "dswt-modalBtnPrimary"), disabled: !!busy, onClick: onConfirm }, busy ? "处理中…" : (confirmText || "确认"))
-          ])
-        ])
-      ]);
+      return h(Modal, {
+        open: !!open,
+        onClose: () => { if (!busy) onCancel(); },
+        title: title || "确认",
+        closeLabel: "关闭",
+        description: desc || "",
+        footer: [
+          h(Button, { key: "c", variant: "outline", size: "sm", disabled: !!busy, onClick: onCancel }, cancelText || "取消"),
+          h(Button, { key: "o", variant: danger ? "outline" : "primary", size: "sm", className: danger ? "dswt-dangerBtn" : undefined, disabled: !!busy, onClick: onConfirm }, busy ? "处理中…" : (confirmText || "确认"))
+        ]
+      });
     }
 
     // ══════════════ 统一内部提示/通知弹窗 ══════════════
     function AlertModal({ open, title, desc, onConfirm }) {
-      const overlayRef = useRef(null);
-      const btnRef = useRef(null);
-      useModalScrollLock(open);
-
-      useEffect(() => {
-        if (!open) return;
-        btnRef.current?.focus();
-        const onKey = (e) => {
-          if (e.key === "Escape" || e.key === "Enter") {
-            e.preventDefault();
-            onConfirm();
-          }
-        };
-        document.addEventListener("keydown", onKey);
-        return () => document.removeEventListener("keydown", onKey);
-      }, [open, onConfirm]);
-
-      if (!open) return null;
-      const handleOverlay = (e) => { if (e.target === overlayRef.current) onConfirm(); };
-      return h("div", { ref: overlayRef, className: "dswt-modalOverlay", role: "presentation", onClick: handleOverlay }, [
-        h("div", { key: "panel", className: "dswt-modalPanel", role: "dialog", "aria-modal": "true", onClick: (e) => e.stopPropagation() }, [
-          h("div", { key: "t", className: "dswt-modalTitle" }, title || "提示"),
-          h("div", { key: "b", className: "dswt-modalBody" }, desc || ""),
-          h("div", { key: "a", className: "dswt-modalActions" }, [
-            h("button", { ref: btnRef, key: "o", type: "button", className: "dswt-modalBtn dswt-modalBtnPrimary", onClick: onConfirm }, "知道了")
-          ])
-        ])
-      ]);
+      return h(Modal, {
+        open: !!open,
+        onClose: onConfirm,
+        title: title || "提示",
+        closeLabel: "关闭",
+        description: desc || "",
+        footer: h(Button, { variant: "primary", size: "sm", onClick: onConfirm }, "知道了")
+      });
     }
 
     // ══════════════ 目录选择弹窗（browse 面自持） ══════════════
@@ -832,7 +944,6 @@ window.__ModuleLoader__.load({
      * 原语之上：native 主机走系统选择器，browse 主机走这里。
      */
     function DirectoryPickerModal({ open, busy, initialListing, listDirectory, createDirectory, onCancel, onPicked }) {
-      const overlayRef = useRef(null);
       const [listing, setListing] = useState(null);
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState("");
@@ -842,7 +953,6 @@ window.__ModuleLoader__.load({
       const [pathDraft, setPathDraft] = useState("");
       /** 已消费的那份首屏种子（同一份只吃一次，避免重渲染把它当成新导航）。 */
       const seedUsed = useRef(null);
-      useModalScrollLock(open);
 
       /** 拉取一个层级（缺省 = host 的 home）；失败就地显示，不弹窗、不关窗。 */
       const readLevel = useCallback(async (target) => {
@@ -887,22 +997,12 @@ window.__ModuleLoader__.load({
         readLevel(void 0);
       }, [open, initialListing, readLevel]);
 
-      useEffect(() => {
-        if (!open) return;
-        const onKey = (e) => { if (e.key === "Escape" && !busy) onCancel(); };
-        document.addEventListener("keydown", onKey);
-        return () => document.removeEventListener("keydown", onKey);
-      }, [open, busy, onCancel]);
-
-      if (!open) return null;
-
       const crumbs = (listing && Array.isArray(listing.crumbs)) ? listing.crumbs : [];
       const entries = (listing && Array.isArray(listing.entries)) ? listing.entries : [];
       const parent = crumbs.length >= 2 ? crumbs[crumbs.length - 2] : null;
       const currentPath = (listing && typeof listing.path === "string") ? listing.path : "";
       const locked = !!busy || creating;
       const canCreate = typeof createDirectory === "function";
-      const handleOverlay = (e) => { if (e.target === overlayRef.current && !locked) onCancel(); };
 
       /** 在当前层新建文件夹，建成后直接进入它（与官方浏览对话框的落点语义一致）。 */
       const commitNewDir = async () => {
@@ -946,18 +1046,18 @@ window.__ModuleLoader__.load({
       });
 
       const newDirControl = newName === null
-        ? h("button", {
+        ? h(Button, {
             key: "nf",
-            type: "button",
-            className: "dswt-modalBtn",
+            variant: "ghost",
+            size: "sm",
             title: canCreate ? "在当前位置新建文件夹并进入" : "当前 DSH 版本不支持新建文件夹",
             disabled: locked || loading || currentPath === "" || !canCreate,
             onClick: () => setNewName("")
           }, "新建文件夹")
         : h("span", { key: "nf", className: "dswt-pickerNewDir" }, [
-            h("input", {
+            h(Input, {
               key: "i",
-              className: "dswt-modalInput dswt-pickerNewInput",
+              className: "dswt-fieldInput dswt-pickerNewInput",
               value: newName,
               placeholder: "新文件夹名称",
               spellCheck: false,
@@ -969,80 +1069,71 @@ window.__ModuleLoader__.load({
                 else if (e.key === "Escape") { e.stopPropagation(); setNewName(null); }
               }
             }),
-            h("button", {
+            h(Button, {
               key: "ok",
-              type: "button",
-              className: "dswt-modalBtn dswt-modalBtnPrimary",
+              variant: "primary",
+              size: "sm",
               disabled: creating || (newName || "").trim() === "",
               onClick: commitNewDir
             }, creating ? "创建中…" : "创建"),
-            h("button", { key: "no", type: "button", className: "dswt-modalBtn", disabled: creating, onClick: () => setNewName(null) }, "取消")
+            h(Button, { key: "no", variant: "ghost", size: "sm", disabled: creating, onClick: () => setNewName(null) }, "取消")
           ]);
 
-      return h("div", {
-        ref: overlayRef,
-        className: "dswt-modalOverlay",
-        role: "presentation",
-        onClick: handleOverlay
+      return h(Modal, {
+        open: !!open,
+        onClose: () => { if (!locked) onCancel(); },
+        title: "添加工作区",
+        closeLabel: "关闭",
+        className: "dswt-pickerPanel",
+        footer: [
+          newDirControl,
+          h("span", { key: "sp", className: "dswt-pickerSpacer" }),
+          h(Button, { key: "c", variant: "outline", size: "sm", disabled: locked, onClick: onCancel }, "取消"),
+          h(Button, {
+            key: "o",
+            variant: "primary",
+            size: "sm",
+            title: currentPath,
+            disabled: locked || loading || currentPath === "",
+            onClick: () => onPicked(currentPath)
+          }, busy ? "添加中…" : "选择此文件夹")
+        ]
       }, [
-        h("div", {
-          key: "panel",
-          className: "dswt-modalPanel dswt-pickerPanel",
-          role: "dialog",
-          "aria-modal": "true",
-          "aria-label": "添加工作区",
-          onClick: (e) => e.stopPropagation()
-        }, [
-          h("div", { key: "t", className: "dswt-modalTitle" }, "添加工作区"),
-          crumbs.length > 0 && h("div", { key: "c", className: "dswt-pickerCrumbs" }, [
-            parent && h("button", {
-              key: "up",
-              type: "button",
-              className: "dswt-crumb dswt-crumbUp",
-              title: "上一级：" + parent.path,
-              disabled: locked || loading,
-              onClick: () => readLevel(parent.path)
-            }, "↑")
-          ].concat(crumbNodes).filter(Boolean)),
-          h("div", { key: "p", className: "dswt-pickerPathRow" }, [
-            h("input", {
-              key: "i",
-              className: "dswt-modalInput dswt-pickerPathInput",
-              value: pathDraft,
-              placeholder: "绝对路径，回车前往",
-              spellCheck: false,
-              disabled: locked,
-              onChange: (e) => setPathDraft(e.target.value),
-              onKeyDown: (e) => { if (e.key === "Enter") { e.preventDefault(); readLevel(pathDraft.trim()); } }
-            }),
-            h("button", {
-              key: "g",
-              type: "button",
-              className: "dswt-modalBtn",
-              disabled: locked || pathDraft.trim() === "",
-              onClick: () => readLevel(pathDraft.trim())
-            }, "前往")
-          ]),
-          h("div", { key: "l", className: "dswt-pickerList", role: "listbox", "aria-label": "目录" },
-            entries.length === 0
-              ? [h("div", { key: "e", className: "dswt-pickerEmpty" }, loading ? "读取中…" : "此目录下没有子文件夹")]
-              : rowNodes
-          ),
-          error !== "" && h("div", { key: "err", className: "dswt-pickerError", role: "alert" }, error),
-          h("div", { key: "a", className: "dswt-modalActions dswt-pickerActions" }, [
-            newDirControl,
-            h("span", { key: "sp", className: "dswt-pickerSpacer" }),
-            h("button", { key: "c", type: "button", className: "dswt-modalBtn", disabled: locked, onClick: onCancel }, "取消"),
-            h("button", {
-              key: "o",
-              type: "button",
-              className: "dswt-modalBtn dswt-modalBtnPrimary",
-              title: currentPath,
-              disabled: locked || loading || currentPath === "",
-              onClick: () => onPicked(currentPath)
-            }, busy ? "添加中…" : "选择此文件夹")
-          ])
-        ])
+        crumbs.length > 0 && h("div", { key: "c", className: "dswt-pickerCrumbs" }, [
+          parent && h("button", {
+            key: "up",
+            type: "button",
+            className: "dswt-crumb dswt-crumbUp",
+            title: "上一级：" + parent.path,
+            disabled: locked || loading,
+            onClick: () => readLevel(parent.path)
+          }, "↑")
+        ].concat(crumbNodes).filter(Boolean)),
+        h("div", { key: "p", className: "dswt-pickerPathRow" }, [
+          h(Input, {
+            key: "i",
+            className: "dswt-fieldInput dswt-pickerPathInput",
+            value: pathDraft,
+            placeholder: "绝对路径，回车前往",
+            spellCheck: false,
+            disabled: locked,
+            onChange: (e) => setPathDraft(e.target.value),
+            onKeyDown: (e) => { if (e.key === "Enter") { e.preventDefault(); readLevel(pathDraft.trim()); } }
+          }),
+          h(Button, {
+            key: "g",
+            variant: "ghost",
+            size: "sm",
+            disabled: locked || pathDraft.trim() === "",
+            onClick: () => readLevel(pathDraft.trim())
+          }, "前往")
+        ]),
+        h("div", { key: "l", className: "dswt-pickerList", role: "listbox", "aria-label": "目录" },
+          entries.length === 0
+            ? [h("div", { key: "e", className: "dswt-pickerEmpty" }, loading ? "读取中…" : "此目录下没有子文件夹")]
+            : rowNodes
+        ),
+        error !== "" && h("div", { key: "err", className: "dswt-pickerError", role: "alert" }, error)
       ]);
     }
 
@@ -1053,7 +1144,7 @@ window.__ModuleLoader__.load({
      * 会话显式跳过（见下方 effect），于是「无归属的归档会话」会长期存在，必须单独成组，
      * 否则官方「已归档会话」可见、本插件归档区却永远看不到。
      */
-    function ArchiveView({ sessions, wsForest, archived, hardDeleted, onOpen, onRestoreOne, onDeleteOne, onRestoreGroup, onDeleteGroup, onRestoreAll, onDeleteAll, busy }) {
+    function ArchiveView({ sessions, wsForest, archived, hardDeleted, currentSid, onOpen, onRestoreOne, onDeleteOne, onRestoreGroup, onDeleteGroup, onRestoreAll, onDeleteAll, busy }) {
       const byId = (sessions && sessions.byId) || {};
 
       const allGroups = [];
@@ -1117,57 +1208,238 @@ window.__ModuleLoader__.load({
               h("button", { key: "dl", type: "button", className: "dswt-iconButton dswt-danger", title: group.workspaceId === null ? "永久删除未分组全部" : "永久删除该工作区全部", disabled: !!busy, onClick: () => onDeleteGroup(group.workspaceId) }, h(Icon, { name: "trash", size: 14 }))
             ])
           ]),
-          h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": "16px" } }, group.sids.map((sid) => h(ArchiveSessionRow, { key: sid, sid, sessions, busy, onOpen, onRestore: onRestoreOne, onDelete: onDeleteOne })))
+          h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": "16px" } }, group.sids.map((sid) => h(ArchiveSessionRow, { key: sid, sid, sessions, busy, currentSid, onOpen, onRestore: onRestoreOne, onDelete: onDeleteOne })))
         ]))
       ]);
     }
 
-    // ══════════════ 工作区模式：组 ══════════════
-    function WorkspaceGroup({ node, depth, indent, sessions, sessionStatus, lineage, archived, hardDeleted, expandedGroups, toggleGroup, onNewSession, onAddWorkspaceIn, onOpenInIde, onRenameWs, onHideWs, onOpen, onRenameSession, onArchiveSession, now }) {
-      const w = node.w;
-      const gkey = w.workspaceId;
-      const groupOpen = expandedGroups.has(gkey);
-      const sids = visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted);
-      const hasContent = sids.length > 0 || (node.children && node.children.length > 0);
+    /** 从森林里找出到达某个工作区的路径（含自身）；不在森林里返回空数组。 */
+    function workspacePathTo(forest, workspaceId) {
+      const target = String(workspaceId);
+      const walk = (nodes, trail) => {
+        for (const node of nodes || []) {
+          const key = String(node.w.workspaceId);
+          const next = trail.concat([key]);
+          if (key === target) return next;
+          const found = walk(node.children, next);
+          if (found) return found;
+        }
+        return null;
+      };
+      return walk(forest, []) || [];
+    }
 
+    /** Hover 卡里的绝对创建时间（本地年月日，官方 date.ymd 口径）。 */
+    function createdLabel(createdAt) {
+      const d = new Date(createdAt);
+      const pad = (v) => String(v).padStart(2, "0");
+      return d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日 " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    }
+
+    /**
+     * 该部署压根没开内容检索时的两条固定说法（Host 侧原话）：`openAt: "never"` 的
+     * sqlite 索引，以及没有挂载 session-query。这是部署能力，不是故障，因此静默降级为
+     * 只做本地匹配；其余失败照常提示。
+     */
+    const SEARCH_DISABLED_MESSAGES = [
+      "session search is disabled",
+      "does not mount @deepseek-ai/dsh-session-query"
+    ];
+    function searchDisabledMessage(message) {
+      const text = String(message || "");
+      return SEARCH_DISABLED_MESSAGES.some((needle) => text.includes(needle));
+    }
+
+    /**
+     * 搜索投影：本地「标题 / 工作区名」子串命中即时可见，Host 内容命中（带片段）随后合并。
+     * 归档、subagent、空白草稿与当前不可见的行不参与搜索（官方口径）。
+     */
+    function deriveSearchResults(sessions, workspaces, archived, hardDeleted, currentSid, query, content, limit) {
+      const needle = query.toLowerCase();
+      const byId = (sessions && sessions.byId) || {};
+      const items = content && Array.isArray(content.items) ? content.items : [];
+      const snippetById = new Map();
+      for (const item of items) {
+        const id = String(item && item.sessionId !== undefined ? item.sessionId : "");
+        if (id !== "") snippetById.set(id, String((item && item.snippet) || ""));
+      }
+      const labelById = new Map();
+      for (const w of workspaces || []) {
+        for (const sid of w.sessionIds || []) {
+          labelById.set(String(sid), w.title || baseName(w.path));
+        }
+      }
+      const hits = [];
+      const seen = new Set();
+      const consider = (rawId) => {
+        const sid = String(rawId);
+        if (seen.has(sid)) return;
+        const row = byId[sid];
+        if (!sessionVisible(row, currentSid, archived, hardDeleted) || row.blank) return;
+        const workspaceLabel = labelById.has(sid) ? labelById.get(sid) : "未分组";
+        const title = row.displayTitle || sid;
+        const snippet = snippetById.has(sid) ? snippetById.get(sid) : "";
+        const local = title.toLowerCase().includes(needle) || workspaceLabel.toLowerCase().includes(needle);
+        if (!local && snippet === "") return;
+        seen.add(sid);
+        hits.push({ id: sid, title, workspace: workspaceLabel, snippet, local });
+      };
+      for (const id of (sessions && Array.isArray(sessions.ids) ? sessions.ids : [])) consider(id);
+      for (const id of snippetById.keys()) consider(id);
+      hits.sort((a, b) => (a.local === b.local ? 0 : a.local ? -1 : 1));
+      const cap = typeof limit === "number" && limit > 0 ? limit : 20;
+      return hits.slice(0, cap);
+    }
+
+    /**
+     * 视图选项菜单：分组方式（官方三档）与排序方式（最近更新 / 手动）。
+     * 用官方 `Menu` 且 `portal: true`——头部为裁掉标题切换动画而 `overflow: hidden`，
+     * 就地渲染的下拉会被裁掉；portal 模式按锚点定位并挂在 body 上，不受裁切与层叠影响。
+     */
+    function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick }) {
+      const [open, setOpen] = useState(false);
+      return h(Menu, {
+        open,
+        onClose: () => setOpen(false),
+        items: [
+          { type: "label", id: "group-by", text: "分组方式" },
+          { id: GROUP_BY.workspace, label: "按工作区" },
+          { id: GROUP_BY.workspaceTree, label: "工作区树" },
+          { id: GROUP_BY.flat, label: "单一列表" },
+          { type: "separator", id: "order-by-separator" },
+          { type: "label", id: "order-by", text: "排序方式" },
+          { id: "manual", label: "手动" },
+          { id: "updated", label: "最近更新" }
+        ],
+        selectedIds: [groupBy, orderBy],
+        onSelect: (id) => {
+          if (id === GROUP_BY.workspace || id === GROUP_BY.workspaceTree || id === GROUP_BY.flat) onGroupPick(id);
+          else if (id === "manual" || id === "updated") onOrderPick(id);
+          setOpen(false);
+        },
+        align: "end",
+        dense: true,
+        portal: true,
+        anchor: h("button", {
+          type: "button",
+          className: "dswt-headBtn" + (open ? " dswt-headBtnActive" : ""),
+          title: "视图选项",
+          "aria-label": "视图选项",
+          "aria-expanded": open,
+          onClick: () => setOpen((v) => !v)
+        }, h(Icon, { name: "options", size: 16 }))
+      });
+    }
+
+    // ══════════════ 工作区模式：组 ══════════════
+    /**
+     * 一个工作区分组：标题行（Hover 卡 + 拖拽）+ 组体。
+     * 组体顺序照官方：先子工作区，再本工作区自己的会话，最后是「展开其余」按钮。
+     * 折叠状态、每组会话上限、会话顺序都由视图状态决定（官方同款）。
+     */
+    function WorkspaceGroup({ node, depth, indent, sessions, sessionStatus, lineage, archived, hardDeleted, view, currentSid, currentGroupKey, ancestorKeys, onNewSession, onAddWorkspaceIn, onOpenInIde, onRenameWs, onHideWs, onOpen, onRenameSession, onArchiveSession, onToggleGroup, onToggleSessions, drag, now }) {
+      const w = node.w;
+      const gkey = String(w.workspaceId);
+      const groupOpen = !view.collapsed.includes(gkey);
+      const byId = (sessions && sessions.byId) || {};
+      const sids = accountOrder(gkey, visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted, currentSid), sessions, view, currentSid);
+      const hasContent = sids.length > 0 || (node.children && node.children.length > 0);
+      const containsCurrent = gkey === (currentGroupKey === null ? null : String(currentGroupKey));
+      // 文件夹高亮 = 当前会话所在的工作区本身或它的祖先（官方 containsCurrent/containsCurrentDescendant）。
+      const folderActive = ancestorKeys.has(gkey) || (groupOpen && containsCurrent);
+      const sessionsExpanded = view.expandedSessions.includes(gkey);
+      const collapsed = collapsedSessionRows(sids, byId);
+      const label = w.title || baseName(w.path);
+
+      const headerNode = h("div", {
+        className: "dswt-projectRow",
+        "data-wsid": gkey,
+        style: { paddingLeft: 8 + depth * indent },
+        role: "treeitem",
+        "aria-expanded": groupOpen,
+        onClick: () => onToggleGroup(gkey),
+        draggable: drag ? true : undefined,
+        onDragStart: (e) => {
+          if (!drag) return;
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", gkey);
+          }
+          drag.startWs(gkey);
+        },
+        onDragOver: (e) => {
+          if (!drag || drag.kind !== "ws" || drag.wsId === gkey) return;
+          e.preventDefault();
+          if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+          const rect = e.currentTarget.getBoundingClientRect();
+          drag.hoverWs(gkey, e.clientY < rect.top + rect.height / 2 ? "before" : "after");
+        },
+        onDrop: (e) => {
+          if (!drag || drag.kind !== "ws" || drag.wsId === gkey) return;
+          e.preventDefault();
+          drag.dropWs();
+        },
+        onDragEnd: () => { if (drag) drag.end(); }
+      }, [
+        h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" + (folderActive ? " dswt-folderActive" : "") }, [
+          h(Icon, { name: folderIconFor(node.aggHasSessions), size: 16, className: "dswt-folderSvg" }),
+          hasContent && h("span", { className: "dswt-chevronOverlay" + (groupOpen ? " dswt-arrowOpen" : "") }, h(Icon, { name: "chevron", size: 12 }))
+        ]),
+        h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, label)),
+        node.aggState && h("span", { key: "ag", className: "dswt-slot dswt-aggSlot", title: node.aggState === "warning" ? "有待处理交互" : node.aggState === "ongoing" ? "有会话运行中" : "有会话已完成" }, h(SessionDot, { state: node.aggState, size: 8 })),
+        h("span", { key: "ac", className: "dswt-rowActions", onClick: (e) => e.stopPropagation() }, [
+          h("button", { key: "ide", type: "button", className: "dswt-iconButton", title: "在 IDE 中打开此工作区", onClick: () => onOpenInIde && onOpenInIde(w.path) }, h(Icon, { name: "ide", size: 14 })),
+          h("button", { key: "ns", type: "button", className: "dswt-iconButton", title: "新建会话", onClick: () => onNewSession(w.workspaceId) }, h(Icon, { name: "newChat", size: 14 })),
+          h("button", { key: "aw", type: "button", className: "dswt-iconButton", title: "添加工作区（从该工作区目录开始选择）", onClick: () => onAddWorkspaceIn && onAddWorkspaceIn(w) }, h(Icon, { name: "folderPlus", size: 14 })),
+          h("button", { key: "rn", type: "button", className: "dswt-iconButton", title: "重命名工作区", onClick: () => onRenameWs(w) }, h(Icon, { name: "edit", size: 14 })),
+          h("button", { key: "hd", type: "button", className: "dswt-iconButton", title: "移除工作区显示（不删除注册，会话归属不变，重新添加该目录后恢复）", onClick: () => onHideWs && onHideWs(w) }, h(Icon, { name: "minus", size: 14 }))
+        ])
+      ]);
+
+      const marker = drag && drag.kind === "ws" && drag.over && drag.over.wsId === gkey && drag.wsId !== gkey ? drag.over.half : null;
+      const header = h("div", {
+        className: (marker === "before" ? "dswt-dropBefore" : "") + (marker === "after" ? " dswt-dropAfter" : "")
+      }, headerNode);
+
+      const children = node.children || [];
       return h("div", {
         className: "dswt-groupSection",
         "data-wsid": gkey
       }, [
-        h("div", {
-          key: "hd",
-          className: "dswt-projectRow",
-          style: { paddingLeft: 8 + depth * indent },
-          role: "treeitem",
-          "aria-expanded": groupOpen,
-          onClick: () => toggleGroup(gkey)
-        }, [
-          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" + (node.aggRunning ? " dswt-folderActive" : "") }, [
-            h(Icon, { name: folderIconFor(node.aggHasSessions), size: 16, className: "dswt-folderSvg" }),
-            hasContent && h("span", { className: "dswt-chevronOverlay" + (groupOpen ? " dswt-arrowOpen" : "") }, h(Icon, { name: "chevron", size: 12 }))
+        w.createdAt === undefined ? header : h(HoverCard, {
+          key: "hc",
+          anchor: header,
+          content: h("div", { className: "dswt-hoverContent" }, [
+            h("div", { key: "t", className: "dswt-hoverTitle" }, label),
+            h("div", { key: "p", className: "dswt-hoverPath" }, w.path),
+            h("div", { key: "c", className: "dswt-hoverMeta" }, "创建于 " + createdLabel(w.createdAt))
           ]),
-          h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, w.title || baseName(w.path))),
-          node.aggState && h("span", { key: "ag", className: "dswt-slot dswt-aggSlot", title: node.aggState === "warning" ? "有待处理交互" : node.aggState === "ongoing" ? "有会话运行中" : "有会话已完成" }, h(StatusDot, { state: node.aggState, size: 8 })),
-          h("span", { key: "ac", className: "dswt-rowActions", onClick: (e) => e.stopPropagation() }, [
-            h("button", { key: "ide", type: "button", className: "dswt-iconButton", title: "在 IDE 中打开此工作区", onClick: () => onOpenInIde && onOpenInIde(w.path) }, h(Icon, { name: "ide", size: 14 })),
-            h("button", { key: "ns", type: "button", className: "dswt-iconButton", title: "新建会话", onClick: () => onNewSession(w.workspaceId) }, h(Icon, { name: "newChat", size: 14 })),
-            h("button", { key: "aw", type: "button", className: "dswt-iconButton", title: "添加工作区（从该工作区目录开始选择）", onClick: () => onAddWorkspaceIn && onAddWorkspaceIn(w) }, h(Icon, { name: "folderPlus", size: 14 })),
-            h("button", { key: "rn", type: "button", className: "dswt-iconButton", title: "重命名工作区", onClick: () => onRenameWs(w) }, h(Icon, { name: "edit", size: 14 })),
-            h("button", { key: "hd", type: "button", className: "dswt-iconButton", title: "移除工作区显示（不删除注册，会话归属不变，重新添加该目录后恢复）", onClick: () => onHideWs && onHideWs(w) }, h(Icon, { name: "minus", size: 14 }))
-          ])
-        ]),
+          disabled: !!(drag && drag.kind === "ws"),
+          copyText: w.path,
+          copyLabel: "复制路径",
+          copiedLabel: "已复制"
+        }),
         groupOpen && h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": (16 + depth * indent) + "px" } }, [
-          sids.map((sid) => h(SessionRow, {
-            key: "s:" + sid, sid, sessions, depth: depth + 1, indent, now, onOpen,
+          children.map((child) => h(WorkspaceGroup, {
+            key: child.w.workspaceId, node: child, depth: depth + 1, indent, sessions, sessionStatus, lineage, archived, hardDeleted,
+            view, currentSid, currentGroupKey, ancestorKeys,
+            onNewSession, onAddWorkspaceIn, onOpenInIde, onRenameWs, onHideWs,
+            onOpen, onRenameSession, onArchiveSession, onToggleGroup, onToggleSessions, drag, now
+          })),
+          (sessionsExpanded ? sids : collapsed.rows).map((sid) => h(SessionRow, {
+            key: "s:" + sid, sid, sessions, depth: depth + 1, indent, now, currentSid, accountKey: gkey, onOpen, drag,
             pendingKind: pendingKindOf(sessionStatus, sid), completionUnread: completionUnreadOf(sessionStatus, sid),
             runningSubagents: runningSubagentsOf(lineage, sid),
             onRename: onRenameSession, onArchive: onArchiveSession
           })),
-          (node.children || []).map((child) => h(WorkspaceGroup, {
-            key: child.w.workspaceId, node: child, depth: depth + 1, indent, sessions, sessionStatus, lineage, archived, hardDeleted,
-            expandedGroups, toggleGroup, onNewSession, onAddWorkspaceIn, onOpenInIde, onRenameWs, onHideWs,
-            onOpen, onRenameSession, onArchiveSession, now
-          }))
+          collapsed.hiddenCount > 0 && h("button", {
+            key: "more",
+            type: "button",
+            className: "dswt-moreBtn",
+            "aria-expanded": sessionsExpanded,
+            style: { paddingLeft: 8 + (depth + 1) * indent },
+            onClick: () => onToggleSessions(gkey)
+          }, sessionsExpanded ? "收起" : "展开其余 " + collapsed.hiddenCount + " 个会话")
         ])
       ]);
     }
@@ -1175,27 +1447,87 @@ window.__ModuleLoader__.load({
     // ══════════════ 工作区模式：未分组 ══════════════
     /**
      * 「未分组」：官方列表里不属于任何已注册工作区的会话。插件不替用户收编，
-     * 这些会话照官方语义原样落在这一组；折叠状态不单独记忆（始终展开）。
+     * 这些会话照官方语义原样落在这一组，折叠与每组上限与其他组同一套规则。
      */
-    function UngroupedGroup({ sids, sessions, sessionStatus, lineage, indent, now, onOpen, onRenameSession, onArchiveSession }) {
+    function UngroupedGroup({ sids, sessions, sessionStatus, lineage, indent, now, currentSid, view, onOpen, onRenameSession, onArchiveSession, onToggleGroup, onToggleSessions, drag }) {
       if (!sids || sids.length === 0) return null;
+      const byId = (sessions && sessions.byId) || {};
+      const ordered = accountOrder(UNGROUPED_KEY, sids, sessions, view, currentSid);
+      const groupOpen = !view.collapsed.includes(UNGROUPED_KEY);
+      const sessionsExpanded = view.expandedSessions.includes(UNGROUPED_KEY);
+      const collapsed = collapsedSessionRows(ordered, byId);
       return h("div", { className: "dswt-groupSection" }, [
-        h("div", { key: "hd", className: "dswt-projectRow", role: "treeitem", "aria-expanded": true }, [
-          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" }, h(Icon, { name: "folderOpenOutline", size: 16, className: "dswt-folderSvg" })),
-          h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, "未分组 · " + sids.length + " 条"))
+        h("div", {
+          key: "hd",
+          className: "dswt-projectRow",
+          role: "treeitem",
+          "aria-expanded": groupOpen,
+          onClick: () => onToggleGroup(UNGROUPED_KEY)
+        }, [
+          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" }, [
+            h(Icon, { name: "folderOpenOutline", size: 16, className: "dswt-folderSvg" }),
+            h("span", { className: "dswt-chevronOverlay" + (groupOpen ? " dswt-arrowOpen" : "") }, h(Icon, { name: "chevron", size: 12 }))
+          ]),
+          h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, "未分组 · " + ordered.length + " 条"))
         ]),
-        h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": "16px" } }, sids.map((sid) => h(SessionRow, {
-          key: "s:" + sid, sid, sessions, depth: 1, indent, now, onOpen,
-          pendingKind: pendingKindOf(sessionStatus, sid), completionUnread: completionUnreadOf(sessionStatus, sid),
-          runningSubagents: runningSubagentsOf(lineage, sid),
-          onRename: onRenameSession, onArchive: onArchiveSession
-        })))
+        groupOpen && h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": "16px" } }, [
+          (sessionsExpanded ? ordered : collapsed.rows).map((sid) => h(SessionRow, {
+            key: "s:" + sid, sid, sessions, depth: 1, indent, now, currentSid, accountKey: UNGROUPED_KEY, onOpen, drag,
+            pendingKind: pendingKindOf(sessionStatus, sid), completionUnread: completionUnreadOf(sessionStatus, sid),
+            runningSubagents: runningSubagentsOf(lineage, sid),
+            onRename: onRenameSession, onArchive: onArchiveSession
+          })),
+          collapsed.hiddenCount > 0 && h("button", {
+            key: "more",
+            type: "button",
+            className: "dswt-moreBtn",
+            "aria-expanded": sessionsExpanded,
+            style: { paddingLeft: 8 + indent },
+            onClick: () => onToggleSessions(UNGROUPED_KEY)
+          }, sessionsExpanded ? "收起" : "展开其余 " + collapsed.hiddenCount + " 个会话")
+        ])
+      ]);
+    }
+
+    // ══════════════ 工作区模式：单一列表（官方 groupBy: flat） ══════════════
+    function FlatList({ sids, sessions, sessionStatus, lineage, now, currentSid, view, onOpen, onRenameSession, onArchiveSession, drag }) {
+      const ordered = accountOrder(FLAT_KEY, sids, sessions, view, currentSid);
+      if (ordered.length === 0) return null;
+      return h("div", { className: "dswt-flatList" }, ordered.map((sid) => h(SessionRow, {
+        key: "s:" + sid, sid, sessions, depth: 0, indent: INDENT, now, currentSid, accountKey: FLAT_KEY, onOpen, drag,
+        pendingKind: pendingKindOf(sessionStatus, sid), completionUnread: completionUnreadOf(sessionStatus, sid),
+        runningSubagents: runningSubagentsOf(lineage, sid),
+        onRename: onRenameSession, onArchive: onArchiveSession
+      })));
+    }
+
+    // ══════════════ 搜索结果 ══════════════
+    /**
+     * 一条结果：标题 + 工作区名 +（内容命中时）片段。选择结果只打开会话并清空搜索，
+     * 不定位到具体事件（官方同款）。
+     */
+    function SearchResultRow({ result, sessions, sessionStatus, lineage, currentSid, onOpen }) {
+      const dotState = sessionState(result, result.id === currentSid, pendingKindOf(sessionStatus, result.id), completionUnreadOf(sessionStatus, result.id), runningSubagentsOf(lineage, result.id));
+      return h("button", {
+        type: "button",
+        className: "dswt-searchRow" + (result.id === currentSid ? " dswt-selected" : ""),
+        "data-sid": result.id,
+        onClick: () => onOpen(result.id)
+      }, [
+        h("span", { key: "h", className: "dswt-searchHead" }, [
+          dotState !== "done" && h(SessionDot, { key: "d", state: dotState, size: 10 }),
+          h("span", { key: "t", className: "dswt-searchTitle" }, result.title)
+        ]),
+        h("span", { key: "m", className: "dswt-searchMeta" }, [
+          h("span", { key: "w", className: "dswt-searchWs" }, result.workspace),
+          result.snippet !== "" && h("span", { key: "s", className: "dswt-searchSnippet" }, result.snippet)
+        ])
       ]);
     }
 
     // ══════════════ 主组件 ══════════════
     function WorkspaceTreeBrowser(props) {
-      const { wide, useSessions, useWorkspaces, useSessionStatus, liveSessionRow, startSession, open, clearSession, renameSession, renameWorkspace, archiveSession, createWorkspace, deleteWorkspace, pickDirectory, listDirectory, createDirectory, refreshSessions } = props;
+      const { wide, useSessions, useWorkspaces, useSessionStatus, usePanelInfo, liveSessionRow, startSession, open, clearSession, renameSession, renameWorkspace, archiveSession, unarchiveSession, createWorkspace, deleteWorkspace, insertWorkspaceBefore, searchSessions, searchResultLimit, pickDirectory, listDirectory, createDirectory, refreshSessions } = props;
       const sessions = useSessions((s) => s);
       const workspaces = useWorkspaces((s) => s);
       // 官方会话状态座位（数据源在 dsh-client-ui-session：运行中 / 待处理交互 /
@@ -1203,10 +1535,28 @@ window.__ModuleLoader__.load({
       const sessionStatus = typeof useSessionStatus === "function"
         ? useSessionStatus((s) => s)
         : null;
+      /**
+       * 全局面板打开时主视图会话不算「当前」（官方 usePanelInfo 口径）：选中高亮熄灭，
+       * 只跟着当前会话显示的空白草稿行一并隐藏。搜索框与目录选择器不改变面板态。
+       */
+      const panelActive = typeof usePanelInfo === "function"
+        ? usePanelInfo((info) => info && info.activePanelId !== null)
+        : false;
+      const currentSid = panelActive ? null : currentSessionIdOf(sessions);
 
       /** 视图：工作区 / 归档区（模式偏好不持久化）。 */
       const [mode, setMode] = useState("workspace");
-      const [expandedGroups, setExpandedGroups] = useState(() => loadSet(LS_GROUPS));
+      const [view, setView] = useState(loadViewState);
+      const [searchOpen, setSearchOpen] = useState(false);
+      const [query, setQuery] = useState("");
+      /** 内容检索结果：null = 无内容命中（或尚未回包）；{error} = 检索本身失败。 */
+      const [contentSearch, setContentSearch] = useState(null);
+      /** 该部署把内容检索关掉了（能力事实，不是故障）：此后只做本地匹配，也不再提示。 */
+      const [contentSearchOff, setContentSearchOff] = useState(false);
+      const [searchPending, setSearchPending] = useState(false);
+      const [drag, setDrag] = useState(null);
+      /** 搜索结果选中后要滚进视野的会话 ID。 */
+      const [revealSid, setRevealSid] = useState(null);
       const [swapFrom, setSwapFrom] = useState(null);
       const [renameTarget, setRenameTarget] = useState(null);
       const [renameDraft, setRenameDraft] = useState("");
@@ -1251,7 +1601,6 @@ window.__ModuleLoader__.load({
       const showAlert = useCallback((desc, title = "提示") => {
         setAlertInfo({ title, desc: String(desc || "") });
       }, []);
-      const groupsInited = useRef(false);
       const now = Date.now();
 
       // 配置订阅：LS 修改（回退路径/缓存同步）与 Host settings 修改实时刷新；
@@ -1368,22 +1717,6 @@ window.__ModuleLoader__.load({
         });
       }, []);
 
-      // 首次进入工作区模式：默认展开所有组
-      useEffect(() => {
-        const items = workspaces.items || [];
-        if (!groupsInited.current && items.length > 0) {
-          groupsInited.current = true;
-          const all = items.map((w) => w.workspaceId);
-          setExpandedGroups((prev) => {
-            if (prev.size === 0) {
-              saveSet(LS_GROUPS, all);
-              return new Set(all);
-            }
-            return prev;
-          });
-        }
-      }, [workspaces.items]);
-
       // 标题切换动画清理
       useEffect(() => {
         if (swapFrom === null) return;
@@ -1392,11 +1725,21 @@ window.__ModuleLoader__.load({
       }, [swapFrom]);
 
       const toggleGroup = useCallback((key) => {
-        setExpandedGroups((prev) => {
-          const next = new Set(prev);
-          if (next.has(key)) next.delete(key); else next.add(key);
-          saveSet(LS_GROUPS, next);
-          return next;
+        setView((prev) => {
+          const list = prev.collapsed.map(String);
+          const next = list.includes(key) ? list.filter((k) => k !== key) : list.concat([key]);
+          const value = { ...prev, collapsed: next };
+          saveViewState(value);
+          return value;
+        });
+      }, []);
+      const toggleSessions = useCallback((key) => {
+        setView((prev) => {
+          const list = prev.expandedSessions.map(String);
+          const next = list.includes(key) ? list.filter((k) => k !== key) : list.concat([key]);
+          const value = { ...prev, expandedSessions: next };
+          saveViewState(value);
+          return value;
         });
       }, []);
 
@@ -1507,9 +1850,14 @@ window.__ModuleLoader__.load({
         if (renameLockRef.current) return;
         const trimmed = (renameDraft || "").trim();
         const initialTrim = (renameTarget.initial || "").trim();
-        if (!trimmed || trimmed === initialTrim) {
-          if (trimmed === initialTrim) setRenameTarget(null);
-          return;
+        if (!trimmed) return;
+        // 会话侧照官方：确认未改动的标题同样提交，把当前的自动标题钉成显式标题；
+        // 工作区侧官方拦住未改动与重名，这里保持同样的门槛。
+        if (renameTarget.kind === "workspace") {
+          if (trimmed === initialTrim) { setRenameTarget(null); return; }
+          const duplicated = (workspaces.items || []).some((w) => String(w.workspaceId) !== String(renameTarget.id)
+            && (w.title || baseName(w.path)) === trimmed);
+          if (duplicated) { showAlert("已有同名工作区，请换一个名称", "重命名失败"); return; }
         }
         renameLockRef.current = true;
         setRenameBusy(true);
@@ -1592,13 +1940,6 @@ window.__ModuleLoader__.load({
             const next = new Set(prev);
             next.delete(wid);
             saveSet(LS_HIDDEN_WS, next);
-            return next;
-          });
-          setExpandedGroups((prev) => {
-            if (!prev.has(wid)) return prev;
-            const next = new Set(prev);
-            next.delete(wid);
-            saveSet(LS_GROUPS, next);
             return next;
           });
         } catch (error) {
@@ -1692,14 +2033,13 @@ window.__ModuleLoader__.load({
       // 归档视图操作
       const onRestoreOne = useCallback(async (sid) => {
         try {
-          const r = await apiPost("/archive/unarchive", { sessionId: sid });
-          if (!r.ok) throw new Error(r.error || "恢复失败");
+          await unarchiveSession(sid);
           forgetDeleted([sid]);
           refreshSessions();
         } catch (error) {
           showAlert(String((error && error.message) || error), "恢复失败");
         }
-      }, [refreshSessions, showAlert, forgetDeleted]);
+      }, [unarchiveSession, refreshSessions, showAlert, forgetDeleted]);
       const onDeleteOne = useCallback((sid) => {
         const t = (sessions.byId[sid] && sessions.byId[sid].displayTitle) || sid;
         setArchiveConfirm({ kind: "deleteOne", sessionId: sid, title: t });
@@ -1742,7 +2082,6 @@ window.__ModuleLoader__.load({
           } catch { /* 静默 */ }
         })();
       }, [mode, sessions, refreshSessions]);
-      /** 一键诊断：把本客户端看到的工作区/会话列表状态复制到剪贴板，用于排查“某端显示为空”。 */
       const onCancelArchiveConfirm = useCallback(() => { if (archiveBusy) return; setArchiveConfirm(null); }, [archiveBusy]);
 
       const onConfirmArchiveConfirm = useCallback(async () => {
@@ -1896,10 +2235,28 @@ window.__ModuleLoader__.load({
         // 归档用全量森林：被“移除显示”的工作区的归档会话也必须可见可恢复，
         // 否则隐藏即永久失联（与“仅移除显示、归属不变”的承诺冲突）
         const archiveForest = buildWorkspaceForest(items);
-        for (const n of wsForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus, lineage);
-        for (const n of archiveForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus, lineage);
-        return { wsForest, archiveForest };
-      }, [visibleItems, items, sessions, archived, hardDeleted, sessionStatus, lineage]);
+        for (const n of wsForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus, lineage, currentSid);
+        for (const n of archiveForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus, lineage, currentSid);
+        const wsChildren = new Map();
+        const wsParent = new Map();
+        wsChildren.set(null, (wsForest || []).map((node) => String(node.w.workspaceId)));
+        (function walk(nodes, parentKey) {
+          for (const node of nodes || []) {
+            const key = String(node.w.workspaceId);
+            wsChildren.set(key, (node.children || []).map((child) => String(child.w.workspaceId)));
+            wsParent.set(key, parentKey);
+            walk(node.children, key);
+          }
+        })(wsForest, null);
+        return { wsForest, archiveForest, wsChildren, wsParent };
+      }, [visibleItems, items, sessions, archived, hardDeleted, sessionStatus, lineage, currentSid]);
+
+      /** 全部可见工作区（不嵌套）：官方 groupBy「按工作区」的平铺分组。 */
+      const flatGroups = useMemo(() => {
+        const nodes = visibleItems.map((w) => ({ w, children: [] }));
+        for (const n of nodes) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus, lineage, currentSid);
+        return nodes;
+      }, [visibleItems, sessions, archived, hardDeleted, sessionStatus, lineage, currentSid]);
 
       const wsForest = aggCtx.wsForest;
       const archiveForest = aggCtx.archiveForest;
@@ -1908,11 +2265,206 @@ window.__ModuleLoader__.load({
       const ungroupedSids = useMemo(() => {
         const accounted = accountedSessionIds(items);
         const byId = (sessions && sessions.byId) || {};
-        const cur = currentSessionIdOf(sessions);
         return (sessions && Array.isArray(sessions.ids) ? sessions.ids : [])
           .map(String)
-          .filter((sid) => !accounted.has(sid) && sessionVisible(byId[sid], cur, archived, hardDeleted));
-      }, [sessions, items, archived, hardDeleted]);
+          .filter((sid) => !accounted.has(sid) && sessionVisible(byId[sid], currentSid, archived, hardDeleted));
+      }, [sessions, items, archived, hardDeleted, currentSid]);
+
+      /** 单一列表：官方列表返回的全部可见会话（archive/subagent 照旧排除）。 */
+      const flatSids = useMemo(() => {
+        const byId = (sessions && sessions.byId) || {};
+        return (sessions && Array.isArray(sessions.ids) ? sessions.ids : [])
+          .map(String)
+          .filter((sid) => sessionVisible(byId[sid], currentSid, archived, hardDeleted));
+      }, [sessions, archived, hardDeleted, currentSid]);
+
+      // ── 视图派生：当前会话所在组、祖先链、账号成员、搜索与拖拽 ──
+      const { wsChildren, wsParent } = aggCtx;
+      const visibleKeySet = useMemo(() => new Set(visibleItems.map((w) => String(w.workspaceId))), [visibleItems]);
+
+      /** 一个会话所属的账号键（工作区 id / UNGROUPED_KEY；单一列表模式统一落 FLAT_KEY）。 */
+      const accountKeyOfSession = useCallback((sid) => {
+        if (view.groupBy === GROUP_BY.flat) return FLAT_KEY;
+        const target = String(sid);
+        for (const w of items) {
+          if ((w.sessionIds || []).some((id) => String(id) === target)) return String(w.workspaceId);
+        }
+        return UNGROUPED_KEY;
+      }, [items, view.groupBy]);
+
+      const currentGroupKey = currentSid === null ? null : accountKeyOfSession(currentSid);
+      /** 当前会话所在组本身（用于文件夹高亮）与它的祖先链。 */
+      const currentOwningKey = currentGroupKey === null
+        ? null
+        : (currentGroupKey === FLAT_KEY ? null : currentGroupKey);
+      const ancestorKeys = useMemo(() => {
+        const set = new Set();
+        if (currentOwningKey === null || currentOwningKey === UNGROUPED_KEY) return set;
+        for (const key of workspacePathTo(wsForest, currentOwningKey).slice(0, -1)) set.add(key);
+        return set;
+      }, [wsForest, currentOwningKey]);
+
+      /** 一个账号当前的显示顺序（拖拽提交与移动标记共用）。 */
+      const accountMembers = useCallback((accountKey) => {
+        if (accountKey === FLAT_KEY) return accountOrder(FLAT_KEY, flatSids, sessions, view, currentSid);
+        if (accountKey === UNGROUPED_KEY) return accountOrder(UNGROUPED_KEY, ungroupedSids, sessions, view, currentSid);
+        const w = items.find((x) => String(x.workspaceId) === accountKey);
+        if (!w) return [];
+        const sids = visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted, currentSid);
+        return accountOrder(accountKey, sids, sessions, view, currentSid);
+      }, [flatSids, ungroupedSids, sessions, view, currentSid, items, archived, hardDeleted]);
+
+      const patchView = useCallback((patch) => {
+        setView((prev) => {
+          const value = { ...prev, ...patch };
+          saveViewState(value);
+          return value;
+        });
+      }, []);
+
+      /** 会话拖拽：同账号内改显示顺序，落手动模式（官方 commitSessionDrag 口径）。 */
+      const commitSessionDrag = useCallback((active, over) => {
+        if (!active || !over) return;
+        const members = accountMembers(active.accountKey);
+        const without = members.filter((id) => id !== active.sid);
+        const at = without.indexOf(over.sid);
+        if (at === -1) return;
+        const next = without.slice();
+        next.splice(over.half === "before" ? at : at + 1, 0, active.sid);
+        setView((prev) => {
+          const value = { ...prev, orderBy: "manual", sessionOrder: { ...prev.sessionOrder, [active.accountKey]: next } };
+          saveViewState(value);
+          return value;
+        });
+      }, [accountMembers]);
+
+      /** 工作区拖拽：同层兄弟重排，写官方注册表的持久顺序（insertWorkspaceBefore）。 */
+      const commitWorkspaceDrag = useCallback((active, over) => {
+        if (!active || !over) return;
+        if (typeof insertWorkspaceBefore !== "function") {
+          showAlert("当前 DSH 版本不支持工作区排序（缺少 insertBefore）", "排序失败");
+          return;
+        }
+        const targetParent = wsParent.has(String(over.wsId)) ? wsParent.get(String(over.wsId)) : null;
+        const sortedSiblings = view.groupBy === GROUP_BY.workspaceTree;
+        // 树模式下只重排同层兄弟（官方：拖到后代上时以最近的同层祖先为落点）。
+        if (sortedSiblings && wsParent.get(String(active.wsId)) !== targetParent) return;
+        const siblings = sortedSiblings
+          ? (wsChildren.get(targetParent) || [])
+          : visibleItems.map((w) => String(w.workspaceId));
+        const without = siblings.filter((id) => id !== String(active.wsId));
+        const at = without.indexOf(String(over.wsId));
+        if (at === -1) return;
+        const anchor = over.half === "before" ? without[at] : without[at + 1];
+        Promise.resolve(insertWorkspaceBefore(active.wsId, anchor)).catch((error) => {
+          showAlert("调整工作区顺序失败：" + String((error && error.message) || error), "排序失败");
+        });
+      }, [insertWorkspaceBefore, wsChildren, wsParent, visibleItems, view.groupBy, showAlert]);
+
+      /** 拖拽 API：行组件只报告「开始 / 悬停 / 落下 / 结束」，判定与提交留在这里。 */
+      const dragApi = useMemo(() => ({
+        kind: drag ? drag.kind : null,
+        sid: drag ? drag.sid : null,
+        accountKey: drag ? (drag.accountKey ?? null) : null,
+        wsId: drag ? drag.wsId : null,
+        over: drag ? drag.over : null,
+        start: (sid) => setDrag({ kind: "session", accountKey: accountKeyOfSession(sid), sid, over: null }),
+        hover: (sid, half) => setDrag((prev) => (prev && prev.kind === "session" ? { ...prev, over: { sid, half } } : prev)),
+        drop: () => { const active = drag; setDrag(null); commitSessionDrag(active, active && active.over); },
+        startWs: (wsId) => setDrag({ kind: "ws", wsId, over: null }),
+        hoverWs: (wsId, half) => setDrag((prev) => (prev && prev.kind === "ws" ? { ...prev, over: { wsId, half } } : prev)),
+        dropWs: () => { const active = drag; setDrag(null); commitWorkspaceDrag(active, active && active.over); },
+        end: () => setDrag(null)
+      }), [drag, accountKeyOfSession, commitSessionDrag, commitWorkspaceDrag]);
+
+      // 搜索：本地即时匹配标题 / 工作区名，Host 内容检索 250ms 防抖 + 上一条 abort（官方同款）。
+      const trimmedQuery = query.trim();
+      /** 搜索框展开（点一次按钮就整行让给输入框）与「已有关键词、列表切到结果」是两件事。 */
+      const searchFieldOpen = searchOpen && mode !== "archive";
+      const searchActive = searchFieldOpen && trimmedQuery !== "";
+      useEffect(() => {
+        if (!searchActive || contentSearchOff || typeof searchSessions !== "function") {
+          setContentSearch(null);
+          setSearchPending(false);
+          return;
+        }
+        const controller = new AbortController();
+        setSearchPending(true);
+        const timer = setTimeout(() => {
+          Promise.resolve()
+            .then(() => searchSessions(trimmedQuery, controller.signal))
+            .then((value) => { if (!controller.signal.aborted) { setContentSearch(value || null); setSearchPending(false); } })
+            .catch((error) => {
+              if (controller.signal.aborted) return;
+              const message = String((error && error.message) || error);
+              if (searchDisabledMessage(message)) {
+                // 部署层面没开内容检索：不再重试，也不把它当成错误报给用户。
+                setContentSearchOff(true);
+                setContentSearch(null);
+              } else {
+                setContentSearch({ error: message });
+              }
+              setSearchPending(false);
+            });
+        }, 250);
+        return () => { clearTimeout(timer); controller.abort(); };
+      }, [searchActive, contentSearchOff, trimmedQuery, searchSessions]);
+
+      const searchResults = useMemo(() => {
+        if (!searchActive) return [];
+        return deriveSearchResults(sessions, visibleItems, archived, hardDeleted, currentSid, trimmedQuery, contentSearch, searchResultLimit);
+      }, [searchActive, sessions, visibleItems, archived, hardDeleted, currentSid, trimmedQuery, contentSearch, searchResultLimit]);
+
+      /** 选中结果：清空并收起搜索，打开会话，并把它的行滚进视野（展开祖先组）。 */
+      const onOpenSearchResult = useCallback((sid) => {
+        setSearchOpen(false);
+        setQuery("");
+        setRevealSid(String(sid));
+        open(sid);
+      }, [open]);
+
+      useEffect(() => {
+        if (revealSid === null) return;
+        const key = accountKeyOfSession(revealSid);
+        if (key !== null) {
+          const path = (key === UNGROUPED_KEY || key === FLAT_KEY) ? [key] : workspacePathTo(wsForest, key);
+          setView((prev) => {
+            const hide = new Set(path);
+            const collapsed = prev.collapsed.filter((k) => !hide.has(k));
+            const expandedSessions = prev.expandedSessions.includes(key) ? prev.expandedSessions : prev.expandedSessions.concat([key]);
+            if (collapsed.length === prev.collapsed.length && expandedSessions === prev.expandedSessions) return prev;
+            const value = { ...prev, collapsed, expandedSessions };
+            saveViewState(value);
+            return value;
+          });
+        }
+        const node = typeof document.querySelector === "function" ? document.querySelector('[data-sid="' + revealSid + '"]') : null;
+        if (node && typeof node.scrollIntoView === "function") node.scrollIntoView({ block: "nearest" });
+        setRevealSid(null);
+      }, [revealSid, accountKeyOfSession, wsForest]);
+
+      /** 搜索框：折叠时只是一个标题按钮，展开后整行让给输入框（官方 header 同款）。 */
+      const searchBox = h("div", { key: "search", className: "dswt-searchBox" }, [
+        h(Icon, { key: "i", name: "search", size: 14, className: "dswt-searchGlyph" }),
+        h(Input, {
+          key: "q",
+          className: "dswt-searchInput",
+          value: query,
+          placeholder: "搜索会话标题、工作区或内容",
+          spellCheck: false,
+          autoFocus: true,
+          onChange: (e) => setQuery(e.target.value),
+          onKeyDown: (e) => { if (e.key === "Escape") { setQuery(""); setSearchOpen(false); } }
+        }),
+        h("button", {
+          key: "c",
+          type: "button",
+          className: "dswt-iconButton",
+          title: "关闭搜索",
+          "aria-label": "关闭搜索",
+          onClick: () => { setQuery(""); setSearchOpen(false); }
+        }, h(Icon, { name: "minus", size: 14 }))
+      ]);
 
       // 内置目录对话框（browse 面回退）—— 挂在两套布局里，只有打开时才渲染面板。
       const pickerNode = h(DirectoryPickerModal, {
@@ -1936,26 +2488,58 @@ window.__ModuleLoader__.load({
       if (!wide) {
         return h("div", { className: "dswt-rail" }, [
           h("button", { key: "ws", type: "button", className: "dswt-rail-btn", title: addWorkspaceTitle, "aria-label": "添加工作区", disabled: addWorkspaceDisabled, onClick: onAddWorkspace }, h(Icon, { name: "plus", size: 18 })),
+          mode !== "archive" && h("button", {
+            key: "sr",
+            type: "button",
+            className: "dswt-rail-btn" + (searchOpen ? " dswt-rail-btnActive" : ""),
+            title: "搜索会话",
+            "aria-label": "搜索会话",
+            onClick: () => { setSearchOpen((v) => !v); if (searchOpen) setQuery(""); }
+          }, h(Icon, { name: "search", size: 18 })),
           pickerNode
         ]);
       }
 
       const header = h("div", { key: "h", className: "dswt-sectionHeader" }, [
-        h("div", {
-          key: "t",
-          className: "dswt-modeTitle",
-          title: mode === "archive" ? "点击返回工作区" : "点击进入归档区",
-          onClick: () => toggleArchive()
-        }, [
-          swapFrom !== null && h("span", { key: "out", className: "dswt-titleItem dswt-titleOut" }, swapFrom === "archive" ? "归档区" : "工作区"),
-          h("span", { key: "in" + mode, className: "dswt-titleItem dswt-titleIn" }, mode === "archive" ? "归档区" : "工作区")
-        ]),
-        h("span", { key: "a", className: "dswt-headerActions" }, [
+        searchFieldOpen
+          ? searchBox
+          : h("div", {
+              key: "t",
+              className: "dswt-modeTitle",
+              title: mode === "archive" ? "点击返回工作区" : "点击进入归档区",
+              onClick: () => toggleArchive()
+            }, [
+              swapFrom !== null && h("span", { key: "out", className: "dswt-titleItem dswt-titleOut" }, swapFrom === "archive" ? "归档区" : "工作区"),
+              h("span", { key: "in" + mode, className: "dswt-titleItem dswt-titleIn" }, mode === "archive" ? "归档区" : "工作区")
+            ]),
+        !searchFieldOpen && h("span", { key: "a", className: "dswt-headerActions" }, [
+          mode !== "archive" && h("button", {
+            key: "sr",
+            type: "button",
+            className: "dswt-headBtn" + (searchOpen ? " dswt-headBtnActive" : ""),
+            title: "搜索会话",
+            "aria-label": "搜索会话",
+            onClick: () => { setSearchOpen((v) => !v); if (searchOpen) setQuery(""); }
+          }, h(Icon, { name: "search", size: 16 })),
+          mode !== "archive" && h(ViewOptionsMenu, {
+            key: "vo",
+            groupBy: view.groupBy,
+            orderBy: view.orderBy,
+            onGroupPick: (groupBy) => patchView({ groupBy }),
+            onOrderPick: (orderBy) => patchView({ orderBy })
+          }),
           mode !== "archive" && h("button", { key: "ns", type: "button", className: "dswt-headBtn", title: "新建会话（选择工作区）", onClick: () => { if (clearSession) clearSession(); else if (typeof startSession === "function") startSession(); } }, h(Icon, { name: "newChat", size: 16 })),
           mode !== "archive" && h("button", { key: "ws", type: "button", className: "dswt-headBtn", title: addWorkspaceTitle, "aria-label": "添加工作区", disabled: addWorkspaceDisabled, onClick: onAddWorkspace }, h(Icon, { name: "plus", size: 16 })),
           h("button", { key: "ar", type: "button", className: "dswt-headBtn" + (mode === "archive" ? " dswt-headBtnActive" : ""), title: mode === "archive" ? "返回" : "归档区", onClick: toggleArchive }, h(Icon, { name: "archive", size: 16 }))
         ].filter(Boolean))
       ]);
+
+      // 搜索态与分组方式决定列表主体；三种分组都复用同一套行组件。
+      const groupNodes = view.groupBy === GROUP_BY.workspaceTree ? wsForest : flatGroups;
+      const showUngrouped = view.groupBy !== GROUP_BY.flat && ungroupedSids.length > 0;
+      const emptyHint = hiddenWs.size > 0
+        ? "所有工作区均已移除显示——重新添加目录即可恢复"
+        : "尚无工作区——点击上方「添加工作区」或先新建会话";
 
       let body;
       if (mode === "archive") {
@@ -1966,6 +2550,7 @@ window.__ModuleLoader__.load({
             wsForest: archiveForest,
             archived,
             hardDeleted,
+            currentSid,
             onOpen: open,
             onRestoreOne,
             onDeleteOne,
@@ -1976,25 +2561,52 @@ window.__ModuleLoader__.load({
             busy: archiveBusy
           })
         ]);
+      } else if (searchActive) {
+        body = h("div", { key: "l", className: "dswt-list", role: "tree", "aria-label": "搜索结果" }, [
+          contentSearch && contentSearch.error && h("div", { key: "w", className: "dswt-searchNote" }, "内容检索不可用：" + contentSearch.error),
+          searchResults.length === 0 && h("div", { key: "e", className: "dswt-empty" }, searchPending ? "搜索中…" : "没有匹配的会话"),
+          searchResults.map((result) => h(SearchResultRow, {
+            key: "r:" + result.id,
+            result,
+            sessions,
+            sessionStatus,
+            lineage,
+            currentSid,
+            onOpen: onOpenSearchResult
+          }))
+        ]);
+      } else if (view.groupBy === GROUP_BY.flat) {
+        body = h("div", { key: "l", className: "dswt-list", role: "tree", "aria-label": "会话" }, [
+          h(FlatList, {
+            key: "flat",
+            sids: flatSids,
+            sessions, sessionStatus, lineage, now, currentSid, view,
+            onOpen: open, onRenameSession: onRequestRenameSession, onArchiveSession, drag: dragApi
+          }),
+          flatSids.length === 0 && h("div", { key: "e", className: "dswt-empty" }, emptyHint)
+        ]);
       } else {
-        // 工作区模式：注册工作区按目录嵌套展示，无归属会话照官方语义落进「未分组」。
+        // 工作区模式：按工作区分组；工作区树模式额外按目录嵌套（官方 groupBy 两档）。
         body = h("div", { key: "l", className: "dswt-list", role: "tree", "aria-label": "工作区" }, [
-          wsForest.map((node) => h(WorkspaceGroup, {
+          groupNodes.map((node) => h(WorkspaceGroup, {
             key: node.w.workspaceId, node, depth: 0, indent: INDENT, sessions, sessionStatus, lineage, archived, hardDeleted,
-            expandedGroups, toggleGroup,
+            view, currentSid, currentGroupKey: currentOwningKey, ancestorKeys,
             onNewSession: startSession,
             onAddWorkspaceIn,
             onOpenInIde: openInIde,
             onRenameWs: onRequestRenameWs, onHideWs,
-            onOpen: open, onRenameSession: onRequestRenameSession, onArchiveSession, now
+            onOpen: open, onRenameSession: onRequestRenameSession, onArchiveSession,
+            onToggleGroup: toggleGroup, onToggleSessions: toggleSessions,
+            drag: dragApi, now
           })),
-          h(UngroupedGroup, {
+          showUngrouped && h(UngroupedGroup, {
             key: "ungrouped",
             sids: ungroupedSids,
-            sessions, sessionStatus, lineage, indent: INDENT, now,
-            onOpen: open, onRenameSession: onRequestRenameSession, onArchiveSession
+            sessions, sessionStatus, lineage, indent: INDENT, now, currentSid, view,
+            onOpen: open, onRenameSession: onRequestRenameSession, onArchiveSession,
+            onToggleGroup: toggleGroup, onToggleSessions: toggleSessions, drag: dragApi
           }),
-          wsForest.length === 0 && ungroupedSids.length === 0 && h("div", { key: "e", className: "dswt-empty" }, hiddenWs.size > 0 ? "所有工作区均已移除显示——重新添加目录即可恢复" : "尚无工作区——点击上方「添加工作区」或先新建会话")
+          groupNodes.length === 0 && !showUngrouped && h("div", { key: "e", className: "dswt-empty" }, emptyHint)
         ]);
       }
 
@@ -2269,8 +2881,7 @@ window.__ModuleLoader__.load({
         if (busy || !sid) return;
         setBusy(true);
         try {
-          const r = await apiPost("/archive/unarchive", { sessionId: sid });
-          if (!r.ok) throw new Error(r.error || "恢复失败");
+          await unarchiveSessionVia(ctx, sid);
           // 同步清除本地删除墓碑：已删除/已恢复两端可见性一致
           try {
             const cur = loadSet(LS_DELETED);
@@ -2667,6 +3278,24 @@ window.__ModuleLoader__.load({
                 }
                 throw new Error("会话归档服务不可用（当前 DSH 版本不支持）");
               },
+              unarchiveSession: (sessionId) => unarchiveSessionVia(ctx, sessionId),
+              /**
+               * 官方会话检索：按当前可见会话消息内容检索，Host 决定结果上限。
+               * 与官方 WorkspaceBrowser 同一入口（`sessions.search` + `searchResultLimit`）。
+               */
+              searchSessions: async (query, signal) => {
+                const result = await ctx.sessions.search(query, signal);
+                if (!result || result.ok !== true) throw new Error((result && result.error && result.error.message) || "会话检索失败");
+                return result.value;
+              },
+              searchResultLimit: ctx.sessions && typeof ctx.sessions.searchResultLimit === "number" ? ctx.sessions.searchResultLimit : 20,
+              /** 官方注册表内的工作区顺序调整（Host 持久 order）——拖拽排序用。 */
+              insertWorkspaceBefore: (workspaceId, beforeWorkspaceId) => {
+                if (ctx.workspaces && typeof ctx.workspaces.insertBefore === "function") {
+                  return ctx.workspaces.insertBefore(workspaceId, beforeWorkspaceId);
+                }
+                return Promise.reject(new Error("工作区排序服务不可用（当前 DSH 版本不支持）"));
+              },
               createWorkspace: (input) => {
                 if (ctx.workspaces && typeof ctx.workspaces.create === "function") {
                   return ctx.workspaces.create(input);
@@ -3003,8 +3632,15 @@ window.__ModuleLoader__.load({
         overflow: hidden;
       }
       .dswt-session .dswt-title {
+        scroll-behavior: smooth;
         flex: 1;
         margin: 0 6px 0 4px;
+      }
+      /* 悬停时去掉省略号：滚动露出的尾部才不会被省略号跟着挡住（官方同款）。 */
+      @media (hover: hover) {
+        .dswt-session:hover .dswt-title {
+          text-overflow: clip;
+        }
       }
       .dswt-time {
         color: var(--dsw-alias-label-tertiary);
@@ -3045,6 +3681,11 @@ window.__ModuleLoader__.load({
       .dswt-iconButton.dswt-danger:hover {
         color: var(--dsw-alias-state-error-primary);
       }
+      /* 破坏性确认按钮：结构交给官方 Button，只把文字与描边染成错误色。 */
+      .dswt-dangerBtn {
+        color: var(--dsw-alias-state-error-primary);
+        border-color: var(--dsw-alias-state-error-primary);
+      }
       .dswt-empty {
         color: var(--dsw-alias-label-tertiary);
         padding: 16px 12px;
@@ -3082,33 +3723,6 @@ window.__ModuleLoader__.load({
         font-size: 12px;
         line-height: 18px;
         white-space: pre-wrap;
-      }
-      .dswt-matrix {
-        flex: none;
-      }
-      .dswt-cell {
-        fill: var(--dsw-alias-state-success-primary);
-        opacity: 0;
-        animation: dswt-pulse 1s linear infinite;
-      }
-      @keyframes dswt-pulse {
-        0%, 15% { opacity: 0; }
-        40% { opacity: 1; }
-        85%, 100% { opacity: 0; }
-      }
-      .dswt-dot {
-        flex: none;
-        border-radius: 50%;
-        background: var(--dsw-alias-label-tertiary);
-        opacity: .45;
-      }
-      .dswt-dot[data-state="done-reminder"] {
-        background: var(--dsw-alias-state-success-primary);
-        opacity: 1;
-      }
-      .dswt-dot[data-state="warning"] {
-        background: var(--dsw-alias-state-warn-primary);
-        opacity: 1;
       }
       .dswt-config {
         padding: 4px 20px 28px;
@@ -3224,128 +3838,16 @@ window.__ModuleLoader__.load({
         font: var(--dsw-font-xxs-12);
         color: var(--dsw-alias-label-tertiary);
       }
-      .dswt-modalOverlay {
-        position: fixed;
-        inset: 0;
-        z-index: 9999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(0,0,0,.38);
-        backdrop-filter: blur(2px);
-        animation: dswt-modal-in .18s var(--ds-ease-in-out, ease);
-      }
-      .dswt-modalPanel {
-        background: var(--dsw-alias-bg-layer-1);
-        border: 1px solid var(--dsw-alias-border-l1);
-        border-radius: 14px;
-        min-width: 360px;
-        max-width: 420px;
-        width: calc(100% - 32px);
-        box-shadow: 0 16px 40px rgba(0,0,0,.18);
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      .dswt-modalTitle {
-        font-size: 14px;
-        line-height: 20px;
-        font-weight: 600;
-        color: var(--dsw-alias-label-primary);
-      }
-      .dswt-modalBody {
-        font-size: 13px;
-        line-height: 20px;
-        color: var(--dsw-alias-label-secondary);
-        white-space: pre-wrap;
-        word-break: break-all;
-      }
-      .dswt-modalActions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        margin-top: 4px;
-      }
-      .dswt-modalBtn {
-        box-sizing: border-box;
-        height: 32px;
-        min-width: 64px;
-        padding: 0 14px;
-        border-radius: 8px;
-        border: 1px solid var(--dsw-alias-border-l1);
-        background: var(--dsw-alias-bg-layer-2);
-        color: var(--dsw-alias-label-primary);
-        cursor: pointer;
-        font-size: 13px;
-        font-weight: 500;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        user-select: none;
-      }
-      .dswt-modalBtn:hover {
-        background: var(--dsw-alias-interactive-bg-hover);
-      }
-      .dswt-modalBtnDanger {
-        background: var(--dsw-alias-state-error-primary);
-        border-color: var(--dsw-alias-state-error-primary);
-        color: #fff;
-      }
-      .dswt-modalBtnDanger:hover {
-        filter: brightness(.94);
-      }
-      .dswt-modalBtn:disabled {
-        opacity: .55;
-        cursor: not-allowed;
-      }
-      .dswt-modalInput {
-        box-sizing: border-box;
-        width: 100%;
-        height: 36px;
-        padding: 0 12px;
-        background: var(--dsw-alias-bg-layer-2);
-        border: 1px solid var(--dsw-alias-border-l1);
-        border-radius: 8px;
-        color: var(--dsw-alias-label-primary);
-        font-size: 14px;
-        outline: none;
-      }
-      .dswt-modalInput:focus {
-        border-color: var(--dsw-alias-brand-primary);
-        background: var(--dsw-alias-bg-layer-1);
-      }
-      .dswt-modalInput:disabled {
-        opacity: .6;
-      }
-      .dswt-modalBtnPrimary {
-        background: var(--dsw-alias-button-primary-fill, #fff);
-        border-color: var(--dsw-alias-button-primary-fill, #fff);
-        color: var(--dsw-alias-label-primary-foreground, #0f1115);
-      }
-      .dswt-modalBtnPrimary:hover {
-        background: var(--dsw-alias-button-primary-hover, #e5e5e5);
-        border-color: var(--dsw-alias-button-primary-hover, #e5e5e5);
-      }
-      .dswt-modalBtnPrimary:disabled {
-        background: var(--dsw-alias-bg-layer-2);
-        border-color: var(--dsw-alias-border-l1);
-        color: var(--dsw-alias-label-tertiary);
-        filter: none;
-      }
-      .dswt-modalBtnPrimary:active {
-        filter: brightness(.9);
-      }
-      @keyframes dswt-modal-in {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-
       /* ══════════════ 目录选择弹窗（browse 面自持） ══════════════ */
       .dswt-pickerPanel {
         min-width: 480px;
         max-width: 560px;
         height: min(560px, calc(100vh - 96px));
+      }
+      .dswt-fieldInput {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
       }
       .dswt-pickerCrumbs {
         display: flex;
@@ -3398,7 +3900,7 @@ window.__ModuleLoader__.load({
         min-width: 0;
         height: 32px;
         font-size: 13px;
-        font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
       }
       .dswt-pickerList {
         flex: 1;
@@ -3455,10 +3957,6 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-state-error-primary);
         word-break: break-all;
       }
-      .dswt-pickerActions {
-        align-items: center;
-        flex-wrap: wrap;
-      }
       .dswt-pickerSpacer {
         flex: 1;
       }
@@ -3477,7 +3975,188 @@ window.__ModuleLoader__.load({
       }
       @media (prefers-reduced-motion: reduce) {
         .dswt-session { transition: none; animation: none; }
-        .dswt-cell { animation: none; opacity: 1; }
+        .dswt-session .dswt-title { scroll-behavior: auto; }
+      }
+
+      /* ══════════════ 视图选项菜单 / 搜索 / 拖拽 / Hover 卡 ══════════════ */
+      .dswt-searchBox {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-width: 0;
+        height: 28px;
+        padding: 0 4px;
+        border: 0.5px solid var(--dsw-alias-border-l4);
+        border-radius: 8px;
+        background: var(--dsw-alias-bg-layer-2);
+      }
+      .dswt-searchGlyph {
+        color: var(--dsw-alias-label-tertiary);
+        flex: none;
+      }
+      .dswt-searchInput {
+        flex: 1;
+        min-width: 0;
+        border: none;
+        background: transparent;
+        color: var(--dsw-alias-label-primary);
+        font-size: 13px;
+        line-height: 18px;
+      }
+      .dswt-searchNote {
+        padding: 8px 12px;
+        color: var(--dsw-alias-label-secondary);
+        font-size: 12px;
+        line-height: 18px;
+      }
+      .dswt-searchRow {
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: 100%;
+        min-height: 48px;
+        padding: 4px 8px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--dsw-alias-label-primary);
+        text-align: left;
+        cursor: pointer;
+      }
+      .dswt-searchRow:hover, .dswt-searchRow.dswt-selected {
+        background: var(--dsw-alias-interactive-bg-hover);
+      }
+      .dswt-searchHead {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .dswt-searchTitle {
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .dswt-searchMeta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        margin-left: 16px;
+      }
+      .dswt-searchWs {
+        flex: none;
+        max-width: 40%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--dsw-alias-label-tertiary);
+        font-size: 12px;
+        line-height: 17px;
+      }
+      .dswt-searchSnippet {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--dsw-alias-label-secondary);
+        font-size: 12px;
+        line-height: 17px;
+      }
+      .dswt-flatList {
+        display: flex;
+        flex-direction: column;
+      }
+      .dswt-flatList > * + * {
+        margin-top: 2px;
+      }
+      .dswt-moreBtn {
+        box-sizing: border-box;
+        width: 100%;
+        height: 28px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--dsw-alias-label-tertiary);
+        font-size: 12px;
+        line-height: 20px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .dswt-moreBtn:hover {
+        color: var(--dsw-alias-label-secondary);
+      }
+      .dswt-schedule {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 20px;
+        margin-right: 6px;
+        flex: none;
+        color: var(--dsw-alias-label-tertiary);
+      }
+      .dswt-dropBefore, .dswt-dropAfter {
+        position: relative;
+      }
+      .dswt-dropBefore:before, .dswt-dropAfter:after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 4px;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--dsw-alias-state-business-primary);
+        pointer-events: none;
+      }
+      .dswt-dropBefore:before {
+        top: -2px;
+      }
+      .dswt-dropAfter:after {
+        bottom: -2px;
+      }
+      /* Hover 卡的内容坐在官方卡片自持的深色面上（HoverCard 的卡片底色与主题无关），
+         因此文字色随官方 Rows 模块的同款字面值，不走主题别名。 */
+      .dswt-hoverContent {
+        --dswt-hover-fg: #FFFFFF;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .dswt-hoverTitle {
+        color: var(--dswt-hover-fg);
+        font-size: 14px;
+        line-height: 20px;
+        overflow-wrap: break-word;
+      }
+      .dswt-hoverPath {
+        color: var(--dswt-hover-fg);
+        opacity: .82;
+        font-size: 12px;
+        line-height: 16px;
+        word-break: break-all;
+      }
+      .dswt-hoverMeta {
+        color: var(--dswt-hover-fg);
+        opacity: .82;
+        font-size: 12px;
+        line-height: 16px;
+      }
+      .dswt-hoverStatus {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--dswt-hover-fg);
+        opacity: .66;
+        font-size: 12px;
+        line-height: 20px;
       }
 
       /* ══════════════ 归档只读底部栏 ══════════════ */

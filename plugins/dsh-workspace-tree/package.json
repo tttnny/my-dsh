@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-workspace-tree",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "DSH 工作区树：侧栏工作区浏览器——注册工作区按目录嵌套、无归属会话落「未分组」；安全归档区（归档有门槛、进区必可删、删除零守卫 fail-loud），附带重命名/移除/IDE 打开等管理。",
   "type": "module",
   "main": "./lib/index.js",
