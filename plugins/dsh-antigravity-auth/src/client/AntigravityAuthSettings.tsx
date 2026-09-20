@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
+import {
+  Button,
+  IconRefreshOutline14,
+  Input,
+  StateDot,
+  Switch,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { AntigravityAuthRpcClient } from '../rpc-contract.ts'
 import type { QuotaStatusView } from '../quota.ts'
@@ -277,12 +284,9 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, search
           <div className="agy-title-line">
             <h1 id="antigravity-auth-title" className="agy-bundle-title">{t('title')}</h1>
             {isConfigured ? (
-              <span
-                className="agy-status-dot"
-                data-state={masterEnabled ? 'ready' : 'paused'}
-                role="status"
-                aria-label={masterEnabled ? t('ready') : t('masterPaused')}
-              />
+              <span className="agy-status" role="status" aria-label={masterEnabled ? t('ready') : t('masterPaused')}>
+                <StateDot state={masterEnabled ? 'done' : 'idle'} size={8} />
+              </span>
             ) : null}
           </div>
           <p className="agy-bundle-intro">{t('intro')}</p>
@@ -330,61 +334,62 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, search
           <div className="agy-action-row">
             {status?.login.phase === 'pending' && typeof status.login.authorizationUrl === 'string' ? (
               <>
-                <a className="agy-btn agy-btn-primary" href={status.login.authorizationUrl} target="_blank" rel="noreferrer">
+                <a className="agy-auth-link" href={status.login.authorizationUrl} target="_blank" rel="noreferrer">
                   {t('openAuthorization')}
                 </a>
-                <button className="agy-btn agy-btn-outline" type="button" disabled={loginBusy} onClick={() => { void cancelLogin() }}>
+                <Button variant="outline" disabled={loginBusy} onClick={() => { void cancelLogin() }}>
                   {t('cancelLogin')}
-                </button>
+                </Button>
               </>
             ) : (
-              <button className="agy-btn agy-btn-primary" type="button" disabled={status === null || loginBusy} onClick={() => { void startLogin() }}>
+              <Button variant="primary" disabled={status === null || loginBusy} onClick={() => { void startLogin() }}>
                 {loginBusy ? t('startingLogin') : isConfigured ? t('relogin') : t('login')}
-              </button>
+              </Button>
             )}
 
             {status?.credential?.configured ? (
-              <button className="agy-btn agy-btn-outline" type="button" disabled={actionBusy} onClick={() => { void logout() }}>
+              <Button variant="outline" disabled={actionBusy} onClick={() => { void logout() }}>
                 {t('logout')}
-              </button>
+              </Button>
             ) : null}
 
-            <button
-              className="agy-btn agy-btn-ghost agy-refresh-btn"
-              type="button"
+            <Button
+              className="agy-refresh-btn"
+              variant="ghost"
               disabled={loadState === 'loading' || quotaBusy}
+              icon={
+                <span className={quotaBusy || loadState === 'loading' ? 'agy-spin-icon' : undefined}>
+                  <IconRefreshOutline14 />
+                </span>
+              }
               onClick={() => {
                 const minDelay = new Promise(resolve => setTimeout(resolve, 500))
                 void Promise.all([load(unmountSignal()), loadQuota(true, unmountSignal()), minDelay])
               }}
             >
-              <span className={quotaBusy || loadState === 'loading' ? 'agy-spin-icon' : ''}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-              </span>
               {quotaBusy || loadState === 'loading' ? t('queryingQuota') : t('refreshStatus')}
-            </button>
+            </Button>
           </div>
 
           {status?.login.phase === 'pending' ? (
             <div className="agy-manual-callback-block">
               <p className="agy-card-subtext">{t('manualCallbackHelp')}</p>
               <div className="agy-manual-callback-row">
-                <input
+                <Input
+                  className="agy-callback-input"
                   type="text"
-                  className="agy-input"
                   value={callbackUrlInput}
                   onChange={e => { setCallbackUrlInput(e.target.value); setCallbackError(null) }}
                   placeholder={t('manualCallbackPlaceholder')}
                   disabled={callbackSubmitting}
                 />
-                <button
-                  className="agy-btn agy-btn-primary"
-                  type="button"
+                <Button
+                  variant="primary"
                   disabled={callbackSubmitting || callbackUrlInput.trim().length === 0}
                   onClick={() => { void submitCallbackUrl() }}
                 >
                   {callbackSubmitting ? t('completingLogin') : t('completeLogin')}
-                </button>
+                </Button>
               </div>
               {callbackError ? <p className="agy-alert" role="alert">{callbackError}</p> : null}
             </div>
@@ -467,31 +472,6 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, search
 
 function capabilityAvailable(status: AntigravityStatusView | null, id: CapabilityRowId): boolean {
   return status?.login.projectAvailable === true && status.capabilities.some(capability => capability.id === id && capability.state === 'available')
-}
-
-function Switch({
-  label,
-  checked,
-  disabled,
-  onChange,
-}: {
-  readonly label: string
-  readonly checked: boolean
-  readonly disabled?: boolean
-  readonly onChange: (checked: boolean) => void
-}): ReactNode {
-  return (
-    <label className="agy-switch">
-      <input
-        type="checkbox"
-        aria-label={label}
-        checked={checked}
-        disabled={disabled}
-        onChange={e => { onChange(e.target.checked) }}
-      />
-      <span className="agy-switch-slider" />
-    </label>
-  )
 }
 
 function formatRefreshTime(resetTime: string, dayUnit: string, now = Date.now()): string {

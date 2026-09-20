@@ -46,6 +46,8 @@ window.__ModuleLoader__.load({
     const React = require("react");
     const h = React.createElement;
     const { useState, useEffect, useRef, useCallback, useMemo } = React;
+    // 设置页控件走内核基线原语：手绘按钮/开关/输入不再自持外观。
+    const { Button, Input, Switch } = require("@deepseek-ai/dsh-client-ui-primitives");
 
     /** Cordis 插件名（与 patch 行 id 一致）。 */
     const name = "dsh-workspace-tree";
@@ -54,7 +56,7 @@ window.__ModuleLoader__.load({
      * inject 声明会等该服务就绪才激活插件，而插件激活与 slot 注入的时刻都可能早于它注册；
      * 改为运行时探测（resolveUiWorkspace），到调用点再解析。
      */
-    const inject = ["slots", "sessions", "workspaces"];
+    const inject = ["slots", "locale", "sessions", "workspaces"];
 
     const LS_MODE = "dsh-workspace-tree.mode";
     const LS_DIRS = "dsh-workspace-tree.dirs";
@@ -2560,13 +2562,111 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 设置面板 ══════════════
-    function ConfigToggle({ checked, onChange, label, disabled }) {
-      return h("label", { className: "dswt-switch" }, [
-        h("input", { type: "checkbox", checked: !!checked, disabled: !!disabled, onChange: (e) => onChange(e.target.checked) }),
-        h("span", { className: "dswt-switchTrack" }),
-        h("span", { className: "dswt-switchText" }, label)
-      ]);
-    }
+    /** 设置页卡片文案的字典命名空间（locale 字典的唯一真源）。 */
+    const NS = "settings.workspaceTree";
+    /** 简体中文字典：key 集合的唯一真源。 */
+    const zh = {
+      title: "工作区树",
+      description: "文件系统双模式工作区浏览器：文件夹模式按目录浏览与新建（环境隔离），工作区模式管理会话。",
+      hostManaged: "配置由 Host 托管（~/.dsh/settings.yaml › {ns}），重启/换端口不丢失。",
+      hostManagedReadOnly: "配置由 Host 托管（~/.dsh/settings.yaml › {ns}），当前只读。",
+      hostUnavailable: "Host 设置服务不可用（旧版 DSH），配置暂存浏览器本地。",
+      enableRow: "启用插件",
+      enableRowHint: "关闭后回退官方工作区浏览器（注册级，刷新页面生效）",
+      enableSwitch: "启用",
+      indentRow: "层级缩进",
+      indentHint: "树中每一级的缩进宽度",
+      indentCompact: "紧凑（8px）",
+      indentStandard: "标准（16px）",
+      indentLoose: "宽松（24px）",
+      defaultModeRow: "默认模式",
+      defaultModeHint: "打开侧栏时优先显示的模式（手动切换后会记住）",
+      modeFolder: "文件夹模式",
+      modeWorkspace: "工作区模式",
+      defaultIdeRow: "默认 IDE",
+      defaultIdeHint: "点击工作区按钮栏「在 IDE 中打开」时调用的编辑器",
+      ideCustom: "自定义命令…",
+      customIdeTitle: "自定义 IDE 可执行文件路径 / 命令",
+      customIdeFormatTitle: "💡 填写格式说明：",
+      customIdeRule1: "• 仅输入可执行文件的绝对路径或命令名，系统会在点击打开时自动在末尾追加工作区路径。",
+      customIdeRule2: "• 勿加引号：带空格的路径直接复制输入即可，不要包裹双引号。",
+      customIdeRule3: "• 勿加参数与点：不要在末尾加 . 或其他路径参数。",
+      customIdeExampleMac: "示例（macOS App 内部 CLI）：{path}",
+      customIdeExamplePath: "示例（系统 PATH 中的命令）：{commands}",
+      aggRow: "状态向上透传",
+      aggRowHint: "目录/组头显示子树内会话的聚合状态点（运行/等待/完成）",
+      aggSwitch: "显示",
+      countRow: "会话计数角标",
+      countRowHint: "文件夹模式工作区节点旁的会话数",
+      countSwitch: "显示",
+      diagRow: "诊断信息",
+      diagRowHint: "排查侧栏显示问题时，把本机工作区/会话状态复制发给开发者（仅元数据，无消息正文）",
+      diagCopy: "复制诊断信息",
+      diagCollecting: "采集中…",
+      diagCopied: "已复制（共 {n} 字符），请粘贴给开发者",
+      diagCopyFailed: "剪贴板写入失败，完整诊断已输出到控制台（F12 查看），请手动复制",
+      diagCollectError: "采集失败：{message}",
+      tombRow: "删除墓碑",
+      tombRowHint: "「永久删除」的本地隐藏记录（localStorage）。树已会向 Host 校验物理存在自动作废误写墓碑；若仍疑似被误隐藏，可在此一键清空（不影响真实已删除的会话）",
+      tombClear: "清空墓碑",
+      tombCleared: "已清空 {n} 条墓碑",
+      tombAlreadyEmpty: "墓碑本来就是空的",
+      tombClearError: "清空失败：{message}",
+      resetDefault: "恢复默认",
+      applyHint: "修改即时生效（启用开关除外）"
+    };
+    /** 英文字典：与 zh 同 key 集合。 */
+    const en = {
+      title: "Workspace tree",
+      description: "Dual-mode filesystem workspace browser: folder mode browses directories and creates sessions in them (environment-isolated); workspace mode manages sessions.",
+      hostManaged: "Configuration is hosted by the Host (~/.dsh/settings.yaml › {ns}); it survives restarts and port changes.",
+      hostManagedReadOnly: "Configuration is hosted by the Host (~/.dsh/settings.yaml › {ns}); currently read-only.",
+      hostUnavailable: "The Host settings service is unavailable (older DSH); configuration is kept in this browser.",
+      enableRow: "Enable plugin",
+      enableRowHint: "When off, the official workspace browser returns (registration-level; takes effect after a page refresh)",
+      enableSwitch: "Enable",
+      indentRow: "Tree indentation",
+      indentHint: "Indent width for each level in the tree",
+      indentCompact: "Compact (8px)",
+      indentStandard: "Standard (16px)",
+      indentLoose: "Loose (24px)",
+      defaultModeRow: "Default mode",
+      defaultModeHint: "Mode shown first when the sidebar opens (a manual switch is remembered)",
+      modeFolder: "Folder mode",
+      modeWorkspace: "Workspace mode",
+      defaultIdeRow: "Default IDE",
+      defaultIdeHint: "Editor invoked by “Open in IDE” in the workspace action bar",
+      ideCustom: "Custom command…",
+      customIdeTitle: "Custom IDE executable path / command",
+      customIdeFormatTitle: "💡 Format notes:",
+      customIdeRule1: "• Enter only the executable's absolute path or command name; the workspace path is appended automatically when you click open.",
+      customIdeRule2: "• No quotes: paste a path with spaces as-is, without wrapping it in double quotes.",
+      customIdeRule3: "• No arguments or trailing dot: do not append . or other path arguments.",
+      customIdeExampleMac: "Example (CLI inside a macOS app): {path}",
+      customIdeExamplePath: "Example (command on PATH): {commands}",
+      aggRow: "Propagate status upward",
+      aggRowHint: "Show an aggregated session state dot (running / waiting / done) on directory and group headers",
+      aggSwitch: "Show",
+      countRow: "Session count badge",
+      countRowHint: "Session count beside workspace nodes in folder mode",
+      countSwitch: "Show",
+      diagRow: "Diagnostics",
+      diagRowHint: "Copy this machine's workspace/session state for a developer when the sidebar misbehaves (metadata only, no message bodies)",
+      diagCopy: "Copy diagnostics",
+      diagCollecting: "Collecting…",
+      diagCopied: "Copied ({n} characters); paste it to the developer",
+      diagCopyFailed: "Clipboard write failed; the full diagnostics were logged to the console (open F12) — copy them manually",
+      diagCollectError: "Collection failed: {message}",
+      tombRow: "Deletion tombstones",
+      tombRowHint: "Local hidden records of “permanently deleted” sessions (localStorage). The tree already verifies physical existence with the Host and voids mistaken tombstones; if a session still looks wrongly hidden, clear them here (real deleted sessions are unaffected)",
+      tombClear: "Clear tombstones",
+      tombCleared: "Cleared {n} tombstone(s)",
+      tombAlreadyEmpty: "There were no tombstones",
+      tombClearError: "Clear failed: {message}",
+      resetDefault: "Restore defaults",
+      applyHint: "Changes apply immediately (except the enable switch)"
+    };
+
     function ConfigRow({ label, hint, children }) {
       return h("div", { className: "dswt-configRow" }, [
         h("div", { className: "dswt-configCol" }, [
@@ -2576,21 +2676,7 @@ window.__ModuleLoader__.load({
         h("div", { className: "dswt-configControl" }, children)
       ]);
     }
-    const IDE_OPTIONS = [
-      ["vscode", "VS Code (code)"],
-      ["codebuddy", "CodeBuddy CN (腾讯 CodeBuddy)"],
-      ["cursor", "Cursor (cursor)"],
-      ["windsurf", "Windsurf (windsurf)"],
-      ["trae", "Trae (trae)"],
-      ["webstorm", "WebStorm (webstorm)"],
-      ["idea", "IntelliJ IDEA (idea)"],
-      ["pycharm", "PyCharm (pycharm)"],
-      ["zed", "Zed (zed)"],
-      ["sublime", "Sublime Text (subl)"],
-      ["custom", "自定义命令…"]
-    ];
-
-    function ConfigPanel() {
+    function ConfigPanel({ t }) {
       const [lsCfg, setLsCfg] = useState(getConfig);
       const [, forceScope] = useState(0);
       const [diagMsg, setDiagMsg] = useState("");
@@ -2625,16 +2711,16 @@ window.__ModuleLoader__.load({
         if (copyLockRef.current) return;
         copyLockRef.current = true;
         try {
-          setDiagMsg("采集中…");
+          setDiagMsg(t("diagCollecting"));
           const diag = collectDiagnostics();
           const text = JSON.stringify(diag);
           const ok = await copyTextToClipboard(text);
           try { console.log("[workspace-tree] diagnostics:", diag); } catch { /* ignore */ }
           setDiagMsg(ok
-            ? "已复制（共 " + text.length + " 字符），请粘贴给开发者"
-            : "剪贴板写入失败，完整诊断已输出到控制台（F12 查看），请手动复制");
+            ? t("diagCopied", { n: text.length })
+            : t("diagCopyFailed"));
         } catch (e) {
-          setDiagMsg("采集失败：" + String((e && e.message) || e));
+          setDiagMsg(t("diagCollectError", { message: String((e && e.message) || e) }));
         } finally {
           copyLockRef.current = false;
         }
@@ -2645,11 +2731,24 @@ window.__ModuleLoader__.load({
           const n = loadSet(LS_DELETED).size;
           saveSet(LS_DELETED, new Set());
           window.dispatchEvent(new CustomEvent("dswt-tombstones-cleared"));
-          setTombMsg(n > 0 ? "已清空 " + n + " 条墓碑" : "墓碑本来就是空的");
+          setTombMsg(n > 0 ? t("tombCleared", { n }) : t("tombAlreadyEmpty"));
         } catch (e) {
-          setTombMsg("清空失败：" + String((e && e.message) || e));
+          setTombMsg(t("tombClearError", { message: String((e && e.message) || e) }));
         }
       };
+      const ideOptions = [
+        ["vscode", "VS Code (code)"],
+        ["codebuddy", "CodeBuddy CN (腾讯 CodeBuddy)"],
+        ["cursor", "Cursor (cursor)"],
+        ["windsurf", "Windsurf (windsurf)"],
+        ["trae", "Trae (trae)"],
+        ["webstorm", "WebStorm (webstorm)"],
+        ["idea", "IntelliJ IDEA (idea)"],
+        ["pycharm", "PyCharm (pycharm)"],
+        ["zed", "Zed (zed)"],
+        ["sublime", "Sublime Text (subl)"],
+        ["custom", t("ideCustom")]
+      ];
       const select = (value, options, onPick) => h("select", {
         className: "dswt-configSelect",
         value,
@@ -2658,93 +2757,56 @@ window.__ModuleLoader__.load({
       }, options.map(([v, l]) => h("option", { key: v, value: v }, l)));
       return h("div", { className: "dswt-config" }, [
         h("div", { className: "dswt-configCard" }, [
-          h("div", { className: "dswt-configTitle" }, "工作区树"),
-          h("div", { className: "dswt-configDesc" }, "文件系统双模式工作区浏览器：文件夹模式按目录浏览与新建（环境隔离），工作区模式管理会话。"),
-          h("div", {
-            className: "dswt-configDesc",
-            style: { marginTop: "4px", color: "var(--dsw-alias-label-tertiary)", fontSize: "12px" }
-          }, useHost
-            ? (readOnly ? "配置由 Host 托管（~/.dsh/settings.yaml › " + SETTINGS_NS + "），当前只读。" : "配置由 Host 托管（~/.dsh/settings.yaml › " + SETTINGS_NS + "），重启/换端口不丢失。")
-            : "Host 设置服务不可用（旧版 DSH），配置暂存浏览器本地。"),
-          h(ConfigRow, { label: "启用插件", hint: "关闭后回退官方工作区浏览器（注册级，刷新页面生效）" },
-            h(ConfigToggle, { checked: cfg.enabled, disabled: readOnly, onChange: (v) => upd({ enabled: v }), label: "启用" })),
-          h(ConfigRow, { label: "层级缩进", hint: "树中每一级的缩进宽度" },
-            select(cfg.indent, [[8, "紧凑（8px）"], [16, "标准（16px）"], [24, "宽松（24px）"]], (v) => upd({ indent: Number(v) }))),
-          h(ConfigRow, { label: "默认模式", hint: "打开侧栏时优先显示的模式（手动切换后会记住）" },
-            select(cfg.defaultMode, [["folder", "文件夹模式"], ["workspace", "工作区模式"]], (v) => upd({ defaultMode: v }))),
-          h(ConfigRow, { label: "默认 IDE", hint: "点击工作区按钮栏「在 IDE 中打开」时调用的编辑器" },
-            select(cfg.defaultIde || "vscode", IDE_OPTIONS, (v) => upd({ defaultIde: v }))),
-          cfg.defaultIde === "custom" && h("div", {
-            className: "dswt-customIdeBox",
-            style: {
-              background: "var(--dsw-alias-bg-layer-2)",
-              border: "1px solid var(--dsw-alias-border-l1)",
-              borderRadius: "10px",
-              padding: "12px 14px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px"
-            }
-          }, [
-            h("div", {
-              style: {
-                fontSize: "13px",
-                fontWeight: 600,
-                color: "var(--dsw-alias-label-primary)"
-              }
-            }, "自定义 IDE 可执行文件路径 / 命令"),
-            h("input", {
+          h("div", { className: "dswt-configTitle" }, t("title")),
+          h("div", { className: "dswt-configDesc" }, t("description")),
+          h("div", { className: "dswt-configDesc dswt-configHost" }, useHost
+            ? (readOnly ? t("hostManagedReadOnly", { ns: SETTINGS_NS }) : t("hostManaged", { ns: SETTINGS_NS }))
+            : t("hostUnavailable")),
+          h(ConfigRow, { label: t("enableRow"), hint: t("enableRowHint") },
+            h(Switch, { checked: cfg.enabled, disabled: readOnly, onChange: (v) => upd({ enabled: v }), label: t("enableSwitch") })),
+          h(ConfigRow, { label: t("indentRow"), hint: t("indentHint") },
+            select(cfg.indent, [[8, t("indentCompact")], [16, t("indentStandard")], [24, t("indentLoose")]], (v) => upd({ indent: Number(v) }))),
+          h(ConfigRow, { label: t("defaultModeRow"), hint: t("defaultModeHint") },
+            select(cfg.defaultMode, [["folder", t("modeFolder")], ["workspace", t("modeWorkspace")]], (v) => upd({ defaultMode: v }))),
+          h(ConfigRow, { label: t("defaultIdeRow"), hint: t("defaultIdeHint") },
+            select(cfg.defaultIde || "vscode", ideOptions, (v) => upd({ defaultIde: v }))),
+          cfg.defaultIde === "custom" && h("div", { className: "dswt-configIdeBox" }, [
+            h("div", { className: "dswt-configIdeTitle" }, t("customIdeTitle")),
+            h(Input, {
               type: "text",
-              className: "dswt-inline",
-              style: {
-                width: "100%",
-                maxWidth: "100%",
-                margin: "0",
-                boxSizing: "border-box",
-                fontFamily: "var(--ds-font-family-code, monospace)",
-                fontSize: "12px",
-                padding: "6px 8px"
-              },
+              className: "dswt-configIdeInput",
+              style: { fontFamily: "var(--ds-font-family-code)" },
               placeholder: "例如: /Applications/CodeBuddy CN.app/Contents/Resources/app/bin/code",
               value: cfg.customIdeCommand || "",
               disabled: readOnly,
               onChange: (e) => upd({ customIdeCommand: e.target.value })
             }),
-            h("div", {
-              style: {
-                fontSize: "12px",
-                lineHeight: "18px",
-                color: "var(--dsw-alias-label-secondary)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "3px"
-              }
-            }, [
-              h("div", { style: { fontWeight: 500, color: "var(--dsw-alias-label-primary)" } }, "💡 填写格式说明："),
-              h("div", { style: { color: "var(--dsw-alias-label-secondary)" } }, "• 仅输入可执行文件的绝对路径或命令名，系统会在点击打开时自动在末尾追加工作区路径。"),
-              h("div", { style: { color: "var(--dsw-alias-label-secondary)" } }, "• 勿加引号：带空格的路径直接复制输入即可，不要包裹双引号。"),
-              h("div", { style: { color: "var(--dsw-alias-label-secondary)" } }, "• 勿加参数与点：不要在末尾加 . 或其他路径参数。"),
-              h("div", { style: { color: "var(--dsw-alias-label-tertiary)", marginTop: "2px" } }, "示例（macOS App 内部 CLI）：/Applications/CodeBuddy CN.app/Contents/Resources/app/bin/code"),
-              h("div", { style: { color: "var(--dsw-alias-label-tertiary)" } }, "示例（系统 PATH 中的命令）：code-insiders 或 buddycn 或 nvim")
+            h("div", { className: "dswt-configIdeNote" }, [
+              h("div", { className: "dswt-configIdeNoteTitle" }, t("customIdeFormatTitle")),
+              h("div", {}, t("customIdeRule1")),
+              h("div", {}, t("customIdeRule2")),
+              h("div", {}, t("customIdeRule3")),
+              h("div", { className: "dswt-configIdeExample" }, t("customIdeExampleMac", { path: "/Applications/CodeBuddy CN.app/Contents/Resources/app/bin/code" })),
+              h("div", { className: "dswt-configIdeExample" }, t("customIdeExamplePath", { commands: "code-insiders / buddycn / nvim" }))
             ])
           ]),
-          h(ConfigRow, { label: "状态向上透传", hint: "目录/组头显示子树内会话的聚合状态点（运行/等待/完成）" },
-            h(ConfigToggle, { checked: cfg.showAgg, disabled: readOnly, onChange: (v) => upd({ showAgg: v }), label: "显示" })),
-          h(ConfigRow, { label: "会话计数角标", hint: "文件夹模式工作区节点旁的会话数" },
-            h(ConfigToggle, { checked: cfg.showCount, disabled: readOnly, onChange: (v) => upd({ showCount: v }), label: "显示" })),
-          h(ConfigRow, { label: "诊断信息", hint: "排查侧栏显示问题时，把本机工作区/会话状态复制发给开发者（仅元数据，无消息正文）" },
-            h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [
-              h("button", { type: "button", className: "dswt-configBtn", onClick: onCopyDiag }, "复制诊断信息"),
+          h(ConfigRow, { label: t("aggRow"), hint: t("aggRowHint") },
+            h(Switch, { checked: cfg.showAgg, disabled: readOnly, onChange: (v) => upd({ showAgg: v }), label: t("aggSwitch") })),
+          h(ConfigRow, { label: t("countRow"), hint: t("countRowHint") },
+            h(Switch, { checked: cfg.showCount, disabled: readOnly, onChange: (v) => upd({ showCount: v }), label: t("countSwitch") })),
+          h(ConfigRow, { label: t("diagRow"), hint: t("diagRowHint") },
+            h("div", { className: "dswt-configInline" }, [
+              h(Button, { variant: "outline", size: "sm", onClick: onCopyDiag }, t("diagCopy")),
               diagMsg && h("span", { className: "dswt-configSaved" }, diagMsg)
             ])),
-          h(ConfigRow, { label: "删除墓碑", hint: "「永久删除」的本地隐藏记录（localStorage）。树已会向 Host 校验物理存在自动作废误写墓碑；若仍疑似被误隐藏，可在此一键清空（不影响真实已删除的会话）" },
-            h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [
-              h("button", { type: "button", className: "dswt-configBtn", onClick: onClearTombstones }, "清空墓碑"),
+          h(ConfigRow, { label: t("tombRow"), hint: t("tombRowHint") },
+            h("div", { className: "dswt-configInline" }, [
+              h(Button, { variant: "outline", size: "sm", onClick: onClearTombstones }, t("tombClear")),
               tombMsg && h("span", { className: "dswt-configSaved" }, tombMsg)
             ])),
           h("div", { className: "dswt-configActions" }, [
-            h("button", { type: "button", className: "dswt-configBtn", disabled: readOnly, onClick: () => { if (!readOnly) resetEffectiveConfig(); } }, "恢复默认"),
-            h("span", { className: "dswt-configSaved" }, "修改即时生效（启用开关除外）")
+            h(Button, { variant: "outline", size: "sm", disabled: readOnly, onClick: () => { if (!readOnly) resetEffectiveConfig(); } }, t("resetDefault")),
+            h("span", { className: "dswt-configSaved" }, t("applyHint"))
           ])
         ])
       ]);
@@ -2814,6 +2876,9 @@ window.__ModuleLoader__.load({
 
     // ══════════════ 注册 ══════════════
     function apply(ctx) {
+      // 设置页文案字典：注册早于设置页 tab 注册，且早于 enabled 早退，保证禁用态下 tab 仍能取到文案。
+      ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-workspace-tree: dictionaries");
+      const t = ctx.locale.bind(NS);
       // 记住 ctx 供配置读写运行时探测 settingsScope（不声明硬依赖，旧版 DSH 回退 LS）。
       settingsScopeCtx = ctx;
       ctx.effect(() => () => { settingsScopeCtx = null; releaseSettingsScope(); }, "dsh-workspace-tree: scope ctx");
@@ -2828,7 +2893,8 @@ window.__ModuleLoader__.load({
         name: "settings.plugins.tab",
         id: "dsh-workspace-tree-config",
         order: 90,
-        label: "工作区树"
+        label: () => t("title"),
+        locale: NS
       }, ConfigPanel));
 
       /**
@@ -3548,7 +3614,7 @@ window.__ModuleLoader__.load({
       }
       .dswt-configCard {
         background: var(--dsw-alias-bg-layer-1);
-        border: 1px solid var(--dsw-alias-border-l1);
+        border: 0.5px solid var(--dsw-alias-border-l1);
         border-radius: 14px;
         padding: 16px;
         display: flex;
@@ -3556,17 +3622,18 @@ window.__ModuleLoader__.load({
         gap: 14px;
       }
       .dswt-configTitle {
-        font-size: 15px;
-        line-height: 22px;
-        font-weight: 600;
+        font: var(--dsw-font-s-strong-14);
         color: var(--dsw-alias-label-primary);
         margin: 0;
       }
       .dswt-configDesc {
-        font-size: 13px;
-        line-height: 20px;
+        font: var(--dsw-font-xs-13);
         color: var(--dsw-alias-label-secondary);
         margin: 0;
+      }
+      .dswt-configHost {
+        margin-top: 4px;
+        color: var(--dsw-alias-label-tertiary);
       }
       .dswt-configRow {
         display: flex;
@@ -3580,13 +3647,11 @@ window.__ModuleLoader__.load({
         min-width: 0;
       }
       .dswt-configLabel {
-        font-size: 13px;
-        line-height: 20px;
+        font: var(--dsw-font-xs-13);
         color: var(--dsw-alias-label-primary);
       }
       .dswt-configHint {
-        font-size: 12px;
-        line-height: 17px;
+        font: var(--dsw-font-xxs-12);
         color: var(--dsw-alias-label-tertiary);
         margin-top: 2px;
       }
@@ -3599,60 +3664,50 @@ window.__ModuleLoader__.load({
         padding: 0 10px;
         background: var(--dsw-alias-bg-layer-2);
         color: var(--dsw-alias-label-primary);
-        border: 1px solid var(--dsw-alias-border-l1);
+        border: 0.5px solid var(--dsw-alias-border-l1);
         border-radius: 8px;
-        font-family: inherit;
-        font-size: 13px;
+        font: var(--dsw-font-xs-13);
         outline: none;
       }
-      .dswt-configSelect:focus {
-        border-color: var(--dsw-alias-brand-primary);
+      .dswt-configSelect:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
       }
-      .dswt-switch {
-        display: inline-flex;
+      .dswt-configInline {
+        display: flex;
         align-items: center;
         gap: 8px;
-        cursor: pointer;
-        user-select: none;
       }
-      .dswt-switch input {
-        position: absolute;
-        opacity: 0;
-        width: 0;
-        height: 0;
-      }
-      .dswt-switchTrack {
-        width: 36px;
-        height: 20px;
-        border-radius: 10px;
+      .dswt-configIdeBox {
         background: var(--dsw-alias-bg-layer-2);
-        border: 1px solid var(--dsw-alias-border-l2);
-        position: relative;
-        transition: background-color .15s var(--ds-ease-in-out, ease), border-color .15s var(--ds-ease-in-out, ease);
-        flex: none;
+        border: 0.5px solid var(--dsw-alias-border-l1);
+        border-radius: 10px;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
-      .dswt-switchTrack::after {
-        content: "";
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        background: var(--dsw-alias-label-tertiary);
-        transition: transform .15s var(--ds-ease-in-out, ease), background-color .15s var(--ds-ease-in-out, ease);
-      }
-      .dswt-switch input:checked + .dswt-switchTrack {
-        background: var(--dsw-alias-brand-primary);
-        border-color: var(--dsw-alias-brand-primary);
-      }
-      .dswt-switch input:checked + .dswt-switchTrack::after {
-        transform: translateX(16px);
-        background: #fff;
-      }
-      .dswt-switchText {
-        font-size: 13px;
+      .dswt-configIdeTitle {
+        font: var(--dsw-font-xs-strong-13);
         color: var(--dsw-alias-label-primary);
+      }
+      .dswt-configIdeInput {
+        box-sizing: border-box;
+        width: 100%;
+      }
+      .dswt-configIdeNote {
+        font: var(--dsw-font-xxs-12);
+        color: var(--dsw-alias-label-secondary);
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .dswt-configIdeNoteTitle {
+        color: var(--dsw-alias-label-primary);
+        font-weight: 500;
+      }
+      .dswt-configIdeExample {
+        color: var(--dsw-alias-label-tertiary);
       }
       .dswt-configActions {
         display: flex;
@@ -3660,22 +3715,8 @@ window.__ModuleLoader__.load({
         gap: 12px;
         margin-top: 2px;
       }
-      .dswt-configBtn {
-        box-sizing: border-box;
-        height: 32px;
-        padding: 0 14px;
-        cursor: pointer;
-        background: var(--dsw-alias-bg-layer-2);
-        color: var(--dsw-alias-label-primary);
-        border: 1px solid var(--dsw-alias-border-l1);
-        border-radius: 8px;
-        font-size: 13px;
-      }
-      .dswt-configBtn:hover {
-        background: var(--dsw-alias-interactive-bg-hover);
-      }
       .dswt-configSaved {
-        font-size: 12px;
+        font: var(--dsw-font-xxs-12);
         color: var(--dsw-alias-label-tertiary);
       }
       .dswt-modalOverlay {

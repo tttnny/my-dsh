@@ -64,7 +64,7 @@ globalThis.Node = class Node {}
 globalThis.Event = class Event {}
 globalThis.CustomEvent = class CustomEvent {}
 
-// --- Module table: the bundle externalises react only ---
+// --- Module table: the bundle externalises react and the primitives baseline ---
 
 const tolerant = new Proxy({}, {
   get: (_t, key) => (key === 'then' || typeof key === 'symbol' ? undefined : () => tolerant),
@@ -75,6 +75,7 @@ globalThis.window.__ModuleLoader__ = {
   load: ({ id, factory }) => {
     exported = factory((spec) => {
       if (spec === 'react' || spec === 'react/jsx-runtime' || spec === 'react-dom') return tolerant
+      if (spec === '@deepseek-ai/dsh-client-ui-primitives') return tolerant
       throw new Error(`module table miss: ${spec}`)
     })
     exported.__loadedId = id

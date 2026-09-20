@@ -401,6 +401,14 @@ const makeServices = (registrations, uiWorkspace, calls, state) => ({
     rename: async () => {},
     archiveSession: async (sessionId) => { calls.archived.push(String(sessionId)); },
   },
+  // The settings card registers its own dictionary and reads its tab label
+  // through `t`; the bundle hard-injects `locale` for that seat.
+  locale: {
+    register: (ns) => { calls.injects.push(`locale:${ns}`); return () => {} },
+    bind: (ns) => (key) => `${ns}:${key}`,
+    getSnapshot: () => ({ revision: 0 }),
+    subscribe: () => () => {},
+  },
   uiWorkspace,
 })
 
@@ -432,6 +440,9 @@ let harnessSeq = 0
 
 /** Boot one fresh module instance of the browser half against a fake host.
  *  `hostFacts.native` = this host can serve the macOS Finder chooser (`/picker/native` → supported). */
+/** Inert stand-in for the ui-primitives baseline module the settings card imports. */
+const primitivesStub = new Proxy({}, { get: (_t, key) => (key === '__esModule' ? true : () => null) })
+
 async function boot(makeOverrides = {}, ledgerOption, hostFacts = {}) {
   const registrations = []
   const calls = { injects: [], errors: [], workspaceCreate: [], sessionCreate: [], sessionUsing: [], sessionRename: [], listDirectory: [], createDirectory: [], pickDirectory: 0, archived: [], guardChecks: [], renderSlot: [], navOpen: [], navClear: 0 }
@@ -444,6 +455,7 @@ async function boot(makeOverrides = {}, ledgerOption, hostFacts = {}) {
       moduleIds.push(id)
       globalThis.__smokeExports = factory((spec) => {
         if (spec === 'react') return React
+        if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitivesStub
         throw new Error(`module table miss: ${spec}`)
       })
     },

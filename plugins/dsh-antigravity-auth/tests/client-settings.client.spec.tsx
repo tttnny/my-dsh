@@ -265,12 +265,12 @@ describe('Antigravity bootstrap settings', () => {
     expect(screen.getAllByText(en.masterDisabledHint)).toHaveLength(3)
 
     // The switch itself stays operable; the capability cards keep their values but pause.
-    const masterSwitch = screen.getByRole('checkbox', { name: en.toggleMaster })
-    expect(masterSwitch).toHaveProperty('checked', false)
+    const masterSwitch = screen.getByRole('switch', { name: en.toggleMaster })
+    expect(masterSwitch.getAttribute('aria-checked')).toBe('false')
     expect(masterSwitch).toHaveProperty('disabled', false)
-    expect(screen.getByRole('checkbox', { name: en.toggleSearch })).toHaveProperty('checked', true)
+    expect(screen.getByRole('switch', { name: en.toggleSearch }).getAttribute('aria-checked')).toBe('true')
     for (const key of ['toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
-      expect(screen.getByRole('checkbox', { name: en[key] })).toHaveProperty('disabled', true)
+      expect(screen.getByRole('switch', { name: en[key] })).toHaveProperty('disabled', true)
     }
 
     // A logged-in account still reads paused rather than ready.
@@ -285,7 +285,7 @@ describe('Antigravity bootstrap settings', () => {
     master.push({ enabled: true })
     await waitFor(() => expect(screen.getByRole('status', { name: en.ready })).toBeTruthy())
     for (const key of ['toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
-      expect(screen.getByRole('checkbox', { name: en[key] })).toHaveProperty('disabled', false)
+      expect(screen.getByRole('switch', { name: en[key] })).toHaveProperty('disabled', false)
     }
     expect(screen.queryByText(en.quotaPausedHint)).toBeNull()
     // The per-capability choices survived the pause.
@@ -378,7 +378,7 @@ describe('Antigravity bootstrap settings', () => {
       expect(screen.getByText(en[key])).toBeTruthy()
     }
     for (const key of ['toggleMaster', 'toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
-      expect(screen.getByRole('checkbox', { name: en[key] })).toBeTruthy()
+      expect(screen.getByRole('switch', { name: en[key] })).toBeTruthy()
     }
     expect(container.textContent).not.toMatch(/\p{Script=Han}/u)
 
@@ -392,7 +392,7 @@ describe('Antigravity bootstrap settings', () => {
       expect(screen.getByText(zh[key])).toBeTruthy()
     }
     for (const key of ['toggleMaster', 'toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
-      expect(screen.getByRole('checkbox', { name: zh[key] })).toBeTruthy()
+      expect(screen.getByRole('switch', { name: zh[key] })).toBeTruthy()
     }
   })
 

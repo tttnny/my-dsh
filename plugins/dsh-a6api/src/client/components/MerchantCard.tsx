@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Button, Tag, type TagTone } from '@deepseek-ai/dsh-client-ui-primitives';
+import { dictionaryT, type A6apiT } from '../locales.js';
 import { store } from '../store.js';
 import type { ModelCardData } from '../../types.js';
 
@@ -20,9 +22,24 @@ const fmtSig = (n: number) => {
   return String(s);
 };
 
+/** 上游商户标签（中文为 A6API 市场侧的稳定标识）→ 官方 Tag 语气。 */
+const tagToneOf = (label: string): TagTone => {
+  if (label.includes('保真')) return 'success';
+  if (label.includes('稳定')) return 'success';
+  if (label.includes('低价')) return 'info';
+  if (label.includes('高速')) return 'warning';
+  if (label.includes('高质')) return 'neutral';
+  return 'outline';
+};
+
+/**
+ * 商户卡片：设置页「可用模型」列表与输入框下方浮层共用。
+ * 浮层侧注册未带 locale，故 `t` 缺省回落到本插件字典。
+ */
 export const MerchantCard: React.FC<{
   model: ModelCardData;
-}> = ({ model }) => {
+  t?: A6apiT;
+}> = ({ model, t = dictionaryT }) => {
   // 进入后默认不展开
   const [expanded, setExpanded] = useState(false);
   const [pinConfirmOpen, setPinConfirmOpen] = useState(false);
@@ -67,9 +84,9 @@ export const MerchantCard: React.FC<{
   const isPinMismatch = hasPin && model.pinTokenMatched === false;
   const isPinUnknown = hasPin && model.pinTokenMatched === undefined;
   const pinTokenNote = isPinMismatch
-    ? '；该固定属于其他令牌，仅供参考'
+    ? t('pinTokenOther')
     : isPinUnknown
-      ? '；未能确认是否属于当前令牌，仅供参考'
+      ? t('pinTokenUnknown')
       : '';
   const isChannelDisabled = Boolean(merchant?.user_channel_disabled);
 
@@ -100,7 +117,7 @@ export const MerchantCard: React.FC<{
     setActionError(null);
     const r = await store.pinModel(model.model_name);
     if (!r.ok) {
-      flashActionError(r.error || '固定失败');
+      flashActionError(r.error || t('errPin'));
     } else {
       setPinConfirmOpen(false);
     }
@@ -112,21 +129,21 @@ export const MerchantCard: React.FC<{
     // 上游取消固定需要渠道 ID：优先固定记录自身渠道，其次卡片商家渠道
     const channelId = Number(model.pinnedChannelId || model.merchant?.channel_id || 0) || undefined;
     const r = await store.unpinModel(model.model_name, channelId);
-    if (!r.ok) flashActionError(r.error || '取消固定失败');
+    if (!r.ok) flashActionError(r.error || t('errUnpin'));
   };
 
   const handleDisable = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setActionError(null);
     const r = await store.disableModel(model.model_name);
-    if (!r.ok) flashActionError(r.error || '禁用失败');
+    if (!r.ok) flashActionError(r.error || t('errDisable'));
   };
 
   const handleRestore = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setActionError(null);
     const r = await store.restoreModel(model.model_name);
-    if (!r.ok) flashActionError(r.error || '恢复失败');
+    if (!r.ok) flashActionError(r.error || t('errRestore'));
   };
 
   // Success Rate Dot Generators
@@ -183,16 +200,6 @@ export const MerchantCard: React.FC<{
     ));
   };
 
-  // Smart tag styling
-  const getTagClass = (tag: string) => {
-    if (tag.includes('保真')) return 'tag-guarantee';
-    if (tag.includes('稳定')) return 'tag-stable';
-    if (tag.includes('低价')) return 'tag-cheap';
-    if (tag.includes('高速')) return 'tag-fast';
-    if (tag.includes('高质')) return 'tag-quality';
-    return '';
-  };
-
   // Realtime ratio pill
   const ratioText = merchant?.realtime_ratio_formatted || '0.0341';
 
@@ -214,14 +221,24 @@ export const MerchantCard: React.FC<{
         const hSharePct = Math.round(h * inShare * 10) / 10;
         const mSharePct = Math.round((1 - h) * inShare * 10) / 10;
         const per1m = blend100m! / 100;
-        return (
-          '混合价估算（¥ / 1亿 tokens，输出占比固定 0.35%）\n' +
-          `命中 ${hSharePct}% × 缓存读价 + 未命中 ${mSharePct}% × 输入价 + 输出 0.35% × 输出价\n` +
-          `= ¥${Number(per1m.toPrecision(4))} /1M ≈ ¥${fmtSig(blend100m!)} /1亿 tokens\n` +
-          '命中率取卡片 24h 实测缓存命中率'
-        );
+        return t('blendTip', {
+          hitShare: hSharePct,
+          missShare: mSharePct,
+          per1m: Number(per1m.toPrecision(4)),
+          total: fmtSig(blend100m!),
+        });
       })()
     : undefined;
+
+  // 智能标签：上游商户标签为中文稳定标识；无数据时用本插件字典兜底
+  const tagList: { key: string | number; tone: TagTone; label: string }[] = merchant?.labels
+    ? merchant.labels.map((lbl, idx) => ({ key: idx, tone: tagToneOf(lbl), label: lbl }))
+    : [
+        { key: 'stable', tone: 'success' as TagTone, label: t('tagStable') },
+        { key: 'cheap', tone: 'info' as TagTone, label: t('tagCheap') },
+        { key: 'fast', tone: 'warning' as TagTone, label: t('tagFast') },
+        { key: 'quality', tone: 'neutral' as TagTone, label: t('tagQuality') },
+      ];
 
   return (
     <div
@@ -231,7 +248,7 @@ export const MerchantCard: React.FC<{
     >
       {refreshFlash && (
         <div className={`dsh-a6-refresh-flag ${refreshFlash === 'ok' ? 'ok' : 'err'}`} aria-hidden="true">
-          {refreshFlash === 'ok' ? '✓ 商户数据已更新' : '✕ 探测失败'}
+          {refreshFlash === 'ok' ? t('refreshOk') : t('refreshErr')}
         </div>
       )}
       {/* 1. Main Top Row */}
@@ -245,37 +262,51 @@ export const MerchantCard: React.FC<{
                 <>
                   <span className="dsh-a6-dot-sep">·</span>
                   <span className="dsh-a6-merchant-id-text">
-                    商户ID {merchant.channel_id}
+                    {t('merchantId', { id: merchant.channel_id })}
                   </span>
                 </>
               )}
               {isPinnedHere && !isChannelDisabled && (
                 <span
-                  className="dsh-a6-pin-badge here"
+                  className="dsh-a6-pin-badge"
                   data-tooltip={
-                    `该模型已固定到当前商家${model.pinnedFallback === false ? '（严格固定）' : '，异常时自动切换智能优选'}${pinTokenNote}`
+                    t('pinHereTipPrefix') +
+                    (model.pinnedFallback === false ? t('pinHereStrict') : t('pinHereFallback')) +
+                    pinTokenNote
                   }
                   data-tooltip-pos="down"
                 >
-                  已固定
+                  <Tag tone="success">{t('pinBadgeHere')}</Tag>
                 </span>
               )}
               {isPinnedElsewhere && (
                 <span
-                  className="dsh-a6-pin-badge elsewhere"
+                  className="dsh-a6-pin-badge"
                   data-tooltip={
-                    `该模型已固定到${model.pinnedChannelId ? `商户 #${model.pinnedChannelId}` : '其他商家'}${model.pinnedSupplierName ? `（${model.pinnedSupplierName}）` : ''}${!hasMerchant ? '；当前暂无商家数据' : ''}${pinTokenNote}`
+                    t('pinElsewhereTipPrefix') +
+                    (model.pinnedChannelId
+                      ? t('pinElsewhereTargetChannel', { id: model.pinnedChannelId })
+                      : t('pinBadgeElsewhere')) +
+                    (model.pinnedSupplierName ? t('pinSupplier', { name: model.pinnedSupplierName }) : '') +
+                    (!hasMerchant ? t('pinNoMerchantData') : '') +
+                    pinTokenNote
                   }
                   data-tooltip-pos="down"
                 >
-                  {!hasMerchant && model.pinnedChannelId
-                    ? `已固定到商户 #${model.pinnedChannelId}`
-                    : '已固定到其他商家'}
+                  <Tag tone="warning">
+                    {!hasMerchant && model.pinnedChannelId
+                      ? t('pinBadgeElsewhereChannel', { id: model.pinnedChannelId })
+                      : t('pinBadgeElsewhere')}
+                  </Tag>
                 </span>
               )}
               {isChannelDisabled && (
-                <span className="dsh-a6-pin-badge disabled" data-tooltip="当前商家已对该模型禁用，路由不会命中此渠道" data-tooltip-pos="down">
-                  已禁用
+                <span
+                  className="dsh-a6-pin-badge"
+                  data-tooltip={t('pinDisabledTip')}
+                  data-tooltip-pos="down"
+                >
+                  <Tag tone="neutral">{t('pinBadgeDisabled')}</Tag>
                 </span>
               )}
             </div>
@@ -289,29 +320,29 @@ export const MerchantCard: React.FC<{
         {merchant ? (
           <div className="dsh-a6-bar-pricing">
             <div className="dsh-a6-price-col">
-              <span className="dsh-a6-price-top" title="输入价 (1M)">
+              <span className="dsh-a6-price-top" title={t('priceInput')}>
                 {merchant.input_price_cny}
               </span>
-              <span className="dsh-a6-price-btm" title="缓存读 (1M)">
+              <span className="dsh-a6-price-btm" title={t('priceCacheRead')}>
                 {merchant.cache_read_price_cny}
               </span>
             </div>
             <div className="dsh-a6-price-col">
-              <span className="dsh-a6-price-top" title="输出价 (1M)">
+              <span className="dsh-a6-price-top" title={t('priceOutput')}>
                 {merchant.output_price_cny}
               </span>
-              <span className="dsh-a6-price-btm" title="缓存写 (1M)">
+              <span className="dsh-a6-price-btm" title={t('priceCacheWrite')}>
                 {merchant.cache_write_price_cny}
               </span>
             </div>
             {blend100mValid && (
-              <div className="dsh-a6-blend-pill" title={blendTitle}>
-                ≈ ¥{fmtSig(blend100m!)}/亿
-              </div>
+              <span className="dsh-a6-blend-pill" title={blendTitle}>
+                <Tag tone="success">{t('blendPill', { value: fmtSig(blend100m!) })}</Tag>
+              </span>
             )}
-            <div className="dsh-a6-ratio-pill" title="实时倍率比官方价">
-              {ratioText}
-            </div>
+            <span className="dsh-a6-ratio-pill" title={t('ratioTip')}>
+              <Tag tone="info">{ratioText}</Tag>
+            </span>
           </div>
         ) : (
           <div className="dsh-a6-bar-pricing unprobed">
@@ -320,7 +351,13 @@ export const MerchantCard: React.FC<{
               data-tooltip={model.probeError || undefined}
               data-tooltip-pos="down"
             >
-              {isProbing ? '商家探测中...' : isQueued ? '排队等待探测...' : model.probeError ? '探测失败' : '尚未探测商家'}
+              {isProbing
+                ? t('probingMerchant')
+                : isQueued
+                  ? t('queuedProbe')
+                  : model.probeError
+                    ? t('probeFailed')
+                    : t('notProbed')}
             </div>
           </div>
         )}
@@ -328,7 +365,7 @@ export const MerchantCard: React.FC<{
         {/* Col 3: Status / Health Bars (实时, 24h, 7d) */}
         <div className="dsh-a6-bar-uptime">
           <div className="dsh-a6-uptime-row">
-            <span className="dsh-a6-uptime-label">实时</span>
+            <span className="dsh-a6-uptime-label">{t('uptimeRealtime')}</span>
             <div className="dsh-a6-dots-track">{renderRealtimeDots()}</div>
             <span className="dsh-a6-uptime-val">
               {merchant ? `${merchant.recent_success_rate_pct.toFixed(1)}%` : '100.0%'}
@@ -370,147 +407,141 @@ export const MerchantCard: React.FC<{
 
         {/* Col 5: Smart Tags */}
         <div className="dsh-a6-bar-tags">
-          {(merchant?.labels || ['稳定', '低价', '高速', '高质']).map((lbl, idx) => (
-            <span key={idx} className={`dsh-a6-smart-pill ${getTagClass(lbl)}`}>
-              {lbl}
-            </span>
+          {tagList.map((tag) => (
+            <Tag key={tag.key} tone={tag.tone}>
+              {tag.label}
+            </Tag>
           ))}
         </div>
-
       </div>
 
       {/* 2. Bottom Footer: 时间戳左下角 + 操作按钮右下角 */}
       <div className="dsh-a6-card-footer">
         <div className="dsh-a6-time-stack">
-          <span
-            className="dsh-a6-time-ago"
-            data-tooltip="该商户路线全网最近一次成功响应时间"
-          >
-            全网最近：{merchant?.last_success_text || '刚刚'}
+          <span className="dsh-a6-time-ago" data-tooltip={t('lastSuccessTip')}>
+            {t('lastSuccessPrefix')}
+            {merchant?.last_success_text || t('lastSuccessFallback')}
           </span>
           <span
             className={`dsh-a6-time-ago dsh-a6-route-snapshot${model.lastRoutedAt ? '' : ' never'}`}
             data-tooltip={
               model.lastRoutedAt
-                ? `个人最后一次请求该商家的该模型 ${formatAbsolute(model.lastRoutedAt)}`
-                : '日志中暂无该商家的该模型路由记录'
+                ? t('personalTip', { time: formatAbsolute(model.lastRoutedAt) })
+                : t('personalTipNever')
             }
           >
-            个人最近：{model.lastRoutedText || '从未路由'}
+            {t('personalPrefix')}
+            {model.lastRoutedText || t('neverRouted')}
           </span>
         </div>
 
         {/* Col 6: 操作按钮组 — 卡片右下角 */}
         <div className="dsh-a6-bar-actions" onClick={(e) => e.stopPropagation()}>
           <div className="dsh-a6-bar-actions-btns">
-            <button
-              type="button"
-              className="dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm"
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleProbe}
               disabled={isProbing || isQueued}
-              data-tooltip={
-                isQueued
-                  ? '正在全量探测队列中等待，请勿重复点击'
-                  : '向该模型发送一次请求以探测并捕获其实际命中的商户 ID、价格及健康度指标（消耗少量Token）'
-              }
+              data-tooltip={isQueued ? t('probeTipQueued') : t('probeTip')}
             >
-              {isProbing ? '探测中...' : isQueued ? '等待探测' : '探测商家'}
-            </button>
+              {isProbing ? t('probingMerchant') : isQueued ? t('queuedProbe') : t('probeAction')}
+            </Button>
 
             {isPinnedHere ? (
-              <button
-                type="button"
-                className="dsh-a6-btn dsh-a6-btn-danger dsh-a6-btn-sm"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleUnpin}
                 disabled={isBusy || !canWebAction || model.pinTokenMatched === false || isProbing || isQueued}
                 data-tooltip={
                   isProbing || isQueued
-                    ? '探测完成后再取消固定'
+                    ? t('unpinTipProbing')
                     : model.pinTokenMatched === false
-                      ? '该固定属于其他令牌，无法在此取消；如需取消请到官网或先为当前令牌固定此商家'
+                      ? t('unpinTipOtherToken')
                       : !canWebAction
-                        ? '需先在「基础配置」配置系统访问令牌/会话'
+                        ? t('unpinTipNoToken')
                         : model.pinTokenMatched === undefined
-                          ? '未能确认该固定是否属于当前令牌，点击后将重新解析并尝试取消；若失败可先探测一次后重试，或到官网手动取消'
-                          : '取消固定后恢复智能优选路由，可重新探测后再决定是否固定'
+                          ? t('unpinTipUnknown')
+                          : t('unpinTip')
                 }
               >
-                {isBusy ? '处理中...' : '取消固定'}
-              </button>
+                {isBusy ? t('processing') : t('unpin')}
+              </Button>
             ) : (
-              <button
-                type="button"
-                className="dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm"
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={handleOpenPinConfirm}
                 disabled={isBusy || !hasMerchant || !canWebAction || isProbing || isQueued}
                 data-tooltip={
                   isProbing || isQueued
-                    ? '探测完成后再固定商家'
+                    ? t('pinTipProbing')
                     : !hasMerchant
-                      ? '该模型暂无商家数据，请先「探测商家」'
+                      ? t('pinTipNoMerchant')
                       : !canWebAction
-                        ? '需先在「基础配置」配置系统访问令牌/会话'
-                        : '把当前商家固定为该模型的服务渠道（优先路由，异常时自动切换智能优选）'
+                        ? t('pinTipNoToken')
+                        : t('pinTip')
                 }
               >
-                {isBusy ? '处理中...' : '固定商家'}
-              </button>
+                {isBusy ? t('processing') : t('pin')}
+              </Button>
             )}
 
             {isChannelDisabled ? (
-              <button
-                type="button"
-                className="dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleRestore}
                 disabled={isBusy || !canWebAction || isProbing || isQueued}
                 data-tooltip={
                   isProbing || isQueued
-                    ? '探测完成后再恢复'
+                    ? t('restoreTipProbing')
                     : canWebAction
-                      ? '恢复该商家对此模型的服务'
-                      : '需先在「基础配置」配置系统访问令牌/会话'
+                      ? t('restoreTip')
+                      : t('restoreTipNoToken')
                 }
               >
-                {isBusy ? '处理中...' : '恢复'}
-              </button>
+                {isBusy ? t('processing') : t('restore')}
+              </Button>
             ) : (
-              <button
-                type="button"
-                className="dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleDisable}
                 disabled={isBusy || !hasMerchant || !canWebAction || isProbing || isQueued}
                 data-tooltip={
                   isProbing || isQueued
-                    ? '探测完成后再禁用'
+                    ? t('disableTipProbing')
                     : !hasMerchant
-                      ? '该模型暂无商家数据，请先「探测商家」'
+                      ? t('disableTipNoMerchant')
                       : !canWebAction
-                        ? '需先在「基础配置」配置系统访问令牌/会话'
-                        : '禁用当前商家对该模型的服务，路由将不再命中此渠道'
+                        ? t('disableTipNoToken')
+                        : t('disableTip')
                 }
               >
-                {isBusy ? '处理中...' : '禁用'}
-              </button>
+                {isBusy ? t('processing') : t('disable')}
+              </Button>
             )}
 
-            <button
-              type="button"
-              className={`dsh-a6-btn dsh-a6-btn-sm ${model.inDsh ? 'dsh-a6-btn-in-dsh' : 'dsh-a6-btn-primary'}`}
+            <Button
+              variant={model.inDsh ? 'outline' : 'primary'}
+              size="sm"
               onClick={handleToggleDsh}
-              data-tooltip={model.inDsh ? '已加入 DSH 模型选择器 (点击移除)' : '添加至 DSH 模型选择器'}
+              data-tooltip={model.inDsh ? t('addTipRemove') : t('addTip')}
             >
-              {model.inDsh ? '移除模型' : '添加模型'}
-            </button>
+              {model.inDsh ? t('removeModel') : t('addModel')}
+            </Button>
 
-            <button
-              type="button"
-              className={`dsh-a6-expand-toggle-btn ${expanded ? 'open' : ''}`}
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setExpanded(!expanded)}
-              data-tooltip={expanded ? '收起价格详情' : '展开官方基准价与商户实时价对比表'}
+              data-tooltip={expanded ? t('collapseTip') : t('detailTip')}
               data-tooltip-pos="left"
             >
-              {expanded ? '收起' : '详情'}
-            </button>
+              {expanded ? t('collapse') : t('detail')}
+            </Button>
           </div>
         </div>
 
@@ -526,14 +557,14 @@ export const MerchantCard: React.FC<{
         <div className="dsh-a6-detail-container">
           <div className="dsh-a6-detail-top-row">
             <div className="dsh-a6-dt-left">
-              <span className="dsh-a6-dt-label">渠道说明</span>
+              <span className="dsh-a6-dt-label">{t('channelNote')}</span>
               <span className="dsh-a6-dt-desc">
-                {merchant?.description || '高并发 主打便宜 稳定'}
+                {merchant?.description || t('channelDescFallback')}
               </span>
             </div>
             {merchant?.channel_name && (
               <div className="dsh-a6-dt-right">
-                <span className="dsh-a6-dt-label">命中线路</span>
+                <span className="dsh-a6-dt-label">{t('hitRoute')}</span>
                 <span className="dsh-a6-dt-channel-name">
                   {merchant.channel_name} (ID: {merchant.channel_id})
                 </span>
@@ -549,22 +580,22 @@ export const MerchantCard: React.FC<{
               <thead>
                 <tr>
                   <th className="dsh-a6-th-blank"></th>
-                  <th>输入价 (1M)</th>
-                  <th>输出价 (1M)</th>
-                  <th>缓存读 (1M)</th>
-                  <th>缓存写 (1M)</th>
+                  <th>{t('thInput')}</th>
+                  <th>{t('thOutput')}</th>
+                  <th>{t('thCacheRead')}</th>
+                  <th>{t('thCacheWrite')}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="dsh-a6-tr-official">
-                  <td className="dsh-a6-td-label">官方价</td>
+                  <td className="dsh-a6-td-label">{t('officialPrice')}</td>
                   <td>{merchant?.official_price?.input_cny || '¥26.884'}</td>
                   <td>{merchant?.official_price?.output_cny || '¥134.418'}</td>
                   <td>{merchant?.official_price?.cache_read_cny || '¥2.688'}</td>
                   <td>{merchant?.official_price?.cache_write_cny || '¥33.605'}</td>
                 </tr>
                 <tr className="dsh-a6-tr-merchant">
-                  <td className="dsh-a6-td-label">商户价</td>
+                  <td className="dsh-a6-td-label">{t('merchantPrice')}</td>
                   <td className="dsh-a6-td-bold">{merchant?.input_price_cny || '¥0.1364'}</td>
                   <td className="dsh-a6-td-bold">{merchant?.output_price_cny || '¥0.6822'}</td>
                   <td className="dsh-a6-td-bold">{merchant?.cache_read_price_cny || '¥0.0136'}</td>
@@ -589,49 +620,50 @@ export const MerchantCard: React.FC<{
             className="dsh-a6-pin-modal"
             role="dialog"
             aria-modal="true"
-            aria-label="固定商家确认"
+            aria-label={t('pinModalAria')}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="dsh-a6-pin-modal-title">固定商家</div>
+            <div className="dsh-a6-pin-modal-title">{t('pinModalTitle')}</div>
             <div className="dsh-a6-pin-modal-body">
               <div className="dsh-a6-pin-modal-row">
-                <span className="dsh-a6-pin-modal-label">模型</span>
+                <span className="dsh-a6-pin-modal-label">{t('pinModalModel')}</span>
                 <span className="dsh-a6-pin-modal-value">{model.model_name}</span>
               </div>
               <div className="dsh-a6-pin-modal-row">
-                <span className="dsh-a6-pin-modal-label">商家</span>
+                <span className="dsh-a6-pin-modal-label">{t('pinModalMerchant')}</span>
                 <span className="dsh-a6-pin-modal-value">
                   {merchant.channel_name} (ID: {merchant.channel_id})
                 </span>
               </div>
               <div className="dsh-a6-pin-modal-row">
-                <span className="dsh-a6-pin-modal-label">当前价</span>
+                <span className="dsh-a6-pin-modal-label">{t('pinModalPrice')}</span>
                 <span className="dsh-a6-pin-modal-value">
-                  输入 {merchant.input_price_cny} · 输出 {merchant.output_price_cny}
+                  {t('pinModalPriceValue', {
+                    input: merchant.input_price_cny,
+                    output: merchant.output_price_cny,
+                  })}
                 </span>
               </div>
-              <p className="dsh-a6-pin-modal-note">
-                固定后该模型的流量优先走此商家；商家异常时自动切换智能优选（平台默认）。固定生效于当前 API Key 令牌，可随时取消。
-              </p>
+              <p className="dsh-a6-pin-modal-note">{t('pinModalNote')}</p>
               {actionError && <div className="dsh-a6-action-error">{actionError}</div>}
             </div>
             <div className="dsh-a6-pin-modal-foot">
-              <button
-                type="button"
-                className="dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setPinConfirmOpen(false)}
                 disabled={isBusy}
               >
-                取消
-              </button>
-              <button
-                type="button"
-                className="dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm"
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={handleConfirmPin}
                 disabled={isBusy}
               >
-                {isBusy ? '固定中...' : '确认固定'}
-              </button>
+                {isBusy ? t('processing') : t('pinModalConfirm')}
+              </Button>
             </div>
           </div>
         </div>

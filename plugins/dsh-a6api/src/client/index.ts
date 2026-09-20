@@ -2,34 +2,25 @@ import React from 'react';
 import { A6ApiSettingsPanel } from './components/A6ApiSettings.js';
 import { A6ApiComposerCard } from './components/A6ApiComposerCard.js';
 import { RELAY_ITEM_SLOT, claimRelaySettingsPage } from './relay-settings-page.js';
+import { en, NS, zh } from './locales.js';
 import mainCss from './styles/main.css';
 import { store } from './store.js';
 
 export const name = '@lynn123411/dsh-a6api';
 export const inject = ['slots', 'locale'];
 
-/** Tab title inside the shared 「API中转」 page, in both shipped languages. */
-const TAB_NAV = { zh: 'A6api', en: 'A6api' };
-/** Sidebar name of the shared 「API中转」 page when this plugin claims it. */
-const RELAY_PAGE_NAV = { zh: 'API中转', en: 'API relay' };
-/** Locale namespace owned by this plugin (shared page titles only). */
-const NS = 'settings.a6api';
-
 /**
- * Register the shared page's own two titles. Called once at the top of `apply`
- * so the dictionaries exist whether or not this plugin wins the shared page
- * election; `ctx.get` keeps the read optional (the client declares `locale`,
- * but a bundle must still tolerate its absence).
+ * Register this plugin's dictionaries. Called once at the top of `apply` so the
+ * copy exists whether or not this plugin wins the shared page election; `ctx.get`
+ * keeps the read optional (the client declares `locale`, but a bundle must still
+ * tolerate its absence).
  */
 function registerNavDicts(ctx: any): void {
   const locale = ctx && typeof ctx.get === 'function' ? ctx.get('locale') : undefined;
   if (!locale || typeof locale.register !== 'function') return;
   ctx.effect(
-    () => locale.register(NS, {
-      zh: { pageNav: RELAY_PAGE_NAV.zh, tabNav: TAB_NAV.zh },
-      en: { pageNav: RELAY_PAGE_NAV.en, tabNav: TAB_NAV.en },
-    }),
-    'dsh-a6api: shared page dictionaries',
+    () => locale.register(NS, { zh, en }),
+    'dsh-a6api: settings dictionaries',
   );
 }
 
@@ -39,7 +30,7 @@ function navLabel(ctx: any, key: 'pageNav' | 'tabNav'): () => string {
   if (locale && typeof locale.bind === 'function') {
     return () => locale.bind(NS)(key);
   }
-  return () => (key === 'pageNav' ? RELAY_PAGE_NAV.zh : TAB_NAV.zh);
+  return () => zh[key];
 }
 
 function injectStyles() {
@@ -283,6 +274,8 @@ export function apply(ctx: any): void {
           // id = 本插件的设置命名空间：共享页按 id 过滤本 tab 的面板，故须与卡片自身命名空间一致
           id: 'dsh-a6api',
           order: 10,
+          // 卡片文案由本插件的 locale 命名空间提供
+          locale: NS,
           // label 由共享页投影为外层 tab 标题
           label: navLabel(ctx, 'tabNav'),
         },

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Button, Input, Pill, Tag } from '@deepseek-ai/dsh-client-ui-primitives';
+import type { A6apiT } from '../locales.js';
 import { store } from '../store.js';
 import type { A6ApiConfig } from '../../types.js';
 
@@ -8,7 +10,8 @@ const MASK = '••••••••';
 export const ConfigPanel: React.FC<{
   config: A6ApiConfig;
   dshConfiguredModels: string[];
-}> = ({ config, dshConfiguredModels }) => {
+  t: A6apiT;
+}> = ({ config, dshConfiguredModels, t }) => {
   const [apiKey, setApiKey] = useState(config.apiKey || '');
   const [accessToken, setAccessToken] = useState(config.accessToken || '');
   const [clearKey, setClearKey] = useState(false);
@@ -75,50 +78,41 @@ export const ConfigPanel: React.FC<{
       {/* 1. API Gateway Node Selection */}
       <div className="dsh-a6-config-section">
         <div className="dsh-a6-section-heading">
-          <span className="dsh-a6-heading-title">API 接入节点 (Base URL)</span>
-          <span className="dsh-a6-heading-desc">
-            选择离您最近的 A6API 聚合网关接入点，支持 CDN 节点与直连备用节点。
-          </span>
+          <span className="dsh-a6-heading-title">{t('nodeTitle')}</span>
+          <span className="dsh-a6-heading-desc">{t('nodeDesc')}</span>
         </div>
 
         <div className="dsh-a6-node-picker">
-          <button
-            type="button"
-            className={`dsh-a6-node-pill ${!isCustom && selectedNode === 'https://api.a6api.com' ? 'active' : ''}`}
+          <Pill
+            active={!isCustom && selectedNode === 'https://api.a6api.com'}
             onClick={() => {
               setIsCustom(false);
               setSelectedNode('https://api.a6api.com');
             }}
           >
-            https://api.a6api.com (CDN 推荐)
-          </button>
-          <button
-            type="button"
-            className={`dsh-a6-node-pill ${!isCustom && selectedNode === 'https://a6.a6api.com' ? 'active' : ''}`}
+            https://api.a6api.com ({t('nodeCdn')})
+          </Pill>
+          <Pill
+            active={!isCustom && selectedNode === 'https://a6.a6api.com'}
             onClick={() => {
               setIsCustom(false);
               setSelectedNode('https://a6.a6api.com');
             }}
           >
-            https://a6.a6api.com (直连备用)
-          </button>
-          <button
-            type="button"
-            className={`dsh-a6-node-pill ${isCustom ? 'active' : ''}`}
-            onClick={() => setIsCustom(true)}
-          >
-            自定义节点
-          </button>
+            https://a6.a6api.com ({t('nodeDirect')})
+          </Pill>
+          <Pill active={isCustom} onClick={() => setIsCustom(true)}>
+            {t('nodeCustom')}
+          </Pill>
         </div>
 
         {isCustom && (
-          <input
+          <Input
+            className="dsh-a6-node-custom"
             type="text"
-            className="dsh-a6-input"
-            placeholder="https://your-custom-gateway.com"
+            placeholder={t('customNodePlaceholder')}
             value={customNode}
             onChange={(e) => setCustomNode(e.target.value)}
-            style={{ marginTop: '8px' }}
           />
         )}
       </div>
@@ -126,108 +120,83 @@ export const ConfigPanel: React.FC<{
       {/* 2. Authentication Tokens */}
       <div className="dsh-a6-config-section">
         <div className="dsh-a6-section-heading">
-          <span className="dsh-a6-heading-title">访问鉴权与令牌凭据</span>
-          <span className="dsh-a6-heading-desc">
-            配置模型调用 API Key 以及用于同步账户余额与商户行情的系统访问令牌。
-          </span>
+          <span className="dsh-a6-heading-title">{t('authTitle')}</span>
+          <span className="dsh-a6-heading-desc">{t('authDesc')}</span>
         </div>
 
         <div className="dsh-a6-config-fields-grid">
           {/* API Key */}
           <div className="dsh-a6-field">
             <div className="dsh-a6-field-header">
-              <label className="dsh-a6-label">A6API 令牌 (API Key)</label>
+              <label className="dsh-a6-label">{t('apiKeyLabel')}</label>
               <div className="dsh-a6-field-header-actions">
                 {apiKeySet && (
-                  <button
-                    type="button"
-                    className="dsh-a6-btn-text"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => {
                       setClearKey(true);
                       setApiKey('');
                     }}
                   >
-                    清除
-                  </button>
+                    {t('clear')}
+                  </Button>
                 )}
-                <button
-                  type="button"
-                  className="dsh-a6-btn-text"
-                  onClick={() => setShowKey(!showKey)}
-                >
-                  {showKey ? '隐藏' : '显示'}
-                </button>
+                <Button variant="ghost" size="sm" onClick={() => setShowKey(!showKey)}>
+                  {showKey ? t('hide') : t('show')}
+                </Button>
               </div>
             </div>
-            <div className="dsh-a6-input-wrapper">
-              <input
-                type={showKey ? 'text' : 'password'}
-                className="dsh-a6-input"
-                placeholder={apiKeySet ? '已保存 · 输入新 Key 可替换' : 'sk-xxxxxxxxxxxxxxxxxxxxxxxx'}
-                value={apiKeySet ? '' : apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-            </div>
+            <Input
+              type={showKey ? 'text' : 'password'}
+              placeholder={apiKeySet ? t('apiKeyPlaceholderSet') : t('apiKeyPlaceholder')}
+              value={apiKeySet ? '' : apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
             <span className="dsh-a6-field-hint">
-              {apiKeySet
-                ? '已配置 API Key（仅保存在本机 ~/.dsh/.credentials.yaml，不回传界面）。'
-                : '用于向 A6API 发起模型对话请求与拉取白名单模型。'}
+              {apiKeySet ? t('apiKeyHintSet') : t('apiKeyHint')}
             </span>
           </div>
 
           {/* System Access Token */}
           <div className="dsh-a6-field">
             <div className="dsh-a6-field-header">
-              <label className="dsh-a6-label">系统访问令牌 (Access Token)</label>
+              <label className="dsh-a6-label">{t('tokenLabel')}</label>
               <div className="dsh-a6-field-header-actions">
                 {tokenSet && (
-                  <button
-                    type="button"
-                    className="dsh-a6-btn-text"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => {
                       setClearToken(true);
                       setAccessToken('');
                     }}
                   >
-                    清除
-                  </button>
+                    {t('clear')}
+                  </Button>
                 )}
-                <button
-                  type="button"
-                  className="dsh-a6-btn-text"
-                  onClick={() => setShowToken(!showToken)}
-                >
-                  {showToken ? '隐藏' : '显示'}
-                </button>
+                <Button variant="ghost" size="sm" onClick={() => setShowToken(!showToken)}>
+                  {showToken ? t('hide') : t('show')}
+                </Button>
               </div>
             </div>
-            <div className="dsh-a6-input-wrapper">
-              <input
-                type={showToken ? 'text' : 'password'}
-                className="dsh-a6-input"
-                placeholder={
-                  tokenSet
-                    ? '已保存 · 输入新令牌可替换'
-                    : '在控制台安全设置中复制，例如 eyJhbGciOi...'
-                }
-                value={tokenSet ? '' : accessToken}
-                onChange={(e) => setAccessToken(e.target.value)}
-              />
-            </div>
+            <Input
+              type={showToken ? 'text' : 'password'}
+              placeholder={tokenSet ? t('tokenPlaceholderSet') : t('tokenPlaceholder')}
+              value={tokenSet ? '' : accessToken}
+              onChange={(e) => setAccessToken(e.target.value)}
+            />
             <div className="dsh-a6-field-footer">
               <span className="dsh-a6-field-hint">
-                {tokenSet
-                  ? '已配置系统访问令牌（仅保存在本机，不回传界面）。'
-                  : '用于免失效同步账户真实余额与商户指标。'}
+                {tokenSet ? t('tokenHintSet') : t('tokenHint')}
               </span>
-              <button
-                type="button"
-                className="dsh-a6-btn-text"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowHelp(!showHelp)}
-                style={{ fontSize: '11px', whiteSpace: 'nowrap' }}
               >
-                {showHelp ? '收起教程' : '获取教程'}
-              </button>
+                {showHelp ? t('helpClose') : t('helpOpen')}
+              </Button>
             </div>
           </div>
         </div>
@@ -235,17 +204,21 @@ export const ConfigPanel: React.FC<{
         {/* Tutorial Drawer */}
         {showHelp && (
           <div className="dsh-a6-help-drawer">
-            <div className="dsh-a6-help-title">系统访问令牌获取步骤（永久有效）：</div>
+            <div className="dsh-a6-help-title">{t('helpTitle')}</div>
             <ol className="dsh-a6-help-list">
               <li>
-                在浏览器打开并登录{' '}
+                {t('helpStep1Prefix')}
                 <a href="https://a6api.com/console/personal" target="_blank" rel="noreferrer">
                   a6api.com/console/personal
-                </a>{' '}
-                （个人设置 - 安全设置）
+                </a>
+                {t('helpStep1Suffix')}
               </li>
-              <li>在「系统访问令牌」栏目直接点击复制令牌字符串（例如 <code>eyJhbGciOi...</code>）</li>
-              <li>粘贴到上方的「系统访问令牌」输入框中并点击下方「保存配置」即可自动同步余额！</li>
+              <li>
+                {t('helpStep2Prefix')}
+                <code>eyJhbGciOi...</code>
+                {t('helpStep2Suffix')}
+              </li>
+              <li>{t('helpStep3')}</li>
             </ol>
           </div>
         )}
@@ -254,28 +227,32 @@ export const ConfigPanel: React.FC<{
       {/* 3. DSH LLM Provider Integration Overview */}
       <div className="dsh-a6-config-section">
         <div className="dsh-a6-section-heading">
-          <span className="dsh-a6-heading-title">DSH 原生 LLM 提供商集成状态</span>
+          <span className="dsh-a6-heading-title">{t('integrationTitle')}</span>
           <span className="dsh-a6-heading-desc">
-            插件已将 A6API 注册为 DSH 原生模型提供商 (<code>a6api</code>)。在「可用模型」中启用的模型将自动写入 DSH 配置文件。
+            {t('integrationDescPrefix')}
+            <code>a6api</code>
+            {t('integrationDescSuffix')}
           </span>
         </div>
 
         <div className="dsh-a6-integration-card">
           <div className="dsh-a6-int-row">
-            <span className="dsh-a6-int-key">提供商标识</span>
-            <span className="dsh-a6-int-val"><code>a6api</code> (OpenAI-compatible)</span>
+            <span className="dsh-a6-int-key">{t('providerKey')}</span>
+            <span className="dsh-a6-int-val">
+              <code>a6api</code> {t('providerCompatible')}
+            </span>
           </div>
           <div className="dsh-a6-int-row">
-            <span className="dsh-a6-int-key">当前已启用模型</span>
+            <span className="dsh-a6-int-key">{t('enabledModelsKey')}</span>
             <div className="dsh-a6-int-tags">
               {dshConfiguredModels.length > 0 ? (
                 dshConfiguredModels.map((m) => (
-                  <span key={m} className="dsh-a6-model-chip">
+                  <Tag key={m} tone="success">
                     {m}
-                  </span>
+                  </Tag>
                 ))
               ) : (
-                <span className="dsh-a6-empty-hint">暂未启用任何模型，请前往「可用模型」页面点击「添加到 DSH」</span>
+                <span className="dsh-a6-empty-hint">{t('noEnabledModels')}</span>
               )}
             </div>
           </div>
@@ -285,21 +262,16 @@ export const ConfigPanel: React.FC<{
       {/* 4. Save Action Bar */}
       <div className="dsh-a6-save-bar">
         <div className="dsh-a6-save-status">
-          {saveSuccess && (
-            <span className="dsh-a6-success-msg">
-              配置已成功保存并同步
-            </span>
-          )}
+          {saveSuccess && <span className="dsh-a6-success-msg">{t('saveSuccess')}</span>}
         </div>
-        <button
-          type="button"
-          className="dsh-a6-btn dsh-a6-btn-primary"
+        <Button
+          variant="primary"
+          className="dsh-a6-save-btn"
           onClick={handleSave}
           disabled={saving}
-          style={{ minWidth: '100px' }}
         >
-          {saving ? '正在保存...' : '保存配置'}
-        </button>
+          {saving ? t('saving') : t('save')}
+        </Button>
       </div>
     </div>
   );

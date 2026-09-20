@@ -1,4 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Button,
+  Checkbox,
+  IconCloseOutline16,
+  Input,
+  Pill,
+  Tag,
+} from '@deepseek-ai/dsh-client-ui-primitives';
+import type { A6apiT } from '../locales.js';
 import { store } from '../store.js';
 import { validateReasoningEfforts } from '../../types.js';
 import type { CatalogModelEntry } from '../../types.js';
@@ -12,7 +21,7 @@ import type { CatalogModelEntry } from '../../types.js';
  * - 行内编辑 settings.yaml 原生模型字段；保存后若该模型已在 DSH 启用，
  *   服务端立即重写 settings.yaml 对应条目（参数即时生效）
  */
-export const ModelCatalogPanel: React.FC = () => {
+export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
   const [catalog, setCatalog] = useState<CatalogModelEntry[]>(store.getState().catalog);
   const [models, setModels] = useState(store.getState().models);
   const [busy, setBusy] = useState<null | 'fetch' | 'query'>(store.getState().catalogBusy);
@@ -60,19 +69,24 @@ export const ModelCatalogPanel: React.FC = () => {
     const r = await store.fetchMarketModels();
     if (r.ok) {
       if (r.failedPages && r.failedPages > 0) {
-        flash('err', `已获取 ${r.total} 个模型（新增 ${r.added} 个），但有 ${r.failedPages} 页拉取失败，目录可能不完整，请重试`);
+        flash('err', t('msgFetchedWithFailures', { total: r.total, added: r.added, pages: r.failedPages }));
       } else {
-        flash('ok', `已获取 ${r.total} 个模型（新增 ${r.added} 个）`);
+        flash('ok', t('msgFetched', { total: r.total, added: r.added }));
       }
-    } else flash('err', r.error || '获取失败');
+    } else flash('err', r.error || t('errFetch'));
   };
 
   const handleQueryAll = async () => {
     const r = await store.queryOpenRouter();
     if (r.ok) {
       const nf = r.notFound?.length || 0;
-      flash('ok', `已更新 ${r.updated} 个模型参数${nf > 0 ? `，${nf} 个未在 OpenRouter 查到（参数留空可手动填写）` : ''}`);
-    } else flash('err', r.error || '查询失败');
+      flash(
+        'ok',
+        nf > 0
+          ? t('msgQueriedAll', { updated: r.updated }) + t('msgQueriedAllNotFound', { notFound: nf })
+          : t('msgQueriedAll', { updated: r.updated }),
+      );
+    } else flash('err', r.error || t('errQuery'));
   };
 
   const handleQueryOne = async (id: string) => {
@@ -80,9 +94,9 @@ export const ModelCatalogPanel: React.FC = () => {
     const r = await store.queryOpenRouter([id]);
     setQueryingId(null);
     if (r.ok) {
-      if ((r.updated || 0) > 0) flash('ok', `「${id}」已从 OpenRouter 填充参数`);
-      else flash('ok', `「${id}」在 OpenRouter 未查到，可手动填写参数`);
-    } else flash('err', r.error || '查询失败');
+      if ((r.updated || 0) > 0) flash('ok', t('msgQueriedOne', { id }));
+      else flash('ok', t('msgQueriedOneNotFound', { id }));
+    } else flash('err', r.error || t('errQuery'));
   };
 
   /** 清空目录：首次点击进入确认态（3s 自动恢复），再次点击执行 */
@@ -97,8 +111,8 @@ export const ModelCatalogPanel: React.FC = () => {
     setConfirmClear(false);
     setEditingId(null);
     const r = await store.clearCatalog();
-    if (r.ok) flash('ok', '模型目录已清空，可重新「从 A6API 获取市场模型」');
-    else flash('err', r.error || '清空失败');
+    if (r.ok) flash('ok', t('msgCleared'));
+    else flash('err', r.error || t('errClear'));
   };
 
   const startEdit = (entry: CatalogModelEntry) => {
@@ -126,7 +140,7 @@ export const ModelCatalogPanel: React.FC = () => {
     const ctx = Number(draft.contextWindow);
     if (draft.contextWindow.trim() !== '') {
       if (!Number.isInteger(ctx) || ctx < 1) {
-        flash('err', 'contextWindow 必须是正整数');
+        flash('err', t('errContextWindow'));
         return;
       }
       patch.contextWindow = ctx;
@@ -136,7 +150,7 @@ export const ModelCatalogPanel: React.FC = () => {
     const maxT = Number(draft.maxTokens);
     if (draft.maxTokens.trim() !== '') {
       if (!Number.isInteger(maxT) || maxT < 1) {
-        flash('err', 'maxTokens 必须是正整数');
+        flash('err', t('errMaxTokens'));
         return;
       }
       patch.maxTokens = maxT;
@@ -170,7 +184,7 @@ export const ModelCatalogPanel: React.FC = () => {
           parsed[k] = v || null;
         }
         if (bad) {
-          flash('err', 'reasoningEfforts 格式应为 "low: low, medium: medium"');
+          flash('err', t('errReasoningFormat'));
           return;
         }
         // DSH 语义预检（与服务端一致）：键 ∈ 档位、值非空（仅 off 可 null）、至少一个非 off 档位
@@ -188,9 +202,15 @@ export const ModelCatalogPanel: React.FC = () => {
     const r = await store.updateCatalogEntry(id, patch);
     if (r.ok) {
       setEditingId(null);
-      flash('ok', `「${id}」已保存${store.getState().dshConfiguredModels.some((m) => m.toLowerCase() === id.toLowerCase()) ? '，并已同步到 DSH 配置' : ''}`);
+      flash(
+        'ok',
+        t('msgSaved', { id }) +
+          (store.getState().dshConfiguredModels.some((m) => m.toLowerCase() === id.toLowerCase())
+            ? t('msgSavedSynced')
+            : ''),
+      );
     } else {
-      flash('err', r.error || '保存失败');
+      flash('err', r.error || t('errSave'));
     }
   };
 
@@ -218,128 +238,98 @@ export const ModelCatalogPanel: React.FC = () => {
       {/* 头部工具栏 */}
       <div className="dsh-a6-section-header">
         <div className="dsh-a6-catalog-toolbar">
-          <button
-            type="button"
-            className="dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm"
+          <Button
+            variant="primary"
+            size="sm"
             onClick={handleFetchMarket}
             disabled={busy !== null}
-            data-tooltip="从 A6API 市场翻页拉取全部支持模型的 ID（含品牌），参数初始为空，随后可用 OpenRouter 查询填充"
+            data-tooltip={t('fetchMarketTip')}
             data-tooltip-pos="down"
           >
-            {busy === 'fetch' ? '获取中...' : '从 A6API 获取市场模型'}
-          </button>
-          <button
-            type="button"
-            className="dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm"
+            {busy === 'fetch' ? t('fetching') : t('fetchMarket')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleQueryAll}
             disabled={busy !== null || catalog.length === 0}
-            data-tooltip="对目录中全部模型查询 OpenRouter 并填充 contextWindow / maxTokens / input；查不到的保持留空可手动填写"
+            data-tooltip={t('queryOpenRouterTip')}
             data-tooltip-pos="down"
           >
-            {busy === 'query' ? '查询中...' : '从 OpenRouter 一键查询'}
-          </button>
-          <button
-            type="button"
-            className={`dsh-a6-btn dsh-a6-btn-danger dsh-a6-btn-sm${confirmClear ? ' dsh-a6-btn-clear-confirm' : ''}`}
+            {busy === 'query' ? t('querying') : t('queryOpenRouter')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleClear}
             disabled={busy !== null || catalog.length === 0}
-            data-tooltip="清空模型目录全部条目，可重新从 A6API 获取并重新用 OpenRouter 填充（不影响已写入 DSH 配置的模型）"
+            data-tooltip={t('clearCatalogTip')}
             data-tooltip-pos="down"
           >
-            {confirmClear ? '确认清空？' : '清空目录'}
-          </button>
+            {confirmClear ? t('confirmClear') : t('clearCatalog')}
+          </Button>
           <div className="dsh-a6-catalog-count">
-            共 {catalog.length} 个 · 可用 {availCount} 个 · 已填参数 {filledCount} 个
+            {t('catalogCount', { total: catalog.length, avail: availCount, filled: filledCount })}
           </div>
         </div>
 
         {/* 筛选区 */}
         <div className="dsh-a6-catalog-filters">
           <div className="dsh-a6-filter-group">
-            <button
-              type="button"
-              className={`dsh-a6-filter-btn ${availFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setAvailFilter('all')}
-            >
-              全部 ({catalog.length})
-            </button>
-            <button
-              type="button"
-              className={`dsh-a6-filter-btn ${availFilter === 'available' ? 'active' : ''}`}
-              onClick={() => setAvailFilter('available')}
-            >
-              可用 ({availCount})
-            </button>
-            <button
-              type="button"
-              className={`dsh-a6-filter-btn ${availFilter === 'unavailable' ? 'active' : ''}`}
-              onClick={() => setAvailFilter('unavailable')}
-            >
-              不可用 ({catalog.length - availCount})
-            </button>
+            <Pill active={availFilter === 'all'} onClick={() => setAvailFilter('all')}>
+              {t('filterCatalogAll', { count: catalog.length })}
+            </Pill>
+            <Pill active={availFilter === 'available'} onClick={() => setAvailFilter('available')}>
+              {t('filterCatalogAvailable', { count: availCount })}
+            </Pill>
+            <Pill active={availFilter === 'unavailable'} onClick={() => setAvailFilter('unavailable')}>
+              {t('filterCatalogUnavailable', { count: catalog.length - availCount })}
+            </Pill>
           </div>
           <div className="dsh-a6-filter-group">
-            <button
-              type="button"
-              className={`dsh-a6-filter-btn ${paramFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setParamFilter('all')}
-            >
-              全部参数
-            </button>
-            <button
-              type="button"
-              className={`dsh-a6-filter-btn ${paramFilter === 'filled' ? 'active' : ''}`}
-              onClick={() => setParamFilter('filled')}
-            >
-              已填 ({filledCount})
-            </button>
-            <button
-              type="button"
-              className={`dsh-a6-filter-btn ${paramFilter === 'empty' ? 'active' : ''}`}
-              onClick={() => setParamFilter('empty')}
-            >
-              未填 ({catalog.length - filledCount})
-            </button>
+            <Pill active={paramFilter === 'all'} onClick={() => setParamFilter('all')}>
+              {t('filterParamAll')}
+            </Pill>
+            <Pill active={paramFilter === 'filled'} onClick={() => setParamFilter('filled')}>
+              {t('filterParamFilled', { count: filledCount })}
+            </Pill>
+            <Pill active={paramFilter === 'empty'} onClick={() => setParamFilter('empty')}>
+              {t('filterParamEmpty', { count: catalog.length - filledCount })}
+            </Pill>
           </div>
           <div className="dsh-a6-search-wrapper">
-            <input
+            <Input
+              className="dsh-a6-search-input"
               type="text"
-              className="dsh-a6-input dsh-a6-search-input"
-              placeholder="搜索模型 ID / 名称..."
+              placeholder={t('catalogSearchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
             {search && (
-              <button
-                type="button"
-                className="dsh-a6-clear-btn"
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<IconCloseOutline16 />}
+                aria-label={t('clearSearch')}
+                title={t('clearSearch')}
                 onClick={() => setSearch('')}
-                title="清空搜索"
-              >
-                ×
-              </button>
+              />
             )}
           </div>
         </div>
       </div>
 
-      {msg && (
-        <div className={`dsh-a6-catalog-msg ${msg.kind}`}>
-          {msg.text}
-        </div>
-      )}
+      {msg && <div className={`dsh-a6-catalog-msg ${msg.kind}`}>{msg.text}</div>}
 
       {/* 内容 */}
       {catalog.length === 0 ? (
         <div className="dsh-a6-empty-state">
-          <span>模型目录为空。</span>
-          <span className="dsh-a6-hint">
-            点击「从 A6API 获取市场模型」拉取全部支持的模型 ID，再用「从 OpenRouter 一键查询」自动填充参数。
-          </span>
+          <span>{t('emptyCatalog')}</span>
+          <span className="dsh-a6-hint">{t('emptyCatalogHint')}</span>
         </div>
       ) : filtered.length === 0 ? (
         <div className="dsh-a6-empty-state">
-          <span>当前筛选条件下没有匹配的模型</span>
+          <span>{t('emptyFiltered')}</span>
         </div>
       ) : (
         <div className="dsh-a6-catalog-list">
@@ -353,49 +343,53 @@ export const ModelCatalogPanel: React.FC = () => {
                 <div className="dsh-a6-catalog-row-head">
                   <div className="dsh-a6-catalog-id">
                     <code>{entry.id}</code>
-                    {isAvail && <span className="dsh-a6-catalog-badge avail">可用</span>}
+                    {isAvail && <Tag tone="success">{t('badgeAvailable')}</Tag>}
                     {entry.name && entry.name !== entry.id && (
                       <span className="dsh-a6-catalog-name">{entry.name}</span>
                     )}
                   </div>
                   <div className="dsh-a6-catalog-row-actions">
-                    <button
-                      type="button"
-                      className="dsh-a6-btn-text"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => handleQueryOne(entry.id)}
                       disabled={busy !== null}
-                      data-tooltip="从 OpenRouter 查询该模型参数并填充"
+                      data-tooltip={t('queryOneTip')}
                     >
-                      {queryingId === entry.id ? '查询中...' : '查询参数'}
-                    </button>
-                    <button
-                      type="button"
-                      className="dsh-a6-btn-text"
+                      {queryingId === entry.id ? t('querying') : t('queryOne')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => (editing ? setEditingId(null) : startEdit(entry))}
                     >
-                      {editing ? '取消' : '编辑'}
-                    </button>
+                      {editing ? t('cancel') : t('edit')}
+                    </Button>
                   </div>
                 </div>
 
                 {/* 第二行：参数（统一在模型 ID 下方） */}
                 <div className="dsh-a6-catalog-meta">
-                  <span className={`dsh-a6-catalog-param${entry.contextWindow != null ? '' : ' empty'}`}>
-                    上下文 {entry.contextWindow != null ? entry.contextWindow.toLocaleString() : '—'}
-                  </span>
-                  <span className={`dsh-a6-catalog-param${entry.maxTokens != null ? '' : ' empty'}`}>
-                    输出 {entry.maxTokens != null ? entry.maxTokens.toLocaleString() : '—'}
-                  </span>
-                  <span className={`dsh-a6-catalog-param${entry.input && entry.input.length > 0 ? '' : ' empty'}`}>
-                    输入 {entry.input && entry.input.length > 0 ? entry.input.join('+') : '—'}
-                  </span>
+                  <Tag tone={entry.contextWindow != null ? 'success' : 'outline'}>
+                    {t('paramContext', {
+                      value: entry.contextWindow != null ? entry.contextWindow.toLocaleString() : '—',
+                    })}
+                  </Tag>
+                  <Tag tone={entry.maxTokens != null ? 'success' : 'outline'}>
+                    {t('paramOutput', {
+                      value: entry.maxTokens != null ? entry.maxTokens.toLocaleString() : '—',
+                    })}
+                  </Tag>
+                  <Tag tone={entry.input && entry.input.length > 0 ? 'success' : 'outline'}>
+                    {t('paramInput', {
+                      value: entry.input && entry.input.length > 0 ? entry.input.join('+') : '—',
+                    })}
+                  </Tag>
                   {re && Object.keys(re).length > 0 && (
-                    <span className="dsh-a6-catalog-param">
-                      推理 {Object.keys(re).length} 档
-                    </span>
+                    <Tag tone="success">{t('paramReasoning', { count: Object.keys(re).length })}</Tag>
                   )}
                   {entry.reasoningEfforts === false && (
-                    <span className="dsh-a6-catalog-param">非推理</span>
+                    <Tag tone="neutral">{t('paramNonReasoning')}</Tag>
                   )}
                 </div>
 
@@ -403,101 +397,80 @@ export const ModelCatalogPanel: React.FC = () => {
                   <div className="dsh-a6-catalog-edit">
                     <div className="dsh-a6-edit-grid">
                       <label className="dsh-a6-edit-field">
-                        <span className="dsh-a6-label">名称 (name)</span>
-                        <input
+                        <span className="dsh-a6-label">{t('fieldName')}</span>
+                        <Input
                           type="text"
-                          className="dsh-a6-input"
                           value={draft.name}
                           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                          placeholder="仅用户填写，留空则不写入 DSH 配置"
+                          placeholder={t('fieldNamePlaceholder')}
                         />
                       </label>
                       <label className="dsh-a6-edit-field">
-                        <span className="dsh-a6-label">上下文窗口 (contextWindow)</span>
-                        <input
+                        <span className="dsh-a6-label">{t('fieldContext')}</span>
+                        <Input
                           type="number"
                           min={1}
-                          className="dsh-a6-input"
                           value={draft.contextWindow}
                           onChange={(e) => setDraft({ ...draft, contextWindow: e.target.value })}
-                          placeholder="如 1048576（留空 = 不填，DSH 用默认）"
+                          placeholder={t('fieldContextPlaceholder')}
                         />
                       </label>
                       <label className="dsh-a6-edit-field">
-                        <span className="dsh-a6-label">最大输出 (maxTokens)</span>
-                        <input
+                        <span className="dsh-a6-label">{t('fieldMaxTokens')}</span>
+                        <Input
                           type="number"
                           min={1}
-                          className="dsh-a6-input"
                           value={draft.maxTokens}
                           onChange={(e) => setDraft({ ...draft, maxTokens: e.target.value })}
-                          placeholder="如 65536（留空 = 不填，DSH 用默认）"
+                          placeholder={t('fieldMaxTokensPlaceholder')}
                         />
                       </label>
                       <div className="dsh-a6-edit-field">
-                        <span className="dsh-a6-label">输入模态 (input)</span>
+                        <span className="dsh-a6-label">{t('fieldInput')}</span>
                         <div className="dsh-a6-checkbox-group">
-                          <label className="dsh-a6-checkbox">
-                            <input
-                              type="checkbox"
-                              checked={draft.inputText}
-                              onChange={(e) => setDraft({ ...draft, inputText: e.target.checked })}
-                            />
-                            <span>text</span>
-                          </label>
-                          <label className="dsh-a6-checkbox">
-                            <input
-                              type="checkbox"
-                              checked={draft.inputImage}
-                              onChange={(e) => setDraft({ ...draft, inputImage: e.target.checked })}
-                            />
-                            <span>image</span>
-                          </label>
+                          <Checkbox
+                            checked={draft.inputText}
+                            onChange={(next) => setDraft({ ...draft, inputText: next })}
+                            label="text"
+                          />
+                          <Checkbox
+                            checked={draft.inputImage}
+                            onChange={(next) => setDraft({ ...draft, inputImage: next })}
+                            label="image"
+                          />
                         </div>
                       </div>
                       <label className="dsh-a6-edit-field dsh-a6-edit-wide">
                         <span className="dsh-a6-label">
-                          推理档位 (reasoningEfforts)
-                          <span className="dsh-a6-field-hint" style={{ marginLeft: 6 }}>
-                            格式：low: low, medium: medium；值为空表示该档位无 wire 值
+                          {t('fieldReasoning')}
+                          <span className="dsh-a6-field-hint dsh-a6-field-hint-inline">
+                            {t('fieldReasoningFormat')}
                           </span>
                         </span>
-                        <input
+                        <Input
                           type="text"
-                          className="dsh-a6-input"
                           value={draft.reasoningText}
                           disabled={draft.reasoningFalse}
                           onChange={(e) => setDraft({ ...draft, reasoningText: e.target.value })}
-                          placeholder="默认已含 DSH 全部 7 档（off/minimal/low/medium/high/xhigh/max），可修改或留空删除该字段"
+                          placeholder={t('fieldReasoningPlaceholder')}
                         />
                       </label>
-                      <label className="dsh-a6-edit-field">
-                        <span className="dsh-a6-label">推理能力</span>
-                        <label className="dsh-a6-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={draft.reasoningFalse}
-                            onChange={(e) => setDraft({ ...draft, reasoningFalse: e.target.checked })}
-                          />
-                          <span>非推理模型 (reasoningEfforts: false)</span>
-                        </label>
-                      </label>
+                      <div className="dsh-a6-edit-field">
+                        <span className="dsh-a6-label">{t('fieldReasoningCapability')}</span>
+                        <Checkbox
+                          checked={draft.reasoningFalse}
+                          onChange={(next) => setDraft({ ...draft, reasoningFalse: next })}
+                          label={t('fieldNonReasoning')}
+                        />
+                      </div>
                     </div>
                     <div className="dsh-a6-edit-actions">
-                      <button
-                        type="button"
-                        className="dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm"
-                        onClick={() => handleSave(entry.id)}
-                      >
-                        保存
-                      </button>
-                      <button
-                        type="button"
-                        className="dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm"
-                        onClick={() => setEditingId(null)}
-                      >
-                        取消
-                      </button>
+                      <Button variant="primary" size="sm" onClick={() => handleSave(entry.id)}>
+                        {t('save')}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setEditingId(null)}>
+                        {t('cancel')}
+                      </Button>
                     </div>
                   </div>
                 )}

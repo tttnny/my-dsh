@@ -186,9 +186,14 @@ const source = (await import('node:fs')).readFileSync(join(root, 'lib/client.js'
 new Function('window', 'document', source)(globalThis.window, globalThis.document)
 
 check('bundle registers under its package id', loaded?.id === '@lynn123411/dsh-a6api')
+// The settings panel renders ui-primitives controls the shell seeds at runtime;
+// the module table supplies them as inert components so the composer-dock render
+// self-check below still exercises the hand-drawn popup it owns.
+const primitivesStub = new Proxy({}, { get: (_t, key) => (key === '__esModule' ? true : () => null) })
 const exported = loaded?.factory((spec) => {
   if (spec === 'react') return require('react')
   if (spec === 'react/jsx-runtime') return require('react/jsx-runtime')
+  if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitivesStub
   throw new Error(`module table miss: ${spec}`)
 })
 check('apply/inject exported', typeof exported?.apply === 'function' && Array.isArray(exported?.inject))

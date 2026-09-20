@@ -1,16 +1,18 @@
 import React from 'react';
+import { dictionaryT, type A6apiT } from '../locales.js';
 import type { PriceFluctuationState } from '../../types.js';
 
 /**
  * 价格波动胶囊（设置页头部与输入框下方浮层共用）：
  * 未配置令牌显示 `--`（禁用），无变动置灰（禁用），有待处理时点击跳官网处理。
- * compact 为浮层内的紧凑缩窄版。
+ * compact 为浮层内的紧凑缩窄版。浮层侧注册未带 locale，故 `t` 缺省回落到本插件字典。
  */
 export const PricePill: React.FC<{
   pf: PriceFluctuationState;
   hasToken: boolean;
+  t?: A6apiT;
   compact?: boolean;
-}> = ({ pf, hasToken, compact }) => {
+}> = ({ pf, hasToken, t = dictionaryT, compact }) => {
   const n = Number(pf?.pendingCount ?? 0);
   const hasAuth = pf?.hasAuth !== false && !pf?.authError && Boolean(hasToken);
   const isAuthError = Boolean(pf?.authError);
@@ -22,37 +24,26 @@ export const PricePill: React.FC<{
       ? `dsh-a6-price-pill disabled${compactCls}`
       : `dsh-a6-price-pill is-zero is-disabled-zero${compactCls}`
     : `dsh-a6-price-pill has-change${compactCls}`;
-  const title = !hasAuth
+  const tip = !hasAuth
     ? isAuthError
-      ? '系统访问令牌已失效，请前往基础配置更新'
-      : '未配置系统访问令牌，无法获取价格变动'
+      ? t('priceTipAuthError')
+      : t('priceTipNoToken')
     : isZero
-      ? '暂无价格变动'
-      : `有 ${n} 条价格变动待处理，点击前往官网处理`;
+      ? t('priceTipZero')
+      : t('priceTipPending', { count: n });
   const onClick = () => {
-    if (isDisabled) return;
     window.open('https://a6api.com/console/token', '_blank', 'noopener');
   };
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (isDisabled) return;
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onClick();
-    }
-  };
   return (
-    <div
+    <button
+      type="button"
       className={cls}
       onClick={isDisabled ? undefined : onClick}
-      onKeyDown={onKeyDown}
-      tabIndex={isDisabled ? -1 : 0}
-      title={title}
-      role="button"
-      aria-disabled={isDisabled}
-      style={isDisabled ? { cursor: 'not-allowed' } : undefined}
+      disabled={isDisabled}
+      title={tip}
     >
-      <span className="dsh-a6-price-pill-label">价格波动：</span>
+      <span className="dsh-a6-price-pill-label">{t('priceLabel')}</span>
       <span className="dsh-a6-price-pill-count">{!hasAuth ? '--' : n}</span>
-    </div>
+    </button>
   );
 };

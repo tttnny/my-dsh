@@ -21,6 +21,8 @@ const check = (label, ok) => {
 }
 
 const requires = []
+/** Inert stand-in for the ui-primitives baseline the settings card imports. */
+const primitivesStub = new Proxy({}, { get: (_t, key) => (key === '__esModule' ? true : () => null) })
 let exported
 globalThis.window = {
   __ModuleLoader__: {
@@ -30,6 +32,7 @@ globalThis.window = {
         if (spec === 'react') return require('react')
         if (spec === 'react/jsx-runtime') return require('react/jsx-runtime')
         if (spec === 'react-dom') return require('react-dom')
+        if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitivesStub
         throw new Error(`module table miss: ${spec}`)
       })
     },

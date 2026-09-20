@@ -6,6 +6,7 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 		let jsx = require("react/jsx-runtime");
 		let react = require("react");
+		const { Button, Checkbox, Input } = require("@deepseek-ai/dsh-client-ui-primitives");
 
 		//#region styles
 		/*
@@ -16,44 +17,40 @@ window.__ModuleLoader__.load({
 		 */
 		const CSS = [
 			".dshAr_card{display:flex;flex-direction:column;gap:10px}",
-			".dshAr_lead{margin:0;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:20px}",
+			".dshAr_lead{margin:0;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xs-13)}",
 			".dshAr_choices{display:flex;gap:10px;margin:0;padding:0;border:0;flex-wrap:wrap}",
-			".dshAr_choice{flex:1 1 200px;min-width:0;display:flex;gap:9px;align-items:flex-start;padding:11px 13px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-3);cursor:pointer}",
+			".dshAr_choice{flex:1 1 200px;min-width:0;display:flex;gap:9px;align-items:flex-start;padding:11px 13px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-3);cursor:pointer;transition:background-color var(--ds-transition-duration) var(--ds-ease-in-out),border-color var(--ds-transition-duration) var(--ds-ease-in-out)}",
 			".dshAr_choice:hover{background:var(--dsw-alias-interactive-bg-hover)}",
 			".dshAr_choice[data-selected=true]{border-color:var(--dsw-alias-state-business-primary);box-shadow:0 0 0 1px var(--dsw-alias-state-business-primary) inset}",
 			".dshAr_choice[data-disabled=true]{cursor:default;opacity:.55}",
-			".dshAr_choice input{margin:3px 0 0}",
+			".dshAr_choice input{margin:3px 0 0;accent-color:var(--dsw-alias-brand-primary)}",
+			".dshAr_choice input:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-state-business-primary)}",
 			".dshAr_choiceText{display:flex;flex-direction:column;gap:2px;min-width:0}",
-			".dshAr_choiceTitle{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600;line-height:20px}",
-			".dshAr_choiceHost{overflow-wrap:anywhere;color:var(--dsw-alias-label-tertiary);font-family:var(--ds-font-family-code);font-size:12px;line-height:17px}",
-			".dshAr_choiceHint{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:17px}",
-			".dshAr_status{margin:0;min-height:18px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}",
+			".dshAr_choiceTitle{color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-strong-14)}",
+			".dshAr_choiceHost{overflow-wrap:anywhere;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12);font-family:var(--ds-font-family-code)}",
+			".dshAr_choiceHint{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}",
+			".dshAr_status{margin:0;min-height:18px;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}",
 			".dshAr_status[data-kind=error]{color:var(--dsw-alias-state-error-primary)}",
-			".dshAr_models{display:flex;flex-direction:column;gap:8px;margin-top:4px;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l2)}",
+			".dshAr_models{display:flex;flex-direction:column;gap:8px;margin-top:4px;padding-top:12px;border-top:0.5px solid var(--dsw-alias-border-l2)}",
 			".dshAr_modelsHead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}",
-			".dshAr_modelsHead h4{margin:0;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600;line-height:20px}",
+			".dshAr_modelsHead h4{margin:0;color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-strong-14)}",
 			".dshAr_actions{display:flex;gap:8px;flex-wrap:wrap}",
 			".dshAr_modelsHead .dshAr_actions{margin-left:auto}",
-			".dshAr_button{appearance:none;padding:5px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;cursor:pointer}",
-			".dshAr_button:hover:enabled{background:var(--dsw-alias-interactive-bg-hover)}",
-			".dshAr_button:disabled{cursor:default;opacity:.5}",
 			".dshAr_modelsList{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}",
-			".dshAr_model{margin:0;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-3)}",
-			".dshAr_modelHead{display:flex;gap:8px;align-items:baseline;cursor:pointer;color:var(--dsw-alias-label-primary);font-size:13px;line-height:19px}",
+			".dshAr_model{margin:0;padding:8px 10px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-3)}",
+			".dshAr_modelHead{display:flex;gap:8px;align-items:baseline;cursor:pointer;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xs-13)}",
 			".dshAr_modelName{font-weight:600}",
-			".dshAr_modelId{overflow-wrap:anywhere;color:var(--dsw-alias-label-tertiary);font-family:var(--ds-font-family-code);font-size:11px;line-height:17px}",
+			".dshAr_modelId{overflow-wrap:anywhere;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-11);font-family:var(--ds-font-family-code)}",
 			".dshAr_fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:10px}",
 			".dshAr_field{display:flex;flex-direction:column;gap:3px;min-width:0}",
-			".dshAr_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:11px;line-height:15px}",
-			".dshAr_input{min-width:0;padding:4px 7px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}",
-			".dshAr_input:disabled{opacity:.55}",
+			".dshAr_fieldLabel{color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxxs-11)}",
 			".dshAr_inputs{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}",
-			".dshAr_toggle{display:flex;gap:5px;align-items:center;color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px}",
 			".dshAr_efforts{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px;margin-top:10px}",
-			".dshAr_effort{display:flex;gap:6px;align-items:center;color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px}",
-			".dshAr_effortLevel{min-width:38px;color:var(--dsw-alias-label-secondary)}",
-			".dshAr_effortWire{flex:1 1 60px}",
+			".dshAr_effort{display:flex;gap:6px;align-items:center;min-width:0}",
+			".dshAr_effortLevel{min-width:76px}",
+			".dshAr_effortWire{flex:1 1 60px;min-width:0}",
 			".dshAr_modelActions{display:flex;justify-content:flex-end;margin-top:10px}",
+			"@media (prefers-reduced-motion: reduce){.dshAr_choice{transition:none}}",
 		].join("");
 		const CSS_TAG_ID = "dsh-llm-agentrouter/EndpointCard.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(CSS_TAG_ID) + "]") === null) {
@@ -108,6 +105,7 @@ window.__ModuleLoader__.load({
 			modalityText: "文本",
 			modalityImage: "图片",
 			wireNone: "留空 = 不发送",
+			wireLabel: "「%s」档位发送给中转站的取值",
 			levelOff: "off",
 			levelMinimal: "minimal",
 			levelLow: "low",
@@ -164,6 +162,7 @@ window.__ModuleLoader__.load({
 			modalityText: "Text",
 			modalityImage: "Image",
 			wireNone: "empty = send nothing",
+			wireLabel: "Wire value sent for the %s level",
 			levelOff: "off",
 			levelMinimal: "minimal",
 			levelLow: "low",
@@ -560,8 +559,7 @@ window.__ModuleLoader__.load({
 					className: "dshAr_field",
 					children: [
 						jsx.jsx("span", { className: "dshAr_fieldLabel", children: t(label) }),
-						jsx.jsx("input", {
-							className: "dshAr_input",
+						jsx.jsx(Input, {
 							type: "text",
 							value: row[name],
 							disabled: readOnly,
@@ -605,25 +603,21 @@ window.__ModuleLoader__.load({
 									className: "dshAr_inputs",
 									children: [
 										jsx.jsx("span", { className: "dshAr_fieldLabel", children: t("fieldInput") }),
-										...MODALITIES.map((modality) => jsx.jsxs(
-											"label",
+										...MODALITIES.map((modality) => jsx.jsx(
+											"span",
 											{
-												className: "dshAr_toggle",
-												children: [
-													jsx.jsx("input", {
-														type: "checkbox",
-														checked: row.input.includes(modality),
-														disabled: readOnly,
-														"data-model": String(index),
-														"data-modality": modality,
-														onChange: () => onPatch(index, {
-															input: row.input.includes(modality)
-																? row.input.filter((entry) => entry !== modality)
-																: [...row.input, modality],
-														}),
+												"data-modality": modality,
+												"data-model": String(index),
+												children: jsx.jsx(Checkbox, {
+													checked: row.input.includes(modality),
+													disabled: readOnly,
+													label: t(MODALITY_LABELS[modality]),
+													onChange: (next) => onPatch(index, {
+														input: next
+															? [...row.input, modality]
+															: row.input.filter((entry) => entry !== modality),
 													}),
-													jsx.jsx("span", { children: t(MODALITY_LABELS[modality]) }),
-												],
+												}),
 											},
 											modality,
 										)),
@@ -635,30 +629,28 @@ window.__ModuleLoader__.load({
 									children: EFFORT_LEVELS.map((level) => {
 										const entry = row.efforts.find((candidate) => candidate.level === level)
 											?? { level, on: false, wire: "" };
+										const levelKey = "level" + level.charAt(0).toUpperCase() + level.slice(1);
 										return jsx.jsxs(
-											"label",
+											"div",
 											{
 												className: "dshAr_effort",
 												"data-level": level,
+												"data-model": String(index),
 												children: [
-													jsx.jsx("input", {
-														type: "checkbox",
+													jsx.jsx(Checkbox, {
 														checked: entry.on,
 														disabled: readOnly,
-														"data-model": String(index),
-														"data-effort": level,
-														onChange: () => onEffort(index, level, { on: !entry.on }),
-													}),
-													jsx.jsx("span", {
 														className: "dshAr_effortLevel",
-														children: t("level" + level.charAt(0).toUpperCase() + level.slice(1)),
+														label: t(levelKey),
+														onChange: (next) => onEffort(index, level, { on: next }),
 													}),
-													jsx.jsx("input", {
-														className: "dshAr_input dshAr_effortWire",
+													jsx.jsx(Input, {
+														className: "dshAr_effortWire",
 														type: "text",
 														value: entry.wire,
 														placeholder: level === "off" ? t("wireNone") : level,
 														disabled: readOnly || !entry.on,
+														"aria-label": fill(t("wireLabel"), [t(levelKey)]),
 														"data-model": String(index),
 														"data-wire": level,
 														onChange: (event) => onEffort(index, level, { wire: event.target.value }),
@@ -671,9 +663,9 @@ window.__ModuleLoader__.load({
 								}),
 								jsx.jsx("div", {
 									className: "dshAr_modelActions",
-									children: jsx.jsx("button", {
-										type: "button",
-										className: "dshAr_button",
+									children: jsx.jsx(Button, {
+										variant: "ghost",
+										size: "sm",
 										"data-action": "remove",
 										disabled: readOnly,
 										onClick: () => onRemove(index),
@@ -869,9 +861,9 @@ window.__ModuleLoader__.load({
 			const shown = status === null
 				? { kind: "info", text: "" }
 				: { kind: status.kind, text: fill(t(status.key), status.values) };
-			const action = (name, label, disabled, onClick) => jsx.jsx("button", {
-				type: "button",
-				className: "dshAr_button",
+			const action = (name, label, disabled, onClick) => jsx.jsx(Button, {
+				variant: name === "save" ? "primary" : "outline",
+				size: "sm",
 				"data-action": name,
 				disabled,
 				onClick,
@@ -985,13 +977,11 @@ window.__ModuleLoader__.load({
 			position: "relative",
 			padding: "7px 1px 11px",
 			cursor: "pointer",
-			font: "inherit",
-			fontSize: "13px",
-			lineHeight: "20px",
-			color: "var(--dsw-alias-label-tertiary, inherit)",
+			font: "var(--dsw-font-xs-13)",
+			color: "var(--dsw-alias-label-tertiary)",
 		};
 		const TAB_ACTIVE_STYLE = Object.assign({}, TAB_STYLE, {
-			color: "var(--dsw-alias-label-primary, inherit)",
+			color: "var(--dsw-alias-label-primary)",
 		});
 		/** The kernel's own tab marker: a 2px rounded bar under the active label. */
 		const TAB_MARKER_STYLE = {
@@ -1001,7 +991,7 @@ window.__ModuleLoader__.load({
 			bottom: 0,
 			height: "2px",
 			borderRadius: "2px 2px 0 0",
-			background: "var(--dsw-alias-label-primary, currentColor)",
+			background: "var(--dsw-alias-label-primary)",
 		};
 		/**
 		 * Panels stay mounted (hidden) so each card keeps its local state. `display:

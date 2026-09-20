@@ -28,7 +28,7 @@ await build({
   platform: 'browser',
   target: ['es2022'],
   sourcemap: true,
-  external: ['react', 'react-dom'],
+  external: ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],
   banner: {
     js: `window.__ModuleLoader__.load({ id: ${JSON.stringify(pkgName)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
   },

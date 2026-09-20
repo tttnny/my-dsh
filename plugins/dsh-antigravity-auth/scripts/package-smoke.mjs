@@ -157,7 +157,15 @@ try {
   if (registration?.id !== manifest.name || typeof registration.factory !== 'function') {
     throw new Error('package smoke: client artifact did not register with the DSH module loader')
   }
-  const clientExports = registration.factory(createRequire(resolve(packageRoot, 'package.json')))
+  // The published bundle externalises the ui-primitives baseline, whose ESM
+  // entry imports bundled stylesheets Node cannot load. The packaging smoke only
+  // checks that the factory applies, so the module table answers that one
+  // specifier inertly and defers everything else to real resolution.
+  const packageRequire = createRequire(resolve(packageRoot, 'package.json'))
+  const primitivesStub = new Proxy({}, { get: (_t, key) => (key === '__esModule' ? true : () => null) })
+  const clientExports = registration.factory((specifier) => (
+    specifier === '@deepseek-ai/dsh-client-ui-primitives' ? primitivesStub : packageRequire(specifier)
+  ))
   if (typeof clientExports?.apply !== 'function') {
     throw new Error('package smoke: client factory did not expose an apply function')
   }

@@ -48,7 +48,8 @@
       "platform": "web",
       "immediately": true,
       "inject": [
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives"
       ]
     }
   },
@@ -69,6 +70,8 @@
     "dsh": "0.1.6-alpha.2"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.6-alpha.2",
     "@deepseek-ai/dsh-home-paths": "0.1.6-alpha.2",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.18",
@@ -78,6 +81,12 @@
     "typescript": "^6.0.0"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": "*",
     "@deepseek-ai/dsh-home-paths": "0.1.6-alpha.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    }
   }
 }

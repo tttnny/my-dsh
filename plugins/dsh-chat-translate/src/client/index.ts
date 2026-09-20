@@ -12,12 +12,13 @@ export const name = 'dsh-chat-translate';
 /**
  * Declared services: slots for the shared 「阅读体验」 settings page (page claim
  * plus the card registration), settingsScope for the per-namespace settings
- * mirror, and the remote + remote.credentials pair for the credentials Remote
- * namespace — the runtime withholds any service not declared here, so
- * `ctx.remote.credentials` would be undefined otherwise. The locale service is
- * optional and read through `ctx.get`, like the renderer's slots registry.
+ * mirror, the remote + remote.credentials pair for the credentials Remote
+ * namespace, and locale for the card's own dictionary. The runtime withholds any
+ * service not declared here; `locale` is declared rather than sampled because
+ * `ctx.get('locale')` at apply time can beat the locale plugin's `provide`,
+ * which silently left the card's dictionary unregistered.
  */
-export const inject = ['slots', 'settingsScope', 'remote', 'remote.credentials'];
+export const inject = ['slots', 'settingsScope', 'remote', 'remote.credentials', 'locale'];
 
 interface ClientContext {
   effect(factory: () => void | (() => void), label: string): void;

@@ -94,7 +94,12 @@ window.fetch = global.fetch;
 let factory = null;
 window.__ModuleLoader__ = { load: (entry) => { factory = entry.factory; } };
 window.eval(code);
-const api = factory((id) => (id === 'react' ? { useState: () => [null, () => {}], useEffect: () => {} } : null));
+// The settings card's ui-primitives controls are never rendered here, so the
+// module table only has to answer the bundle's top-level require.
+const primitivesStub = new Proxy({}, { get: (_t, key) => (key === '__esModule' ? true : () => null) });
+const api = factory((id) => (id === 'react'
+  ? { useState: () => [null, () => {}], useEffect: () => {} }
+  : (id === '@deepseek-ai/dsh-client-ui-primitives' ? primitivesStub : null)));
 api.apply({ effect: (fn) => { try { fn(); } catch (error) { console.log('[effect err]', error.message); } }, get: () => null });
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

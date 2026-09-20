@@ -26,6 +26,40 @@ import { act, create } from 'react-test-renderer'
 
 const require_ = createRequire(import.meta.url)
 
+/**
+ * The ui-primitives baseline as thin React doubles. The harness cannot load the
+ * published package (its ESM entry imports bundled stylesheets), so these mirror
+ * the element shape and prop pass-through the real controls document: `Button`
+ * renders a `<button>`, `Input` a wrapper `<span>` around the native `<input>`,
+ * and `Checkbox` a `<label>` around a native checkbox that reports the checked
+ * bit on change. Only the exports this bundle requires are present.
+ */
+const primitives = {
+  Button: ({ variant, size, icon, className, children, ...rest }) => createElement(
+    'button',
+    { type: 'button', className, ...rest },
+    icon !== undefined && icon !== null ? createElement('span', null, icon) : null,
+    children,
+  ),
+  Input: ({ icon, className, ...rest }) => createElement(
+    'span',
+    { className },
+    icon !== undefined && icon !== null ? createElement('span', null, icon) : null,
+    createElement('input', rest),
+  ),
+  Checkbox: ({ checked, onChange, label, disabled = false, title, className }) => createElement(
+    'label',
+    { className, title },
+    createElement('input', {
+      type: 'checkbox',
+      checked,
+      disabled,
+      onChange: (event) => { onChange(event.target.checked) },
+    }),
+    createElement('span', null, label),
+  ),
+}
+
 /** Child slot both participants register their card into. */
 const ITEM_SLOT = 'relay.settings.item'
 /** Page id the first participant to activate claims. */
@@ -57,6 +91,7 @@ function loadBundle() {
   const resolved = new Map([
     ['react', require_('react')],
     ['react/jsx-runtime', require_('react/jsx-runtime')],
+    ['@deepseek-ai/dsh-client-ui-primitives', primitives],
   ])
   const exports_ = registered.factory((specifier) => {
     const module = resolved.get(specifier)
@@ -368,6 +403,38 @@ function inputOf(tree, index, field) {
   )
 }
 
+/** One model row's effort row, the wrapper that pairs a level checkbox with its wire box. */
+function effortRowOf(tree, index, level) {
+  return find(
+    tree,
+    (node) => node.type === 'div'
+      && node.props['data-level'] === level
+      && node.props['data-model'] === String(index),
+  )
+}
+
+/** One reasoning level's checkbox, addressed by its row. */
+function effortCheckboxOf(tree, index, level) {
+  return effortRowOf(tree, index, level)
+    .findAll((node) => node.type === 'input' && node.props.type === 'checkbox').at(0)
+}
+
+/** One reasoning level's wire box, addressed by its row. */
+function effortWireOf(tree, index, level) {
+  return effortRowOf(tree, index, level)
+    .find((node) => node.type === 'input' && node.props['data-wire'] === level)
+}
+
+/** One input modality's checkbox, addressed by the wrapper the card renders around it. */
+function modalityCheckboxOf(tree, index, name) {
+  return find(
+    tree,
+    (node) => node.type === 'span'
+      && node.props['data-modality'] === name
+      && node.props['data-model'] === String(index),
+  ).findAll((node) => node.type === 'input' && node.props.type === 'checkbox').at(0)
+}
+
 /** The status line's rendered text and kind. */
 function statusOf(tree) {
   const node = find(tree, (child) => child.type === 'p' && child.props.className === 'dshAr_status' && child.props.role !== undefined)
@@ -655,25 +722,13 @@ test('the model list shows the route’s own models and their declared parameter
 
   // Off is offered only where the route declares it, and its wire box only opens
   // then — an unoffered level cannot carry a value the relay would never get.
-  const effort = (index, level, attribute) => find(
-    tree,
-    (node) => node.type === 'input'
-      && node.props[attribute] === level
-      && node.props['data-model'] === String(index),
-  )
-  assert.equal(effort(0, 'off', 'data-effort').props.checked, true)
-  assert.equal(effort(1, 'off', 'data-effort').props.checked, false, 'glm-5.3 always thinks')
-  assert.equal(effort(1, 'off', 'data-wire').props.disabled, true)
-  assert.equal(effort(0, 'xhigh', 'data-wire').props.value, 'xhigh', 'the wire spelling is editable, not implied')
+  assert.equal(effortCheckboxOf(tree, 0, 'off').props.checked, true)
+  assert.equal(effortCheckboxOf(tree, 1, 'off').props.checked, false, 'glm-5.3 always thinks')
+  assert.equal(effortWireOf(tree, 1, 'off').props.disabled, true)
+  assert.equal(effortWireOf(tree, 0, 'xhigh').props.value, 'xhigh', 'the wire spelling is editable, not implied')
 
-  const modality = (index, name) => find(
-    tree,
-    (node) => node.type === 'input'
-      && node.props['data-modality'] === name
-      && node.props['data-model'] === String(index),
-  )
-  assert.equal(modality(0, 'image').props.checked, true)
-  assert.equal(modality(1, 'image').props.checked, false, 'a model declaring no modalities claims none')
+  assert.equal(modalityCheckboxOf(tree, 0, 'image').props.checked, true)
+  assert.equal(modalityCheckboxOf(tree, 1, 'image').props.checked, false, 'a model declaring no modalities claims none')
 })
 
 test('update merges the relay’s listing and seeds only the new models with the defaults', async () => {
@@ -707,7 +762,7 @@ test('update merges the relay’s listing and seeds only the new models with the
   assert.equal(inputOf(tree, 2, 'maxTokens').props.value, '131072')
   assert.equal(inputOf(tree, 0, 'contextWindow').props.value, '1000000', 'an existing model keeps what it had')
   assert.equal(
-    find(tree, (node) => node.type === 'input' && node.props['data-effort'] === 'xhigh' && node.props['data-model'] === '2').props.checked,
+    effortCheckboxOf(tree, 2, 'xhigh').props.checked,
     true,
     'every level is offered by default',
   )
@@ -733,8 +788,8 @@ test('saving writes the drafted list as the route’s models, fenced by the revi
     inputOf(tree, 0, 'contextWindow').props.onChange({ target: { value: '4096' } })
   })
   await act(async () => {
-    find(tree, (node) => node.type === 'input' && node.props['data-modality'] === 'image' && node.props['data-model'] === '0')
-      .props.onChange()
+    modalityCheckboxOf(tree, 0, 'image')
+      .props.onChange({ target: { checked: false } })
   })
   await act(async () => {
     actionOf(tree, 'save').props.onClick()
@@ -801,8 +856,8 @@ test('a draft the adapter would refuse never reaches the Host', async () => {
 
   await act(async () => {
     inputOf(tree, 1, 'contextWindow').props.onChange({ target: { value: '1000000' } })
-    find(tree, (node) => node.type === 'input' && node.props['data-effort'] === 'medium' && node.props['data-model'] === '1')
-      .props.onChange()
+    effortCheckboxOf(tree, 1, 'medium')
+      .props.onChange({ target: { checked: true } })
   })
   await save()
   assert.deepEqual(written, [], 'an offered level with no wire value is caught here')

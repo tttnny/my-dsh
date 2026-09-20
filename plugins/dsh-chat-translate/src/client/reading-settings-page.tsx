@@ -101,15 +101,13 @@ const TAB_STYLE = {
   position: 'relative',
   padding: '7px 1px 11px',
   cursor: 'pointer',
-  font: 'inherit',
-  fontSize: '13px',
-  lineHeight: '20px',
-  color: 'var(--dsw-alias-label-tertiary, inherit)',
+  font: 'var(--dsw-font-xs-13)',
+  color: 'var(--dsw-alias-label-tertiary)',
 } as const
 
 const TAB_ACTIVE_STYLE = {
   ...TAB_STYLE,
-  color: 'var(--dsw-alias-label-primary, inherit)',
+  color: 'var(--dsw-alias-label-primary)',
 } as const
 
 /** The kernel's own tab marker: a 2px rounded bar under the active label. */
@@ -120,7 +118,7 @@ const TAB_MARKER_STYLE = {
   bottom: 0,
   height: '2px',
   borderRadius: '2px 2px 0 0',
-  background: 'var(--dsw-alias-label-primary, currentColor)',
+  background: 'var(--dsw-alias-label-primary)',
 } as const
 
 /** Panels stay mounted (hidden) so each card keeps its local state. */

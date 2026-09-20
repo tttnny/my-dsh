@@ -1,4 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
+import {
+  Button,
+  IconCloseOutline16,
+  IconRefreshOutline14,
+  Input,
+  Pill,
+  Tag,
+} from '@deepseek-ai/dsh-client-ui-primitives';
+import { NS } from '../locales.js';
 import { store, type StoreState } from '../store.js';
 import { MerchantCard } from './MerchantCard.js';
 import { AccountPanel } from './BalanceCard.js';
@@ -9,7 +19,7 @@ import { ModelCatalogPanel } from './ModelCatalogPanel.js';
 
 type TabKey = 'models' | 'catalog' | 'account' | 'config';
 
-export const A6ApiSettingsPanel: React.FC = () => {
+export const A6ApiSettingsPanel: React.FC<PropsLocale<typeof NS>> = ({ t }) => {
   const [state, setState] = useState<StoreState>(store.getState());
   const [activeTab, setActiveTab] = useState<TabKey>('models');
   const [filterMode, setFilterMode] = useState<'all' | 'enabled' | 'probed'>('all');
@@ -76,74 +86,59 @@ export const A6ApiSettingsPanel: React.FC = () => {
       {/* 1. Header Title & Description */}
       <div className="dsh-a6-main-header">
         <div className="dsh-a6-header-text">
-          <h2 className="dsh-a6-main-title">A6api</h2>
-          <p className="dsh-a6-main-subtitle">
-            聚合全球主流与高性价比模型，实时监控商户指标、价格倍率与账户资产。
-          </p>
+          <h2 className="dsh-a6-main-title">{t('heading')}</h2>
+          <p className="dsh-a6-main-subtitle">{t('subtitle')}</p>
         </div>
 
         <div className="dsh-a6-header-badges">
           {state.balance?.hasAccountAuth && (
-            <div
+            <button
+              type="button"
               className="dsh-a6-header-balance-badge"
               onClick={() => setActiveTab('account')}
-              title="点击切换至「账户资产」页面"
+              title={t('balanceBadgeTip')}
             >
-              <span className="dsh-a6-hb-label">账户余额:</span>
+              <span className="dsh-a6-hb-label">{t('balanceLabel')}</span>
               <span className="dsh-a6-hb-amount">{state.balance.accountBalanceFormatted}</span>
-            </div>
+            </button>
           )}
-          <PricePill pf={state.priceFluctuation} hasToken={Boolean(state.config?.hasToken)} />
-          <MarketPill />
+          <PricePill
+            pf={state.priceFluctuation}
+            hasToken={Boolean(state.config?.hasToken)}
+            t={t}
+          />
+          <MarketPill t={t} />
         </div>
       </div>
 
       {/* 2. Top Navigation Tabs */}
       <div className="dsh-a6-nav-tabs">
-        <button
-          type="button"
-          className={`dsh-a6-nav-tab ${activeTab === 'models' ? 'active' : ''}`}
-          onClick={() => setActiveTab('models')}
-        >
-          <span>可用模型</span>
-          <span className="dsh-a6-tab-badge">{state.models.length}</span>
-        </button>
+        <Pill active={activeTab === 'models'} onClick={() => setActiveTab('models')}>
+          <span>{t('tabModels')}</span>
+          <Tag tone="neutral">{state.models.length}</Tag>
+        </Pill>
 
-        <button
-          type="button"
-          className={`dsh-a6-nav-tab ${activeTab === 'catalog' ? 'active' : ''}`}
-          onClick={() => setActiveTab('catalog')}
-        >
-          <span>模型目录</span>
-          {state.catalog.length > 0 && <span className="dsh-a6-tab-badge">{state.catalog.length}</span>}
-        </button>
+        <Pill active={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')}>
+          <span>{t('tabCatalog')}</span>
+          {state.catalog.length > 0 && <Tag tone="neutral">{state.catalog.length}</Tag>}
+        </Pill>
 
-        <button
-          type="button"
-          className={`dsh-a6-nav-tab ${activeTab === 'account' ? 'active' : ''}`}
-          onClick={() => setActiveTab('account')}
-        >
-          <span>账户资产</span>
+        <Pill active={activeTab === 'account'} onClick={() => setActiveTab('account')}>
+          <span>{t('tabAccount')}</span>
           {state.balance?.hasAccountAuth && (
-            <span className="dsh-a6-tab-badge success">
-              {state.balance.accountBalanceFormatted}
-            </span>
+            <Tag tone="success">{state.balance.accountBalanceFormatted}</Tag>
           )}
-        </button>
+        </Pill>
 
-        <button
-          type="button"
-          className={`dsh-a6-nav-tab ${activeTab === 'config' ? 'active' : ''}`}
-          onClick={() => setActiveTab('config')}
-        >
-          <span>基础配置</span>
-        </button>
+        <Pill active={activeTab === 'config'} onClick={() => setActiveTab('config')}>
+          <span>{t('tabConfig')}</span>
+        </Pill>
       </div>
 
       {/* 3. Tab Content Pages */}
       {activeTab === 'catalog' && (
         <div className="dsh-a6-tab-page catalog-page">
-          <ModelCatalogPanel />
+          <ModelCatalogPanel t={t} />
         </div>
       )}
 
@@ -152,97 +147,87 @@ export const A6ApiSettingsPanel: React.FC = () => {
           {/* Models Section Toolbar */}
           <div className="dsh-a6-section-header">
             <div className="dsh-a6-filter-group">
-              <button
-                type="button"
-                className={`dsh-a6-filter-btn ${filterMode === 'all' ? 'active' : ''}`}
-                onClick={() => setFilterMode('all')}
-              >
-                全部 ({state.models.length})
-              </button>
-              <button
-                type="button"
-                className={`dsh-a6-filter-btn ${filterMode === 'enabled' ? 'active' : ''}`}
-                onClick={() => setFilterMode('enabled')}
-              >
-                已启用 ({inDshCount})
-              </button>
-              <button
-                type="button"
-                className={`dsh-a6-filter-btn ${filterMode === 'probed' ? 'active' : ''}`}
-                onClick={() => setFilterMode('probed')}
-              >
-                已探测 ({probedCount})
-              </button>
+              <Pill active={filterMode === 'all'} onClick={() => setFilterMode('all')}>
+                {t('filterAll', { count: state.models.length })}
+              </Pill>
+              <Pill active={filterMode === 'enabled'} onClick={() => setFilterMode('enabled')}>
+                {t('filterEnabled', { count: inDshCount })}
+              </Pill>
+              <Pill active={filterMode === 'probed'} onClick={() => setFilterMode('probed')}>
+                {t('filterProbed', { count: probedCount })}
+              </Pill>
             </div>
 
             <div className="dsh-a6-toolbar-right">
               <div className="dsh-a6-search-wrapper">
-                <input
+                <Input
+                  className="dsh-a6-search-input"
                   type="text"
-                  className="dsh-a6-input dsh-a6-search-input"
-                  placeholder="搜索模型 / 供应商 / 渠道..."
+                  placeholder={t('searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
                 {searchQuery && (
-                  <button
-                    type="button"
-                    className="dsh-a6-clear-btn"
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<IconCloseOutline16 />}
+                    aria-label={t('clearSearch')}
+                    title={t('clearSearch')}
                     onClick={() => setSearchQuery('')}
-                    title="清空搜索"
-                  >
-                    ×
-                  </button>
+                  />
                 )}
               </div>
 
-              <button
-                type="button"
-                className={`dsh-a6-btn dsh-a6-btn-secondary dsh-a6-btn-sm ${refreshSuccess ? 'dsh-a6-btn-refresh-ok' : ''}`}
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<IconRefreshOutline14 />}
                 onClick={handleRefreshState}
                 disabled={refreshing || state.probeAllActive}
                 data-tooltip={
-                  state.probeAllActive
-                    ? '全量探测进行中，完成后可刷新'
-                    : '重新向 A6API 接口拉取当前令牌的可用模型列表及已缓存商户指标（不消耗 Token）'
+                  state.probeAllActive ? t('refreshBusyTip') : t('refreshTip')
                 }
                 data-tooltip-pos="down"
               >
-                {refreshing ? '刷新中...' : refreshSuccess ? '已刷新 ✓' : '刷新列表'}
-              </button>
+                {refreshing ? t('refreshing') : refreshSuccess ? t('refreshed') : t('refresh')}
+              </Button>
 
               {state.probeAllActive ? (
                 <>
-                  <button
-                    type="button"
-                    className="dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm"
+                  <Button
+                    variant="primary"
+                    size="sm"
                     disabled
-                    data-tooltip="正在并发探测全部模型，卡片逐个回填结果"
+                    data-tooltip={t('probeAllProgressTip')}
                     data-tooltip-pos="down-left"
                   >
-                    全量探测中 {state.probeAllDoneCount}/{state.probeAllTotal}
-                  </button>
-                  <button
-                    type="button"
-                    className="dsh-a6-btn dsh-a6-btn-danger dsh-a6-btn-sm"
+                    {t('probeAllProgress', {
+                      done: state.probeAllDoneCount,
+                      total: state.probeAllTotal,
+                    })}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={handleCancelProbeAll}
-                    data-tooltip="停止取新任务，已在探测中的模型会正常完成并回填"
+                    data-tooltip={t('cancelProbeTip')}
                     data-tooltip-pos="down-left"
                   >
-                    取消
-                  </button>
+                    {t('cancel')}
+                  </Button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  className="dsh-a6-btn dsh-a6-btn-primary dsh-a6-btn-sm"
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={handleProbeAll}
                   disabled={state.models.length === 0}
-                  data-tooltip="对当前令牌支持的所有模型并发发送请求，批量捕获商户路由与最新行情（每个模型消耗少量Token，遇限流自动重试）"
+                  data-tooltip={t('probeAllTip')}
                   data-tooltip-pos="down-left"
                 >
-                  一键全量探测
-                </button>
+                  {t('probeAll')}
+                </Button>
               )}
             </div>
           </div>
@@ -252,30 +237,24 @@ export const A6ApiSettingsPanel: React.FC = () => {
             {state.loading && state.models.length === 0 ? (
               <div className="dsh-a6-empty-state">
                 <div className="dsh-a6-spinner" />
-                <span>正在连接 A6API 聚合站并加载模型行情...</span>
+                <span>{t('emptyLoading')}</span>
               </div>
             ) : sortedModels.length > 0 ? (
               sortedModels.map((m) => (
-                <MerchantCard key={m.model_name} model={m} />
+                <MerchantCard key={m.model_name} model={m} t={t} />
               ))
             ) : (
               <div className="dsh-a6-empty-state">
                 {searchQuery ? (
-                  <span>未搜索到匹配「{searchQuery}」的模型</span>
+                  <span>{t('emptyNoMatch', { query: searchQuery })}</span>
                 ) : filterMode === 'enabled' ? (
-                  <span>
-                    当前尚未在 DSH 中启用任何 A6API 模型，点击模型卡片右侧「添加到 DSH」即可启用。
-                  </span>
+                  <span>{t('emptyEnabled')}</span>
                 ) : filterMode === 'probed' ? (
-                  <span>
-                    尚未探测任何模型商户线路，点击模型卡片上的「探测商家」或上方「一键全量探测」即可开始。
-                  </span>
+                  <span>{t('emptyProbed')}</span>
                 ) : !state.config.hasApiKey ? (
-                  <span>
-                    请前往「基础配置」页面填入您的 A6API 令牌 (API Key) 并保存，即可自动加载可用模型列表。
-                  </span>
+                  <span>{t('emptyNoKey')}</span>
                 ) : (
-                  <span>当前令牌暂无可用模型，请检查 A6API 控制台中的令牌限制设置。</span>
+                  <span>{t('emptyNone')}</span>
                 )}
               </div>
             )}
@@ -290,6 +269,7 @@ export const A6ApiSettingsPanel: React.FC = () => {
             config={state.config}
             recentLogs={state.recentLogs}
             onNavigateToConfig={() => setActiveTab('config')}
+            t={t}
           />
         </div>
       )}
@@ -299,6 +279,7 @@ export const A6ApiSettingsPanel: React.FC = () => {
           <ConfigPanel
             config={state.config}
             dshConfiguredModels={state.dshConfiguredModels}
+            t={t}
           />
         </div>
       )}
