@@ -1,8 +1,9 @@
-// jsdom 回归：工具调用整行扣留——实时 turn 里新出现的行先整行隐藏，译文就绪后
-// 按阅读顺序放行并重放 smooth-stream 的行入场；排在待出现行后面的会话流条目同时
-// 被挂起（data-dsh-reveal-hold），所以不会有行先占位再被顶下去。缓存命中/历史行/
-// 非末尾插入/无活动 turn/通道全关都不扣留；明确失败与超时放行原文；已显示行的原文
-// 变化原地换译文。
+// jsdom 回归：工具调用整行扣留——实时 turn 里新出现的行先整条移出布局（`display: none`，
+// 连同会话流的兄弟间距一起消失，屏幕上不留空白），译文就绪后按阅读顺序逐行放行并重放
+// smooth-stream 的行入场；排在待出现行后面的会话流条目同时被挂起（data-dsh-reveal-hold），
+// 所以不会有行先占位再被顶下去。解锁时后面可能已经积了一长串行，那些行一步只放一条，
+// 且队伍越长步长越短。缓存命中/历史行/非末尾插入/无活动 turn/通道全关都不扣留；明确
+// 失败与超时放行原文；已显示行的原文变化原地换译文。
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
@@ -93,13 +94,19 @@ const flow = () => $('[data-chat-flow]');
 const row = (id) => $('#' + id);
 const root = (id) => row(id)?.querySelector('.XX_root');
 const host = (id) => $('#' + id + '-host');
-/** 待出现的行：卡片被藏起来（不占位）。 */
-const cardHidden = (id) => root(id)?.style.display === 'none';
-/** 排在待出现行后面的条目：整条不可见（占位但看不见）。 */
-const invisible = (id) => row(id)?.style.opacity === '0';
+/** 待出现的行：整个流程条目被移出布局——不占位，也不留兄弟间距。 */
+const itemHidden = (id) => row(id)?.style.display === 'none';
+/** 卡片自身不被单独隐藏：藏的是整条，恢复时也就没有两套状态要对齐。 */
+const cardUntouched = (id) => root(id)?.style.display !== 'none';
 const translatedTo = (id) => row(id)?.querySelector('.XX_root > .XX_summary > .dsh-tidy-translated-block')?.textContent ?? null;
 const held = (id) => row(id)?.hasAttribute(HOLD_ATTRIBUTE) === true;
-const settled = (id) => !cardHidden(id) && !invisible(id);
+const settled = (id) => !itemHidden(id) && !held(id);
+/** 轮询等待条件成立；返回最终是否成立。 */
+async function until(predicate, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) await wait(10);
+  return predicate();
+}
 
 let seq = 0;
 function appendRow(text, options = {}) {
@@ -151,11 +158,12 @@ check('装载时历史行不被隐藏', settled('row0'));
 await wait(700);
 check('历史行照常译出', translatedTo('row0') === '译<Historical row title>');
 
-// 2. 实时 turn 里新追加的行：先整行隐藏，译文就绪后放行。
+// 2. 实时 turn 里新追加的行：先整条移出布局，译文就绪后放行。
 fetchMode = 'ok';
 const live = appendRow('Run integration test suite');
 await wait(0);
-check('新行立即整行隐藏', cardHidden(live) && invisible(live));
+check('新行立即整条移出布局', itemHidden(live));
+check('藏的是整条而不是卡片自己', cardUntouched(live));
 check('等待期间自己的流程条目也被挂起', held(live));
 await wait(700);
 check('译文就绪后放行', settled(live));
@@ -171,7 +179,7 @@ const styles = new window.MutationObserver((records) => {
 });
 styles.observe(host(restarted), { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
 await wait(0);
-check('带 active 宿主的新行同样先隐藏', cardHidden(restarted));
+check('带 active 宿主的新行同样先隐藏', itemHidden(restarted));
 await wait(700);
 check('active 宿主上的动画被重放', styleTraces.some((value) => value.includes('animation: none')));
 check('重放后行内样式已清干净', host(restarted).style.animation === '');
@@ -189,7 +197,7 @@ check('缓存命中的行不留挂起标记', !held(cachedRow));
 fetchMode = 'fallback';
 const failing = appendRow('Failing row title');
 await wait(0);
-check('降级行同样先隐藏', cardHidden(failing));
+check('降级行同样先隐藏', itemHidden(failing));
 await wait(700);
 check('判定失败后放行', settled(failing));
 check('放行的是原文', translatedTo(failing) === null);
@@ -198,7 +206,7 @@ check('放行的是原文', translatedTo(failing) === null);
 fetchMode = 'hang';
 const hanging = appendRow('Hanging row title');
 await wait(0);
-check('挂起行先隐藏', cardHidden(hanging));
+check('挂起行先隐藏', itemHidden(hanging));
 await wait(5300);
 check('超过上限后放行原文', settled(hanging) && translatedTo(hanging) === null);
 hangResolvers = [];
@@ -221,30 +229,37 @@ check('后缀未命中不影响整行显示', settled(suffixRow));
 check('摘要命中缓存直接显示', translatedTo(suffixRow) === '后缀行标题');
 
 // 9. 两行同时在等：队首没就绪时，后面那行即使已有译文也不上屏——先出现会占住队首
-// 的位置，等队首就绪再被顶下去。
+// 的位置，等队首就绪再被顶下去。解锁时排在后面的行一步只放一条。
 fetchMode = 'hang';
 const head = appendRow('Queued head title');
 api.clientCache.set('Queued follower title', '排队标题');
 const follower = appendRow('Queued follower title');
 await wait(700);
-check('队首等待时它自己隐藏', cardHidden(head) && invisible(head));
-check('队首等待时后面已就绪的行也不上屏', invisible(follower));
+check('队首等待时它自己移出布局', itemHidden(head) && cardUntouched(head));
+check('队首等待时后面已就绪的行也不上屏', itemHidden(follower));
 check('后面行的条目被挂起', held(follower));
 await wait(0);
 const agent = appendAgentItem('agent-queued');
 await wait(0);
 check('后续回答/思考条目同样被挂起', held(agent));
-check('挂载时就带着文字的条目也一样看不见', invisible(agent));
+check('挂载时就带着文字的条目也一样看不见', itemHidden(agent));
 const readRow = appendReadRow('row-queued-read');
 await wait(0);
-check('不翻译的工具行也要等（否则它会先占住队首的位置）', invisible(readRow) && held(readRow));
+check('不翻译的工具行也要等（否则它会先占住队首的位置）', itemHidden(readRow) && held(readRow));
 releaseHangs();
-await wait(50);
-check('队首就绪后立即放行', settled(head) && translatedTo(head) === '译<Queued head title>');
-check('紧随其后的行接着放行', settled(follower) && translatedTo(follower) === '排队标题');
-check('不翻译的工具行按顺序放行且保持原文', settled(readRow) && translatedTo(readRow) === null);
-check('放行后回答/思考条目解除挂起', !held(agent));
-check('队列排空后条目上的标记全部清干净', !held(head) && !held(follower) && !held(readRow));
+await until(() => settled(head));
+check('队首就绪后立即放行', translatedTo(head) === '译<Queued head title>');
+check('后续行不跟着一次性放行', itemHidden(follower) && itemHidden(agent) && itemHidden(readRow));
+check('后续行仍保持挂起标记', held(follower) && held(agent) && held(readRow));
+await until(() => settled(follower));
+check('第二步按阅读顺序放出紧随其后的行', translatedTo(follower) === '排队标题');
+check('更后面的行仍在等', itemHidden(agent) && itemHidden(readRow));
+await until(() => settled(agent));
+check('第三步放出回答/思考条目', !held(agent));
+check('不翻译的工具行还在等', itemHidden(readRow) && held(readRow));
+await until(() => settled(readRow));
+check('最后一行按阅读顺序放行且保持原文', translatedTo(readRow) === null);
+check('队列排空后条目上的标记全部清干净', !held(head) && !held(follower) && !held(agent) && !held(readRow));
 
 // 10. 没有活动 turn 标记时不扣留。
 $('#turn-status').remove();
@@ -286,7 +301,7 @@ check('通道全关时不扣留', settled(noChannel));
 await api.settingsStore.update({ aiEnabled: true, bingEnabled: true });
 const switched = appendRow('Switch off row title');
 await wait(700);
-check('开关关闭前确实处于扣留', cardHidden(switched) && held(switched));
+check('开关关闭前确实处于扣留', itemHidden(switched) && held(switched));
 await api.settingsStore.update({ enabled: false });
 await wait(50);
 check('关闭总开关后立即放行', settled(switched));
@@ -312,10 +327,61 @@ check('刚切过来的会话里已有的行不扣留、不空白', settled(switc
 check('切会话时也不挂起它的条目', !held(switchedHistory));
 const switchedLive = appendRow('Switched session live title', { flow: nextFlow });
 await wait(700);
-check('切会话之后新追加的行照旧扣留', cardHidden(switchedLive) && held(switchedLive));
+check('切会话之后新追加的行照旧扣留', itemHidden(switchedLive) && held(switchedLive));
 releaseHangs();
-await wait(50);
-check('放行后新行照常出场', settled(switchedLive) && translatedTo(switchedLive) === '译<Switched session live title>');
+await until(() => settled(switchedLive));
+check('放行后新行照常出场', translatedTo(switchedLive) === '译<Switched session live title>');
+
+// 15. 解锁时积了一长串行：一步一条，且步长随队伍变短而变短（总时长由
+//     RELEASE_BUDGET_MS 约束，不随行数线性膨胀）。
+fetchMode = 'hang';
+const burstHead = appendRow('Burst head title');
+const burst = [];
+for (let i = 0; i < 11; i++) burst.push(appendRow('Burst row ' + i));
+await wait(0);
+check('长队列期间全部整条移出布局', itemHidden(burstHead) && burst.every((id) => itemHidden(id)));
+const releasedAt = new Map();
+const watcher = setInterval(() => {
+  for (const id of [burstHead, ...burst]) {
+    if (!releasedAt.has(id) && settled(id)) releasedAt.set(id, Date.now());
+  }
+}, 5);
+releaseHangs();
+await until(() => settled(burst[burst.length - 1]), 6000);
+// 收尾补记一次：轮询可能比 5ms 的观察者先看到最后一行。
+for (const id of [burstHead, ...burst]) {
+  if (!releasedAt.has(id) && settled(id)) releasedAt.set(id, Date.now());
+}
+clearInterval(watcher);
+const order = [burstHead, ...burst].map((id) => releasedAt.get(id));
+check('长队列全部按顺序放行', burst.every((id) => settled(id)));
+check('放行时间戳严格递增（一步只放一条、阅读顺序不变）', order.every((at, index) => typeof at === 'number' && (index === 0 || at >= order[index - 1])));
+// 12 条队伍：前几步被压到 60-100ms 一档；把上限定在 200ms 才说明步长确实缩短了
+// （不动用加速时每一步都是 220ms 的长队上限）。
+const gaps = order.slice(1, 6).map((at, index) => at - order[index]);
+check('队伍长时步长被压缩（加速释放）', gaps.length === 5 && gaps.every((gap) => gap < 200));
+
+// 16. 逐行放行途中又来了一条要扣留的行：正在等的那些行不会被顺手一次性抖出来，
+//     新队首之后的条目照样藏住。
+fetchMode = 'hang';
+const midHead = appendRow('Mid head title');
+const midA = appendRow('Mid row A');
+const midB = appendRow('Mid row B');
+await wait(0);
+releaseHangs();
+await until(() => settled(midHead));
+check('放行序列开始后后面的行还在等', itemHidden(midA) && itemHidden(midB));
+fetchMode = 'hang';
+const midNew = appendRow('Mid new head title');
+await wait(0);
+check('放行途中新到的行自己藏住', itemHidden(midNew) && held(midNew));
+check('正在逐行放行的行不被一次性抖出来', itemHidden(midA) && itemHidden(midB));
+await until(() => settled(midB));
+check('原来那几行照旧逐行放完', settled(midA) && settled(midB));
+check('新到的队首仍在等自己的译文', itemHidden(midNew) && held(midNew));
+releaseHangs();
+await until(() => settled(midNew));
+check('新队首就绪后照常放行', translatedTo(midNew) === '译<Mid new head title>');
 
 console.log('');
 console.log('工具调用整行扣留：' + (failures.length === 0 ? 'PASS' : 'FAIL (' + failures.length + ')'));

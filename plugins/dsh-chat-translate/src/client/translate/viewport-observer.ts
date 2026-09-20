@@ -7,10 +7,14 @@
  * 3. Batch queuing to group multiple visible elements into efficient batch requests.
  *
  * 扣留行（{@link observeHeld}）复用同一条防抖与批次，只跳过可见性判定：
- * 行此刻是隐藏的，等不到 IntersectionObserver 回调。
+ * 行此刻是隐藏的，等不到 IntersectionObserver 回调。注册时再兜一道：
+ * 任何落在被挂起条目（`data-dsh-reveal-hold`）里的元素同样直接进批次——
+ * 整条 `display: none` 的条目永远不 intersecting，包括那些已经过了扣留队列、
+ * 正排在逐行放行队伍里的行。
  */
 
 import { NonDestructiveTranslationMount } from './mount.ts';
+import { REVEAL_HOLD_ATTRIBUTE } from './hold.ts';
 
 export interface ViewportObserverOptions {
   rootMargin?: string;
@@ -127,8 +131,14 @@ export class StreamDebounceViewportObserver {
   private register(element: HTMLElement, text: string, skipViewport: boolean): void {
     if (!element.isConnected) return;
 
-    if (skipViewport || !this.intersectionObserver) {
-      // 扣留行与不支持 IntersectionObserver 的环境都直接进批次。
+    // 扣留行、不支持 IntersectionObserver 的环境，以及任何落在被挂起条目里的
+    // 元素都直接进批次：被扣留的条目整条 `display: none`，几何上永远不会
+    // intersecting，等观察器回调就是永远等不到。
+    if (
+      skipViewport
+      || !this.intersectionObserver
+      || element.closest(`[${REVEAL_HOLD_ATTRIBUTE}]`) !== null
+    ) {
       this.enqueueBatch(element, text);
       return;
     }

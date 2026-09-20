@@ -3,10 +3,20 @@
  *
  * 扣留按阅读顺序放行。队首那一行还在等译文时，排在它后面的每个流程条目整条不可见
  * 并挂上 {@link REVEAL_HOLD_ATTRIBUTE}：标记让 smooth-stream 不再推进条目里的逐字
- * 揭示（积压原样留着），样式让条目里的任何东西都上不了屏——不翻译的行、宿主直接
- * 落盘的文本、已经逐字reveal了一半的正文，都得等轮到它。队首一就绪，它先出现（译文
- * 挂载 + 整行对数淡入），再轮到下一条。没有这层顺序，靠后的行会先占住位置，等靠前
- * 的行出现时再被顶下去。
+ * 揭示（积压原样留着），`display: none` 让条目里的任何东西都上不了屏——不翻译的行、
+ * 宿主直接落盘的文本、已经逐字reveal了一半的正文，都得等轮到它。队首一就绪，它先出现
+ * （译文挂载 + 整行对数淡入），再轮到下一条。没有这层顺序，靠后的行会先占住位置，等
+ * 靠前的行出现时再被顶下去。
+ *
+ * 藏法是整条 `display: none`，不是「占着位置但透明」：条目一旦进入布局就带上了
+ * 会话流的 16px 兄弟间距（`.column > :not(:empty) ~ :not(:empty)`），积压几行就是
+ * 屏幕底部一条几十像素的空白，且这空白要等轮到它才被填上。移除整个盒子，等待期间
+ * 的占位就是零。
+ *
+ * 放行是一步一行：队首解锁时排在它后面的行可能已经积了一长串（工具行、思考行都在
+ * 继续产出），一次全放会让整屏同时淡入。所以解锁的行先进 {@link RowHoldQueue} 的
+ * 放行队列，由定时器逐行吐出，待放行越多步长越短（见 RELEASE_BUDGET_MS），既不
+ * 突兀也不会让长队拖住屏幕。
  *
  * 等待有上限：超过 HOLD_DEADLINE_MS 仍无译文就放行原文，译文之后到达时再原地挂载。
  */
@@ -15,6 +25,16 @@ import { NonDestructiveTranslationMount } from './mount.ts';
 
 /** 一行最多被扣留多久，到点放行原文。 */
 export const HOLD_DEADLINE_MS = 5000;
+
+/**
+ * 逐行放行的总预算：待放行 N 行时每一步约 BUDGET/N，夹在
+ * {@link RELEASE_STEP_MIN_MS} 与 {@link RELEASE_STEP_MAX_MS} 之间。
+ */
+const RELEASE_BUDGET_MS = 900;
+/** 步长下限：再长的队伍也不快于这个间隔，保住「一行一行」的观感。 */
+const RELEASE_STEP_MIN_MS = 60;
+/** 步长上限：队伍短时让上一行的 240ms 淡入走完再放下一条。 */
+const RELEASE_STEP_MAX_MS = 220;
 
 /**
  * 挂起标记：打在会话流条目（`[data-chat-flow-key]`）上，表示「这条还没轮到上屏」。
@@ -68,7 +88,7 @@ export interface RowHoldEntry {
   item: HTMLElement;
   /** 被翻译的摘要 span；React 可能在扣留期间换掉它。工具行本身不翻译时为 null。 */
   span: HTMLElement | null;
-  /** 行根（`[data-variant]` 卡片），扣留期间隐藏它。 */
+  /** 行根（`[data-variant]` 卡片）。它只用来辨认「同一行」是否已经入队。 */
   root: HTMLElement;
   /** 当前正在等待译文的原文。 */
   text: string;
@@ -76,8 +96,6 @@ export interface RowHoldEntry {
   translation: string | null;
   /** 译文（或失败判定）已就绪，只等排到队首。没有译文可等的行入场即就绪。 */
   ready: boolean;
-  /** 隐藏之前行根元素的行内 display 值。 */
-  previousDisplay: string;
   timer: number | null;
 }
 
@@ -86,8 +104,11 @@ class RowHoldQueue {
   private entries: RowHoldEntry[] = [];
   /** 结果回来时只知道 span，不知道条目，所以另留一份索引。 */
   private bySpan = new WeakMap<HTMLElement, RowHoldEntry>();
-  /** 当前挂起着的流程条目 → 隐藏之前它自己的行内 opacity。 */
+  /** 当前挂起着的流程条目 → 隐藏之前它自己的行内 display。 */
   private marked = new Map<HTMLElement, string>();
+  /** 已轮到上屏、正在按阅读顺序逐行吐出的条目。 */
+  private releasing: HTMLElement[] = [];
+  private releaseTimer: number | null = null;
 
   /**
    * 隐藏整行并启动放行上限。幂等：同一行在途请求期间文本又变了时只更新文本并
@@ -111,7 +132,7 @@ class RowHoldQueue {
           existing.timer = window.setTimeout(() => this.readyEntry(existing, null), HOLD_DEADLINE_MS);
         }
       }
-      this.sync(false);
+      this.sync();
       return;
     }
 
@@ -125,16 +146,14 @@ class RowHoldQueue {
       text,
       translation: null,
       ready: false,
-      previousDisplay: root.style.display,
       timer: null,
     };
-    root.style.display = 'none';
     if (typeof window !== 'undefined') {
       entry.timer = window.setTimeout(() => this.readyEntry(entry, null), HOLD_DEADLINE_MS);
     }
     this.insert(entry);
     this.bySpan.set(span, entry);
-    this.sync(false);
+    this.sync();
   }
 
   /** 该文本所属行的扣留状态；返回 undefined 表示没有扣留。 */
@@ -194,15 +213,17 @@ class RowHoldQueue {
   }
 
   /**
-   * 藏住整条流程条目。用 `opacity: 0` 而不是 `visibility`：条目内部的节点可以显式
-   * 声明 `visibility: visible`（系统提示卡片就是这么自管的），那样会从隐藏的祖先里
-   * 逃出来；组透明度盖住整棵子树，谁都逃不掉，而且布局原样保留，放行时不产生位移。
+   * 藏住整条流程条目。用 `display: none` 而不是 `opacity`/`visibility`：条目内部的
+   * 节点可以显式声明 `visibility: visible`（系统提示卡片就是这么自管的），那样会从
+   * 隐藏的祖先里逃出来；而且只要条目还参与布局，会话流的 16px 兄弟间距就还在——每
+   * 一条被扣留的行都会在屏幕底部留一段等宽的空白。整个盒子移除，等待期间占位为零，
+   * 轮到它时再连同入场淡入一起撑开。
    */
   private mark(item: HTMLElement): void {
     if (this.marked.has(item)) return;
-    this.marked.set(item, item.style.opacity);
+    this.marked.set(item, item.style.display);
     item.setAttribute(REVEAL_HOLD_ATTRIBUTE, '');
-    item.style.opacity = '0';
+    item.style.display = 'none';
   }
 
   /** 解除挂起；`animate` 为真时补一段行入场淡入，避免内容一下子蹦出来。 */
@@ -211,8 +232,64 @@ class RowHoldQueue {
     if (previous === undefined) return;
     this.marked.delete(item);
     item.removeAttribute(REVEAL_HOLD_ATTRIBUTE);
-    item.style.opacity = previous;
+    item.style.display = previous;
     if (animate) replayRowEntrance(item);
+  }
+
+  /**
+   * 排进放行队列。按阅读顺序插入，所以逐行吐出的顺序就是行在流里的顺序。
+   */
+  private enqueueRelease(item: HTMLElement): void {
+    if (this.releasing.includes(item)) return;
+    const index = this.releasing.findIndex(
+      (other) => (item.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+    );
+    if (index === -1) this.releasing.push(item);
+    else this.releasing.splice(index, 0, item);
+  }
+
+  /**
+   * 取出下一个还连在文档里的待放行条目。
+   * @returns 待放行条目；队列空或只剩已断开节点时返回 undefined。
+   */
+  private takeRelease(): HTMLElement | undefined {
+    while (this.releasing.length > 0) {
+      const item = this.releasing.shift()!;
+      if (item.isConnected) return item;
+      this.unmark(item, false);
+    }
+    return undefined;
+  }
+
+  /** 队伍越长步长越短：几行时让淡入跑完，几十行时也不至于让读者干等。 */
+  private releaseStepMs(): number {
+    const step = RELEASE_BUDGET_MS / (this.releasing.length + 1);
+    return Math.min(RELEASE_STEP_MAX_MS, Math.max(RELEASE_STEP_MIN_MS, step));
+  }
+
+  /**
+   * 逐行放行：每一步只让一行出现，然后按当时的队伍长度安排下一步。队首（刚解锁
+   * 的那一行）走的是同步的那一步，所以它不会比译文晚一帧上屏。
+   */
+  private pumpRelease(): void {
+    if (this.releaseTimer !== null || typeof window === 'undefined') return;
+    const item = this.takeRelease();
+    if (item === undefined) return;
+    this.unmark(item, true);
+    if (this.releasing.length === 0) return;
+    this.releaseTimer = window.setTimeout(() => {
+      this.releaseTimer = null;
+      this.pumpRelease();
+    }, this.releaseStepMs());
+  }
+
+  /** 丢掉逐行放行的进度（关闭、换会话、断开观察器时用）。 */
+  private clearReleases(): void {
+    if (this.releaseTimer !== null && typeof window !== 'undefined') {
+      window.clearTimeout(this.releaseTimer);
+    }
+    this.releaseTimer = null;
+    this.releasing = [];
   }
 
   /** 按阅读顺序入队：入队顺序就是上屏顺序。 */
@@ -222,6 +299,7 @@ class RowHoldQueue {
     else this.entries.splice(index, 0, entry);
   }
 
+  /** 译文（或超时判定）落地，交给队首判定。 */
   private readyEntry(entry: RowHoldEntry, translation: string | null): void {
     if (entry.timer !== null && typeof window !== 'undefined') {
       window.clearTimeout(entry.timer);
@@ -233,8 +311,9 @@ class RowHoldQueue {
   }
 
   /**
-   * 按顺序放行：队首就绪就放它，然后看新的队首。放行时先把译文挂上再显示，
-   * 所以屏幕上不会出现完整中文被画一帧再被截断的闪烁。
+   * 按顺序解锁：队首就绪就挂译文并把它交给逐行放行，然后看新的队首。译文在条目
+   * 仍是 `display: none` 时挂上，所以屏幕上不会出现完整中文被画一帧再被截断的闪烁；
+   * 真正撑开这一行由 {@link pumpRelease} 执行。
    */
   private drain(): void {
     this.entries = this.entries.filter((entry) => {
@@ -251,18 +330,19 @@ class RowHoldQueue {
           originalText: entry.text,
         });
       }
-      entry.root.style.display = entry.previousDisplay;
     }
-    // 摘标记顺带补入场淡入：整条从不可见变可见，这一步就是它的出场。
-    this.sync(true);
+    // 解锁的行交给逐行放行：这一步顺带补入场淡入，整条从不可见变可见就是它的出场。
+    this.sync();
   }
 
   /**
    * 让挂起标记与队首对齐：队首自己以及排在它后面的每个流程条目都藏起来，其余
-   * 全部恢复。放行让队首前移时，之前被它挡住的条目就在这一步重新出现。
-   * @param animate - 是否给这一步解除挂起的条目补入场淡入。
+   * 交给逐行放行。放行让队首前移时，之前被它挡住的条目就在这一步进入放行队列。
+   *
+   * 没有「立即恢复」的旁路：放行一律排队逐行吐出，所以放行途中新到的队首不会把
+   * 正在等的那些行一次性抖出来（`releaseAll` 是唯一的立即路径）。
    */
-  private sync(animate: boolean): void {
+  private sync(): void {
     const head = this.entries[0];
     const wanted = new Set<HTMLElement>();
     if (head) {
@@ -278,22 +358,27 @@ class RowHoldQueue {
     }
 
     for (const item of [...this.marked.keys()]) {
-      if (!wanted.has(item)) this.unmark(item, animate);
+      if (!wanted.has(item)) this.enqueueRelease(item);
+    }
+    // 重新被队首挡住的条目退出放行队列：它必须继续等。
+    if (this.releasing.length > 0) {
+      this.releasing = this.releasing.filter((item) => !wanted.has(item));
     }
     for (const item of wanted) this.mark(item);
+    this.pumpRelease();
   }
 
   /**
-   * 全部放行：断开观察器与关闭总开关时用。批量放行不做入场动画，否则整屏会一起
-   * 闪一遍。
+   * 全部放行：断开观察器与关闭总开关时用。批量放行不做入场动画，也不排队，
+   * 否则整屏会一起闪一遍、或者留下一个跑不完的定时器。
    */
   releaseAll(): void {
+    this.clearReleases();
     for (const entry of this.entries) {
       if (entry.timer !== null && typeof window !== 'undefined') {
         window.clearTimeout(entry.timer);
       }
       if (entry.span !== null) this.bySpan.delete(entry.span);
-      entry.root.style.display = entry.previousDisplay;
     }
     this.entries = [];
     for (const item of [...this.marked.keys()]) this.unmark(item, false);
