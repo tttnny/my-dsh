@@ -30,7 +30,7 @@
     <tr>
       <td><b>🗂️ 工作区管理</b><br><i>侧栏信息架构与会话资产，含写语义</i></td>
       <td><a href="./plugins/dsh-workspace-tree"><code>@lynn123411/dsh-workspace-tree</code></a></td>
-      <td><b>工作区树</b><br>· 文件系统推导的多级树（文件夹 / 工作区双模式，会话环境严格隔离）<br>· 一键在外部 IDE 打开（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）<br>· 全局重命名 + 安全归档区 + 级联物理删除<br>· 唯一带注册表与文件系统写语义的侧栏插件</td>
+      <td><b>工作区树</b><br>· 注册工作区按目录嵌套的侧栏树，无归属会话按官方语义落「未分组」<br>· 一键在外部 IDE 打开（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）<br>· 全局重命名 + 安全归档区（归档门槛 / 只读阅览）+ 级联物理删除<br>· 唯一带注册表与文件系统写语义的侧栏插件</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-workspace-tree</code></td>
     </tr>
     <tr>

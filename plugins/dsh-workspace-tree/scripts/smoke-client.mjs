@@ -12,11 +12,11 @@
  *     browser dialog built on the official browse primitives, NOT raise the
  *     "添加工作区失败" alert;
  *   - native hosts (loopback bind): the OS chooser path is used as-is;
- *   - macOS hosts (`/picker/native` reports support): the single 「添加工作区」
- *     button short-circuits straight to the host-side Finder chooser;
- *   - the sidebar entry still must NOT declare `sidebar.workspaces.directoryFlow`
- *     (the kernel declaration ledger allows one declaring entry, and the shadowed
- *     WorkspaceBrowser still holds it) — a regression guard for that decision.
+ *   - macOS hosts (`/picker/native` reports support): the 「添加工作区」
+ *     buttons short-circuit straight to the host-side Finder chooser;
+ *   - the global entry and each workspace row's own entry share one flow, the
+ *     row entry seeding the dialog at that workspace directory;
+ *   - unattributed sessions render under 「未分组」 instead of being adopted.
  *
  * Run with: node scripts/smoke-client.mjs [plugin-dir]
  */
@@ -86,6 +86,8 @@ let nativeSupported = false
 let nativePickResult = { ok: true, path: null }
 let nativeProbeFailure = null
 let nativePickCalls = 0
+/** POST /picker/native 的请求体（断言行内入口把 startPath 传下去）。 */
+let nativePickBodies = []
 globalThis.fetch = async (url, init) => {
   const path = String(url)
   if (path.endsWith('/archive/guardCheck')) {
@@ -113,6 +115,7 @@ globalThis.fetch = async (url, init) => {
       return { json: async () => (nativeSupported ? { ok: true, platform: 'darwin', supported: true } : { ok: true, platform: 'linux', supported: false }) }
     }
     nativePickCalls += 1
+    nativePickBodies.push(JSON.parse(init?.body ?? '{}'))
     return { json: async () => nativePickResult }
   }
   throw new Error(`unexpected fetch: ${path}`)
@@ -241,88 +244,6 @@ async function settle(component, props, rounds = 8) {
 }
 
 
-/**
- * Faithful miniature of the kernel's SlotCore ledger: `register` refuses to declare a
- * child key that already has a spec (the exact error the real kernel throws), and
- * `releaseEntry` clears every declared child's spec AND cascades into its occupants.
- * Without emulating the refusal, the dual-track patch assertions would be vacuous.
- * `kernelFirst` models which registration lands first: true = the shadowed kernel
- * WorkspaceBrowser already holds the `directoryFlow` declaration; false = the plugin
- * registers first (the real boot order, since `dsh.client.immediately` activates it
- * ahead of ui-workspace) and the kernel declares the hole afterwards.
- */
-const makeLedgerCore = (hole, occupant, kernelFirst = true) => {
-  const records = new Map()
-  const record = (key, init = {}) => {
-    const rec = { spec: undefined, declaredBy: undefined, parent: undefined, declarationEpoch: 0, entries: [], declared: 0, ...init }
-    records.set(key, rec)
-    return rec
-  }
-  record('sidebar.workspaces', { spec: { kind: 'single', scope: 'root' }, declaredBy: '(the shell)', declarationEpoch: 1, entries: [] })
-  if (kernelFirst) {
-    record(hole, {
-      spec: { kind: 'single', scope: 'root' },
-      declaredBy: 'an entry in "sidebar.workspaces" (kernel WorkspaceBrowser)',
-      parent: 'sidebar.workspaces',
-      declarationEpoch: 1,
-      entries: occupant === undefined ? [] : [occupant],
-    })
-  }
-  let notifyCount = 0
-  const core = {
-    records,
-    get notifyCount() { return notifyCount },
-    notifyDeclaration: () => { notifyCount += 1 },
-    register(options, component) {
-      // Only the child-declaration refusal is part of the model under test; unrelated
-      // slots (settings.plugins.tab, conversation.composer, …) are auto-declared so the
-      // harness does not fabricate failures the real kernel would not produce.
-      let rec = records.get(options.name)
-      if (rec === undefined || rec.spec === undefined) rec = record(options.name, { spec: { kind: 'list', scope: 'root' }, declarationEpoch: 1, entries: [] })
-      if (options.children) {
-        for (const key of Object.keys(options.children)) {
-          const child = records.get(key)
-          if (child !== undefined && child.spec !== undefined) {
-            throw new Error(`slot "${key}" is already declared (by ${child.declaredBy ?? 'an unknown entry'})`)
-          }
-        }
-      }
-      const entry = { options, component, children: options.children }
-      rec.entries = rec.entries.concat([entry])
-      if (options.children) {
-        for (const [key, spec] of Object.entries(options.children)) {
-          const child = records.get(key) ?? record(key)
-          child.spec = spec
-          child.declaredBy = `an entry in "${options.name}"`
-          child.parent = options.name
-          child.declarationEpoch += 1
-          child.declared += 1
-          core.notifyDeclaration(child)
-        }
-      }
-      return () => {
-        rec.entries = rec.entries.filter((item) => item !== entry)
-        core.releaseEntry(entry)
-      }
-    },
-    releaseEntry(entry) {
-      if (!entry.children) return
-      for (const key of Object.keys(entry.children)) {
-        const child = records.get(key)
-        if (child === undefined) continue
-        const dropped = child.entries
-        child.spec = undefined
-        child.declaredBy = undefined
-        child.parent = undefined
-        child.declarationEpoch += 1
-        child.entries = []
-        for (const item of dropped) core.releaseEntry(item)
-      }
-    },
-  }
-  return core
-}
-
 const walk = (node, visit) => {
   if (Array.isArray(node)) { node.forEach((child) => walk(child, visit)); return }
   if (node === null || typeof node !== 'object') return
@@ -360,8 +281,6 @@ const makeUiWorkspace = (override = {}) => ({
 /** Service table read through `ctx.get(name)`; property reads need a declaration. */
 const makeServices = (registrations, uiWorkspace, calls, state) => ({
   slots: {
-    // `_core` only exists when the harness installed a ledger (the dual-track probe).
-    _core: state.core,
     inject: (key, callback) => {
       calls.injects.push(key)
       try { callback() } catch (error) { calls.errors.push(`slots.inject(${key}) threw: ${error?.message}`) }
@@ -370,13 +289,9 @@ const makeServices = (registrations, uiWorkspace, calls, state) => ({
     register: (options, component) => {
       const record = { ...options, component }
       registrations.push(record)
-      // Delegate into the ledger so the patch (and its failure modes) really runs.
-      const dispose = state.core === undefined ? () => {} : state.core.register(options, component)
-      record.dispose = () => dispose()
-      return () => dispose()
+      record.dispose = () => {}
+      return () => {}
     },
-    entries: (key) => (state.core === undefined ? [] : (state.core.records.get(key)?.entries ?? [])),
-    subscribe: () => () => {},
   },
   sessions: {
     // Live store: `liveSessionRow` in the plugin reads this, so the harness can move the
@@ -443,11 +358,11 @@ let harnessSeq = 0
 /** Inert stand-in for the ui-primitives baseline module the settings card imports. */
 const primitivesStub = new Proxy({}, { get: (_t, key) => (key === '__esModule' ? true : () => null) })
 
-async function boot(makeOverrides = {}, ledgerOption, hostFacts = {}) {
+async function boot(makeOverrides = {}, hostFacts = {}) {
   const registrations = []
-  const calls = { injects: [], errors: [], workspaceCreate: [], sessionCreate: [], sessionUsing: [], sessionRename: [], listDirectory: [], createDirectory: [], pickDirectory: 0, archived: [], guardChecks: [], renderSlot: [], navOpen: [], navClear: 0 }
+  const calls = { injects: [], errors: [], workspaceCreate: [], sessionCreate: [], sessionUsing: [], sessionRename: [], listDirectory: [], createDirectory: [], pickDirectory: 0, archived: [], guardChecks: [], navOpen: [], navClear: 0 }
   const moduleIds = []
-  const state = { sessionSnapshot: { ids: [], byId: {}, phase: 'ready' }, core: ledgerOption }
+  const state = { sessionSnapshot: { ids: [], byId: {}, phase: 'ready' } }
   const uiWorkspace = makeUiWorkspace(typeof makeOverrides === 'function' ? makeOverrides(calls) : makeOverrides)
 
   globalThis.window.__ModuleLoader__ = {
@@ -469,6 +384,7 @@ async function boot(makeOverrides = {}, ledgerOption, hostFacts = {}) {
   archiveCalls = []
   nativeSupported = hostFacts.native === true
   nativePickCalls = 0
+  nativePickBodies = []
   nativeProbeFailure = null
   harnessSeq += 1
   await import(`${pathToFileURL(join(root, 'lib/client.js')).href}?smoke=${harnessSeq}`)
@@ -491,22 +407,16 @@ function mount(harness) {
 }
 
 /** Sidebar props: the inject face plus the two snapshot-selector seats. */
-const renderSlotStub = (calls) => (key, owner) => {
-  calls.renderSlot.push({ key, owner })
-  return { type: 'official-flow-marker', props: { key, owner } }
-}
-
-const sidebarProps = (face, wide, state = { sessionSnapshot: { ids: [], byId: {}, phase: 'ready' } }, calls) => ({
+const sidebarProps = (face, wide, state = { sessionSnapshot: { ids: [], byId: {}, phase: 'ready' } }) => ({
   ...face,
   wide,
-  ...(calls === undefined ? {} : { renderSlot: renderSlotStub(calls) }),
   useSessions: (select) => select(state.sessionSnapshot),
   useWorkspaces: (select) => select({ items: [], archivedSessionIds: [], phase: 'ready' }),
   useSessionStatus: (select) => select(new Map()),
 })
 
 /** Sidebar props carrying one workspace with the given session rows (archive-gate audit). */
-const sidebarPropsWith = (face, rows, state, calls) => {
+const sidebarPropsWith = (face, rows, state) => {
   const ids = rows.map((row) => row.id)
   // Publishing into the mutable store keeps `useSessions` and the plugin's `liveSessionRow`
   // reading one source, exactly like the shipped controller does.
@@ -518,7 +428,6 @@ const sidebarPropsWith = (face, rows, state, calls) => {
   return {
     ...face,
     wide: true,
-    ...(calls === undefined ? {} : { renderSlot: renderSlotStub(calls) }),
     // The kernel's session-status seat (Map<SessionId, { running, pendingInteraction,
     // completionUnread }>), exactly as the shipped `dsh-client-ui-session` contributes it
     // to every `sidebar.workspaces` entry.
@@ -536,8 +445,8 @@ const sidebarPropsWith = (face, rows, state, calls) => {
   }
 }
 
-/** Sidebar props with an explicit Workspace list (the auto-adopt cases need real items). */
-const sidebarPropsWithWorkspaces = (face, rows, items, state, calls) => {
+/** Sidebar props with an explicit Workspace list (the tree projections need real items). */
+const sidebarPropsWithWorkspaces = (face, rows, items, state) => {
   // Publishing into the mutable store keeps `useSessions` and the plugin's `liveSessionRow`
   // reading one source, exactly like the shipped controller does.
   state.sessionSnapshot = {
@@ -548,7 +457,6 @@ const sidebarPropsWithWorkspaces = (face, rows, items, state, calls) => {
   return {
     ...face,
     wide: true,
-    ...(calls === undefined ? {} : { renderSlot: renderSlotStub(calls) }),
     useSessionStatus: (select) => select(new Map()),
     useSessions: (select) => select(state.sessionSnapshot),
     useWorkspaces: (select) => select({ items, archivedSessionIds: [], phase: 'ready' }),
@@ -556,7 +464,7 @@ const sidebarPropsWithWorkspaces = (face, rows, items, state, calls) => {
 }
 
 /** Sidebar props in archive mode: explicit workspace list plus the registry-global archive set. */
-const sidebarPropsWithArchive = (face, rows, items, archivedIds, state, calls) => {
+const sidebarPropsWithArchive = (face, rows, items, archivedIds, state) => {
   state.sessionSnapshot = {
     ids: rows.map((row) => row.id),
     byId: Object.fromEntries(rows.map((row) => [row.id, row])),
@@ -565,7 +473,6 @@ const sidebarPropsWithArchive = (face, rows, items, archivedIds, state, calls) =
   return {
     ...face,
     wide: true,
-    ...(calls === undefined ? {} : { renderSlot: renderSlotStub(calls) }),
     useSessionStatus: (select) => select(new Map()),
     useSessions: (select) => select(state.sessionSnapshot),
     useWorkspaces: (select) => select({ items, archivedSessionIds: archivedIds, phase: 'ready' }),
@@ -574,7 +481,7 @@ const sidebarPropsWithArchive = (face, rows, items, archivedIds, state, calls) =
 
 /** The row's archive affordance: enabled rows read "移至归档", gated rows read the reason. */
 const archiveButton = (tree) => findNode(tree, (node) => node?.props?.type === 'button'
-  && /^(移至归档|会话运行中)/.test(String(node?.props?.title ?? '')))
+  && /^(移至归档|会话运行中|其后代子代理正在运行|等待处理的交互)/.test(String(node?.props?.title ?? '')))
 
 /** The single add-workspace entry point; its tooltip names the picker this host will open. */
 const addWorkspaceButton = (tree) => findNode(tree, (node) => typeof node?.props?.title === 'string'
@@ -621,7 +528,7 @@ const listing = (path, entries, crumbs) => ({
   check('bundle registers under its package id', harness.moduleIds[0] === '@lynn123411/dsh-workspace-tree')
   check('apply/inject exported', typeof harness.exported.apply === 'function' && Array.isArray(harness.exported.inject))
   check('sidebar entry keeps the shadowing priority', entry.priority === -1)
-  check('sidebar entry declares no child slot (kernel ledger holds directoryFlow)', entry.children === undefined)
+  check('sidebar entry declares no child slot', entry.children === undefined)
   check('other seats still registered', harness.registrations.some((r) => r.name === 'settings.plugins.tab')
     && harness.registrations.some((r) => r.name === 'conversation.composer'))
   check('inject face exposes native + browse directory surfaces',
@@ -908,101 +815,11 @@ const listing = (path, entries, crumbs) => ({
 }
 
 
-// ───────── dual-track: official directory flow first, self-held dialog as fallback ─────────
-
-{
-  const occupant = { options: { priority: 0, id: 'official-browse-surface' }, component: () => null }
-  const core = makeLedgerCore('sidebar.workspaces.directoryFlow', occupant)
-  const harness = await boot({}, core)
-  const mounted = mount(harness)
-  const { entry, face, Browser } = mounted
-  const hole = 'sidebar.workspaces.directoryFlow'
-
-  const before = core.records.get(hole)
-  check('dual-track: sidebar entry declares the directory-flow hole', JSON.stringify(Object.keys(entry.children ?? {})) === JSON.stringify([hole]))
-  check('dual-track: the kernel ledger still owns the declaration',
-    before.declaredBy === 'an entry in "sidebar.workspaces" (kernel WorkspaceBrowser)' && before.declarationEpoch === 1)
-  check('dual-track: the official occupant was not disturbed',
-    before.entries.length === 1 && before.entries[0] === occupant)
-  check('dual-track: no synthetic declaration notification fired', core.notifyCount === 0)
-  check('dual-track: apply stayed error-free', harness.calls.errors.length === 0)
-
-  // The component must render the official occupant's hole and drive it through owner props.
-  const props = sidebarPropsWith(face, [], harness.state, harness.calls)
-  const tree = await settle(Browser, props)
-  const marker = findNode(tree, (n) => n?.type === 'official-flow-marker')
-  check('dual-track: the official flow is rendered into the sidebar', marker !== undefined)
-  check('dual-track: the owner contract is handed to the occupant',
-    marker !== undefined && marker.props.owner !== undefined
-    && marker.props.owner.open === false && marker.props.owner.busy === false
-    && typeof marker.props.owner.onPicked === 'function'
-    && typeof marker.props.owner.onCancel === 'function'
-    && typeof marker.props.owner.onError === 'function')
-
-  const button = findNode(tree, (n) => n?.props?.title === '添加工作区')
-  await button.props.onClick()
-  const after = await settle(Browser, props)
-  const openedMarker = findNode(after, (n) => n?.type === 'official-flow-marker')
-  check('dual-track: add-workspace opens the official flow instead of the self-held dialog',
-    openedMarker !== undefined && openedMarker.props.owner.open === true
-    && pickerPanel(after) === undefined && harness.calls.pickDirectory === 0)
-
-  // Releasing our entry must not cascade the official occupant away.
-  for (const record of harness.registrations) if (record.name === 'sidebar.workspaces') record.dispose?.()
-  const afterRelease = core.records.get(hole)
-  check('dual-track: releasing our entry keeps the declaration and the occupant',
-    afterRelease.spec !== undefined
-    && afterRelease.declaredBy === 'an entry in "sidebar.workspaces" (kernel WorkspaceBrowser)'
-    && afterRelease.entries.length === 1 && afterRelease.entries[0] === occupant)
-}
-
-{
-  // Real boot order: `dsh.client.immediately` activates this plugin before ui-workspace, so
-  // our entry lands with NO conflicting declaration yet. The bridge must not declare the
-  // child itself — otherwise the kernel's later registration throws "already declared".
-  const core = makeLedgerCore('sidebar.workspaces.directoryFlow', undefined, false)
-  const harness = await boot({}, core)
-  const { entry } = mount(harness)
-  const hole = 'sidebar.workspaces.directoryFlow'
-
-  check('order: our entry still carries the auth table', entry.children !== undefined && entry.children[hole] !== undefined)
-  check('order: the bridge declared nothing in the ledger', core.records.get(hole) === undefined)
-  check('order: apply stayed error-free', harness.calls.errors.length === 0)
-
-  // The kernel's ui-workspace registration must then succeed and own the declaration.
-  let lateError = null
-  const kernelDispose = (() => {
-    try { return core.register({ name: 'sidebar.workspaces', children: { [hole]: { kind: 'single', scope: 'root' } } }, () => null) } catch (error) { lateError = error; return () => {} }
-  })()
-  check('order: the kernel\'s later declaration succeeds', lateError === null)
-  check('order: the ledger declaration is the kernel\'s',
-    core.records.get(hole)?.spec !== undefined
-    && core.records.get(hole)?.declaredBy === 'an entry in "sidebar.workspaces"')
-
-  for (const record of harness.registrations) if (record.name === 'sidebar.workspaces') record.dispose?.()
-  check('order: releasing our entry keeps the kernel declaration',
-    core.records.get(hole)?.spec !== undefined
-    && core.records.get(hole)?.declaredBy === 'an entry in "sidebar.workspaces"')
-  kernelDispose()
-}
-
-{
-  // No ledger internals: the plugin must fall back to the self-held dialog, unchanged.
-  const harness = await boot({})
-  const { entry, face } = mount(harness)
-  check('fallback: no child slot is declared without the bridge', entry.children === undefined)
-  const props = sidebarPropsWith(face, [], harness.state, harness.calls)
-  const tree = await settle(mount(harness).Browser, props)
-  check('fallback: no official flow marker is rendered', findNode(tree, (n) => n?.type === 'official-flow-marker') === undefined)
-  check('fallback: apply stayed error-free', harness.calls.errors.length === 0)
-}
-
-
 // ─────────── 「添加工作区」单一入口：macOS 直达 Finder，其余环境走内置浏览 ───────────
 
 {
   nativePickResult = { ok: true, path: '/Users/tny/Desktop/work/finder-pick' }
-  const harness = await boot((calls) => ({ pickDirectory: async () => { calls.pickDirectory += 1; return '/tmp/should-not-be-used' } }), undefined, { native: true })
+  const harness = await boot((calls) => ({ pickDirectory: async () => { calls.pickDirectory += 1; return '/tmp/should-not-be-used' } }), { native: true })
   const { face, Browser } = mount(harness)
   const props = sidebarProps(face, true, harness.state, harness.calls)
   let tree = await settle(Browser, props)
@@ -1020,7 +837,7 @@ const listing = (path, entries, crumbs) => ({
 
 {
   nativePickResult = { ok: true, path: null }   // operator cancelled the native dialog
-  const harness = await boot({}, undefined, { native: true })
+  const harness = await boot({}, { native: true })
   const { face, Browser } = mount(harness)
   const props = sidebarProps(face, true, harness.state, harness.calls)
   let tree = await settle(Browser, props)
@@ -1032,7 +849,7 @@ const listing = (path, entries, crumbs) => ({
 
 {
   nativePickResult = { ok: false, error: '仅在 macOS 可用' }
-  const harness = await boot({}, undefined, { native: true })
+  const harness = await boot({}, { native: true })
   const { face, Browser } = mount(harness)
   const props = sidebarProps(face, true, harness.state, harness.calls)
   let tree = await settle(Browser, props)
@@ -1069,84 +886,171 @@ const listing = (path, entries, crumbs) => ({
     && harness.calls.errors.length === 0)
 }
 
-// ── 自动收编只认物理存在的会话：已删幽灵写墓碑跳过，「彻底移除」的工作区不被复活 ──
+// ── 后代子代理运行态：行状态点 / title / 聚合，且 fork 不向上冒泡（官方谱系判据） ──
 
 {
-  const DELETED_KEY = 'dswt-workspace-tree.deleted'
-  storage.delete(DELETED_KEY)
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const base = { running: false, blank: false, updatedAt: Date.now(), cwd: '/home/tny/work' }
+  const normal = (over = {}) => ({ id: 'session-parent', displayTitle: 'parent row', ...base, ...over })
+  const subagent = (over = {}) => ({ id: 'sub-1', displayTitle: 'subagent row', origin: 'subagent', parentId: 'session-parent', running: true, blank: false, updatedAt: Date.now(), ...over })
+  const items = (sessionIds = ['session-parent', 'session-fork']) => [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds }]
+  const propsWith = (subRunning, forkSubRunning = true) => sidebarPropsWithWorkspaces(face, [
+    normal(),
+    subagent({ running: subRunning }),
+    normal({ id: 'session-fork', displayTitle: 'fork row', parentId: 'session-parent' }),
+    subagent({ id: 'sub-2', parentId: 'session-fork', running: forkSubRunning }),
+  ], items(), harness.state)
+  const rowNode = (tree, text) => findNode(tree, (n) => hasClass(n, 'dswt-session') && textOf(n).includes(text))
+  const isOngoing = (node) => findNode(node, (n) => hasClass(n, 'dswt-matrix')) !== undefined
 
+  let tree = await settle(Browser, propsWith(true))
+  check('lineage: an idle parent whose subagent runs shows the running dot', isOngoing(rowNode(tree, 'parent row')))
+  check('lineage: the running count rides the row tooltip',
+    /1 个子代理运行中/.test(String(rowNode(tree, 'parent row').props.title)))
+  check('lineage: a fork child counts for itself but never bubbles to its parent',
+    /1 个子代理运行中/.test(String(rowNode(tree, 'fork row').props.title))
+    && !/2 个子代理运行中/.test(String(rowNode(tree, 'parent row').props.title)))
+  check('lineage: subagent rows stay out of the tree', rowNode(tree, 'subagent row') === undefined)
+  check('lineage: the workspace folder turns active', findNode(tree, (n) => hasClass(n, 'dswt-folderActive')) !== undefined)
+  check('lineage: the workspace aggregate dot turns ongoing',
+    isOngoing(findNode(tree, (n) => hasClass(n, 'dswt-aggSlot'))))
+
+  tree = await settle(Browser, propsWith(false))
+  check('lineage: with no running subagent the parent dot is idle again', !isOngoing(rowNode(tree, 'parent row')))
+  check('lineage: the tooltip drops the subagent count',
+    !/子代理运行中/.test(String(rowNode(tree, 'parent row').props.title)))
+  check('lineage: the folder stays active through the fork child in the same subtree',
+    findNode(tree, (n) => hasClass(n, 'dswt-folderActive')) !== undefined)
+
+  tree = await settle(Browser, propsWith(false, false))
+  check('lineage: with every descendant stopped the folder goes quiet again',
+    findNode(tree, (n) => hasClass(n, 'dswt-folderActive')) === undefined)
+}
+
+// ── 归档门槛的后代层：置灰、动作侧、Host 权威计数 ──
+
+{
+  const harness = await boot({})
+  const { face, Browser } = mount(harness)
+  const parent = (over = {}) => ({ id: 'session-audit', displayTitle: 'audit row', cwd: '/home/tny/work', running: false, blank: false, updatedAt: Date.now(), ...over })
+  const child = (over = {}) => ({ id: 'sub-audit', displayTitle: 'sub row', origin: 'subagent', parentId: 'session-audit', running: true, blank: false, updatedAt: Date.now(), ...over })
+  const propsWith = (subRunning) => sidebarPropsWith(face, [parent(), child({ running: subRunning })], harness.state)
+
+  let tree = await settle(Browser, propsWith(true))
+  let button = archiveButton(tree)
+  check('guard: a running descendant greys the archive button',
+    button !== undefined && button.props.disabled === true && /后代子代理正在运行/.test(String(button.props.title)))
+  await button.props.onClick()
+  tree = await settle(Browser, propsWith(true))
+  check('guard: a greyed descendant row archives nothing', harness.calls.archived.length === 0)
+
+  // Host layer: the render snapshot says idle (button enabled) while the host reports a running descendant.
+  guardAnswer = { ok: true, status: 'idle', running: false, runningDescendants: 1 }
+  tree = await settle(Browser, propsWith(false))
+  button = archiveButton(tree)
+  check('guard: with no running descendant the button is archivable again',
+    button !== undefined && button.props.disabled === false)
+  await button.props.onClick()
+  tree = await settle(Browser, propsWith(false))
+  check('guard: the host descendant count refuses the archive',
+    harness.calls.archived.length === 0 && /后代子代理正在运行（Host 实测 1 个）/.test(textOf(tree)))
+
+  guardAnswer = { ok: true, status: 'idle', running: false, runningDescendants: 0 }
+  tree = await settle(Browser, propsWith(false))
+  await archiveButton(tree).props.onClick()
+  tree = await settle(Browser, propsWith(false))
+  check('guard: with no descendants anywhere the archive goes through',
+    harness.calls.archived.length === 1 && harness.calls.archived[0] === 'session-audit')
+}
+
+// ── 未分组：插件不再替用户收编，无归属会话照官方语义落进「未分组」 ──
+
+{
   const harness = await boot({})
   const { face, Browser } = mount(harness)
   const row = (over = {}) => ({
-    id: 'session-ghost', displayTitle: 'ghost row', cwd: '/home/tny/standard',
+    id: 'session-loose', displayTitle: 'loose row', cwd: '/home/tny/loose',
     running: false, blank: false, updatedAt: Date.now(), ...over,
   })
-  const ws = (id, path) => ({ workspaceId: id, path, title: path.split('/').pop(), sessionIds: [] })
-  const propsWith = (rows, items) => sidebarPropsWithWorkspaces(face, rows, items, harness.state, harness.calls)
-  const created = () => harness.calls.workspaceCreate.length
-  const adopted = () => harness.calls.sessionCreate.length
-  // Async handlers outlive one settle round; drain before snapshotting per-case deltas.
-  const drain = async () => { for (let i = 0; i < 3; i += 1) await new Promise((resolveTurn) => setTimeout(resolveTurn, 0)) }
+  const ws = (id, path, sessionIds = []) => ({ workspaceId: id, path, title: path.split('/').pop(), sessionIds })
+  const propsWith = (rows, items) => sidebarPropsWithWorkspaces(face, rows, items, harness.state)
 
-  // 1) 用户刚把空工作区「彻底移除」（注册表里已无该 path），官方列表仍返回其幽灵会话：
-  //    收编必须跳过——否则 createWorkspace + attach 会把工作区原地建回来（本 bug 根因）。
-  tombstoneAlive = []
-  let createdBefore = created()
-  let adoptedBefore = adopted()
-  await settle(Browser, propsWith([row()], []))
-  await drain()
-  check('adopt: a ghost whose directory is gone never gets its workspace re-created',
-    created() === createdBefore && adopted() === adoptedBefore)
-  check('adopt: the ghost is probed through the host physical-existence route',
-    tombstoneCalls.length >= 1
-    && JSON.stringify(tombstoneCalls[0].ids) === JSON.stringify(['session-ghost']))
-  check('adopt: the ghost is tombstoned (hidden, skipped on every later pass)',
-    JSON.parse(storage.get(DELETED_KEY) ?? '[]').includes('session-ghost'))
+  // 无归属会话：不注册工作区、不 attach，只作为「未分组」渲染出来。
+  let tree = await settle(Browser, propsWith([row()], []))
+  check('ungrouped: an unattributed session renders under 「未分组」',
+    /未分组 · 1 条/.test(textOf(tree)) && textOf(tree).includes('loose row'))
+  check('ungrouped: nothing is registered or attached on its behalf',
+    harness.calls.workspaceCreate.length === 0 && harness.calls.sessionCreate.length === 0)
 
-  // 2) 幽灵 + 仍在注册表里的同路径空工作区：也不得把它挂回去。
-  tombstoneAlive = []
-  createdBefore = created()
-  adoptedBefore = adopted()
-  await settle(Browser, propsWith([row({ id: 'session-ghost-2' })], [ws('ws-empty', '/home/tny/standard')]))
-  await drain()
-  check('adopt: a gone-directory ghost is not attached to an existing empty workspace',
-    created() === createdBefore && adopted() === adoptedBefore)
-
-  // 3) 物理存在的无归属会话：照旧挂到同路径工作区（收编语义不变）。
-  tombstoneAlive = ['session-live']
-  createdBefore = created()
-  adoptedBefore = adopted()
-  await settle(Browser, propsWith([row({ id: 'session-live' })], [ws('ws-empty', '/home/tny/standard')]))
-  await drain()
-  const adoptedNow = harness.calls.sessionCreate.slice(adoptedBefore)
-  check('adopt: a physically present session still attaches to its workspace',
-    adoptedNow.length >= 1 && created() === createdBefore
-    && adoptedNow.every((input) => input.sessionId === 'session-live' && input.workspaceId === 'ws-empty'))
-
-  // 4) 物理存在但没有任何工作区认领：照旧按 cwd 注册工作区。
-  tombstoneAlive = ['session-fresh']
-  createdBefore = created()
-  await settle(Browser, propsWith([row({ id: 'session-fresh', cwd: '/home/tny/fresh' })], []))
-  await drain()
-  const createdNow = harness.calls.workspaceCreate.slice(createdBefore)
-  check('adopt: an unaccounted live session still registers its cwd as a workspace',
-    createdNow.length >= 1 && createdNow.every((input) => input.path === '/home/tny/fresh'))
-
-  // 5) 探测不可用（旧版宿主半边 / 网络故障）：fail-open，维持原收编行为。
-  tombstoneFailure = 'network down'
-  createdBefore = created()
-  await settle(Browser, propsWith([row({ id: 'session-offline', cwd: '/home/tny/offline' })], []))
-  await drain()
-  const offlineCreated = harness.calls.workspaceCreate.slice(createdBefore)
-  check('adopt: an unreachable probe fails open instead of blocking adoption',
-    offlineCreated.length >= 1 && offlineCreated.every((input) => input.path === '/home/tny/offline'))
-  tombstoneFailure = null
+  // 已有归属的会话照旧落在它自己的工作区组里，不再有「未分组」。
+  tree = await settle(Browser, propsWith([row({ id: 'session-owned' })], [ws('ws-1', '/home/tny/work', ['session-owned'])]))
+  check('ungrouped: an attributed session stays inside its workspace group',
+    !/未分组 /.test(textOf(tree)))
+  check('ungrouped: the workspace header is still rendered', textOf(tree).includes('work'))
+  check('ungrouped: apply stayed error-free', harness.calls.errors.length === 0)
 }
+
+// ── 工作区行的「添加工作区」：同一套交互，选择器从该工作区目录起 ──
+
+{
+  const harness = await boot((calls) => ({
+    pickDirectory: async () => { calls.pickDirectory += 1; throw new Error(BROWSE_REFUSAL) },
+    listDirectory: async (path) => { calls.listDirectory.push(path); return listing(path ?? '/home/tny', []) },
+  }))
+  const { face, Browser } = mount(harness)
+  const props = sidebarPropsWithWorkspaces(face, [], [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: [] }], harness.state)
+  const rowAddTitle = '添加工作区（从该工作区目录开始选择）'
+  const rowAddButton = (tree) => findNode(tree, (node) => node?.props?.title === rowAddTitle)
+  const globalAddCount = (tree) => {
+    let n = 0
+    walk(tree, (node) => { if (node?.props?.title === '添加工作区') n += 1 })
+    return n
+  }
+
+  let tree = await settle(Browser, props)
+  check('row-add: the workspace row carries its own add-workspace button', rowAddButton(tree) !== undefined)
+  check('row-add: the sidebar keeps exactly one global entry', globalAddCount(tree) === 1)
+
+  await rowAddButton(tree).props.onClick()
+  tree = await settle(Browser, props)
+  check('row-add: the dialog is seeded at that workspace directory',
+    pickerPanel(tree) !== undefined && harness.calls.listDirectory[0] === '/home/tny/work')
+  check('row-add: nothing is registered until a folder is picked', harness.calls.workspaceCreate.length === 0)
+
+  findNode(tree, (n) => hasClass(n, 'dswt-modalBtnPrimary') && /选择此文件夹/.test(textOf(n))).props.onClick()
+  tree = await settle(Browser, props)
+  check('row-add: picking that folder registers it as a workspace',
+    harness.calls.workspaceCreate.length === 1 && harness.calls.workspaceCreate[0].path === '/home/tny/work')
+  check('row-add: the dialog closes after the pick', pickerPanel(tree) === undefined)
+}
+
+// ── macOS 上同一套入口：起点交给宿主 osascript 的 default location ──
+
+{
+  nativePickResult = { ok: true, path: '/Users/tny/Desktop/work/picked-sub' }
+  const harness = await boot({}, { native: true })
+  const { face, Browser } = mount(harness)
+  const props = sidebarPropsWithWorkspaces(face, [], [{ workspaceId: 'ws-1', path: '/home/tny/work', title: 'work', sessionIds: [] }], harness.state)
+  const rowAddButton = (tree) => findNode(tree, (node) => node?.props?.title === '添加工作区（从该工作区目录开始选择）')
+
+  let tree = await settle(Browser, props)
+  await rowAddButton(tree).props.onClick()
+  check('row-add: the Finder chooser is asked to open at the workspace directory',
+    nativePickBodies.length === 1 && nativePickBodies[0].startPath === '/home/tny/work')
+  check('row-add: the picked directory registers as a workspace',
+    harness.calls.workspaceCreate.length === 1 && harness.calls.workspaceCreate[0].path === '/Users/tny/Desktop/work/picked-sub')
+
+  tree = await settle(Browser, props)
+  await addWorkspaceButton(tree).props.onClick()
+  check('row-add: the global entry asks for no start path',
+    nativePickBodies.length === 2 && nativePickBodies[1].startPath === undefined)
+}
+
 
 // ── 归档区兜住「无归属」归档：归档集合是注册表全局的，无归属必须单独成组（回归） ──
 
 {
-  storage.delete('dsh-workspace-tree.mode')
 
   const harness = await boot({})
   const { face, Browser } = mount(harness)

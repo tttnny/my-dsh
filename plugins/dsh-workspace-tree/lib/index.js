@@ -2,8 +2,6 @@
  * dsh-workspace-tree — node half (v1.9.10)。
  *
  * 核心功能：
- *  - GET  /debug               工作区注册表投影（诊断用）
- *  - POST /mkdir               安全创建子目录 { parent, name } → { path }
  *  - POST /open-ide            在外部 IDE 中打开指定目录 { path, ide, customCommand? }
  *  - POST /archive/unarchive   恢复单条会话 { sessionId }
  *  - POST /archive/unarchiveAll 批量恢复 { workspaceId? } (null=未分组, omit=全部)
@@ -31,7 +29,7 @@
  *                              用户刚移除的工作区）。会话根目录不可枚举时返回
  *                              ok:false（绝不谎报「全部已删」），调用方 fail-open。
  *
- * 设计契约（v1.9.5）：
+ * 设计契约：
  *  - 归档门槛：运行中（Host 实测 agents 状态）与等待回复（浏览器半区读官方 pending
  *    座位）的会话不允许归档。按钮置灰只是提示，真正的门槛是「动作侧活快照复查 +
  *    /archive/guardCheck 权威复查」；归档仍沿用官方 workspace/archiveSession RPC。
@@ -41,7 +39,7 @@
  *  - 不再有 claims/heartbeat 占用注册表、运行守卫、幽灵/孤儿清理等历史补丁机制；
  *    空白草稿回收跟随官方（不做自动清理）。
  */
-import { mkdir, open, readdir, rm, stat } from "node:fs/promises";
+import { open, readdir, rm, stat } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
@@ -75,10 +73,6 @@ const WIN_CMD_METACHARS = /[&|<>\^;%!`$"'\r\n]/;
  * UI 瞬态（展开/隐藏/墓碑/当前模式）仍留 localStorage，不进设置。 */
 const CONFIG_SCHEMA = z.object({
   enabled: z.boolean().default(true),
-  indent: z.number().min(8).max(32).default(16),
-  defaultMode: z.string().default("workspace"),
-  showAgg: z.boolean().default(true),
-  showCount: z.boolean().default(true),
   defaultIde: z.string().default("vscode"),
   customIdeCommand: z.string().default("")
 });
@@ -151,71 +145,6 @@ function tryDecodeSegment(encoded) {
   } catch {
     return null;
   }
-}
-
-/** 调试：输出工作区注册表（path/title/id），用于诊断文件系统树。
- * 注意：本端点无鉴权，仅假定 webServer 监听回环地址；不要在公网暴露 DSH 端口。 */
-async function handleDebug(ctx, req, res) {
-  const registry = ctx.get("workspaceRegistry");
-  if (!registry || typeof registry.list !== "function") {
-    return sendJson(res, 200, { ok: false, error: "workspaceRegistry 不可用" });
-  }
-  const records = registry.list();
-  const domain = getWorkspaceDomain(ctx);
-  const archived = domain ? (domain.global.get().archivedSessionIds || []) : (registry.archivedSessionIds || []);
-  sendJson(res, 200, {
-    ok: true,
-    archivedSessionIds: (archived || []).map(String),
-    archivedCount: (archived || []).length,
-    workspaces: records.map((r) => ({
-      workspaceId: String(r.id),
-      title: r.title,
-      path: r.path,
-      sessionCount: Array.isArray(r.sessionIds) ? r.sessionIds.length : 0,
-      sessionIds: (r.sessionIds || []).map(String),
-      archivedIds: (r.sessionIds || []).filter((id) => (archived || []).map(String).includes(String(id)))
-    }))
-  });
-}
-
-/** 新建子目录：增强安全校验的真实 fs.mkdir。 */
-async function handleMkdir(req, res) {
-  const raw = await parseJsonBody(req);
-  const parentRaw = typeof raw.parent === "string" ? raw.parent.trim() : "";
-  const nameRaw = typeof raw.name === "string" ? raw.name.trim() : "";
-  if (!parentRaw || !nameRaw) return sendJson(res, 200, { ok: false, error: "parent 与 name 必填" });
-  
-  if (nameRaw === "." || nameRaw === ".." || /[\\\\/:*?"<>|\x00-\x1F]/.test(nameRaw)) {
-    return sendJson(res, 200, { ok: false, error: "文件夹名包含非法字符或路径遍历片段" });
-  }
-
-  // Windows 语义下 shell 元字符与尾随空格/点会导致 open-ide 侧注入或建出不可管理目录
-  // （与 open-ide 的 WIN_CMD_METACHARS 对齐，另加单引号）
-  if (process.platform === "win32" && (/[&;`$()^!%~']/.test(nameRaw) || /[ .]$/.test(nameRaw))) {
-    return sendJson(res, 200, { ok: false, error: "文件夹名包含 Windows 下的非法字符" });
-  }
-
-  // 必须对原始输入校验绝对路径：resolve() 总是返回绝对路径（相对输入会被静默解析到
-  // 服务器进程 cwd 下），resolve 之后再检查是无效的死代码。
-  if (!isAbsolute(parentRaw)) {
-    return sendJson(res, 200, { ok: false, error: "parent 必须为绝对路径" });
-  }
-
-  const parent = resolve(parentRaw);
-
-  try {
-    const parentStat = await stat(parent);
-    if (!parentStat.isDirectory()) {
-      return sendJson(res, 200, { ok: false, error: "parent 不是有效目录" });
-    }
-  } catch (err) {
-    return sendJson(res, 200, { ok: false, error: `parent 目录不存在: ${String(err.message || err)}` });
-  }
-
-  // nameRaw 已排除 "/"、"\\"、"."、".."，resolve 结果必为 parent 的直接子目录
-  const target = resolve(parent, nameRaw);
-  await mkdir(target, { recursive: true });
-  sendJson(res, 200, { ok: true, path: target });
 }
 
 /** 解析 IDE 执行路径（跨平台多路径智能探测）。 */
@@ -1150,22 +1079,32 @@ function runNativeCommand(command, args, options) {
  *
  * @param platform - 目标平台（注入以便测试）。
  * @param run - 执行器 (command, args, options) => Promise<{ stdout }>（注入以便测试）。
+ * @param startPath - 可选起点目录（已由调用方校验为存在的绝对路径）；空串表示由系统决定落点。
  * @returns {Promise<string|null>} 选定目录的绝对路径；用户取消返回 null。
  * @throws 平台不支持 / 命令缺失 / 超时 / 其它执行失败。
  */
-async function pickNativeDirectory(platform, run) {
+async function pickNativeDirectory(platform, run, startPath) {
   if (platform !== "darwin") {
     const error = new Error("原生 Finder 选择器仅在 macOS 可用（当前平台 " + platform + "）");
     error.unsupported = true;
     throw error;
   }
   try {
-    const result = await run("osascript", [
-      "-e",
-      'set selectedFolder to choose folder with prompt "选择工作区目录"',
-      "-e",
-      "POSIX path of selectedFolder"
-    ], { timeout: NATIVE_PICK_TIMEOUT_MS });
+    // 起点走 argv（而不是插进 AppleScript 文本）：路径里的引号不会破坏脚本，
+    // 也不会被 osascript 当成 programfile（带 -e 时其后的参数即脚本 argv）。
+    const script = (typeof startPath === "string" && startPath !== "")
+      ? [
+          "-e", "on run argv",
+          "-e", 'set selectedFolder to choose folder with prompt "选择工作区目录" default location (POSIX file (item 1 of argv))',
+          "-e", "POSIX path of selectedFolder",
+          "-e", "end run",
+          "--", startPath
+        ]
+      : [
+          "-e", 'set selectedFolder to choose folder with prompt "选择工作区目录"',
+          "-e", "POSIX path of selectedFolder"
+        ];
+    const result = await run("osascript", script, { timeout: NATIVE_PICK_TIMEOUT_MS });
     const path = String((result && result.stdout) || "").replace(/[\r\n]+$/, "");
     return path === "" ? null : path;
   } catch (error) {
@@ -1185,14 +1124,32 @@ function handleNativePickerStatus(res) {
   sendJson(res, 200, { ok: true, platform: process.platform, supported: process.platform === "darwin" });
 }
 
-/** POST /picker/native：在宿主显示器上弹出原生选择文件夹对话框 → { path }（取消为 null）。 */
-async function handleNativePickerPick(res) {
+/**
+ * POST /picker/native：在宿主显示器上弹出原生选择文件夹对话框 → { path }（取消为 null）。
+ * body 可带 startPath（绝对路径）：对话框的起点目录；校验不过即报错、不开窗口。
+ */
+async function handleNativePickerPick(req, res) {
+  const raw = await parseJsonBody(req);
+  const startPathRaw = typeof raw.startPath === "string" ? raw.startPath.trim() : "";
+  let startPath = "";
+  if (startPathRaw !== "") {
+    if (!isAbsolute(startPathRaw)) {
+      return sendJson(res, 200, { ok: false, error: "startPath 必须为绝对路径" });
+    }
+    try {
+      const startStat = await stat(startPathRaw);
+      if (!startStat.isDirectory()) return sendJson(res, 200, { ok: false, error: "startPath 不是目录" });
+    } catch (err) {
+      return sendJson(res, 200, { ok: false, error: `startPath 目录不可用: ${String((err && err.message) || err)}` });
+    }
+    startPath = startPathRaw;
+  }
   if (nativePickBusy) {
     return sendJson(res, 200, { ok: false, error: "已经有一个原生选择器窗口在等待操作" });
   }
   nativePickBusy = true;
   try {
-    const path = await pickNativeDirectory(process.platform, nativeRunnerOverride || runNativeCommand);
+    const path = await pickNativeDirectory(process.platform, nativeRunnerOverride || runNativeCommand, startPath);
     sendJson(res, 200, { ok: true, path: path });
   } catch (error) {
     sendJson(res, 200, { ok: false, error: String((error && error.message) || error) });
@@ -1206,10 +1163,12 @@ async function handleGuardCheck(ctx, req, res) {
   const sessionId = typeof raw.sessionId === "string" ? raw.sessionId.trim() : "";
   if (!sessionId) return sendJson(res, 200, { ok: false, error: "sessionId 必填" });
   let status = "unknown";
+  let agents = null;
   try {
-    const agents = ctx.get("agents");
+    agents = ctx.get("agents");
     if (!agents || typeof agents.get !== "function") {
       // 服务缺席（旧版/未装配）：观察不到存活态，如实回 unknown，不冒充 inactive。
+      agents = null;
       status = "unknown";
     } else {
       const agent = agents.get(sessionId);
@@ -1217,9 +1176,26 @@ async function handleGuardCheck(ctx, req, res) {
       else if (typeof agent.status === "string") status = agent.status;
     }
   } catch (err) {
+    agents = null;
     status = "unknown";
   }
-  sendJson(res, 200, { ok: true, sessionId, status, running: status === "running" });
+  // 后代子代理：持久谱系（与级联删除同源判据，扫一次会话 header）给出后代集合，
+  // 逐个问 agents.get(id).status——客户端那条谱系是转发事实、存在窗口期，故此处是权威层。
+  // agents 缺席时计数为 0（与 status=unknown 一致：观察不到就不冒充运行中）。
+  let runningDescendants = 0;
+  if (agents) {
+    try {
+      const { childrenMap } = await scanSessionTopology();
+      for (const id of collectDescendantSessionIds(sessionId, childrenMap)) {
+        if (String(id) === String(sessionId)) continue;   // 自身由 status 单独报告
+        const agent = agents.get(id);
+        if (agent && agent.status === "running") runningDescendants += 1;
+      }
+    } catch {
+      runningDescendants = 0;
+    }
+  }
+  sendJson(res, 200, { ok: true, sessionId, status, running: status === "running", runningDescendants });
 }
 
 async function handleTombstoneCheck(req, res) {
@@ -1274,12 +1250,10 @@ function apply(ctx) {
       const rest = url.pathname.split("/").filter(Boolean).slice(2);
       const head = rest[0];
       try {
-        if (head === "debug" && (req.method === "GET" || req.method === "HEAD")) return await handleDebug(ctx, req, res);
-        if (head === "mkdir" && req.method === "POST") return await handleMkdir(req, res);
         if (head === "open-ide" && req.method === "POST") return await handleOpenIde(req, res);
         if (head === "picker" && rest[1] === "native") {
           if (req.method === "GET" || req.method === "HEAD") return handleNativePickerStatus(res);
-          if (req.method === "POST") return await handleNativePickerPick(res);
+          if (req.method === "POST") return await handleNativePickerPick(req, res);
         }
         if (head === "archive" && req.method === "POST") {
           const sub = rest[1];

@@ -67,6 +67,15 @@ const call = async (path, body, agents, method = 'POST') => {
   return { httpStatus: res.httpStatus, ...(res.payload ?? {}) }
 }
 
+const previousDshHome = process.env.DSH_HOME
+const restoreDshHome = () => {
+  if (previousDshHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = previousDshHome
+}
+// Every guardCheck case scans the durable session topology, so point that scan at an
+// empty scratch home instead of the operator's real ~/.dsh/sessions.
+process.env.DSH_HOME = join(mkdtempSync(join(tmpdir(), 'dswt-guard-home-')), 'no-such-home')
+
 const guard = '/api/dsh-workspace-tree/archive/guardCheck'
 
 const runningCase = await call(guard, { sessionId: 's-1' }, { get: (id) => (id === 's-1' ? { id, status: 'running' } : undefined) })
@@ -92,14 +101,49 @@ check('missing sessionId is refused', noIdCase.ok === false && /sessionId/.test(
 const notFoundCase = await call('/api/dsh-workspace-tree/archive/doesNotExist', {}, undefined)
 check('unknown sub-route still answers 404 JSON', notFoundCase.ok === false && /not found/.test(String(notFoundCase.error)))
 
+// ─────── guardCheck: running subagent descendants from the durable topology ───────
+
+const topoHome = mkdtempSync(join(tmpdir(), 'dswt-topo-'))
+const writeSession = (id, header) => {
+  const dir = join(topoHome, 'sessions', '--scope--', id)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'session.v1.jsonl'), JSON.stringify({ type: 'session', id, ...header }) + '\n')
+}
+writeSession('s-root', {})
+writeSession('s-sub', { origin: 'subagent', parentSession: 's-root', delegationDepth: 1 })
+writeSession('s-sub2', { origin: 'subagent', parentSession: 's-sub', delegationDepth: 2 })
+writeSession('s-fork', { parentSession: 's-root' })
+writeSession('s-fork-sub', { origin: 'subagent', parentSession: 's-fork', delegationDepth: 1 })
+process.env.DSH_HOME = topoHome
+
+/** agents stub: exactly the listed ids are live and running. */
+const runningOnly = (...ids) => ({ get: (id) => (ids.includes(id) ? { id, status: 'running' } : undefined) })
+
+const rootWithSub = await call(guard, { sessionId: 's-root' }, runningOnly('s-sub'))
+check('guardCheck: a running subagent descendant is counted',
+  rootWithSub.ok === true && rootWithSub.running === false && rootWithSub.runningDescendants === 1)
+
+const rootWithGrandchild = await call(guard, { sessionId: 's-root' }, runningOnly('s-sub2'))
+check('guardCheck: an uninterrupted grandchild counts for the root',
+  rootWithGrandchild.runningDescendants === 1)
+
+const forkCase = await call(guard, { sessionId: 's-root' }, runningOnly('s-fork-sub'))
+check('guardCheck: a subagent under a plain fork never bubbles to the root',
+  forkCase.runningDescendants === 0)
+const forkOwnCase = await call(guard, { sessionId: 's-fork' }, runningOnly('s-fork-sub'))
+check('guardCheck: …it still counts for the fork session itself',
+  forkOwnCase.runningDescendants === 1)
+
+const idleDescendants = await call(guard, { sessionId: 's-root' }, { get: () => ({ status: 'idle' }) })
+check('guardCheck: idle descendants are not counted', idleDescendants.runningDescendants === 0)
+
+const withoutAgents = await call(guard, { sessionId: 's-root' }, undefined)
+check('guardCheck: without the agents service the descendant count stays 0 (fail open)',
+  withoutAgents.ok === true && withoutAgents.runningDescendants === 0)
+
 // ─────── physical-existence probe (auto-adopt gate + tombstone self-heal) ───────
 
 const probe = '/api/dsh-workspace-tree/archive/tombstoneCheck'
-const previousDshHome = process.env.DSH_HOME
-const restoreDshHome = () => {
-  if (previousDshHome === undefined) delete process.env.DSH_HOME
-  else process.env.DSH_HOME = previousDshHome
-}
 
 process.env.DSH_HOME = join(mkdtempSync(join(tmpdir(), 'dswt-home-missing-')), 'no-such-home')
 const unreadableRoot = await call(probe, { ids: ['session-x'] }, undefined)
@@ -166,6 +210,43 @@ check('POST /picker/native normalizes cancel to path: null', cancelled.ok === tr
 internals.setNativeRunner(async () => { const error = new Error('dialog exploded'); throw error })
 const broken = await call('/api/dsh-workspace-tree/picker/native', {}, undefined)
 check('POST /picker/native reports failures without throwing', broken.ok === false && /dialog exploded/.test(String(broken.error)))
+// The row-level 「添加工作区」 entry hands its start directory to osascript's default location.
+let capturedArgs = null
+const captureRun = async (command, args) => { capturedArgs = args; return { stdout: '/Users/tny/Desktop/work/picked\n' } }
+const startDir = mkdtempSync(join(tmpdir(), 'dswt-start-'))
+const seeded = await internals.pickNativeDirectory('darwin', captureRun, startDir)
+check('darwin: an explicit start directory rides the osascript argv',
+  seeded === '/Users/tny/Desktop/work/picked'
+  && capturedArgs.includes('on run argv')
+  && capturedArgs.some((arg) => arg.includes('default location (POSIX file (item 1 of argv))'))
+  && capturedArgs.includes('--')
+  && capturedArgs[capturedArgs.length - 1] === startDir)
+await internals.pickNativeDirectory('darwin', captureRun)
+check('darwin: without a start directory the chooser keeps the system default',
+  !capturedArgs.includes('--') && !capturedArgs.some((arg) => arg.includes('default location')))
+
+internals.setNativeRunner(captureRun)
+const seededRoute = await call('/api/dsh-workspace-tree/picker/native', { startPath: startDir }, undefined)
+check('POST /picker/native forwards a valid start path', seededRoute.ok === true && capturedArgs[capturedArgs.length - 1] === startDir)
+
+capturedArgs = null
+internals.setNativeRunner(captureRun)
+const missingStart = await call('/api/dsh-workspace-tree/picker/native', { startPath: join(startDir, 'no-such-dir') }, undefined)
+check('POST /picker/native refuses a missing start path without opening the chooser',
+  missingStart.ok === false && /startPath/.test(String(missingStart.error)) && capturedArgs === null)
+
+internals.setNativeRunner(captureRun)
+const relativeStart = await call('/api/dsh-workspace-tree/picker/native', { startPath: 'relative/dir' }, undefined)
+check('POST /picker/native refuses a relative start path',
+  relativeStart.ok === false && /绝对路径/.test(String(relativeStart.error)))
+
+const filePath = join(startDir, 'a-file.txt')
+writeFileSync(filePath, 'x')
+internals.setNativeRunner(captureRun)
+const fileStart = await call('/api/dsh-workspace-tree/picker/native', { startPath: filePath }, undefined)
+check('POST /picker/native refuses a start path that is not a directory',
+  fileStart.ok === false && /不是目录/.test(String(fileStart.error)))
+
 internals.setNativeRunner(null)
 
 console.log(failures.length === 0 ? '\nhost-smoke: PASS' : `\nhost-smoke: FAIL (${failures.length})`)

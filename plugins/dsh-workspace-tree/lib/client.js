@@ -1,5 +1,5 @@
 /**
- * dsh-workspace-tree — browser half (v1.9.10)。
+ * dsh-workspace-tree — browser half (v2.0.0)。
  *
  * 内核契约基线：DSH 0.1.6。
  *  - 主视图当前会话读 sessions.list 行上的 retainedBy.mainView（快照已无 current）；
@@ -10,12 +10,8 @@
  * 核心设计（第一性原理对齐）：
  *  - 会话空间归属与归档状态正交；官方列表返回的会话一律可见（含空白草稿），
  *    工作区模式显示活跃会话、归档区显示已归档会话。
- *  - 工作区模式无「未分组」：会话失去工作区归属（如 DSH 升级重置注册表）时后台
- *    自动收编——将其 cwd 注册为工作区（幂等）并挂载会话。**已归档会话不参与收编**
- *    （归档态与工作区归属正交，官方归档也允许无归属），故归档区保留一个「未分组」
- *    分组兜住这类会话。收编前按物理存在性过一遍：官方列表仍返回、目录却已消失的
- *    已删会话写入删除墓碑并跳过，既不让幽灵复活成活会话，也不把刚真注销的工作区
- *    按 cwd 原地建回来。
+ *  - 工作区模式保留官方的「未分组」语义：无归属会话照官方列表原样落进未分组区块，
+ *    插件不替用户注册工作区；归档区同样以「未分组」分组兜住无归属的归档会话。
  *  - 工作区管理默认「移除显示」而非「删除注册」：仅隐藏工作区节点（localStorage 记忆），
  *    注册与会话归属不变；重新添加同一目录后工作区连同会话一起恢复显示。
  *    例外：名下已无任何可见会话与归档会话的空工作区，移除时自动走官方 workspace/delete
@@ -23,18 +19,18 @@
  *  - 归档门槛：运行中/等待回复的会话不允许归档（按钮置灰），归档动作沿用官方
  *    workspace/archiveSession RPC；凡进入归档区的会话删除零守卫、必定可删。
  *  - 永久删除会话采用持久化墓碑（localStorage）：官方列表仍返回的已删会话无论
- *    刷新/跨标签页都不可见；官方列表收敛后自动摘碑。v1.9.2 起对「列表仍返回」的
- *    墓碑增加权威自愈：向 Host 查询会话目录是否仍物理存在——存在即会话存活
- *    （永久删除成功必然使目录消失），该墓碑必为误写（历史版本残留），自动作废
- *    恢复显示；设置页亦提供手动「清空墓碑」兜底入口。
+ *    刷新/跨标签页都不可见；官方列表收敛后自动摘碑。对「列表仍返回」的墓碑另有
+ *    权威自愈：向 Host 查询会话目录是否仍物理存在——存在即会话存活（永久删除成功
+ *    必然使目录消失），该墓碑必为误写，自动作废恢复显示；设置页亦提供手动
+ *    「清空墓碑」兜底入口。
  *  - 空白草稿跟随官方语义：不自动回收、仅视图层隐藏（官方从不物理删除会话文件）。
- *  - 目录选择面：官方「一种能力、两种交互」——回环绑定（且非 SSH）时挂 native 系统
- *    选择器，局域网/远端绑定时只挂 browse 原语（listDirectory / createDirectory）。
- *    内核「添加工作区只有一条路」依赖 sidebar.workspaces.directoryFlow 子槽；本插件以
- *    priority -1 顶掉 sidebar.workspaces 后，官方对话框无处渲染，而内核的槽位声明账本
- *    （SlotCore.register：slot "…" is already declared）不允许再声明同一子槽——被顶掉的
- *    内核 entry 仍持有该声明。故 native 走官方系统选择器，browse 由插件自持对话框承担，
- *    底层只用官方 browse 原语。
+ *  - 目录选择面：官方「一种能力、两种交互」——本机 macOS 走宿主 osascript 原生
+ *    「选择文件夹」窗口，其余环境走插件自持的浏览对话框（面包屑 + 目录列表 +
+ *    绝对路径直输 + 新建文件夹），底层只用官方 browse 原语
+ *    （uiWorkspace.listDirectory / createDirectory）。插件以 priority -1 顶掉
+ *    sidebar.workspaces，官方对话框无处渲染，故两种交互都由插件自己承担。
+ *  - 每个工作区行的「添加工作区」按钮与该工作区共享同一套目录选择交互，
+ *    只是把选择器的起始路径播在该工作区目录上（允许越出，不做越界限制）。
  */
 window.__ModuleLoader__.load({
   id: "@lynn123411/dsh-workspace-tree",
@@ -46,8 +42,13 @@ window.__ModuleLoader__.load({
     const React = require("react");
     const h = React.createElement;
     const { useState, useEffect, useRef, useCallback, useMemo } = React;
-    // 设置页控件走内核基线原语：手绘按钮/开关/输入不再自持外观。
-    const { Button, Input, Switch } = require("@deepseek-ai/dsh-client-ui-primitives");
+    // 设置页控件与全部图标走内核基线原语：手绘按钮/开关/输入/图形全部不再自持。
+    const {
+      Button, Input, Switch,
+      IconFolderOpen16, IconFolderOpenOutline16, IconChevronRightOutline14, IconPlusOutline16,
+      IconCloseOutline16, IconEditOutline16, IconTrashOutline16, IconArchiveOutline20,
+      IconRefreshOutline14, IconNewChatOutline16, IconProjectAddOutline16, IconCodeOutline16
+    } = require("@deepseek-ai/dsh-client-ui-primitives");
 
     /** Cordis 插件名（与 patch 行 id 一致）。 */
     const name = "dsh-workspace-tree";
@@ -58,8 +59,6 @@ window.__ModuleLoader__.load({
      */
     const inject = ["slots", "locale", "sessions", "workspaces"];
 
-    const LS_MODE = "dsh-workspace-tree.mode";
-    const LS_DIRS = "dsh-workspace-tree.dirs";
     const LS_GROUPS = "dsh-workspace-tree.groups";
     const LS_CONFIG = "dsh-workspace-tree.config";
     /** 旧 localStorage 配置已迁移到 Host settings 的一次性标记（防迁移回环）。 */
@@ -77,10 +76,6 @@ window.__ModuleLoader__.load({
     // ══════════════ 配置 store（localStorage 持久化，订阅通知） ══════════════
     const DEFAULT_CONFIG = {
       enabled: true,
-      indent: 16,
-      defaultMode: "workspace",
-      showAgg: true,
-      showCount: true,
       defaultIde: "vscode",
       customIdeCommand: ""
     };
@@ -90,12 +85,6 @@ window.__ModuleLoader__.load({
       const out = Object.assign({}, DEFAULT_CONFIG);
       if (!input || typeof input !== "object" || Array.isArray(input)) return out;
       if (typeof input.enabled === "boolean") out.enabled = input.enabled;
-      if (typeof input.indent === "number" && Number.isFinite(input.indent)) {
-        out.indent = Math.min(Math.max(Math.round(input.indent), 8), 32);
-      }
-      if (input.defaultMode === "folder" || input.defaultMode === "workspace") out.defaultMode = input.defaultMode;
-      if (typeof input.showAgg === "boolean") out.showAgg = input.showAgg;
-      if (typeof input.showCount === "boolean") out.showCount = input.showCount;
       if (typeof input.defaultIde === "string" && input.defaultIde) out.defaultIde = input.defaultIde;
       if (typeof input.customIdeCommand === "string") out.customIdeCommand = input.customIdeCommand;
       return out;
@@ -152,7 +141,7 @@ window.__ModuleLoader__.load({
     }
     function scopeValueToConfig(value) {
       // 经 sanitizeConfig 收敛：Host schema 对 defaultMode/defaultIde 是裸 string，
-      // 脏值（手写 settings.yaml）不能直接进 UI，否则 indent 非法会算出 NaNpx。
+      // 脏值（手写 settings.yaml）不能直接进 UI。
       return sanitizeConfig(value || {});
     }
     /** 有效配置：settings 就绪即以 Host 值为准，否则回退 localStorage。 */
@@ -236,14 +225,6 @@ window.__ModuleLoader__.load({
       } catch { /* 迁移失败静默：下次以标记为准不再重试 */ }
       try { localStorage.setItem(LS_MIGRATED, "1"); } catch { /* ignore */ }
     }
-    function initialMode() {
-      try {
-        const m = localStorage.getItem(LS_MODE);
-        if (m === "folder" || m === "workspace") return m;
-      } catch { /* ignore */ }
-      return getEffectiveConfig().defaultMode === "folder" ? "folder" : "workspace";
-    }
-
     // ══════════════ 空白草稿的官方语义 ══════════════
     // v1.9.0：空白草稿跟随官方——官方从不自动清理（懒物化、仅视图层隐藏），
     // 因此移除了旧版的自动回收与 claims/heartbeat 占用注册表（host /claims/*
@@ -277,19 +258,6 @@ window.__ModuleLoader__.load({
       });
       return res.json();
     }
-
-    /**
-     * 「借道渲染官方目录对话框」能力的模块级引用。主组件定义在 factory 作用域（拿不到
-     * apply 的局部变量），所以 apply 装配好 officialFlowBridge 后挂到这里；探测失败时
-     * 保持 ok:false —— 组件据此回退自持对话框。
-     */
-    const officialFlowBridgeRef = {
-      ok: false,
-      reason: "尚未装配",
-      hole: "sidebar.workspaces.directoryFlow",
-      occupied: () => false,
-      subscribe: () => () => {}
-    };
 
     async function apiGet(path) {
       const res = await fetch(API + path, { method: "GET" });
@@ -331,10 +299,12 @@ window.__ModuleLoader__.load({
      * 归档门槛的 Host 权威判据。官方 workspace/archiveSession 在 Host 侧没有运行态守卫
      * （直接写注册表），而客户端 running 位是 Host 转发来的事实（客户端 prompt() 不做乐观
      * 翻转，发送后到状态帧落地之间存在窗口），所以归档前问一次插件自己的 Host 半边：
-     * agents.get(sessionId).status（本轮实测 Host 服务 `agents.get(id)` 返回带 status 的
-     * 活 Agent，状态取值 idle | running）。
-     * @returns {Promise<{ok:boolean, running?:boolean, status?:string}>} ok=false 表示查询
-     *   本身不可用（旧版/网络故障）——调用方 fail-open 放行，由官方 RPC 定生死。
+     *  自身 agents.get(sessionId).status（Host 服务 `agents.get(id)` 返回带 status 的活
+     *  Agent，状态取值 idle | running），以及持久谱系里在跑的后代子代理数
+     *  runningDescendants（只统计 origin === "subagent" 链上的后代）。
+     * @returns {Promise<{ok:boolean, running?:boolean, status?:string, runningDescendants?:number}>}
+     *   ok=false 表示查询本身不可用（旧版/网络故障）——调用方 fail-open 放行，
+     *   由官方 RPC 定生死。
      */
     async function checkArchiveGuard(sessionId) {
       try {
@@ -343,32 +313,6 @@ window.__ModuleLoader__.load({
       } catch {
         return { ok: false };
       }
-    }
-
-    /**
-     * 会话目录物理存在性探测（Host 权威）：返回其中「目录已消失」的会话 id 集合。
-     * 收编链路用它挡掉官方列表仍在返回的已删会话：官方索引收敛有延迟、host 内存也
-     * 仍持有它们，收编这类幽灵会把它当活会话重新挂载，并把用户刚「彻底移除」的空
-     * 工作区按 cwd 原地重建（于是出现「点了移除，工作区还在」）。
-     * 判据与删除墓碑同源：删除 fail-loud，删除成功必然使目录消失，因此目录在 = 存活、
-     * 目录没了 = 已删；被误判的墓碑仍有列表收敛/墓碑自愈兜底。
-     * fail-open：路由缺席（旧版宿主半边）、网络故障或响应形状不符时返回空集，调用方
-     * 维持原有收编行为——探测故障只应减少保护，不应卡住收编本身。
-     * @param {string[]} ids - 待探测的会话 id（调用方已去重）。
-     * @returns {Promise<Set<string>>} 目录已消失的会话 id 集合。
-     */
-    async function probeGoneSessions(ids) {
-      const gone = new Set();
-      if (!Array.isArray(ids) || ids.length === 0) return gone;
-      try {
-        const result = await apiPost("/archive/tombstoneCheck", { ids });
-        if (!result || result.ok !== true || !Array.isArray(result.alive)) return gone;
-        const alive = new Set(result.alive.map(String));
-        for (const id of ids) if (!alive.has(String(id))) gone.add(String(id));
-      } catch {
-        /* fail-open */
-      }
-      return gone;
     }
 
     // ══════════════ 展开状态持久化 ══════════════
@@ -390,92 +334,6 @@ window.__ModuleLoader__.load({
      * 墓碑只承担「官方列表收敛前的残留期隐藏」，官方列表不再返回该 id 即摘碑。
      */
 
-    // ══════════════ 一键诊断（设置页入口；树头不再放按钮） ══════════════
-    // 直接读 ctx 快照 + localStorage，不依赖任何组件 props，因此设置面板
-    // （独立 slot，无 sessions 传参）与侧栏树可共用同一份采集逻辑。
-    function collectDiagnostics() {
-      let sessions = null;
-      let workspaces = null;
-      try {
-        const c = settingsScopeCtx;
-        if (c && c.sessions && c.sessions.list && typeof c.sessions.list.getSnapshot === "function") {
-          sessions = c.sessions.list.getSnapshot();
-        }
-        if (c && c.workspaces && c.workspaces.list && typeof c.workspaces.list.getSnapshot === "function") {
-          workspaces = c.workspaces.list.getSnapshot();
-        }
-      } catch { sessions = null; workspaces = null; }
-      // 快照缺席时明确标注 warning，避免“空诊断”被误读为“真空”
-      const noSnap = !sessions && !workspaces;
-      const byId = (sessions && sessions.byId) || {};
-      const archivedIds = (workspaces && Array.isArray(workspaces.archivedSessionIds))
-        ? workspaces.archivedSessionIds
-        : [];
-      const archived = new Set(archivedIds.map(String));
-      const hardDeleted = loadSet(LS_DELETED);
-      let defaultMode = null;
-      try { defaultMode = initialMode(); } catch { defaultMode = null; }
-      // 注意：此处 defaultMode 是持久化偏好（initialMode），不是侧栏树的 live mode
-      // （live mode 可为 archive 且不持久化，设置页拿不到它）
-      return {
-        // 注意：此处版本号为手写常量，发版改 package.json 时同步改这里
-        plugin: "dsh-workspace-tree@1.9.10",
-        t: new Date().toISOString(),
-        ...(noSnap ? { warning: "snapshots unavailable（ctx 未就绪或已释放）" } : {}),
-        defaultMode,
-        sessions: {
-          phase: sessions ? (sessions.phase || null) : null,
-          idsCount: sessions && Array.isArray(sessions.ids) ? sessions.ids.length : 0,
-          current: currentSessionIdOf(sessions),
-          rowsTruncated: !!(sessions && Array.isArray(sessions.ids) && sessions.ids.length > 60),
-          rows: (sessions && Array.isArray(sessions.ids) ? sessions.ids : []).slice(0, 60).map((sid) => {
-            const row = byId[sid] || null;
-            return {
-              sid: String(sid),
-              present: !!row,
-              blank: row ? !!row.blank : null,
-              running: row ? !!row.running : null,
-              origin: row ? (row.origin || null) : null,
-              title: row && row.displayTitle ? String(row.displayTitle).slice(0, 24) : null
-            };
-          })
-        },
-        workspaces: {
-          phase: workspaces ? (workspaces.phase || null) : null,
-          items: (workspaces && Array.isArray(workspaces.items) ? workspaces.items : []).map((w) => ({
-            id: String(w.workspaceId),
-            title: w.title || null,
-            path: w.path || null,
-            regCount: Array.isArray(w.sessionIds) ? w.sessionIds.length : 0,
-            visibleCount: visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted).length
-          }))
-        },
-        archivedCount: archived.size,
-        hardDeleted: [...hardDeleted],
-        hiddenWs: [...loadSet(LS_HIDDEN_WS)],
-        expandedGroups: [...loadSet(LS_GROUPS)]
-      };
-    }
-    async function copyTextToClipboard(text) {
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(text);
-          return true;
-        }
-        throw new Error("clipboard unavailable");
-      } catch {
-        try {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          const ok = document.execCommand("copy");
-          document.body.removeChild(ta);
-          return !!ok;
-        } catch { return false; }
-      }
-    }
-
     // ══════════════ Modal Scroll Lock 计数器 ══════════════
     let activeModalsCount = 0;
     function useModalScrollLock(open) {
@@ -494,109 +352,33 @@ window.__ModuleLoader__.load({
       }, [open]);
     }
 
-    // ══════════════ 官方图标 ══════════════
-    const ICONS = {
-      folderOpen: {
-        vb: "0 0 16 16",
-        paths: [
-          { d: "M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V6.62671C15.2694 7.02689 15.6605 7.85012 15.4385 8.68726L14.3848 12.658C14.1037 13.7164 13.1449 14.4527 12.0498 14.4529H2.91699C1.51651 14.4529 0.451662 13.2814 0.501954 11.9519V3.98706C0.501954 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM3.7793 7.75562C3.30994 7.75562 2.89883 8.07153 2.77832 8.52515L1.91602 11.7722C1.74167 12.4291 2.23734 13.073 2.91699 13.073H12.0498C12.5191 13.0728 12.9304 12.757 13.0508 12.3035L14.1045 8.33374C14.1819 8.04202 13.9619 7.756 13.6602 7.75562H3.7793ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V7.2937C2.33068 6.7269 3.02249 6.37476 3.7793 6.37476H13.2051V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z" },
-          { d: "M13.6602 7.75525C13.9618 7.7556 14.1815 8.04179 14.1045 8.33337L13.0508 12.3031C12.9304 12.7567 12.5191 13.0725 12.0498 13.0726H2.91701C2.23744 13.0725 1.7417 12.4287 1.91603 11.7719L2.77834 8.52478C2.89898 8.07146 3.31018 7.75532 3.77931 7.75525H13.6602ZM5.1963 2.95154C5.34985 2.95159 5.49377 3.02803 5.57912 3.15564L6.0508 3.86365C6.39205 4.37553 6.96685 4.68385 7.58205 4.68396H12.1699C12.7416 4.68434 13.2049 5.14754 13.2051 5.71912V6.37439H3.77931C3.02267 6.37444 2.33067 6.72671 1.88283 7.29333V3.98669C1.88299 3.4152 2.34649 2.95168 2.91798 2.95154H5.1963Z", opacity: "0.2" }
-        ]
-      },
-      folderOpenFilled: {
-        vb: "0 0 16 16",
-        paths: [
-          { d: "M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V6.62671C15.2694 7.02689 15.6605 7.85012 15.4385 8.68726L14.3848 12.658C14.1037 13.7164 13.1449 14.4527 12.0498 14.4529H2.91699C1.51651 14.4529 0.451662 13.2814 0.501954 11.9519V3.98706C0.501954 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM3.7793 7.75562C3.30994 7.75562 2.89883 8.07153 2.77832 8.52515L1.91602 11.7722C1.74167 12.4291 2.23734 13.073 2.91699 13.073H12.0498C12.5191 13.0728 12.9304 12.757 13.0508 12.3035L14.1045 8.33374C14.1819 8.04202 13.9619 7.756 13.6602 7.75562H3.7793ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V7.2937C2.33068 6.7269 3.02249 6.37476 3.7793 6.37476H13.2051V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z" },
-          { d: "M13.6602 7.75525C13.9618 7.7556 14.1815 8.04179 14.1045 8.33337L13.0508 12.3031C12.9304 12.7567 12.5191 13.0725 12.0498 13.0726H2.91701C2.23744 13.0725 1.7417 12.4287 1.91603 11.7719L2.77834 8.52478C2.89898 8.07146 3.31018 7.75532 3.77931 7.75525H13.6602ZM5.1963 2.95154C5.34985 2.95159 5.49377 3.02803 5.57912 3.15564L6.0508 3.86365C6.39205 4.37553 6.96685 4.68385 7.58205 4.68396H12.1699C12.7416 4.68434 13.2049 5.14754 13.2051 5.71912V6.37439H3.77931C3.02267 6.37444 2.33067 6.72671 1.88283 7.29333V3.98669C1.88299 3.4152 2.34649 2.95168 2.91798 2.95154H5.1963Z", opacity: "0.2" }
-        ]
-      },
-      folderOpenOutline: {
-        vb: "0 0 16 16",
-        d: "M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V6.62671C15.2694 7.02689 15.6605 7.85012 15.4385 8.68726L14.3848 12.658C14.1037 13.7164 13.1449 14.4527 12.0498 14.4529H2.91699C1.51651 14.4529 0.451662 13.2814 0.501954 11.9519V3.98706C0.501954 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM3.7793 7.75562C3.30994 7.75562 2.89883 8.07153 2.77832 8.52515L1.91602 11.7722C1.74167 12.4291 2.23734 13.073 2.91699 13.073H12.0498C12.5191 13.0728 12.9304 12.757 13.0508 12.3035L14.1045 8.33374C14.1819 8.04202 13.9619 7.756 13.6602 7.75562H3.7793ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V7.2937C2.33068 6.7269 3.02249 6.37476 3.7793 6.37476H13.2051V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z"
-      },
-      folderClose: {
-        vb: "0 0 16 16",
-        d: "M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V12.1484C14.5859 13.4824 13.5039 14.5645 12.1699 14.5645H2.91699C1.58396 14.5645 0.501953 13.4824 0.501953 12.1484V3.98706C0.501953 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V12.1484C1.88281 12.7202 2.34625 13.1836 2.91797 13.1836H12.1699C12.7416 13.1836 13.2051 12.7202 13.2051 12.1484V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z"
-      },
-      folderCloseFilled: {
-        vb: "0 0 16 16",
-        paths: [
-          { d: "M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V12.1484C14.5859 13.4824 13.5039 14.5645 12.1699 14.5645H2.91699C1.58396 14.5645 0.501953 13.4824 0.501953 12.1484V3.98706C0.501953 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V12.1484C1.88281 12.7202 2.34625 13.1836 2.91797 13.1836H12.1699C12.7416 13.1836 13.2051 12.7202 13.2051 12.1484V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z" },
-          { d: "M2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V12.1484C1.88281 12.7202 2.34625 13.1836 2.91797 13.1836H12.1699C12.7416 13.1836 13.2051 12.7202 13.2051 12.1484V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z", opacity: "0.2" }
-        ]
-      },
-      folderCloseOutline: {
-        vb: "0 0 16 16",
-        d: "M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V12.1484C14.5859 13.4824 13.5039 14.5645 12.1699 14.5645H2.91699C1.58396 14.5645 0.501953 13.4824 0.501953 12.1484V3.98706C0.501953 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V12.1484C1.88281 12.7202 2.34625 13.1836 2.91797 13.1836H12.1699C12.7416 13.1836 13.2051 12.7202 13.2051 12.1484V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z"
-      },
-      chevron: {
-        vb: "0 0 14 14",
-        d: "M4.25 2.82782L4.25 11.1722C4.25 11.6622 4.84243 11.9076 5.18891 11.5611L9.36109 7.38891C9.57588 7.17412 9.57588 6.82588 9.36109 6.61109L5.18891 2.43891C4.84243 2.09243 4.25 2.33782 4.25 2.82782Z"
-      },
-      plus: { vb: "0 0 16 16", d: "M8.64453 1.5V7.34961H14.5V8.65039H8.64453V14.5H7.34473V8.65039H1.5V7.34961H7.34473V1.5H8.64453Z" },
-      minus: { vb: "0 0 16 16", d: "M2.5 6.75H13.5V9.25H2.5Z" },
-      edit: { vb: "0 0 16 16", d: "M9.94076 1.34942C10.7047 0.90231 11.6503 0.902415 12.4143 1.34942C12.7061 1.52015 12.9688 1.79118 13.3104 2.13284C13.6521 2.47448 13.9231 2.73721 14.0939 3.02894C14.5408 3.79294 14.5409 4.73856 14.0939 5.50251C13.9231 5.79415 13.652 6.05704 13.3104 6.39861L6.65932 13.0497C6.28068 13.4284 6.00695 13.7108 5.66543 13.9097C5.32391 14.1085 4.94315 14.2074 4.42705 14.3498L3.24394 14.6761C2.77527 14.8054 2.34538 14.9262 2.00131 14.9684C1.65196 15.0112 1.17964 15.0013 0.810764 14.6325C0.441921 14.2637 0.432107 13.7913 0.47486 13.442C0.517035 13.0979 0.6379 12.668 0.767181 12.1993L1.09352 11.0162C1.23588 10.5001 1.33481 10.1193 1.5336 9.77784C1.7325 9.43632 2.0149 9.1626 2.39355 8.78395L9.04466 2.13284C9.38625 1.79126 9.64911 1.52016 9.94076 1.34942ZM15.5427 14.8398H7.55223L8.96707 13.425H15.5427V14.8398ZM3.39382 9.78422C2.965 10.213 2.84244 10.3436 2.75709 10.49C2.67183 10.6366 2.61862 10.8079 2.45733 11.3925L2.13099 12.5756C2.00183 13.0439 1.92194 13.3419 1.88863 13.5536C2.10041 13.5204 2.39872 13.4416 2.86764 13.3123L4.05075 12.9859C4.63544 12.8246 4.80669 12.7715 4.95323 12.6862C5.09968 12.6008 5.23022 12.4783 5.65905 12.0494L10.721 6.98644L8.45577 4.72121L3.39382 9.78422ZM11.7 2.57079C11.3774 2.38198 10.9777 2.38198 10.6551 2.57079C10.5602 2.62647 10.4487 2.72931 10.0449 3.13311L9.45604 3.72094L11.7213 5.98617L12.3102 5.39833C12.7139 4.99457 12.8168 4.88307 12.8725 4.78818C13.0613 4.46561 13.0612 4.06585 12.8725 3.74326C12.8169 3.64827 12.7146 3.53752 12.3102 3.13311C11.9057 2.72863 11.795 2.6264 11.7 2.57079Z" },
-      trash: { vb: "0 0 16 16", d: "M14.4782 4.84067L14.2138 10.1152C14.1102 12.1872 14.067 13.0115 13.3866 13.9607C13.1044 14.3546 12.7498 14.6912 12.3424 14.9535C11.8239 15.2872 11.2415 15.4316 10.5585 15.4998C9.88727 15.5668 9.04946 15.5656 7.99998 15.5656C6.95051 15.5656 6.1127 15.5668 5.44142 15.4998C4.75851 15.4316 4.17602 15.2872 3.65753 14.9535C3.25012 14.6912 2.89559 14.3546 2.61332 13.9607C1.93296 13.0115 1.88979 12.1872 1.78619 10.1152L1.52179 4.84067L2.89006 4.77277L3.15343 10.0463C3.26221 12.2218 3.32452 12.6015 3.72646 13.1624C3.90825 13.4161 4.13686 13.6334 4.39927 13.8023C4.66204 13.9714 5.00263 14.0792 5.57825 14.1367C6.16562 14.1953 6.92298 14.1963 7.99998 14.1963C9.07699 14.1963 9.83434 14.1953 10.4217 14.1367C10.9973 14.0792 11.3379 13.9714 11.6007 13.8023C11.8631 13.6334 12.0917 13.4161 12.2735 13.1624C12.6755 12.6015 12.7378 12.2218 12.8465 10.0463L13.1099 4.77277L14.4782 4.84067ZM5.43011 6.22849H6.7994V11.3909H5.43011V6.22849ZM9.20056 6.22849H10.5699V11.3909H9.20056V6.22849ZM8.53597 0.434431C9.17976 0.434431 9.6522 0.426926 10.0966 0.571258C10.2357 0.616451 10.3717 0.672554 10.502 0.738948C10.9182 0.951107 11.2464 1.29099 11.7015 1.74612L12.4978 2.54136H15.3742V3.91169H0.625732V2.54136H3.50218L4.29845 1.74612C4.75358 1.29099 5.08174 0.951107 5.49801 0.738948C5.62831 0.672554 5.76425 0.616451 5.90334 0.571258C6.34776 0.426926 6.82021 0.434431 7.46399 0.434431H8.53597ZM7.46399 1.80476C6.73208 1.80476 6.51641 1.81187 6.32617 1.87369C6.25545 1.89667 6.18668 1.92533 6.12041 1.95907C5.96398 2.03878 5.82348 2.16253 5.44142 2.54136H10.5585C10.1765 2.16253 10.036 2.03878 9.87955 1.95907C9.81329 1.92533 9.74452 1.89667 9.6738 1.87369C9.48356 1.81187 9.26789 1.80476 8.53597 1.80476H7.46399Z" },
-      archive: {
-        vb: "0 0 20 20",
-        paths: [
-          { d: "M15.8659 2.05975C17.2603 2.05995 18.3913 3.19096 18.3914 4.58527V5.4874C18.3914 6.02747 18.2192 6.52672 17.9303 6.93735C17.9336 6.96524 17.9388 6.99318 17.9388 7.02195V12.8884C17.9388 13.6345 17.9395 14.2379 17.8996 14.7254C17.8642 15.1593 17.7936 15.5499 17.6373 15.9141L17.5654 16.0685C17.278 16.6328 16.8405 17.1046 16.3038 17.434L16.0679 17.5661C15.66 17.7739 15.2196 17.8598 14.7237 17.9003C14.2362 17.9401 13.6327 17.9405 12.8867 17.9405H7.11122C6.36511 17.9405 5.76171 17.9401 5.27418 17.9003C4.84051 17.8649 4.44949 17.7952 4.08545 17.6391L3.93104 17.5661C3.36673 17.2785 2.89392 16.8414 2.56465 16.3044L2.43245 16.0685C2.22473 15.6608 2.13878 15.2211 2.09825 14.7254C2.05841 14.2379 2.05912 13.6345 2.05912 12.8884V7.02195C2.05912 6.99284 2.06422 6.96449 2.06758 6.93629C1.77931 6.52592 1.60858 6.02687 1.60858 5.4874V4.58527C1.60876 3.19084 2.73962 2.05975 4.1341 2.05975H15.8659ZM16.4984 7.92936C16.296 7.98169 16.0847 8.01288 15.8659 8.01291H4.1341C3.91478 8.01291 3.70246 7.98194 3.49955 7.92936V12.8884C3.49955 13.6582 3.50053 14.1927 3.53445 14.608C3.56769 15.0146 3.62923 15.244 3.71635 15.415L3.7925 15.5514C3.98339 15.8627 4.25749 16.1165 4.58464 16.2833L4.72529 16.3435C4.88095 16.3993 5.08638 16.4402 5.39158 16.4651C5.80685 16.4991 6.34138 16.5001 7.11122 16.5001H12.8867C13.6564 16.5001 14.1911 16.499 14.6063 16.4651C15.0128 16.432 15.2423 16.3703 15.4133 16.2833L15.5508 16.2061C15.8618 16.0152 16.116 15.7419 16.2827 15.415L16.3429 15.2732C16.3985 15.1177 16.4396 14.9128 16.4645 14.608C16.4985 14.1927 16.4984 13.6583 16.4984 12.8884V7.92936ZM4.1341 3.50019C3.53511 3.50019 3.0492 3.98631 3.04902 4.58527V5.4874C3.04902 6.08649 3.535 6.57248 4.1341 6.57248H15.8659C16.4648 6.57228 16.951 6.08638 16.951 5.4874V4.58527C16.9509 3.98644 16.4647 3.50038 15.8659 3.50019H4.1341Z" },
-          { d: "M12.7962 12.5661V11.0832H7.20548V12.5661L12.7962 12.5661Z" }
-        ]
-      },
-      restore: { vb: "0 0 16 16", d: "M8 3a5 5 0 0 0-5 5 5 5 0 0 0 5 5 5 5 0 0 0 5-5h-1.5A3.5 3.5 0 0 1 8 11.5 3.5 3.5 0 0 1 4.5 8 3.5 3.5 0 0 1 8 4.5V3l3 3-3 3V7H8V3Z" },
-      newChat: { vb: "0 0 16 16", d: "M8.00003 0.3237C3.76075 0.3237 0.32373 3.76072 0.32373 8C0.32373 9.17603 0.589121 10.2922 1.0632 11.2901L1.35291 11.8989L2.5705 11.3205L2.28079 10.7117C1.89079 9.89074 1.67301 8.97167 1.67301 8C1.67301 4.50546 4.50549 1.67298 8.00003 1.67298C11.4946 1.67298 14.3271 4.50546 14.3271 8C14.3271 11.4945 11.4946 14.327 8.00003 14.327C7.28473 14.327 6.76077 14.277 6.29621 14.1487C5.83857 14.0224 5.40441 13.8109 4.88514 13.4488C4.12569 12.919 3.03778 12.7316 2.141 13.2978L2.12682 13.307L2.11264 13.3171L1.34886 13.854L1.79659 15.188L2.86122 14.4384C3.19068 14.2305 3.68325 14.2542 4.11326 14.5539C4.72789 14.9826 5.30042 15.2724 5.93762 15.4484C6.56803 15.6224 7.22776 15.6763 8.00003 15.6763C12.2393 15.6763 15.6763 12.2393 15.6763 8C15.6763 3.76072 12.2393 0.3237 8.00003 0.3237ZM7.32033 4.82535V7.32536H4.82538V8.67464H7.32033V11.1747H8.6696V8.67464H11.1747V7.32536H8.6696V4.82535H7.32033Z" },
-      folderPlus: {
-        vb: "0 0 16 16",
-        paths: [
-          { d: "M5.05582 0.518756L4.50669 0.86654L5.05582 0.518756ZM13 9.4837L13.65 9.4837L13.65 3.53962L13 3.53962L12.35 3.53962L12.35 9.4837L13 9.4837ZM11.3264 1.86603L11.3264 1.21603L6.52313 1.21603L6.52313 1.86603L6.52313 2.51603L11.3264 2.51603L11.3264 1.86603ZM5.58054 1.34727L6.12968 0.999489L5.60495 0.170972L5.05582 0.518756L4.50669 0.86654L5.03141 1.69506L5.58054 1.34727ZM4.11323 1.23058e-13L4.11323 -0.65L1.67359 -0.65L1.67359 5.00699e-14L1.67359 0.65L4.11323 0.65L4.11323 1.23058e-13ZM0 1.67359L-0.65 1.67359L-0.65 9.4837L0 9.4837L0.65 9.4837L0.65 1.67359L0 1.67359ZM11.3264 11.1573L11.3264 10.5073L1.67359 10.5073L1.67359 11.1573L1.67359 11.8073L11.3264 11.8073L11.3264 11.1573ZM0 9.4837L-0.65 9.4837C-0.65 10.767 0.390308 11.8073 1.67359 11.8073L1.67359 11.1573L1.67359 10.5073C1.10828 10.5073 0.65 10.049 0.65 9.4837L0 9.4837ZM1.67359 5.00699e-14L1.67359 -0.65C0.390307 -0.65 -0.65 0.390309 -0.65 1.67359L0 1.67359L0.65 1.67359C0.65 1.10828 1.10828 0.65 1.67359 0.65L1.67359 5.00699e-14ZM5.05582 0.518756L5.60495 0.170972C5.28121 -0.340193 4.71829 -0.65 4.11323 -0.65L4.11323 1.23058e-13L4.11323 0.65C4.27282 0.65 4.4213 0.731715 4.50669 0.86654L5.05582 0.518756ZM6.52313 1.86603L6.52313 1.21603C6.36354 1.21603 6.21507 1.13431 6.12968 0.999489L5.58054 1.34727L5.03141 1.69506C5.35515 2.20622 5.91808 2.51603 6.52313 2.51603L6.52313 1.86603ZM13 3.53962L13.65 3.53962C13.65 2.25634 12.6097 1.21603L11.3264 1.21603L11.3264 1.86603L11.3264 2.51603C11.8917 2.51603 12.35 2.97431 12.35 3.53962L13 3.53962ZM13 9.4837L12.35 9.4837C12.35 10.049 11.8917 10.5073 11.3264 10.5073L11.3264 11.1573L11.3264 11.8073C12.6097 11.8073 13.65 10.767 13.65 9.4837L13 9.4837Z", transform: "translate(1.5 2.429)" },
-          { d: "M12 10.8v1.2h1.9v1.2H12v1.2h-1.2v-1.2H8.9v-1.2h1.9v-1.2H12z" }
-        ]
-      },
-      ide: {
-        vb: "0 0 16 16",
-        paths: [
-          { d: "M5.7 3.3C5.3 2.9 4.7 2.9 4.3 3.3L1.5 6.8C1.1 7.2 1.1 7.8 1.5 8.2L4.3 11.7C4.7 12.1 5.3 12.1 5.7 11.7C6.1 11.3 6.1 10.7 5.7 10.3L3.4 7.5L5.7 4.7C6.1 4.3 6.1 3.7 5.7 3.3Z" },
-          { d: "M10.3 3.3C9.9 3.7 9.9 4.3 10.3 4.7L12.6 7.5L10.3 10.3C9.9 10.7 9.9 11.3 10.3 11.7C10.7 12.1 11.3 12.1 11.7 11.7L14.5 8.2C14.9 7.8 14.9 7.2 14.5 6.8L11.7 3.3C11.3 2.9 10.7 2.9 10.3 3.3Z" },
-          { d: "M6.3 12.3C6.1 12.3 5.9 12.2 5.8 12C5.6 11.6 5.8 11.1 6.2 10.9L9.2 3.7C9.4 3.3 9.9 3.1 10.3 3.3C10.7 3.5 10.9 4 10.7 4.4L7.7 11.6C7.5 12 7.1 12.3 6.7 12.3H6.3Z" }
-        ]
-      }
+    /** 树的固定层级缩进（8 + depth * INDENT）。 */
+    const INDENT = 16;
+
+    // ══════════════ 图标 ══════════════
+    /** 语义名 → 官方原语图标。三档文件夹共用「开口文件夹」形状（蓝/灰/线框由 CSS 类区分）。 */
+    const ICON_COMPONENTS = {
+      folderOpen: IconFolderOpen16,
+      folderOpenOutline: IconFolderOpenOutline16,
+      chevron: IconChevronRightOutline14,
+      plus: IconPlusOutline16,
+      minus: IconCloseOutline16,
+      edit: IconEditOutline16,
+      trash: IconTrashOutline16,
+      archive: IconArchiveOutline20,
+      restore: IconRefreshOutline14,
+      newChat: IconNewChatOutline16,
+      folderPlus: IconProjectAddOutline16,
+      ide: IconCodeOutline16
     };
-
-    /**
-     * 根据展开状态及子树会话情况确定文件夹图标：
-     * 有会话 → 填充灰底文件夹；无会话 → 纯线框空文件夹。
-     * 运行态染蓝由调用方附加 dswt-folderActive 类实现（蓝色 = 子树内有运行中会话）。
-     */
-    function folderIconFor(isOpen, hasSessions) {
-      if (hasSessions) {
-        return isOpen ? "folderOpenFilled" : "folderCloseFilled";
-      }
-      return isOpen ? "folderOpenOutline" : "folderCloseOutline";
+    function Icon({ name, size, className }) {
+      const Component = ICON_COMPONENTS[name];
+      if (!Component) return null;
+      return h(Component, { size: size || 16, className });
     }
-
-    function Icon({ name, size, className, title }) {
-      const spec = ICONS[name];
-      if (!spec) return null;
-      const kids = [];
-      const pushPath = (p, key) => {
-        const props = { key, d: p.d, fill: "currentColor" };
-        if (p.opacity !== void 0) props.opacity = p.opacity;
-        if (p.transform) props.transform = p.transform;
-        if (p.fillRule) props.fillRule = p.fillRule;
-        kids.push(h("path", props));
-      };
-      if (spec.paths) spec.paths.forEach((p, i) => pushPath(p, "p" + i));
-      else pushPath(spec, "p0");
-      return h("svg", {
-        width: size || 16,
-        height: size || 16,
-        viewBox: spec.vb,
-        fill: "none",
-        xmlns: "http://www.w3.org/2000/svg",
-        className,
-        ...(title ? { "aria-label": title, role: "img" } : { "aria-hidden": "true" })
-      }, kids);
+    /** 子树内有会话 → 填充开口文件夹；无会话 → 线框开口文件夹。 */
+    function folderIconFor(hasSessions) {
+      return hasSessions ? "folderOpen" : "folderOpenOutline";
     }
 
     // ══════════════ 状态点 ══════════════
@@ -619,12 +401,14 @@ window.__ModuleLoader__.load({
       });
     }
 
-    function sessionState(row, current, pendingKind, completionUnread) {
+    function sessionState(row, current, pendingKind, completionUnread, runningSubagents) {
       if (!row) return "done";
       // 等待人回复（审批/计划复核/提问）优先于运行态：这种会话在动，但卡在人身上。
       // pendingKind / completionUnread 均由官方会话状态座位传入（row 上没有这两个字段）。
       if (pendingKind) return "warning";
-      if (row.running) return "ongoing";
+      // 自身回合在跑，或其不间断谱系里有后代子代理在跑——与官方「父空闲、子代理在跑」
+      // 也点亮运行指示的语义一致。
+      if (row.running || runningSubagents > 0) return "ongoing";
       if (completionUnread && !current) return "done-reminder";
       return "done";
     }
@@ -642,11 +426,42 @@ window.__ModuleLoader__.load({
       return Math.floor(days / 30) + "月";
     }
 
+    // ══════════════ 后代子代理谱系（与官方同构） ══════════════
+    /**
+     * 逐个祖先累计「运行中的后代子代理数」，与官方 dsh-client-ui-workspace 的
+     * indexSubagentDescendants 同构：只遍历 origin === "subagent" 的行，从它沿 parentId
+     * 逐层向上，且每层自身也必须是 subagent（不间断谱系）——fork 出来的普通会话
+     * （origin 为空）既不参与计数、也不会被算成谁的子代理；seen 集合防环。
+     * 计数读 session 快照的 running（与官方一致，不读状态座位）。
+     * @param byId - SessionListState.byId（含 subagent 行，即使这些行在树里被隐藏）。
+     * @returns {Map<string, number>} 祖先会话 id → 运行中的后代子代理数。
+     */
+    function indexSubagentRunning(byId) {
+      const indexed = new Map();
+      for (const row of Object.values(byId || {})) {
+        if (!row || row.origin !== "subagent") continue;
+        const seen = new Set();
+        let current = row;
+        while (current && current.origin === "subagent" && current.parentId != null && !seen.has(String(current.id))) {
+          seen.add(String(current.id));
+          const key = String(current.parentId);
+          indexed.set(key, (indexed.get(key) || 0) + (row.running ? 1 : 0));
+          current = byId[current.parentId] || byId[key] || null;
+        }
+      }
+      return indexed;
+    }
+    /** 祖先会话 id 的运行中后代子代理数（无谱系索引时视为 0）。 */
+    function runningSubagentsOf(lineage, sid) {
+      if (!lineage || sid === null || sid === void 0) return 0;
+      return lineage.get(String(sid)) || 0;
+    }
+
     // ══════════════ 第一性原理：会话可见性判定标准 ══════════════
     /**
      * subagent 子会话判定：归宿主 subagent 路由管理（随父会话展示），
-     * 宿主禁止将其 attach 到工作区（adopt 必然抛 subagent-ownership 错误），
-     * 故不参与树的任何渲染投影，也不进入自动收编/空白草稿回收。
+     * 宿主禁止将其 attach 到工作区（attach 必然抛 subagent-ownership 错误），
+     * 故不参与树的任何渲染投影，也不进入未分组/空白草稿回收。
      * 唯一判据是 origin === "subagent"——**不能看 parentId**：fork 出来的普通会话
      * （origin 为空）同样带 parentSessionId（宿主 fork 会写 meta.parentSession），
      * 用 parentId 判断会把 fork 会话误当作 subagent 而全部隐藏。
@@ -702,56 +517,6 @@ window.__ModuleLoader__.load({
       const i = n.lastIndexOf("/");
       if (i <= 0) return null;
       return n.slice(0, i);
-    }
-
-    /** 目录树：智能汇聚，折叠无意义的单干长链，保留必要父节点分支。 */
-    function buildDirTree(items) {
-      if (!items || items.length === 0) return [];
-      const wsPaths = items.map((w) => normalizePath(w.path)).filter(Boolean);
-      if (wsPaths.length === 0) return [];
-
-      const nodes = new Map();
-      const ensure = (p) => {
-        const n = normalizePath(p);
-        if (!nodes.has(n)) nodes.set(n, { path: n, name: baseName(n), ws: null, children: [] });
-        return nodes.get(n);
-      };
-
-      for (const w of items) {
-        const p = normalizePath(w.path);
-        const node = ensure(p);
-        node.ws = w;
-      }
-
-      for (const w of items) {
-        let cur = normalizePath(w.path);
-        let p = parentPath(cur);
-        while (p !== null && p !== "" && p !== "/") {
-          const hasOtherWsUnderP = wsPaths.some((wp) => wp !== cur && wp.startsWith(p + "/"));
-          const isWsItself = items.some((item) => normalizePath(item.path) === p);
-          if (hasOtherWsUnderP || isWsItself) {
-            const par = ensure(p);
-            const child = nodes.get(cur);
-            if (child && !par.children.includes(child)) par.children.push(child);
-            cur = p;
-            p = parentPath(cur);
-          } else {
-            break;
-          }
-        }
-      }
-
-      const childSet = new Set();
-      for (const node of nodes.values()) {
-        for (const c of node.children) childSet.add(c.path);
-      }
-      const roots = [...nodes.values()].filter((n) => !childSet.has(n.path));
-      const sortNodes = (list) => {
-        list.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-        for (const n of list) sortNodes(n.children);
-      };
-      sortNodes(roots);
-      return roots;
     }
 
     /** 工作区森林：按目录嵌套关系组织工作区节点。 */
@@ -815,20 +580,20 @@ window.__ModuleLoader__.load({
     function aggPriority(st) {
       return AGG_PRIO[st] || 0;
     }
-    function aggOfSessionIds(ids, sessions, archived, hardDeleted, sessionStatus) {
+    function aggOfSessionIds(ids, sessions, archived, hardDeleted, sessionStatus, lineage) {
       const byId = (sessions && sessions.byId) || {};
       const cur = currentSessionIdOf(sessions);
       let best = null;
       for (const sid of ids || []) {
         const row = byId[sid];
         if (!sessionVisible(row, cur, archived, hardDeleted)) continue;
-        const st = sessionState(row, sid === cur, pendingKindOf(sessionStatus, sid), completionUnreadOf(sessionStatus, sid));
+        const st = sessionState(row, sid === cur, pendingKindOf(sessionStatus, sid), completionUnreadOf(sessionStatus, sid), runningSubagentsOf(lineage, sid));
         if (aggPriority(st) > aggPriority(best)) best = st;
         if (best === "warning") return best;
       }
       return best;
     }
-    function decorateAgg(node, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus) {
+    function decorateAgg(node, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus, lineage) {
       let best = null;
       let running = false;
       let hasSessions = false;
@@ -836,14 +601,14 @@ window.__ModuleLoader__.load({
       if (w) {
         const vis = visibleSessionIds(w.sessionIds, sessions, archived, hardDeleted);
         if (vis.length > 0) hasSessions = true;
-        best = aggOfSessionIds(w.sessionIds, sessions, archived, hardDeleted, sessionStatus);
+        best = aggOfSessionIds(w.sessionIds, sessions, archived, hardDeleted, sessionStatus, lineage);
         const byId = (sessions && sessions.byId) || {};
         for (const sid of vis) {
-          if (byId[sid] && byId[sid].running) { running = true; break; }
+          if (byId[sid] && (byId[sid].running || runningSubagentsOf(lineage, sid) > 0)) { running = true; break; }
         }
       }
       for (const c of childrenOf(node)) {
-        const cs = decorateAgg(c, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus);
+        const cs = decorateAgg(c, wsOf, childrenOf, sessions, archived, hardDeleted, sessionStatus, lineage);
         if (aggPriority(cs) > aggPriority(best)) best = cs;
         if (c.aggRunning) running = true;
         if (c.aggHasSessions) hasSessions = true;
@@ -855,144 +620,39 @@ window.__ModuleLoader__.load({
       return best;
     }
 
-    // ══════════════ 行内输入（带防并发提交锁） ══════════════
-    function InlineInput({ initial, placeholder, onCommit, onCancel }) {
-      const [value, setValue] = useState(initial || "");
-      const inputRef = useRef(null);
-      const finishedRef = useRef(false);
-
-      useEffect(() => {
-        inputRef.current && inputRef.current.focus();
-      }, []);
-
-      const handleCommit = () => {
-        if (finishedRef.current) return;
-        finishedRef.current = true;
-        const v = value.trim();
-        if (v) onCommit(v);
-        else onCancel();
-      };
-
-      const handleCancel = () => {
-        if (finishedRef.current) return;
-        finishedRef.current = true;
-        onCancel();
-      };
-
-      return h("input", {
-        ref: inputRef,
-        className: "dswt-inline",
-        value,
-        placeholder,
-        onChange: (e) => setValue(e.target.value),
-        onKeyDown: (e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            handleCommit();
-          }
-          if (e.key === "Escape") {
-            e.preventDefault();
-            handleCancel();
-          }
-        },
-        onBlur: handleCommit
-      });
-    }
-
-    // ══════════════ 文件夹模式：目录节点 ══════════════
-    function DirNode({ node, depth, indent, showAgg, showCount, expandedDirs, toggleDir, onNavToWorkspace, onNewSessionInDir, onAddWorkspaceDir, onOpenInIde, onNewDir, onCancelNewDir, newDirAt, onRenameWs, onHideWs, sessions, archived, hardDeleted }) {
-      const isWs = node.ws !== null;
-      const open = expandedDirs.has(node.path);
-      const hasChildren = node.children && node.children.length > 0;
-      const wsSessionCount = isWs ? visibleSessionIds(node.ws.sessionIds, sessions, archived, hardDeleted).length : 0;
-      return h("div", { className: "dswt-dir" }, [
-        h("div", {
-          key: "rw",
-          className: "dswt-projectRow" + (isWs ? " dswt-wsRow" : " dswt-dirRow"),
-          style: { paddingLeft: 8 + depth * indent },
-          role: "treeitem",
-          "aria-expanded": open,
-          onClick: () => {
-            if (isWs) { onNavToWorkspace(node.ws); return; }
-            if (hasChildren) toggleDir(node.path);
-          }
-        }, [
-          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" + ((showAgg && node.aggRunning) ? " dswt-folderActive" : "") }, [
-            h(Icon, { name: folderIconFor(open, !!(showAgg && node.aggHasSessions)), size: 16, className: "dswt-folderSvg" }),
-            hasChildren && h("span", { className: "dswt-chevronOverlay" + (open ? " dswt-arrowOpen" : ""), onClick: (e) => { e.stopPropagation(); toggleDir(node.path); } }, h(Icon, { name: "chevron", size: 12 }))
-          ]),
-          h("span", { key: "nm", className: "dswt-title dswt-dirTitle", title: node.path }, node.name),
-          showAgg && node.aggState && h("span", { key: "ag", className: "dswt-slot dswt-aggSlot", title: node.aggState === "warning" ? "有待处理交互" : node.aggState === "ongoing" ? "有会话运行中" : "有会话已完成" }, h(StatusDot, { state: node.aggState, size: 8 })),
-          isWs && showCount && h("span", { key: "ct", className: "dswt-dirCount", title: node.path }, String(wsSessionCount)),
-          h("span", { key: "ac", className: "dswt-rowActions", onClick: (e) => e.stopPropagation() }, [
-            h("button", { key: "nd", type: "button", className: "dswt-iconButton", title: "新建子文件夹（自动注册为工作区）", onClick: () => onNewDir(node.path) }, h(Icon, { name: "folderPlus", size: 14 })),
-            isWs
-              ? [
-                  h("button", { key: "ide", type: "button", className: "dswt-iconButton", title: "在 IDE 中打开此工作区", onClick: () => onOpenInIde && onOpenInIde(node.path) }, h(Icon, { name: "ide", size: 14 })),
-                  h("button", { key: "ns", type: "button", className: "dswt-iconButton", title: "新建会话（cwd=该目录）", onClick: () => onNewSessionInDir(node.ws.workspaceId, node.path) }, h(Icon, { name: "newChat", size: 14 })),
-                  h("button", { key: "rn", type: "button", className: "dswt-iconButton", title: "重命名工作区", onClick: () => onRenameWs(node.ws) }, h(Icon, { name: "edit", size: 14 })),
-                  h("button", { key: "hd", type: "button", className: "dswt-iconButton", title: "移除工作区显示（不删除注册，会话归属不变，重新添加该目录后恢复）", onClick: () => onHideWs && onHideWs(node.ws) }, h(Icon, { name: "minus", size: 14 }))
-                ]
-              : [
-                  h("button", { key: "ide", type: "button", className: "dswt-iconButton", title: "在 IDE 中打开此目录", onClick: () => onOpenInIde && onOpenInIde(node.path) }, h(Icon, { name: "ide", size: 14 })),
-                  h("button", { key: "ns", type: "button", className: "dswt-iconButton", title: "新建会话（自动注册工作区，cwd=该目录）", onClick: () => onNewSessionInDir(null, node.path) }, h(Icon, { name: "newChat", size: 14 })),
-                  h("button", { key: "aw", type: "button", className: "dswt-iconButton", title: "添加为工作区", onClick: () => onAddWorkspaceDir(node.path) }, h(Icon, { name: "folderOpen", size: 14 }))
-                ]
-          ])
-        ]),
-        newDirAt === node.path && h(InlineInput, {
-          key: "ndi",
-          initial: "",
-          placeholder: "子文件夹名",
-          onCommit: (v) => onNewDir && onNewDir(node.path, v),
-          onCancel: onCancelNewDir
-        }),
-        open && node.children.map((child) => h(DirNode, {
-          key: child.path,
-          node: child,
-          depth: depth + 1,
-          indent,
-          showAgg,
-          showCount,
-          expandedDirs,
-          toggleDir,
-          onNavToWorkspace,
-          onNewSessionInDir,
-          onAddWorkspaceDir,
-          onOpenInIde,
-          onNewDir,
-          onCancelNewDir,
-          newDirAt,
-          onRenameWs,
-          onHideWs,
-          sessions,
-          archived,
-          hardDeleted
-        }))
-      ]);
-    }
-
     // ══════════════ 工作区模式：会话行 ══════════════
-    function SessionRow({ sid, sessions, pendingKind, completionUnread, depth, indent, now, onOpen, onRename, onArchive }) {
+    function SessionRow({ sid, sessions, pendingKind, completionUnread, runningSubagents, depth, indent, now, onOpen, onRename, onArchive }) {
       const row = (sessions && sessions.byId) ? sessions.byId[sid] : null;
       if (!row) return null;
       const selected = sid === currentSessionIdOf(sessions);
-      const dotState = sessionState(row, selected, pendingKind, completionUnread);
-      // 归档门槛：运行中/等待回复审批的会话不允许归档（进区后才可能删不掉的历史
-      // 守卫已整体移除；归档区删除零守卫，因此门槛只需保证「运行态不进区」）。
-      // 判据读真实数据源——运行态取 row.running，等待交互取官方会话状态座位；置灰
-      // 只是提示，真正的门槛在 onArchiveSession（那里复查，并再向 Host 要一次 agents 状态）。
-      const canArchive = !row.running && !pendingKind;
+      const subagents = runningSubagents || 0;
+      const dotState = sessionState(row, selected, pendingKind, completionUnread, subagents);
+      // 标题被省略号截断，悬停提示是它唯一的可见载体：后代子代理在跑时追加状态文案。
+      const titleText = subagents > 0
+        ? row.displayTitle + " · " + subagents + " 个子代理运行中"
+        : row.displayTitle;
+      // 归档门槛：自身运行中、等待回复审批、或**后代子代理正在运行**的会话都不允许归档
+      // （归档区删除零守卫，因此门槛只需保证「运行态不进区」）。判据读真实数据源——
+      // 运行态取 row.running 与快照谱系，等待交互取官方会话状态座位；置灰只是提示，
+      // 真正的门槛在 onArchiveSession（那里复查，并再向 Host 要一次 agents 状态）。
+      const canArchive = !row.running && !pendingKind && subagents === 0;
+      const archiveTitle = canArchive
+        ? "移至归档"
+        : row.running
+          ? "会话运行中（或等待回复/审批），结束后才能归档"
+          : subagents > 0
+            ? "其后代子代理正在运行，结束后才能归档"
+            : "等待处理的交互结束后才能归档";
       return h("div", {
         className: "dswt-session" + (selected ? " dswt-selected" : ""),
         style: { paddingLeft: 8 + depth * indent },
         role: "treeitem",
         "aria-selected": selected,
         onClick: () => onOpen(sid),
-        title: row.displayTitle
+        title: titleText
       }, [
         h("span", { key: "st", className: "dswt-slot" }, h(StatusDot, { state: dotState })),
-        h("span", { key: "ti", className: "dswt-title" + (row.blank ? " dswt-blank" : ""), title: row.displayTitle }, row.displayTitle),
+        h("span", { key: "ti", className: "dswt-title" + (row.blank ? " dswt-blank" : ""), title: titleText }, row.displayTitle),
         h("span", { key: "tm", className: "dswt-time" }, timeLabel(row.updatedAt, now)),
         h("span", { key: "ac", className: "dswt-rowActions", onClick: (e) => e.stopPropagation() }, [
           h("button", { key: "rn", type: "button", className: "dswt-iconButton", title: "重命名", onClick: () => onRename(sid, row.displayTitle) }, h(Icon, { name: "edit", size: 14 })),
@@ -1000,7 +660,7 @@ window.__ModuleLoader__.load({
             key: "ar",
             type: "button",
             className: "dswt-iconButton",
-            title: canArchive ? "移至归档" : "会话运行中（或等待回复/审批），结束后才能归档",
+            title: archiveTitle,
             disabled: !canArchive,
             onClick: () => canArchive && onArchive(sid)
           }, h(Icon, { name: "archive", size: 14 }))
@@ -1450,7 +1110,7 @@ window.__ModuleLoader__.load({
         hasAny ? null : h("div", { key: "empty", className: "dswt-empty" }, "归档区为空 — 归档的会话会在此分组显示（无归属者归入「未分组」）"),
         allGroups.map((group) => h("div", { key: group.key, className: "dswt-groupSection" }, [
           h("div", { key: "hd", className: "dswt-projectRow" }, [
-            h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" }, h(Icon, { name: "folderOpenFilled", size: 16, className: "dswt-folderSvg" })),
+            h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" }, h(Icon, { name: "folderOpen", size: 16, className: "dswt-folderSvg" })),
             h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, group.title + " · " + group.sids.length + " 条")),
             h("span", { key: "ac", className: "dswt-rowActions", style: { display: "inline-flex" } }, [
               h("button", { key: "rs", type: "button", className: "dswt-iconButton", title: group.workspaceId === null ? "恢复未分组全部" : "恢复该工作区全部", disabled: !!busy, onClick: () => onRestoreGroup(group.workspaceId) }, h(Icon, { name: "restore", size: 14 })),
@@ -1463,7 +1123,7 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════════ 工作区模式：组 ══════════════
-    function WorkspaceGroup({ node, depth, indent, showAgg, sessions, sessionStatus, archived, hardDeleted, expandedGroups, toggleGroup, onNewSession, onOpenInIde, onRenameWs, onHideWs, onOpen, onRenameSession, onArchiveSession, now }) {
+    function WorkspaceGroup({ node, depth, indent, sessions, sessionStatus, lineage, archived, hardDeleted, expandedGroups, toggleGroup, onNewSession, onAddWorkspaceIn, onOpenInIde, onRenameWs, onHideWs, onOpen, onRenameSession, onArchiveSession, now }) {
       const w = node.w;
       const gkey = w.workspaceId;
       const groupOpen = expandedGroups.has(gkey);
@@ -1482,15 +1142,16 @@ window.__ModuleLoader__.load({
           "aria-expanded": groupOpen,
           onClick: () => toggleGroup(gkey)
         }, [
-          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" + ((showAgg && node.aggRunning) ? " dswt-folderActive" : "") }, [
-            h(Icon, { name: folderIconFor(groupOpen, !!(showAgg && node.aggHasSessions)), size: 16, className: "dswt-folderSvg" }),
+          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" + (node.aggRunning ? " dswt-folderActive" : "") }, [
+            h(Icon, { name: folderIconFor(node.aggHasSessions), size: 16, className: "dswt-folderSvg" }),
             hasContent && h("span", { className: "dswt-chevronOverlay" + (groupOpen ? " dswt-arrowOpen" : "") }, h(Icon, { name: "chevron", size: 12 }))
           ]),
           h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, w.title || baseName(w.path))),
-          showAgg && node.aggState && h("span", { key: "ag", className: "dswt-slot dswt-aggSlot", title: node.aggState === "warning" ? "有待处理交互" : node.aggState === "ongoing" ? "有会话运行中" : "有会话已完成" }, h(StatusDot, { state: node.aggState, size: 8 })),
+          node.aggState && h("span", { key: "ag", className: "dswt-slot dswt-aggSlot", title: node.aggState === "warning" ? "有待处理交互" : node.aggState === "ongoing" ? "有会话运行中" : "有会话已完成" }, h(StatusDot, { state: node.aggState, size: 8 })),
           h("span", { key: "ac", className: "dswt-rowActions", onClick: (e) => e.stopPropagation() }, [
             h("button", { key: "ide", type: "button", className: "dswt-iconButton", title: "在 IDE 中打开此工作区", onClick: () => onOpenInIde && onOpenInIde(w.path) }, h(Icon, { name: "ide", size: 14 })),
             h("button", { key: "ns", type: "button", className: "dswt-iconButton", title: "新建会话", onClick: () => onNewSession(w.workspaceId) }, h(Icon, { name: "newChat", size: 14 })),
+            h("button", { key: "aw", type: "button", className: "dswt-iconButton", title: "添加工作区（从该工作区目录开始选择）", onClick: () => onAddWorkspaceIn && onAddWorkspaceIn(w) }, h(Icon, { name: "folderPlus", size: 14 })),
             h("button", { key: "rn", type: "button", className: "dswt-iconButton", title: "重命名工作区", onClick: () => onRenameWs(w) }, h(Icon, { name: "edit", size: 14 })),
             h("button", { key: "hd", type: "button", className: "dswt-iconButton", title: "移除工作区显示（不删除注册，会话归属不变，重新添加该目录后恢复）", onClick: () => onHideWs && onHideWs(w) }, h(Icon, { name: "minus", size: 14 }))
           ])
@@ -1499,20 +1160,42 @@ window.__ModuleLoader__.load({
           sids.map((sid) => h(SessionRow, {
             key: "s:" + sid, sid, sessions, depth: depth + 1, indent, now, onOpen,
             pendingKind: pendingKindOf(sessionStatus, sid), completionUnread: completionUnreadOf(sessionStatus, sid),
+            runningSubagents: runningSubagentsOf(lineage, sid),
             onRename: onRenameSession, onArchive: onArchiveSession
           })),
           (node.children || []).map((child) => h(WorkspaceGroup, {
-            key: child.w.workspaceId, node: child, depth: depth + 1, indent, showAgg, sessions, sessionStatus, archived, hardDeleted,
-            expandedGroups, toggleGroup, onNewSession, onOpenInIde, onRenameWs, onHideWs,
+            key: child.w.workspaceId, node: child, depth: depth + 1, indent, sessions, sessionStatus, lineage, archived, hardDeleted,
+            expandedGroups, toggleGroup, onNewSession, onAddWorkspaceIn, onOpenInIde, onRenameWs, onHideWs,
             onOpen, onRenameSession, onArchiveSession, now
           }))
         ])
       ]);
     }
 
+    // ══════════════ 工作区模式：未分组 ══════════════
+    /**
+     * 「未分组」：官方列表里不属于任何已注册工作区的会话。插件不替用户收编，
+     * 这些会话照官方语义原样落在这一组；折叠状态不单独记忆（始终展开）。
+     */
+    function UngroupedGroup({ sids, sessions, sessionStatus, lineage, indent, now, onOpen, onRenameSession, onArchiveSession }) {
+      if (!sids || sids.length === 0) return null;
+      return h("div", { className: "dswt-groupSection" }, [
+        h("div", { key: "hd", className: "dswt-projectRow", role: "treeitem", "aria-expanded": true }, [
+          h("span", { key: "ic", className: "dswt-slot dswt-folderIcon" }, h(Icon, { name: "folderOpenOutline", size: 16, className: "dswt-folderSvg" })),
+          h("span", { key: "pt", className: "dswt-projectText" }, h("span", { className: "dswt-title" }, "未分组 · " + sids.length + " 条"))
+        ]),
+        h("div", { key: "bd", className: "dswt-groupBody", style: { "--dswt-line-x": "16px" } }, sids.map((sid) => h(SessionRow, {
+          key: "s:" + sid, sid, sessions, depth: 1, indent, now, onOpen,
+          pendingKind: pendingKindOf(sessionStatus, sid), completionUnread: completionUnreadOf(sessionStatus, sid),
+          runningSubagents: runningSubagentsOf(lineage, sid),
+          onRename: onRenameSession, onArchive: onArchiveSession
+        })))
+      ]);
+    }
+
     // ══════════════ 主组件 ══════════════
     function WorkspaceTreeBrowser(props) {
-      const { wide, useSessions, useWorkspaces, useSessionStatus, liveSessionRow, renderSlot, startSession, connectWorkspace, open, clearSession, renameSession, renameWorkspace, archiveSession, createWorkspace, deleteWorkspace, pickDirectory, listDirectory, createDirectory, refreshSessions, adoptSession } = props;
+      const { wide, useSessions, useWorkspaces, useSessionStatus, liveSessionRow, startSession, open, clearSession, renameSession, renameWorkspace, archiveSession, createWorkspace, deleteWorkspace, pickDirectory, listDirectory, createDirectory, refreshSessions } = props;
       const sessions = useSessions((s) => s);
       const workspaces = useWorkspaces((s) => s);
       // 官方会话状态座位（数据源在 dsh-client-ui-session：运行中 / 待处理交互 /
@@ -1521,11 +1204,9 @@ window.__ModuleLoader__.load({
         ? useSessionStatus((s) => s)
         : null;
 
-      const [mode, setMode] = useState(initialMode);
-      const [expandedDirs, setExpandedDirs] = useState(() => loadSet(LS_DIRS));
+      /** 视图：工作区 / 归档区（模式偏好不持久化）。 */
+      const [mode, setMode] = useState("workspace");
       const [expandedGroups, setExpandedGroups] = useState(() => loadSet(LS_GROUPS));
-      const [navTarget, setNavTarget] = useState(null);
-      const [newDirAt, setNewDirAt] = useState(null);
       const [swapFrom, setSwapFrom] = useState(null);
       const [renameTarget, setRenameTarget] = useState(null);
       const [renameDraft, setRenameDraft] = useState("");
@@ -1561,18 +1242,6 @@ window.__ModuleLoader__.load({
           if (alive && result && result.ok === true && result.supported === true) setNativePicker(true);
         }).catch(() => { /* 旧版宿主半边：保持隐藏 */ });
         return () => { alive = false; };
-      }, []);
-
-      // 官方目录流（借道渲染成功 + 槽位有占位者时优先使用）：
-      // open/busy 交给占位者，onPicked/onCancel/onError 回到这里。
-      const [officialOpen, setOfficialOpen] = useState(false);
-      const [officialBusy, setOfficialBusy] = useState(false);
-      const [officialFlow, setOfficialFlow] = useState(() => officialFlowBridgeRef.ok && officialFlowBridgeRef.occupied());
-      useEffect(() => {
-        if (!officialFlowBridgeRef.ok) return undefined;
-        const sync = () => setOfficialFlow(officialFlowBridgeRef.occupied());
-        sync();
-        return officialFlowBridgeRef.subscribe(sync);
       }, []);
 
       const [hardDeleted, setHardDeleted] = useState(() => loadSet(LS_DELETED));
@@ -1722,15 +1391,6 @@ window.__ModuleLoader__.load({
         return () => clearTimeout(t);
       }, [swapFrom]);
 
-      const toggleDir = useCallback((path) => {
-        setExpandedDirs((prev) => {
-          const next = new Set(prev);
-          if (next.has(path)) next.delete(path); else next.add(path);
-          saveSet(LS_DIRS, next);
-          return next;
-        });
-      }, []);
-
       const toggleGroup = useCallback((key) => {
         setExpandedGroups((prev) => {
           const next = new Set(prev);
@@ -1740,48 +1400,11 @@ window.__ModuleLoader__.load({
         });
       }, []);
 
-      const switchMode = useCallback((m) => {
-        setMode(m);
-        if (m !== "archive") {
-          try { localStorage.setItem(LS_MODE, m); } catch { /* ignore */ }
-        }
-      }, []);
-
       const toggleArchive = useCallback(() => {
         if (swapFrom !== null) return;
-        if (mode === "archive") {
-          setSwapFrom(mode);
-          switchMode(initialMode());
-        } else {
-          setSwapFrom(mode);
-          switchMode("archive");
-        }
-      }, [mode, swapFrom, switchMode]);
-
-      /** 文件夹模式点击工作区节点 → 纯导航 */
-      const navToWorkspace = useCallback((ws) => {
-        switchMode("workspace");
-        setNavTarget(ws.workspaceId);
-        setExpandedGroups((prev) => {
-          const next = new Set(prev);
-          next.add(ws.workspaceId);
-          saveSet(LS_GROUPS, next);
-          return next;
-        });
-      }, [switchMode]);
-
-      // 导航定位
-      useEffect(() => {
-        if (navTarget === null) return;
-        const timer = setTimeout(() => {
-          try {
-            const el = document.querySelector(".dswt-groupSection[data-wsid=\"" + navTarget + "\"]");
-            if (el) el.scrollIntoView({ block: "nearest" });
-          } catch { /* ignore */ }
-          setNavTarget(null);
-        }, 60);
-        return () => clearTimeout(timer);
-      }, [navTarget, mode]);
+        setSwapFrom(mode);
+        setMode(mode === "archive" ? "workspace" : "archive");
+      }, [mode, swapFrom]);
 
       /** 重新添加目录后将其移出「移除显示」集合——工作区连同会话一起恢复显示。 */
       const unhideWorkspace = useCallback((ws) => {
@@ -1796,25 +1419,6 @@ window.__ModuleLoader__.load({
         });
       }, []);
 
-      /**
-       * 在指定目录下新建会话：
-       * 严格保证会话与目标工作区绑定——若目录未注册为工作区，先自动注册工作区，再通过 startSession 启动会话。
-       */
-      const newSessionInDir = useCallback(async (workspaceIdOrNull, dirPath) => {
-        try {
-          let wid = workspaceIdOrNull;
-          if (wid === null) {
-            const ws = await createWorkspace({ path: dirPath });
-            if (!ws || !ws.workspaceId) throw new Error("工作区注册失败");
-            wid = ws.workspaceId;
-            unhideWorkspace(ws);
-          }
-          startSession(wid);
-        } catch (error) {
-          showAlert("新建会话失败: " + String((error && error.message) || error), "新建会话失败");
-        }
-      }, [createWorkspace, startSession, showAlert, unhideWorkspace]);
-
       const addWorkspaceDir = useCallback(async (dirPath) => {
         try {
           const ws = await createWorkspace({ path: dirPath });
@@ -1823,18 +1427,6 @@ window.__ModuleLoader__.load({
           showAlert("添加工作区失败: " + String((error && error.message) || error), "添加工作区失败");
         }
       }, [createWorkspace, showAlert, unhideWorkspace]);
-
-      /** 官方占位者选中目录：注册工作区（失败照常弹窗），无论成败都收回交互请求。 */
-      const onOfficialPicked = useCallback(async (dirPath) => {
-        if (typeof dirPath !== "string" || dirPath === "") { setOfficialOpen(false); return; }
-        setOfficialBusy(true);
-        try {
-          await addWorkspaceDir(dirPath);
-        } finally {
-          setOfficialBusy(false);
-          setOfficialOpen(false);
-        }
-      }, [addWorkspaceDir]);
 
       /** 内置目录对话框的采纳：注册工作区（失败照常弹窗），无论成败都收回对话框。 */
       const onPickerPicked = useCallback(async (dirPath) => {
@@ -1847,65 +1439,11 @@ window.__ModuleLoader__.load({
         }
       }, [addWorkspaceDir, closeDirectoryPicker]);
 
-      // 归档集合（提前声明：收编/回收 effect 的依赖需要它；放后面会触发 TDZ）
+      /** 归档会话 id 集合。 */
       const archived = useMemo(() => new Set((workspaces.archivedSessionIds || []).map(String)), [workspaces.archivedSessionIds]);
 
-      /**
-       * 自动收编（后台、静默）：会话没有工作区归属时（如 DSH 升级重置注册表、
-       * 或经官方入口在任意 cwd 新建的会话），将其 cwd 注册为工作区（Host 侧按 path 幂等），
-       * 再走 Host session.create 的幂等 adopt 语义挂载会话——「未分组」从此不再存在。
-       * 失败不弹窗，随列表下一次更新自动重试。
-       *
-       * 收编前先按物理存在性过一遍（一次性批量问 Host，见 probeGoneSessions）：官方列表
-       * 仍会返回已删会话一段时间，收编幽灵会把它当活会话重新挂载，并按 cwd 把用户刚
-       * 「彻底移除」的空工作区原地重建。目录已消失的候选写入删除墓碑（与归档删除同源：
-       * 目录没了 = 已删）并跳过；探测不可用时 fail-open，维持原有收编行为。
-       */
-      const adoptInFlight = useRef(new Set());
-      useEffect(() => {
-        if (!sessions || sessions.phase !== "ready") return;
-        if (!workspaces || workspaces.phase !== "ready") return;
-        const accounted = accountedSessionIds(workspaces.items || []);
-        const candidates = [];
-        for (const sid of sessions.ids || []) {
-          const id = String(sid);
-          if (accounted.has(id)) continue;
-          if (hardDeleted.has(id)) continue;
-          // 已归档会话不收编：归档态与工作区归属正交，收编会把它重新挂回注册表
-          if (archived.has(id)) continue;
-          const row = sessions.byId ? sessions.byId[id] : null;
-          // 严密过滤空白草稿会话，杜绝将未发消息的空白草稿持久化挂载到工作区
-          if (!row || row.blank) continue;
-          // subagent 子会话归 subagent 路由所有，宿主禁止 attach 到工作区（adopt 必然失败）
-          if (isSubagentRow(row)) continue;
-          if (adoptInFlight.current.has(id)) continue;
-          // 无 cwd 的会话无从判断归属（也无从注册工作区），照旧跳过
-          if (!row.cwd) continue;
-          candidates.push({ id, cwd: row.cwd });
-        }
-        if (candidates.length === 0) return;
-        for (const candidate of candidates) adoptInFlight.current.add(candidate.id);
-        (async () => {
-          try {
-            // 幽灵判定先于任何写操作：先 createWorkspace 再发现会话已删，会留下一个
-            // 空工作区把用户的移除结果又摆回树上。
-            const gone = await probeGoneSessions(candidates.map((candidate) => candidate.id));
-            if (gone.size > 0) rememberDeleted([...gone]);
-            for (const candidate of candidates) {
-              if (gone.has(candidate.id)) continue;
-              try {
-                let ws = (workspaces.items || []).find((w) => normalizePath(w.path) === normalizePath(candidate.cwd));
-                if (!ws) ws = await createWorkspace({ path: candidate.cwd });
-                if (ws && ws.workspaceId) await adoptSession(candidate.id, ws.workspaceId);
-              } catch (error) {
-                console.warn("[workspace-tree] 自动收编失败（将随列表更新重试）:", candidate.id, error);
-              }
-            }
-          } finally {
-            for (const candidate of candidates) adoptInFlight.current.delete(candidate.id);
-          }
-        })();
-      }, [sessions.ids, sessions.byId, sessions.phase, workspaces.items, workspaces.phase, hardDeleted, archived, createWorkspace, adoptSession, rememberDeleted]);
+      /** 后代子代理谱系（行状态点、聚合与归档门槛共用；提前声明：门槛回调的依赖需要它）。 */
+      const lineage = useMemo(() => indexSubagentRunning(sessions && sessions.byId), [sessions]);
 
       // 空白草稿跟随官方语义：不自动回收（官方从不物理删除会话文件），仅视图层隐藏
       // （sessionVisible 已排除非当前打开的 blank 行）。v1.9.0 起移除旧的自动回收
@@ -1943,23 +1481,6 @@ window.__ModuleLoader__.load({
           showAlert("打开 IDE 失败: " + String(error?.message || error), "打开 IDE 失败");
         }
       }, [showAlert, cfg]);
-
-      const commitNewDir = useCallback(async (parentPath, name) => {
-        try {
-          const data = await apiPost("/mkdir", { parent: parentPath, name });
-          if (data.ok !== true) throw new Error(data.error || "创建失败");
-          unhideWorkspace(await createWorkspace({ path: data.path }));
-          setExpandedDirs((prev) => {
-            const next = new Set(prev);
-            next.add(parentPath);
-            saveSet(LS_DIRS, next);
-            return next;
-          });
-          setNewDirAt(null);
-        } catch (error) {
-          showAlert("新建文件夹失败: " + String((error && error.message) || error), "新建文件夹失败");
-        }
-      }, [createWorkspace, showAlert, unhideWorkspace]);
 
       const onRequestRenameWs = useCallback((w) => {
         const initial = w.title || baseName(w.path);
@@ -2092,13 +1613,16 @@ window.__ModuleLoader__.load({
       }, [deleteWsConfirm, deleteWorkspace, showAlert]);
 
       /**
-       * 归档会话的唯一入口。判据三层，逐层更权威：
+       * 归档会话的唯一入口。判据四层，逐层更权威：
        *  1) 空白草稿不归档（归档后双视图都不可见，用户会找不到它）；
-       *  2) 运行中 / 等待审批·计划复核·提问 不归档 —— 读**本次渲染**的活快照与官方
+       *  2) 自身运行中 / 等待审批·计划复核·提问 不归档 —— 读**本次渲染**的活快照与官方
        *     pending 座位，而不是行按钮渲染时算好的 canArchive 闭包（那个可能已过期）；
-       *  3) Host 权威复查：官方 workspace/archiveSession 在 Host 上没有运行态守卫，
+       *  3) 后代子代理正在运行不归档 —— 读与行状态点同源的快照谱系（父会话自身空闲，
+       *     但它的不间断 subagent 谱系里还有在跑的后代）；
+       *  4) Host 权威复查：官方 workspace/archiveSession 在 Host 上没有运行态守卫，
        *     客户端 running 位是 Host 转发事实（发送后到状态帧落地之间有窗口），所以
-       *     归档前问一次插件 Host 半边 agents.get(sessionId).status；查询不可用时
+       *     归档前问一次插件 Host 半边——自身 agents.get(sessionId).status，以及
+       *     持久谱系 + agents.get 逐后代算出的 runningDescendants；查询不可用时
        *     fail-open 放行（不因网络故障把用户锁死，最终仍由官方 RPC 定生死）。
        * 判据只拦「不该归档」；归档成功与否仍以官方 RPC 为准。
        */
@@ -2123,6 +1647,11 @@ window.__ModuleLoader__.load({
           showAlert("会话正在" + PENDING_LABEL[pendingKind] + "，处理完才能归档", "无法归档");
           return;
         }
+        const lineageRunning = runningSubagentsOf(lineage, sessionId);
+        if (lineageRunning > 0) {
+          showAlert("该会话的后代子代理正在运行（" + lineageRunning + " 个），结束后才能归档", "无法归档");
+          return;
+        }
         const guard = await checkArchiveGuard(sessionId);
         if (guard.ok && guard.running) {
           // 客户端位落后于 Host（转发窗口/事件流打嗝）：顺手让列表重新对齐一次。
@@ -2130,12 +1659,18 @@ window.__ModuleLoader__.load({
           showAlert("会话正在运行（Host 实测状态：" + String(guard.status || "running") + "），结束后才能归档", "无法归档");
           return;
         }
+        if (guard.ok && guard.runningDescendants > 0) {
+          // 同一窗口的宿主侧补漏：客户端谱系来自转发快照，Host 是权威。
+          if (typeof refreshSessions === "function") refreshSessions();
+          showAlert("该会话的后代子代理正在运行（Host 实测 " + guard.runningDescendants + " 个），结束后才能归档", "无法归档");
+          return;
+        }
         try {
           await archiveSession(sessionId);
         } catch (error) {
           showAlert(String((error && error.message) || error), "归档会话失败");
         }
-      }, [archiveSession, showAlert, sessions, liveSessionRow, sessionStatus, refreshSessions]);
+      }, [archiveSession, showAlert, sessions, liveSessionRow, sessionStatus, lineage, refreshSessions]);
 
       const isCurrentArchived = useMemo(() => {
         const current = currentSessionIdOf(sessions);
@@ -2283,12 +1818,14 @@ window.__ModuleLoader__.load({
        * 屏幕上** ——人就在这台机器前时的首选路径，也是「添加工作区」按钮在本机的单击行为。
        * 远端设备看不到这个窗口：那类环境 /picker/native 报 supported:false，按钮改走内置目录浏览。
        * 取消（osascript exit 1 + User canceled）由宿主侧归一成 path: null。
+       * startPath 是对话框的起点目录（工作区行内入口传该工作区目录，全局入口不传）：
+       * 宿主校验不过（不存在/无权限/不是目录）就报错且不开窗口。
        */
-      const onPickWithFinder = useCallback(async () => {
+      const onPickWithFinder = useCallback(async (startPath) => {
         if (nativeBusy) return;
         setNativeBusy(true);
         try {
-          const result = await apiPost("/picker/native", {});
+          const result = await apiPost("/picker/native", (typeof startPath === "string" && startPath !== "") ? { startPath } : {});
           if (!result || result.ok !== true) throw new Error((result && result.error) || "原生选择器不可用");
           if (result.path === null || result.path === void 0 || result.path === "") return;   // 操作员取消
           await addWorkspaceDir(String(result.path));
@@ -2300,22 +1837,18 @@ window.__ModuleLoader__.load({
       }, [nativeBusy, addWorkspaceDir, showAlert]);
 
       /**
-       * 「添加工作区」按钮的唯一行为。**本机 macOS 单击直达 Finder**（/picker/native 报支持时
-       * 短路到 onPickWithFinder）；其余环境走下面这条内置路径：先试官方目录流占位者（native 主机
-       * 弹系统选择器、browse 主机弹官方浏览对话框），没有占位者时自持兜底——先试
-       * uiWorkspace.pickDirectory()，被拒（browse 主机必被 host 以 directory-picker/unavailable
-       * 拒绝，这不是故障，不该弹错）则转本插件自持的内置浏览对话框。
-       * 转之前先探一次 home：探得通才开对话框（顺带作为首屏，不再二次拉取），
-       * 探不通说明两种能力都没有——此时如实报 native 的原始错误，不留死胡同。
+       * 「添加工作区」按钮的共同行为（侧栏顶部与每个工作区行共用）：**本机 macOS 单击直达
+       * Finder**（/picker/native 报支持时短路到 onPickWithFinder）；其余环境先试
+       * uiWorkspace.pickDirectory()，被拒（browse 主机必被 host 以
+       * directory-picker/unavailable 拒绝，这不是故障，不该弹错）则转自持浏览对话框。
+       * startPath 是对话框的起始层：侧栏顶部传空（从 home 起），工作区行传该工作区目录
+       * （只作为起点，不限制越出）。macOS 的 Finder 窗口与自持浏览对话框都从它起——前者
+       * 由宿主以 osascript 的 default location 落点，后者作为首屏列表。
+       * 探得通起始层才开对话框（顺带作为首屏，不再二次拉取）；
+       * 起始层探不通就退回 home；两者都探不通说明两种能力都没有——如实报错，不留死胡同。
        */
-      const onAddWorkspace = useCallback(async () => {
-        if (nativePicker) return onPickWithFinder();
-        // 官方交互可用（借道成功且槽位有占位者）：native 主机弹系统选择器、browse 主机弹
-        // 官方内置浏览对话框，两种形态都由占位者自己决定，这里只递交 owner 请求。
-        if (officialFlow) {
-          setOfficialOpen(true);
-          return;
-        }
+      const addWorkspaceFlow = useCallback(async (startPath) => {
+        if (nativePicker) return onPickWithFinder(startPath);
         let nativeError = null;
         try {
           const path = await pickDirectory();
@@ -2327,11 +1860,15 @@ window.__ModuleLoader__.load({
           console.warn("[dsh-workspace-tree] 官方原生目录选择器不可用，尝试内置浏览对话框：", error);
         }
         try {
-          const seed = await listDirectory(void 0);
+          let seed = null;
+          if (typeof startPath === "string" && startPath !== "") {
+            try { seed = await listDirectory(startPath); } catch { seed = null; }
+          }
+          if (!seed) seed = await listDirectory(void 0);
           setPickerSeed(seed || null);
           setPickerOpen(true);
         } catch (browseError) {
-          console.warn("[dsh-workspace-tree] 内置目录浏览同样不可用：", browseError);
+          console.warn("[dsh-workspace-tree] 自持目录浏览不可用：", browseError);
           // 两种能力都没有：如实报错，不留一个点不动的对话框。
           // native 是被 capability 拒绝的（host 服务 browse，只是客户端这边也拿不到
           // browse 面，例如旧版 DSH）时，真正的可操作信息在 browse 那一侧；否则
@@ -2339,24 +1876,14 @@ window.__ModuleLoader__.load({
           const nativeMsg = String((nativeError && nativeError.message) || nativeError || "");
           const browseMsg = String((browseError && browseError.message) || browseError || "");
           const nativeRefused = /needs the native capability|directory-picker\/unavailable/.test(nativeMsg);
-          try {
-            document.body.setAttribute("data-dswt-dirflow-diag", JSON.stringify({
-              bridge: officialFlowBridgeRef.ok ? "ok" : officialFlowBridgeRef.reason,
-              occupied: officialFlowBridgeRef.occupied(),
-              nativeMsg: nativeMsg,
-              browseMsg: browseMsg,
-              nativeRefused: nativeRefused
-            }));
-          } catch { /* ignore */ }
           showAlert("添加工作区失败: " + ((nativeRefused && browseMsg) ? browseMsg : (nativeMsg || browseMsg)), "添加工作区失败");
         }
-      }, [nativePicker, onPickWithFinder, officialFlow, pickDirectory, listDirectory, addWorkspaceDir, showAlert]);
+      }, [nativePicker, onPickWithFinder, pickDirectory, listDirectory, addWorkspaceDir, showAlert]);
 
-      /**
-       * 官方目录流的现场诊断（写在侧栏根节点的 data 属性上，供排查与支持）：
-       * official = 走官方占位者；self = 回退自持对话框；bridge 段给出探测结论/失败原因。
-       */
-      const dirflowDiag = () => (officialFlow ? "official" : "self") + ";bridge=" + (officialFlowBridgeRef.ok ? "ok" : officialFlowBridgeRef.reason);
+      const onAddWorkspace = useCallback(() => addWorkspaceFlow(null), [addWorkspaceFlow]);
+
+      /** 工作区行内入口：同一套交互，只是选择器从该工作区目录起。 */
+      const onAddWorkspaceIn = useCallback((ws) => addWorkspaceFlow(ws && ws.path), [addWorkspaceFlow]);
 
       // 数据投影计算：visibleItems 为未被「移除显示」的工作区（树只由它构建）
       const items = workspaces.items || [];
@@ -2365,34 +1892,27 @@ window.__ModuleLoader__.load({
         [items, hiddenWs]
       );
       const aggCtx = useMemo(() => {
-        const dirForest = buildDirTree(visibleItems);
         const wsForest = buildWorkspaceForest(visibleItems);
         // 归档用全量森林：被“移除显示”的工作区的归档会话也必须可见可恢复，
         // 否则隐藏即永久失联（与“仅移除显示、归属不变”的承诺冲突）
         const archiveForest = buildWorkspaceForest(items);
-        for (const n of dirForest) decorateAgg(n, (x) => x.ws, (x) => x.children, sessions, archived, hardDeleted, sessionStatus);
-        for (const n of wsForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus);
-        for (const n of archiveForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus);
-        return { dirForest, wsForest, archiveForest };
-      }, [visibleItems, items, sessions, archived, hardDeleted, sessionStatus]);
+        for (const n of wsForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus, lineage);
+        for (const n of archiveForest) decorateAgg(n, (x) => x.w, (x) => x.children, sessions, archived, hardDeleted, sessionStatus, lineage);
+        return { wsForest, archiveForest };
+      }, [visibleItems, items, sessions, archived, hardDeleted, sessionStatus, lineage]);
 
-      const dirForest = aggCtx.dirForest;
       const wsForest = aggCtx.wsForest;
       const archiveForest = aggCtx.archiveForest;
 
-      // 官方目录流占位者：借道成功且有占位者时才渲染（native 驱动或官方 browse 对话框）。
-      const officialFlowNode = (officialFlow && typeof renderSlot === "function")
-        ? renderSlot(officialFlowBridgeRef.hole, {
-            open: officialOpen,
-            busy: officialBusy,
-            onPicked: onOfficialPicked,
-            onCancel: () => setOfficialOpen(false),
-            onError: (message) => {
-              setOfficialOpen(false);
-              showAlert(String(message || "目录选择失败"), "添加工作区失败");
-            }
-          })
-        : null;
+      /** 不属于任何已注册工作区的可见会话（含隐藏工作区名下的会话：它们已有归属）。 */
+      const ungroupedSids = useMemo(() => {
+        const accounted = accountedSessionIds(items);
+        const byId = (sessions && sessions.byId) || {};
+        const cur = currentSessionIdOf(sessions);
+        return (sessions && Array.isArray(sessions.ids) ? sessions.ids : [])
+          .map(String)
+          .filter((sid) => !accounted.has(sid) && sessionVisible(byId[sid], cur, archived, hardDeleted));
+      }, [sessions, items, archived, hardDeleted]);
 
       // 内置目录对话框（browse 面回退）—— 挂在两套布局里，只有打开时才渲染面板。
       const pickerNode = h(DirectoryPickerModal, {
@@ -2406,18 +1926,16 @@ window.__ModuleLoader__.load({
         onPicked: onPickerPicked
       });
 
-      // 「添加工作区」是**唯一**入口：本机 macOS 单击直达 Finder，其余环境走内置目录浏览
-      // （分支逻辑在 onAddWorkspace）。标题随环境说明本次会开什么，避免出现第二个同类按钮。
+      // 侧栏顶部与每个工作区行共用同一套交互，标题随宿主能力说明本次会开什么。
       const addWorkspaceTitle = nativePicker
         ? (nativeBusy ? "Finder 窗口已打开，等待选择…" : "添加工作区（用 Finder 选择目录）")
         : "添加工作区";
-      const addWorkspaceDisabled = nativePicker ? nativeBusy : (pickerBusy || officialBusy);
+      const addWorkspaceDisabled = nativePicker ? nativeBusy : pickerBusy;
 
       // rail 模式：窄图标列
       if (!wide) {
-        return h("div", { className: "dswt-rail", "data-dswt-dirflow": dirflowDiag() }, [
-          h("button", { key: "ws", type: "button", className: "dswt-rail-btn", title: addWorkspaceTitle, "aria-label": "添加工作区", disabled: addWorkspaceDisabled, onClick: onAddWorkspace }, h(Icon, { name: "folderOpen", size: 18 })),
-          officialFlowNode,
+        return h("div", { className: "dswt-rail" }, [
+          h("button", { key: "ws", type: "button", className: "dswt-rail-btn", title: addWorkspaceTitle, "aria-label": "添加工作区", disabled: addWorkspaceDisabled, onClick: onAddWorkspace }, h(Icon, { name: "plus", size: 18 })),
           pickerNode
         ]);
       }
@@ -2426,16 +1944,11 @@ window.__ModuleLoader__.load({
         h("div", {
           key: "t",
           className: "dswt-modeTitle",
-          title: mode === "archive" ? "点击返回工作区" : "点击切换到" + (mode === "folder" ? "工作区" : "文件夹") + "模式",
-          onClick: () => {
-            if (swapFrom !== null) return;
-            if (mode === "archive") { toggleArchive(); return; }
-            setSwapFrom(mode);
-            switchMode(mode === "folder" ? "workspace" : "folder");
-          }
+          title: mode === "archive" ? "点击返回工作区" : "点击进入归档区",
+          onClick: () => toggleArchive()
         }, [
-          swapFrom !== null && h("span", { key: "out", className: "dswt-titleItem dswt-titleOut" }, swapFrom === "folder" ? "文件夹" : swapFrom === "archive" ? "归档区" : "工作区"),
-          h("span", { key: "in" + mode, className: "dswt-titleItem dswt-titleIn" }, mode === "archive" ? "归档区" : mode === "folder" ? "文件夹" : "工作区")
+          swapFrom !== null && h("span", { key: "out", className: "dswt-titleItem dswt-titleOut" }, swapFrom === "archive" ? "归档区" : "工作区"),
+          h("span", { key: "in" + mode, className: "dswt-titleItem dswt-titleIn" }, mode === "archive" ? "归档区" : "工作区")
         ]),
         h("span", { key: "a", className: "dswt-headerActions" }, [
           mode !== "archive" && h("button", { key: "ns", type: "button", className: "dswt-headBtn", title: "新建会话（选择工作区）", onClick: () => { if (clearSession) clearSession(); else if (typeof startSession === "function") startSession(); } }, h(Icon, { name: "newChat", size: 16 })),
@@ -2445,25 +1958,7 @@ window.__ModuleLoader__.load({
       ]);
 
       let body;
-      if (mode === "folder") {
-        body = h("div", { key: "l", className: "dswt-list", role: "tree", "aria-label": "文件夹" }, [
-          dirForest.map((node) => h(DirNode, {
-            key: node.path, node, depth: 0, indent: cfg.indent, showAgg: cfg.showAgg, showCount: cfg.showCount,
-            expandedDirs, toggleDir,
-            onNavToWorkspace: navToWorkspace, onNewSessionInDir: newSessionInDir,
-            onAddWorkspaceDir: addWorkspaceDir,
-            onOpenInIde: openInIde,
-            onNewDir: (p, name) => {
-              if (name === void 0) setNewDirAt(p === newDirAt ? null : p);
-              else commitNewDir(p, name);
-            },
-            onCancelNewDir: () => setNewDirAt(null),
-            newDirAt,
-            onRenameWs: onRequestRenameWs, onHideWs, sessions, archived, hardDeleted
-          })),
-          dirForest.length === 0 && h("div", { key: "e", className: "dswt-empty" }, "尚无工作区——点击上方「添加工作区」或先新建会话")
-        ]);
-      } else if (mode === "archive") {
+      if (mode === "archive") {
         body = h("div", { key: "l", className: "dswt-list", role: "tree", "aria-label": "归档区" }, [
           h(ArchiveView, {
             key: "av",
@@ -2482,18 +1977,24 @@ window.__ModuleLoader__.load({
           })
         ]);
       } else {
-        // 工作区模式：可见会话均被后台自动收编到某工作区，故无「未分组」区块；
-        // 无归属的已归档会话不在此视图（它们由归档区以「未分组」分组兜住）。
+        // 工作区模式：注册工作区按目录嵌套展示，无归属会话照官方语义落进「未分组」。
         body = h("div", { key: "l", className: "dswt-list", role: "tree", "aria-label": "工作区" }, [
           wsForest.map((node) => h(WorkspaceGroup, {
-            key: node.w.workspaceId, node, depth: 0, indent: cfg.indent, showAgg: cfg.showAgg, sessions, sessionStatus, archived, hardDeleted,
+            key: node.w.workspaceId, node, depth: 0, indent: INDENT, sessions, sessionStatus, lineage, archived, hardDeleted,
             expandedGroups, toggleGroup,
-            onNewSession: (wid) => newSessionInDir(wid, node.w.path),
+            onNewSession: startSession,
+            onAddWorkspaceIn,
             onOpenInIde: openInIde,
             onRenameWs: onRequestRenameWs, onHideWs,
             onOpen: open, onRenameSession: onRequestRenameSession, onArchiveSession, now
           })),
-          wsForest.length === 0 && h("div", { key: "e", className: "dswt-empty" }, hiddenWs.size > 0 ? "所有工作区均已移除显示——重新添加目录即可恢复" : "尚无工作区——点击上方「添加工作区」或先新建会话")
+          h(UngroupedGroup, {
+            key: "ungrouped",
+            sids: ungroupedSids,
+            sessions, sessionStatus, lineage, indent: INDENT, now,
+            onOpen: open, onRenameSession: onRequestRenameSession, onArchiveSession
+          }),
+          wsForest.length === 0 && ungroupedSids.length === 0 && h("div", { key: "e", className: "dswt-empty" }, hiddenWs.size > 0 ? "所有工作区均已移除显示——重新添加目录即可恢复" : "尚无工作区——点击上方「添加工作区」或先新建会话")
         ]);
       }
 
@@ -2514,8 +2015,8 @@ window.__ModuleLoader__.load({
         return { open: false, title: "", desc: "", confirmText: "确认", danger: false };
       })();
 
-      return h("div", { className: "dswt-root", "data-dswt-dirflow": dirflowDiag() }, [
-        header, body, officialFlowNode, pickerNode,
+      return h("div", { className: "dswt-root" }, [
+        header, body, pickerNode,
         h(RenameModal, {
           key: "renameModal",
           open: renameTarget !== null,
@@ -2567,22 +2068,13 @@ window.__ModuleLoader__.load({
     /** 简体中文字典：key 集合的唯一真源。 */
     const zh = {
       title: "工作区树",
-      description: "文件系统双模式工作区浏览器：文件夹模式按目录浏览与新建（环境隔离），工作区模式管理会话。",
+      description: "侧栏工作区浏览器：按目录嵌套管理已注册工作区与会话，带安全归档区与永久删除。",
       hostManaged: "配置由 Host 托管（~/.dsh/settings.yaml › {ns}），重启/换端口不丢失。",
       hostManagedReadOnly: "配置由 Host 托管（~/.dsh/settings.yaml › {ns}），当前只读。",
       hostUnavailable: "Host 设置服务不可用（旧版 DSH），配置暂存浏览器本地。",
       enableRow: "启用插件",
       enableRowHint: "关闭后回退官方工作区浏览器（注册级，刷新页面生效）",
       enableSwitch: "启用",
-      indentRow: "层级缩进",
-      indentHint: "树中每一级的缩进宽度",
-      indentCompact: "紧凑（8px）",
-      indentStandard: "标准（16px）",
-      indentLoose: "宽松（24px）",
-      defaultModeRow: "默认模式",
-      defaultModeHint: "打开侧栏时优先显示的模式（手动切换后会记住）",
-      modeFolder: "文件夹模式",
-      modeWorkspace: "工作区模式",
       defaultIdeRow: "默认 IDE",
       defaultIdeHint: "点击工作区按钮栏「在 IDE 中打开」时调用的编辑器",
       ideCustom: "自定义命令…",
@@ -2593,19 +2085,6 @@ window.__ModuleLoader__.load({
       customIdeRule3: "• 勿加参数与点：不要在末尾加 . 或其他路径参数。",
       customIdeExampleMac: "示例（macOS App 内部 CLI）：{path}",
       customIdeExamplePath: "示例（系统 PATH 中的命令）：{commands}",
-      aggRow: "状态向上透传",
-      aggRowHint: "目录/组头显示子树内会话的聚合状态点（运行/等待/完成）",
-      aggSwitch: "显示",
-      countRow: "会话计数角标",
-      countRowHint: "文件夹模式工作区节点旁的会话数",
-      countSwitch: "显示",
-      diagRow: "诊断信息",
-      diagRowHint: "排查侧栏显示问题时，把本机工作区/会话状态复制发给开发者（仅元数据，无消息正文）",
-      diagCopy: "复制诊断信息",
-      diagCollecting: "采集中…",
-      diagCopied: "已复制（共 {n} 字符），请粘贴给开发者",
-      diagCopyFailed: "剪贴板写入失败，完整诊断已输出到控制台（F12 查看），请手动复制",
-      diagCollectError: "采集失败：{message}",
       tombRow: "删除墓碑",
       tombRowHint: "「永久删除」的本地隐藏记录（localStorage）。树已会向 Host 校验物理存在自动作废误写墓碑；若仍疑似被误隐藏，可在此一键清空（不影响真实已删除的会话）",
       tombClear: "清空墓碑",
@@ -2618,22 +2097,13 @@ window.__ModuleLoader__.load({
     /** 英文字典：与 zh 同 key 集合。 */
     const en = {
       title: "Workspace tree",
-      description: "Dual-mode filesystem workspace browser: folder mode browses directories and creates sessions in them (environment-isolated); workspace mode manages sessions.",
+      description: "Sidebar workspace browser: registered workspaces and sessions nested by directory, with a safe archive section and permanent deletion.",
       hostManaged: "Configuration is hosted by the Host (~/.dsh/settings.yaml › {ns}); it survives restarts and port changes.",
       hostManagedReadOnly: "Configuration is hosted by the Host (~/.dsh/settings.yaml › {ns}); currently read-only.",
       hostUnavailable: "The Host settings service is unavailable (older DSH); configuration is kept in this browser.",
       enableRow: "Enable plugin",
       enableRowHint: "When off, the official workspace browser returns (registration-level; takes effect after a page refresh)",
       enableSwitch: "Enable",
-      indentRow: "Tree indentation",
-      indentHint: "Indent width for each level in the tree",
-      indentCompact: "Compact (8px)",
-      indentStandard: "Standard (16px)",
-      indentLoose: "Loose (24px)",
-      defaultModeRow: "Default mode",
-      defaultModeHint: "Mode shown first when the sidebar opens (a manual switch is remembered)",
-      modeFolder: "Folder mode",
-      modeWorkspace: "Workspace mode",
       defaultIdeRow: "Default IDE",
       defaultIdeHint: "Editor invoked by “Open in IDE” in the workspace action bar",
       ideCustom: "Custom command…",
@@ -2644,19 +2114,6 @@ window.__ModuleLoader__.load({
       customIdeRule3: "• No arguments or trailing dot: do not append . or other path arguments.",
       customIdeExampleMac: "Example (CLI inside a macOS app): {path}",
       customIdeExamplePath: "Example (command on PATH): {commands}",
-      aggRow: "Propagate status upward",
-      aggRowHint: "Show an aggregated session state dot (running / waiting / done) on directory and group headers",
-      aggSwitch: "Show",
-      countRow: "Session count badge",
-      countRowHint: "Session count beside workspace nodes in folder mode",
-      countSwitch: "Show",
-      diagRow: "Diagnostics",
-      diagRowHint: "Copy this machine's workspace/session state for a developer when the sidebar misbehaves (metadata only, no message bodies)",
-      diagCopy: "Copy diagnostics",
-      diagCollecting: "Collecting…",
-      diagCopied: "Copied ({n} characters); paste it to the developer",
-      diagCopyFailed: "Clipboard write failed; the full diagnostics were logged to the console (open F12) — copy them manually",
-      diagCollectError: "Collection failed: {message}",
       tombRow: "Deletion tombstones",
       tombRowHint: "Local hidden records of “permanently deleted” sessions (localStorage). The tree already verifies physical existence with the Host and voids mistaken tombstones; if a session still looks wrongly hidden, clear them here (real deleted sessions are unaffected)",
       tombClear: "Clear tombstones",
@@ -2679,7 +2136,6 @@ window.__ModuleLoader__.load({
     function ConfigPanel({ t }) {
       const [lsCfg, setLsCfg] = useState(getConfig);
       const [, forceScope] = useState(0);
-      const [diagMsg, setDiagMsg] = useState("");
       const [tombMsg, setTombMsg] = useState("");
       useEffect(() => subscribeConfig((next) => {
         const snap = safeScopeSnapshot(resolveSettingsScope());
@@ -2706,25 +2162,6 @@ window.__ModuleLoader__.load({
       const cfg = useHost ? scopeValueToConfig(hostSnap.value) : lsCfg;
       const readOnly = !!(useHost && hostSnap.writable === false);
       const upd = (patch) => { if (!readOnly) setEffectiveConfig(patch); };
-      const copyLockRef = useRef(false);
-      const onCopyDiag = async () => {
-        if (copyLockRef.current) return;
-        copyLockRef.current = true;
-        try {
-          setDiagMsg(t("diagCollecting"));
-          const diag = collectDiagnostics();
-          const text = JSON.stringify(diag);
-          const ok = await copyTextToClipboard(text);
-          try { console.log("[workspace-tree] diagnostics:", diag); } catch { /* ignore */ }
-          setDiagMsg(ok
-            ? t("diagCopied", { n: text.length })
-            : t("diagCopyFailed"));
-        } catch (e) {
-          setDiagMsg(t("diagCollectError", { message: String((e && e.message) || e) }));
-        } finally {
-          copyLockRef.current = false;
-        }
-      };
       /** 手动清空删除墓碑（自愈失效时的兜底）：清 LS + 广播事件让侧栏树同步内存态。 */
       const onClearTombstones = () => {
         try {
@@ -2764,10 +2201,6 @@ window.__ModuleLoader__.load({
             : t("hostUnavailable")),
           h(ConfigRow, { label: t("enableRow"), hint: t("enableRowHint") },
             h(Switch, { checked: cfg.enabled, disabled: readOnly, onChange: (v) => upd({ enabled: v }), label: t("enableSwitch") })),
-          h(ConfigRow, { label: t("indentRow"), hint: t("indentHint") },
-            select(cfg.indent, [[8, t("indentCompact")], [16, t("indentStandard")], [24, t("indentLoose")]], (v) => upd({ indent: Number(v) }))),
-          h(ConfigRow, { label: t("defaultModeRow"), hint: t("defaultModeHint") },
-            select(cfg.defaultMode, [["folder", t("modeFolder")], ["workspace", t("modeWorkspace")]], (v) => upd({ defaultMode: v }))),
           h(ConfigRow, { label: t("defaultIdeRow"), hint: t("defaultIdeHint") },
             select(cfg.defaultIde || "vscode", ideOptions, (v) => upd({ defaultIde: v }))),
           cfg.defaultIde === "custom" && h("div", { className: "dswt-configIdeBox" }, [
@@ -2790,15 +2223,6 @@ window.__ModuleLoader__.load({
               h("div", { className: "dswt-configIdeExample" }, t("customIdeExamplePath", { commands: "code-insiders / buddycn / nvim" }))
             ])
           ]),
-          h(ConfigRow, { label: t("aggRow"), hint: t("aggRowHint") },
-            h(Switch, { checked: cfg.showAgg, disabled: readOnly, onChange: (v) => upd({ showAgg: v }), label: t("aggSwitch") })),
-          h(ConfigRow, { label: t("countRow"), hint: t("countRowHint") },
-            h(Switch, { checked: cfg.showCount, disabled: readOnly, onChange: (v) => upd({ showCount: v }), label: t("countSwitch") })),
-          h(ConfigRow, { label: t("diagRow"), hint: t("diagRowHint") },
-            h("div", { className: "dswt-configInline" }, [
-              h(Button, { variant: "outline", size: "sm", onClick: onCopyDiag }, t("diagCopy")),
-              diagMsg && h("span", { className: "dswt-configSaved" }, diagMsg)
-            ])),
           h(ConfigRow, { label: t("tombRow"), hint: t("tombRowHint") },
             h("div", { className: "dswt-configInline" }, [
               h(Button, { variant: "outline", size: "sm", onClick: onClearTombstones }, t("tombClear")),
@@ -2898,7 +2322,7 @@ window.__ModuleLoader__.load({
       }, ConfigPanel));
 
       /**
-       * 会话/目录导航方法（startSession / connectWorkspace / pickDirectory）的宿主服务：
+       * 会话/目录导航方法（startSession / pickDirectory）的宿主服务：
        * DSH 中由 uiWorkspace 服务（UiWorkspaceService）提供。
        */
       function resolveUiWorkspace() {
@@ -2953,106 +2377,6 @@ window.__ModuleLoader__.load({
         }
       }, (props) => h(ReadonlyArchivedComposerBanner, { ...props, ctx })));
 
-      // ══════════════ 官方目录对话框的「借道渲染」 ══════════════
-      /**
-       * 内核「添加工作区只有一条路」把交互挂在 sidebar.workspaces.directoryFlow 子槽上，而槽位
-       * 账本（SlotCore.register）一个子键只允许**一个** entry 声明，且被本插件顶掉的内核
-       * WorkspaceBrowser entry 仍持有该声明。渲染授权看的是 entry 自己的 children 表
-       * （boundRenderSlot: `entry.children?.[key]`），与账本里"谁声明了"无关，于是走「借道」：
-       * 本插件这次注册**不带** children 表进账本（不声明、不通知、不可能冲突），注册完再把
-       * children 表挂到自己的 entry 上——只作渲染授权，声明权始终留给内核 entry。两个注册
-       * 无论谁先落地都不冲突：本插件 dsh.client.immediately 会先于 ui-workspace 激活，
-       * 而旧实现假定内核先注册，于是自己抢先声明、让内核那次注册抛 already declared。
-       * 代价是碰 slots._core 这些**非公开内部**，所以整块做成「探测 → 试探 → 任何一步失败
-       * 即整体放弃、回退自持对话框」，补丁作用域收到最小：
-       *  - 只在 armed 窗口（我们那一次注册）把 children 摘出账本再挂回 entry；
-       *  - 我们 entry 卸载时跳过对该子键的级联清理（否则会把内核的声明一起掀掉）。
-       */
-      const officialFlowBridge = (() => {
-        const hole = "sidebar.workspaces.directoryFlow";
-        try {
-          const core = ctx.slots ? ctx.slots._core : null;
-          if (!core || typeof core.register !== "function" || typeof core.releaseEntry !== "function"
-            || !(core.records instanceof Map)) {
-            return { ok: false, reason: "slots._core 形状不符" };
-          }
-          const own = new Set();
-          let armed = false;
-          const origRegister = core.register;
-          const origRelease = core.releaseEntry;
-          core.register = function (options, component) {
-            if (!armed || !options || options.children === undefined) {
-              return origRegister.call(core, options, component);
-            }
-            const declared = options.children;
-            const stripped = { ...options };
-            delete stripped.children;
-            const dispose = origRegister.call(core, stripped, component);
-            // 授权表只挂在 entry 上、不进账本：声明权留给内核 entry（先到后到都安全）。
-            const rec = core.records.get(options.name);
-            const entry = (rec && Array.isArray(rec.entries))
-              ? rec.entries.find((candidate) => candidate.component === component)
-              : undefined;
-            if (entry !== undefined) {
-              entry.children = declared;
-              own.add(entry);
-            }
-            return dispose;
-          };
-          core.releaseEntry = function (entry) {
-            if (own.has(entry) && entry && entry.children !== undefined
-              && Object.prototype.hasOwnProperty.call(entry.children, hole)) {
-              const savedChildren = entry.children;
-              entry.children = undefined;
-              try { return origRelease.call(core, entry); } finally { entry.children = savedChildren; }
-            }
-            return origRelease.call(core, entry);
-          };
-          ctx.effect(() => () => {
-            core.register = origRegister;
-            core.releaseEntry = origRelease;
-          }, "dsh-workspace-tree: official directory-flow bridge");
-          return {
-            ok: true,
-            hole: hole,
-            /** 在放行窗口里执行我们那次 register（children 表摘出账本、挂回自己 entry）。 */
-            register: (options, component) => {
-              armed = true;
-              try {
-                return ctx.slots.register(options, component);
-              } finally {
-                armed = false;
-              }
-            },
-            /** 槽位当前是否有占位者——没有占位者就没有官方交互可渲染。 */
-            occupied: () => {
-              try {
-                const rows = ctx.slots.entries ? ctx.slots.entries(hole) : null;
-                return Array.isArray(rows) && rows.length > 0;
-              } catch { return false; }
-            },
-            /** 占位者出现/消失时回调，用于在官方与自持之间切换。 */
-            subscribe: (listener) => {
-              try {
-                return typeof ctx.slots.subscribe === "function" ? ctx.slots.subscribe(hole, listener) : () => {};
-              } catch { return () => {}; }
-            }
-          };
-        } catch (error) {
-          return { ok: false, reason: String((error && error.message) || error) };
-        }
-      })();
-      if (officialFlowBridge.ok) {
-        officialFlowBridgeRef.ok = true;
-        officialFlowBridgeRef.hole = officialFlowBridge.hole;
-        officialFlowBridgeRef.occupied = officialFlowBridge.occupied;
-        officialFlowBridgeRef.subscribe = officialFlowBridge.subscribe;
-        officialFlowBridgeRef.reason = "";
-      } else {
-        officialFlowBridgeRef.reason = String(officialFlowBridge.reason || "未知原因");
-        console.info("[dsh-workspace-tree] 官方目录对话框借道渲染不可用（" + officialFlowBridgeRef.reason + "），使用插件自持对话框");
-      }
-
       ctx.slots.inject("sidebar.workspaces", () => {
         const component = (props) => h(ErrorBoundary, null, h(WorkspaceTreeBrowser, props));
         const options = {
@@ -3069,14 +2393,6 @@ window.__ModuleLoader__.load({
                   return;
                 }
                 uiWs.startSession(workspaceId);
-              },
-              connectWorkspace: async (workspaceId) => {
-                const uiWs = resolveUiWorkspace();
-                if (uiWs && typeof uiWs.connectWorkspace === "function") {
-                  return await uiWs.connectWorkspace(workspaceId);
-                }
-                // uiWorkspace 缺席时退到官方会话创建原语（无导航副作用）。
-                return await ctx.sessions.create({ workspaceId });
               },
               open: (sessionId) => {
                 // 打开会话是 uiWorkspace 的导航职责（0.1.6 已移除 sessions.open）。
@@ -3139,12 +2455,6 @@ window.__ModuleLoader__.load({
                 }
                 return Promise.reject(new Error("工作区注销服务不可用（当前 DSH 版本不支持）"));
               },
-              adoptSession: (sessionId, workspaceId) => {
-                if (ctx.sessions && typeof ctx.sessions.create === "function") {
-                  return ctx.sessions.create({ sessionId, workspaceId });
-                }
-                return Promise.reject(new Error("会话服务不可用"));
-              },
               // 官方目录选择面（UiWorkspaceService 转发 remote.directoryPicker）：
               //  - pickDirectory：native 系统选择器，只有回环绑定主机挂载；browse 主机
               //    会被 host 以 directory-picker/unavailable 拒绝（"directoryPicker.pick
@@ -3164,14 +2474,14 @@ window.__ModuleLoader__.load({
                 if (uiWs && typeof uiWs.listDirectory === "function") {
                   return uiWs.listDirectory(path, signal);
                 }
-                throw new Error("当前 DSH 版本不支持目录浏览（uiWorkspace.listDirectory）；可在文件夹模式用「添加为工作区」，或升级 DSH。");
+                throw new Error("当前 DSH 版本不支持目录浏览（uiWorkspace.listDirectory）；请升级 DSH。");
               },
               createDirectory: (path, dirName) => {
                 const uiWs = resolveUiWorkspace();
                 if (uiWs && typeof uiWs.createDirectory === "function") {
                   return uiWs.createDirectory(path, dirName);
                 }
-                throw new Error("当前 DSH 版本不支持新建文件夹（uiWorkspace.createDirectory）；可在文件夹模式用「新建文件夹」，或升级 DSH。");
+                throw new Error("当前 DSH 版本不支持新建文件夹（uiWorkspace.createDirectory）；请升级 DSH。");
               },
               refreshSessions: () => {
                 try {
@@ -3181,12 +2491,6 @@ window.__ModuleLoader__.load({
           };
         }
         };
-        // 只有借道成功才声明子槽（声明即渲染授权，见 officialFlowBridge 注释）；
-        // 失败则完全保持 v1.9.5 的形态：不声明、用自持对话框。
-        if (officialFlowBridge.ok) {
-          options.children = { [officialFlowBridge.hole]: { kind: "single", scope: "root" } };
-          return officialFlowBridge.register(options, component);
-        }
         return ctx.slots.register(options, component);
       });
     }
@@ -3461,25 +2765,6 @@ window.__ModuleLoader__.load({
         line-height: 20px;
         overflow: hidden;
       }
-      .dswt-dirTitle {
-        flex: 1;
-        margin: 0 6px 0 4px;
-        color: var(--dsw-alias-label-secondary);
-      }
-      .dswt-dirRow:hover .dswt-dirTitle {
-        color: var(--dsw-alias-label-primary);
-      }
-      .dswt-dirCount {
-        flex: none;
-        min-width: 16px;
-        text-align: center;
-        font-size: 11px;
-        line-height: 16px;
-        color: var(--dsw-alias-label-tertiary);
-        background: var(--dsw-alias-bg-layer-2);
-        border-radius: 8px;
-        padding: 0 4px;
-      }
       .dswt-session .dswt-title {
         flex: 1;
         margin: 0 6px 0 4px;
@@ -3522,23 +2807,6 @@ window.__ModuleLoader__.load({
       }
       .dswt-iconButton.dswt-danger:hover {
         color: var(--dsw-alias-state-error-primary);
-      }
-      .dswt-inline {
-        border: 1px solid var(--dsw-alias-border-l2);
-        background: var(--dsw-alias-bg-layer-2);
-        min-width: 0;
-        max-width: calc(100% - 16px);
-        color: var(--dsw-alias-label-primary);
-        border-radius: 4px;
-        outline: none;
-        padding: 3px 6px;
-        font-size: 14px;
-        line-height: 20px;
-        margin: 2px 8px;
-        box-sizing: border-box;
-      }
-      .dswt-inline:focus {
-        border-color: var(--dsw-alias-brand-primary);
       }
       .dswt-empty {
         color: var(--dsw-alias-label-tertiary);
