@@ -363,7 +363,7 @@ export class ChatTranslateObserver {
   /**
    * 该行是否该被扣留：当前 turn 仍在产出、这行是新追加到流末尾的、不是后缀、
    * 通道可用，且不在初始扫描期间。判断顺带把每个会话流见过的末尾行推进到
-   * 最新，供后续判定使用。
+   * 最新，供后续判定使用；第一次见到的会话流先按历史处理。
    */
   private shouldHold(span: HTMLElement): boolean {
     if (isSummarySuffixSpan(span)) return false;
@@ -374,8 +374,15 @@ export class ChatTranslateObserver {
     if (!item) return false;
 
     const known = this.flowTail.get(flow);
+    if (known === undefined) {
+      // 第一次见到的会话流：这一刻在屏上的都是已经存在的历史（刚切过来的会话、
+      // 重放的转录），先把末尾记下来再说——否则新会话里最先被处理的那几行会被
+      // 当成「刚追加的实时行」整条扣住，出现几行空白等译文的情形。
+      const items = flow.querySelectorAll<HTMLElement>(FLOW_ITEM_SELECTOR);
+      this.flowTail.set(flow, items[items.length - 1] ?? item);
+      return false;
+    }
     const appended =
-      known === undefined ||
       known === item ||
       (known.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
     if (appended) this.flowTail.set(flow, item);

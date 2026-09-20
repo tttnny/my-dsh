@@ -93,9 +93,13 @@ const flow = () => $('[data-chat-flow]');
 const row = (id) => $('#' + id);
 const root = (id) => row(id)?.querySelector('.XX_root');
 const host = (id) => $('#' + id + '-host');
-const hidden = (id) => root(id)?.style.display === 'none';
+/** 待出现的行：卡片被藏起来（不占位）。 */
+const cardHidden = (id) => root(id)?.style.display === 'none';
+/** 排在待出现行后面的条目：整条不可见（占位但看不见）。 */
+const invisible = (id) => row(id)?.style.opacity === '0';
 const translatedTo = (id) => row(id)?.querySelector('.XX_root > .XX_summary > .dsh-tidy-translated-block')?.textContent ?? null;
 const held = (id) => row(id)?.hasAttribute(HOLD_ATTRIBUTE) === true;
+const settled = (id) => !cardHidden(id) && !invisible(id);
 
 let seq = 0;
 function appendRow(text, options = {}) {
@@ -112,17 +116,17 @@ function appendRow(text, options = {}) {
     '<span class="XX_title">Bash</span>' +
     '<span class="XX_summary">' + text + '</span>' + suffix +
     '</div></div></div></div>';
-  flow().appendChild(item);
+  (options.flow ?? flow()).appendChild(item);
   return id;
 }
 
-/** 非工具条目：回答节点 / 思考卡片所在的会话流条目，没有可翻译的摘要。 */
-function appendAgentItem(id) {
+/** 非工具条目：回答节点 / 思考卡片所在的会话流条目，挂载时就带着可见文字。 */
+function appendAgentItem(id, flowElement) {
   const element = window.document.createElement('div');
   element.id = id;
   element.setAttribute('data-chat-flow-key', 'step:' + id);
   element.innerHTML = '<div class="follow surface" data-entrance="idle"><span>Answer text</span></div>';
-  flow().appendChild(element);
+  (flowElement ?? flow()).appendChild(element);
   return id;
 }
 
@@ -143,7 +147,7 @@ function appendReadRow(id) {
 }
 
 // 1. 装载时已在屏幕上的行是历史：不扣留，原地补译。
-check('装载时历史行不被隐藏', !hidden('row0'));
+check('装载时历史行不被隐藏', settled('row0'));
 await wait(700);
 check('历史行照常译出', translatedTo('row0') === '译<Historical row title>');
 
@@ -151,10 +155,10 @@ check('历史行照常译出', translatedTo('row0') === '译<Historical row titl
 fetchMode = 'ok';
 const live = appendRow('Run integration test suite');
 await wait(0);
-check('新行立即整行隐藏', hidden(live));
+check('新行立即整行隐藏', cardHidden(live) && invisible(live));
 check('等待期间自己的流程条目也被挂起', held(live));
 await wait(700);
-check('译文就绪后放行', !hidden(live));
+check('译文就绪后放行', settled(live));
 check('放行时已挂译文', translatedTo(live) === '译<Run integration test suite>');
 check('放行时把行入场门控拨到 active', host(live).getAttribute('data-entrance') === 'active');
 check('队列排空后摘掉挂起标记', !held(live));
@@ -167,7 +171,7 @@ const styles = new window.MutationObserver((records) => {
 });
 styles.observe(host(restarted), { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
 await wait(0);
-check('带 active 宿主的新行同样先隐藏', hidden(restarted));
+check('带 active 宿主的新行同样先隐藏', cardHidden(restarted));
 await wait(700);
 check('active 宿主上的动画被重放', styleTraces.some((value) => value.includes('animation: none')));
 check('重放后行内样式已清干净', host(restarted).style.animation === '');
@@ -177,7 +181,7 @@ styles.disconnect();
 api.clientCache.set('Cached row title', '缓存标题');
 const cachedRow = appendRow('Cached row title');
 await wait(0);
-check('缓存命中的新行不被隐藏', !hidden(cachedRow));
+check('缓存命中的新行不被隐藏', settled(cachedRow));
 check('缓存命中的新行直接显示译文', translatedTo(cachedRow) === '缓存标题');
 check('缓存命中的行不留挂起标记', !held(cachedRow));
 
@@ -185,18 +189,18 @@ check('缓存命中的行不留挂起标记', !held(cachedRow));
 fetchMode = 'fallback';
 const failing = appendRow('Failing row title');
 await wait(0);
-check('降级行同样先隐藏', hidden(failing));
+check('降级行同样先隐藏', cardHidden(failing));
 await wait(700);
-check('判定失败后放行', !hidden(failing));
+check('判定失败后放行', settled(failing));
 check('放行的是原文', translatedTo(failing) === null);
 
 // 6. 一直拿不到译文：5 秒上限到点放行原文。
 fetchMode = 'hang';
 const hanging = appendRow('Hanging row title');
 await wait(0);
-check('挂起行先隐藏', hidden(hanging));
+check('挂起行先隐藏', cardHidden(hanging));
 await wait(5300);
-check('超过上限后放行原文', !hidden(hanging) && translatedTo(hanging) === null);
+check('超过上限后放行原文', settled(hanging) && translatedTo(hanging) === null);
 hangResolvers = [];
 
 // 7. 已显示行的原文变化：保留旧译文，新译文就绪后原地替换，行不消失。
@@ -204,7 +208,7 @@ const wrapper = row(live).querySelector('.XX_root > .XX_summary > .dsh-tidy-orig
 wrapper.firstChild.data = 'Run integration test suite v2';
 fetchMode = 'ok';
 await wait(0);
-check('原文变化时行不被隐藏', !hidden(live));
+check('原文变化时行不被隐藏', settled(live));
 check('新译文就绪前保留旧译文', translatedTo(live) === '译<Run integration test suite>');
 await wait(700);
 check('新译文就绪后原地替换', translatedTo(live) === '译<Run integration test suite v2>');
@@ -213,7 +217,7 @@ check('新译文就绪后原地替换', translatedTo(live) === '译<Run integrat
 api.clientCache.set('Suffix row title', '后缀行标题');
 const suffixRow = appendRow('Suffix row title', { suffix: '+2 rows' });
 await wait(0);
-check('后缀未命中不影响整行显示', !hidden(suffixRow));
+check('后缀未命中不影响整行显示', settled(suffixRow));
 check('摘要命中缓存直接显示', translatedTo(suffixRow) === '后缀行标题');
 
 // 9. 两行同时在等：队首没就绪时，后面那行即使已有译文也不上屏——先出现会占住队首
@@ -223,21 +227,22 @@ const head = appendRow('Queued head title');
 api.clientCache.set('Queued follower title', '排队标题');
 const follower = appendRow('Queued follower title');
 await wait(700);
-check('队首等待时它自己隐藏', hidden(head));
-check('队首等待时后面已就绪的行也不上屏', hidden(follower));
+check('队首等待时它自己隐藏', cardHidden(head) && invisible(head));
+check('队首等待时后面已就绪的行也不上屏', invisible(follower));
 check('后面行的条目被挂起', held(follower));
 await wait(0);
 const agent = appendAgentItem('agent-queued');
 await wait(0);
 check('后续回答/思考条目同样被挂起', held(agent));
+check('挂载时就带着文字的条目也一样看不见', invisible(agent));
 const readRow = appendReadRow('row-queued-read');
 await wait(0);
-check('不翻译的工具行也要等（否则它会先占住队首的位置）', hidden(readRow) && held(readRow));
+check('不翻译的工具行也要等（否则它会先占住队首的位置）', invisible(readRow) && held(readRow));
 releaseHangs();
 await wait(50);
-check('队首就绪后立即放行', !hidden(head) && translatedTo(head) === '译<Queued head title>');
-check('紧随其后的行接着放行', !hidden(follower) && translatedTo(follower) === '排队标题');
-check('不翻译的工具行按顺序放行且保持原文', !hidden(readRow) && translatedTo(readRow) === null);
+check('队首就绪后立即放行', settled(head) && translatedTo(head) === '译<Queued head title>');
+check('紧随其后的行接着放行', settled(follower) && translatedTo(follower) === '排队标题');
+check('不翻译的工具行按顺序放行且保持原文', settled(readRow) && translatedTo(readRow) === null);
 check('放行后回答/思考条目解除挂起', !held(agent));
 check('队列排空后条目上的标记全部清干净', !held(head) && !held(follower) && !held(readRow));
 
@@ -247,7 +252,7 @@ await wait(0);
 fetchMode = 'hang';
 const quiet = appendRow('Quiet row title');
 await wait(0);
-check('无活动 turn 时不扣留', !hidden(quiet));
+check('无活动 turn 时不扣留', settled(quiet));
 check('无活动 turn 时不挂起后续条目', !held(quiet));
 
 // 11. 活动 turn 期间插到流前面的（加载更早历史）不算新行。
@@ -268,25 +273,49 @@ older.innerHTML =
   '</div></div></div></div>';
 flow().insertBefore(older, flow().firstChild);
 await wait(0);
-check('插到流前面的历史行不扣留', !hidden('row-older'));
+check('插到流前面的历史行不扣留', settled('row-older'));
 
 // 12. 两条通道都关：没有可等的译文，不扣留。
 await api.settingsStore.update({ aiEnabled: false, bingEnabled: false });
 fetchMode = 'hang';
 const noChannel = appendRow('No channel row title');
 await wait(0);
-check('通道全关时不扣留', !hidden(noChannel));
+check('通道全关时不扣留', settled(noChannel));
 
 // 13. 扣留期间关闭总开关：立即放行、摘掉全部挂起标记，且批量放行不重放入场动画。
 await api.settingsStore.update({ aiEnabled: true, bingEnabled: true });
 const switched = appendRow('Switch off row title');
 await wait(700);
-check('开关关闭前确实处于扣留', hidden(switched) && held(switched));
+check('开关关闭前确实处于扣留', cardHidden(switched) && held(switched));
 await api.settingsStore.update({ enabled: false });
 await wait(50);
-check('关闭总开关后立即放行', !hidden(switched));
+check('关闭总开关后立即放行', settled(switched));
 check('关闭总开关后摘掉挂起标记', !held(switched));
 check('批量放行不重放入场动画', host(switched).getAttribute('data-entrance') === 'idle');
+
+// 14. 切到另一个会话（新的会话流容器）：这一刻在屏上的都是历史，不扣留、不藏行。
+await api.settingsStore.update({ enabled: true });
+await wait(50);
+fetchMode = 'hang';
+const nextFlow = window.document.createElement('div');
+nextFlow.setAttribute('data-chat-flow', '');
+const nextStatus = window.document.createElement('div');
+nextStatus.setAttribute('role', 'status');
+nextStatus.setAttribute('aria-live', 'polite');
+nextStatus.textContent = 'Working';
+nextFlow.appendChild(nextStatus);
+$('[data-conversation-scroll]').appendChild(nextFlow);
+await wait(0);
+const switchedHistory = appendRow('Switched session history title', { flow: nextFlow });
+await wait(700);
+check('刚切过来的会话里已有的行不扣留、不空白', settled(switchedHistory));
+check('切会话时也不挂起它的条目', !held(switchedHistory));
+const switchedLive = appendRow('Switched session live title', { flow: nextFlow });
+await wait(700);
+check('切会话之后新追加的行照旧扣留', cardHidden(switchedLive) && held(switchedLive));
+releaseHangs();
+await wait(50);
+check('放行后新行照常出场', settled(switchedLive) && translatedTo(switchedLive) === '译<Switched session live title>');
 
 console.log('');
 console.log('工具调用整行扣留：' + (failures.length === 0 ? 'PASS' : 'FAIL (' + failures.length + ')'));

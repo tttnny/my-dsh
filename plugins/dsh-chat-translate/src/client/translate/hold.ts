@@ -1,12 +1,12 @@
 /**
  * 扣留队列：工具调用 / 命令行在标题译文就绪之前整行不可见，原文不落屏。
  *
- * 扣留按阅读顺序放行。队首那一行还在等译文时，排在它后面的每个流程条目都被挂上
- * {@link REVEAL_HOLD_ATTRIBUTE}——smooth-stream 看到标记就不推进那些条目里的逐字
- * 揭示：回答正文、思考正文、译文都不动，积压原样留着。队首一就绪，它先出现（译文
+ * 扣留按阅读顺序放行。队首那一行还在等译文时，排在它后面的每个流程条目整条不可见
+ * 并挂上 {@link REVEAL_HOLD_ATTRIBUTE}：标记让 smooth-stream 不再推进条目里的逐字
+ * 揭示（积压原样留着），样式让条目里的任何东西都上不了屏——不翻译的行、宿主直接
+ * 落盘的文本、已经逐字reveal了一半的正文，都得等轮到它。队首一就绪，它先出现（译文
  * 挂载 + 整行对数淡入），再轮到下一条。没有这层顺序，靠后的行会先占住位置，等靠前
- * 的行出现时再被顶下去；被挂起的文字若在被挂起期间就把队列排空，放行时又会一次性
- * 砸出来。
+ * 的行出现时再被顶下去。
  *
  * 等待有上限：超过 HOLD_DEADLINE_MS 仍无译文就放行原文，译文之后到达时再原地挂载。
  */
@@ -33,9 +33,8 @@ const ROW_ENTRANCE_HOST_SELECTOR = '[data-entrance]';
 const FLOW_SELECTOR = '[data-chat-flow]';
 const FLOW_ITEM_SELECTOR = '[data-chat-flow-key]';
 
-/** 工具行卡片（`[data-variant]`）与思考卡片（同一个属性，另一种变体）。 */
-const TOOL_CARD_SELECTOR = '[data-variant]';
-const THINK_CARD_SELECTOR = '[data-variant="think"]';
+/** 用户自己贴进流里的条目：扣留不能把它们也藏起来。 */
+const USER_KINDS = new Set(['user', 'steering', 'command-input']);
 
 /**
  * 放行时重放行入场动画。
@@ -48,8 +47,10 @@ const THINK_CARD_SELECTOR = '[data-variant="think"]';
  * active，让浏览器按同一套样式从头发一遍；随挂载入场的老行与扣留放行的行因此
  * 看到的是同一段对数淡入。
  */
-function replayRowEntrance(rowRoot: HTMLElement): void {
-  const host = rowRoot.closest<HTMLElement>(ROW_ENTRANCE_HOST_SELECTOR);
+function replayRowEntrance(element: HTMLElement): void {
+  // 卡片条目往上找得到包裹层；整个流程条目要找它里面的那一个。
+  const host = element.closest<HTMLElement>(ROW_ENTRANCE_HOST_SELECTOR)
+    ?? element.querySelector<HTMLElement>(ROW_ENTRANCE_HOST_SELECTOR);
   if (!host) return;
 
   if (host.getAttribute('data-entrance') === 'active') {
@@ -85,8 +86,8 @@ class RowHoldQueue {
   private entries: RowHoldEntry[] = [];
   /** 结果回来时只知道 span，不知道条目，所以另留一份索引。 */
   private bySpan = new WeakMap<HTMLElement, RowHoldEntry>();
-  /** 当前挂着挂起标记的流程条目。 */
-  private marked = new Set<HTMLElement>();
+  /** 当前挂起着的流程条目 → 隐藏之前它自己的行内 opacity。 */
+  private marked = new Map<HTMLElement, string>();
 
   /**
    * 隐藏整行并启动放行上限。幂等：同一行在途请求期间文本又变了时只更新文本并
@@ -110,7 +111,7 @@ class RowHoldQueue {
           existing.timer = window.setTimeout(() => this.readyEntry(existing, null), HOLD_DEADLINE_MS);
         }
       }
-      this.sync();
+      this.sync(false);
       return;
     }
 
@@ -133,7 +134,7 @@ class RowHoldQueue {
     }
     this.insert(entry);
     this.bySpan.set(span, entry);
-    this.sync();
+    this.sync(false);
   }
 
   /** 该文本所属行的扣留状态；返回 undefined 表示没有扣留。 */
@@ -158,10 +159,10 @@ class RowHoldQueue {
   /**
    * 扣留期间新出现的会话流内容：排在队首后面的一律先不上屏。
    *
-   * 逐字揭示交给挂起标记——回答正文、思考正文、译文都只会积压、不会推进。
-   * 工具卡片的文本不归揭示引擎管（smooth-stream 对工具行只做整行入场），所以
-   * 那些卡片在这里直接藏起来，轮到自己时再放行：不翻译的行（如读写文件的链接
-   * 摘要）也一样，否则它会先冒出来占住待出现行的位置。
+   * 藏的是整个流程条目，不是某一张卡片：条目里的东西有的归揭示引擎管（回答正文、
+   * 思考正文、译文，标记会让它们只积压不推进），有的宿主直接落盘（工具卡片正文、
+   * 不翻译的读写文件行），只冻结揭示挡不住后者。整条藏起来两种都覆盖，而且条目
+   * 本身在 React 重渲染里不会被换掉，卡片被换掉也照样藏得住。
    * @param node - 这次变更里新增的元素，或其祖先所在的那一片子树。
    */
   noteAppended(node: HTMLElement): void {
@@ -180,41 +181,38 @@ class RowHoldQueue {
     if (item !== null) this.holdItem(item, head);
   }
 
-  /** 挂起一个条目，并藏住它里面还没轮到出场的工具卡片。 */
+  /** 挂起一个条目：整条不可见，并且不推进它里面的揭示。 */
   private holdItem(item: HTMLElement, head: RowHoldEntry): void {
     if (!this.follows(head.item, item)) return;
+    const kind = item.getAttribute('data-chat-flow-kind');
+    if (kind !== null && USER_KINDS.has(kind)) return;
     this.mark(item);
-    for (const root of item.querySelectorAll<HTMLElement>(TOOL_CARD_SELECTOR)) {
-      if (root.closest(THINK_CARD_SELECTOR)) continue;
-      this.gate(item, root);
-    }
   }
 
   private follows(head: HTMLElement, item: HTMLElement): boolean {
     return (head.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
   }
 
+  /**
+   * 藏住整条流程条目。用 `opacity: 0` 而不是 `visibility`：条目内部的节点可以显式
+   * 声明 `visibility: visible`（系统提示卡片就是这么自管的），那样会从隐藏的祖先里
+   * 逃出来；组透明度盖住整棵子树，谁都逃不掉，而且布局原样保留，放行时不产生位移。
+   */
   private mark(item: HTMLElement): void {
     if (this.marked.has(item)) return;
+    this.marked.set(item, item.style.opacity);
     item.setAttribute(REVEAL_HOLD_ATTRIBUTE, '');
-    this.marked.add(item);
+    item.style.opacity = '0';
   }
 
-  /** 藏住一张还没有轮到出场的工具卡片。 */
-  private gate(item: HTMLElement, root: HTMLElement): void {
-    if (this.entries.some((entry) => entry.root === root)) return;
-    const entry: RowHoldEntry = {
-      item,
-      span: null,
-      root,
-      text: '',
-      translation: null,
-      ready: true,
-      previousDisplay: root.style.display,
-      timer: null,
-    };
-    root.style.display = 'none';
-    this.insert(entry);
+  /** 解除挂起；`animate` 为真时补一段行入场淡入，避免内容一下子蹦出来。 */
+  private unmark(item: HTMLElement, animate: boolean): void {
+    const previous = this.marked.get(item);
+    if (previous === undefined) return;
+    this.marked.delete(item);
+    item.removeAttribute(REVEAL_HOLD_ATTRIBUTE);
+    item.style.opacity = previous;
+    if (animate) replayRowEntrance(item);
   }
 
   /** 按阅读顺序入队：入队顺序就是上屏顺序。 */
@@ -254,16 +252,17 @@ class RowHoldQueue {
         });
       }
       entry.root.style.display = entry.previousDisplay;
-      replayRowEntrance(entry.root);
     }
-    this.sync();
+    // 摘标记顺带补入场淡入：整条从不可见变可见，这一步就是它的出场。
+    this.sync(true);
   }
 
   /**
-   * 让挂起标记与队首对齐：队首自己以及排在它后面的每个流程条目都挂上，其余
-   * 全部摘掉。放行让队首前移时，被它挡住的条目就在这一步解除挂起、继续流淌。
+   * 让挂起标记与队首对齐：队首自己以及排在它后面的每个流程条目都藏起来，其余
+   * 全部恢复。放行让队首前移时，之前被它挡住的条目就在这一步重新出现。
+   * @param animate - 是否给这一步解除挂起的条目补入场淡入。
    */
-  private sync(): void {
+  private sync(animate: boolean): void {
     const head = this.entries[0];
     const wanted = new Set<HTMLElement>();
     if (head) {
@@ -278,13 +277,10 @@ class RowHoldQueue {
       if (!reached) wanted.add(head.item);
     }
 
-    for (const item of this.marked) {
-      if (!wanted.has(item)) item.removeAttribute(REVEAL_HOLD_ATTRIBUTE);
+    for (const item of [...this.marked.keys()]) {
+      if (!wanted.has(item)) this.unmark(item, animate);
     }
-    for (const item of wanted) {
-      if (!this.marked.has(item)) item.setAttribute(REVEAL_HOLD_ATTRIBUTE, '');
-    }
-    this.marked = wanted;
+    for (const item of wanted) this.mark(item);
   }
 
   /**
@@ -300,8 +296,7 @@ class RowHoldQueue {
       entry.root.style.display = entry.previousDisplay;
     }
     this.entries = [];
-    for (const item of this.marked) item.removeAttribute(REVEAL_HOLD_ATTRIBUTE);
-    this.marked = new Set();
+    for (const item of [...this.marked.keys()]) this.unmark(item, false);
   }
 }
 
