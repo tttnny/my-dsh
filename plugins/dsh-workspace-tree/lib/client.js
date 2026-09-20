@@ -1,5 +1,5 @@
 /**
- * dsh-workspace-tree — browser half (v2.2.0)。
+ * dsh-workspace-tree — browser half (v2.3.0)。
  *
  * 内核契约基线：DSH 0.1.6。
  *  - 主视图当前会话读 sessions.list 行上的 retainedBy.mainView（快照已无 current）；
@@ -23,7 +23,8 @@
  *    权威自愈：向 Host 查询会话目录是否仍物理存在——存在即会话存活（永久删除成功
  *    必然使目录消失），该墓碑必为误写，自动作废恢复显示；设置页亦提供手动
  *    「清空墓碑」兜底入口。
- *  - 空白草稿跟随官方语义：不自动回收、仅视图层隐藏（官方从不物理删除会话文件）。
+ *  - 空白草稿跟随官方语义：不自动回收、仅视图层隐藏（官方从不物理删除会话文件）；
+ *    回收只在设置页提供一次性入口（「删除所有空壳会话」→ Host `/blank/deleteAll`）。
  *  - 目录选择面：官方「一种能力、两种交互」——本机 macOS 走宿主 osascript 原生
  *    「选择文件夹」窗口，其余环境走插件自持的浏览对话框（面包屑 + 目录列表 +
  *    绝对路径直输 + 新建文件夹），底层只用官方 browse 原语
@@ -231,13 +232,17 @@ window.__ModuleLoader__.load({
     // v1.9.0：空白草稿跟随官方——官方从不自动清理（懒物化、仅视图层隐藏），
     // 因此移除了旧版的自动回收与 claims/heartbeat 占用注册表（host /claims/*
     // 端点、localStorage 心跳、pagehide 释放等整套机制一并删除）。
+    // 回收改为设置页的一次性显式入口（「删除所有空壳会话」）：判据取官方投影的
+    // blank，由 Host 侧排除运行中/已 attach/子代理后再物理删除。
     // 渲染层维持现状：非当前打开的 blank 行在树中隐藏（sessionVisible）。
 
     /**
      * 批量删除失败项的人话说明。服务端删除零守卫后失败只剩真实原因
      * （文件被锁/权限等），逐条列出失败项与会话 ID。
+     * @param r - Host 响应（含 `failed`）。
+     * @param keptWhere - 失败项的留存位置说法（归档删除 = 归档区；空壳删除 = 原地）。
      */
-    function describeDeleteFailures(r) {
+    function describeDeleteFailures(r, keptWhere) {
       const failed = Array.isArray(r && r.failed) ? r.failed : [];
       const n = failed.length;
       if (n === 0) return "";
@@ -246,7 +251,7 @@ window.__ModuleLoader__.load({
         const why = d.error || "未知原因";
         return "会话 " + d.sessionId + "： " + why;
       });
-      return "其中 " + n + " 条删除失败，已保留在归档区："
+      return "其中 " + n + " 条删除失败，" + (keptWhere || "已保留在原地") + "："
         + lines.join("；")
         + (n > 3 ? "；另有 " + (n - 3) + " 条同类失败" : "");
     }
@@ -1709,6 +1714,20 @@ window.__ModuleLoader__.load({
       }, []);
 
       /**
+       * 设置页「删除所有空壳会话」事件：服务端已按 fail-loud 删净并剔除会话归属，
+       * 这里把删掉的 id 记入墓碑，使官方列表收敛前它们不再以「未分组会话」复现。
+       * 与永久删除同一条写路径（同一 LS 键、同一内存态）。
+       */
+      useEffect(() => {
+        const onBlankDeleted = (event) => {
+          const ids = event && event.detail && Array.isArray(event.detail.ids) ? event.detail.ids : [];
+          if (ids.length > 0) rememberDeleted(ids);
+        };
+        window.addEventListener("dswt-blank-deleted", onBlankDeleted);
+        return () => window.removeEventListener("dswt-blank-deleted", onBlankDeleted);
+      }, [rememberDeleted]);
+
+      /**
        * 恢复成功后同步清除墓碑：否则被删方标签页内该会话会一直隐藏
        * （列表不再返回时才会摘碑），恢复与删除两端可见性分裂。
        */
@@ -1795,8 +1814,9 @@ window.__ModuleLoader__.load({
       const lineage = useMemo(() => indexSubagentRunning(sessions && sessions.byId), [sessions]);
 
       // 空白草稿跟随官方语义：不自动回收（官方从不物理删除会话文件），仅视图层隐藏
-      // （sessionVisible 已排除非当前打开的 blank 行）。v1.9.0 起移除旧的自动回收
-      // 与 claims/heartbeat 占用注册表全套机制。
+      // （sessionVisible 已排除非当前打开的 blank 行）。回收只在设置页按需触发一次
+      // （「删除所有空壳会话」，见 ConfigPanel 的 onDeleteBlankSessions）；
+      // v1.9.0 起已移除旧版的自动回收与 claims/heartbeat 占用注册表全套机制。
 
       // 清理「移除显示」集合中已不存在的工作区 ID（注册被外部删除后避免残留）。
       // 必须等 workspaces.phase === "ready" 再清理：加载初期 items 为空数组，
@@ -2125,7 +2145,7 @@ window.__ModuleLoader__.load({
               startSession();
             }
             refreshSessions();
-            const desc = describeDeleteFailures(r);
+            const desc = describeDeleteFailures(r, "已保留在归档区");
             if (desc) showAlert(desc, "部分删除失败");
           };
 
@@ -2710,6 +2730,14 @@ window.__ModuleLoader__.load({
       tombCleared: "已清空 {n} 条墓碑",
       tombAlreadyEmpty: "墓碑本来就是空的",
       tombClearError: "清空失败：{message}",
+      blankRow: "空壳会话",
+      blankRowHint: "一键删除所有空壳会话（从未产生过任何对话的空白会话，官方从不自动回收）。判据取官方列表投影的 blank，并排除运行中、正在打开（含当前草稿）与子代理会话；物理删除并级联清理子代理与投影缓存，删不掉的会如实列出",
+      blankDelete: "删除所有空壳会话",
+      blankConfirmTitle: "删除所有空壳会话",
+      blankConfirmDesc: "确定要删除全部空壳会话吗？仅删除从未产生过任何对话的空白会话（运行中、正在打开、子代理会话一律保留）。此操作会物理删除会话文件，无法恢复。",
+      blankDone: "已删除 {n} 个空壳会话",
+      blankNone: "没有可删除的空壳会话",
+      blankError: "删除失败：{message}",
       resetDefault: "恢复默认",
       applyHint: "修改即时生效（启用开关除外）"
     };
@@ -2740,6 +2768,14 @@ window.__ModuleLoader__.load({
       tombCleared: "Cleared {n} tombstone(s)",
       tombAlreadyEmpty: "There were no tombstones",
       tombClearError: "Clear failed: {message}",
+      blankRow: "Blank sessions",
+      blankRowHint: "Permanently delete every blank session (a session that never produced any conversation; the official product never reclaims them). The predicate is the official list projection's `blank`, excluding running, currently-open (including the draft you are typing in) and subagent sessions; files are deleted for real along with their subagents and projection cache, and anything that cannot be deleted is reported",
+      blankDelete: "Delete all blank sessions",
+      blankConfirmTitle: "Delete all blank sessions",
+      blankConfirmDesc: "Permanently delete every blank session? Only sessions that never produced any conversation are removed (running, currently-open and subagent sessions are always kept). This deletes session files from disk and cannot be undone.",
+      blankDone: "Deleted {n} blank session(s)",
+      blankNone: "No blank sessions to delete",
+      blankError: "Delete failed: {message}",
       resetDefault: "Restore defaults",
       applyHint: "Changes apply immediately (except the enable switch)"
     };
@@ -2757,6 +2793,11 @@ window.__ModuleLoader__.load({
       const [lsCfg, setLsCfg] = useState(getConfig);
       const [, forceScope] = useState(0);
       const [tombMsg, setTombMsg] = useState("");
+      /** 「删除所有空壳会话」：确认弹窗开关、执行中标志与结果文案。 */
+      const [blankConfirm, setBlankConfirm] = useState(false);
+      const [blankBusy, setBlankBusy] = useState(false);
+      const [blankMsg, setBlankMsg] = useState("");
+      const [blankFailures, setBlankFailures] = useState("");
       useEffect(() => subscribeConfig((next) => {
         const snap = safeScopeSnapshot(resolveSettingsScope());
         if (snap) setLsCfg(scopeValueToConfig(snap.value));
@@ -2791,6 +2832,42 @@ window.__ModuleLoader__.load({
           setTombMsg(n > 0 ? t("tombCleared", { n }) : t("tombAlreadyEmpty"));
         } catch (e) {
           setTombMsg(t("tombClearError", { message: String((e && e.message) || e) }));
+        }
+      };
+      /**
+       * 一键删除所有空壳会话：判据与排除规则全在 Host 侧（官方列表投影的 blank +
+       * 排除运行中 / 已 attach / 子代理），浏览器这边只负责确认、防重复点击与如实呈现。
+       * 删掉的 id 经 `dswt-blank-deleted` 事件交给侧栏树记入墓碑并在官方列表收敛前保持隐藏。
+       */
+      const onDeleteBlankSessions = async () => {
+        if (blankBusy) return;
+        setBlankBusy(true);
+        setBlankMsg("");
+        setBlankFailures("");
+        try {
+          const r = await apiPost("/blank/deleteAll", { all: true });
+          if (!r || r.ok !== true) throw new Error((r && r.error) || "删除失败");
+          const deleted = Array.isArray(r.deleted) ? r.deleted : [];
+          if (deleted.length > 0) {
+            // 自己落墓碑（设置卡片可能先于侧栏树挂载，不能只靠事件），再广播事件让
+            // 已挂载的树同步内存态；两条路径写同一个 LS 键。
+            try {
+              const next = loadSet(LS_DELETED);
+              for (const id of deleted) next.add(String(id));
+              saveSet(LS_DELETED, next);
+            } catch { /* 墓碑写失败不影响删除结果本身 */ }
+            window.dispatchEvent(new CustomEvent("dswt-blank-deleted", { detail: { ids: deleted } }));
+            setBlankMsg(t("blankDone", { n: deleted.length }));
+          } else {
+            setBlankMsg(t("blankNone"));
+          }
+          const desc = describeDeleteFailures(r, "仍留在原处");
+          if (desc) setBlankFailures(desc);
+        } catch (e) {
+          setBlankMsg(t("blankError", { message: String((e && e.message) || e) }));
+        } finally {
+          setBlankBusy(false);
+          setBlankConfirm(false);
         }
       };
       const ideOptions = [
@@ -2848,11 +2925,36 @@ window.__ModuleLoader__.load({
               h(Button, { variant: "outline", size: "sm", onClick: onClearTombstones }, t("tombClear")),
               tombMsg && h("span", { className: "dswt-configSaved" }, tombMsg)
             ])),
+          h(ConfigRow, { label: t("blankRow"), hint: t("blankRowHint") },
+            h("div", { className: "dswt-configStack" }, [
+              h("div", { className: "dswt-configInline" }, [
+                h(Button, {
+                  variant: "outline",
+                  size: "sm",
+                  className: "dswt-dangerBtn",
+                  disabled: blankBusy,
+                  onClick: () => { if (!blankBusy) { setBlankMsg(""); setBlankFailures(""); setBlankConfirm(true); } }
+                }, blankBusy ? "处理中…" : t("blankDelete")),
+                blankMsg && h("span", { className: "dswt-configSaved" }, blankMsg)
+              ]),
+              blankFailures && h("div", { className: "dswt-configError" }, blankFailures)
+            ])),
           h("div", { className: "dswt-configActions" }, [
             h(Button, { variant: "outline", size: "sm", disabled: readOnly, onClick: () => { if (!readOnly) resetEffectiveConfig(); } }, t("resetDefault")),
             h("span", { className: "dswt-configSaved" }, t("applyHint"))
           ])
-        ])
+        ]),
+        h(ConfirmModal, {
+          key: "blankConfirm",
+          open: blankConfirm,
+          title: t("blankConfirmTitle"),
+          desc: t("blankConfirmDesc"),
+          confirmText: t("blankDelete"),
+          danger: true,
+          busy: blankBusy,
+          onCancel: () => { if (!blankBusy) setBlankConfirm(false); },
+          onConfirm: onDeleteBlankSessions
+        })
       ]);
     }
 
@@ -3802,6 +3904,19 @@ window.__ModuleLoader__.load({
         display: flex;
         align-items: center;
         gap: 8px;
+      }
+      /* 控件 + 结果文案的纵向堆叠：错误详情换到按钮下方，不挤窄控件列。 */
+      .dswt-configStack {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+        max-width: 420px;
+      }
+      .dswt-configError {
+        font: var(--dsw-font-xxs-12);
+        color: var(--dsw-alias-state-error-primary);
+        text-align: right;
       }
       .dswt-configIdeBox {
         background: var(--dsw-alias-bg-layer-2);

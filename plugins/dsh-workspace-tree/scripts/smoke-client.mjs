@@ -64,6 +64,36 @@ globalThis.document = {
 globalThis.window = {
   addEventListener: () => { listeners.added += 1 },
   removeEventListener: () => { listeners.removed += 1 },
+  /** Custom-event bus: the settings card and the sidebar tree coordinate through window
+   *  events (tombstone writes), so the harness must deliver them like a real page. */
+  dispatchEvent: (event) => {
+    const type = event && event.type
+    for (const handler of (windowListeners.get(type) ?? [])) handler(event)
+    return true
+  },
+}
+/** Registered `window` event handlers, keyed by type. */
+const windowListeners = new Map()
+const realAdd = globalThis.window.addEventListener
+globalThis.window.addEventListener = (type, handler) => {
+  realAdd(type, handler)
+  const list = windowListeners.get(type) ?? []
+  list.push(handler)
+  windowListeners.set(type, list)
+}
+globalThis.window.removeEventListener = (type, handler) => {
+  listeners.removed += 1
+  const list = windowListeners.get(type)
+  if (list === undefined) return
+  const at = list.indexOf(handler)
+  if (at !== -1) list.splice(at, 1)
+}
+/** Minimal CustomEvent: enough for `new CustomEvent(type, { detail })` + `event.detail`. */
+globalThis.CustomEvent = class CustomEvent {
+  constructor(type, init) {
+    this.type = type
+    this.detail = init && init.detail
+  }
 }
 
 /**
@@ -79,6 +109,12 @@ let tombstoneFailure = null
 let tombstoneCalls = []
 /** Archive action calls (`/archive/unarchiveAll` / `/archive/deleteAll`) — archive-view regression. */
 let archiveCalls = []
+/** 「删除所有空壳会话」桩：请求体记录、Host 应答与可选失败。 */
+let blankCalls = []
+let blankAnswer = { ok: true, deleted: [], failed: [] }
+let blankFailure = null
+/** locale 字典捕获：`locale.register(ns, dict)` 的原样副本，供设置卡片用真实文案渲染。 */
+const localeDicts = {}
 /** Native (macOS Finder) picker knobs: support probe answer and the POST result.
  *  Default false = a host that cannot serve the Finder chooser; the macOS scenarios
  *  opt in explicitly (see the merged 「添加工作区」 cases at the end). */
@@ -111,6 +147,12 @@ globalThis.fetch = async (url, init) => {
   if (path.endsWith('/archive/unarchiveAll') || path.endsWith('/archive/deleteAll')) {
     archiveCalls.push({ path, body: JSON.parse(init?.body ?? '{}') })
     return { json: async () => ({ ok: true, restored: [], deleted: [], failed: [] }) }
+  }
+  if (path.endsWith('/blank/deleteAll')) {
+    blankCalls.push(JSON.parse(init?.body ?? '{}'))
+    if (blankFailure !== null) throw new Error(blankFailure)
+    const body = typeof blankAnswer === 'function' ? blankAnswer(blankCalls) : blankAnswer
+    return { json: async () => body }
   }
   if (path.endsWith('/picker/native')) {
     if (init?.method === 'GET') {
@@ -253,6 +295,29 @@ const walk = (node, visit) => {
   visit(node)
   if (node.props && node.props.children !== undefined) walk(node.props.children, visit)
 }
+/**
+ * Find a button by its label, scoped by whether it lives inside a `stub-modal`.
+ * The settings row trigger and the confirmation's own confirm button carry the same
+ * label and the same danger class by design, so scope — not class — is what tells them apart.
+ */
+const findButton = (tree, label, inModal) => {
+  let hit
+  const visit = (node, insideModal) => {
+    if (hit !== undefined) return
+    if (Array.isArray(node)) { node.forEach((child) => visit(child, insideModal)); return }
+    if (node === null || typeof node !== 'object') return
+    const isModal = node.type === 'div' && hasClass(node, 'stub-modal')
+    const inside = insideModal || isModal
+    if (node.type === 'button' && inside === inModal && label.test(String(node.props.children ?? ''))) {
+      hit = node
+      return
+    }
+    if (node.props && node.props.children !== undefined) visit(node.props.children, inside)
+  }
+  visit(tree, false)
+  return hit
+}
+
 const findNode = (tree, predicate) => {
   let hit
   walk(tree, (node) => { if (hit === undefined && predicate(node)) hit = node })
@@ -337,10 +402,22 @@ const makeServices = (registrations, uiWorkspace, calls, state) => ({
     insertBefore: async (workspaceId, beforeWorkspaceId) => { calls.wsInsertBefore.push({ workspaceId, beforeWorkspaceId }); },
   },
   // The settings card registers its own dictionary and reads its tab label
-  // through `t`; the bundle hard-injects `locale` for that seat.
+  // through `t`; the bundle hard-injects `locale` for that seat. The dictionaries are
+  // captured so a test can drive the card with real product copy instead of key echoes.
   locale: {
-    register: (ns) => { calls.injects.push(`locale:${ns}`); return () => {} },
-    bind: (ns) => (key) => `${ns}:${key}`,
+    register: (ns, dict) => {
+      calls.injects.push(`locale:${ns}`)
+      if (dict && typeof dict === 'object') localeDicts[ns] = (dict.zh && typeof dict.zh === 'object') ? dict.zh : dict
+      return () => {}
+    },
+    bind: (ns) => (key, params) => {
+      const table = localeDicts[ns]
+      const raw = (table && typeof table[key] === 'string') ? table[key] : `${ns}:${key}`
+      if (params === undefined) return raw
+      return raw.replace(/\{(\w+)\}/g, (match, name) => (
+        Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+      ))
+    },
     getSnapshot: () => ({ revision: 0 }),
     subscribe: () => () => {},
   },
@@ -466,6 +543,19 @@ const primitivesStub = new Proxy({}, {
   },
 })
 
+/**
+ * The bound translator the settings card expects, built over a captured zh dictionary.
+ * The real locale service picks a language and interpolates `{name}` placeholders; this
+ * reproduces exactly that over the dictionary the bundle registered.
+ */
+const makeSettingsTranslator = (dict) => (key, params) => {
+  const raw = (dict && typeof dict[key] === 'string') ? dict[key] : key
+  if (params === undefined) return raw
+  return raw.replace(/\{(\w+)\}/g, (match, name) => (
+    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+  ))
+}
+
 async function boot(makeOverrides = {}, hostFacts = {}) {
   const registrations = []
   const calls = { injects: [], errors: [], workspaceCreate: [], sessionCreate: [], sessionUsing: [], sessionRename: [], listDirectory: [], createDirectory: [], pickDirectory: 0, archived: [], guardChecks: [], navOpen: [], navClear: 0, searches: [], unarchived: [], wsInsertBefore: [] }
@@ -490,6 +580,9 @@ async function boot(makeOverrides = {}, hostFacts = {}) {
   tombstoneFailure = null
   tombstoneAlive = []
   archiveCalls = []
+  blankCalls = []
+  blankAnswer = { ok: true, deleted: [], failed: [] }
+  blankFailure = null
   nativeSupported = hostFacts.native === true
   nativePickCalls = 0
   nativePickBodies = []
@@ -651,7 +744,7 @@ const listing = (path, entries, crumbs) => ({
   const settingsCards = harness.registrations.filter((r) => r.name === 'sidebar.settings.item')
   check('sidebar settings card registered once', settingsCards.length === 1)
   check('sidebar settings card id is the Host settings namespace', settingsCards[0].id === 'dsh-workspace-tree')
-  check('sidebar settings card order/label', settingsCards[0].order === 10 && settingsCards[0].label() === 'settings.workspaceTree:title')
+  check('sidebar settings card order/label', settingsCards[0].order === 10 && settingsCards[0].label() === '工作区树')
   check('plugin page tab is gone', !harness.registrations.some((r) => r.name === 'settings.plugins.tab'))
   const settingsPage = harness.registrations.find((r) => r.name === 'settings.section')
   check('shared settings page claimed as sidebar/130',
@@ -659,7 +752,7 @@ const listing = (path, entries, crumbs) => ({
   check('shared settings page declares the item slot',
     settingsPage.children !== undefined && settingsPage.children['sidebar.settings.item'] !== undefined
     && settingsPage.children['sidebar.settings.item'].kind === 'list')
-  check('shared settings page label is the sidebar nav label', settingsPage.label() === 'settings.workspaceTree:pageNav')
+  check('shared settings page label is the sidebar nav label', settingsPage.label() === '侧边栏')
   check('shared settings page injects the tab roster', typeof settingsPage.inject().sidebarTabs.getSnapshot === 'function')
   check('inject face exposes native + browse directory surfaces',
     typeof face.pickDirectory === 'function' && typeof face.listDirectory === 'function' && typeof face.createDirectory === 'function')
@@ -1735,6 +1828,102 @@ for (const mode of [null, 'workspace', 'flat']) {
     harness.calls.unarchived.length === 1 && harness.calls.unarchived[0] === 's-arch')
 }
 
+
+// ── 设置页「删除所有空壳会话」：确认门槛 / load-bearing all:true / 墓碑记账 ──
+
+{
+  const harness = await boot({})
+  mount(harness)
+  const card = harness.registrations.find((r) => r.name === 'sidebar.settings.item')
+  check('blank-delete: the settings card is reachable for the feature',
+    card !== undefined && typeof card.component === 'function')
+
+  // The real bound translator over the zh dictionary the bundle registered, so the
+  // assertions read product copy rather than key echoes.
+  const t = makeSettingsTranslator(localeDicts['settings.workspaceTree'])
+  const props = { t, locale: harness.state }
+
+  // Clicking the row only opens the confirmation — nothing hits the Host yet.
+  let tree = await settle(card.component, props)
+  const trigger = findButton(tree, /删除所有空壳会话/, false)
+  check('blank-delete: the card renders a delete-all-blank control', trigger !== undefined)
+
+  trigger.props.onClick()
+  tree = await settle(card.component, props)
+  check('blank-delete: clicking the control only opens a confirmation, no request is sent',
+    blankCalls.length === 0)
+  const confirm = findNode(tree, (n) => hasClass(n, 'stub-modal') && n.props['data-title'] === '删除所有空壳会话')
+  check('blank-delete: the confirmation states the operation is irreversible',
+    confirm !== undefined && /无法恢复/.test(textOf(confirm)))
+
+  // Confirming sends the load-bearing `all: true` and reports the count.
+  blankAnswer = { ok: true, deleted: ['s-blank-1', 's-blank-2', 's-blank-3'], failed: [] }
+  findButton(tree, /删除所有空壳会话/, true).props.onClick()
+  tree = await settle(card.component, props)
+  check('blank-delete: the request carries the explicit all:true opt-in',
+    blankCalls.length === 1 && blankCalls[0].all === true)
+  check('blank-delete: the deleted count is reported back',
+    /已删除 3 个空壳会话/.test(textOf(tree)))
+
+  // The deleted ids are tombstoned so the official list cannot resurrect them as ungrouped rows.
+  const tombstoned = JSON.parse(storage.get('dswt-workspace-tree.deleted') ?? '[]')
+  check('blank-delete: every deleted id is written to the local tombstone set',
+    tombstoned.includes('s-blank-1') && tombstoned.includes('s-blank-2') && tombstoned.includes('s-blank-3'))
+}
+
+// Cancelling must never issue the request, and a Host refusal must surface its reason.
+{
+  const harness = await boot({})
+  mount(harness)
+  const card = harness.registrations.find((r) => r.name === 'sidebar.settings.item')
+  // The real bound translator over the zh dictionary the bundle registered, so the
+  // assertions read product copy rather than key echoes.
+  const t = makeSettingsTranslator(localeDicts['settings.workspaceTree'])
+  const props = { t, locale: harness.state }
+
+  let tree = await settle(card.component, props)
+  findButton(tree, /删除所有空壳会话/, false).props.onClick()
+  tree = await settle(card.component, props)
+  findButton(tree, /取消/, true).props.onClick()
+  tree = await settle(card.component, props)
+  check('blank-delete: cancelling sends nothing', blankCalls.length === 0)
+
+  // A Host-side refusal (e.g. sessionController unavailable) is shown, not swallowed.
+  blankAnswer = { ok: false, error: 'sessionController 不可用' }
+  findButton(tree, /删除所有空壳会话/, false).props.onClick()
+  tree = await settle(card.component, props)
+  findButton(tree, /删除所有空壳会话/, true).props.onClick()
+  tree = await settle(card.component, props)
+  check('blank-delete: a Host refusal is reported verbatim',
+    /删除失败：sessionController 不可用/.test(textOf(tree)))
+}
+
+// Partial failure: the survivors are listed, the successful ids still get tombstoned.
+{
+  const harness = await boot({})
+  mount(harness)
+  const card = harness.registrations.find((r) => r.name === 'sidebar.settings.item')
+  // The real bound translator over the zh dictionary the bundle registered, so the
+  // assertions read product copy rather than key echoes.
+  const t = makeSettingsTranslator(localeDicts['settings.workspaceTree'])
+  const props = { t, locale: harness.state }
+
+  blankAnswer = {
+    ok: true,
+    deleted: ['s-ok'],
+    failed: [{ sessionId: 's-locked', error: 'EBUSY: resource busy' }],
+  }
+  let tree = await settle(card.component, props)
+  findButton(tree, /删除所有空壳会话/, false).props.onClick()
+  tree = await settle(card.component, props)
+  findButton(tree, /删除所有空壳会话/, true).props.onClick()
+  tree = await settle(card.component, props)
+  check('blank-delete: a partial failure names the session that survived',
+    /s-locked/.test(textOf(tree)) && /EBUSY/.test(textOf(tree)))
+  const tombstoned = JSON.parse(storage.get('dswt-workspace-tree.deleted') ?? '[]')
+  check('blank-delete: only the genuinely deleted id is tombstoned',
+    tombstoned.includes('s-ok') && !tombstoned.includes('s-locked'))
+}
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`)
 if (failures.length > 0) process.exitCode = 1

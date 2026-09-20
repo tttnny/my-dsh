@@ -1,5 +1,5 @@
 /**
- * dsh-workspace-tree — node half (v1.9.10)。
+ * dsh-workspace-tree — node half (v2.3.0)。
  *
  * 核心功能：
  *  - POST /open-ide            在外部 IDE 中打开指定目录 { path, ide, customCommand? }
@@ -10,6 +10,12 @@
  *  - POST /archive/deleteAll   批量永久删除归档会话 { workspaceId? } → { deleted, failed }：
  *                              逐条执行，能删的删掉，删不掉的留在归档区并逐条列原因
  *  - POST /archive/pruneStale  清理归档列表中 host 会话已不再返回的「失效归档」ID
+ *  - POST /blank/deleteAll     删除所有空壳会话（未产生任何对话的空白会话）
+ *                              { all: true } → { deleted, failed, totalBlank, skipped }：
+ *                              空壳判据取官方列表投影的 blank（官方 applySessionListMetadata），
+ *                              三重排除 running / 已 attach（含当前草稿）/ subagent；
+ *                              与归档删除同一套级联 fail-loud 执行器，逐条列出失败原因。
+ *                              判据服务不可用时拒绝执行，绝不自行猜测空壳。
  *  - POST /archive/guardCheck  归档门槛的 Host 权威判据 { sessionId } → { ok, status, running }
  *                              status 取 ctx.agents.get(sessionId)?.status（idle | running；
  *                              无活 Agent 时 inactive）。官方 workspace/archiveSession 在
@@ -958,6 +964,124 @@ async function handleDeleteAll(ctx, req, res) {
 }
 
 /**
+ * 空壳会话的权威判据与候选集（「删除所有空壳会话」的服务端核心）。
+ *
+ * 「空壳」= 官方会话列表投影自己给出的 `blank === true`，即从未产生过 `turn/start`
+ * 的会话（见 @deepseek-ai/dsh-api-session-controller 的 applySessionListMetadata：
+ * `blank: state.blank && event.type !== 'turn/start'`）。用官方的投影而不是自己解析
+ * 会话日志，有两个硬理由：
+ *  1. 会话日志是**多帧 zstd**（Event 批各成一帧），Node 的 zstd 绑定只解得出首帧
+ *     header（`ZSTD_error_prefix_unknown`），仅凭首行无法判断有无对话；官方的
+ *     scanZstdFrames 才是权威解码路径，而它没有对外暴露。
+ *  2. 冷会话的 blank 只有投影缓存里才有（summarizeCold 用 `metadata?.blank ?? false`），
+ *     缓存缺席时官方自己就判成「非空壳」——保守方向，本插件同样照此处理。
+ *
+ * 因此 `sessionController` 不可用时**拒绝执行**（返回 ok:false），绝不退化成
+ * 「自己猜哪些是空壳」——那会把有内容的会话当成空壳删掉。
+ *
+ * 三重排除（任一命中即不是候选）：
+ *  - running：列表投影的 running 位或活 Agent status === "running"；
+ *  - 活会话（已 attach 到本进程 session store）：正在被打开的会话，哪怕空闲也不动
+ *    （当前输入的草稿会话正在此列，避免把用户正在打字的框删掉）；
+ *  - 子代理会话：origin === "subagent" 的会话由父会话的级联删除负责，不在此处单删。
+ *
+ * @returns {Promise<{ids: string[], totalBlank: number, skipped: {running: string[], live: string[], subagent: string[]}}>}
+ * @throws 服务不可用/不可信时抛错，由调用方转成 ok:false（见 handleDeleteAllBlank）。
+ */
+async function collectBlankSessionIds(ctx) {
+  const sc = ctx.get("sessionController");
+  if (!sc || typeof sc.list !== "function") {
+    throw new Error("无法读取 host 会话列表（sessionController 不可用，空壳判据不可信，拒绝执行）");
+  }
+  const raw = await sc.list();
+  const items = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.items) ? raw.items : null);
+  if (!items) throw new Error("host 会话列表返回了无法识别的形状（拒绝执行）");
+
+  let agents = null;
+  try { agents = ctx.get("agents") || null; } catch { agents = null; }
+  let live = null;
+  try { live = ctx.get("sessions") || null; } catch { live = null; }
+
+  const ids = [];
+  const total = { count: 0 };
+  const skipped = { running: [], live: [], subagent: [] };
+  for (const item of items) {
+    const id = item && (item.sessionId || item.id);
+    if (typeof id !== "string" || !id) continue;
+    if (item.blank !== true) continue;
+    total.count += 1;
+
+    if (item.running === true) { skipped.running.push(id); continue; }
+    if (item.origin === "subagent") { skipped.subagent.push(id); continue; }
+
+    // 活 Agent 复查：列表 running 位是转发事实，存在窗口期，Host 侧再问一次真值。
+    if (agents && typeof agents.get === "function") {
+      let status = null;
+      try { const agent = agents.get(id); status = agent && agent.status; } catch { status = null; }
+      if (status === "running") { skipped.running.push(id); continue; }
+    }
+    // 已 attach 的会话：正在打开（含当前草稿），不做后台删除。
+    if (live && typeof live.get === "function") {
+      let attached = undefined;
+      try { attached = live.get(id); } catch { attached = undefined; }
+      if (attached !== undefined) { skipped.live.push(id); continue; }
+    }
+    ids.push(id);
+  }
+  return { ids, totalBlank: total.count, skipped };
+}
+
+/**
+ * 删除所有空壳会话（未产生任何对话的空白会话）。
+ *
+ * 与归档删除的区别：空壳**不需要先归档**——它们从未进过归档区，也没有任何内容可保护；
+ * 本路由自带三重排除（见 collectBlankSessionIds），因此不套用归档门槛。
+ *
+ * 防误触 / 防 CSRF：与 /archive/deleteAll 同一约定，必须显式传 all: true。
+ * 复用 deleteSessionList（逐条 fail-loud + 级联子代理 + 注册表剔除），
+ * 因此部分失败时会话留在原地并逐条列出原因，可幂等重试。
+ */
+async function handleDeleteAllBlank(ctx, req, res) {
+  const raw = await parseJsonBody(req);
+  if (raw.all !== true) {
+    return sendJson(res, 200, {
+      ok: false,
+      error: "拒绝执行：删除全部空壳会话必须显式传 all: true"
+    });
+  }
+
+  let collected;
+  try {
+    collected = await collectBlankSessionIds(ctx);
+  } catch (err) {
+    return sendJson(res, 200, { ok: false, error: err.message || String(err) });
+  }
+
+  if (collected.ids.length === 0) {
+    return sendJson(res, 200, {
+      ok: true,
+      deleted: [],
+      failed: [],
+      totalBlank: collected.totalBlank,
+      skipped: collected.skipped
+    });
+  }
+
+  try {
+    const { deleted, failed } = await deleteSessionList(ctx, collected.ids);
+    sendJson(res, 200, {
+      ok: true,
+      deleted,
+      failed,
+      totalBlank: collected.totalBlank,
+      skipped: collected.skipped
+    });
+  } catch (err) {
+    sendJson(res, 200, { ok: false, error: err.message || String(err) });
+  }
+}
+
+/**
  * 清理失效归档（最小兜底版）：
  * 归档列表中 host 会话列表（sessionController.list）已不再返回的 ID —— 会话日志
  * 已被物理删除（如经插件删除、DSH 升级）后的历史残留，任何 UI 都无法再展示/打开。
@@ -1246,6 +1370,9 @@ function apply(ctx) {
           if (sub === "pruneStale") return await handlePruneStaleArchives(ctx, req, res);
           if (sub === "guardCheck") return await handleGuardCheck(ctx, req, res);
           if (sub === "tombstoneCheck") return await handleTombstoneCheck(req, res);
+        }
+        if (head === "blank" && rest[1] === "deleteAll" && req.method === "POST") {
+          return await handleDeleteAllBlank(ctx, req, res);
         }
         sendJson(res, 404, { ok: false, error: "not found" });
       } catch (error) {

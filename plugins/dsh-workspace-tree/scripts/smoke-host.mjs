@@ -11,7 +11,7 @@
  * Run with: node scripts/smoke-host.mjs [plugin-dir]
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,6 +36,10 @@ const routes = []
 const services = {}
 const ctx = {
   get: (name) => services[name],
+  // `getWorkspaceDomain` reads `ctx.storageDomain` directly (it is a hard dependency of
+  // the plugin, so it is a declared service rather than an optional `ctx.get` lookup):
+  // expose it as a live accessor so a test can install one per scenario.
+  get storageDomain() { return services.storageDomain },
   effect: (fn) => { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {} },
   settings: { register: () => { throw new Error('settings unavailable in this harness') } },
   webServer: { register: (route) => { routes.push(route); return () => {} } },
@@ -44,10 +48,19 @@ const ctx = {
 mod.apply(ctx)
 check('host half registers its prefix route', routes.length === 1 && routes[0].path === '/api/dsh-workspace-tree')
 
+/**
+ * Sentinel for `call`'s third argument: passing it leaves `services.agents` exactly as
+ * the test set it, for cases that configure several services up front. Passing plain
+ * `undefined` keeps the original meaning ("no agents service registered").
+ */
+const keepServices = Symbol('keep services as configured')
+
 /** One request through the real prefix handler: returns the HTTP status plus the JSON body. */
 const call = async (path, body, agents, method = 'POST') => {
-  if (agents === undefined) delete services.agents
-  else services.agents = agents
+  if (agents !== keepServices) {
+    if (agents === undefined) delete services.agents
+    else services.agents = agents
+  }
   const res = {
     httpStatus: null,
     payload: null,
@@ -65,6 +78,39 @@ const call = async (path, body, agents, method = 'POST') => {
   }
   await routes[0].handler(req, res)
   return { httpStatus: res.httpStatus, ...(res.payload ?? {}) }
+}
+
+/**
+ * Minimal `storageDomain` stand-in for the workspace domain: `mutateWorkspaceState`
+ * falls back to `global`/`table` when no `workspaceRegistry` service is registered,
+ * which is the shape the blank-delete route drives through `stripSessionIdsFromRegistry`.
+ * The table implements the record store surface the route actually uses (get / entries /
+ * update), and the live state is exposed so a test can assert the registry was stripped.
+ */
+const makeWorkspaceDomain = () => {
+  const records = new Map()
+  let state = { archivedSessionIds: [] }
+  const table = {
+    get: (id) => records.get(id),
+    entries: () => records.entries(),
+    set: (id, rec) => { records.set(id, rec) },
+    update: async (id, mutator) => {
+      const next = mutator(records.get(id))
+      records.set(id, next)
+      return next
+    },
+  }
+  const domain = {
+    global: {
+      get: () => state,
+      set: async (next) => { state = next },
+    },
+    table: (name) => {
+      if (name !== 'workspaces') throw new Error(`unexpected table ${name}`)
+      return table
+    },
+  }
+  return { domain, table, records, state: () => state }
 }
 
 const previousDshHome = process.env.DSH_HOME
@@ -162,6 +208,116 @@ const foundRoot = await call(probe, { ids: ['session-y'] }, undefined)
 check('tombstoneCheck: an existing session directory is reported alive',
   foundRoot.ok === true && JSON.stringify(foundRoot.alive) === JSON.stringify(['session-y']))
 restoreDshHome()
+
+// ─────────────── POST /blank/deleteAll (delete every blank session) ───────────────
+//
+// The predicate is the official list projection's `blank`, so `sessionController.list()`
+// is the sole authority and every exclusion (running / attached / subagent) is asserted
+// by the ids that survive. Deletion reuses the archive cascade, so the assertions cover
+// the real filesystem effect plus the registry strip, not just the response body.
+
+const blankRoute = '/api/dsh-workspace-tree/blank/deleteAll'
+
+/** A scratch home whose sessions root holds one directory per given id. */
+const blankHome = (ids) => {
+  const home = mkdtempSync(join(tmpdir(), 'dswt-blank-'))
+  for (const id of ids) mkdirSync(join(home, 'sessions', '--scope--', id), { recursive: true })
+  return home
+}
+/** `sessionController` stub whose list() reports exactly these summaries. */
+const blankList = (items) => ({ list: async () => items })
+const blankDirs = (home, id) => existsSync(join(home, 'sessions', '--scope--', id))
+
+// Guard: the destructive route must demand the same explicit opt-in as /archive/deleteAll.
+process.env.DSH_HOME = blankHome([])
+services.sessionController = blankList([])
+const noConfirm = await call(blankRoute, {}, keepServices)
+check('blank/deleteAll: an unconfirmed call is refused (no implicit "delete everything")',
+  noConfirm.ok === false && /all: true/.test(String(noConfirm.error)))
+
+const badConfirm = await call(blankRoute, { all: 'yes' }, keepServices)
+check('blank/deleteAll: a truthy-but-not-true flag is refused', badConfirm.ok === false)
+
+// Without the authority there is no safe predicate — refuse rather than guess.
+delete services.sessionController
+const noAuthority = await call(blankRoute, { all: true }, undefined)
+check('blank/deleteAll: without sessionController the route refuses instead of guessing blanks',
+  noAuthority.ok === false && /sessionController/.test(String(noAuthority.error)))
+
+services.sessionController = { list: async () => ({ nope: true }) }
+const badShape = await call(blankRoute, { all: true }, keepServices)
+check('blank/deleteAll: an unrecognized list shape is refused', badShape.ok === false)
+
+// The real deletion: three blanks, three protected sessions, four non-blank survivors.
+{
+  const keep = ['s-talked', 's-archived-talked']
+  const blanks = ['s-blank-1', 's-blank-2', 's-blank-3']
+  const protectedIds = ['s-running', 's-attached', 's-subagent']
+  const home = blankHome([...keep, ...blanks, ...protectedIds])
+  process.env.DSH_HOME = home
+  services.sessionController = blankList([
+    ...blanks.map((id) => ({ sessionId: id, blank: true, running: false })),
+    ...keep.map((id) => ({ sessionId: id, blank: false })),
+    { sessionId: 's-running', blank: true, running: false },
+    { sessionId: 's-attached', blank: true, running: false },
+    { sessionId: 's-subagent', blank: true, origin: 'subagent' },
+  ])
+  services.agents = { get: (id) => (id === 's-running' ? { id, status: 'running' } : undefined) }
+  services.sessions = { get: (id) => (id === 's-attached' ? { id } : undefined) }
+  const ws = makeWorkspaceDomain()
+  services.storageDomain = {
+    get: (name) => (name === 'workspace' ? ws.domain : undefined),
+  }
+  ws.records.set('ws-1', { path: '/tmp/ws', title: 'ws', sessionIds: ['s-blank-1', 's-talked'], createdAt: '', updatedAt: '' })
+
+  const wiped = await call(blankRoute, { all: true }, keepServices)
+  check('blank/deleteAll: every blank session is deleted',
+    wiped.ok === true && blanks.every((id) => wiped.deleted.includes(id)))
+  check('blank/deleteAll: their directories are gone from disk',
+    blanks.every((id) => !blankDirs(home, id)))
+  check('blank/deleteAll: a session with conversation is never touched',
+    wiped.deleted.includes('s-talked') === false && blankDirs(home, 's-talked'))
+  check('blank/deleteAll: a running blank is skipped, not deleted',
+    wiped.skipped.running.includes('s-running') && blankDirs(home, 's-running'))
+  check('blank/deleteAll: an attached (currently open) blank is skipped',
+    wiped.skipped.live.includes('s-attached') && blankDirs(home, 's-attached'))
+  check('blank/deleteAll: a subagent session is left to its parent\'s cascade',
+    wiped.skipped.subagent.includes('s-subagent') && blankDirs(home, 's-subagent'))
+  check('blank/deleteAll: the workspace registry drops the deleted session but keeps the rest',
+    JSON.stringify(ws.records.get('ws-1').sessionIds) === JSON.stringify(['s-talked']))
+  check('blank/deleteAll: reports the blank population it inspected', wiped.totalBlank === 6)
+}
+
+// Nothing to do is a success, not an error (idempotent re-run).
+{
+  const home = blankHome([])
+  process.env.DSH_HOME = home
+  services.sessionController = blankList([])
+  delete services.agents
+  delete services.sessions
+  delete services.storageDomain
+  const empty = await call(blankRoute, { all: true }, keepServices)
+  check('blank/deleteAll: an empty blank set answers ok with nothing deleted',
+    empty.ok === true && Array.isArray(empty.deleted) && empty.deleted.length === 0)
+}
+
+// A running agent that the list still reports as idle is still protected: the list
+// `running` bit is a forwarded fact with a window, so the Host re-asks the live registry.
+{
+  const home = blankHome(['s-race'])
+  process.env.DSH_HOME = home
+  services.sessionController = blankList([{ sessionId: 's-race', blank: true, running: false }])
+  services.agents = { get: () => ({ status: 'running' }) }
+  const race = await call(blankRoute, { all: true }, keepServices)
+  check('blank/deleteAll: a stale list `running: false` cannot delete a genuinely running session',
+    race.ok === true && race.deleted.length === 0 && race.skipped.running.includes('s-race') && blankDirs(home, 's-race'))
+  delete services.agents
+}
+
+process.env.DSH_HOME = join(mkdtempSync(join(tmpdir(), 'dswt-restore-')), 'no-such-home')
+delete services.sessionController
+delete services.sessions
+delete services.storageDomain
 
 // ───────────────────── native Finder picker (macOS `choose folder`) ─────────────────────
 

@@ -25,7 +25,7 @@
     <tr>
       <td><b>🗂️ 工作区管理</b><br><i>侧栏信息架构与会话资产，含写语义</i></td>
       <td><a href="./plugins/dsh-workspace-tree"><code>@lynn123411/dsh-workspace-tree</code></a></td>
-      <td><b>工作区树</b><br>· 三档分组（按工作区 / 工作区树 / 单一列表）+ 会话搜索 + 排序与拖拽，注册工作区按目录嵌套、无归属会话落「未分组」<br>· 一键在外部 IDE 打开（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）<br>· 全局重命名 + 安全归档区（归档门槛 / 只读阅览）+ 级联物理删除<br>· 唯一带注册表与文件系统写语义的侧栏插件<br>· 设置项与 Matt 技能控制面板共用「<b>侧边栏</b>」设置页（先到先得当选页面宿主）</td>
+      <td><b>工作区树</b><br>· 三档分组（按工作区 / 工作区树 / 单一列表）+ 会话搜索 + 排序与拖拽，注册工作区按目录嵌套、无归属会话落「未分组」<br>· 一键在外部 IDE 打开（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）<br>· 全局重命名 + 安全归档区（归档门槛 / 只读阅览）+ 级联物理删除<br>· 唯一带注册表与文件系统写语义的侧栏插件<br>· 一键删除空壳会话（判据取官方列表投影的 blank，排除运行中/正在打开/子代理，fail-loud 级联）<br>· 设置项与 Matt 技能控制面板共用「<b>侧边栏</b>」设置页（先到先得当选页面宿主）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-workspace-tree</code></td>
     </tr>
     <tr>
