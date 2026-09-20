@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-chat-translate",
-  "version": "1.5.0",
+  "version": "1.7.0",
   "description": "Tool-call & think-chain translation with dual AI (OpenAI-compatible) + Bing channels for the DeepSeek Harness Web UI",
   "license": "MIT",
   "author": "lynn123411",
@@ -61,7 +61,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node scripts/test-client-wiring.mjs && node scripts/test-regression-suite.mjs && node scripts/test-channel-logic.mjs && node scripts/test-store.mjs && node scripts/test-toggle-restore.mjs && node scripts/test-think-pipeline.mjs && node scripts/test-think-client.mjs",
+    "test": "node scripts/test-client-wiring.mjs && node scripts/test-regression-suite.mjs && node scripts/test-channel-logic.mjs && node scripts/test-store.mjs && node scripts/test-toggle-restore.mjs && node scripts/test-hold.mjs && node scripts/test-think-pipeline.mjs && node scripts/test-think-client.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
     "check": "pnpm typecheck && pnpm build && pnpm test && pnpm assert:lib-untracked"
   },

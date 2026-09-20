@@ -1,5 +1,6 @@
 import { clientCache } from './client-cache.ts';
 import { requestTranslateBatch } from './api.ts';
+import { rowHold } from './hold.ts';
 import { NonDestructiveTranslationMount } from './mount.ts';
 import { StreamDebounceViewportObserver } from './viewport-observer.ts';
 
@@ -41,6 +42,23 @@ class LazyTranslationQueue {
     this.viewportObserver.observeWithDebounce(element, text, immediate);
   }
 
+  /**
+   * 扣留行的取文本路径。命中缓存时同步就绪（没有需要遮住的等待），否则走无可见
+   * 性判定的防抖批次；译文挂载由扣留队列在轮到这一行时执行，好让逐字与对数淡入
+   * 从它真正上屏的那一刻开始。
+   */
+  observeHeld(element: HTMLElement, text: string): void {
+    if (!this.enabled || !element.isConnected) return;
+
+    const cached = clientCache.get(text);
+    if (cached) {
+      rowHold.ready(element, cached);
+      return;
+    }
+
+    this.viewportObserver.observeHeld(element, text);
+  }
+
   private async handleVisibleBatch(items: TranslateTask[]): Promise<void> {
     if (!this.enabled || items.length === 0) return;
 
@@ -59,7 +77,10 @@ class LazyTranslationQueue {
 
       const cached = clientCache.get(item.text);
       if (cached) {
-        this.applyTranslation(item.element, cached, item.text);
+        if (this.stillMatches(item.element, item.text)) {
+          if (rowHold.stateFor(item.element)) rowHold.ready(item.element, cached);
+          else this.applyTranslation(item.element, cached, item.text);
+        }
         continue;
       }
 
@@ -74,6 +95,7 @@ class LazyTranslationQueue {
     const results = await requestTranslateBatch(uniqueTexts);
 
     for (const res of results) {
+      const entries = textMap.get(res.original) || [];
       if (
         res.translated &&
         res.translated.trim() &&
@@ -82,16 +104,32 @@ class LazyTranslationQueue {
         res.translated.trim() !== res.original.trim()
       ) {
         clientCache.set(res.original, res.translated);
-        const entries = textMap.get(res.original) || [];
         for (const entry of entries) {
-          if (entry.isConnected && this.enabled) {
-            this.applyTranslation(entry, res.translated, res.original);
-          }
+          if (!entry.isConnected || !this.enabled) continue;
+          const held = rowHold.stateFor(entry);
+          // 文本在请求在途时又变了：这一份结果已经过时，等新文本自己的结果。
+          if (held && held.text !== res.original) continue;
+          if (!this.stillMatches(entry, res.original)) continue;
+          // 扣留行在这里只「就绪」：真正挂载与上屏由队列按阅读顺序执行。
+          if (held) rowHold.ready(entry, res.translated);
+          else this.applyTranslation(entry, res.translated, res.original);
         }
-      } else if (res.channel === 'fallback' || res.channel === 'fallback-client') {
+      } else {
+        // 明确失败（降级 / 通道关闭 / 空译文 / 与原文相同）没有可等的译文，
+        // 直接放行原文。
+        for (const entry of entries) {
+          const held = rowHold.stateFor(entry);
+          if (held && held.text === res.original) rowHold.ready(entry, null);
+        }
         console.debug(`[dsh-chat-translate] 翻译未成功 (降级保留原文): "${res.original.slice(0, 40)}"`);
       }
     }
+  }
+
+  /** 元素当前承载的原文是否仍是这次结果对应的那一份。 */
+  private stillMatches(element: HTMLElement, original: string): boolean {
+    const current = NonDestructiveTranslationMount.extractVisibleText(element);
+    return !current || current === original;
   }
 
   private applyTranslation(element: HTMLElement, translated: string, original: string): void {

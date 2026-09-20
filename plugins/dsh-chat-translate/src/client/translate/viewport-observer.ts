@@ -5,7 +5,12 @@
  * 1. True IntersectionObserver for viewport visibility detection (rootMargin: '150px 0px').
  * 2. Typing/streaming debounce (default 400ms) to avoid translating partial streaming sentences.
  * 3. Batch queuing to group multiple visible elements into efficient batch requests.
+ *
+ * 扣留行（{@link observeHeld}）复用同一条防抖与批次，只跳过可见性判定：
+ * 行此刻是隐藏的，等不到 IntersectionObserver 回调。
  */
+
+import { NonDestructiveTranslationMount } from './mount.ts';
 
 export interface ViewportObserverOptions {
   rootMargin?: string;
@@ -19,7 +24,7 @@ export class StreamDebounceViewportObserver {
    * Pending per-element streaming debounce timers. A Map (not a WeakMap)
    * because disconnect() must enumerate and clear every pending timer: a
    * WeakMap cannot be iterated, so a debounce armed just before the switch was
-   * turned off would still fire registerForViewport() afterwards.
+   * turned off would still fire register() afterwards.
    */
   private streamingTimers = new Map<HTMLElement, number>();
   private pendingQueue: Array<{ element: HTMLElement; text: string }> = [];
@@ -49,7 +54,9 @@ export class StreamDebounceViewportObserver {
             const el = entry.target;
             // Stop observing once it enters viewport and is queued
             this.intersectionObserver?.unobserve(el);
-            const text = el.dataset.tidyPendingText || el.textContent?.trim() || '';
+            const text = el.dataset.tidyPendingText
+              || NonDestructiveTranslationMount.extractVisibleText(el)
+              || '';
             if (text) {
               delete el.dataset.tidyPendingText;
               this.enqueueBatch(el, text);
@@ -70,6 +77,23 @@ export class StreamDebounceViewportObserver {
    * If streaming updates characterData repeatedly within debounceMs, the timer resets.
    */
   observeWithDebounce(element: HTMLElement, text: string, immediate = false): void {
+    this.armDebounce(element, text, immediate, false);
+  }
+
+  /**
+   * 扣留行的取文本路径：保留同一套流式防抖，跳过可见性判定——行此刻是
+   * 隐藏的（永远不进入视口），放行由扣留控制器负责。
+   */
+  observeHeld(element: HTMLElement, text: string): void {
+    this.armDebounce(element, text, false, true);
+  }
+
+  private armDebounce(
+    element: HTMLElement,
+    text: string,
+    immediate: boolean,
+    skipViewport: boolean
+  ): void {
     if (!element || !text) return;
 
     // Clear any active streaming timer for this element
@@ -80,7 +104,7 @@ export class StreamDebounceViewportObserver {
     }
 
     if (immediate || this.options.debounceMs <= 0) {
-      this.registerForViewport(element, text);
+      this.register(element, text, skipViewport);
       return;
     }
 
@@ -90,20 +114,21 @@ export class StreamDebounceViewportObserver {
       if (this.streamingTimers.get(element) !== timer) return;
       this.streamingTimers.delete(element);
       if (element.isConnected) {
-        // Read latest text content after streaming settles
-        const latestText = element.textContent?.trim() || text;
-        this.registerForViewport(element, latestText);
+        // Read latest text content after streaming settles. 已挂载的行必须
+        // 排除我们自己的译文与原文容器，否则读到的会是两者的拼接。
+        const latestText = NonDestructiveTranslationMount.extractVisibleText(element) || text;
+        this.register(element, latestText, skipViewport);
       }
     }, this.options.debounceMs);
 
     this.streamingTimers.set(element, timer);
   }
 
-  private registerForViewport(element: HTMLElement, text: string): void {
+  private register(element: HTMLElement, text: string, skipViewport: boolean): void {
     if (!element.isConnected) return;
 
-    if (!this.intersectionObserver) {
-      // Fallback if IntersectionObserver is unsupported: enqueue immediately
+    if (skipViewport || !this.intersectionObserver) {
+      // 扣留行与不支持 IntersectionObserver 的环境都直接进批次。
       this.enqueueBatch(element, text);
       return;
     }
