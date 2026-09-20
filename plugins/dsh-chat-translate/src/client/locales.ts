@@ -15,7 +15,7 @@ export const zh = {
   masterTitle: '翻译总开关',
   enableTranslation: '启用翻译',
   masterDesc:
-    '自动将当前会话中工具调用标题（如 {example}）翻译为中文，点击译文可原地切换原文/译文。思考正文默认不翻译，由 AI 卡片里的「显示思考链翻译按钮」控制：打开后每张思考卡右侧出现按钮，点击才翻译。思考卡折叠起来的那一行摘要永不翻译。仅作用于当前查看的会话，回答正文永不翻译。',
+    '自动将当前会话中工具调用标题（如 {example}）翻译为中文，点击译文可原地切换原文/译文。思考正文默认不翻译，由 AI 卡片里的「显示思考链翻译按钮」控制：打开后展开的思考卡右侧出现按钮，点击才翻译。思考卡折叠起来的那一行摘要永不翻译。仅作用于当前查看的会话，回答正文永不翻译。',
 
   aiTitle: 'AI 翻译（OpenAI 兼容协议）',
   enableAi: '启用 AI 翻译通道',
@@ -45,7 +45,7 @@ export const zh = {
 
   thinkEnableTitle: '显示思考链翻译按钮',
   thinkEnableDesc:
-    '在每张思考卡的「Think」右侧显示一个按钮，点击才翻译这条思考正文（不会自动翻译）；翻译中按钮转圈，翻好后实心高亮，再点一下整条切回原文（正文里的点击不切换）。代码块与折叠摘要不动，Bing 通道不参与。关闭此开关会撤掉按钮并还原已翻译内容。',
+    '在展开的思考卡的「Think」右侧显示一个按钮，点击才翻译这条思考正文（不会自动翻译）；折叠起来的卡片没有按钮，展开后按钮才出现。翻译中按钮转圈，翻好后实心高亮，再点一下整条切回原文（正文里的点击不切换）。代码块与折叠摘要不动，Bing 通道不参与。关闭此开关会撤掉按钮并还原已翻译内容。',
   thinkTimeoutTitle: '思考链翻译超时',
   thinkTimeoutDesc: '单位毫秒，范围 500-900000。整块思考可能要几分钟，默认 600000。',
 
@@ -76,7 +76,7 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   masterTitle: 'Translation master switch',
   enableTranslation: 'Enable translation',
   masterDesc:
-    'Translates tool-call titles in the current session (e.g. {example}) into Chinese; click a translation to switch back to the original in place. Think text stays untranslated by default and is controlled by “show think-chain translate button” in the AI card: once on, a button appears at the right of every think card and translates only when clicked. The collapsed summary line of a think card is never translated. Applies to the session you are viewing only; reply text is never translated.',
+    'Translates tool-call titles in the current session (e.g. {example}) into Chinese; click a translation to switch back to the original in place. Think text stays untranslated by default and is controlled by “show think-chain translate button” in the AI card: once on, a button appears at the right of every expanded think card and translates only when clicked. The collapsed summary line of a think card is never translated. Applies to the session you are viewing only; reply text is never translated.',
 
   aiTitle: 'AI translation (OpenAI-compatible)',
   enableAi: 'Enable the AI translation channel',
@@ -106,7 +106,7 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
 
   thinkEnableTitle: 'Show the think-chain translate button',
   thinkEnableDesc:
-    'Shows a button to the right of “Think” on every think card; it translates that think text only when clicked, never automatically. While translating, the button spins; once done it highlights solid, and clicking it again switches the whole block back to the original (clicks inside the text do not switch). Code blocks and the collapsed summary stay untouched, and the Bing channel is not involved. Turning this off removes the button and restores already translated content.',
+    'Shows a button to the right of “Think” on every expanded think card; it translates that think text only when clicked, never automatically. Collapsed cards carry no button; it appears once the card is expanded. While translating, the button spins; once done it highlights solid, and clicking it again switches the whole block back to the original (clicks inside the text do not switch). Code blocks and the collapsed summary stay untouched, and the Bing channel is not involved. Turning this off removes the button and restores already translated content.',
   thinkTimeoutTitle: 'Think-chain translation timeout',
   thinkTimeoutDesc: 'In milliseconds, range 500-900000. A whole think block can take minutes; default 600000.',
 

@@ -5,7 +5,7 @@ import { estimateTokens } from '../../server/pipeline/think.ts';
 import { createThinkButton, THINK_BUTTON_CLASS, type ThinkButtonHandle, type ThinkButtonState } from './think-button.ts';
 
 /**
- * 思考正文的翻译，只由卡片标题右侧那个按钮触发。
+ * 思考正文的翻译，只由卡片标题右侧那个按钮触发；按钮只在卡片展开时存在。
  *
  * 目标只取思考卡里的正文容器，翻译单位是 markdown 渲染出来的块级元素；混合块
  * （列表项文字 + 子列表 / 代码块）拆成行内片段，嵌套的块级子节点留在原位；
@@ -159,8 +159,6 @@ interface CardState {
   state: ThinkButtonState;
   /** 本次展开是否已经做过「全部命中缓存就直接显示」的判断。 */
   expandedHandled: boolean;
-  /** 折叠状态下点了按钮：等正文挂进 DOM 后开始翻译。 */
-  pendingActivate: boolean;
 }
 
 class ThinkTranslateController {
@@ -213,7 +211,6 @@ class ThinkTranslateController {
       if (state !== undefined) {
         state.button = null;
         state.state = 'idle';
-        state.pendingActivate = false;
         state.expandedHandled = false;
       }
       NonDestructiveTranslationMount.restore(card);
@@ -244,7 +241,7 @@ class ThinkTranslateController {
   private stateFor(card: HTMLElement): CardState {
     let state = this.states.get(card);
     if (state === undefined) {
-      state = { button: null, state: 'idle', expandedHandled: false, pendingActivate: false };
+      state = { button: null, state: 'idle', expandedHandled: false };
       this.states.set(card, state);
     }
     return state;
@@ -254,27 +251,22 @@ class ThinkTranslateController {
     if (!card.isConnected) return;
     const state = this.stateFor(card);
     if (!this.usable()) {
-      this.removeButton(card, state, true);
+      this.discardCard(card, state);
       return;
     }
 
     const expanded = card.querySelector(EXPANDED_SELECTOR) !== null;
-    if (!expanded) state.expandedHandled = false;
-
-    this.ensureButton(card, state);
+    if (expanded) this.ensureButton(card, state);
+    else {
+      this.removeButton(state);
+      state.expandedHandled = false;
+    }
 
     if (state.state !== 'working') {
       state.state = this.isShowingTranslation(card) ? 'translated' : 'idle';
     }
     state.button?.setState(state.state);
     this.updateDisabled(card, state);
-
-    if (state.pendingActivate) {
-      if (card.dataset.state === 'running') return;
-      state.pendingActivate = false;
-      this.translateCard(card, state);
-      return;
-    }
 
     if (!expanded || state.expandedHandled || state.state === 'working') return;
     state.expandedHandled = true;
@@ -301,12 +293,18 @@ class ThinkTranslateController {
     button.setState(state.state);
   }
 
-  private removeButton(card: HTMLElement, state: CardState, restore: boolean): void {
+  /** 折叠或停用时撤掉按钮，卡片的翻译状态不变。 */
+  private removeButton(state: CardState): void {
     state.button?.element.remove();
     state.button = null;
+  }
+
+  /** 插件停用：撤掉按钮并还原这张卡片上的全部译文。 */
+  private discardCard(card: HTMLElement, state: CardState): void {
+    this.removeButton(state);
     state.state = 'idle';
-    state.pendingActivate = false;
-    if (restore) NonDestructiveTranslationMount.restore(card);
+    state.expandedHandled = false;
+    NonDestructiveTranslationMount.restore(card);
   }
 
   /** 卡片当前显示的是译文（至少有一个译文块可见）。 */
@@ -336,20 +334,11 @@ class ThinkTranslateController {
     state.button?.setState(state.state);
   }
 
-  /** 按钮被点击。 */
+  /** 按钮被点击；按钮只在展开的卡片上存在。 */
   private activate(card: HTMLElement): void {
     const state = this.stateFor(card);
     if (!this.usable() || state.state === 'working') return;
     if (card.dataset.state === 'running') return;
-
-    if (card.querySelector(EXPANDED_SELECTOR) === null) {
-      // 先展开：内核渲染下正文此时才挂进 DOM，等下一次同步接着翻译。
-      state.pendingActivate = true;
-      const row = card.querySelector<HTMLElement>('[data-disclosure-row]') ?? card;
-      row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      this.syncCard(card);
-      return;
-    }
 
     if (state.state === 'translated') {
       NonDestructiveTranslationMount.toggleGroup(card, true);

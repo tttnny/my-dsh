@@ -1,5 +1,5 @@
-// jsdom 回归：思考链改成按钮触发——摘要不翻、按钮插入位置、三态切换、
-// running 置灰、折叠点击自动展开、缓存规则、失败回到未翻译、开关撤按钮并还原。
+// jsdom 回归：思考链改成按钮触发——摘要不翻、按钮只在展开时插入、三态切换、
+// running 置灰、缓存规则、失败回到未翻译、开关撤按钮并还原。
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
@@ -118,14 +118,14 @@ api.chatTranslateObserver.setThinkConfigured(true);
 // 工具标题那条路径要等视口防抖（400ms）加批次刷新（50ms），这里一次等够。
 await wait(1200);
 
-// 1. 按钮注入
-check('每张思考卡都插入了按钮', $$('.dsh-tidy-think-button').length === 4);
-const historicRow = $('#historic .lcKema_row');
+// 1. 按钮注入：只给展开的卡片
+check('展开的思考卡各有一个按钮', $$('.dsh-tidy-think-button').length === 2);
+check('折叠的思考卡不插按钮', buttonOf('#historic') === null && buttonOf('#smooth') === null);
+const openRow = $('#open .lcKema_row');
 check(
-  '按钮插在 Think 标题之后、摘要之前',
-  historicRow.children[1]?.className.includes('title') &&
-    historicRow.children[2]?.className.includes('think-button') &&
-    historicRow.children[3]?.className.includes('separator')
+  '按钮插在 Think 标题之后',
+  openRow.children[0]?.className.includes('title') &&
+    openRow.children[1]?.className.includes('think-button')
 );
 check('未点击前一律不翻译', mountedBlocks('#open') === 0 && mountedBlocks('#smooth') === 0 && thinkCalls === 0);
 check('running 卡片的按钮置灰', buttonOf('#running')?.disabled === true);
@@ -227,7 +227,7 @@ check('失败后按钮回到未翻译', buttonState('#fail') === 'idle');
 check('失败时不挂译文', mountedBlocks('#fail') === 0);
 failText = null;
 
-// 11. 折叠时点击：先自动展开，再翻译
+// 11. 折叠的卡片没有按钮；展开后才插入，点它才翻译
 const historicRowElement = $('#historic .lcKema_row');
 historicRowElement.addEventListener('click', () => {
   if (historicRowElement.hasAttribute('data-open')) return;
@@ -237,12 +237,21 @@ historicRowElement.addEventListener('click', () => {
   body.innerHTML = '<p>Historic body paragraph.</p>';
   $('#historic').appendChild(body);
 });
-check('折叠卡片也有按钮', buttonOf('#historic') !== null);
+check('折叠的卡片没有按钮', buttonOf('#historic') === null);
 check('折叠时正文尚未渲染', $('#historic .lcKema_thinkBody') === null);
+click(historicRowElement);
+await wait(500);
+check('展开后插入按钮', buttonOf('#historic') !== null);
+check(
+  '展开后按钮排在 Think 标题之后、摘要之前',
+  historicRowElement.children[1]?.className.includes('title') &&
+    historicRowElement.children[2]?.className.includes('think-button') &&
+    historicRowElement.children[3]?.className.includes('separator')
+);
+check('展开本身不翻译未命中的正文', mountedBlocks('#historic') === 0);
 click(buttonOf('#historic'));
-await wait(900);
-check('折叠点击先自动展开', $('#historic [data-open]') !== null);
-check('展开后完成翻译', mountedBlocks('#historic') === 1);
+await wait(700);
+check('点按钮完成翻译', mountedBlocks('#historic') === 1);
 check('翻译完成后按钮高亮', buttonState('#historic') === 'translated');
 
 // 12. 关闭开关：撤掉按钮并还原
@@ -259,7 +268,8 @@ await wait(300);
 check('AI 未配置时不注入按钮', $$('.dsh-tidy-think-button').length === 0);
 api.chatTranslateObserver.setThinkConfigured(true);
 await wait(500);
-check('配置恢复后按钮回来', $$('.dsh-tidy-think-button').length >= 7);
+check('配置恢复后按钮回来（只给展开的卡片）', $$('.dsh-tidy-think-button').length === 6);
+check('折叠卡片恢复后仍无按钮', buttonOf('#smooth') === null && buttonOf('#historic') !== null);
 
 // 14. 多单位：一次点击分成多次请求，前一批先挂载
 let bulkInner = '';
