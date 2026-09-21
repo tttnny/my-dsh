@@ -285,7 +285,10 @@ export function apply(ctx: any): void {
 
     // 输入框下方那一行的「A6api」按钮:点击贴按钮上沿向上弹出当前会话 A6api 模型的 MerchantCard 浮层。
     // order -1 让按钮排在官方 StatsPills(order 0)左侧;会话身份由该 slot 的会话级标准属性 sessionId 提供。
-    // getter 在 apply 闭包创建一次,引用稳定,避免 entry 重渲染触发组件 effect 反复重订阅
+    // getter 在 apply 闭包创建一次,引用稳定,避免 entry 重渲染触发组件 effect 反复重订阅。
+    // 注意:宿主 ui-conversation 对该 slot 的渲染门禁原本排除了 hero 形态,新建会话里不出现;
+    // 现在能在新建会话出现,靠的是本地补丁 patches/patch-dsh-client-ui-conversation-hero-dock
+    // (vendor 产物改动,不随本插件发布;缺补丁时本注册在 hero 下静默不渲染,无报错)。
     const getModelDirectories = () =>
       ctx && typeof ctx.get === 'function' ? ctx.get('modelDirectories') : undefined;
     slots.inject('conversation.composer.dock', () => {
