@@ -6,15 +6,9 @@
  * 2. Typing/streaming debounce (default 400ms) to avoid translating partial streaming sentences.
  * 3. Batch queuing to group multiple visible elements into efficient batch requests.
  *
- * 扣留行（{@link observeHeld}）复用同一条防抖与批次，只跳过可见性判定：
- * 行此刻是隐藏的，等不到 IntersectionObserver 回调。注册时再兜一道：
- * 任何落在被挂起条目（`data-dsh-reveal-hold`）里的元素同样直接进批次——
- * 整条 `display: none` 的条目永远不 intersecting，包括那些已经过了扣留队列、
- * 正排在逐行放行队伍里的行。
  */
 
 import { NonDestructiveTranslationMount } from './mount.ts';
-import { REVEAL_HOLD_ATTRIBUTE } from './hold.ts';
 
 export interface ViewportObserverOptions {
   rootMargin?: string;
@@ -81,22 +75,13 @@ export class StreamDebounceViewportObserver {
    * If streaming updates characterData repeatedly within debounceMs, the timer resets.
    */
   observeWithDebounce(element: HTMLElement, text: string, immediate = false): void {
-    this.armDebounce(element, text, immediate, false);
-  }
-
-  /**
-   * 扣留行的取文本路径：保留同一套流式防抖，跳过可见性判定——行此刻是
-   * 隐藏的（永远不进入视口），放行由扣留控制器负责。
-   */
-  observeHeld(element: HTMLElement, text: string): void {
-    this.armDebounce(element, text, false, true);
+    this.armDebounce(element, text, immediate);
   }
 
   private armDebounce(
     element: HTMLElement,
     text: string,
-    immediate: boolean,
-    skipViewport: boolean
+    immediate: boolean
   ): void {
     if (!element || !text) return;
 
@@ -108,7 +93,7 @@ export class StreamDebounceViewportObserver {
     }
 
     if (immediate || this.options.debounceMs <= 0) {
-      this.register(element, text, skipViewport);
+      this.register(element, text);
       return;
     }
 
@@ -121,24 +106,19 @@ export class StreamDebounceViewportObserver {
         // Read latest text content after streaming settles. 已挂载的行必须
         // 排除我们自己的译文与原文容器，否则读到的会是两者的拼接。
         const latestText = NonDestructiveTranslationMount.extractVisibleText(element) || text;
-        this.register(element, latestText, skipViewport);
+        this.register(element, latestText);
       }
     }, this.options.debounceMs);
 
     this.streamingTimers.set(element, timer);
   }
 
-  private register(element: HTMLElement, text: string, skipViewport: boolean): void {
+  private register(element: HTMLElement, text: string): void {
     if (!element.isConnected) return;
 
-    // 扣留行、不支持 IntersectionObserver 的环境，以及任何落在被挂起条目里的
-    // 元素都直接进批次：被扣留的条目整条 `display: none`，几何上永远不会
-    // intersecting，等观察器回调就是永远等不到。
-    if (
-      skipViewport
-      || !this.intersectionObserver
-      || element.closest(`[${REVEAL_HOLD_ATTRIBUTE}]`) !== null
-    ) {
+    // No IntersectionObserver in this environment: no visibility callback can
+    // ever fire, so queue the element straight away.
+    if (!this.intersectionObserver) {
       this.enqueueBatch(element, text);
       return;
     }

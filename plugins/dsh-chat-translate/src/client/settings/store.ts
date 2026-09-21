@@ -160,12 +160,6 @@ class SettingsStore {
       chatTranslateObserver.setThinkEnabled(this.state.enabled && this.state.thinkEnabled);
       chatTranslateObserver.setThinkConfigured(this.state.aiEnabled && this.state.aiConfigured);
     } catch {}
-    // 工具标题扣留以「有译文可等」为前提：两条通道都关时不隐藏任何行。
-    try {
-      chatTranslateObserver.setChannelsAvailable(
-        (this.state.aiEnabled && this.state.aiConfigured) || this.state.bingEnabled
-      );
-    } catch {}
     this.notify();
   }
 

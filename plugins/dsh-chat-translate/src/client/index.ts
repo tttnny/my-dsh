@@ -47,6 +47,5 @@ export { setupSettingsUi } from './settings/ui.tsx';
 export { NonDestructiveTranslationMount } from './translate/mount.ts';
 export { StreamDebounceViewportObserver } from './translate/viewport-observer.ts';
 export { clientCache } from './translate/client-cache.ts';
-export { rowHold } from './translate/hold.ts';
 export { lazyQueue } from './translate/lazy.ts';
 export { settingsStore } from './settings/store.ts';
