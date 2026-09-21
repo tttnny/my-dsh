@@ -17,10 +17,15 @@
   </thead>
   <tbody>
     <tr>
-      <td><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
+      <td rowspan="2"><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
       <td><b>聊天翻译</b><br>· 工具调用标题自动译中（仅当前会话、回答正文不翻）；思考卡折叠摘要永不翻译<br>· <b>思考链翻译按钮</b>（默认显示，仅 AI 通道且要求 AI 已配置）：只给展开的思考卡在「Think」右侧插小按钮，点它才翻译，三态（描边「译」字 / 圈内旋转 / 实心高亮），再点整条切换；折叠的卡片没有按钮，思考流式中置灰<br>· 按 markdown 块级元素切分并打包（客户端 2048 估算 token、宿主 4096 输入 / 8192 输出 token），代码块原样保留，混合块只翻行内文字；整条命中缓存则展开即显示中文<br>· 请求走独立串行队列与独立超时（默认 600s）、独立缓存池（各 300 条）<br>· OpenAI 兼容 AI 通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）+ 免 Key Bing 兜底双通道<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
+    </tr>
+    <tr>
+      <td><a href="./plugins/dsh-turn-fold"><code>@lynn123411/dsh-turn-fold</code></a></td>
+      <td><b>会话折叠</b><br>· 每个<b>已完成</b>回合的 Agent activity（思考 / 工具调用 / 上下文注入）收进一行可展开折叠栏，最终答复独立可见；出错、被中断、收尾后又有新活动的回合整段保持可见<br>· 折叠栏六项指标（耗时 / 首字 / token / tok/s / 缓存命中 / 已折叠步数），运行中实时、回合结束后切官方权威值；齿轮弹窗逐项勾选，token 与官方统计同口径（含隐藏计费 attempt）<br>· 流式中连续工具与思考按真实交错顺序合成子折叠组，可见助手正文是硬边界<br>· shadow 官方「对话显示」设置行，Normal / Compact / Turn-Fold 三档：选 Turn-Fold 由本插件接管并同时把官方 <code>transcriptView</code> 置为 <code>normal</code> 以避免双重折叠<br>· 前导图标默认内置动态扑克牌（运行中花色循环 / 收起牌堆 / 展开扇形），可切回官方 chevron；数据源 <code>icons/default.json</code><br>· <b>零侵入</b>：只注册官方 <code>conversation.chat.node</code> 槽位，不改 DSH 源码、不需要 Harmony、不依赖编译产物补丁；同位被占自动让位</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-turn-fold</code></td>
     </tr>
     <tr>
       <td><b>🗂️ 工作区管理</b><br><i>侧栏信息架构与会话资产，含写语义</i></td>

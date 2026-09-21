@@ -1,0 +1,69 @@
+{
+  "name": "@lynn123411/dsh-turn-fold",
+  "version": "2.0.0",
+  "description": "DSH 会话折叠：把已完成回合的 agent activity（思考 / 工具调用 / 上下文注入）收进一行可展开的折叠栏，只留最终答复；折叠栏带实时指标（耗时 / 首字 / token / tok/s / 缓存命中），前导图标可选内置动态扑克牌或官方 chevron。零侵入——只用官方 conversation.chat.node 槽位，不改 DSH 源码。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "lib/",
+    "icons/",
+    "assets/",
+    "scripts/",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tttnny/my-dsh.git",
+    "directory": "plugins/dsh-turn-fold"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "fold",
+    "collapse",
+    "turn",
+    "tool-call"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test --test-isolation=none \"tests/*.test.mjs\"",
+    "icons:check": "node scripts/sync-icons.mjs",
+    "sync:icons": "node scripts/sync-icons.mjs --inject",
+    "check": "node --check lib/client.js && node --check lib/index.js && node scripts/sync-icons.mjs && node --test --test-isolation=none \"tests/*.test.mjs\""
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "engines": {
+    "dsh": "0.1.6-alpha.2",
+    "node": "^22.19 || >=24"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
