@@ -121,9 +121,7 @@ window.__ModuleLoader__.load({
 				segmentSearchSuffix: "次",
 				segmentOthers: "执行了",
 				segmentOthersSuffix: "项操作",
-				// 回合折叠栏字段设置弹窗
-				fieldSettings: "回合折叠栏字段",
-				fieldSettingsHint: "选择要在回合折叠栏中显示的字段",
+				// 回合折叠栏字段（设置卡片里逐项勾选）
 				fieldDuration: "耗时",
 				fieldDurationDesc: "回合总时长",
 				fieldTtft: "首字",
@@ -136,9 +134,11 @@ window.__ModuleLoader__.load({
 				fieldCacheHitDesc: "缓存命中百分比",
 				fieldFolded: "已折叠步数",
 				fieldFoldedDesc: "回合折叠栏收纳的步骤数（运行中显示待折叠）",
-				fieldSettingsDone: "完成",
-				// 文件链接复制 Toast
-				fileCopiedToast: "已复制绝对路径",
+				// 阅读体验共享页：本插件卡片（tab 名「会话折叠」）
+				readingPageNav: "阅读体验",
+				cardTitle: "会话折叠",
+				cardFieldsLabel: "回合折叠栏字段",
+				cardFieldsDesc: "选择回合折叠栏标题上显示的指标，改动即时生效并记住",
 				// 注册降级 Toast（一次性，页面加载内只提示一次）。措辞中性：降级原因
 				// 不止"与其他插件冲突"——还有旧版 DSH 未声明 slot 的版本缺口、宿主注册
 				// 抛错等，一律不指涉冲突方。
@@ -188,9 +188,7 @@ window.__ModuleLoader__.load({
 				segmentSearchSuffix: " times",
 				segmentOthers: "Executed ",
 				segmentOthersSuffix: " operations",
-				// Turn fold bar field settings popup
-				fieldSettings: "Turn fold bar fields",
-				fieldSettingsHint: "Choose which fields to show on the turn fold bar",
+				// Turn fold bar fields (toggled in the settings card)
 				fieldDuration: "Duration",
 				fieldDurationDesc: "Turn elapsed time",
 				fieldTtft: "TTFT",
@@ -203,9 +201,11 @@ window.__ModuleLoader__.load({
 				fieldCacheHitDesc: "Cache hit percentage",
 				fieldFolded: "Folded steps",
 				fieldFoldedDesc: "Steps folded into the turn bar (pending while running)",
-				fieldSettingsDone: "Done",
-				// File link copy toast
-				fileCopiedToast: "Absolute path copied",
+				// Shared reading-settings page: this plugin's card (tab 「会话折叠」)
+				readingPageNav: "Reading",
+				cardTitle: "Turn folding",
+				cardFieldsLabel: "Turn fold bar fields",
+				cardFieldsDesc: "Choose which metrics appear on the turn fold bar title; changes apply at once and are remembered",
 				// Slot degradation toast (one-shot per page load). Neutral wording: the cause
 				// is not necessarily a plugin conflict — a legacy DSH build without the slot
 				// is a version gap, so never blame another plugin.
@@ -227,6 +227,9 @@ window.__ModuleLoader__.load({
 				settingsTranscriptTurnFoldTip: "Plugin folding: take over all folds and show metrics"
 			}
 		};
+		/** 本插件在 locale 服务里注册的命名空间（共享页壳按它给卡片发 t，
+		 *  卡片 tab 标题也走它取，随界面语言即时重取）。 */
+		var CARD_LOCALE_NS = "dshTurnFold";
 		/** 取当前语言下的文案；缺失键回退英文，再缺失返回键名本身。 */
 		function _T(key) {
 			var dict = TEXTS[currentLocale()] || TEXTS.en;
@@ -836,6 +839,10 @@ window.__ModuleLoader__.load({
 
 		// ---- React ----
 		var react = require("react");
+		// 共享页壳副本里 esbuild 生成的 interop 名（见下方 shared reading settings page
+		// shell 区段）：区段本身逐字节等于 dsh-chat-translate 的编译产物，故这个别名
+		// 必须留在区段外，区段内才不会有本插件特有的行。
+		var import_react = react;
 		var useMemo = react.useMemo;
 		var useSyncExternalStore = react.useSyncExternalStore;
 
@@ -930,29 +937,26 @@ window.__ModuleLoader__.load({
 				   用淡入+微位移入场动画避免"瞬间出现"（.22s ease-out） */
 				"@keyframes dstf-member-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}",
 				".dstf-member-in{animation:dstf-member-in .22s ease-out both}",
+				/* 层级缩进：只作用于**步骤折体内部**（depth 2），形态照抄官方
+				   dsh-client-ui-tool 的 _subCalls（margin-left:22px + padding-left:8px +
+				   border-left:0.5px）。
+				   深度由渲染层显式挂在 data-dstf-depth 上，不靠 DOM 结构推断——步骤段的
+				   叶子既可能是折体的直接子元素，也可能是 .dstf-member-in（回合折体的
+				   兄弟节点）的子元素，纯结构选择器覆盖不全。
+				   depth 1（回合折体 / 回合成员容器）**不缩进**：回合折叠栏与步骤折叠栏
+				   同列对齐，层级感只由步骤折叠栏内部内容提供。 */
+				"[data-dstf-depth=\"2\"]{margin-left:22px;padding-left:8px;border-left:0.5px solid var(--dsw-alias-border-l2,#e5e7eb)}",
 				/* 官方 DisclosureRow 折叠栏微调：标题 400、可省略号（回合折叠栏指标文案可能较长）、chevron 用 label-secondary */
 				".dstf-header-title{font-weight:400;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
 				/* 回合折叠栏标题占满行宽，指标与"第x轮"两端对齐（右对齐轮次） */
 				".dstf-group-root[data-dstf-turn] .dstf-header-title{flex:1 1 auto}",
 				".dstf-header-flex{display:flex;align-items:center;justify-content:space-between;width:100%;min-width:0;gap:12px}",
-				/* 指标容器改为 inline-flex：齿轮图标与指标文字按 flex 交叉轴垂直居中
-				   （原先是 inline 布局，齿轮按文本基线对齐导致纵向偏上） */
+				/* 指标容器用 inline-flex：指标文字与右侧元素按 flex 交叉轴垂直居中 */
 				".dstf-header-flex-metrics{min-width:0;display:inline-flex;align-items:center}",
 				".dstf-header-round{flex:none;white-space:nowrap}",
 				/* 组内有执行失败命令时标题标红（与官方错误色 token 一致） */
 				/* 失败提示：仅 "——" 之后的部分标红（整标题不再整体标红） */
 				".dstf-header-failure{color:var(--dsw-alias-state-error-primary,#ef4444)}",
-				/* 编辑行数变更 [ +N -M ]：悬停括号范围时 +N 变绿、-N 变红 */
-				".dstf-diff{transition:color .15s ease}",
-				".dstf-diff:hover .dstf-diff-add{color:var(--dsw-alias-state-success-primary,#16a34a)}",
-				".dstf-diff:hover .dstf-diff-del{color:var(--dsw-alias-state-error-primary,#ef4444)}",
-				/* 文件名链接：悬停变 DeepSeek 官方蓝色 #4D6BFE（[ +12 -3 ] 同款变色逻辑），
-				   点击复制绝对路径并弹官方 Toast 提示。
-				   !important：DisclosureRow 官方 title 样式的 color 优先级更高，
-				   不加 !important 时 hover 变色会被覆盖。不可用 CSS 变量
-				   --dsw-alias-brand-primary（暗色主题下解析为白色）。 */
-				".dstf-file-link{cursor:pointer;transition:color .15s ease,text-decoration-color .15s ease;text-decoration-line:underline;text-decoration-style:solid;text-decoration-color:transparent;text-underline-offset:3px}",
-				".dstf-file-link:hover{color:#4D6BFE!important;text-decoration-color:#fff!important}",
 				".dstf-header-chevron{color:var(--dsw-alias-label-secondary,#9ca3af)}",
 				/* 步骤折叠栏扑克牌图标：前导区隐藏（内建 chevron 一并消失），图标并入标题；
 				   同一套牌张元素，开合时按 data-dstf-open 改写 transform，逐张牌形变过渡。
@@ -1047,57 +1051,42 @@ window.__ModuleLoader__.load({
 				   （分隔线→正文应为本插件设计的 8px；展开回合内 上一成员→正文 = 官方 16px gap） */
 				"[data-dstf-turn-folded]>*>*>*>:first-child{margin-top:0!important}",
 				"[data-dstf-turn-folded]>*>*>*>:last-child{margin-bottom:0!important}",
-				/* 回合折叠栏字段设置齿轮图标：悬停向右旋转（90° 半圈，再松开回位） */
-				".dstf-gear-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:16px;height:16px;margin-left:2px;cursor:pointer;color:var(--dsw-alias-label-tertiary,#9ca3af);border-radius:4px;transition:color .15s ease}",
-				".dstf-gear-icon:hover{color:var(--dsw-alias-label-primary,#1f2328)}",
-				".dstf-gear-icon svg{transition:transform .45s cubic-bezier(.22,1,.36,1)}",
-				".dstf-gear-icon:hover svg{transform:rotate(90deg)}",
-				"@media (prefers-reduced-motion:reduce){.dstf-gear-icon svg{transition:none!important}}",
-				/* 字段设置弹窗：半透明遮罩 + 居中卡片，checkbox 逐字段开关 */
-				".dstf-gear-overlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.32);animation:dstf-gear-fade .15s ease-out}",
-				".dstf-gear-popup{background:var(--dsw-alias-bg-layer-2,#ffffff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:16px 18px;min-width:320px;max-width:400px;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-primary,#1f2328)}",
-				".dstf-gear-popup-title{font-weight:600;font-size:14px;margin-bottom:4px}",
-				".dstf-gear-popup-hint{font-size:12px;color:var(--dsw-alias-label-tertiary,#9ca3af);margin-bottom:10px}",
-				".dstf-gear-popup-fields{display:flex;flex-direction:column;gap:2px}",
-				".dstf-gear-popup-field{display:flex;align-items:center;gap:8px;padding:4px 2px;cursor:pointer;border-radius:6px;color:var(--dsw-alias-label-primary,#1f2328)}",
-				".dstf-gear-popup-field:hover{background:var(--dsw-alias-bg-layer-3,#f3f4f6)}",
-				".dstf-gear-popup-field input[type=checkbox]{margin:0;flex:none;accent-color:var(--dsw-alias-brand-primary,#4f6ef7);cursor:pointer}",
-				".dstf-gear-popup-field label{flex:1;cursor:pointer;user-select:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-				".dstf-gear-popup-field-desc{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary,#9ca3af)}",
-				".dstf-gear-popup-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}",
-				".dstf-gear-popup-btn{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#4f6ef7));color:var(--dsw-alias-label-primary-foreground,#fff);border:none;border-radius:14px;padding:4px 14px;font-size:12px;line-height:18px;cursor:pointer}",
-				".dstf-gear-popup-btn:hover{background:var(--dsw-alias-button-primary-hover,var(--dsw-alias-brand-primary,#4f6ef7))}",
-				/* 折叠图标选择器：分隔线 + 标签 + 两行选项（每行预览图标 + 文字） */
-				".dstf-gear-divider{height:1px;background:var(--dsw-alias-border-l2,#e5e7eb);margin:10px 0 8px}",
-				".dstf-gear-icon-selector{margin-bottom:2px}",
-				".dstf-gear-icon-selector-label{font-size:12px;font-weight:600;margin-bottom:6px;color:var(--dsw-alias-label-secondary,#6b7280)}",
-				".dstf-gear-icon-option{display:flex;align-items:center;gap:10px;padding:6px 8px;cursor:pointer;border-radius:8px;border:1.5px solid transparent;transition:border-color .15s ease,background .15s ease;margin-bottom:4px}",
-				".dstf-gear-icon-option:hover{background:var(--dsw-alias-bg-layer-3,#f3f4f6)}",
-				".dstf-gear-icon-option[data-selected]{border-color:var(--dsw-alias-brand-primary,#4f6ef7);background:var(--dsw-alias-bg-layer-3,#f3f4f6)}",
-				/* 选项文字在左、预览图标组在右 */
-				".dstf-gear-icon-option-text{flex:1;min-width:0}",
-				".dstf-gear-icon-option-title{font-size:13px;font-weight:500;line-height:1.3;color:var(--dsw-alias-label-primary,#1f2328)}",
-				".dstf-gear-icon-option-desc{font-size:11px;color:var(--dsw-alias-label-tertiary,#9ca3af)}",
-				/* 预览组：右侧横排一列展示所有存在的图标状态 */
-				".dstf-gear-icon-option-preview{flex:none;display:flex;align-items:center;gap:3px;color:var(--dsw-alias-label-secondary,#9ca3af)}",
-				".dstf-gear-icon-option-preview-item{flex:none;display:flex;align-items:center;justify-content:center;width:22px;height:24px}",
+				/* 设置卡片（阅读体验共享页内）：平铺面板，checkbox 逐字段开关 +
+				   折叠图标选择器。面板本身是 <ul>，卡片是其中的 <li>。 */
+				".dstf-settings-card{display:flex;flex-direction:column;gap:10px;padding:4px 0 8px}",
+				".dstf-settings-card-title{font-size:14px;font-weight:400;line-height:22px;color:var(--dsw-alias-label-primary)}",
+				".dstf-settings-card-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
+				".dstf-card-fields{display:flex;flex-direction:column;gap:2px}",
+				".dstf-card-field{display:flex;align-items:center;gap:8px;padding:4px 2px;cursor:pointer;border-radius:6px;color:var(--dsw-alias-label-primary)}",
+				".dstf-card-field:hover{background:var(--dsw-alias-bg-layer-3,#f3f4f6)}",
+				".dstf-card-field input[type=checkbox]{margin:0;flex:none;accent-color:var(--dsw-alias-brand-primary,#4f6ef7);cursor:pointer}",
+				".dstf-card-field label{flex:1;cursor:pointer;user-select:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+				".dstf-card-field-desc{flex:0 1 auto;min-width:0;font-size:11px;color:var(--dsw-alias-label-tertiary,#9ca3af);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+				".dstf-card-divider{height:.5px;background:var(--dsw-alias-border-l2,#e5e7eb);margin:6px 0 2px}",
+				/* 折叠图标选择器：标签 + 两行选项（每行预览图标 + 文字） */
+				".dstf-card-icon-selector{margin-bottom:2px}",
+				".dstf-card-icon-selector-label{font-size:12px;font-weight:600;margin-bottom:6px;color:var(--dsw-alias-label-secondary,#6b7280)}",
+				".dstf-card-icon-option{display:flex;align-items:center;gap:10px;padding:6px 8px;cursor:pointer;border-radius:8px;border:0.5px solid transparent;transition:border-color .15s ease,background .15s ease;margin-bottom:4px}",
+				".dstf-card-icon-option:hover{background:var(--dsw-alias-bg-layer-3,#f3f4f6)}",
+				".dstf-card-icon-option[data-selected]{border-color:var(--dsw-alias-brand-primary,#4f6ef7);background:var(--dsw-alias-bg-layer-3,#f3f4f6)}",
+				".dstf-card-icon-option-text{flex:1;min-width:0}",
+				".dstf-card-icon-option-title{font-size:13px;font-weight:500;line-height:1.3;color:var(--dsw-alias-label-primary,#1f2328)}",
+				".dstf-card-icon-option-desc{font-size:11px;color:var(--dsw-alias-label-tertiary,#9ca3af)}",
+				/* 预览组：右侧横排展示所有存在的图标状态 */
+				".dstf-card-icon-option-preview{flex:none;display:flex;align-items:center;gap:3px;color:var(--dsw-alias-label-secondary,#9ca3af)}",
+				".dstf-card-icon-option-preview-item{flex:none;display:flex;align-items:center;justify-content:center;width:22px;height:24px}",
 				/* 预览里的扑克牌组件（原生 24px SVG）缩到 20px 适配预览项 */
-				".dstf-gear-icon-option-preview-item svg{width:20px;height:20px}",
-				".dstf-gear-icon-option-preview-item .dstf-poker-icon{width:20px;height:20px}",
-				/* 预览放大气泡：悬浮预览图标时在其上方弹出放大版预览（2x），
-				   底部尖尖指向原预览图。定位用 absolute 锚定预览项。 */
+				".dstf-card-icon-option-preview-item svg{width:20px;height:20px}",
+				".dstf-card-icon-option-preview-item .dstf-poker-icon{width:20px;height:20px}",
+				/* 预览放大气泡：悬浮预览图标时在其上方弹出放大版预览（4x），
+				   定位用 absolute 锚定预览项。 */
 				".dstf-preview-tooltip{position:relative;display:inline-flex}",
-				/* 气泡初始状态：隐藏 + 下移 3px（进场微动效） */
 				".dstf-preview-bubble{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%) translateY(3px);z-index:11000;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .12s ease,transform .12s ease}",
 				".dstf-preview-tooltip:hover .dstf-preview-bubble,.dstf-preview-tooltip:focus-within .dstf-preview-bubble{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}",
-				/* 气泡卡片：圆角 + 阴影，内放放大图标 */
 				".dstf-preview-bubble-body{background:var(--dsw-alias-bg-layer-2,#ffffff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.16);padding:14px;display:flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary,#9ca3af)}",
-				/* 放大图标 4x 显示：气泡内直接 src 元素 80px 矢量放大 */
 				".dstf-preview-bubble-body svg{width:80px;height:80px;display:block}",
 				".dstf-preview-bubble-body .dstf-poker-icon{width:80px;height:80px}",
 				"@media (prefers-reduced-motion:reduce){.dstf-preview-bubble{transition:none!important}}",
-				"@keyframes dstf-gear-fade{from{opacity:0}to{opacity:1}}",
-				"@media (prefers-reduced-motion:reduce){.dstf-gear-overlay{animation:none!important}}",
 				/* 设置 → 对话 → 回合折叠方式 行（shadow 官方 transcript-view 行）*/
 				/* 样式与官方 TranscriptViewRow.module.css 逐像素一致：无描边、18px 胶囊、
 				   平台模块背景、hover 交互高亮 */
@@ -1169,14 +1158,35 @@ window.__ModuleLoader__.load({
 			});
 		}
 
-		// ---- 回合折叠栏字段显隐设置（模块级，全局共享） ----
-		// 齿轮弹窗里逐字段开关，决定回合折叠栏标题显示哪些指标。字段键：
+		// ---- 回合折叠栏字段显隐设置（模块级，全局共享，持久化） ----
+		// 设置页卡片里逐字段开关，决定回合折叠栏标题显示哪些指标。字段键：
 		//   duration / ttft / tokens / tokensPerSecond / cacheHit / folded。
 		// 用版本号驱动重渲染（useSyncExternalStore 订阅）：改动后所有回合折叠栏
-		// 立即按新设置重算文案。
+		// 立即按新设置重算文案。选择写入 localStorage（读失败/坏值一律落回默认）。
 		var FIELD_KEYS = ["duration", "ttft", "tokens", "tokensPerSecond", "cacheHit", "folded"];
+		var FIELD_VISIBILITY_KEY = "dsh-turn-fold:fields";
 		var defaultFieldVisibility = { duration: true, ttft: true, tokens: true, tokensPerSecond: true, cacheHit: true, folded: true };
 		var fieldVisibility = Object.assign({}, defaultFieldVisibility);
+		/** 读取已保存的字段显隐：只接受已知键的布尔值，其余保持默认。 */
+		function loadFieldVisibility() {
+			try {
+				var raw = (typeof window !== "undefined" && window.localStorage && window.localStorage.getItem(FIELD_VISIBILITY_KEY)) || "";
+				if (!raw) return;
+				var parsed = JSON.parse(raw);
+				if (!parsed || typeof parsed !== "object") return;
+				for (var i = 0; i < FIELD_KEYS.length; i++) {
+					var k = FIELD_KEYS[i];
+					if (typeof parsed[k] === "boolean") fieldVisibility[k] = parsed[k];
+				}
+			} catch (e) { /* 坏值/存储不可用：保持默认 */ }
+		}
+		function saveFieldVisibility() {
+			try {
+				if (typeof window !== "undefined" && window.localStorage) {
+					window.localStorage.setItem(FIELD_VISIBILITY_KEY, JSON.stringify(fieldVisibility));
+				}
+			} catch (e) { /* 忽略 */ }
+		}
 		var fieldVisibilityListeners = new Set();
 		var fieldVisibilityVersion = 0;
 		function subscribeFieldVisibility(fn) {
@@ -1194,9 +1204,10 @@ window.__ModuleLoader__.load({
 			if (!fieldVisibility.hasOwnProperty(key)) return;
 			if (fieldVisibility[key] === !!visible) return;
 			fieldVisibility[key] = !!visible;
+			saveFieldVisibility();
 			notifyFieldVisibility();
 		}
-		/** 弹窗中逐字段开关（checkbox 双向绑定用）。 */
+		/** 设置页卡片里逐字段开关（checkbox 双向绑定用）。 */
 		function useFieldVisibility() {
 			useSyncExternalStore(subscribeFieldVisibility, getFieldVisibilityVersion);
 			return fieldVisibility;
@@ -1236,22 +1247,7 @@ window.__ModuleLoader__.load({
 			}
 			return result ? result : metrics;
 		}
-
-		// ---- 字段设置弹窗可见状态（模块级；全局一个弹窗） ----
-		var popupVisible = false;
-		var popupListeners = new Set();
-		function subscribePopup(fn) { popupListeners.add(fn); return function () { popupListeners.delete(fn); }; }
-		function notifyPopup() {
-			var fns = [];
-			popupListeners.forEach(function (fn) { fns.push(fn); });
-			for (var i = 0; i < fns.length; i++) fns[i]();
-		}
-		function setPopupVisible(v) {
-			if (popupVisible === v) return;
-			popupVisible = v;
-			notifyPopup();
-		}
-		function getPopupVisible() { return popupVisible; }
+		loadFieldVisibility();
 
 		// ---- 折叠接管模式（模块级，全局共享） ----
 		// DSH 0.1.2+ 官方自带"回合折叠方式"设置（normal/compact）。插件新增
@@ -1343,10 +1339,12 @@ window.__ModuleLoader__.load({
 			);
 		}
 
-		// ---- 折叠图标样式设置（模块级，全局共享） ----
-		// 齿轮弹窗里下拉选择：poker（动态扑克牌，默认，当前行为）或 default（官方 chevron）。
+		// ---- 折叠图标样式设置（模块级，全局共享，持久化） ----
+		// 设置页卡片里选择：poker（动态扑克牌，默认，当前行为）或 default（官方 chevron）。
 		// 用版本号驱动重渲染：改动后所有步骤/回合折叠栏按新样式重渲染前导图标。
+		// 选择写入 localStorage（读失败/坏值落回 poker）。
 		var FOLD_ICON_STYLES = ["poker", "default"];
+		var FOLD_ICON_KEY = "dsh-turn-fold:icon-style";
 		var foldIconStyle = "poker";
 		var foldIconListeners = new Set();
 		var foldIconVersion = 0;
@@ -1361,10 +1359,17 @@ window.__ModuleLoader__.load({
 			for (var i = 0; i < fns.length; i++) fns[i]();
 		}
 		function getFoldIconVersion() { return foldIconVersion; }
+		function loadFoldIconStyle() {
+			try {
+				var raw = (typeof window !== "undefined" && window.localStorage && window.localStorage.getItem(FOLD_ICON_KEY)) || "";
+				if (FOLD_ICON_STYLES.indexOf(raw) !== -1) foldIconStyle = raw;
+			} catch (e) { /* 忽略 */ }
+		}
 		function setFoldIconStyle(style) {
 			if (FOLD_ICON_STYLES.indexOf(style) === -1) return;
 			if (foldIconStyle === style) return;
 			foldIconStyle = style;
+			try { (typeof window !== "undefined" && window.localStorage) && window.localStorage.setItem(FOLD_ICON_KEY, style); } catch (e) { /* 忽略 */ }
 			notifyFoldIcon();
 		}
 		function getFoldIconStyle() { return foldIconStyle; }
@@ -1373,6 +1378,7 @@ window.__ModuleLoader__.load({
 			useSyncExternalStore(subscribeFoldIcon, getFoldIconVersion);
 			return foldIconStyle;
 		}
+		loadFoldIconStyle();
 
 		// ---- 实时直播时钟（回合运行中，回合折叠栏指标按随机间隔刷新） ----
 		// 运行中回合的 turnTimings 只有 startTime，没有 endTime：耗时秒数需要时钟
@@ -1467,10 +1473,26 @@ window.__ModuleLoader__.load({
 		}
 
 		// ---- 会话快照辅助 ----
+		/** 是否**结构上**是 think 节点（含任意 reasoning 块，不论文本是否为空）。
+		 *  这是**段归属**判据：只要节点带 reasoning 块，它就该被收进步骤折叠栏。
+		 *  不能拿"有没有非空文本"当归属判据——provider 偶发吐出的单个空格 reasoning 块
+		 *  若因此被排除在段外，它会脱离折叠栏、在对话流里留下一行孤立的空思考。 */
 		function hasReasoning(node) {
 			if (!node || node.kind !== "assistant-step") return false;
 			var blocks = node.data && node.data.blocks;
 			return Array.isArray(blocks) && blocks.some(function (b) { return !!b && b.kind === "reasoning"; });
+		}
+		/** 是否含**非空** reasoning 文本——只用于**计数**（"思考了N次"）。
+		 *  官方四处可见性判定（ui-chat 的 blockIsVisible / hasVisibleContent /
+		 *  processSpec / interruptedBlocks）都要求 `text.trim() !== ""`，与 hasText 口径
+		 *  一致：空/纯空白块不算一次思考（真机语料：483 个 reasoning 块里 17 个纯空白，
+		 *  其中 1 个落在可见节点上，会让计数虚增 1）。归属仍走 hasReasoning。 */
+		function hasVisibleReasoning(node) {
+			if (!node || node.kind !== "assistant-step") return false;
+			var blocks = node.data && node.data.blocks;
+			return Array.isArray(blocks) && blocks.some(function (b) {
+				return !!b && b.kind === "reasoning" && typeof b.text === "string" && b.text.trim() !== "";
+			});
 		}
 		/** 是否含实际 text 块（非空文本）——"下一个 text 出现"的判定依据，也是段边界。 */
 		function hasText(node) {
@@ -1659,7 +1681,7 @@ window.__ModuleLoader__.load({
 				var n = nodes.get(keys[m]);
 				if (!n) continue;
 				if (hasText(n)) segHasText = true;
-				if (n.kind === "assistant-step" && isThinkNode(n)) thinkCount++;
+				if (n.kind === "assistant-step" && hasVisibleReasoning(n)) thinkCount++;
 				if (n.kind !== "tool-call") continue;
 				toolCount++;
 				if (n.data && isRunningRoot(n.data.root)) { anyRunning = true; continue; }
@@ -1850,12 +1872,58 @@ window.__ModuleLoader__.load({
 		}
 
 		// ---- 回合性能指标（回合折叠栏文案） ----
-		/** 缓存命中率：固定两位小数（如 "66.67"、"99.99"、"100.00"），比官方
-		 *  仅接近 100% 才提精度的方案更高；无可计费输入返回 null。 */
-		function cacheHitPercent(uncachedInputTokens, cacheReadTokens, cacheWriteTokens) {
-			var denominator = uncachedInputTokens + cacheReadTokens + cacheWriteTokens;
-			if (denominator === 0) return null;
-			return (cacheReadTokens / denominator * 100).toFixed(2);
+		/** 缓存命中率——与官方 formatCacheHitPercent（ui-chat）同款算法：
+		 *  1 位小数、且绝不把部分命中四舍五入成 100%（99.96% 显示 "99.9" 而不是 "100.0"，
+		 *  接近满命中时按需要补足区分精度位数）。无可计费输入返回 null。 */
+		function roundedPercentUnits(cacheReadTokens, denominator, decimalPlaces) {
+			var scale = (decimalPlaces === 0 ? 1 : 10) * 100;
+			var doubledScale = scale * 2;
+			var denominatorQuotient = Math.floor(denominator / doubledScale);
+			var denominatorRemainder = denominator % doubledScale;
+			var lower = 0;
+			var upper = scale;
+			while (lower < upper) {
+				var candidate = Math.floor((lower + upper + 1) / 2);
+				var factor = candidate * 2 - 1;
+				if (cacheReadTokens >= factor * denominatorQuotient + Math.ceil(factor * denominatorRemainder / doubledScale)) lower = candidate;
+				else upper = candidate - 1;
+			}
+			return lower;
+		}
+		/** 命中单位数 → 显示文本：整十数去掉小数尾巴（"40" 而非 "40.0"）。 */
+		function displayPercentUnits(units, decimalPlaces) {
+			if (decimalPlaces === 0) return String(units);
+			var whole = Math.floor(units / 10);
+			var tenths = units % 10;
+			return tenths === 0 ? String(whole) : whole + "." + tenths;
+		}
+		/** 缓存命中率，decimalPlaces 默认 0；调用方按官方口径传 1。 */
+		function formatCacheHitPercent(cacheReadTokens, promptTokens, decimalPlaces) {
+			var places = decimalPlaces === undefined ? 0 : decimalPlaces;
+			if (promptTokens === 0) return null;
+			var missedInputTokens = promptTokens - cacheReadTokens;
+			if (missedInputTokens === 0) return "100";
+			var roundedUnits = roundedPercentUnits(cacheReadTokens, promptTokens, places);
+			if (roundedUnits < (places === 0 ? 100 : 1000)) return displayPercentUnits(roundedUnits, places);
+			// 会四舍五入到 100 的部分命中：加精度直到能区分出"没满"。
+			var distinguishingPlaces = 1;
+			var scaledDoubleGap = missedInputTokens * 200;
+			var denominatorTens = Math.floor(promptTokens / 10);
+			while (scaledDoubleGap <= denominatorTens) {
+				scaledDoubleGap *= 10;
+				distinguishingPlaces += 1;
+			}
+			var denominatorOnes = promptTokens % 10;
+			var roundedLoss = 5;
+			for (var loss = 1; loss < 5; loss += 1) {
+				var factor = loss * 2 + 1;
+				var threshold = factor * denominatorTens + Math.floor(factor * denominatorOnes / 10);
+				if (scaledDoubleGap <= threshold) {
+					roundedLoss = loss;
+					break;
+				}
+			}
+			return "99." + new Array(distinguishingPlaces).join("9") + (10 - roundedLoss);
 		}
 		/** 累加一个 assistant-step 节点的 usage 与实时 TTFT 证据（acc 为可变累加器）。
 		 *  visible 与 hidden 节点共用同一入口：隐藏纯工具步骤的 usage 同样是真实计费。
@@ -1865,21 +1933,39 @@ window.__ModuleLoader__.load({
 			if (acc.counted.has(node)) return;
 			acc.counted.add(node);
 			var d = node.data;
+			// 输出 token：官方 usageOutputTokens 的口径（number && isFinite && >= 0），
+			// 非负校验不可省——负值会让 Σoutput 偏小、tok/s 失真。
+			var stepOutput = null;
 			if (d.usage) {
 				var u = d.usage;
 				if (typeof u.inputTokens === "number" && isFinite(u.inputTokens)) acc.input += u.inputTokens;
-				if (typeof u.outputTokens === "number" && isFinite(u.outputTokens)) acc.output += u.outputTokens;
+				if (typeof u.outputTokens === "number" && isFinite(u.outputTokens) && u.outputTokens >= 0) {
+					acc.output += u.outputTokens;
+					stepOutput = u.outputTokens;
+				}
 				if (typeof u.cacheReadTokens === "number" && isFinite(u.cacheReadTokens)) acc.cacheRead += u.cacheReadTokens;
 				if (typeof u.cacheWriteTokens === "number" && isFinite(u.cacheWriteTokens)) acc.cacheWrite += u.cacheWriteTokens;
 			}
 			var fn = d.finalNode;
 			var stepTiming = fn && fn.timing;
-			if (stepTiming && typeof stepTiming.stepStartTime === "number" && typeof stepTiming.firstTokenTime === "number") {
+			if (stepTiming) {
 				var stepNum = typeof fn.step === "number" ? fn.step
 					: (typeof d.step === "number" ? d.step : (typeof node.step === "number" ? node.step : -1));
-				if (stepNum < acc.liveFirstStep) {
-					acc.liveFirstStep = stepNum;
-					acc.liveTtft = Math.max(0, stepTiming.firstTokenTime - stepTiming.stepStartTime);
+				// TTFT：官方 assistantStepReading 要求 stepStartTime 与 firstTokenTime **都**非 null
+				// （这里用 typeof number 表达同一件事），取 step 号最小者。
+				if (typeof stepTiming.stepStartTime === "number" && typeof stepTiming.firstTokenTime === "number") {
+					if (stepNum < acc.liveFirstStep) {
+						acc.liveFirstStep = stepNum;
+						acc.liveTtft = Math.max(0, stepTiming.firstTokenTime - stepTiming.stepStartTime);
+					}
+				}
+				// decode 口径（官方 deriveTurnMetrics 逐字对齐）：**只要求 firstTokenTime 非 null**，
+				// decodeMs = max(0, completedTime − firstTokenTime)。官方把 decode 与 TTFT 分成两个
+				// 独立判据——stepStartTime 缺失（老版本/异常结算）时仍要计入 decode，否则该步的
+				// output 与 decode 一起被丢掉，tok/s 系统性偏低。tok/s = Σoutput ÷ Σdecode。
+				if (stepOutput !== null && typeof stepTiming.firstTokenTime === "number" && typeof stepTiming.completedTime === "number") {
+					acc.decodeOutput += stepOutput;
+					acc.decodeMs += Math.max(0, stepTiming.completedTime - stepTiming.firstTokenTime);
 				}
 			}
 		}
@@ -1912,7 +1998,7 @@ window.__ModuleLoader__.load({
 			// ——官方在 step settle（assistant/message）后把 timing 写入 finalNode
 			// （{ stepStartTime, firstTokenTime, completedTime }；中断的 step 无 timing），
 			// 取 step 号最小者（第一个请求）的 firstTokenTime - stepStartTime。
-			var acc = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, liveTtft: null, liveFirstStep: Infinity, counted: new Set() };
+			var acc = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, liveTtft: null, liveFirstStep: Infinity, decodeOutput: 0, decodeMs: 0, counted: new Set() };
 			var officialUsage = null;
 			for (var i = 0; i < keys.length; i++) {
 				var n = nodes.get(keys[i]);
@@ -1945,16 +2031,25 @@ window.__ModuleLoader__.load({
 					accumulateAssistantStep(v, acc);
 				}
 			}
-			// 回合未结束（turn-tail 未出现）时用 finalNode.timing 实时值
+			// 回合未结束（turn-tail 未出现）时用 finalNode.timing 实时值。
+			// 官方在 step 1 settle 后才把 timing 写入 finalNode，所以 step 1 settle 之前
+			// 这一项**留空**——不再用浏览器时钟（Date.now() − turn 起始）去近似，那个近似
+			// 量的是"折叠栏第一次渲染"而非首个 token，刷新/切会话/后台节流会把整段已过
+			// 时间当成首字，且首次采样被永久冻结、随后还会跳到一个小得多的真实值。
 			if (ttftMs === undefined && acc.liveTtft !== null) ttftMs = acc.liveTtft;
 			var billedInput = acc.input + acc.cacheRead + acc.cacheWrite;
 			var hasUsage = billedInput > 0 || acc.output > 0;
-			// 运行中（liveNow 存在）且官方 turn-tail 未给出 tok/s 时：
-			// 按"已输出 token / 已耗时"实时估算（耗时 >=1s 且已有输出才显示，避免
-			// 开场瞬间的巨大瞬时速率；回合结束后由 turn-tail 的权威值覆盖）。
-			if (tokensPerSecond === undefined && typeof liveNow === "number" && durationMs !== undefined && durationMs >= 1000 && acc.output > 0) {
-				tokensPerSecond = acc.output / (durationMs / 1000);
+			// 运行中（liveNow 存在）且官方 turn-tail 未给出 tok/s 时，按官方
+			// deriveTurnMetrics 同款口径实时估算：Σ已结算步骤的 output ÷ Σ其 decode 时间
+			// （decodeMs = completedTime − firstTokenTime，已扣掉 TTFT 与步骤间隔）。
+			// 旧实现用"整回合累计输出 ÷ 回合墙上时间"（含 TTFT、工具执行、等待），
+			// 工具越多数字越低、回合结束再跳到官方值——这正是"tok/s 看着不对"的主因。
+			if (tokensPerSecond === undefined && typeof liveNow === "number" && acc.decodeMs > 0 && acc.decodeOutput > 0) {
+				tokensPerSecond = acc.decodeOutput / (acc.decodeMs / 1000);
 			}
+			// 数值合法性：官方值/累加值都必须是有限数字，否则会让 "NaN"/"Infinity" 上屏。
+			if (typeof tokensPerSecond === "number" && !isFinite(tokensPerSecond)) tokensPerSecond = undefined;
+			if (typeof ttftMs === "number" && !isFinite(ttftMs)) ttftMs = undefined;
 			if (durationMs === undefined && !hasUsage && tokensPerSecond === undefined) return null;
 			var metricsResult;
 			if (officialUsage !== null) {
@@ -1968,19 +2063,19 @@ window.__ModuleLoader__.load({
 					outputTokens: officialUsage.outputTokens,
 					tokensPerSecond: tokensPerSecond,
 					cacheHitPercent: typeof officialUsage.cacheReadTokens === "number" && officialPrompt > 0
-						? (officialUsage.cacheReadTokens / officialPrompt * 100).toFixed(2)
-						: (hasUsage && billedInput > 0 ? cacheHitPercent(acc.input, acc.cacheRead, acc.cacheWrite) : undefined)
+						? formatCacheHitPercent(officialUsage.cacheReadTokens, officialPrompt, 1)
+						: (hasUsage && billedInput > 0 ? formatCacheHitPercent(acc.cacheRead, billedInput, 1) : undefined)
 				};
 			} else {
 				metricsResult = {
 					durationMs: durationMs,
 					// 消耗 = 计费输入（uncached + cacheRead + cacheWrite）+ 输出
 					tokens: hasUsage ? (billedInput + acc.output) : undefined,
-					// 输出 token 累计（tok/s 实时估算用）
+					// 输出 token 累计
 					outputTokens: hasUsage ? acc.output : undefined,
 					tokensPerSecond: tokensPerSecond,
-					// 缓存命中率：固定两位小数（如 "66.67"、"99.99"）
-					cacheHitPercent: hasUsage && billedInput > 0 ? cacheHitPercent(acc.input, acc.cacheRead, acc.cacheWrite) : undefined
+					// 缓存命中率：1 位小数 + 防四舍五入到 100%（官方 formatCacheHitPercent 口径）
+					cacheHitPercent: hasUsage && billedInput > 0 ? formatCacheHitPercent(acc.cacheRead, billedInput, 1) : undefined
 				};
 			}
 			// TTFT（官方 turn-tail 值，单回合第一个 step 的 firstTokenTime - stepStartTime）
@@ -1988,21 +2083,7 @@ window.__ModuleLoader__.load({
 			return metricsResult;
 		}
 
-		/** TTFT（首字延迟，毫秒）：回合启动（turnTimings.startTime）到第一个 response
-		 *  （首个 assistant-step 渲染时刻）的近似值，由组件渲染期同步冻结记录。
-		 *  会话快照不提供官方 timing 数据，这是插件的自测近似（误差约一帧渲染延迟）。
-		 *  记录幂等（has 检查），StrictMode 双调用/渲染中断重试均无害。 */
-		var ttftCache = new Map();
-		function recordTtft(sessionId, turn, closed, turnTimings) {
-			if (closed || turn === undefined) return;
-			var key = sessionId + "::" + turn;
-			if (ttftCache.has(key)) return;
-			var timing = turnTimings && typeof turnTimings.get === "function" ? turnTimings.get(turn) : null;
-			if (timing && typeof timing.startTime === "number") {
-				ttftCache.set(key, Math.max(0, Date.now() - timing.startTime));
-			}
-		}
-		/** 会话切换时清理计算缓存与手动状态（保留 ttftCache）。
+		/** 会话切换时清理计算缓存与手动状态。
 		 *
 		 *  清理：
 		 *  - segmentLabelCache：整体清空（key 不含 sessionId；每段一条标题字符串，
@@ -2010,7 +2091,6 @@ window.__ModuleLoader__.load({
 		 *  - liveTokenCache：按 sessionId 前缀清（每回合 1-2 条，无可见差异）；
 		 *  - overrides / turnOverrides（手动展开状态）：清空后回到自动规则
 		 *    （已结束回合默认收起、运行中默认展开）。
-		 *  保留：ttftCache（每回合一个毫秒数字，几百轮也只有几十 KB，不值得清）。
 		 *  由各 Grouped 视图渲染开头调用（幂等：仅 sessionId 变化时执行一次）。
 		 */
 		var trackedSession = null;
@@ -2025,7 +2105,6 @@ window.__ModuleLoader__.load({
 				liveTokenCache.forEach(function (v, k) { if (k.indexOf(prefix) === 0) liveTokenCache.delete(k); });
 			}
 			segmentLabelCache.clear();
-			segmentFilePathsCache.clear();
 			foldSuitMap.clear();
 			overrides.clear();
 			turnOverrides.clear();
@@ -2096,63 +2175,84 @@ window.__ModuleLoader__.load({
 				ttftMs: metrics.ttftMs
 			};
 		}
-		/** 耗时格式化：中英文各自的单位写法；>=1 小时 → "x时x分x秒" / "xh xm xs"。 */
+		/** 补零到两位（官方 pad2）。 */
+		function pad2(n) {
+			return String(n).padStart(2, "0");
+		}
+		/** 耗时格式化——数值格式与官方 formatRunDuration 对齐：>=1 小时带时分秒、
+		 *  >=1 分钟带分秒（秒补零）、否则整秒。zh 单位"时分秒"、en "h m s"（官方模板）。 */
 		function formatTurnDuration(ms) {
-			var total = Math.floor(ms / 1000);
-			if (total >= 3600) {
-				var h = Math.floor(total / 3600);
-				var m = Math.floor((total % 3600) / 60);
-				var s = total % 60;
-				if (currentLocale() === "zh") return h + "时" + m + "分" + s + "秒";
-				return h + "h " + m + "m " + s + "s";
+			var total = Math.floor(Math.max(0, ms) / 1000);
+			var hours = Math.floor(total / 3600);
+			var minutes = Math.floor(total / 60) % 60;
+			var seconds = total % 60;
+			if (currentLocale() === "zh") {
+				if (hours > 0) return hours + "小时" + pad2(minutes) + "分" + pad2(seconds) + "秒";
+				if (minutes > 0) return minutes + "分" + pad2(seconds) + "秒";
+				return seconds + "秒";
 			}
-			if (total >= 60) {
-				var mm = Math.floor(total / 60);
-				var ss = total % 60;
-				if (currentLocale() === "zh") return mm + "分" + ss + "秒";
-				return mm + "m " + ss + "s";
+			if (hours > 0) return hours + "h " + pad2(minutes) + "m " + pad2(seconds) + "s";
+			if (minutes > 0) return minutes + "m " + pad2(seconds) + "s";
+			return seconds + "s";
+		}
+		/** 首字延迟数值——与官方 formatLatencySeconds 对齐：<10 秒一位小数、>=10 秒取整。 */
+		function formatLatencySeconds(ms) {
+			var s = Math.max(0, ms) / 1000;
+			return s < 10 ? String(Math.round(s * 10) / 10) : String(Math.round(s));
+		}
+		/** 整数千分位分组（官方 formatExactTokens 同款，分隔符与官方一致为 ","）。 */
+		function formatExactTokens(value) {
+			var digits = String(value);
+			var groups = [];
+			for (var end = digits.length; end > 0; end -= 3) {
+				groups.unshift(digits.slice(Math.max(0, end - 3), end));
 			}
-			if (currentLocale() === "zh") return total + "秒";
-			return total + "s";
+			return groups.join(",");
 		}
 		/** tok/s：>=10 取整，<10 保留一位小数（与官方一致）。 */
 		function formatTokPerSec(tps) {
 			var v = Math.max(0, tps);
 			return v >= 10 ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
 		}
-		/** 回合折叠栏文案："耗时…，消耗…token，…tok/s，缓存命中…%"；无数据返回空串。 */
+		/** 回合折叠栏文案："耗时… · 首字… · 消耗…token · …tok/s · 缓存命中…%"；无数据返回空串。
+		 *  数值格式（补零 / 取整 / 1 位小数防 100% / 千分位）与官方一致，标签沿用插件的短措辞。 */
 		function turnHeaderLabel(metrics, closed) {
 			if (!metrics) return "";
+			// 数值合法性：NaN/Infinity 一律当作"无此指标"——否则会把 "NaN tok/s" /
+			// "Infinity tok/s" 这类字符串渲染到折叠栏上。computeTurnMetrics 已守卫一次，
+			// 这里再兜一道，保证任何调用路径（含测试/未来新增调用方）都不会漏。
+			var finite = function (v) { return typeof v === "number" && isFinite(v); };
 			var parts = [];
-			if (metrics.durationMs !== undefined) {
-				if (currentLocale() === "zh") parts.push("耗时" + formatTurnDuration(metrics.durationMs));
+			var zh = currentLocale() === "zh";
+			if (finite(metrics.durationMs)) {
+				if (zh) parts.push("耗时" + formatTurnDuration(metrics.durationMs));
 				else parts.push(formatTurnDuration(metrics.durationMs));
 			}
-			if (metrics.ttftMs !== undefined) {
-				// 首字（TTFT 近似）：秒为单位、一位小数（毫秒不直观）
-				var ttftSec = (metrics.ttftMs / 1000).toFixed(1);
-				if (currentLocale() === "zh") parts.push("首字" + ttftSec + "s");
+			if (finite(metrics.ttftMs)) {
+				var ttftSec = formatLatencySeconds(metrics.ttftMs);
+				if (zh) parts.push("首字" + ttftSec + "秒");
 				else parts.push("TTFT " + ttftSec + "s");
 			}
-			if (metrics.tokens !== undefined) {
-				if (currentLocale() === "zh") parts.push("消耗" + metrics.tokens + "token");
-				else parts.push(metrics.tokens + " tokens");
+			if (finite(metrics.tokens)) {
+				if (zh) parts.push("消耗" + formatExactTokens(metrics.tokens) + "token");
+				else parts.push(formatExactTokens(metrics.tokens) + " tokens");
 			}
-			if (metrics.tokensPerSecond !== undefined) {
-				if (currentLocale() === "zh") parts.push(formatTokPerSec(metrics.tokensPerSecond) + "tok/s");
+			if (finite(metrics.tokensPerSecond)) {
+				// 官方模板 `{tps} tok/s`（数值与单位之间有一个空格）
+				if (zh) parts.push(formatTokPerSec(metrics.tokensPerSecond) + " tok/s");
 				else parts.push(formatTokPerSec(metrics.tokensPerSecond) + " tok/s");
 			}
 			if (metrics.cacheHitPercent !== undefined) {
-				if (currentLocale() === "zh") parts.push("缓存命中" + metrics.cacheHitPercent + "%");
+				if (zh) parts.push("缓存命中" + metrics.cacheHitPercent + "%");
 				else parts.push("cache hit " + metrics.cacheHitPercent + "%");
 			}
-			// 已折叠步数：紧跟缓存命中之后、设置齿轮之前；仅 foldedRows>0 时显示
+			// 已折叠步数：紧跟缓存命中之后；仅 foldedRows>0 时显示
 			//（上游只在 >0 时注入指标，这里再兜底一次，绝不出现"已折叠0步"）。
 			// 运行中（closed=false）是"待折叠N步"（这些节点还没真正收起、回合结束时
 			// 才折叠）；回合结束后（closed=true）才是"已折叠N步"。closed 缺省按
 			// 已折叠处理（调用点全部显式传值，缺省只影响测试/边界）。
 			var foldedPending = closed === false;
-			if (metrics.foldedRows !== undefined && metrics.foldedRows > 0) {
+			if (finite(metrics.foldedRows) && metrics.foldedRows > 0) {
 				if (currentLocale() === "zh") parts.push((foldedPending ? "待折叠" : "已折叠") + metrics.foldedRows + "步");
 				else parts.push((foldedPending ? "pending " : "folded ") + metrics.foldedRows + " steps");
 			}
@@ -2293,6 +2393,10 @@ window.__ModuleLoader__.load({
 		function FoldClip(props) {
 			var open = props.open;
 			var live = props.live === true;
+			// depth：折体内容的嵌套层级（1=回合折体，2=步骤折体）。显式挂在
+			// data-dstf-depth 上供 CSS 逐层累积缩进——不靠 DOM 结构推断（步骤段的
+			// 叶子既可能是折体直接子元素，也可能是 .dstf-member-in 的兄弟节点）。
+			var depth = typeof props.depth === "number" ? props.depth : 1;
 			// 注意：官方 DisclosureRow 只在展开时渲染 children，所以本组件
 			// 首次挂载时 open 往往已是 true。初始状态必须固定为"折叠态"
 			// （不挂载、无 open class、prev=false），否则展开动画分支永不执行。
@@ -2375,7 +2479,7 @@ window.__ModuleLoader__.load({
 				},
 				react.createElement(
 					"div",
-					{ className: "dstf-fold-body" },
+					{ className: "dstf-fold-body", "data-dstf-depth": String(depth) },
 					props.children
 				)
 			);
@@ -2526,39 +2630,9 @@ window.__ModuleLoader__.load({
 			return currentLocale() === "zh" ? "第" + turn + "轮" : "Turn " + turn;
 		}
 
-		// ---- 齿轮图标（字段设置弹窗触发器） ----
-		// Material 风格齿轮 ⚙，14×14，悬停向右旋转 90°（.45s 缓动）。
-		function GearIcon() {
-			// 齿轮在 DisclosureRow（expandOnRowClick=true）的 title 区内：
-			// 点击/键盘必须 stopPropagation，否则会冒泡到折叠栏行的 onToggle，
-			// 把"弹窗"误触成"展开/折叠"。
-			function openPopup(e) {
-				if (e) {
-					if (e.stopPropagation) e.stopPropagation();
-					if (e.preventDefault) e.preventDefault();
-				}
-				setPopupVisible(true);
-			}
-			return react.createElement("span", {
-				className: "dstf-gear-icon",
-				onClick: openPopup,
-				title: _T("fieldSettings"),
-				role: "button",
-				tabIndex: 0,
-				"aria-label": _T("fieldSettings"),
-				onKeyDown: function (e) {
-					if (e.key === "Enter" || e.key === " ") { openPopup(e); }
-				}
-			},
-				react.createElement("svg", { viewBox: "0 0 24 24", width: "14", height: "14", fill: "currentColor" },
-					react.createElement("path", { d: "M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" })
-				)
-			);
-		}
-
-		// ---- 字段设置弹窗 ----
-		// 全局弹窗：列出回合折叠栏所有可显字段，每行一个 checkbox（勾选=显示）。
-		// 使用 useSyncExternalStore 订阅模块级 popupVisible 状态决定显隐。
+		// ---- 会话折叠设置卡片（阅读体验共享页里的本插件面板） ----
+		// 卡片直接平铺在共享页的 <ul> 里（页内 tab 就是它的折叠层），因此根元素
+		// 是 <li> 且自带 listStyle:none；齿轮弹窗已移除，设置入口统一收在设置页。
 		var FIELD_CONFIG = [
 			{ key: "duration", labelKey: "fieldDuration", descKey: "fieldDurationDesc" },
 			{ key: "ttft", labelKey: "fieldTtft", descKey: "fieldTtftDesc" },
@@ -2586,26 +2660,8 @@ window.__ModuleLoader__.load({
 				react.createElement("polyline", { points: props.points })
 			);
 		}
-		/** 复制文本到剪贴板（navigator.clipboard 优先，兜底 textarea fallback）。 */
-		function copyToClipboard(text) {
-			if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-				navigator.clipboard.writeText(text).catch(function () { /* 静默 */ });
-			} else {
-				try {
-					var ta = document.createElement("textarea");
-					ta.value = text;
-					ta.style.position = "fixed";
-					ta.style.left = "-9999px";
-					document.body.appendChild(ta);
-					ta.select();
-					document.execCommand("copy");
-					document.body.removeChild(ta);
-				} catch (e) { /* 静默 */ }
-			}
-		}
 		// ---- 全局 Toast 消息通知（共享官方 Toast 组件） ----
 		// 模块级状态 + useSyncExternalStore 驱动，单例 TurnFoldToast 组件常驻渲染。
-		// 不受 FieldVisibilityPopup 弹窗显隐影响，始终可用。
 		var toastSnapshot = { seq: 0, text: null };
 		var toastListeners = new Set();
 		function subscribeToast(fn) { toastListeners.add(fn); return function () { toastListeners.delete(fn); }; }
@@ -2642,7 +2698,7 @@ window.__ModuleLoader__.load({
 		// 打断官方 UI 激活 → web 整页无法启动。两层都必须兜：register 的异常 catch 在
 		// 回调内（返回 undefined 即"无可清理资源"，官方 cachedSlotInject 对 falsy 返回
 		// 无害）；slots.inject 本身同步抛（声明等待 setup 失败等）也 catch 在调用点。
-		// 降级时 console.warn 留排查线索，并弹一次 Toast 告知用户（齿轮根在 apply 时已
+		// 降级时 console.warn 留排查线索，并弹一次 Toast 告知用户（运行时根在 apply 时已
 		// 常驻挂载，宿主尚未挂载时 Toast 快照会在挂载后显示）。以下两个函数只在 catch
 		// 块里调用，自身任何异常都必须吞掉。
 		var slotDegradedToasted = false;
@@ -2735,56 +2791,6 @@ window.__ModuleLoader__.load({
 				return -2; // entries 不可用时同样不用 -1（保持顺序无关）
 			}
 		}
-		/** 步骤折叠栏标题中的文件链接：点击复制绝对路径，悬停变 DeepSeek 主题蓝色。 */
-		function FileLink(props) {
-			var fullPath = props.path;
-			var name = props.name;
-			function doCopy(e) {
-				if (e) {
-					if (e.stopPropagation) e.stopPropagation();
-					if (e.preventDefault) e.preventDefault();
-				}
-				copyToClipboard(fullPath);
-				showToast(_T("fileCopiedToast"));
-			}
-			return react.createElement("span", {
-				className: "dstf-file-link",
-				title: fullPath,
-				onClick: doCopy,
-				role: "button",
-				tabIndex: 0,
-				onKeyDown: function (e) {
-					if (e.key === "Enter" || e.key === " ") { doCopy(e); }
-				}
-			}, name);
-		}
-		/** 把标题字符串中的文件名（filePaths Map 的 key）替换为可点击复制的 FileLink 组件。
-		 *  返回字符串（无匹配时）或 React 元素数组/Fragment。 */
-		function renderTitleFileLinks(text, filePaths) {
-			if (!text || !filePaths || filePaths.size === 0) return text;
-			var hits = [];
-			filePaths.forEach(function (fullPath, basename) {
-				if (!basename) return;
-				var from = 0, idx;
-				while ((idx = text.indexOf(basename, from)) !== -1) {
-					hits.push({ idx: idx, len: basename.length, basename: basename, fullPath: fullPath });
-					from = idx + basename.length;
-				}
-			});
-			if (hits.length === 0) return text;
-			hits.sort(function (a, b) { return a.idx - b.idx; });
-			var kids = [];
-			var cursor = 0;
-			for (var i = 0; i < hits.length; i++) {
-				var h = hits[i];
-				if (h.idx < cursor) continue;
-				if (h.idx > cursor) kids.push(text.slice(cursor, h.idx));
-				kids.push(react.createElement(FileLink, { key: "f" + i, name: h.basename, path: h.fullPath }));
-				cursor = h.idx + h.len;
-			}
-			if (cursor < text.length) kids.push(text.slice(cursor));
-			return kids.length === 1 ? kids[0] : react.createElement.apply(react, [react.Fragment, null].concat(kids));
-		}
 		/** 折叠图标选项列表：每行标题 + 描述在左，右侧横排展示该选项下所有存在的图标状态。
 		 *  previews 是 function(tick)（FoldIconSelector 每秒 tick 一次驱动重渲染）：
 		 *  poker：3牌折叠 / 3牌展开 / 5牌折叠 / 5牌展开（每秒按牌面池轮换，四花色 +
@@ -2857,7 +2863,7 @@ window.__ModuleLoader__.load({
 					previewItems.push(react.createElement(
 						"span",
 						{ key: "p" + pi, className: "dstf-preview-tooltip" },
-						react.createElement("span", { className: "dstf-gear-icon-option-preview-item" }, previewEls[pi]),
+						react.createElement("span", { className: "dstf-card-icon-option-preview-item" }, previewEls[pi]),
 						react.createElement(
 							"span",
 							{ className: "dstf-preview-bubble" },
@@ -2867,7 +2873,7 @@ window.__ModuleLoader__.load({
 				}
 				opts.push(react.createElement("div", {
 					key: opt.value,
-					className: "dstf-gear-icon-option",
+					className: "dstf-card-icon-option",
 					"data-selected": selected ? "true" : undefined,
 					onClick: function (v) { return function () { setFoldIconStyle(v); }; }(opt.value),
 					role: "radio",
@@ -2877,30 +2883,30 @@ window.__ModuleLoader__.load({
 						if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFoldIconStyle(v); }
 					}; }(opt.value)
 				},
-					react.createElement("span", { className: "dstf-gear-icon-option-text" },
-						react.createElement("div", { className: "dstf-gear-icon-option-title" }, _T(opt.labelKey)),
-						react.createElement("div", { className: "dstf-gear-icon-option-desc" }, _T(opt.descKey))
+					react.createElement("span", { className: "dstf-card-icon-option-text" },
+						react.createElement("div", { className: "dstf-card-icon-option-title" }, _T(opt.labelKey)),
+						react.createElement("div", { className: "dstf-card-icon-option-desc" }, _T(opt.descKey))
 					),
-					react.createElement("span", { className: "dstf-gear-icon-option-preview", "aria-hidden": "true" }, previewItems)
+					react.createElement("span", { className: "dstf-card-icon-option-preview", "aria-hidden": "true" }, previewItems)
 				));
 			}
-			return react.createElement("div", { className: "dstf-gear-icon-selector" },
-				react.createElement("div", { className: "dstf-gear-icon-selector-label" }, _T("foldIconLabel")),
+			return react.createElement("div", { className: "dstf-card-icon-selector" },
+				react.createElement("div", { className: "dstf-card-icon-selector-label" }, _T("foldIconLabel")),
 				opts
 			);
 		}
-		function FieldVisibilityPopup() {
-			// 注意 Hooks 顺序：useFieldVisibility() 必须在条件 return 之前调用——
-			// 若放在 `if (!visible) return null;` 之后，首次渲染（隐藏）只调 1 个 hook，
-			// 弹窗显示时调 2 个 hook，React 报 "Rendered more hooks..." 导致弹窗根崩溃。
-			var visible = useSyncExternalStore(subscribePopup, getPopupVisible);
+		/** 阅读体验共享页里的本插件卡片：两组设置（指标字段显隐 + 折叠图标风格）。
+		 *  根元素必须是 <li>（共享页面板是 <ul>，否则漏出游离项目符号），自带 listStyle:none。
+		 *  两处改动都即时作用于所有折叠栏，并写入 localStorage（刷新后保留）。 */
+		function SessionFoldSettingsCard() {
 			var visibility = useFieldVisibility();
-			if (!visible) return null;
-			var fields = [];			for (var fi = 0; fi < FIELD_CONFIG.length; fi++) {
+			useFoldIconStyle();
+			var fields = [];
+			for (var fi = 0; fi < FIELD_CONFIG.length; fi++) {
 				var cfg = FIELD_CONFIG[fi];
 				var checked = visibility[cfg.key];
 				var fieldKey = cfg.key;
-				fields.push(react.createElement("div", { key: fieldKey, className: "dstf-gear-popup-field" },
+				fields.push(react.createElement("div", { key: fieldKey, className: "dstf-card-field" },
 					react.createElement("input", {
 						type: "checkbox",
 						id: "dstf-field-" + fieldKey,
@@ -2908,30 +2914,15 @@ window.__ModuleLoader__.load({
 						onChange: function (k, v) { return function () { setFieldVisible(k, !v); }; }(fieldKey, checked)
 					}),
 					react.createElement("label", { htmlFor: "dstf-field-" + fieldKey }, _T(cfg.labelKey)),
-					react.createElement("span", { className: "dstf-gear-popup-field-desc" }, _T(cfg.descKey))
+					react.createElement("span", { className: "dstf-card-field-desc" }, _T(cfg.descKey))
 				));
 			}
-			return react.createElement("div", {
-				className: "dstf-gear-overlay",
-				onClick: function (e) { if (e.target === e.currentTarget) setPopupVisible(false); },
-				role: "dialog",
-				"aria-modal": "true",
-				"aria-label": _T("fieldSettings")
-			},
-				react.createElement("div", { className: "dstf-gear-popup" },
-					react.createElement("div", { className: "dstf-gear-popup-title" }, _T("fieldSettings")),
-					react.createElement("div", { className: "dstf-gear-popup-hint" }, _T("fieldSettingsHint")),
-					react.createElement("div", { className: "dstf-gear-popup-fields" }, fields),
-					react.createElement("div", { className: "dstf-gear-divider", "aria-hidden": "true" }),
-					react.createElement(FoldIconSelector, null),
-					react.createElement("div", { className: "dstf-gear-popup-foot" },
-						react.createElement("button", {
-							className: "dstf-gear-popup-btn",
-							type: "button",
-							onClick: function () { setPopupVisible(false); }
-						}, _T("fieldSettingsDone"))
-					)
-				)
+			return react.createElement("li", { className: "dstf-settings-card", style: { listStyle: "none" } },
+				react.createElement("div", { className: "dstf-settings-card-title" }, _T("cardFieldsLabel")),
+				react.createElement("div", { className: "dstf-settings-card-hint" }, _T("cardFieldsDesc")),
+				react.createElement("div", { className: "dstf-card-fields" }, fields),
+				react.createElement("div", { className: "dstf-card-divider", "aria-hidden": "true" }),
+				react.createElement(FoldIconSelector, null)
 			);
 		}
 
@@ -2940,41 +2931,16 @@ window.__ModuleLoader__.load({
 		// 与 Think / 工具卡片的折叠行样式一致；平台原语缺失时回退到自带兜底行。
 		// 无障碍：两种路径都带 aria-label / aria-expanded，键盘可操作。
 		// live：运行中的回合折叠栏——标题里的数字用滚轮动画逐位滚动；回合结束后纯文本。
-		/** 段闭合标题拆分：把"编辑了b.js [ +12 -3 ] 运行了pwsh —— 1条执行失败"拆成
-		 *  { base, after, diff, failure }——diff（编辑行数变更）供悬停高亮并保留原始位置
-		 *  （diff 只跟在编辑文件名后，后面可能还有"运行了pwsh"等片段），failure（失败提示）
-		 *  恒在末尾、独立标红。格式由本插件自建（" [ +N -M ]" 与 failurePrefix），拆分可靠。 */
+		/** 段闭合标题拆分：把"运行了2条命令 —— 1条执行失败"拆成 { base, failure }——
+		 *  failure（失败提示）恒在末尾、独立标红。格式由本插件自建（failurePrefix），拆分可靠。 */
 		function splitLabelParts(label) {
-			var base = label, after = "", failure = null, diff = null;
+			var base = label, failure = null;
 			var fi = base.lastIndexOf(_T("failurePrefix"));
 			if (fi !== -1) {
 				failure = base.slice(fi);
 				base = base.slice(0, fi);
 			}
-			var m = / \[ ([+-]\d+(?: [+-]\d+)?) \]/.exec(base);
-			if (m) {
-				var nums = m[1].match(/[+-]\d+/g) || [];
-				var added = 0, removed = 0;
-				for (var ni = 0; ni < nums.length; ni++) {
-					if (nums[ni].charAt(0) === "+") added = parseInt(nums[ni].slice(1), 10);
-					else removed = parseInt(nums[ni].slice(1), 10);
-				}
-				diff = { added: added, removed: removed };
-				after = base.slice(m.index + m[0].length);
-				base = base.slice(0, m.index);
-			}
-			return { base: base, after: after, diff: diff, failure: failure };
-		}
-		/** 编辑行数变更 [ +N -M ]：悬停括号范围时 +N 变绿、-N 变红（官方 success/error token）。 */
-		function renderDiff(diff) {
-			var kids = [" [ "];
-			if (diff.added > 0) {
-				kids.push(react.createElement("span", { key: "a", className: "dstf-diff-add" }, "+" + diff.added));
-				if (diff.removed > 0) kids.push(" ");
-			}
-			if (diff.removed > 0) kids.push(react.createElement("span", { key: "r", className: "dstf-diff-del" }, "-" + diff.removed));
-			kids.push(" ]");
-			return react.createElement("span", { className: "dstf-diff" }, kids);
+			return { base: base, failure: failure };
 		}
 		function GroupHeader(props) {
 			var count = props.count;
@@ -2987,11 +2953,8 @@ window.__ModuleLoader__.load({
 			// live：运行中的回合折叠栏数值实时变化，用滚轮动画渲染（DisclosureRow 的
 			// title 直接作为 children 渲染，传 React 元素即可）。
 			var live = props.live === true;
-			// filePaths：步骤折叠栏标题中的文件名映射（basename → 绝对路径），
-			// 用于把文件名渲染为可点击复制元素（悬停变 DeepSeek 主题蓝色）。
-			var filePaths = props.filePaths;
-			// 纯文本标题拆分：编辑行数变更 [ +N -M ] 悬停高亮；"——"之后的失败提示单独标红
-			// （整标题不再整体标红；运行中 JSX 标题无失败后缀，保持原色）。
+			// 纯文本标题拆分："——"之后的失败提示单独标红（整标题不再整体标红；
+			// 运行中 JSX 标题无失败后缀，保持原色）。
 			var titleContent;
 			if (live) {
 				titleContent = react.createElement(AnimatedLabel, { label: label });
@@ -3001,39 +2964,29 @@ window.__ModuleLoader__.load({
 				titleContent = react.createElement(FoldedRollLabel, { label: label });
 			} else if (typeof label === "string") {
 				var parts = splitLabelParts(label);
-				if (parts.diff !== null || parts.failure !== null) {
+				if (parts.failure !== null) {
 					// 数组子元素必须逐个带 key（React 会对无 key 的数组子项报警并按“按位复用”
-					// 协调）：base/after 可能是字符串、单个元素或 Fragment，用带 key 的
-					// Fragment 包一层统一处理（Fragment 不产生 DOM，不影响布局与选择器）。
-					var kids = [react.createElement(react.Fragment, { key: "base" }, renderTitleFileLinks(parts.base, filePaths))];
-					if (parts.diff !== null) kids.push(react.createElement(react.Fragment, { key: "diff" }, renderDiff(parts.diff)));
-					kids.push(react.createElement(react.Fragment, { key: "after" }, parts.after));
-					if (parts.failure !== null) kids.push(react.createElement("span", { key: "fail", className: "dstf-header-failure" }, parts.failure));
+					// 协调）：用带 key 的 Fragment 包一层（Fragment 不产生 DOM）。
+					var kids = [react.createElement(react.Fragment, { key: "base" }, parts.base)];
+					kids.push(react.createElement("span", { key: "fail", className: "dstf-header-failure" }, parts.failure));
 					titleContent = react.createElement.apply(react, [react.Fragment, null].concat(kids));
 				} else {
-					titleContent = renderTitleFileLinks(label, filePaths);
+					titleContent = label;
 				}
 			} else {
 				titleContent = label;
 			}
 			// right：右对齐的尾部元素（回合折叠栏的"第x轮"）——flex 容器两端对齐，指标在左、轮次在右。
-			// gearIcon：字段设置齿轮（回合折叠栏专属）——紧跟指标文案之后、轮次之前。
 			if (props.right !== undefined && props.right !== null && props.right !== "") {
-				// 同上：这两个子元素进的是数组，必须带 key（titleContent 可能是字符串、
+				// 这两个子元素进的是数组，必须带 key（titleContent 可能是字符串、
 				// 元素或 Fragment，故用带 key 的 Fragment 统一包裹，不引入额外 DOM）。
-				var flexMetricsKids = [react.createElement(react.Fragment, { key: "metrics" }, titleContent)];
-				if (props.gearIcon !== undefined) {
-					flexMetricsKids.push(react.createElement(react.Fragment, { key: "gear" }, props.gearIcon));
-				}
 				titleContent = react.createElement(
 					"span",
 					{ className: "dstf-header-flex" },
-					react.createElement("span", { className: "dstf-header-flex-metrics" }, flexMetricsKids),
+					react.createElement("span", { className: "dstf-header-flex-metrics" },
+						react.createElement(react.Fragment, { key: "metrics" }, titleContent)),
 					react.createElement("span", { className: "dstf-header-round" }, props.right)
 				);
-			} else if (props.gearIcon !== undefined) {
-				// 无 right（极端情况：轮次文案为空）时齿轮仍跟随指标
-				titleContent = react.createElement(react.Fragment, null, titleContent, props.gearIcon);
 			}
 			// pokerIcon：步骤折叠栏的扑克牌图标（收起=牌堆、展开=扇形，CSS 按开合切换）——置于标题最前
 			if (props.pokerIcon !== undefined) {
@@ -3543,69 +3496,8 @@ window.__ModuleLoader__.load({
 				react.createElement("span", { ref: svgRef, className: "dstf-poker-svg", dangerouslySetInnerHTML: { __html: html } })
 			);
 		}
-		/** 解析 argsRaw 一次（提取路径与行数共用，避免重复 JSON.parse）。 */
-		function parseArgsRaw(argsRaw) {
-			if (!argsRaw) return null;
-			try { return JSON.parse(argsRaw); } catch (e) { return null; }
-		}
-		/** 从已解析的 args 提取文件路径（path / file_path / url / file / target；args 数组兜底取含路径分隔符的串）。 */
-		function extractFilePathFromParsed(raw) {
-			if (!raw || typeof raw !== "object") return null;
-			var keys = ["file_path", "path", "file", "target", "url"];
-			for (var i = 0; i < keys.length; i++) {
-				var v = raw[keys[i]];
-				if (typeof v === "string" && v !== "") return v;
-			}
-			if (Array.isArray(raw.args)) {
-				for (var j = raw.args.length - 1; j >= 0; j--) {
-					var a = raw.args[j];
-					if (typeof a === "string" && (a.indexOf("/") !== -1 || a.indexOf("\\") !== -1)) return a;
-				}
-			}
-			return null;
-		}
-		/** 从已解析的 args 提取编辑行数变更：insertions/deletions 显式字段，否则 old/new
-		 *  内容块行数（兼容全部命名变体）。 */
-		function extractLineChangesFromParsed(raw) {
-			if (!raw || typeof raw !== "object") return null;
-			var added = 0, removed = 0;
-			// 显式字段
-			if (typeof raw.insertions === "number") added = raw.insertions;
-			else if (typeof raw.added === "number") added = raw.added;
-			else if (typeof raw["+"] === "number") added = raw["+"];
-			if (typeof raw.deletions === "number") removed = raw.deletions;
-			else if (typeof raw.removed === "number") removed = raw.removed;
-			else if (typeof raw["-"] === "number") removed = raw["-"];
-			// 从 old/new 内容块行数统计（edit 类工具常用，兼容全部命名变体：
-			//  camelCase oldStr/newStr、snake_case old_str/new_str、
-			//  DSH edit 工具全拼 old_string/new_string）
-			if (added === 0 && removed === 0) {
-				var newContent = null, oldContent = null;
-				if (typeof raw.newStr === "string") newContent = raw.newStr;
-				else if (typeof raw.new_str === "string") newContent = raw.new_str;
-				else if (typeof raw.new_string === "string") newContent = raw.new_string;
-				if (typeof raw.oldStr === "string") oldContent = raw.oldStr;
-				else if (typeof raw.old_str === "string") oldContent = raw.old_str;
-				else if (typeof raw.old_string === "string") oldContent = raw.old_string;
-				if (newContent !== null) {
-					// 块级统计（与官方 edit 的 diff 视图一致：old_string 整块删除、
-					// new_string 整块新增，统计块的行数而非行级差异）
-					added = newContent.split("\n").length;
-					removed = oldContent !== null ? oldContent.split("\n").length : 0;
-				}
-			}
-			if (added === 0 && removed === 0) return null;
-			return { added: added, removed: removed };
-		}
-		/** 路径最后一段（文件名 / URL 尾）。 */
-		function pathBasename(path) {
-			if (!path) return null;
-			var sep = path.indexOf("\\") !== -1 ? "\\" : "/";
-			var parts = path.split(sep);
-			var last = parts[parts.length - 1];
-			return last || null;
-		}
-		/** 统计段内工具调用：按分类分组，read/edit 类附带去重后的文件名单及行数变更。 */
+		/** 统计段内工具调用：按分类分桶计数（只留计数所需的形状）。
+		 *  折叠行只输出计数，故不再提取文件名/行数变更/参数摘要——展开后自见。 */
 		function classifySegmentTools(group, nodes) {
 			var stats = { command: [], read: [], search: [], edit: [], others: [] };
 			for (var i = 0; i < group.keys.length; i++) {
@@ -3616,115 +3508,38 @@ window.__ModuleLoader__.load({
 				// 形状绕过归一后 `String(undefined)` 变成字面量 "undefined"）
 				var name = info && typeof info.name === "string" ? info.name : "";
 				var kind = TOOL_KINDS[name.toLowerCase()] || "others";
-				// 性能：官方 diffs 存在时（路径 + oldText/newText 行数）完全不解析 argsRaw；
-				// 否则解析一次 argsRaw 同时提取路径与行数（避免多次 JSON.parse）
-				var filePath = null, lineChanges = null;
-				if (info && Array.isArray(info.diffs) && info.diffs.length > 0) {
-					var first = info.diffs[0];
-					if (first && typeof first.path === "string") filePath = first.path;
-					var ta = 0, tr = 0;
-					for (var di = 0; di < info.diffs.length; di++) {
-						var h = info.diffs[di];
-						if (!h) continue;
-						if (typeof h.newText === "string") ta += h.newText.split("\n").length;
-						if (typeof h.oldText === "string") tr += h.oldText.split("\n").length;
-					}
-					if (ta > 0 || tr > 0) lineChanges = { added: ta, removed: tr };
-				} else if (info) {
-					var parsed = parseArgsRaw(info.argsRaw);
-					filePath = extractFilePathFromParsed(parsed);
-					lineChanges = extractLineChangesFromParsed(parsed);
-				}
-				var item = { name: name, filePath: filePath, fileName: pathBasename(filePath), lineChanges: lineChanges };
-				// 单条命令标题需要命令详情（"运行了Pwsh · cd x:/abc"），command 条目带上 argsRaw
-				if (kind === "command") item.argsRaw = info ? info.argsRaw : undefined;
-				stats[kind].push(item);
+				stats[kind].push({ name: name });
 			}
 			return stats;
 		}
-		/** 组内 read/edit 类的描述：同一文件用文件名，多个文件用数量+单位。edit 类额外附加行数变更。 */
-		function filePartLabel(stats, kind, prefix, suffix) {
+		/** 组内 read/edit 类计数：一律"前缀 + 数量 + 单位"。
+		 *  单项不再显示文件名（也不显示编辑行数变更）——折叠行只给概括性描述，
+		 *  具体操作内容展开后自见。 */
+		function countPartLabel(stats, kind, prefix, suffix) {
 			var items = stats[kind];
 			if (!items || items.length === 0) return "";
-			var files = [];
-			for (var i = 0; i < items.length; i++) {
-				if (items[i].fileName) {
-					var fp = items[i].fileName;
-					if (files.indexOf(fp) === -1) files.push(fp);
-				}
-			}
-			var label;
-			if (files.length === 1) label = prefix + files[0];
-			else label = prefix + (files.length > 0 ? files.length : items.length) + suffix;
-			// edit 类：单文件时汇总所有编辑的行数变更（方括号包裹，如 [ +12 -3 ]）
-			if (kind === "edit" && files.length === 1) {
-				var totalAdded = 0, totalRemoved = 0;
-				for (var j = 0; j < items.length; j++) {
-					var lc = items[j].lineChanges;
-					if (lc) { totalAdded += lc.added; totalRemoved += lc.removed; }
-				}
-				if (totalAdded > 0 || totalRemoved > 0) {
-					var parts = [];
-					if (totalAdded > 0) parts.push("+" + totalAdded);
-					if (totalRemoved > 0) parts.push("-" + totalRemoved);
-					label += " [ " + parts.join(" ") + " ]";
-				}
-			}
-			return label;
-		}
-		/** 单条命令详情：优先取 argsRaw 的 command 字段（DSH bash/pwsh 的标准形状），
-		 *  兜底取最长字符串值（summarizeArgs 行为）；空白折叠 + 60 字截断。
-		 *  仅在段内只有一次命令调用时显示。 */
-		function commandDetail(argsRaw) {
-			if (!argsRaw) return "";
-			var fallback = summarizeArgs(argsRaw);
-			try {
-				var obj = JSON.parse(argsRaw);
-				if (obj && typeof obj.command === "string" && obj.command.trim() !== "") {
-					var c = obj.command.replace(/\s+/g, " ").trim();
-					return c.length > 60 ? c.slice(0, 60) + "…" : c;
-				}
-			} catch (e) { /* 非 JSON 走兜底 */ }
-			return fallback;
-		}
-		/** 组内 command 类的描述：单次命令显示"运行了Pwsh · 命令详情"（工具名首字母大写），
-		 *  多次显示次数+单位。 */
-		function commandPartLabel(stats) {
-			var items = stats.command;
-			if (!items || items.length === 0) return "";
-			if (items.length === 1) {
-				var name = capitalizeFirst(items[0].name || "");
-				var detail = commandDetail(items[0].argsRaw);
-				return _T("segmentCommand") + name + (detail ? " · " + detail : "");
-			}
-			return _T("segmentCommand") + items.length + _T("segmentCommandSuffix");
+			return prefix + items.length + suffix;
 		}
 		// 段闭合标题缓存：段闭合后（textAfter=true）标题不再随流式变化，按
-		// leaderKey+keys+工具轻量指纹记忆只计算一次，避免每次渲染重复解析 argsRaw。
-		// 指纹 = 每个 tool 的 name + isError + argsRaw 长度（不解析内容，O(1)）——
-		// 段闭合后这些字段稳定；不同内容但同 keys 的段（如测试场景）长度不同也能区分。
+		// leaderKey+keys+工具轻量指纹记忆只计算一次。指纹 = 每个 tool 的 name + isError
+		// + 段内 thinkCount——段闭合后这些字段稳定。计数标题不再依赖 argsRaw 内容，
+		// 故不再把参数写进指纹。
 		var segmentLabelCache = new Map();
 		function segmentCacheKey(group, nodes) {
-			var parts = [currentLocale(), group.leaderKey, group.keys.join(",")];
+			var parts = [currentLocale(), group.leaderKey, group.keys.join(","), String(group.thinkCount)];
 			for (var i = 0; i < group.keys.length; i++) {
 				var n = nodes.get(group.keys[i]);
 				if (!n || n.kind !== "tool-call") continue;
 				var root = n.data && n.data.root;
-				var name = "", isErr = "0", rawLen = 0, raw = "";
+				var name = "", isErr = "0";
 				if (root && "kind" in root) {
 					var call = root.call || root;
 					name = call.name || "";
 					if (root.isError === true) isErr = "1";
-					if (typeof call.argsRaw === "string") { raw = call.argsRaw; rawLen = raw.length; }
 				} else if (root) {
 					name = root.name || "";
-					if (typeof root.argsRaw === "string") { raw = root.argsRaw; rawLen = raw.length; }
 				}
-				// 单条命令标题含命令详情（argsRaw 内容），command 工具必须把内容写进指纹，
-				// 否则同长度不同命令会命中错误缓存（如 "cd x" 与 "cd y"）。
-				var kind = TOOL_KINDS[name.toLowerCase()] || "others";
-				if (kind === "command" && raw !== "") parts.push(name + ":" + isErr + ":" + rawLen + ":" + raw);
-				else parts.push(name + ":" + isErr + ":" + rawLen);
+				parts.push(name + ":" + isErr);
 			}
 			return parts.join("|");
 		}
@@ -3735,21 +3550,26 @@ window.__ModuleLoader__.load({
 		 *    走闭合标题——否则运行态标题（"正在思考/正在运行"+shimmer 动效）会永久停留。 */
 		function segmentLabel(group, nodes, closed) {
 			if (isSegmentClosed(group, closed) && group.toolCount > 0) {
-				// 段闭合：按工具类型分组统计（think 不算），结果缓存
+				// 段闭合：按工具类型分桶计数，结果缓存
 				var cacheKey = segmentCacheKey(group, nodes);
 				var cached = segmentLabelCache.get(cacheKey);
 				if (cached !== undefined) return cached;
 				var stats = classifySegmentTools(group, nodes);
 				var parts = [];
-				var readLabel = filePartLabel(stats, "read", _T("segmentRead"), _T("segmentReadSuffix"));
-				if (readLabel) parts.push(readLabel);
-				var editLabel = filePartLabel(stats, "edit", _T("segmentEdit"), _T("segmentEditSuffix"));
-				if (editLabel) parts.push(editLabel);
+				var readPart = countPartLabel(stats, "read", _T("segmentRead"), _T("segmentReadSuffix"));
+				if (readPart) parts.push(readPart);
+				var editPart = countPartLabel(stats, "edit", _T("segmentEdit"), _T("segmentEditSuffix"));
+				if (editPart) parts.push(editPart);
 				if (stats.search.length > 0) parts.push(_T("segmentSearch") + stats.search.length + _T("segmentSearchSuffix"));
 				if (stats.others.length > 0) parts.push(_T("segmentOthers") + stats.others.length + _T("segmentOthersSuffix"));
-				var commandLabel = commandPartLabel(stats);
-				if (commandLabel) parts.push(commandLabel);
-				var label = parts.join(" ");
+				if (stats.command.length > 0) parts.push(_T("segmentCommand") + stats.command.length + _T("segmentCommandSuffix"));
+				// 段内思考次数并列追加在末尾：工具与思考并存时同样显示——此前
+				// thinkCount 只在"段内无工具"时才输出，导致"运行了6条命令"的段里
+				// 那几条思考在标题上凭空消失（统计了却被丢弃）。
+				if (group.thinkCount > 0) parts.push(_T("segmentThink") + group.thinkCount + _T("segmentThinkSuffix"));
+				// 各计数段之间用 " · " 分隔（与回合折叠栏指标行同款），避免
+				// "读取了1份文件运行了2条命令"糊成一片。
+				var label = parts.join(" · ");
 				// 失败追加：仅单条工具调用失败显示"执行失败"（无条数）；
 				// 多条工具调用时 1 条失败也显示"1条执行失败"
 				if (group.failures > 0) {
@@ -3771,7 +3591,7 @@ window.__ModuleLoader__.load({
 				var info = toolCallInfo(last);
 				if (info && info.name) {
 					var desc = summarizeArgs(info.argsRaw);
-					return _T("runningTool") + capitalizeFirst(info.name) + (desc ? " · " + desc : "");
+					return _T("runningTool") + toolDisplayName(info.name) + (desc ? " · " + desc : "");
 				}
 			}
 			if (last && last.kind === "assistant-step") {
@@ -3788,30 +3608,6 @@ window.__ModuleLoader__.load({
 				else fallback += _T("failurePrefix") + group.failures + _T("failureSuffix");
 			}
 			return fallback;
-		}
-		/** 段内文件路径（basename → 绝对路径）：read/edit 类工具调用解析出的文件。
-		 *  供 GroupHeader 把标题里的文件名渲染成可点击复制元素。复用 classifySegmentTools
-		 *  的结果，按 leaderKey 缓存（段闭合后字段稳定）。 */
-		var segmentFilePathsCache = new Map();
-		function segmentFilePaths(group, nodes, closed) {
-			if (!group || !isSegmentClosed(group, closed) || group.toolCount === 0) return null;
-			var cacheKey = segmentCacheKey(group, nodes);
-			if (segmentFilePathsCache.has(cacheKey)) return segmentFilePathsCache.get(cacheKey);
-			var stats = classifySegmentTools(group, nodes);
-			var map = new Map();
-			var kinds = ["read", "edit"];
-			for (var k = 0; k < kinds.length; k++) {
-				var items = stats[kinds[k]];
-				for (var i = 0; i < items.length; i++) {
-					var it = items[i];
-					if (it && it.fileName && it.filePath) {
-						// 同一 basename 多个路径时保留最后一个（标题只显示一个文件名）
-						map.set(it.fileName, it.filePath);
-					}
-				}
-			}
-			segmentFilePathsCache.set(cacheKey, map);
-			return map;
 		}
 		/** think 摘要行：运行中横向自动滚动跟随末尾（官方 ReasoningRow 的 data-follow-end 行为）。
 		 *  节流逻辑与官方 useThrottledVisualUpdate 一致：变化时排队一条 3 帧的 rAF 链，
@@ -3891,6 +3687,47 @@ window.__ModuleLoader__.load({
 		function capitalizeFirst(s) {
 			return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 		}
+		// ---- 工具显示名解析（三级退化） ----
+		// ① 词典命中：本环境真实存在的第三方工具 + 常用官方工具的中文/英文显示名；
+		// ② MCP 线名拆解：官方约定的 `mcp__<server>__<raw>` → "<server> · <raw>"；
+		// ③ 机械兜底：下划线/连字符转空格 + 首字母大写（未知名如 generate_image → Generate image）。
+		// 只影响**运行中**折叠行的标题（闭合行已改为纯计数，不显示工具名）。
+		var TOOL_DISPLAY_NAMES = {
+			generate_image: { zh: "生成图片", en: "Generate image" },
+			list_images: { zh: "列出图片", en: "List images" },
+			analyze_video: { zh: "分析视频", en: "Analyze video" },
+			find_dsh_plugin: { zh: "搜索插件", en: "Find plugin" },
+			ask_user_grilling: { zh: "追问确认", en: "Grill user" },
+			read_image: { zh: "读取图片", en: "Read image" },
+			todo_write: { zh: "更新任务清单", en: "Update todos" },
+			subagent: { zh: "子代理", en: "Subagent" },
+			workflow: { zh: "工作流", en: "Workflow" },
+			skill: { zh: "技能", en: "Skill" },
+			present: { zh: "展示文件", en: "Present files" }
+		};
+		/** 工具显示名：词典 → MCP 线名 → 机械兜底。空名返回空串。 */
+		function toolDisplayName(name) {
+			if (typeof name !== "string" || name === "") return "";
+			var entry = TOOL_DISPLAY_NAMES[name];
+			if (entry) return currentLocale() === "zh" ? entry.zh : entry.en;
+			// mcp__<server>__<raw>：官方 dsh-mcp-client 的线名约定（超长/非法名尾部会带
+			// 12 位 hash，这里不特判——hash 一并按普通词渲染，不影响可读性）。
+			if (name.indexOf("mcp__") === 0) {
+				var rest = name.slice(5);
+				var sep = rest.indexOf("__");
+				if (sep > 0) {
+					var server = rest.slice(0, sep);
+					var raw = rest.slice(sep + 2);
+					return prettifyToolName(server) + " · " + prettifyToolName(raw);
+				}
+			}
+			return prettifyToolName(name);
+		}
+		/** 机械美化：下划线/连字符转空格 + 首字母大写。 */
+		function prettifyToolName(name) {
+			if (!name) return "";
+			return capitalizeFirst(String(name).replace(/[_-]+/g, " ").trim());
+		}
 		/** 步骤段是否已闭合的唯一判定：text 出现（group.textAfter）或所属回合已结束
 		 *  （closed=true，含用户停止/出错——被打断的回合往往没有最终 text）。所有标题/
 		 *  图标/文件链接的闭合态分支一律经它，别再手写第二份条件——两处写法一旦漂移，
@@ -3931,7 +3768,7 @@ window.__ModuleLoader__.load({
 							{ className: "dstf-think-title dstf-think-title-live" },
 							react.createElement("span", { className: "dstf-think-prefix" }, _T("runningTool")),
 							toolIconFor(info.name, 14),
-							react.createElement("span", { className: "dstf-think-name" }, capitalizeFirst(info.name)),
+							react.createElement("span", { className: "dstf-think-name" }, toolDisplayName(info.name)),
 							desc ? react.createElement("span", { className: "dstf-think-sep" }, " · ") : null,
 							desc ? react.createElement("span", { className: "dstf-think-summary" }, desc) : null
 						);
@@ -3993,7 +3830,6 @@ window.__ModuleLoader__.load({
 				setGroupOpen(sessionId, group.leaderKey, !open);
 			};
 			var title = segmentTitle(group, nodes, closed);
-			var filePaths = segmentFilePaths(group, nodes, closed);
 			var danger = group.failures > 0;
 			// 运行中 = 段未闭合（isSegmentClosed 取反）。一个步骤 = 步骤折叠栏内
 			// 所有工具调用+思考（computeGroup 以 text 为边界向前/向后扩展），text 是唯一闭合标记：
@@ -4015,9 +3851,9 @@ window.__ModuleLoader__.load({
 				{ className: "dstf-group-root", "data-dstf-count": String(group.toolCount), "data-dstf-open": open ? "true" : undefined },
 				react.createElement(
 					GroupHeader,
-					{ count: group.toolCount, open: open, onToggle: toggle, label: title, danger: danger, isTurn: false, filePaths: filePaths, pokerIcon: pokerIcon }
+					{ count: group.toolCount, open: open, onToggle: toggle, label: title, danger: danger, isTurn: false, pokerIcon: pokerIcon }
 				),
-				react.createElement(FoldClip, { open: open }, inner),
+				react.createElement(FoldClip, { open: open, depth: 2 }, inner),
 				textBodies
 			);
 		}
@@ -4087,15 +3923,10 @@ window.__ModuleLoader__.load({
 			var metrics = useMemo(function () { return computeTurnMetrics(turn, nodes, locations, turnTimings, liveNow); }, [turn, nodes, locations, turnTimings, liveNow]);
 			// 运行中展示指标：消耗token 在真实基线之上叠加动画偏移持续增长（真实值到达时校正基线）
 			var displayMetrics = useMemo(function () { return turnDisplayMetrics(sessionId, turn, metrics, closed, liveNow); }, [sessionId, turn, metrics, closed, liveNow]);
-			// TTFT（首字）：运行中（turn-tail 未出现）用渲染时刻近似——首个 assistant-step
-			// 渲染时同步冻结记录（回合启动 → 首个 response）；渲染期副作用需幂等（has 检查），
-			// StrictMode 双调无害。回合结束后优先用官方持久化值（turn-tail 携带的 ttftMs：
-			// 该回合第一个 step 的 firstTokenTime - stepStartTime，来自事件日志，刷新不丢）。
-			recordTtft(sessionId, turn, closed, turnTimings);
-			var officialTtft = displayMetrics && typeof displayMetrics.ttftMs === "number" ? displayMetrics.ttftMs : undefined;
-			var approxTtft = turn !== undefined ? ttftCache.get(sessionId + "::" + turn) : undefined;
-			var ttftMs = officialTtft !== undefined ? officialTtft : approxTtft;
-			var headerMetrics = ttftMs !== undefined && displayMetrics ? Object.assign({}, displayMetrics, { ttftMs: ttftMs }) : displayMetrics;
+			// 首字（TTFT）：全部来自官方数据源——运行中取已 settle 步骤的
+			// finalNode.timing，回合结束后取 turn-tail 的权威 ttftMs（见 computeTurnMetrics）。
+			// step 1 settle 之前该项留空，不再用浏览器时钟近似（那量的是折叠栏首次渲染）。
+			var headerMetrics = displayMetrics;
 			// 已折叠行数：回合折叠栏收纳的内容行数（仅 >0 时注入指标，绝不显示"已折叠0行"）。
 			if (fold && fold.foldedRows > 0) {
 				headerMetrics = headerMetrics ? Object.assign({}, headerMetrics, { foldedRows: fold.foldedRows }) : { foldedRows: fold.foldedRows };
@@ -4136,16 +3967,16 @@ window.__ModuleLoader__.load({
 						return react.createElement(
 							"div",
 							{ className: "dstf-group-root", "data-dstf-count": String(fold.toolCount), "data-dstf-open": turnOpen ? "true" : undefined, "data-dstf-turn": "true" },
-							react.createElement(GroupHeader, { label: turnLabelX, count: fold.toolCount, open: turnOpen, onToggle: toggleTurnX, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), gearIcon: react.createElement(GearIcon, null), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
+							react.createElement(GroupHeader, { label: turnLabelX, count: fold.toolCount, open: turnOpen, onToggle: toggleTurnX, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
 							react.createElement("div", { className: "dstf-turn-divider", "aria-hidden": "true" }),
-							react.createElement(FoldClip, { open: turnOpen, live: !closed }, renderBuiltinToolCall(props))
+							react.createElement(FoldClip, { open: turnOpen, live: !closed, depth: 1 }, renderBuiltinToolCall(props))
 						);
 					}
-					return turnOpen ? react.createElement("div", { className: "dstf-member-in" }, renderBuiltinToolCall(props)) : hiddenMarker();
+					return turnOpen ? react.createElement("div", { className: "dstf-member-in", "data-dstf-depth": "1" }, renderBuiltinToolCall(props)) : hiddenMarker();
 				}
 				if (!fold.isTurnHeader) {
 					// 成员：回合折叠栏展开时显示自己的段内内容（非 leader 由段 leader 统一渲染）；收起时隐藏。
-					return turnOpen ? react.createElement("div", { className: "dstf-member-in" }, renderSegment(props, group, open, sessionId, nodes, finalKey, closed)) : hiddenMarker();
+					return turnOpen ? react.createElement("div", { className: "dstf-member-in", "data-dstf-depth": "1" }, renderSegment(props, group, open, sessionId, nodes, finalKey, closed)) : hiddenMarker();
 				}
 				// 折叠栏节点：渲染回合折叠栏（文案 = 本回合性能指标 + 状态标签，无数据则退回
 				// "运行了 N 条命令"）；折叠栏下方常驻分隔线（收起/展开都显示），其下接自己的段内内容。
@@ -4157,9 +3988,9 @@ window.__ModuleLoader__.load({
 				return react.createElement(
 					"div",
 					{ className: "dstf-group-root", "data-dstf-count": String(fold.toolCount), "data-dstf-open": turnOpen ? "true" : undefined, "data-dstf-turn": "true" },
-					react.createElement(GroupHeader, { label: turnLabel, count: fold.toolCount, open: turnOpen, onToggle: toggleTurn, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), gearIcon: react.createElement(GearIcon, null), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
+					react.createElement(GroupHeader, { label: turnLabel, count: fold.toolCount, open: turnOpen, onToggle: toggleTurn, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
 					react.createElement("div", { className: "dstf-turn-divider", "aria-hidden": "true" }),
-					react.createElement(FoldClip, { open: turnOpen, live: !closed }, renderSegment(props, group, open, sessionId, nodes, finalKey, closed))
+					react.createElement(FoldClip, { open: turnOpen, live: !closed, depth: 1 }, renderSegment(props, group, open, sessionId, nodes, finalKey, closed))
 				);
 			}
 
@@ -4195,15 +4026,10 @@ window.__ModuleLoader__.load({
 			var metrics = useMemo(function () { return computeTurnMetrics(turn, nodes, locations, turnTimings, liveNow); }, [turn, nodes, locations, turnTimings, liveNow]);
 			// 运行中展示指标：消耗token 在真实基线之上叠加动画偏移持续增长（真实值到达时校正基线）
 			var displayMetrics = useMemo(function () { return turnDisplayMetrics(sessionId, turn, metrics, closed, liveNow); }, [sessionId, turn, metrics, closed, liveNow]);
-			// TTFT（首字）：运行中（turn-tail 未出现）用渲染时刻近似——首个 assistant-step
-			// 渲染时同步冻结记录（回合启动 → 首个 response）；渲染期副作用需幂等（has 检查），
-			// StrictMode 双调无害。回合结束后优先用官方持久化值（turn-tail 携带的 ttftMs：
-			// 该回合第一个 step 的 firstTokenTime - stepStartTime，来自事件日志，刷新不丢）。
-			recordTtft(sessionId, turn, closed, turnTimings);
-			var officialTtft = displayMetrics && typeof displayMetrics.ttftMs === "number" ? displayMetrics.ttftMs : undefined;
-			var approxTtft = turn !== undefined ? ttftCache.get(sessionId + "::" + turn) : undefined;
-			var ttftMs = officialTtft !== undefined ? officialTtft : approxTtft;
-			var headerMetrics = ttftMs !== undefined && displayMetrics ? Object.assign({}, displayMetrics, { ttftMs: ttftMs }) : displayMetrics;
+			// 首字（TTFT）：全部来自官方数据源——运行中取已 settle 步骤的
+			// finalNode.timing，回合结束后取 turn-tail 的权威 ttftMs（见 computeTurnMetrics）。
+			// step 1 settle 之前该项留空，不再用浏览器时钟近似（那量的是折叠栏首次渲染）。
+			var headerMetrics = displayMetrics;
 			// 已折叠行数：回合折叠栏收纳的内容行数（仅 >0 时注入指标，绝不显示"已折叠0行"）。
 			if (fold && fold.foldedRows > 0) {
 				headerMetrics = headerMetrics ? Object.assign({}, headerMetrics, { foldedRows: fold.foldedRows }) : { foldedRows: fold.foldedRows };
@@ -4275,9 +4101,9 @@ window.__ModuleLoader__.load({
 					return react.createElement(
 						"div",
 						{ className: "dstf-group-root", "data-dstf-count": String(fold.toolCount), "data-dstf-open": turnOpen ? "true" : undefined, "data-dstf-turn": "true" },
-						react.createElement(GroupHeader, { label: turnLabel2, count: fold.toolCount, open: turnOpen, onToggle: toggleTurn2, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), gearIcon: react.createElement(GearIcon, null), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
+						react.createElement(GroupHeader, { label: turnLabel2, count: fold.toolCount, open: turnOpen, onToggle: toggleTurn2, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
 						react.createElement("div", { className: "dstf-turn-divider", "aria-hidden": "true" }),
-						react.createElement(FoldClip, { open: turnOpen, live: !closed },
+						react.createElement(FoldClip, { open: turnOpen, live: !closed, depth: 1 },
 							renderSegment(props, segGroup, segOpen, sessionId, nodes, fold.finalAssistantKey, closed)
 						)
 					);
@@ -4287,7 +4113,7 @@ window.__ModuleLoader__.load({
 			}
 			if (!fold.isTurnHeader) {
 				// 中间 Think 节点（含 text 的普通消息）：回合折叠栏展开时显示；收起时隐藏。
-				return turnOpen ? react.createElement("div", { className: "dstf-member-in" }, renderBuiltinAssistant(props)) : hiddenMarker();
+				return turnOpen ? react.createElement("div", { className: "dstf-member-in", "data-dstf-depth": "1" }, renderBuiltinAssistant(props)) : hiddenMarker();
 			}
 			// 折叠栏节点：渲染回合折叠栏（文案 = 本回合性能指标 + 状态标签）；折叠栏下方常驻
 			// 分隔线（收起/展开都显示），其下接自己的内容（Think 行）。
@@ -4299,9 +4125,9 @@ window.__ModuleLoader__.load({
 			return react.createElement(
 				"div",
 				{ className: "dstf-group-root", "data-dstf-count": String(fold.toolCount), "data-dstf-open": turnOpen ? "true" : undefined, "data-dstf-turn": "true" },
-				react.createElement(GroupHeader, { label: turnLabel, count: fold.toolCount, open: turnOpen, onToggle: toggleTurn, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), gearIcon: react.createElement(GearIcon, null), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
+				react.createElement(GroupHeader, { label: turnLabel, count: fold.toolCount, open: turnOpen, onToggle: toggleTurn, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
 				react.createElement("div", { className: "dstf-turn-divider", "aria-hidden": "true" }),
-				react.createElement(FoldClip, { open: turnOpen, live: !closed }, renderBuiltinAssistant(props))
+				react.createElement(FoldClip, { open: turnOpen, live: !closed, depth: 1 }, renderBuiltinAssistant(props))
 			);
 		}
 
@@ -4332,15 +4158,10 @@ window.__ModuleLoader__.load({
 			var metrics = useMemo(function () { return computeTurnMetrics(turn, nodes, locations, turnTimings, liveNow); }, [turn, nodes, locations, turnTimings, liveNow]);
 			// 运行中展示指标：消耗token 在真实基线之上叠加动画偏移持续增长（真实值到达时校正基线）
 			var displayMetrics = useMemo(function () { return turnDisplayMetrics(sessionId, turn, metrics, closed, liveNow); }, [sessionId, turn, metrics, closed, liveNow]);
-			// TTFT（首字）：运行中（turn-tail 未出现）用渲染时刻近似——首个 assistant-step
-			// 渲染时同步冻结记录（回合启动 → 首个 response）；渲染期副作用需幂等（has 检查），
-			// StrictMode 双调无害。回合结束后优先用官方持久化值（turn-tail 携带的 ttftMs：
-			// 该回合第一个 step 的 firstTokenTime - stepStartTime，来自事件日志，刷新不丢）。
-			recordTtft(sessionId, turn, closed, turnTimings);
-			var officialTtft = displayMetrics && typeof displayMetrics.ttftMs === "number" ? displayMetrics.ttftMs : undefined;
-			var approxTtft = turn !== undefined ? ttftCache.get(sessionId + "::" + turn) : undefined;
-			var ttftMs = officialTtft !== undefined ? officialTtft : approxTtft;
-			var headerMetrics = ttftMs !== undefined && displayMetrics ? Object.assign({}, displayMetrics, { ttftMs: ttftMs }) : displayMetrics;
+			// 首字（TTFT）：全部来自官方数据源——运行中取已 settle 步骤的
+			// finalNode.timing，回合结束后取 turn-tail 的权威 ttftMs（见 computeTurnMetrics）。
+			// step 1 settle 之前该项留空，不再用浏览器时钟近似（那量的是折叠栏首次渲染）。
+			var headerMetrics = displayMetrics;
 			// 已折叠行数：回合折叠栏收纳的内容行数（仅 >0 时注入指标，绝不显示"已折叠0行"）。
 			if (fold && fold.foldedRows > 0) {
 				headerMetrics = headerMetrics ? Object.assign({}, headerMetrics, { foldedRows: fold.foldedRows }) : { foldedRows: fold.foldedRows };
@@ -4371,12 +4192,12 @@ window.__ModuleLoader__.load({
 				return react.createElement(
 					"div",
 					{ className: "dstf-group-root", "data-dstf-count": String(fold.toolCount), "data-dstf-open": turnOpen ? "true" : undefined, "data-dstf-turn": "true" },
-					react.createElement(GroupHeader, { label: turnLabel, count: fold.toolCount, open: turnOpen, onToggle: toggleTurn, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), gearIcon: react.createElement(GearIcon, null), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
+					react.createElement(GroupHeader, { label: turnLabel, count: fold.toolCount, open: turnOpen, onToggle: toggleTurn, isTurn: true, live: !closed, right: turnRoundLabel(fold.turn), pokerIcon: turnPokerIcon(fold, closed, turnOpen) }),
 					react.createElement("div", { className: "dstf-turn-divider", "aria-hidden": "true" }),
-					react.createElement(FoldClip, { open: turnOpen, live: !closed }, renderBuiltinContext(props))
+					react.createElement(FoldClip, { open: turnOpen, live: !closed, depth: 1 }, renderBuiltinContext(props))
 				);
 			}
-			return turnOpen ? react.createElement("div", { className: "dstf-member-in" }, renderBuiltinContext(props)) : hiddenMarker();
+			return turnOpen ? react.createElement("div", { className: "dstf-member-in", "data-dstf-depth": "1" }, renderBuiltinContext(props)) : hiddenMarker();
 		}
 
 		// ---- 回合折叠栏 0 秒占位（user 消息正下方） ----
@@ -4470,7 +4291,7 @@ window.__ModuleLoader__.load({
 				react.createElement(
 					"div",
 					{ className: "dstf-group-root", "data-dstf-count": "0", "data-dstf-open": "true", "data-dstf-turn": "true", "data-dstf-placeholder": "true" },
-					react.createElement(GroupHeader, { label: label, count: 0, open: true, onToggle: function () {}, isTurn: true, live: true, right: turnRoundLabel(runningTurn), gearIcon: react.createElement(GearIcon, null), pokerIcon: placeholderPokerIcon }),
+					react.createElement(GroupHeader, { label: label, count: 0, open: true, onToggle: function () {}, isTurn: true, live: true, right: turnRoundLabel(runningTurn), pokerIcon: placeholderPokerIcon }),
 					react.createElement("div", { className: "dstf-turn-divider", "aria-hidden": "true" })
 				)
 			);
@@ -4585,13 +4406,163 @@ window.__ModuleLoader__.load({
 			);
 		}
 
+		//#region shared reading settings page shell
+		/**
+		 * 「阅读体验」共享设置页的壳（h1 版）。
+		 *
+		 * 本区段必须与母本逐行同源：母本是 `dsh-chat-translate` 的
+		 * `src/client/reading-settings-page.tsx`，其**编译产物**位于
+		 * `plugins/dsh-chat-translate/lib/client.js:1767-1896`（130 行）。
+		 *
+		 * 为什么复制的是编译产物而不是 TSX 母本：本插件客户半边是手写整包、没有编译
+		 * 步骤，而 TSX→JS 的 esbuild 输出会改写 const→var、剥掉注释/空行/类型行、
+		 * 把 useState 变成 (0, import_react.useState)、给单参数箭头补括号、折行与
+		 * `void 0` 等——这些差异超出仓库 shared-settings-page.md 允许的等价类
+		 * （实测按文档口径归一化后仍差 173 行）。只有原样复制编译产物才能做到
+		 * 归一化差异 0，从而可机械校验。
+		 *
+		 * 升级母本时：重新从 `dsh-chat-translate` 的编译产物里取这段，替换本区段
+		 * 内容（页 id / order / 子槽名 / 组件体都不可手改，改一处即静默失联）。
+		 */
+		var READING_PAGE_ID = "reading";
+		var READING_PAGE_ORDER = 110;
+		var READING_ITEM_SLOT = "reading.settings.item";
+		function readLabel(label) {
+		  if (typeof label === "function") return label();
+		  return typeof label === "string" ? label : "";
+		}
+		var TABLIST_STYLE = {
+		  display: "flex",
+		  alignItems: "flex-end",
+		  gap: "22px",
+		  marginTop: "2px",
+		  marginBottom: "16px"
+		};
+		var TAB_STYLE = {
+		  appearance: "none",
+		  background: "transparent",
+		  // No border on ANY tab: the marker below is the active tab's own element, so
+		  // an inactive tab has nothing that could render a line.
+		  border: "none",
+		  position: "relative",
+		  padding: "7px 1px 11px",
+		  cursor: "pointer",
+		  font: "var(--dsw-font-xs-13)",
+		  color: "var(--dsw-alias-label-tertiary)"
+		};
+		var TAB_ACTIVE_STYLE = {
+		  ...TAB_STYLE,
+		  color: "var(--dsw-alias-label-primary)"
+		};
+		var TAB_MARKER_STYLE = {
+		  position: "absolute",
+		  left: 0,
+		  right: 0,
+		  bottom: 0,
+		  height: "2px",
+		  borderRadius: "2px 2px 0 0",
+		  background: "var(--dsw-alias-label-primary)"
+		};
+		var PANEL_STYLE = { listStyle: "none", margin: 0, padding: 0 };
+		var PANEL_HIDDEN_STYLE = { ...PANEL_STYLE, display: "none" };
+		function createReadingTabs(ctx) {
+		  const locale = ctx.get("locale");
+		  let version = -1;
+		  let revision = -1;
+		  let tabs = [];
+		  return {
+		    getSnapshot: () => {
+		      const nextVersion = ctx.slots.getVersion(READING_ITEM_SLOT);
+		      const nextRevision = locale === void 0 ? 0 : locale.getSnapshot().revision;
+		      if (nextVersion === version && nextRevision === revision) return tabs;
+		      version = nextVersion;
+		      revision = nextRevision;
+		      tabs = ctx.slots.entries(READING_ITEM_SLOT).map((entry) => ({
+		        id: entry.options.id ?? "",
+		        order: entry.options.order ?? 0,
+		        label: readLabel(entry.options.label)
+		      })).sort((left, right) => left.order - right.order);
+		      return tabs;
+		    },
+		    subscribe: (listener) => {
+		      const offSlots = ctx.slots.subscribe(READING_ITEM_SLOT, listener);
+		      const offLocale = locale?.subscribe(listener);
+		      return () => {
+		        offSlots();
+		        offLocale?.();
+		      };
+		    }
+		  };
+		}
+		function ReadingSettingsSection({ renderSlot, readingTabs }) {
+		  const tabs = (0, import_react.useSyncExternalStore)(
+		    readingTabs.subscribe,
+		    readingTabs.getSnapshot,
+		    readingTabs.getSnapshot
+		  );
+		  const [requested, setRequested] = (0, import_react.useState)(null);
+		  const selected = requested !== null && tabs.some((tab) => tab.id === requested) ? requested : tabs[0]?.id ?? null;
+		  if (selected === null) return null;
+		  return (0, import_react.createElement)(
+		    "div",
+		    null,
+		    (0, import_react.createElement)(
+		      "div",
+		      { role: "tablist", style: TABLIST_STYLE },
+		      tabs.map((tab) => (0, import_react.createElement)(
+		        "button",
+		        {
+		          key: tab.id,
+		          type: "button",
+		          role: "tab",
+		          "aria-selected": tab.id === selected,
+		          style: tab.id === selected ? TAB_ACTIVE_STYLE : TAB_STYLE,
+		          onClick: () => {
+		            setRequested(tab.id);
+		          }
+		        },
+		        tab.label,
+		        tab.id === selected ? (0, import_react.createElement)("span", { style: TAB_MARKER_STYLE, "aria-hidden": true }) : null
+		      ))
+		    ),
+		    tabs.map((tab) => (0, import_react.createElement)(
+		      "ul",
+		      {
+		        key: tab.id,
+		        role: "tabpanel",
+		        hidden: tab.id !== selected,
+		        style: tab.id === selected ? PANEL_STYLE : PANEL_HIDDEN_STYLE
+		      },
+		      renderSlot(READING_ITEM_SLOT, {}, { only: tab.id })
+		    ))
+		  );
+		}
+		function readingPageClaimed(ctx) {
+		  return ctx.slots.entries("settings.section").some((entry) => entry.options.id === READING_PAGE_ID);
+		}
+		function claimReadingSettingsPage(ctx, label, locale) {
+		  if (readingPageClaimed(ctx)) return () => {
+		  };
+		  const readingTabs = createReadingTabs(ctx);
+		  return ctx.slots.register({
+		    name: "settings.section",
+		    id: READING_PAGE_ID,
+		    order: READING_PAGE_ORDER,
+		    label,
+		    locale,
+		    inject: () => ({ readingTabs }),
+		    children: { "reading.settings.item": { kind: "list", scope: "root" } }
+		  }, ReadingSettingsSection);
+		}
+		//#endregion shared reading settings page shell
+
 		// ---- Cordis 插件入口 ----
 		// 关键：委托渲染内置组件时，内置组件（ToolCallTree 等）依赖由"条目自身
 		// inject 声明"提供的 hook（如 useConnectionGeneration，来自 connection 服务的
 		// generation 可观察源）。我们的条目必须声明同样的 inject，否则手动
 		// createElement 内置组件会因缺少这些 hook 而崩溃，SlotErrorBoundary 会把
 		// 我们的条目"abdicate"（踢出槽位），折叠随即永久失效。
-		exports.inject = ["slots", "connection", "settingsScope"];
+		exports.inject = ["slots", "connection", "settingsScope", "locale"];
 		exports.apply = function (ctx) {
 			// 设置 → 对话 → 「回合折叠方式」行：shadow 官方 transcript-view 行（priority:-1）。
 			// 通过 ctx.settingsScope（DSH 服务注入）读写官方 ui-chat 命名空间的 transcriptView 字段。
@@ -4629,21 +4600,54 @@ window.__ModuleLoader__.load({
 					}, SettingsTranscriptViewRow);
 				}
 			} catch (e) { /* settingsScope 或 slots 不可用：跳过设置行注册 */ }
-			// 字段设置弹窗 + 全局 Toast + 悬浮提示：独立 React 根挂在 <body> 上，与折叠渲染无关。
+			// 「阅读体验」共享页：本插件注册一张卡片（tab「会话折叠」）承载
+			// 两组设置——字段显隐（6 项指标）与折叠图标风格。页面由先到的参与者当选，
+			// 本插件只 claim（未当选则返回空 disposer，卡片仍照常注册进子槽）。
+			try {
+				var cardSlots = ctx.slots;
+				if (cardSlots && typeof cardSlots.inject === "function") {
+					var cardTranslate = null;
+					if (ctx.locale && typeof ctx.locale.register === "function" && typeof ctx.locale.bind === "function") {
+						ctx.effect(function () {
+							// 重复注册（插件重载/两次 apply）会抛"already has locale"，
+							// 吞掉即可——字典已在，重渲染由 locale revision 驱动。
+							try {
+								return ctx.locale.register(CARD_LOCALE_NS, { zh: TEXTS.zh, en: TEXTS.en });
+							} catch (err) { return undefined; }
+						}, "dsh-turn-fold: reading card dictionaries");
+						cardTranslate = ctx.locale.bind(CARD_LOCALE_NS);
+					}
+					// 参与页面选举：未当选时 claim 内部直接返回空 disposer（不重复声明页面）。
+					cardSlots.inject("settings.section", function () {
+						return claimReadingSettingsPage(ctx, function () {
+							return cardTranslate ? cardTranslate("readingPageNav") : _T("readingPageNav");
+						}, CARD_LOCALE_NS);
+					});
+					// 卡片本体：注册进共享页声明的子槽，等页面出现后自动获得入口。
+					safeRegisterSlot(cardSlots, {
+						name: READING_ITEM_SLOT,
+						id: "dsh-turn-fold",
+						order: 10,
+						label: function () { return cardTranslate ? cardTranslate("cardTitle") : _T("cardTitle"); },
+						locale: CARD_LOCALE_NS
+					}, SessionFoldSettingsCard);
+				}
+			} catch (e) { /* slots/locale 不可用：跳过卡片注册 */ }
+			// 全局 Toast + 悬浮提示：独立 React 根挂在 <body> 上，与折叠渲染无关。
+			// （字段设置齿轮弹窗已移除——设置统一收进「阅读体验」共享页里的本插件卡片。）
 			// 特性检测（document / react-dom createRoot / ctx.effect）让极简宿主与
 			// 测试环境（mock ctx 无 effect、loader 不提供 react-dom）静默跳过。
 			if (typeof document !== "undefined" && ReactDOM !== null && typeof ReactDOM.createRoot === "function" && typeof ctx.effect === "function") {
 				ctx.effect(function () {
-					var host = document.getElementById("__dsh-turn-fold-gear");
+					var host = document.getElementById("__dsh-turn-fold-runtime");
 					if (!host && document.body && typeof document.createElement === "function") {
 						host = document.createElement("div");
-						host.id = "__dsh-turn-fold-gear";
+						host.id = "__dsh-turn-fold-runtime";
 						document.body.appendChild(host);
 					}
 					if (!host) return undefined;
 					var root = ReactDOM.createRoot(host);
 					root.render(react.createElement(react.Fragment, null,
-						react.createElement(FieldVisibilityPopup, null),
 						react.createElement(TurnFoldToast, null),
 						react.createElement(SettingsTip, null)
 					));

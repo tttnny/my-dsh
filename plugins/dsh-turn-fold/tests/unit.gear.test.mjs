@@ -1,5 +1,5 @@
-// 齿轮图标 & 字段设置弹窗：验证点击齿轮 → 弹窗出现 → checkbox 开关 → 字段过滤
-// 也包含文件名链接测试（segmentFilePaths / renderTitleFileLinks / GroupHeader 渲染）
+// 设置卡片 & 折叠图标选择器：验证「阅读体验」共享页里的卡片渲染 → checkbox 开关 →
+// 字段过滤 → 图标风格切换。齿轮弹窗已移除（设置统一收进设置页）。
 import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
@@ -22,7 +22,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { test: T, React } = loadPlugin({ window: dom.window })
 
-describe('齿轮图标 & 字段设置弹窗', () => {
+describe('设置卡片（阅读体验共享页） & 折叠图标选择器', () => {
   let container, root
 
   before(() => {
@@ -31,27 +31,30 @@ describe('齿轮图标 & 字段设置弹窗', () => {
     root = createRoot(container)
   })
 
-  it('初始状态：弹窗隐藏', () => {
-    act(() => { root.render(React.createElement(T.FieldVisibilityPopup)) })
-    assert.strictEqual(dom.window.document.querySelector('.dstf-gear-overlay'), null, '初始无弹窗')
-  })
-
-  it('setPopupVisible(true) → 弹窗出现，含 6 个 checkbox', () => {
-    act(() => { T.setPopupVisible(true) })
-    const overlay = dom.window.document.querySelector('.dstf-gear-overlay')
-    assert.ok(overlay, '弹窗遮罩出现')
-    const popup = overlay.querySelector('.dstf-gear-popup')
-    assert.ok(popup, '弹窗卡片出现')
-    const fields = popup.querySelectorAll('.dstf-gear-popup-field')
+  it('卡片根元素是 <li>（共享页面板是 <ul>），且平铺渲染 6 个字段 checkbox', () => {
+    act(() => { root.render(React.createElement(T.SessionFoldSettingsCard)) })
+    const card = container.querySelector('.dstf-settings-card')
+    assert.ok(card, '卡片出现')
+    assert.strictEqual(card.tagName, 'LI', '卡片根元素必须是 <li>，否则 <ul> 面板漏出游离项目符号')
+    assert.strictEqual(card.style.listStyle, 'none', '自带 listStyle:none 兜底')
+    const fields = card.querySelectorAll('.dstf-card-field')
     assert.strictEqual(fields.length, 6, '6 个字段 checkbox')
-    const checkboxes = popup.querySelectorAll('input[type="checkbox"]')
+    const checkboxes = card.querySelectorAll('input[type="checkbox"]')
     assert.strictEqual(checkboxes.length, 6, '6 个 checkbox')
     for (const cb of checkboxes) assert.ok(cb.checked, '默认全勾选')
   })
 
+  it('齿轮弹窗相关 CSS 已彻底移除（不再有 .dstf-gear-* 规则）', () => {
+    const css = dom.window.document.querySelector('style[data-plugin-css="dsh-turn-fold/style"]')
+    assert.ok(css, '注入样式存在')
+    assert.ok(!css.textContent.includes('.dstf-gear-icon'), '齿轮图标样式已删除')
+    assert.ok(!css.textContent.includes('.dstf-gear-overlay'), '弹窗遮罩样式已删除')
+    assert.ok(!css.textContent.includes('.dstf-gear-popup'), '弹窗卡片样式已删除')
+  })
+
   it('取消勾选 缓存命中率 → filterVisibleMetrics 不再输出 cacheHitPercent', () => {
     // 先勾掉 cacheHit 字段
-    const checkbox = dom.window.document.querySelector('#dstf-field-cacheHit')
+    const checkbox = container.querySelector('#dstf-field-cacheHit')
     assert.ok(checkbox)
     act(() => { checkbox.click() })
     assert.strictEqual(checkbox.checked, false, '缓存命中率取消勾选')
@@ -71,8 +74,8 @@ describe('齿轮图标 & 字段设置弹窗', () => {
     // 上一个用例勾掉了 cacheHit：先恢复，避免跨用例状态影响本用例断言
     act(() => { T.setFieldVisible('cacheHit', true) })
     // 先勾掉 folded 字段
-    const checkbox = dom.window.document.querySelector('#dstf-field-folded')
-    assert.ok(checkbox, '弹窗应含"已折叠行数"checkbox')
+    const checkbox = container.querySelector('#dstf-field-folded')
+    assert.ok(checkbox, '卡片应含"已折叠行数"checkbox')
     act(() => { checkbox.click() })
     assert.strictEqual(checkbox.checked, false, '已折叠行数取消勾选')
 
@@ -88,12 +91,12 @@ describe('齿轮图标 & 字段设置弹窗', () => {
 
   it('turnHeaderLabel：foldedRows 仅 >0 时拼接在缓存命中之后（zh/en）', () => {
     // zh：紧跟"缓存命中x%"之后；缺省 closed 按已折叠处理
-    const label = T.turnHeaderLabel({ cacheHitPercent: '66.67', foldedRows: 8 })
-    assert.strictEqual(label, '缓存命中66.67% · 已折叠8步')
+    const label = T.turnHeaderLabel({ cacheHitPercent: '66.7', foldedRows: 8 })
+    assert.strictEqual(label, '缓存命中66.7% · 已折叠8步')
     // 运行中（closed=false）显示"待折叠N步"
-    assert.strictEqual(T.turnHeaderLabel({ cacheHitPercent: '66.67', foldedRows: 8 }, false), '缓存命中66.67% · 待折叠8步')
+    assert.strictEqual(T.turnHeaderLabel({ cacheHitPercent: '66.7', foldedRows: 8 }, false), '缓存命中66.7% · 待折叠8步')
     // 无 foldedRows / foldedRows=0（上游只在 >0 时注入，这里兜底验证不显示"已折叠0步"）
-    assert.strictEqual(T.turnHeaderLabel({ cacheHitPercent: '66.67' }), '缓存命中66.67%')
+    assert.strictEqual(T.turnHeaderLabel({ cacheHitPercent: '66.7' }), '缓存命中66.7%')
     assert.strictEqual(T.turnHeaderLabel({ foldedRows: 0 }), '')
   })
 
@@ -118,48 +121,43 @@ describe('齿轮图标 & 字段设置弹窗', () => {
     assert.strictEqual(T.turnHeaderLabel(filtered), '')
   })
 
-  it('关闭弹窗 → setPopupVisible(false) → overlay 消失', () => {
-    act(() => { T.setPopupVisible(false) })
-    assert.strictEqual(dom.window.document.querySelector('.dstf-gear-overlay'), null, '弹窗关闭')
-  })
-
   // ── 折叠图标选择 ──
-  it('弹窗内出现折叠图标选择器（两个选项，每个选项右侧一排预览图标）', () => {
-    act(() => { T.setPopupVisible(true) })
-    const selector = dom.window.document.querySelector('.dstf-gear-icon-selector')
+  it('卡片内出现折叠图标选择器（两个选项，每个选项右侧一排预览图标）', () => {
+    act(() => { root.render(React.createElement(T.SessionFoldSettingsCard)) })
+    const selector = container.querySelector('.dstf-card-icon-selector')
     assert.ok(selector, '选择器区域出现')
-    const options = selector.querySelectorAll('.dstf-gear-icon-option')
+    const options = selector.querySelectorAll('.dstf-card-icon-option')
     assert.strictEqual(options.length, 2, '两个选项')
 
     // 选项文字在左、预览在右
     const pokerOpt = options[0]
     const defaultOpt = options[1]
-    assert.ok(pokerOpt.querySelector('.dstf-gear-icon-option-text'), 'poker 选项有文字区')
-    assert.ok(defaultOpt.querySelector('.dstf-gear-icon-option-text'), 'default 选项有文字区')
-    const pokerPreview = pokerOpt.querySelector('.dstf-gear-icon-option-preview')
-    const defaultPreview = defaultOpt.querySelector('.dstf-gear-icon-option-preview')
+    assert.ok(pokerOpt.querySelector('.dstf-card-icon-option-text'), 'poker 选项有文字区')
+    assert.ok(defaultOpt.querySelector('.dstf-card-icon-option-text'), 'default 选项有文字区')
+    const pokerPreview = pokerOpt.querySelector('.dstf-card-icon-option-preview')
+    const defaultPreview = defaultOpt.querySelector('.dstf-card-icon-option-preview')
     assert.ok(pokerPreview, 'poker 选项有预览区')
     assert.ok(defaultPreview, 'default 选项有预览区')
 
     // 文字在左、预览在右：DOM 顺序 text → preview
     const firstChild = pokerOpt.children[0]
     const secondChild = pokerOpt.children[1]
-    assert.ok(firstChild.classList.contains('dstf-gear-icon-option-text'), '文字在前')
-    assert.ok(secondChild.classList.contains('dstf-gear-icon-option-preview'), '预览在后')
+    assert.ok(firstChild.classList.contains('dstf-card-icon-option-text'), '文字在前')
+    assert.ok(secondChild.classList.contains('dstf-card-icon-option-preview'), '预览在后')
 
     // poker 预览 6 个图标（4 个静态牌堆/扇形——每秒按牌面池轮换，四花色 + Logo——
     // + 牌面翻转 + 牌面轮换）
-    const pokerItems = pokerPreview.querySelectorAll('.dstf-gear-icon-option-preview-item')
+    const pokerItems = pokerPreview.querySelectorAll('.dstf-card-icon-option-preview-item')
     assert.strictEqual(pokerItems.length, 6, 'poker 预览 6 种图标')
     // 静态牌堆/扇形 4 个。判定用 svg 内的 .dstf-poker-card（仅静态 PokerIcon 有牌堆
     // 结构）——spin/anim 在 open=false 时不渲染 data-* 属性，:not 排除不可靠；
     // 每个预览项在放大气泡里还有一份副本，只数可见项（tooltip > preview-item 直链）。
-    const allIcons = [...pokerPreview.querySelectorAll(':scope > .dstf-preview-tooltip > .dstf-gear-icon-option-preview-item > .dstf-poker-icon')]
+    const allIcons = [...pokerPreview.querySelectorAll(':scope > .dstf-preview-tooltip > .dstf-card-icon-option-preview-item > .dstf-poker-icon')]
     const staticIcons = allIcons.filter((el) => el.querySelector('.dstf-poker-card'))
     assert.strictEqual(staticIcons.length, 4, '静态牌堆/扇形预览 4 个（每秒轮换牌面）')
 
     // default 预览 2 个图标（右箭头、下箭头）
-    const defaultItems = defaultPreview.querySelectorAll('.dstf-gear-icon-option-preview-item')
+    const defaultItems = defaultPreview.querySelectorAll('.dstf-card-icon-option-preview-item')
     assert.strictEqual(defaultItems.length, 2, 'default 预览 2 种图标')
     // 箭头是描边 polyline（非 fill 路径）
     const rightArrow = defaultItems[0].querySelector('polyline')
@@ -173,11 +171,11 @@ describe('齿轮图标 & 字段设置弹窗', () => {
 
   it('每个预览图标外包放大气泡（hover 显示，无尖尖）', () => {
     // 展开后：每个预览项都包在 .dstf-preview-tooltip 里，内含原预览项 + 放大气泡
-    const tips = dom.window.document.querySelectorAll('.dstf-gear-icon-option-preview .dstf-preview-tooltip')
+    const tips = container.querySelectorAll('.dstf-card-icon-option-preview .dstf-preview-tooltip')
     // poker 6（4 静态轮换 + 翻牌 + 轮换）+ default 2 = 8 个预览项
     assert.strictEqual(tips.length, 8, '每个预览图标一个 tooltip 包裹')
     for (const tip of tips) {
-      const item = tip.querySelector('.dstf-gear-icon-option-preview-item')
+      const item = tip.querySelector('.dstf-card-icon-option-preview-item')
       assert.ok(item, 'tooltip 内含原预览项')
       const bubble = tip.querySelector('.dstf-preview-bubble')
       assert.ok(bubble, 'tooltip 内含放大气泡')
@@ -192,7 +190,7 @@ describe('齿轮图标 & 字段设置弹窗', () => {
 
   it('选择"默认" → turnPokerIcon 返回 undefined（官方 chevron）', () => {
     // 选中"默认"选项（第二个）
-    const option = dom.window.document.querySelectorAll('.dstf-gear-icon-option')[1]
+    const option = container.querySelectorAll('.dstf-card-icon-option')[1]
     assert.ok(option)
     act(() => { option.click() })
     assert.strictEqual(T.getFoldIconStyle(), 'default', '已切换到 default')
@@ -207,7 +205,7 @@ describe('齿轮图标 & 字段设置弹窗', () => {
   })
 
   it('切回"动态扑克牌" → turnPokerIcon 返回组件', () => {
-    const option = dom.window.document.querySelectorAll('.dstf-gear-icon-option')[0]
+    const option = container.querySelectorAll('.dstf-card-icon-option')[0]
     assert.ok(option)
     act(() => { option.click() })
     assert.strictEqual(T.getFoldIconStyle(), 'poker', '已切回 poker')
@@ -287,96 +285,38 @@ describe('齿轮图标 & 字段设置弹窗', () => {
     })
   })
 
-  // ── 文件名链接（步骤折叠栏标题中的文件可点击复制） ──
-  describe('文件名链接（segmentFilePaths / renderTitleFileLinks / GroupHeader）', () => {
-    function toolWithPath(key, seq, name, path) {
-      return makeNode(key, 'tool-call', seq, { data: { root: { kind: 'tool-result', callId: key, name, argsRaw: JSON.stringify({ path }), isError: false } } })
-    }
-    function closedGroupWithFiles(paths) {
-      const nodes = [
-        makeNode('u', 'user', 100, { data: { seq: 100, content: [] } }),
-        makeNode('as', 'assistant-step', 200, { data: { status: 'settled', turn: 13, step: 1, blocks: [{ kind: 'reasoning', text: '思考' }, { kind: 'text', text: '正文' }] } }),
-        ...paths.map((p, i) => toolWithPath('e' + i, 300 + i, 'edit', p)),
-        makeNode('as2', 'assistant-step', 400, { data: { status: 'settled', turn: 13, step: 2, blocks: [{ kind: 'text', text: '最终' }] } }),
-      ]
-      const s = buildSnapshot(nodes, { turnEnds: new Map() })
-      const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e0'))
-      return { group: g, nodes: s.chat.nodes, order: s.chat.order }
-    }
-
-    it('segmentFilePaths：basename → 绝对路径映射（read/edit 都收集）', () => {
-      const { group, nodes } = closedGroupWithFiles(['C:\\proj\\b.js', 'C:\\proj\\c.js'])
-      T.segmentFilePathsCache.clear()
-      const map = T.segmentFilePaths(group, nodes)
-      assert.ok(map instanceof Map)
-      assert.strictEqual(map.get('b.js'), 'C:\\proj\\b.js')
-      assert.strictEqual(map.get('c.js'), 'C:\\proj\\c.js')
-      assert.strictEqual(map.size, 2)
-    })
-
-    it('renderTitleFileLinks：把标题中的文件名替换为 FileLink 元素', () => {
-      const filePaths = new Map([['b.js', 'C:\\proj\\b.js']])
-      const result = T.renderTitleFileLinks('编辑了b.js [ +12 -3 ]', filePaths)
-      assert.strictEqual(typeof result, 'object', '返回 React 元素（非字符串）')
-      assert.ok(result !== null)
-      // 结果是 Fragment，含文本 + FileLink
-      const type = result && result.type
-      assert.ok(type === 'symbol' || type === React.Fragment || type === 'div', '结果为 Fragment/元素')
-    })
-
-    it('无文件时 renderTitleFileLinks 原样返回字符串', () => {
-      assert.strictEqual(T.renderTitleFileLinks('运行了2条命令', null), '运行了2条命令')
-      assert.strictEqual(T.renderTitleFileLinks('运行了2条命令', new Map()), '运行了2条命令')
-    })
-
-    it('GroupHeader：段闭合含文件名时渲染出可点击的 .dstf-file-link（悬停变主题蓝）', () => {
-      // 清掉缓存，构造单文件编辑段
+  // ── 步骤折叠栏闭合标题：纯计数（文件名/参数/diff 不再进入标题） ──
+  describe('步骤折叠栏闭合标题（纯计数）', () => {
+    it('闭合标题按份数输出，不含文件名、不含 diff 数字', () => {
       T.segmentLabelCache.clear()
-      T.segmentFilePathsCache.clear()
+      const mk = (key, seq, name, path) =>
+        makeNode(key, 'tool-call', seq, { data: { root: { kind: 'tool-result', callId: key, name, argsRaw: JSON.stringify({ path }), isError: false } } })
       const nodes = [
         makeNode('u', 'user', 100, { data: { seq: 100, content: [] } }),
-        makeNode('as', 'assistant-step', 200, { data: { status: 'settled', turn: 13, step: 1, blocks: [{ kind: 'reasoning', text: '思考' }, { kind: 'text', text: '正文' }] } }),
-        makeNode('e0', 'tool-call', 300, { data: { root: { kind: 'tool-result', callId: 'e0', name: 'edit', argsRaw: JSON.stringify({ path: 'C:\\proj\\index.js', insertions: 12, deletions: 3 }), isError: false } } }),
+        makeNode('as', 'assistant-step', 200, { data: { status: 'settled', turn: 13, step: 1, blocks: [{ kind: 'reasoning', text: '思考' }] } }),
+        mk('e0', 300, 'edit', 'C:\\proj\\index.js'),
         makeNode('as2', 'assistant-step', 400, { data: { status: 'settled', turn: 13, step: 2, blocks: [{ kind: 'text', text: '最终' }] } }),
       ]
       const s = buildSnapshot(nodes, { turnEnds: new Map() })
       const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e0'))
-      const filePaths = T.segmentFilePaths(g, s.chat.nodes)
-      const title = T.segmentLabel(g, s.chat.nodes)
-      assert.strictEqual(title, '编辑了index.js [ +12 -3 ]', '标题含文件名')
+      const label = T.segmentLabel(g, s.chat.nodes, true)
+      assert.ok(!label.includes('index.js'), '标题不含文件名')
+      assert.ok(!label.includes('['), '标题不含 [ +N -M ] diff 片段')
+      assert.ok(/编辑了1份文件/.test(label), '按份数计数')
+    })
 
-      // 渲染 GroupHeader（isTurn=false，filePaths 传入）→ 标题里应出现 .dstf-file-link
-      const headerHost = dom.window.document.createElement('div')
-      const headerRoot = createRoot(headerHost)
+    it('GroupHeader 不再渲染任何文件链接元素', () => {
+      const headerRoot = createRoot(dom.window.document.createElement('div'))
       act(() => {
         headerRoot.render(React.createElement(T.GroupHeader, {
-          count: 1, open: true, onToggle: () => {}, label: title,
-          isTurn: false, filePaths,
+          label: '编辑了2份文件 · 运行了1条命令',
+          count: 2, open: false, onToggle: () => {}, isTurn: false,
         }))
       })
-      const link = headerHost.querySelector('.dstf-file-link')
-      assert.ok(link, '文件名渲染为 .dstf-file-link')
-      assert.strictEqual(link.textContent, 'index.js', '显示文件名')
-      assert.strictEqual(link.getAttribute('title'), 'C:\\proj\\index.js', 'title 携带绝对路径')
-      assert.ok(link.hasAttribute('role') && link.getAttribute('role') === 'button', '可点击')
-      // 点击复制（jsdom 无 clipboard，走 fallback 不报错）且不冒泡到行 toggle
-      let toggled = false
-      act(() => {
-        headerRoot.render(React.createElement(T.GroupHeader, {
-          count: 1, open: true, onToggle: () => { toggled = true }, label: title,
-          isTurn: false, filePaths,
-        }))
-      })
-      const link2 = headerHost.querySelector('.dstf-file-link')
-      const clickEvent = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })
-      link2.dispatchEvent(clickEvent)
-      assert.strictEqual(toggled, false, '点击文件名不触发折叠栏展开/收起')
-      // 点击后触发 Toast（showToast 被调用，getToast 有文案）
-      const toast = T.getToast()
-      assert.ok(toast.seq > 0, 'Toast seq 递增')
-      assert.strictEqual(toast.text, '已复制绝对路径', 'Toast 文案正确')
+      assert.strictEqual(dom.window.document.querySelectorAll('.dstf-file-link').length, 0, '无文件链接')
       act(() => { headerRoot.unmount() })
     })
+
 
     it('showToast / clearToast 状态管理', () => {
       // 先清除可能被前序测试残留的 toast 状态

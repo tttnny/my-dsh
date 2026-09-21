@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-turn-fold",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "DSH 会话折叠：把已完成回合的 agent activity（思考 / 工具调用 / 上下文注入）收进一行可展开的折叠栏，只留最终答复；折叠栏带实时指标（耗时 / 首字 / token / tok/s / 缓存命中），前导图标可选内置动态扑克牌或官方 chevron。零侵入——只用官方 conversation.chat.node 槽位，不改 DSH 源码。",
   "type": "module",
   "main": "./lib/index.js",

@@ -182,7 +182,7 @@ describe('GroupedToolCallView / GroupedAssistantView 渲染交互（TURN13 真�
     // as-1 纯 think 段标题"思考了1次"，其余工具段"运行了Pwsh"
     assert.ok(segHeaders[0].textContent.includes('思考了1次'), '首个步骤折叠栏为纯 think 段')
     for (let i = 1; i < segHeaders.length; i++) {
-      assert.ok(segHeaders[i].textContent.includes('运行了Pwsh'), '工具步骤折叠栏标题应为"运行了Pwsh"')
+      assert.ok(segHeaders[i].textContent.includes('运行了1条命令'), '工具步骤折叠栏标题应为"运行了1条命令"')
     }
     // text-only：as-1/2/3/4 段外 text（as-1 纯 think 段也有段外 text）
     assert.equal(container.querySelectorAll('.dstf-text-only').length, 4, '4 个 text-only（as-1/2/3/4）')
@@ -190,9 +190,9 @@ describe('GroupedToolCallView / GroupedAssistantView 渲染交互（TURN13 真�
 
   it('展开步骤折叠栏后工具卡片可见（手动展开覆盖默认折叠）', () => {
     clickHeader()
-    // 找到第一个工具步骤折叠栏（"运行了Pwsh"）
+    // 找到第一个工具步骤折叠栏（"运行了1条命令"）
     const segHeaders = [...container.querySelectorAll('.dstf-group-root:not([data-dstf-turn]) > .dstf-header')]
-    const toolSeg = segHeaders.find(h => h.textContent.includes('运行了Pwsh'))
+    const toolSeg = segHeaders.find(h => h.textContent.includes('运行了1条命令'))
     assert.ok(toolSeg, '工具步骤折叠栏应存在')
     act(() => { toolSeg.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })) })
     assert.equal(counts().cards, 1, '展开该段后其工具卡片可见')
@@ -213,7 +213,7 @@ describe('GroupedToolCallView / GroupedAssistantView 渲染交互（TURN13 真�
     clickHeader()
     // 展开一个工具段 · 让工具卡片实际挂载
     const segHeaders = [...container.querySelectorAll('.dstf-group-root:not([data-dstf-turn]) > .dstf-header')]
-    const toolSeg = segHeaders.find(h => h.textContent.includes('运行了Pwsh'))
+    const toolSeg = segHeaders.find(h => h.textContent.includes('运行了1条命令'))
     assert.ok(toolSeg)
     act(() => { toolSeg.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })) })
     assert.ok(lastToolCallProps, '展开步骤折叠后应渲染内置工具卡片')
@@ -231,7 +231,7 @@ describe('GroupedToolCallView / GroupedAssistantView 渲染交互（TURN13 真�
     // 闭合态：已折叠N步（滚轮数字只滚步数，sr-only 保留完整文案）
     const sr = title.querySelector('.dstf-sr-only')
     assert.ok(sr, '闭合回合折叠栏应有 sr-only 完整文本')
-    assert.equal(sr.textContent, '已完成 | 耗时22分34秒 · 首字4.9s · 消耗370202token · 144tok/s · 缓存命中93.99% · 已折叠8步')
+    assert.equal(sr.textContent, '已完成 | 耗时22分34秒 · 首字4.9秒 · 消耗370,202token · 144 tok/s · 缓存命中94% · 已折叠8步')
     assert.ok(container.querySelector('.dstf-header-round'), '回合折叠栏右侧应有"第x轮"')
     assert.equal(container.querySelector('.dstf-header-round').textContent, '第13轮')
   })
@@ -253,7 +253,6 @@ describe('运行中的回合：回合折叠栏从回复开始出现 + 实时指�
     T.overrides.clear()
     T.liveTokenCache.clear()
     T.segmentLabelCache.clear()
-    T.ttftCache.clear()
     mount(RUNNING)
   })
   afterEach(() => {
@@ -263,7 +262,6 @@ describe('运行中的回合：回合折叠栏从回复开始出现 + 实时指�
     T.overrides.clear()
     T.liveTokenCache.clear()
     T.segmentLabelCache.clear()
-    T.ttftCache.clear()
     T.CONFIG.liveTickMs = realLiveTickMs
     Date.now = realDateNow
   })
@@ -278,9 +276,9 @@ describe('运行中的回合：回合折叠栏从回复开始出现 + 实时指�
     assert.equal(c.cards, 0, '步骤折叠默认收起 · 工具卡片应隐藏')
     const segHeaders = [...container.querySelectorAll('.dstf-group-root:not([data-dstf-turn]) > .dstf-header')]
     assert.equal(segHeaders.length, 2, '应有 as-run-1 纯 think 段 + tc-run 工具段两个步骤折叠栏')
-    // as-run-1 纯 think 段（fixture 含 text 块 → 已闭合）标题"思考了1次"；tc-run 段"运行了Pwsh"
+    // as-run-1 纯 think 段（fixture 含 text 块 → 已闭合）标题"思考了1次"；tc-run 段"运行了1条命令"
     assert.ok(segHeaders[0].textContent.includes('思考了1次'), '纯 think 段步骤折叠栏标题应为"思考了1次"')
-    assert.ok(segHeaders[1].textContent.includes('运行了Pwsh'), '工具段步骤折叠栏标题应为"运行了Pwsh"')
+    assert.ok(segHeaders[1].textContent.includes('运行了1条命令'), '工具段步骤折叠栏标题应为"运行了1条命令"')
     // as-run-1 段外 text + as-run-2 段外 text（纯 think 段同样段外渲染 text 正文）
     assert.equal(c.assistants, 2, 'as-run-1 段外 text + as-run-2 段外 text')
     assert.equal(c.hidden, 1, 'as-run-2 非 leader 成员隐藏标记')
@@ -295,7 +293,7 @@ describe('运行中的回合：回合折叠栏从回复开始出现 + 实时指�
     // 滚轮数字是视觉装饰（DOM 含 0-9 数字条） · 完整文案在 sr-only 文本上。
     const sr = title.querySelector('.dstf-sr-only')
     assert.ok(sr, '滚轮文案应有 sr-only 最终文本')
-    assert.match(sr.textContent, /^耗时\d+秒 · 首字\d+\.\d+s · 消耗450token · \d+(\.\d+)?tok\/s · 缓存命中66\.67% · 待折叠\d+步$/)
+    assert.match(sr.textContent, /^耗时\d+秒 · 消耗450token · 缓存命中66\.7% · 待折叠\d+步$/)
   })
 
   it('点击回合折叠栏收起：成员隐藏、分隔线常驻；再点展开恢复', () => {
@@ -315,9 +313,9 @@ describe('运行中的回合：回合折叠栏从回复开始出现 + 实时指�
   })
 
   it('点击步骤折叠栏展开：工具卡片可见；再点收起', () => {
-    // 找到 tc-run 步骤折叠栏（标题含"运行了Pwsh"）
+    // 找到 tc-run 步骤折叠栏（标题含"运行了1条命令"）
     const segHeaders = [...container.querySelectorAll('.dstf-group-root:not([data-dstf-turn]) > .dstf-header')]
-    const tcHeader = segHeaders.find(h => h.textContent.includes('运行了Pwsh'))
+    const tcHeader = segHeaders.find(h => h.textContent.includes('运行了1条命令'))
     assert.ok(tcHeader, 'tc-run 步骤折叠栏应存在')
     assert.equal(counts().cards, 0, '默认折叠 · 工具卡片隐藏')
     // textBody：as-run-1 纯 think 段段外 text + as-run-2 段外 text = 2
@@ -342,7 +340,6 @@ describe('think 步骤折叠：纯 think 段也套步骤折叠栏（标题自研
     T.overrides.clear()
     T.liveTokenCache.clear()
     T.segmentLabelCache.clear()
-    T.ttftCache.clear()
   })
   afterEach(() => {
     act(() => root.unmount())
@@ -351,7 +348,6 @@ describe('think 步骤折叠：纯 think 段也套步骤折叠栏（标题自研
     T.overrides.clear()
     T.liveTokenCache.clear()
     T.segmentLabelCache.clear()
-    T.ttftCache.clear()
     T.CONFIG.liveTickMs = realLiveTickMs
     Date.now = realDateNow
   })
@@ -488,7 +484,7 @@ describe('think 步骤折叠：纯 think 段也套步骤折叠栏（标题自研
     const segRoot = container.querySelector('.dstf-group-root:not([data-dstf-turn])')
     assert.ok(segRoot, '步骤折叠栏存在')
     const title = segRoot.querySelector('.dstf-header .dstf-title')
-    assert.ok(title.textContent.includes('运行了Pwsh'), '回合结束后运行中工具段立即走闭合标题')
+    assert.ok(title.textContent.includes('运行了1条命令'), '回合结束后运行中工具段立即走闭合标题')
     assert.ok(!title.textContent.includes('正在运行'), '不得停留在运行态标题')
     assert.equal(segRoot.querySelector('.dstf-think-title-live'), null, '无运行态标题')
   })
@@ -534,14 +530,14 @@ describe('滚轮数字（RollDigit / AnimatedLabel / 回合折叠栏 live 文案
   })
 
   it('AnimatedLabel：数字拆成逐位滚轮、文字原样 · sr-only 保留完整最终文案', () => {
-    mountNode(React.createElement(T.AnimatedLabel, { label: '耗时5秒 · 消耗450token · 12tok/s · 缓存命中66.67%' }))
+    mountNode(React.createElement(T.AnimatedLabel, { label: '耗时5秒 · 消耗450token · 缓存命中66.7%' }))
     const cells = rcontainer.querySelectorAll('.dstf-roll-cell')
-    // 数字 5 / 4 5 0 / 1 2 / 6 6 6 7 = 10 个数位（66.67 的小数点是文字 · 不拆滚轮）
-    assert.equal(cells.length, 10)
-    assert.deepEqual([...cells].map((c) => c.dataset.digit), ['5', '4', '5', '0', '1', '2', '6', '6', '6', '7'])
+    // 数字 5 / 4 5 0 / 6 6 / 7 = 7 个数位（小数点是文字 · 不拆滚轮）
+    assert.equal(cells.length, 7)
+    assert.deepEqual([...cells].map((c) => c.dataset.digit), ['5', '4', '5', '0', '6', '6', '7'])
     const sr = rcontainer.querySelector('.dstf-sr-only')
     assert.ok(sr, '应有 sr-only 完整文案')
-    assert.equal(sr.textContent, '耗时5秒 · 消耗450token · 12tok/s · 缓存命中66.67%')
+    assert.equal(sr.textContent, '耗时5秒 · 消耗450token · 缓存命中66.7%')
   })
 
   it('AnimatedLabel：数值更新只滚动对应数位（9→10 进位时新增高位）', () => {
@@ -595,7 +591,6 @@ describe('回合折叠栏 0 秒占位（GroupedUserView · user 消息正下方�
   beforeEach(() => {
     T.liveTokenCache.clear()
     T.segmentLabelCache.clear()
-    T.ttftCache.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -700,7 +695,6 @@ describe('排除工具（todo_write）：不套步骤折叠栏，只参与回合
     T.overrides.clear()
     T.liveTokenCache.clear()
     T.segmentLabelCache.clear()
-    T.ttftCache.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -712,7 +706,6 @@ describe('排除工具（todo_write）：不套步骤折叠栏，只参与回合
     T.overrides.clear()
     T.liveTokenCache.clear()
     T.segmentLabelCache.clear()
-    T.ttftCache.clear()
   })
   const todoNode = (key, seq) => makeNode(key, 'tool-call', seq, {
     data: { root: { kind: 'tool-result', callId: key, name: 'todo_write', isError: false } },
@@ -794,9 +787,9 @@ describe('排除工具（todo_write）：不套步骤折叠栏，只参与回合
 describe('语言动态切换', () => {
   it('turnHeaderLabel 随 document.documentElement.lang 在中文/英文间切换', () => {
     document.documentElement.lang = 'en-US'
-    assert.equal(T.turnHeaderLabel(TURN13_METRICS), '22m 34s · TTFT 4.9s · 370202 tokens · 144 tok/s · cache hit 93.99%')
+    assert.equal(T.turnHeaderLabel(TURN13_METRICS), '22m 34s · TTFT 4.9s · 370,202 tokens · 144 tok/s · cache hit 94%')
     document.documentElement.lang = 'zh-CN'
-    assert.equal(T.turnHeaderLabel(TURN13_METRICS), '耗时22分34秒 · 首字4.9s · 消耗370202token · 144tok/s · 缓存命中93.99%')
+    assert.equal(T.turnHeaderLabel(TURN13_METRICS), '耗时22分34秒 · 首字4.9秒 · 消耗370,202token · 144 tok/s · 缓存命中94%')
     // 恢复（避免污染后续测试；无 lang 时回退 navigator zh-CN）
     document.documentElement.lang = ''
   })

@@ -130,20 +130,11 @@ describe('CSS 折叠隐藏规则', () => {
     document.body.removeChild(el)
   })
 
-  it('文件名链接：悬停变蓝 + 白色下划实线（底态透明下划线占位，可过渡淡入）', () => {
+  it('旧的 diff / 文件名链接样式已彻底移除', () => {
     const tag = document.querySelector('style[data-plugin-css="dsh-turn-fold/style"]')
     const css = tag.textContent
-    assert.match(css, /\.dstf-file-link\{[^}]*text-decoration-line:underline[^}]*text-decoration-color:transparent/,
-      '底态应有透明下划线占位（悬停时颜色过渡淡入）')
-    assert.match(css, /\.dstf-file-link:hover\{color:#4D6BFE!important;text-decoration-color:#fff!important\}/,
-      '悬停应变官方蓝 + 白色下划实线')
-    // 行为：底态下划线不可见（透明），悬停后变白
-    const el = document.createElement('span')
-    el.className = 'dstf-file-link'
-    document.body.appendChild(el)
-    const view = document.defaultView
-    assert.equal(view.getComputedStyle(el).textDecorationColor, 'rgba(0, 0, 0, 0)', '底态下划线透明')
-    document.body.removeChild(el)
+    assert.ok(!css.includes('.dstf-file-link'), '文件名链接样式已删除')
+    assert.ok(!css.includes('.dstf-diff'), 'diff 高亮样式已删除')
   })
 
   it('段外 text 正文首尾块 margin 钳制为 0（镜像官方重置，防止与 16px padding/gap 叠加）', () => {    // 模拟官方 AssistantMarkdown 结构：root > body > .markdown > p（p 自带 margin:16px 0，

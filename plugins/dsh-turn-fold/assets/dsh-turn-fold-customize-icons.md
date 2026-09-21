@@ -1,6 +1,6 @@
 # Customize dsh-turn-fold Icons
 
-The plugin's fold-bar icons are **poker cards** (default style) or the **official chevron** (`default` style, picked in the gear popup). Poker icon data is externalized; edit the data source, not hard-coded strings.
+The plugin's fold-bar icons are **poker cards** (default style) or the **official chevron** (`default` style, picked in the plugin's card on the shared 「阅读体验」 settings page). Poker icon data is externalized; edit the data source, not hard-coded strings.
 
 ## Icon data source & pipeline
 

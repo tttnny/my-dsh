@@ -241,7 +241,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     assert.equal(T.segmentLabel(g2, s2.chat.nodes), '正在思考' + '长'.repeat(80))
   })
 
-  it('段闭合（出现下一个 text）：标题 = 运行了 N 条命令（think 不算命令数）', () => {
+  it('段闭合（出现下一个 text）：标题 = 纯计数汇总 + 思考次数并列', () => {
     const nodes = [
       userNode('u', 100),
       asNode('as', 200),
@@ -254,7 +254,12 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('tc1'))
     assert.equal(g.textAfter, true)
     assert.equal(g.toolCount, 2)
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了2条命令')
+    // 段内含 2 个 think：中间纯 think 的 'th' + 边界节点 'as2'（它同时含 text，
+    // think 部分入段、text 部分在段外渲染——这是本插件的既有拆分语义）
+    assert.equal(g.thinkCount, 2, '段内 2 个 think 节点')
+    // 思考数与工具计数并列——此前 thinkCount 只在"段内无工具"时才输出，
+    // 导致"运行了6条命令"的段里那几条思考在标题上消失。
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了2条命令 · 思考了2次')
   })
 
   // ── 回归：被停止/出错的回合（closed=true）──────────────────────────────
@@ -271,9 +276,9 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     assert.equal(g.textAfter, false, '段未闭合（无最终 text——被停止的回合没有总结）')
     // 不传 closed（运行中）：仍是运行态标题（既有行为不变）
     assert.equal(T.segmentLabel(g, s.chat.nodes), '正在运行Pwsh · x')
-    // 传 closed=true（回合已结束）：立即闭合——单条命令闭合标题显示工具名+详情
-    //（既有闭合语义，见"段闭合：单次命令显示工具名"用例），绝不永久停在"正在运行"
-    assert.equal(T.segmentLabel(g, s.chat.nodes, true), '运行了Pwsh · x')
+    // 传 closed=true（回合已结束）：立即闭合——单条命令也走纯计数（不再显示工具名/详情），
+    // 绝不永久停在"正在运行"
+    assert.equal(T.segmentLabel(g, s.chat.nodes, true), '运行了1条命令')
   })
 
   it('被停止的回合（closed=true）：think 段 → "思考了N次"，不再"正在思考"', () => {
@@ -288,7 +293,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     assert.equal(T.segmentLabel(g, s.chat.nodes, true), '思考了1次')
   })
 
-  it('被停止的回合（closed=true）：read 段闭合标题照常按工具分组（文件名链接数据源可用）', () => {
+  it('被停止的回合（closed=true）：read 段闭合标题按计数输出', () => {
     const readNode = (key, seq) => makeNode(key, 'tool-call', seq, {
       data: { root: { kind: 'tool-result', callId: key, name: 'read', argsRaw: JSON.stringify({ path: 'X:/a/b.js' }) } },
     })
@@ -296,10 +301,8 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     const s = buildSnapshot(nodes, { turnEnds: new Map() })
     const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('rd'))
     assert.equal(g.textAfter, false)
-    // closed=true：标题与文件路径（FileLink 数据源）按闭合语义工作
-    assert.equal(T.segmentLabel(g, s.chat.nodes, true), '读取了b.js')
-    assert.ok(T.segmentFilePaths(g, s.chat.nodes, true), '闭合标题里的文件名可渲染为链接')
-    assert.equal(T.segmentFilePaths(g, s.chat.nodes), null, '运行中不提供文件链接数据源')
+    // closed=true：标题按闭合语义输出计数（文件名不再出现在标题里）
+    assert.equal(T.segmentLabel(g, s.chat.nodes, true), '读取了1份文件')
   })
 
   it('段闭合且组内有失败命令：标题追加失败数', () => {
@@ -312,7 +315,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     const s = buildSnapshot(nodes, { turnEnds: new Map() })
     const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('ok'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了2条命令 —— 1条执行失败', '多条工具调用时 1 条失败也显示"1条执行失败"')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了2条命令 · 思考了1次 —— 1条执行失败', '多条工具调用时 1 条失败也显示"1条执行失败"')
   })
 
   it('段闭合：多条失败追加"——y条执行失败"', () => {
@@ -326,7 +329,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     const s = buildSnapshot(nodes, { turnEnds: new Map() })
     const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('ok'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了3条命令 —— 2条执行失败')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了3条命令 · 思考了1次 —— 2条执行失败')
   })
 
   it('段闭合：混合操作失败计入所有工具（read 失败也算）', () => {
@@ -342,7 +345,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     let s = buildSnapshot(nodes, { turnEnds: new Map() })
     let g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('r1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了a.js 运行了Pwsh —— 1条执行失败', 'read 失败计入失败数（多条工具调用时 1 条也带条数）')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了1份文件 · 运行了1条命令 · 思考了1次 —— 1条执行失败', 'read 失败计入失败数（多条工具调用时 1 条也带条数）')
     // edit + pwsh 都失败 → 2 条执行失败
     nodes = [
       userNode('u', 100),
@@ -353,7 +356,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     s = buildSnapshot(nodes, { turnEnds: new Map() })
     g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了b.js 运行了Pwsh —— 2条执行失败', 'edit+pwsh 失败计入失败数')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了1份文件 · 运行了1条命令 · 思考了1次 —— 2条执行失败', 'edit+pwsh 失败计入失败数')
   })
 
   it('段闭合：单条工具调用失败 → 显示"执行失败"（不带条数）', () => {
@@ -365,10 +368,10 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     const s = buildSnapshot(nodes, { turnEnds: new Map() })
     const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('err'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了Pwsh —— 执行失败', '单条工具调用失败不带条数')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了1条命令 · 思考了1次 —— 执行失败', '单条工具调用失败不带条数')
   })
 
-  it('段闭合：单次命令显示工具名 · 多次显示次数+单位', () => {
+  it('段闭合：单次命令也只显示计数（不再显示工具名）', () => {
     const nodes = [
       userNode('u', 100),
       asNode('as', 200),
@@ -377,10 +380,10 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     const s = buildSnapshot(nodes, { turnEnds: new Map() })
     const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('tc'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了Pwsh', '单次命令显示工具名')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了1条命令 · 思考了1次', '单次命令也走计数，不显示工具名')
   })
 
-  it('段闭合：单次命令显示"运行了Pwsh · 命令详情"（command 字段）· 多次命令不显示详情', () => {
+  it('段闭合：命令一律只显示条数（不再显示工具名与命令详情）', () => {
     const toolWithArgs = (key, seq, argsRaw) =>
       makeNode(key, 'tool-call', seq, { data: { root: { kind: 'tool-result', callId: key, name: 'pwsh', argsRaw, isError: false } } })
     // 单次命令：优先取 command 字段
@@ -392,7 +395,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     let s = buildSnapshot(nodes, { turnEnds: new Map() })
     let g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('c1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了Pwsh · cd x:/abc', '单次命令显示命令详情')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了1条命令 · 思考了1次', '单次命令不显示详情')
     // 无 command 字段：兜底取最长字符串值
     nodes = [
       userNode('u', 100),
@@ -402,7 +405,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     s = buildSnapshot(nodes, { turnEnds: new Map() })
     g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('c2'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了Pwsh · x:/abc', '无 command 字段时兜底最长字符串')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了1条命令 · 思考了1次', '无 command 字段同样只计数')
     // 两次命令：只显示次数，不显示详情
     nodes = [
       userNode('u', 100),
@@ -413,10 +416,10 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     s = buildSnapshot(nodes, { turnEnds: new Map() })
     g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('c3'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了2条命令', '多次命令不显示详情')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '运行了2条命令 · 思考了1次', '多次命令只显示条数')
   })
 
-  it('段闭合：仅读取工具——同一文件显示文件名 · 多个文件显示数量', () => {
+  it('段闭合：仅读取工具——一律显示份数（不再显示文件名）', () => {
     const toolWithPath = (key, seq, name, path) =>
       makeNode(key, 'tool-call', seq, { data: { root: { kind: 'tool-result', callId: key, name, argsRaw: JSON.stringify({ path }), isError: false } } })
     // 同一文件读取两次
@@ -429,7 +432,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     let s = buildSnapshot(nodes, { turnEnds: new Map() })
     let g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('r1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了client.js', '同一文件显示文件名')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了2份文件 · 思考了1次', '同一文件读两次也按次数计')
     // 两个不同文件
     nodes = [
       userNode('u', 100),
@@ -440,10 +443,10 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     s = buildSnapshot(nodes, { turnEnds: new Map() })
     g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('r1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了2份文件', '多个文件显示数量+份')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了2份文件 · 思考了1次', '多个文件显示数量+份')
   })
 
-  it('段闭合：混合 读取+命令 —— 读取在前、命令在最后；单命令显示工具名', () => {
+  it('段闭合：混合 读取+命令 —— 读取在前、命令在最后', () => {
     const toolWithPath = (key, seq, name, path) =>
       makeNode(key, 'tool-call', seq, { data: { root: { kind: 'tool-result', callId: key, name, argsRaw: path ? JSON.stringify({ path }) : '{}', isError: false } } })
     const nodes = [
@@ -455,7 +458,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     const s = buildSnapshot(nodes, { turnEnds: new Map() })
     const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('r1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了client.js 运行了Pwsh', '读取在前、命令在最后')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了1份文件 · 运行了1条命令 · 思考了1次', '读取在前、命令在最后')
   })
 
   it('段闭合：混合 读取+编辑+命令 —— 读取、编辑按序 · 命令始终最后', () => {
@@ -472,13 +475,13 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     const s = buildSnapshot(nodes, { turnEnds: new Map() })
     const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('r1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了a.js 编辑了b.js 运行了2条命令')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '读取了1份文件 · 编辑了1份文件 · 运行了2条命令 · 思考了1次')
   })
 
-  it('段闭合：仅编辑工具——同一文件显示文件名 · 单文件时附加行数变更（+xx —xx）', () => {
+  it('段闭合：仅编辑工具——一律显示份数（不再显示文件名与行数变更）', () => {
     const toolWithPath = (key, seq, name, path, extra) =>
       makeNode(key, 'tool-call', seq, { data: { root: { kind: 'tool-result', callId: key, name, argsRaw: JSON.stringify(Object.assign({ path }, extra)), isError: false } } })
-    // 单文件编辑：附加 +12 —3
+    // 单个文件编辑：不再附加 [ +12 -3 ]
     let nodes = [
       userNode('u', 100),
       asNode('as', 200),
@@ -487,79 +490,28 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     let s = buildSnapshot(nodes, { turnEnds: new Map() })
     let g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了index.js [ +12 -3 ]', '单文件编辑附加行数变更')
-    // 无显式字段时从 newStr/oldStr 行数差计算（edit/write 工具的真实 argsRaw 形态）
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了1份文件 · 思考了1次', '单文件编辑只计数，不显示文件名/行数变更')
+    // 多个文件编辑 → 份数
     nodes = [
       userNode('u', 100),
       asNode('as', 200),
-      toolWithPath('e2', 300, 'edit', 'C:\\proj\\a.js', { file_path: 'C:\\proj\\a.js', oldStr: 'line1\nline2', newStr: 'line1\nline2\nline3\nline4' }),
+      toolWithPath('e2', 300, 'edit', 'C:\\proj\\a.js', { insertions: 12, deletions: 3 }),
+      toolWithPath('e3', 301, 'edit', 'C:\\proj\\b.js', { insertions: 1, deletions: 0 }),
       asNode('as2', 400),
     ]
     s = buildSnapshot(nodes, { turnEnds: new Map() })
     g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e2'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了a.js [ +4 -2 ]', '从 newStr/oldStr 行数差计算（仅新增）')
-    // str-replace-editor 用 snake_case：old_str / new_str
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了2份文件 · 思考了1次', '多个文件编辑显示份数')
+    // str-replace-editor 也归 edit 桶（分类不受影响）
     nodes = [
       userNode('u', 100),
       asNode('as', 200),
-      toolWithPath('e3', 300, 'str-replace-editor', 'C:\\proj\\b.js', { file_path: 'C:\\proj\\b.js', old_str: 'a\nb\nc', new_str: 'a\nb' }),
-      asNode('as2', 400),
-    ]
-    s = buildSnapshot(nodes, { turnEnds: new Map() })
-    g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e3'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了b.js [ +2 -3 ]', 'snake_case old_str/new_str 行数差计算（仅删除）')
-    // DSH edit 工具全拼：old_string / new_string
-    nodes = [
-      userNode('u', 100),
-      asNode('as', 200),
-      toolWithPath('e4', 300, 'edit', 'C:\\proj\\c.js', { file_path: 'C:\\proj\\c.js', old_string: 'x\ny', new_string: 'x\ny\nz\nw' }),
+      toolWithPath('e4', 300, 'str-replace-editor', 'C:\\proj\\b.js', { old_str: 'a\\nb\\nc', new_str: 'a\\nb' }),
       asNode('as2', 400),
     ]
     s = buildSnapshot(nodes, { turnEnds: new Map() })
     g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e4'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了c.js [ +4 -2 ]', 'DSH edit 工具 old_string/new_string 行数差计算')
-    // 同一文件编辑两次（行数变更不同）→ 汇总显示
-    nodes = [
-      userNode('u', 100),
-      asNode('as', 200),
-      toolWithPath('e5', 300, 'edit', 'C:\\proj\\d.js', { file_path: 'C:\\proj\\d.js', old_string: 'x\ny\nz', new_string: 'x\ny\nz\nw\nv\nu' }),
-      toolWithPath('e6', 301, 'edit', 'C:\\proj\\d.js', { file_path: 'C:\\proj\\d.js', old_string: 'a\nb\nc\nd\ne', new_string: 'a\nb\nc' }),
-      asNode('as2', 400),
-    ]
-    s = buildSnapshot(nodes, { turnEnds: new Map() })
-    g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e5'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了d.js [ +9 -8 ]', '同一文件多次编辑汇总行数变更（块级：+6-3 与 +3-5 → +9 -8）')
-    // 行数相同但内容不同：替换 N 行 → +N -N（行数差为 0 也能显示）
-    nodes = [
-      userNode('u', 100),
-      asNode('as', 200),
-      toolWithPath('e7', 300, 'edit', 'C:\\proj\\e.js', { file_path: 'C:\\proj\\e.js', old_string: 'a\nb\nc\nd\ne\nf\ng', new_string: 'A\nB\nC\nD\nE\nF\nG' }),
-      asNode('as2', 400),
-    ]
-    s = buildSnapshot(nodes, { turnEnds: new Map() })
-    g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e7'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了e.js [ +7 -7 ]', '行数相同但内容不同 → 替换 7 行 +7 -7')
-    // 官方 diffs 数据源（call.diffs 的 oldText/newText）优先于 argsRaw
-    nodes = [
-      userNode('u', 100),
-      asNode('as', 200),
-      makeNode('e8', 'tool-call', 300, { data: { root: { kind: 'tool-result', callId: 'e8', name: 'edit', argsRaw: JSON.stringify({ file_path: 'C:\\proj\\f.js', old_string: 'x', new_string: 'y' }), diffs: [{ path: 'C:\\proj\\f.js', oldText: 'a\nb\nc\nd\ne\nf\ng', newText: 'A\nB\nC\nD\nE\nF\nG' }], isError: false } } }),
-      asNode('as2', 400),
-    ]
-    s = buildSnapshot(nodes, { turnEnds: new Map() })
-    g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e8'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了f.js [ +7 -7 ]', '官方 diffs 数据优先（与官方 diff 视图一致）')
-    // 多个文件编辑：只显示数量+份 · 不附加行数
-    nodes = [
-      userNode('u', 100),
-      asNode('as', 200),
-      toolWithPath('e1', 300, 'edit', 'C:\\proj\\a.js', { insertions: 12, deletions: 3 }),
-      toolWithPath('e2', 301, 'edit', 'C:\\proj\\b.js', { insertions: 1, deletions: 0 }),
-      asNode('as2', 400),
-    ]
-    s = buildSnapshot(nodes, { turnEnds: new Map() })
-    g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('e1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了2份文件')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '编辑了1份文件 · 思考了1次', 'str-replace-editor 仍计入编辑桶')
   })
 
   it('段闭合：仅搜索工具——显示搜索次数', () => {
@@ -574,7 +526,7 @@ describe('segmentLabel / summarizeArgs（步骤折叠栏标题）', () => {
     ]
     const s = buildSnapshot(nodes, { turnEnds: new Map() })
     const g = T.computeGroup(s.chat.order, s.chat.nodes, s.chat.nodes.get('g1'))
-    assert.equal(T.segmentLabel(g, s.chat.nodes), '搜索了2次')
+    assert.equal(T.segmentLabel(g, s.chat.nodes), '搜索了2次 · 思考了1次')
   })
 
   it('纯 think 段闭合：标题 = 思考了N次（不显示"运行了 0 条命令"）', () => {
@@ -841,10 +793,11 @@ describe('computeTurnMetrics / turnHeaderLabel / 格式化', () => {
     // tok/s = 60 / 5 = 12；缓存命中 = 官方精度算法（260/390 → 67% · 字符串）
     assert.equal(m.durationMs, 5000)
     assert.equal(m.tokens, 450)
-    assert.equal(m.tokensPerSecond, 12)
-    assert.equal(m.cacheHitPercent, '66.67')
+    // tok/s：官方 decode 口径——这些 fixture 节点无 timing（无 decodeMs），故不估算
+    assert.equal(m.tokensPerSecond, undefined, '无 decode 时间证据时不产出 tok/s（不再用墙上时间近似）')
+    assert.equal(m.cacheHitPercent, '66.7')
     assert.equal(m.ttftMs, undefined, '运行中且无 settle step（无 finalNode.timing）→ 无官方 TTFT')
-    assert.equal(T.turnHeaderLabel(m), '耗时5秒 · 消耗450token · 12tok/s · 缓存命中66.67%')
+    assert.equal(T.turnHeaderLabel(m), '耗时5秒 · 消耗450token · 缓存命中66.7%')
   })
 
   it('运行中：第一个 step settle 后即显示官方 TTFT（finalNode.timing 实时读取）', () => {
@@ -866,8 +819,10 @@ describe('computeTurnMetrics / turnHeaderLabel / 格式化', () => {
     })
     const m = T.computeTurnMetrics(13, s.chat.nodes, s.chat.locations, s.turnTimings, 300000)
     assert.equal(m.ttftMs, 4900, 'step settle 后实时读到官方 TTFT（204900 - 200000 = 4900ms）')
-    // token = 100 + 200 + 50 = 350；tok/s = 50 / (100000ms/1000) = 0.5
-    assert.equal(T.turnHeaderLabel(m), '耗时1分40秒 · 首字4.9s · 消耗350token · 0.5tok/s · 缓存命中66.67%')
+    // token = 100 + 200 + 50 = 350
+    // tok/s：官方 decode 口径 = outputTokens 50 ÷ decode(210000-204900=5100ms) ≈ 9.8
+    assert.equal(Math.round(m.tokensPerSecond * 10) / 10, 9.8, 'decode 口径 tok/s')
+    assert.equal(T.turnHeaderLabel(m), '耗时1分40秒 · 首字4.9秒 · 消耗350token · 9.8 tok/s · 缓存命中66.7%')
   })
 
   it('运行中：多个 settle step 取 step 最小者（官方 deriveTurnMetrics 语义）', () => {
@@ -932,29 +887,38 @@ describe('computeTurnMetrics / turnHeaderLabel / 格式化', () => {
     assert.equal(m.durationMs, 500)
     assert.equal(m.tokens, 10)
     assert.equal(m.tokensPerSecond, undefined)
-    assert.equal(T.turnHeaderLabel(m), '耗时0秒 · 消耗10token · 缓存命中0.00%')
+    assert.equal(T.turnHeaderLabel(m), '耗时0秒 · 消耗10token · 缓存命中0%')
   })
 
   it('缺耗时但有 token → 文案省略耗时项', () => {
     assert.equal(T.turnHeaderLabel({ tokens: 100 }), '消耗100token')
   })
 
-  it('缓存命中精度：固定两位小数（不依赖是否接近 100%）', () => {
-    // 完全命中（无未命中输入）："100.00"
-    assert.equal(T.cacheHitPercent(0, 500, 0), '100.00')
-    // 普通命中：两位小数
-    assert.equal(T.cacheHitPercent(130, 260, 0), '66.67')
-    // 接近 100%：同样两位小数（官方算法此处才会提精度 · 插件固定两位）
-    assert.equal(T.cacheHitPercent(1, 9990, 0), '99.99')
-    // 无计费输入：null
-    assert.equal(T.cacheHitPercent(0, 0, 0), null)
+  it('缓存命中精度：1 位小数 + 不把部分命中四舍五入成 100%（官方 formatCacheHitPercent 口径）', () => {
+    // 完全命中：整数字符串 "100"
+    assert.equal(T.formatCacheHitPercent(500, 500, 1), '100')
+    // 普通命中：1 位小数（整十数去掉小数尾巴）
+    assert.equal(T.formatCacheHitPercent(260, 390, 1), '66.7')
+    assert.equal(T.formatCacheHitPercent(1, 3, 1), '33.3')
+    // 整十数去掉小数尾巴（"40" 而非 "40.0"）
+    assert.equal(T.formatCacheHitPercent(2, 5, 1), '40')
+    // 接近 100% 的部分命中：绝不显示成 100——官方按需要补足区分精度位数
+    // （0.04% 未命中 → "99.96"，而不是四舍五入成 100）
+    assert.equal(T.formatCacheHitPercent(9996, 10000, 1), '99.96')
+    assert.equal(T.formatCacheHitPercent(9990, 10000, 1), '99.9')
+    // 精确整十数仍去掉小数尾巴
+    assert.equal(T.formatCacheHitPercent(9900, 10000, 1), '99')
+    // 无 prompt 输入：null
+    assert.equal(T.formatCacheHitPercent(0, 0, 1), null)
   })
 
-  it('formatTurnDuration：秒 / 分秒 / 时分秒', () => {
+  it('formatTurnDuration：秒 / 分秒 / 时分秒（秒位按官方 pad2 补零）', () => {
     assert.equal(T.formatTurnDuration(45000), '45秒')
     assert.equal(T.formatTurnDuration(90000), '1分30秒')
     assert.equal(T.formatTurnDuration(1354551), '22分34秒')
-    assert.equal(T.formatTurnDuration(3661000), '1时1分1秒')
+    // 官方 duration.minutes = "{minutes}分{seconds}秒"，秒补零到两位
+    assert.equal(T.formatTurnDuration(69000), '1分09秒')
+    assert.equal(T.formatTurnDuration(3661000), '1小时01分01秒')
     assert.equal(T.formatTurnDuration(0), '0秒')
   })
 
@@ -1029,8 +993,9 @@ describe('英文界面（en）', () => {
     assert.equal(T2.formatTurnDuration(45000), '45s')
     assert.equal(T2.formatTurnDuration(90000), '1m 30s')
     assert.equal(T2.formatTurnDuration(1354551), '22m 34s')
-    assert.equal(T2.formatTurnDuration(3661000), '1h 1m 1s')
-    assert.equal(T2.turnHeaderLabel(TURN13_METRICS), '22m 34s · TTFT 4.9s · 370202 tokens · 144 tok/s · cache hit 93.99%')
+    // 官方 duration.hours = "{hours}h {minutes}m {seconds}s"，分/秒补零
+    assert.equal(T2.formatTurnDuration(3661000), '1h 01m 01s')
+    assert.equal(T2.turnHeaderLabel(TURN13_METRICS), '22m 34s · TTFT 4.9s · 370,202 tokens · 144 tok/s · cache hit 94%')
     assert.equal(T2.turnHeaderLabel({ tokens: 100 }), '100 tokens')
     // 恢复中文 navigator（动态语言读取下，否则会污染同进程后续测试）
     Object.defineProperty(globalThis, 'navigator', { value: { language: 'zh-CN', languages: ['zh-CN'] }, configurable: true })
@@ -1181,18 +1146,15 @@ describe('projectLiveTokens / turnDisplayMetrics（消耗token 动画增长）',
 describe('trackSession（会话切换清理）', () => {
   const RESET = '__reset__'
 
-  it('切换会话：清理 segmentLabelCache / liveTokenCache / 手动状态 · 保留 ttftCache', () => {
+  it('切换会话：清理 segmentLabelCache / liveTokenCache / 手动状态', () => {
     T.trackSession(RESET)
     T.segmentLabelCache.clear()
-    T.ttftCache.clear()
     T.liveTokenCache.clear()
     T.turnOverrides.clear()
     T.overrides.clear()
     T.trackSession('sess-a') // 从 RESET 切换 → 清理（此时全空）
     // 填充旧会话缓存
     T.segmentLabelCache.set('zh|k1|k2', '标题')
-    T.ttftCache.set('sess-a::13', 120)
-    T.ttftCache.set('sess-b::13', 340)
     T.liveTokenCache.set('sess-a::13', { lastTokens: 100, animBaseTick: 0 })
     T.liveTokenCache.set('sess-a::13:pending', { lastTokens: 0, animBaseTick: 0 })
     T.turnOverrides.set('sess-a::turn:13', true)
@@ -1205,14 +1167,10 @@ describe('trackSession（会话切换清理）', () => {
     assert.equal(T.liveTokenCache.has('sess-a::13:pending'), false, 'pending key 一并清理')
     assert.equal(T.turnOverrides.has('sess-a::turn:13'), false, '回合手动状态回到自动规则')
     assert.equal(T.overrides.has('sess-a::k1'), false, '组手动状态回到自动规则')
-    // ttftCache 保留（每回合一个数字，量级可忽略）
-    assert.ok(T.ttftCache.has('sess-a::13'), 'TTFT 缓存保留')
-    assert.ok(T.ttftCache.has('sess-b::13'), '其他会话 TTFT 不受影响')
   })
 
   it('同一会话重复调用不清理', () => {
     T.trackSession(RESET)
-    T.ttftCache.clear()
     T.liveTokenCache.clear()
     T.segmentLabelCache.clear()
     T.turnOverrides.clear()

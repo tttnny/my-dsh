@@ -281,7 +281,7 @@ describe('步骤分组：手动展开/收起', () => {
     mount(s)
     const segHeaders = [...container.querySelectorAll('.dstf-header')].filter((h) => !h.closest('[data-dstf-turn]'))
     assert.equal(segHeaders.length, 1, '运行中单条工具调用应套步骤折叠栏')
-    assert.ok(segHeaders[0].textContent.includes('运行了Pwsh'), '步骤折叠栏标题应为"运行了Pwsh"（单次命令显示工具名）')
+    assert.ok(segHeaders[0].textContent.includes('运行了1条命令'), '步骤折叠栏标题应为"运行了1条命令"（一律计数）')
     act(() => root.unmount())
     document.body.innerHTML = ''
     // 回合结束后：回合折叠栏收起，步骤折叠栏随回合折叠栏隐藏
@@ -491,8 +491,8 @@ describe('回归：隐藏纯工具步骤的消耗token漏计（对齐官方统�
     const m = T.computeTurnMetrics(13, s.chat.nodes, s.chat.locations, s.turnTimings, undefined)
     assert.equal(m.tokens, OFFICIAL_TOTAL, '58448 + 58543(隐藏) + 58853 = 175844（修复前 117301）')
     assert.equal(m.outputTokens, 36371)
-    // 缓存命中：66496 / (72977 + 66496 + 0) → 47.68
-    assert.equal(m.cacheHitPercent, '47.68')
+    // 缓存命中（官方 1 位小数口径）：66496 / (72977 + 66496 + 0) → 47.7
+    assert.equal(m.cacheHitPercent, '47.7')
   })
 
   it('官方 tokenUsage 优先于节点累加（被重试 attempt 只在事件日志里也计入）', () => {
@@ -501,11 +501,11 @@ describe('回归：隐藏纯工具步骤的消耗token漏计（对齐官方统�
     assert.equal(m.tokens, OFFICIAL_TOTAL + 9000, '官方 totalTokens（含重试 attempt）优先，不用节点累加值 175844')
     assert.equal(m.outputTokens, 36371)
     // 官方 TurnUsagePanel 同款分母：cacheRead / (totalTokens - outputTokens)
-    // = 66496 / (184844 - 36371) → 44.79
-    assert.equal(m.cacheHitPercent, '44.79')
+    // = 66496 / (184844 - 36371) → 44.8（官方 1 位小数口径）
+    assert.equal(m.cacheHitPercent, '44.8')
     // 其余指标不受影响：tok/s 与 ttft 仍读 turn-tail
     assert.equal(m.tokensPerSecond, 144)
-    assert.equal(T.turnHeaderLabel(m), '耗时8秒 · 消耗184844token · 144tok/s · 缓存命中44.79%')
+    assert.equal(T.turnHeaderLabel(m), '耗时8秒 · 消耗184,844token · 144 tok/s · 缓存命中44.8%')
   })
 
   it('跨回合不串账：其他回合的隐藏 assistant-step 不计入本回合', () => {
@@ -783,7 +783,7 @@ describe('回归：直播时钟定时器生命周期（不留下空转的孤儿�
 })
 
 // ─────────────── 回归：GroupHeader 子元素 key / SVG 属性（React 零告警） ───────────────
-// 数组子元素缺 key 时 React 会告警并按"按位复用"协调（文件链接/齿轮增删时可能错位
+// 数组子元素缺 key 时 React 会告警并按"按位复用"协调（新增/删除标题元素时可能错位
 // 复用 DOM）；SVG 属性写成连字符形式（stroke-width）会逐条报 Invalid DOM property。
 // 两者都在折叠栏标题这条热路径上，用真实渲染 + 捕获 console.error 守住。
 describe('回归：GroupHeader 子元素 key 与 SVG 属性（React 控制台零告警）', () => {
@@ -807,7 +807,7 @@ describe('回归：GroupHeader 子元素 key 与 SVG 属性（React 控制台零
   }
   const offenders = (captured, pattern) => captured.filter((line) => line.indexOf(pattern) !== -1)
 
-  it('闭合回合折叠栏（指标 + 齿轮 + 轮次）零 key 告警', () => {
+  it('闭合回合折叠栏（指标 + 轮次）零 key 告警', () => {
     const captured = renderOnce(React.createElement(T.GroupHeader, {
       label: '耗时10秒 · 消耗1200token · 已折叠5步',
       count: 5,
@@ -816,35 +816,31 @@ describe('回归：GroupHeader 子元素 key 与 SVG 属性（React 控制台零
       isTurn: true,
       live: false,
       right: '第3轮',
-      gearIcon: React.createElement(T.GearIcon, null),
     }))
     assert.deepEqual(offenders(captured, 'unique "key"'), [], captured.join('\n'))
   })
 
-  it('步骤折叠栏标题（文件名 + diff + 失败）零 key 告警，文件链接照常渲染', () => {
+  it('步骤折叠栏标题（计数汇总 + 失败后缀）零 key 告警，失败提示照常渲染', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
     const r = createRoot(host)
     const captured = captureWarnings(() => {
       act(() => {
         r.render(React.createElement(T.GroupHeader, {
-          label: '编辑了client.js [ +12 -3 ] 运行了pwsh —— 1条执行失败',
-          count: 2,
+          label: '编辑了1份文件 · 运行了2条命令 —— 1条执行失败',
+          count: 3,
           open: false,
           onToggle: () => {},
           isTurn: false,
-          filePaths: new Map([['client.js', 'C:/repo/client.js']]),
         }))
       })
     })
     const links = host.querySelectorAll('.dstf-file-link')
-    const diffAdd = host.querySelector('.dstf-diff-add')
     const failure = host.querySelector('.dstf-header-failure')
     act(() => r.unmount())
     document.body.innerHTML = ''
     assert.deepEqual(offenders(captured, 'unique "key"'), [], captured.join('\n'))
-    assert.equal(links.length, 1, '文件名链接仍渲染')
-    assert.ok(diffAdd, 'diff 高亮仍渲染')
+    assert.equal(links.length, 0, '文件名链接已彻底移除')
     assert.ok(failure, '失败提示仍渲染')
   })
 
@@ -915,7 +911,7 @@ describe('回归：tool-result 的 call 头缺失时名称归一为空串', () =
     const { nodes, group } = segOf([readNode, truncatedNode('tc-trunc2', 12)])
     const label = T.segmentLabel(group, nodes, true)
     assert.ok(!/undefined/i.test(label), `混合段标题不应含 undefined：${label}`)
-    assert.ok(label.includes('a.js'), `read 的文件名照常显示：${label}`)
+    assert.ok(label.includes('读取了1份文件'), `read 按份数计数（不再显示文件名）：${label}`)
     assert.ok(label.includes('执行了1项操作'), `截断调用计为其它操作：${label}`)
   })
 })
