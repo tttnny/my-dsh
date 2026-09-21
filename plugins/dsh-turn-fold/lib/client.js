@@ -837,6 +837,23 @@ window.__ModuleLoader__.load({
 			};
 		}
 
+		// ---- 按子条目自己声明的 locale 命名空间绑 t ----
+		// 官方 renderEntry 只给**声明了 locale** 的条目发 t，且按该条目自己的命名空间绑定
+		// （ui-tool 的工具行用 'conversation'、ui-skill 的 skill 行用 'skill'，本仓库
+		// ask_user_grilling 行用 'askGrilling'）。tool.call.toolview 的 key 领域是开放的，
+		// 第三方条目各用各的命名空间，所以 renderToolview 的手写分发不能沿用我们自己的 t：
+		// locale 服务查不到 key 时按契约原样返回 key，卡片外壳还在、正文全变成 "row.title"
+		// 这类裸 key（展开后看不出内容）。命名空间在 entry.locale（顶层字段，不在 options 里）。
+		var localeFace = null;
+		function bindLocaleT(ns) {
+			if (!localeFace || typeof localeFace.bind !== "function") return null;
+			if (typeof ns !== "string" || ns === "") return null;
+			try {
+				var bound = localeFace.bind(ns);
+				return typeof bound === "function" ? bound : null;
+			} catch (e) { return null; }
+		}
+
 		// ---- React ----
 		var react = require("react");
 		// 共享页壳副本里 esbuild 生成的 interop 名（见下方 shared reading settings page
@@ -2302,7 +2319,7 @@ window.__ModuleLoader__.load({
 				}
 			}
 			if (!entry || !entry.component) return fallback;
-			var props = buildEntryProps(kit, owner, {
+			var extra = {
 				// 0.1.2-rc.1+：read_image 等条目声明 children（tool.call.images 单槽），
 				// 官方机制会给这类条目发 renderSlot；我们的手写分发同样补一个——
 				// 只处理 tool.call.images（图片画廊），其余 key 走 fallback。
@@ -2313,7 +2330,12 @@ window.__ModuleLoader__.load({
 					if (key !== "tool.call.images") return imgOptions && imgOptions.fallback ? imgOptions.fallback : null;
 					return renderToolImages(kit, imgOwner);
 				}
-			});
+			};
+			// t 按该条目自己声明的命名空间绑定（见 bindLocaleT）；未声明 locale 或绑定失败
+			// （旧版无 locale 面）时退回 kit.t，保持历史行为。
+			var entryT = entry.locale !== void 0 ? bindLocaleT(entry.locale) : null;
+			if (entryT) extra.t = wrapLocaleT(entryT);
+			var props = buildEntryProps(kit, owner, extra);
 			return react.createElement(entry.component, props);
 		}
 
@@ -4564,6 +4586,10 @@ window.__ModuleLoader__.load({
 		// 我们的条目"abdicate"（踢出槽位），折叠随即永久失效。
 		exports.inject = ["slots", "connection", "settingsScope", "locale"];
 		exports.apply = function (ctx) {
+			// locale 面（已声明进 inject）：renderToolview 的手写分发要按子条目自己声明的
+			// 命名空间绑 t（见 bindLocaleT）。测试宿主/极简宿主可能不给，读不到就保持 null、
+			// 退回 kit.t。
+			try { localeFace = ctx.locale || null; } catch (e) { localeFace = null; }
 			// 设置 → 对话 → 「回合折叠方式」行：shadow 官方 transcript-view 行（priority:-1）。
 			// 通过 ctx.settingsScope（DSH 服务注入）读写官方 ui-chat 命名空间的 transcriptView 字段。
 			// 旧版/测试环境无 settingsScope 或 slots 时静默跳过。
