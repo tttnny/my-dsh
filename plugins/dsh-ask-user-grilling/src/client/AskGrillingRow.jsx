@@ -21,6 +21,7 @@ import { readAskCard } from '../card.js';
  */
 export function AskGrillingRow({ block, toolName, inspect, t }) {
   const [expanded, setExpanded] = useState(false);
+  const toggle = () => setExpanded((value) => !value);
   const settled = 'kind' in block;
   const argsRaw = (settled ? block.call?.argsRaw : block.argsRaw) ?? '';
   const resultText = settled ? firstText(block.content) : undefined;
@@ -43,6 +44,7 @@ export function AskGrillingRow({ block, toolName, inspect, t }) {
         title={t('row.title')}
         open={open}
         expandable={expandable}
+        onToggle={toggle}
         expandOnRowClick
         keepContentWhenOpen
         rowClassName="dsg-row"

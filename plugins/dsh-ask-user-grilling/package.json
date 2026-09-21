@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-ask-user-grilling",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Form-presentation variant of the native ask_user_question: same tool description and shared-parameter descriptions verbatim, forced multi-select, an optional question number merged into the header, an optional markdown detail body, a recommendation marker normalized into the one label suffix the client renders, plus an auto-appended round-end supplement question. Its own browser half renders the transcript card for ask_user_grilling (question list, detail markdown, round-end supplement, rejected-round violations).",
   "type": "module",
   "main": "lib/index.js",

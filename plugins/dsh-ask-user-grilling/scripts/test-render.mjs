@@ -28,9 +28,16 @@ globalThis.document = {
   head: { appendChild: () => {} },
 };
 
-/** 只渲染 props 的 ui-primitives 替身，见文件头。 */
+/** 只渲染 props 的 ui-primitives 替身，见文件头。同时记下 DisclosureRow 收到的那份 props：
+ * 展开是受控的，`onToggle` 漏传时真组件不会挂 onClick（`expandOnRowClick` 也救不回来），
+ * 症状是行永远展不开、正文永远不出现——这条只有在这里断言才拦得住。 */
+let lastDisclosureProps = null;
 const primitives = {
-  DisclosureRow: ({ title, collapsedContent, children }) => createElement('div', null, title, collapsedContent, children),
+  DisclosureRow: (props) => {
+    lastDisclosureProps = props;
+    const { title, collapsedContent, children } = props;
+    return createElement('div', null, title, collapsedContent, children);
+  },
   MarkdownText: ({ text }) => createElement('span', null, text),
   StateDot: () => createElement('span', null),
   IconQuestionOutline14: () => null,
@@ -173,6 +180,21 @@ test('调用失败：给失败说明', () => {
   const markup = html(settled('boom: seam unavailable', { isError: true, error: { name: 'Error', code: 'EPIPE' } }));
   assert.match(markup, /调用失败/);
   assert.match(markup, /boom: seam unavailable/);
+});
+
+test('行是可展开的：DisclosureRow 拿到受控的 onToggle（漏传则整行点不开、正文永不出现）', () => {
+  html(settled(answers([{ id: 'h1', selected: ['A'] }])));
+  assert.equal(typeof lastDisclosureProps.onToggle, 'function', '没给 onToggle，展开行挂不上点击');
+  assert.equal(lastDisclosureProps.expandOnRowClick, true);
+  assert.equal(lastDisclosureProps.open, false, '初始应折叠');
+  assert.equal(lastDisclosureProps.expandable, true, '这一行有内容，应当可展开');
+});
+
+test('没有内容的行不给 onToggle：不可展开', () => {
+  // argsRaw 为空、结果为空 → expandable 为 false，此时展开态恒为 false。
+  html({ kind: 'result', call: { name: 'ask_user_grilling', argsRaw: '' }, content: [] });
+  assert.equal(lastDisclosureProps.expandable, false);
+  assert.equal(lastDisclosureProps.open, false);
 });
 
 test('流式半截 JSON：退回原始文本，不假装读懂了', () => {
