@@ -35,7 +35,7 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-antigravity-auth"><code>@lynn123411/dsh-antigravity-auth</code></a></td>
-      <td><b>Antigravity 全套权益接入</b><br>· Google Antigravity 私有能力包：Gemini 2.5/3.1/3.7、Claude 3.5/3.7 与 GPT-OSS 原生模型接入<br>· 突破 127.0.0.1 严格回环限制，支持全网卡监听（0.0.0.0）与远程手动授权回调换票<br>· 搭载 Google Search Grounding 联网搜索、多模态生图与视频分析工具<br>· 设置卡片无缝挂载于共享页「<b>API中转</b>」（order 30，Tab: Antigravity）</td>
+      <td><b>Antigravity 全套权益接入</b><br>· Google Antigravity 私有能力包：Gemini 2.5/3.1/3.7、Claude 3.5/3.7 与 GPT-OSS 原生模型接入<br>· 突破 127.0.0.1 严格回环限制，支持全网卡监听（0.0.0.0）与远程手动授权回调换票<br>· 搭载 Google Search Grounding 联网搜索、多模态生图与视频分析工具<br>· 设置卡片挂载于共享页「<b>API中转</b>」（order 30，Tab: Antigravity）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-antigravity-auth</code></td>
     </tr>
     <tr>
