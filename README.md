@@ -51,12 +51,6 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling</code></td>
     </tr>
     <tr>
-      <td><b>📦 已归档</b><br><i>archive/plugins/ 下只作历史参考</i></td>
-      <td><a href="./archive/plugins/dsh-workspace-tree"><code>@lynn123411/dsh-workspace-tree</code></a></td>
-      <td><b>工作区归档区（已归档，不再发布）</b><br>· <b>纯增量</b>：不注册 <code>sidebar.workspaces</code>，官方工作区列表 / 搜索 / 拖拽 / 分组 / 设置页一律不动——归档区经官方 <code>sidebar.panellist</code> 侧栏图标 + <code>main</code>（keyed）面板接入<br>· 归档按工作区分组（无归属者落「未分组」），subagent 来源与空白草稿不入列<br>· 只读阅览、单条 / 分组 / 全部恢复（官方 <code>unarchiveSession</code>）、永久删除 fail-loud 级联<br>· 退役处置与两处登记的同步规则见 <a href="./docs/rules/release.md">docs/rules/release.md</a>「退役（归档）」</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-workspace-tree</code>（停止维护，保留历史链接）</td>
-    </tr>
-    <tr>
       <td><b>📱 设备访问</b><br><i>跨设备与本机外部应用接入</i></td>
       <td><a href="./plugins/dsh-web-auth-url"><code>@lynn123411/dsh-web-auth-url</code></a></td>
       <td><b>GUI 鉴权地址</b><br>· 把当前实例<b>带 token 的访问地址</b>交给模型与 shell：托管 <code>DSH_WEB_AUTH_URL</code>，每次 shell 调用即时解析，token 随重启轮换自动跟随<br>· 贡献一段紧随 <code>app:web-surface</code> 的提示词，交代「第一次请求 303 换 cookie、之后复用同一个 jar」这一必需用法（token 只对 <code>GET /</code> 有效，之后全靠 Set-Cookie，故 <code>curl -c/-b</code> 是唯一可行路径）<br>· <b>secret 不进提示词与 transcript</b>：默认只报变量名，<code>inline</code> 档才把带 token 的地址写进提示词<br>· 形态：bundle 型插件，无客户端半边、不新增端口与凭据</td>
