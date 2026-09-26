@@ -7,16 +7,16 @@
 ## 安装与启用
 
 ```bash
-# 装进 profile（npm 包名）
-dsh plugin --profile web add @lynn123411/dsh-preset-matt-ptc
+# 装进 profile（npm 包名）：本包 + 它消费的 grilling 插件
+dsh plugin --profile web add @lynn123411/dsh-preset-matt-ptc @lynn123411/dsh-ask-user-grilling
 
 # 本仓库开发副本：在仓库根执行，命令把目录 link 进 profile 并登记包名
-dsh plugin --profile web add ./presets/matt-ptc
+dsh plugin --profile web add ./presets/matt-ptc ./plugins/dsh-ask-user-grilling
 ```
 
-装完后 `list_bundles` 应列出本包、`list_plugins` 应看到 `preset-matt-ptc` 行已激活（激活失败会留在名册上并带诊断）。重启 DSH 后，在新建会话界面选择「Matt PTC 模式（实验性）」。
+装完后 `list_bundles` 应列出两个包、`list_plugins` 应看到 `preset-matt-ptc` 行已激活（激活失败会留在名册上并带诊断）。重启 DSH 后，在新建会话界面选择「Matt PTC 模式（实验性）」。
 
-前置：grilling 适配插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md) 必须已按注册方式装进同一 profile。patch 里那条工具行消费它，缺了它该行不可解析，preset 会整体从模式选择里消失。
+前置：grilling 适配插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md) 已声明为本包 `dependencies`，行因此总是可解析；但它同时是带客户端半边的 bundle，`dsh.profile.bundles` 只按 profile 的**直接依赖**登记（传递依赖进不了 bundle 层），所以安装命令要点名它——只装本包时工具照常可用，transcript 那一行退回原始 JSON。
 
 ## 详细说明
 

@@ -37,7 +37,7 @@ DSH 原生 `ask_user_question`（[`@deepseek-ai/dsh-tool-ask-user`](https://www.
 dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 ```
 
-已发布至 npm，供三个 matt 预设（`matt-standard` / `matt-ptc` / `matt-cordis`）使用：preset 的工具行直接消费本包，官方 `tool-ask-user` 行原位换成它。
+已发布至 npm，供三个 matt 预设（`matt-standard` / `matt-ptc` / `matt-cordis`）使用：preset 的工具行直接消费本包，官方 `tool-ask-user` 行原位换成它。三份 preset 从 0.1.1 起把本包声明为 `dependencies`（preset 行因此总可解析）；但 `dsh.profile.bundles` 只按 profile 的**直接依赖**登记，安装命令仍要点名本包：`dsh plugin --profile web add @lynn123411/dsh-preset-matt-<id> @lynn123411/dsh-ask-user-grilling`（开发副本同理带上 `./plugins/dsh-ask-user-grilling`；`link:` 包的 `dependencies` 不会被物化）。
 
 **本地开发**：用 `link:`，不要拷贝——运行副本软链接到本仓库目录后，仓库里的文件就是“已安装内容”：`cd ~/.dsh/profiles/web && pnpm add "link:<my-dsh 绝对路径>/plugins/dsh-ask-user-grilling" --offline`，再在插件目录 `pnpm install && pnpm build`。本插件宿主半边 `import` 了 `@deepseek-ai/dsh-tools` 与 `@deepseek-ai/dsh-user-questions`；`link:` 插件的这些内核包由 DSH 自身路由供给（前提是 DSH 带 `--preserve-symlinks` 启动，启动器已默认带上——见仓库 `docs/rules/dev-copy.md`「内核包路由与 `--preserve-symlinks`」）。**不要**手工拷贝进 `node_modules/`：裸拷贝是未注册状态，`pnpm install` / `dsh plugin add|remove` 等任何 profile 同步都会把它当 extraneous 清掉，而 roster 对每份 preset 做行可解析性健康检查——插件一旦被剪，引用它的三份 matt preset 会整体从模式选择里消失。
 

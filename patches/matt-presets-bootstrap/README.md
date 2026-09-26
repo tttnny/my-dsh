@@ -132,11 +132,11 @@ Q2. **<问题标题>**: <问题正文，可能包含多个段落>
 ## 三、其余文件
 
 - `skills/` 的 26 个技能：来自 [mattpocock/skills](https://github.com/mattpocock/skills) **原样 vendor，无改动**；其中 `implement-spec` 上游归在 `skills/in-progress/`（beta、官方明确不随插件分发），本仓库按快照一并 vendor。grilling 是唯一有本地改动的例外。matt-cordis 的技能数与另两份相同（26）——cordis 随附的 3 个技能改由官方 `@deepseek-ai/dsh-agent-preset/skills` 提供，不再入库。
-- `package.json`（bundle 声明）、`matt-<id>.patch.yml`（组合声明）、`README.md`：自写。`package.json` 与另三份 preset 同形态：`name` / `version` / `description` / `type` / `exports["./package.json"]` / `files`（`skills`、`matt-<id>.patch.yml`、`README.md`）/ `license` / `keywords` / `repository.directory` / `engines.dsh: "0.1.7-rc.2"`（0.1.7-rc.1 起安装与启动都做 DSH 版本兼容检查，内核版本钉死由它承担）/ `publishConfig` / `dsh.bundle.patch`。**不声明 `peerDependencies`**：preset bundle 不编译、不 import 内核包，而 `config.plugins` 引用的内核包有几十个，挑几个当 peer 纯属任意；更要紧的是 pnpm 的 `auto-install-peers` 会去 registry 把它们物化回来，可能顶掉本机开发副本（本仓库硬约束 2 的同款事故）。
+- `package.json`（bundle 声明）、`matt-<id>.patch.yml`（组合声明）、`README.md`：自写。`package.json` 与另三份 preset 同形态：`name` / `version` / `description` / `type` / `exports["./package.json"]` / `files`（`skills`、`matt-<id>.patch.yml`、`README.md`）/ `dependencies` / `license` / `keywords` / `repository.directory` / `engines.dsh: "0.1.7-rc.2"`（0.1.7-rc.1 起安装与启动都做 DSH 版本兼容检查，内核版本钉死由它承担）/ `publishConfig` / `dsh.bundle.patch`。`dependencies` 只写 `config.plugins` 消费的仓库外插件（三份都是 `@lynn123411/dsh-ask-user-grilling`）：preset 行按 `name` 从声明它的那棵树解析，缺了它整行 `never started`、preset 带上诊断且不可选。**不声明 `peerDependencies`**：preset bundle 不编译、不 import 内核包，而 `config.plugins` 引用的内核包有几十个，挑几个当 peer 纯属任意；更要紧的是 pnpm 的 `auto-install-peers` 会去 registry 把它们物化回来，可能顶掉本机开发副本（本仓库硬约束 2 的同款事故）。
 
 ## 四、外部材料（非改动、需自带）
 
-- 插件 `@lynn123411/dsh-ask-user-grilling`（`ask_user_question` 的表单呈现变体：同一条 `ctx.userQuestions` seam，工具描述与共有参数描述**与原生逐字一致**；只强制多选、把可选题号参数 `number` 并进 `header`、把可选正文参数 `detail` 交给界面的 markdown 正文位、并自动追加一道轮末补充题；表单装不下的入参就地返回 `rejected` + `violations`；多选刻意不写进描述；transcript 那一行由本包自带的浏览器半边画成问答卡片）：**必须经注册安装、且列进 profile 的 bundle 层**。① 装包（Plugin Manager `install_bundle`，或对应 profile 的 pnpm 依赖）；② 该包进 `dsh.profile.bundles`（包内 `cordis.patch.yml` 会插入一条载体行，宿主半边在那条行下什么都不注册）。② 不可省：卡片是客户端半边画的，而客户端 bundle 只对 root loader 的 **enabled entry** 服务，preset 工具行是直接挂的子树、不是 Loader entry——少了它工具照常可用，只是 transcript 里那一行退回原始 JSON。**不要手工拷贝进 `node_modules/@lynn123411/`**：未注册的裸拷贝会在任何 pnpm 同步时被当 extraneous 剪掉，而 roster 对每份 preset 做行可解析性健康检查——此插件一旦被剪，**引用它的三份 preset 会整体从模式选择里消失**。仓库 `plugins/dsh-ask-user-grilling/` 是事实源。
+- 插件 `@lynn123411/dsh-ask-user-grilling`（`ask_user_question` 的表单呈现变体：同一条 `ctx.userQuestions` seam，工具描述与共有参数描述**与原生逐字一致**；只强制多选、把可选题号参数 `number` 并进 `header`、把可选正文参数 `detail` 交给界面的 markdown 正文位、并自动追加一道轮末补充题；表单装不下的入参就地返回 `rejected` + `violations`；多选刻意不写进描述；transcript 那一行由本包自带的浏览器半边画成问答卡片）：**必须经注册安装、且列进 profile 的 bundle 层**。① 装包（`dsh plugin --profile web add @lynn123411/dsh-preset-matt-<id> @lynn123411/dsh-ask-user-grilling`，或 Plugin Manager `install_bundle`）；三份 preset 已把它声明为 `dependencies`，preset 行总可解析——但 bundle 层只按 profile 的**直接依赖**登记（`dsh-app-boot` 的 `readProfilePlugins` 读 profile 自己的 `package.json`），漏点名时工具照常可用、卡片退回原始 JSON。② 该包进 `dsh.profile.bundles`（包内 `cordis.patch.yml` 会插入一条载体行，宿主半边在那条行下什么都不注册）；② 不可省：卡片是客户端半边画的，而客户端 bundle 只对 root loader 的 **enabled entry** 服务，preset 工具行是直接挂的子树、不是 Loader entry。**不要手工拷贝进 `node_modules/@lynn123411/`**：未注册的裸拷贝会在任何 pnpm 同步时被当 extraneous 剪掉；roster 对每份 preset 做行可解析性健康检查，插件被剪后三份 preset 都带 `never started` 诊断、不可选。仓库 `plugins/dsh-ask-user-grilling/` 是事实源。
 - 26 个技能随 mattpocock/skills 上游更新。
 
 ## 五、验证（2026-09-26 在 DSH 0.1.7-rc.2 实测）
@@ -179,7 +179,12 @@ DSH="$(node tmp/dsh-0.1.7-migration/dshpkg.mjs dsh)/lib/bin.js"
 
 6. **包形态**：`cd presets/matt-<id> && npm pack --dry-run` 三份都 exit 0，各 79 个文件（`package.json` + `matt-<id>.patch.yml` + `README.md` + 26 个技能目录及其子文件）。
 
-7. **真装载（按 npm 包名补跑）**：0.1.7-rc.2 隔离 `DSH_HOME` 里 `dsh plugin --profile web add @lynn123411/dsh-preset-matt-<id>` 真装后 boot 一个探针宿主行，实测：三份都 `broken: null`、各自 `skills/` 的 26 个技能进 skills 服务、`tool-ask-user-grilling=up`、matt-ptc 的模型可见目录只有 `run_code`、matt-cordis 另有官方 3 个 cordis 技能与 `tool-cordis=up`（探针读 `systemPrompt.assemble({ scope })`，即模型可见工具目录）。`--dump-config-schema` 对含 `@deepseek-ai/dsh-agent-preset` 的组合树一律 exit 1（报 `unrecognized Loader tree carrier`）——这是它对该行的既有局限：**把官方 `standard.patch.yml` 当 overlay 跑，stderr 与本次成品逐字相同**（4 条基线 + 每多一条 preset 行多 1 条），不是本仓库引入的问题。
+7. **真装载（0.1.7-rc.2 隔离 `DSH_HOME`）**：0.1.0 按包名只装 preset 时，三份的 `agentPresets.list()` 都报 `tool-ask-user-grilling (@lynn123411/dsh-ask-user-grilling): never started`——patch 里那条工具行不可解析。0.1.1 起 grilling 进 `dependencies`，以 matt-standard 复测三个流程：
+   - 只装 preset（npm 包名，或本地 tarball 当 registry）：`broken: null`，grilling 作为传递依赖装进 profile，但**不进** `dsh.profile.bundles`（`readProfilePlugins` 只读 profile 的直接依赖）——工具可用，transcript 卡片退回原始 JSON；
+   - 命令点名两个包：两个包都进 `bundles`，`broken: null`，grilling 行 `fiberState: 2`；
+   - 开发副本（`link:`）只装 preset：`link:` 包的 `dependencies` 不被物化，仍旧 `never started`——开发副本命令必须同样点名 `./plugins/dsh-ask-user-grilling`。
+
+   探针读 `agentPresets.list()` / `compositionInventory()`；三份的 `skills/` 26 个技能进 skills 服务、`tool-ask-user-grilling=up`、matt-ptc 的模型可见目录只有 `run_code`、matt-cordis 另有官方 3 个 cordis 技能与 `tool-cordis=up`。`--dump-config-schema` 对含 `@deepseek-ai/dsh-agent-preset` 的组合树一律 exit 1（报 `unrecognized Loader tree carrier`）——这是它对该行的既有局限：**把官方 `standard.patch.yml` 当 overlay 跑，stderr 与本次成品逐字相同**（4 条基线 + 每多一条 preset 行多 1 条），不是本仓库引入的问题。
 
 ## 六、何时重打
 
@@ -189,4 +194,4 @@ DSH="$(node tmp/dsh-0.1.7-migration/dshpkg.mjs dsh)/lib/bin.js"
 - **同进程与官方 `cordis` 共存**：0.1.7-rc.2 起 Host inspect provider 由**宿主组合单点注册**（`dsh-web-app/cordis.patch.yml` 的 `cordis-inspect-providers` 行，`@deepseek-ai/dsh-tool-cordis/host`），per-preset 的 `tool-cordis` 行不再注册任何 provider，重复注册无从产生——**不需要任何幂等补丁**。判据：`--profile web --dump-config | grep -c "id: cordis-inspect-providers"` 期望 `1`；全安装树 `grep -rn "cordisInspect.register"` 应唯一命中 `dsh-tool-cordis/lib/types/host.js`。
 - **Matt 技能上游更新后**：整体覆盖 26 个技能目录（上游 `skills/engineering` 18 个 + `skills/productivity` 7 个 + `skills/in-progress/implement-spec`），再把三份 preset 的 `skills/grilling/SKILL.md` 按 §二 重做——上游逐字 + 改动①②③④（`matt-ptc` 用 PTC 形态的投递旁注；改动③ 是删句，覆盖上游文件后需手工再删一遍）。其余技能无本地改动。
 
-仓库 `presets/matt-*/` 即上述改动后的成品；日常使用 = `dsh plugin --profile web add @lynn123411/dsh-preset-matt-<id>` 装进 profile（本仓库开发副本改传 `./presets/matt-<id>`），重启 DSH 后在新建会话界面选择。
+仓库 `presets/matt-*/` 即上述改动后的成品；日常使用 = `dsh plugin --profile web add @lynn123411/dsh-preset-matt-<id> @lynn123411/dsh-ask-user-grilling` 装进 profile（本仓库开发副本改传 `./presets/matt-<id> ./plugins/dsh-ask-user-grilling`），重启 DSH 后在新建会话界面选择。
