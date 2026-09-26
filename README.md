@@ -17,21 +17,10 @@
   </thead>
   <tbody>
     <tr>
-      <td rowspan="2"><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
+      <td><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
       <td><b>聊天翻译</b><br>· 工具调用标题自动译中（仅当前会话、回答正文不翻）；思考卡折叠摘要永不翻译<br>· <b>思考链翻译按钮</b>（默认显示，仅 AI 通道且要求 AI 已配置）：只给展开的思考卡在「Think」右侧插小按钮，点它才翻译，三态（描边「译」字 / 圈内旋转 / 实心高亮），再点整条切换；折叠的卡片没有按钮，思考流式中置灰<br>· 按 markdown 块级元素切分并打包（客户端 2048 估算 token、宿主 4096 输入 / 8192 输出 token），代码块原样保留，混合块只翻行内文字；整条命中缓存则展开即显示中文<br>· 请求走独立串行队列与独立超时（默认 600s）、独立缓存池（各 300 条）<br>· OpenAI 兼容 AI 通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）+ 免 Key Bing 兜底双通道<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
-    </tr>
-    <tr>
-      <td><a href="./plugins/dsh-turn-fold"><code>@lynn123411/dsh-turn-fold</code></a></td>
-      <td><b>会话折叠</b><br>· 每个<b>已完成</b>回合的 Agent activity（思考 / 工具调用 / 上下文注入）收进一行可展开折叠栏，最终答复独立可见；出错、被中断、收尾后又有新活动的回合整段保持可见<br>· 折叠栏六项指标（耗时 / 首字 / token / tok/s / 缓存命中 / 已折叠步数），数值格式与官方一致（补零 / 取整 / 1 位小数防 100% / 千分位），tok/s 走官方 decode 口径、首字取自官方 timing；token 与官方统计同口径（含隐藏计费 attempt）<br>· 闭合的步骤折叠栏只给计数汇总（<code>读取了N份文件 · 运行了N条命令 · 思考了N次</code>）；展开后折体内按官方形态逐层缩进<br>· 流式中连续工具与思考按真实交错顺序合成子折叠组，可见助手正文是硬边界<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片：字段显隐 + 折叠图标风格，均持久化）<br>· shadow 官方「对话显示」设置行，Normal / Compact / Turn-Fold 三档：选 Turn-Fold 由本插件接管并同时把官方 <code>transcriptView</code> 置为 <code>normal</code> 以避免双重折叠<br>· 前导图标默认内置动态扑克牌（运行中花色循环 / 收起牌堆 / 展开扇形），可切回官方 chevron；数据源 <code>icons/default.json</code><br>· <b>零侵入</b>：只注册官方 <code>conversation.chat.node</code> 槽位，不改 DSH 源码、不需要 Harmony、不依赖编译产物补丁；同位被占自动让位</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-turn-fold</code></td>
-    </tr>
-    <tr>
-      <td><b>🗂️ 工作区管理</b><br><i>侧栏信息架构与会话资产，含写语义</i></td>
-      <td><a href="./plugins/dsh-workspace-tree"><code>@lynn123411/dsh-workspace-tree</code></a></td>
-      <td><b>工作区树</b><br>· 三档分组（按工作区 / 工作区树 / 单一列表）+ 会话搜索 + 排序与拖拽，注册工作区按目录嵌套、无归属会话落「未分组」<br>· 一键在外部 IDE 打开（VS Code / Cursor / CodeBuddy / Windsurf / Trae / JetBrains 等）<br>· 全局重命名 + 安全归档区（归档门槛 / 只读阅览）+ 级联物理删除<br>· 唯一带注册表与文件系统写语义的侧栏插件<br>· 一键删除空壳会话（判据取官方列表投影的 blank，排除运行中/正在打开/子代理，fail-loud 级联）<br>· 设置项与 Matt 技能控制面板共用「<b>侧边栏</b>」设置页（先到先得当选页面宿主）</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-workspace-tree</code></td>
     </tr>
     <tr>
       <td rowspan="3"><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
@@ -56,15 +45,16 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-model-submenu</code></td>
     </tr>
     <tr>
-      <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
+      <td><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
       <td><a href="./plugins/dsh-ask-user-grilling"><code>@lynn123411/dsh-ask-user-grilling</code></a></td>
       <td><b>提问表单变体</b><br>· <code>ask_user_grilling</code>：原生 <code>ask_user_question</code> 的呈现变体——同一条 <code>userQuestions</code> seam，工具描述与共有参数描述<b>与原生逐字一致</b>（另有可选参数 <code>number</code>（题号，由代码并进 <code>header</code>）、<code>detail</code>（界面按 markdown 渲染的正文）、<code>recommended</code>（推荐项）），只强制多选、并自动追加一道轮末补充题（多选刻意不写进描述）<br>· transcript 卡片由自带浏览器半边画：题号/题干/选项说明之外还把 <code>detail</code> 正文、轮末补充题与被拒的违规清单一起列出来（官方卡只认 id 与题干，遇到轮末补充题会退回原始 JSON）<br>· 配合 <code>matt-*</code> 预设：轮次先散文预告、再以一次表单投递作答<br>· ⚠️ 形态：bundle + 客户端半边——工具由 preset 工具行注册，profile <code>dsh.profile.bundles</code> 里的本包载体行（<code>config.carrier: true</code>，什么都不注册）只为让 Web shell 服务卡片 bundle</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling</code></td>
     </tr>
     <tr>
-      <td><a href="./plugins/dsh-mattpocock-skills-deck"><code>@lynn123411/dsh-mattpocock-skills-deck</code></a></td>
-      <td><b>Matt 技能控制面板（Deck）</b><br>· wayfinder 地图 / 票务 / 进度、triage / grilling / handoff 动作注入侧栏（GitHub / GitLab / Markdown 后端）<br>· 上游分叉：技能判装识别 <code>~/.dsh/.agent-presets/&lt;id&gt;/skills/</code> 根并<b>按当前会话生效 preset 门控</b>（没选 Matt preset 不虚报「环境 10/10」，选了不误报缺失）<br>· 移除上游随包全局技能 provider<br>· 设置项与工作区树共用「<b>侧边栏</b>」设置页（先到先得当选页面宿主）</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-mattpocock-skills-deck</code></td>
+      <td><b>📦 已归档</b><br><i>archive/plugins/ 下只作历史参考</i></td>
+      <td><a href="./archive/plugins/dsh-workspace-tree"><code>@lynn123411/dsh-workspace-tree</code></a></td>
+      <td><b>工作区归档区（已归档，不再发布）</b><br>· <b>纯增量</b>：不注册 <code>sidebar.workspaces</code>，官方工作区列表 / 搜索 / 拖拽 / 分组 / 设置页一律不动——归档区经官方 <code>sidebar.panellist</code> 侧栏图标 + <code>main</code>（keyed）面板接入<br>· 归档按工作区分组（无归属者落「未分组」），subagent 来源与空白草稿不入列<br>· 只读阅览、单条 / 分组 / 全部恢复（官方 <code>unarchiveSession</code>）、永久删除 fail-loud 级联<br>· 退役处置与两处登记的同步规则见 <a href="./docs/rules/release.md">docs/rules/release.md</a>「退役（归档）」</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-workspace-tree</code>（停止维护，保留历史链接）</td>
     </tr>
     <tr>
       <td><b>📱 设备访问</b><br><i>跨设备与本机外部应用接入</i></td>

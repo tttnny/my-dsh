@@ -1,0 +1,59 @@
+{
+  "name": "@lynn123411/dsh-workspace-tree",
+  "version": "3.0.2",
+  "description": "DSH 工作区归档区：在官方工作区浏览器之上加一个归档区（侧栏「归档」图标 + 主视图归档面板）——按工作区分组、只读阅览、单条/分组/全部恢复与永久删除（fail-loud 级联）。官方工作区列表与设置保持原样。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "lib/",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tttnny/my-dsh.git",
+    "directory": "plugins/dsh-workspace-tree"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "workspace",
+    "archive",
+    "sidebar"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "smoke": "node scripts/smoke-client.mjs && node scripts/smoke-host.mjs",
+    "test": "node scripts/smoke-client.mjs && node scripts/smoke-host.mjs",
+    "check": "node --check lib/client.js && node --check lib/index.js && node scripts/smoke-client.mjs && node scripts/smoke-host.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.3"
+  },
+  "engines": {
+    "dsh": "0.1.7-alpha.1",
+    "node": "^22.19 || >=24"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  }
+}
