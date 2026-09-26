@@ -1,6 +1,7 @@
 /** Host half of the private Antigravity bootstrap capability bundle. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-commands'
@@ -17,36 +18,29 @@ import {
 } from './loopback-rpc.ts'
 import { mountCapabilityLifecycle } from './capability-lifecycle.ts'
 import {
-  ANTIGRAVITY_MASTER_DEFAULT_ENABLED,
-  ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE,
-  Config as MasterConfig,
-  type AntigravityMasterSettings,
+  Config as MasterConfigSchema,
+  type MasterConfig,
 } from './capability-master.ts'
 
 export const name = 'antigravity-auth'
 export const inject = ['llm', 'attachments']
 
 /** Mount the Host-only OAuth service, its guarded account RPC channel, and the master switch. */
-export function apply(ctx: Context, config: AntigravityMasterSettings = { enabled: ANTIGRAVITY_MASTER_DEFAULT_ENABLED }): void {
-  // Resolved master switch. Until the settings section is registered there is no
-  // switch above the rows, so they keep their own gates: a composition without
-  // the settings service must not silently disable every capability.
-  let masterSource = (): AntigravityMasterSettings => config
-  let masterInstalled = false
-  const masterGate = (): boolean => (masterInstalled ? masterSource().enabled : true)
+export function apply(ctx: Context, config: MasterConfig = MasterConfigSchema({})): void {
+  // The profile entry's own config owns the master switch: every field is a
+  // volatile reference the loader commits in place, so a settings-form edit
+  // reaches the gate without a reload and the rows below re-evaluate through
+  // the shared service.
+  const masterGate = (): boolean => config.enabled.get()
   const service = createAntigravityAuthService({
     storePath: defaultAuthStorePath(),
     autoActivateGates: true,
     masterGate,
   })
   ctx.inject(['settings'], settingsCtx => {
-    settingsCtx.settings.installSection(ctx, ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE, MasterConfig, config, {
-      setSource: source => { masterSource = source; service.publishMasterGate() },
-      onChange: () => { service.publishMasterGate() },
-    })
-    masterInstalled = true
-    service.publishMasterGate()
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: true }, ctx.fiber))
   })
+  ctx.on('loader/volatile-update', () => { service.publishMasterGate() })
   // Account-control activation for the slash command. A terminal composition
   // composes no public WebServer, so the command starts enabled (local-only
   // dispatch); the connection inject below records the WebServer bind and
@@ -93,8 +87,6 @@ export function apply(ctx: Context, config: AntigravityMasterSettings = { enable
     },
     ownsAuth: true,
     cleanup: async () => {
-      // The switch leaves with this row; any surviving row falls back to its own gates.
-      masterInstalled = false
       await unprovide()
     },
     label: 'antigravity-auth: OAuth and LLM operations',

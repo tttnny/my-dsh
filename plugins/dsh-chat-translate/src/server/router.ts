@@ -7,10 +7,10 @@ import type { TranslationDispatcher } from './dispatcher.ts';
  * the shared `/api` channel.
  *
  * Config and credentials have no HTTP endpoints: since 1.2 the settings panel
- * reads and writes through DSH's own channels — the client `SettingsScope`
- * service and the `credentials` Remote API — so the plugin owns exactly three
- * routes: short-text batch translation, think-chain block translation, and the
- * channel probe.
+ * reads and writes through DSH's own channels — the shared configuration form
+ * (`ctx.configForms`) over the profile entry, and the `credentials` Remote API
+ * for the key — so the plugin owns exactly three routes: short-text batch
+ * translation, think-chain block translation, and the channel probe.
  */
 
 /** Batch-translation route path. */

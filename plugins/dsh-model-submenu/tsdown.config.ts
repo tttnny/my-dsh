@@ -11,10 +11,12 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
 /**
  * Specifiers resolved from the Web shell module table. Everything else is
  * inlined so a require() the table cannot answer never reaches the browser.
- * The Web shell seeds exactly react, react-dom, `@deepseek-ai/cordis`,
- * `@deepseek-ai/dsh-client-store`, `@deepseek-ai/dsh-client-ui-slots`,
- * `@deepseek-ai/dsh-client-ui-primitives`, and `@deepseek-ai/dsh-client-ui-dockkit`;
- * every other `@deepseek-ai/*` row is a composed graph edge instead.
+ * On 0.1.7-rc.2 the shell seeds the react/react-dom family plus
+ * `@deepseek-ai/cordis`, `@deepseek-ai/dsh-client-store`,
+ * `@deepseek-ai/dsh-client-ui-slots` and `@deepseek-ai/dsh-client-ui-primitives`;
+ * every other `@deepseek-ai/*` row is a composed graph edge instead. This
+ * bundle requests only the baseline rows below, so its manifest needs no
+ * `dsh.client.external` entry.
  */
 const CLIENT_EXTERNALS: readonly string[] = [
   'react',

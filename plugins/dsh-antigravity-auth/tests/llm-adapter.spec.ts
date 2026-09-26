@@ -213,7 +213,7 @@ describe('Antigravity LLM adapter', () => {
     const bashCallId = 'toolu_vrtx_bash'
     const globCallId = 'toolu_vrtx_glob'
     const assistant = {
-      id: 'assistant-tools',
+      id: 'assistant-tools' as never,
       role: 'assistant',
       source: {
         kind: 'model',
@@ -230,11 +230,13 @@ describe('Antigravity LLM adapter', () => {
         { type: 'tool-call', id: globCallId, name: 'glob', arguments: '{"pattern":"*/package.json"}' },
       ],
     } as Message
+    // A tool result is its own message role in 0.1.7, carrying flat content.
     const result = (id: string, name: string, text: string): Message => ({
       id: `result-${name}` as never,
-      role: 'user',
+      role: 'tool',
       source: { kind: 'tool', callId: id as never },
-      content: [{ type: 'tool-result', toolCallId: id as never, content: [{ type: 'text', text }] }],
+      toolCallId: id as never,
+      content: [{ type: 'text', text }],
     })
     const request = vi.fn(async (input: PrivateTransportRequest) => {
       const payload = JSON.parse(String(input.body)) as {
@@ -848,16 +850,17 @@ describe('Antigravity LLM adapter', () => {
     const toolCallId = 'call-7'
     const request = options({ messages: [
       {
-        id: 'assistant-1',
+        id: 'assistant-1' as never,
         role: 'assistant',
         source: { kind: 'model', provider: ANTIGRAVITY_PROVIDER, model: 'antigravity-gemini-3.7-flash' },
-        content: [{ type: 'tool-call', id: toolCallId, name: 'lookup_weather', arguments: '{"city":"Paris"}' }],
+        content: [{ type: 'tool-call', id: toolCallId as never, name: 'lookup_weather', arguments: '{"city":"Paris"}' }],
       } as Message,
       {
-        id: 'tool-1',
-        role: 'user',
-        source: { kind: 'tool', callId: toolCallId },
-        content: [{ type: 'tool-result', toolCallId, content: [{ type: 'text', text: 'sunny' }] }],
+        id: 'tool-1' as never,
+        role: 'tool',
+        source: { kind: 'tool', callId: toolCallId as never },
+        toolCallId: toolCallId as never,
+        content: [{ type: 'text', text: 'sunny' }],
       } as Message,
     ] })
 

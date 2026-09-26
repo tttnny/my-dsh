@@ -319,40 +319,36 @@ export function TidySettingsPanel(
 }
 
 /**
- * Bind the settings store to DSH's native settings/credentials services and
- * join the shared 「阅读体验」 settings page: whichever participant activates
- * first claims the page, everyone registers a card into its child slot.
- * @param ctx - DSH browser client context; services are resolved defensively.
+ * Bind the settings store to this plugin's own configuration form and the
+ * credentials Remote API, then join the shared 「阅读体验」 settings page:
+ * whichever participant activates first claims the page, everyone registers a
+ * card into its child slot.
+ * @param ctx - DSH browser client context.
  */
 export function setupSettingsUi(ctx: any): void {
   if (typeof window === 'undefined') return;
 
-  // Ride DSH's own settings surface: the `settingsScope` service mirrors the
-  // host document (per-namespace describe) and the `credentials` Remote API
-  // writes the API key. No custom config HTTP endpoint since 1.2.
+  // Ride DSH's shared configuration forms: `ctx.configForms.get(<profile entry
+  // id>)` is the read/write face of THIS plugin's own Config schema — it
+  // mirrors the Host's config section for the entry and folds every accepted
+  // write back. `remote.credentials` writes the API key. No custom config HTTP
+  // endpoint since 1.2, and no per-namespace settings scope since 0.1.7.
+  const configForms = ctx.configForms;
+  const remoteCredentials = ctx.remote?.credentials ?? null;
   try {
-    // Declared via inject: 'settingsScope' and 'remote.credentials' (plus the
-    // 'remote' root). Fall back to optional lookup so a degraded environment
-    // degrades to an in-memory store instead of failing loudly.
-    const settingsScope = ctx?.settingsScope || (ctx?.get ? ctx.get('settingsScope') : null);
-    const remoteCredentials =
-      ctx?.remote?.credentials || (ctx?.get ? ctx.get('remote.credentials') : null);
-    if (settingsScope && typeof settingsScope.bind === 'function') {
-      const scope = settingsScope.bind({ namespace: SETTINGS_NAMESPACE });
-      settingsStore.attach(scope, remoteCredentials ?? null);
-    }
+    settingsStore.attach(configForms.get(SETTINGS_NAMESPACE), remoteCredentials);
   } catch (err) {
-    console.warn('[dsh-chat-translate] Failed to bind settings scope:', err);
+    console.warn('[dsh-chat-translate] Failed to bind the configuration form:', err);
   }
 
   // The locale service is declared through the client `inject` table, so cordis
-  // installs it before this body runs and `ctx.get('locale')` cannot miss it.
+  // installs it before this body runs and `ctx.locale` cannot miss it.
   // Registering the dictionary HERE is what the card's seat `t` resolves
   // against; a non-waiting sample left it unregistered and the card then fell
   // back to the shell's `common` namespace, rendering every unknown key as its
   // own key text.
-  const locale = typeof ctx?.get === 'function' ? ctx.get('locale') : null;
-  if (locale && typeof locale.register === 'function' && typeof ctx?.effect === 'function') {
+  const locale = ctx.locale;
+  if (locale && typeof locale.register === 'function') {
     ctx.effect(
       () => locale.register(NS, { zh, en }),
       'dsh-chat-translate: locale dictionaries'
@@ -366,7 +362,7 @@ export function setupSettingsUi(ctx: any): void {
     : (key: ChatTranslateLocaleKey): string => zh[key] ?? key;
 
   try {
-    const slots = ctx?.slots || (ctx?.get ? ctx.get('slots') : null);
+    const slots = ctx.slots;
     if (!slots || typeof slots.inject !== 'function') return;
 
     // 共享「阅读体验」设置页：本插件与 dsh-smooth-stream
@@ -375,24 +371,35 @@ export function setupSettingsUi(ctx: any): void {
     // reading.settings.item 子 slot，未当选者只把卡片注册进该子 slot 等页面出现。
     // 共享页壳需要真 ctx：它用 ctx.slots 读注册表，并用 ctx.get('locale') 在语言
     // 切换时重读 tab 标签（可选服务，必须走 ctx.get，不能用 ctx.locale）。
-    slots.inject('settings.section', () =>
-      claimReadingSettingsPage(ctx, () => t('pageNav'), NS)
-    );
-
-    slots.inject(READING_ITEM_SLOT, () =>
-      slots.register(
-        {
-          name: READING_ITEM_SLOT,
-          // id = 本插件的 Host 设置命名空间（settings.section 时代的 id 沿用）
-          id: SETTINGS_NAMESPACE,
-          // 卡片在共享页里的顺序：丝滑流式 10、吸顶提示 20、聊天翻译 30
-          order: 30,
-          // 共享页按此标签渲染 tab
-          label: () => t('title'),
-          locale: NS,
-        },
-        TidySettingsPanel
-      )
+    //
+    // 整页（含本插件那张卡片）只在宿主真的服务本插件的配置条目时存在：
+    // `whileServed` 是 0.1.7 的正式契约，没装/没加载宿主半边的部署不会留下页的痕迹。
+    ctx.effect(
+      () => configForms.whileServed([SETTINGS_NAMESPACE], () => {
+        const offPage = slots.inject('settings.section', () =>
+          claimReadingSettingsPage(ctx, () => t('pageNav'), NS)
+        );
+        const offCard = slots.inject(READING_ITEM_SLOT, () =>
+          slots.register(
+            {
+              name: READING_ITEM_SLOT,
+              // id = 本插件的配置条目 id（= profile entry id = 设置命名空间）
+              id: SETTINGS_NAMESPACE,
+              // 卡片在共享页里的顺序：丝滑流式 10、吸顶提示 20、聊天翻译 30
+              order: 30,
+              // 共享页按此标签渲染 tab
+              label: () => t('title'),
+              locale: NS,
+            },
+            TidySettingsPanel
+          )
+        );
+        return () => {
+          offCard();
+          offPage();
+        };
+      }),
+      'dsh-chat-translate: shared reading page'
     );
   } catch (err) {
     console.warn('[dsh-chat-translate] Failed to inject settings section:', err);

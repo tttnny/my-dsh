@@ -34,7 +34,37 @@ const primitivesStub = new Proxy({}, { get: (_t, key) => (key === '__esModule' ?
 const exports = factory((id) => id === 'react'
   ? { useState: () => [null, () => {}], useEffect: () => {} }
   : (id === '@deepseek-ai/dsh-client-ui-primitives' ? primitivesStub : null));
-exports.apply({ effect: (fn) => { try { fn(); } catch (e) { console.log('[effect err]', e.message); } }, get: () => null });
+// Minimal stand-in for the services the client half declares: the shared
+// configuration form (its read/write face is what the settings store rides) and
+// the locale seat its dictionary registration uses. The card's slot wiring is
+// exercised by scripts/test-client-wiring.mjs; here only the store's write path
+// and the observer's reaction matter.
+function createForm(initial) {
+  const listeners = new Set();
+  let value = { ...initial };
+  return {
+    getSnapshot: () => ({ status: 'ready', value, writable: true, revision: 1, mode: 'host' }),
+    subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
+    set: async (field, next) => { value = { ...value, [field]: next }; return true; },
+    unset: async (field) => { const { [field]: _drop, ...rest } = value; value = rest; return true; },
+    mutate: async (ops) => {
+      for (const op of ops) if (op.op === 'set') value = { ...value, [op.path[0]]: op.value };
+      for (const listener of [...listeners]) listener();
+      return true;
+    },
+  };
+}
+
+const form = createForm({ enabled: true });
+const ctx = {
+  effect: (fn) => { try { fn(); } catch (e) { console.log('[effect err]', e.message); } },
+  get: () => null,
+  configForms: { get: () => form, whileServed: (namespaces, register) => register(new Set(namespaces)) },
+  locale: { register: () => () => {}, bind: (ns) => (key) => `${ns}:${key}` },
+  slots: { inject: (_key, callback) => { callback(); return () => {}; }, register: () => () => {}, entries: () => [] },
+  remote: { credentials: null },
+};
+exports.apply(ctx);
 
 const summary = () => window.document.querySelector('.CY-8Ka_summary');
 await new Promise(r => setTimeout(r, 600));

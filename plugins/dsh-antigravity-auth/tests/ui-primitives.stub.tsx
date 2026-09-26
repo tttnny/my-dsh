@@ -72,6 +72,9 @@ export function StateDot({ state, size, className }: {
 }
 
 /** Refresh glyph; the card only renders it, so a decorative span is enough. */
-export function IconRefreshOutline14() {
-  return createElement('span', { 'aria-hidden': true })
+export function IconRefreshOutlineRegular({ size, className }: {
+  size?: number
+  className?: string
+}) {
+  return createElement('span', { className, 'aria-hidden': true, 'data-size': size })
 }

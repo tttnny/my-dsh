@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  IconCheckOutline16,
-  IconChevronDownOutline14,
-  IconChevronLeftOutline14,
-  IconChevronRightOutline14,
-  IconDataOutline16,
-  IconWarningOutline16,
+  IconCheckOutlineRegular,
+  IconChevronDownOutlineRegular,
+  IconChevronLeftOutlineRegular,
+  IconChevronRightOutlineRegular,
+  IconDataOutlineRegular,
+  IconWarningOutlineRegular,
   Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelDirectoryState, ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client'
@@ -259,7 +259,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t }: 
   }
   const backRow = () => (
     <button ref={itemRef('back')} type="button" role="menuitem" className={css.cell} onClick={back}>
-      <IconChevronLeftOutline14 className={css.cellChevron} />
+      <IconChevronLeftOutlineRegular className={css.cellChevron} />
       <span className={css.cellLabel}>{t('back')}</span>
     </button>
   )
@@ -280,10 +280,10 @@ export function ModelSubmenu({ locked, available, directory, load, select, t }: 
           else show()
         }}
       >
-        <IconDataOutline16 className={css.triggerIcon} size={16} />
+        <IconDataOutlineRegular className={css.triggerIcon} size={16} />
         <span className={css.triggerLabel}>{modelLabel}</span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
-        <IconChevronDownOutline14 className={cls(css.chevron, open && css.chevronOpen)} />
+        <IconChevronDownOutlineRegular className={cls(css.chevron, open && css.chevronOpen)} />
       </button>
       {open && createPortal((
         <div
@@ -300,13 +300,13 @@ export function ModelSubmenu({ locked, available, directory, load, select, t }: 
               <button ref={itemRef('root:provider')} type="button" role="menuitem" className={css.cell} onClick={() => drill('providers')}>
                 <span className={css.cellLabel}>{t('menu.provider')}</span>
                 <span className={css.cellValue}>{currentGroup?.name ?? current?.provider ?? ''}</span>
-                <IconChevronRightOutline14 className={css.cellChevron} />
+                <IconChevronRightOutlineRegular className={css.cellChevron} />
               </button>
               {reasoning !== undefined && (
                 <button ref={itemRef('root:effort')} type="button" role="menuitem" className={css.cell} onClick={() => drill('effort')}>
                   <span className={css.cellLabel}>{t('menu.effort')}</span>
                   <span className={css.cellValue}>{effortLabel}</span>
-                  <IconChevronRightOutline14 className={css.cellChevron} />
+                  <IconChevronRightOutlineRegular className={css.cellChevron} />
                 </button>
               )}
             </Fragment>
@@ -346,8 +346,8 @@ export function ModelSubmenu({ locked, available, directory, load, select, t }: 
                     >
                       <span className={css.cellLabel}>{group.name}</span>
                       <span className={css.cellValue}>{mine ? currentModel?.name ?? current?.model ?? '' : t('provider.modelCount', { count: String(group.models.length) })}</span>
-                      {mine && <span className={css.check}><IconCheckOutline16 /></span>}
-                      <IconChevronRightOutline14 className={css.cellChevron} />
+                      {mine && <span className={css.check}><IconCheckOutlineRegular /></span>}
+                      <IconChevronRightOutlineRegular className={css.cellChevron} />
                     </button>
                   )
                 })}
@@ -373,7 +373,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t }: 
                       onClick={() => chooseModel(shownGroup.id, model)}
                     >
                       <span className={css.optionCopy}><span className={css.modelName}>{model.name}</span></span>
-                      <span className={css.check}>{selected ? <IconCheckOutline16 /> : null}</span>
+                      <span className={css.check}>{selected ? <IconCheckOutlineRegular /> : null}</span>
                     </button>
                   )
                 })}
@@ -403,7 +403,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t }: 
                     onClick={() => chooseEffort(level.effort)}
                   >
                     <span className={css.optionCopy}><span className={css.modelName}>{level.label}</span></span>
-                    <span className={css.check}>{effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}</span>
+                    <span className={css.check}>{effectiveEffort === level.effort ? <IconCheckOutlineRegular /> : null}</span>
                   </button>
                 ))}
             </Fragment>
@@ -414,7 +414,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t }: 
         <Toast
           key={toast.seq}
           text={toast.text}
-          icon={<IconWarningOutline16 />}
+          icon={<IconWarningOutlineRegular />}
           anchor={rootRef.current?.closest('[data-composer-card]') ?? null}
           onDone={() => {
             setToast(null)

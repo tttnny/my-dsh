@@ -29,6 +29,11 @@
  * itself already uses — it withholds `read_image` from a route whose model
  * declares no image input — so this is an intended seam, not a workaround.
  *
+ * The row is mounted as this package's `./tool-filter` export, not as a path
+ * relative to the preset composition: a preset row's baseUrl is the profile
+ * directory the preset was declared from, so `./plugins/…` would resolve under
+ * the profile instead of here.
+ *
  * @module minimal-fs/tool-filter
  */
 
@@ -40,16 +45,20 @@ export const inject = ['systemPrompt']
 
 /**
  * Drop the hidden tools from each assembly.
+ *
+ * The waterfall's returned value is authoritative, so the filter runs after
+ * every downstream listener and returns a narrowed copy of whatever they
+ * produced — an in-place edit of the incoming object could be dropped by a
+ * later listener that builds a fresh assembly.
  * @param ctx - the preset row's context; its scope covers every agent composed
  *   from this preset.
  */
 export function apply(ctx) {
-  ctx.on('system-prompt/assemble', (assembly, _context, next) => {
-    const tools = assembly.tools
-    if (Array.isArray(tools)) {
-      const kept = tools.filter((tool) => !HIDDEN.includes(tool?.name))
-      if (kept.length !== tools.length) assembly.tools = kept
-    }
-    return next()
+  ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
+    const transformed = await next()
+    const tools = transformed.tools
+    if (!Array.isArray(tools)) return transformed
+    const kept = tools.filter((tool) => !HIDDEN.includes(tool?.name))
+    return kept.length === tools.length ? transformed : { ...transformed, tools: kept }
   })
 }

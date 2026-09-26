@@ -1,8 +1,9 @@
 /** Antigravity image generation/editing tools and session-authorized image catalog. */
 
 import { Buffer } from 'node:buffer'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import { resolveModelWithTier } from '@cortexkit/antigravity-auth-core'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-settings'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -41,14 +42,20 @@ export const GENERATE_IMAGE_TOOL_NAME = 'generate_image'
 export const LIST_IMAGES_TOOL_NAME = 'list_images'
 export const ANTIGRAVITY_IMAGE_ENDPOINT = `${ANTIGRAVITY_WIRE_ORIGIN}/v1internal:generateContent` as const
 export const ANTIGRAVITY_IMAGE_MODEL = 'antigravity-gemini-3.1-flash-image'
-export const ANTIGRAVITY_IMAGE_SETTINGS_NAMESPACE = 'antigravity-image'
+/** Profile entry id of the Image row; the settings form's namespace. */
+export const ANTIGRAVITY_IMAGE_ENTRY_ID = 'antigravity-image'
 
-export interface Config extends AntigravityImageSettings {}
+/** Resolved profile config of the Image row; every field is a live reference. */
+export interface Config {
+  readonly enabled: Volatile<boolean>
+  readonly model: Volatile<string>
+  readonly n: Volatile<number>
+}
 
-export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true),
-  model: z.string().default(ANTIGRAVITY_IMAGE_MODEL),
-  n: z.number().step(1).min(1).max(4).default(1),
+export const Config = z.object({
+  enabled: z.boolean().default(true).volatile(),
+  model: z.string().default(ANTIGRAVITY_IMAGE_MODEL).volatile(),
+  n: z.number().step(1).min(1).max(4).default(1).volatile(),
 })
 
 const MAX_REFERENCES = 5
@@ -337,7 +344,7 @@ function renderList(value: ListResult): ContentBlock[] {
 }
 
 /** Mount tools when a ToolRuntime is available; the tool bodies recheck the credential gate. */
-export function apply(ctx?: Context, config: Config = { enabled: true, model: ANTIGRAVITY_IMAGE_MODEL, n: 1 }): void {
+export function apply(ctx?: Context, config: Config = Config()): void {
   if (ctx === undefined) return
   const candidate = ctx as unknown as {
     tools?: { register: (definition: ToolDefinition) => () => void }
@@ -346,14 +353,18 @@ export function apply(ctx?: Context, config: Config = { enabled: true, model: AN
     get?: (name: string) => unknown
   }
   if (candidate.tools === undefined || candidate.attachments === undefined || candidate.fs === undefined) return
-  let current = (): AntigravityImageSettings => config
+  // The profile entry's own config is the settings form: every field is
+  // volatile, so the loader commits an edit in place and this read is live.
+  const current = (): AntigravityImageSettings => ({
+    enabled: config.enabled.get(),
+    model: config.model.get(),
+    n: config.n.get(),
+  })
   let lifecycle: CapabilityLifecycle | undefined
   ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, ANTIGRAVITY_IMAGE_SETTINGS_NAMESPACE, Config, config, {
-      setSource: source => { current = source; lifecycle?.sync() },
-      onChange: () => { lifecycle?.sync() },
-    })
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: true }, ctx.fiber))
   })
+  ctx.on('loader/volatile-update', () => { lifecycle?.sync() })
   const provided = candidate.get?.('antigravityAuth')
   const auth = isAuthService(provided) ? provided : createAntigravityAuthService()
   const options: AntigravityImageToolOptions = { auth, attachments: candidate.attachments!, fs: candidate.fs!, settings: () => current() }

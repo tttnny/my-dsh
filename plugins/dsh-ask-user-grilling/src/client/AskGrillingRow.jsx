@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
   DisclosureRow,
-  IconInspectOutline12,
-  IconQuestionOutline14,
+  IconInspectOutlineRegular,
+  IconQuestionOutlineRegular,
   MarkdownText,
   StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives';
@@ -62,7 +62,7 @@ export function AskGrillingRow({ block, toolName, inspect, t }) {
           <CardBody model={model} argsRaw={argsRaw} resultText={resultText} failure={failure} t={t} />
           {inspect === undefined ? null : (
             <button type="button" className="dsg-inspectButton" onClick={inspect}>
-              <IconInspectOutline12 />
+              <IconInspectOutlineRegular />
               {t('row.inspect')}
             </button>
           )}
@@ -103,7 +103,7 @@ function failureText(resultText, error) {
 function leadingFor(state) {
   if (state === 'error' || state === 'rejected') return <StateDot state="error" />;
   if (state === 'cancelled' || state === 'interrupted') return <StateDot state="warning" />;
-  return <IconQuestionOutline14 />;
+  return <IconQuestionOutlineRegular />;
 }
 
 /**

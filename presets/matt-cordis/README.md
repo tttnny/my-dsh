@@ -1,23 +1,17 @@
 # matt-cordis — Matt 创造模式
 
-官方 `cordis` 组合（persona 保持官方原样，含 `tool-cordis` 动态插件工具集与双平面引导）＋ Matt Pocock 的 26 个技能并入 `skills/`（与 cordis 随附 2 个技能共 28 个）＋ grilling 投递插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md)。行为要点与 matt-standard 相同：grilling 轮次先以散文预告、再以 `ask_user_grilling` 表单投递作答。
+官方 `cordis` 组合（persona 逐字取官方，含 `tool-cordis` 动态插件工具集与官方随附 3 个 cordis 技能）＋ Matt Pocock 的 26 个技能（`skills/`）＋ grilling 投递插件。行为要点与 matt-standard 相同：grilling 轮次先以散文预告、再以 `ask_user_grilling` 表单投递作答。同进程与官方 `cordis` 混用不需要任何补丁：0.1.7-rc.2 起 Host inspect provider 由**宿主组合单点注册**（`dsh-web-app/cordis.patch.yml` 的 `cordis-inspect-providers` 行，`@deepseek-ai/dsh-tool-cordis/host`），per-preset 的 `tool-cordis` 行（本 preset 的那条）不再注册任何 provider，重复注册无从产生。
+
+本目录是一个可安装的 **bundle 包**：`package.json` 的 `dsh.bundle.patch` 指向 `matt-cordis.patch.yml`，后者插入一条 `@deepseek-ai/dsh-agent-preset` 行，宣告 preset `matt-cordis`（`order: 13`）。该行的 `config.plugins` 取 0.1.7-rc.2 官方 `cordis` 组合逐字，只多两处 MATT 改动——工具行原位换成 grilling；`skill-filesystem.customSkillDirs` 指向本包 `skills/`。`skills/` 里的 26 个技能由那条 `!!js` 表达式在装载时从本包解析出来（`createRequire(baseUrl).resolve('@lynn123411/dsh-preset-matt-cordis/package.json')`，`baseUrl` 是 profile 目录）。
 
 ## 安装与启用
 
-```bash
-# 1. 创建 preset 目录（preset id 必须为 matt-cordis）
-mkdir -p ~/.dsh/.agent-presets/matt-cordis
+1. 用 Plugin Manager 安装本目录：`action: install_bundle`，`target` 填本目录的绝对路径。它自己完成包安装与 bundle 选择，不要用 shell 手工复刻这两步。
+2. 装完后 `list_bundles` 应列出本包，`list_plugins` 应看到 `preset-matt-cordis` 行已激活（激活失败会留在名册上并带诊断）。
+3. 重启 DSH，在新建会话界面选择「Matt 创造模式」。
 
-# 2. 复制 preset 配置文件与技能目录
-cp matt-cordis/agent.cordis.yml matt-cordis/preset.yml ~/.dsh/.agent-presets/matt-cordis/
-cp -R matt-cordis/skills ~/.dsh/.agent-presets/matt-cordis/
-
-# 3. 安装 grilling 投递插件
-dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
-```
-
-重启 DSH 后，在新建会话界面选择「Matt 创造模式」即可。单独使用本 preset 无需任何额外补丁；同进程与官方 `cordis` 混用时的共存要求见 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md)。
+前置：grilling 适配插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md) 必须已按注册方式装进同一 profile。patch 里那条工具行消费它，缺了它该行不可解析，preset 会整体从模式选择里消失。
 
 ## 详细说明
 
-配置细节、实现原理与使用说明一律见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)：官方基线与逐处改动清单、`agent.cordis.yml` 两处改动块（本 preset 官方自带 `customSkillDirs`，只余工具行替换）、`skills/grilling/SKILL.md` 四处本地改动的成品块、cordis 随附技能的来源、插件的注册安装要求、同步与校验步骤、DSH 或技能上游升级后的重打流程。本目录不含 README.md 之外的自有配置：`agent.cordis.yml` / `preset.yml` / `skills/` 就是成品，直接同步即用。
+相对官方基线的逐处改动清单、`skills/grilling/SKILL.md` 的四处本地适配、验证命令与重打流程，一律见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)。

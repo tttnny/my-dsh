@@ -47,8 +47,8 @@ try {
       throw new Error(`package smoke: ${dependency} does not declare the verified exact DSH version`)
     }
   }
-  if (manifest.peerDependencies?.['@deepseek-ai/cordis'] !== '^4.0.2'
-    || manifest.peerDependencies?.['@deepseek-ai/schemastery'] !== '^3.18.2') {
+  if (manifest.peerDependencies?.['@deepseek-ai/cordis'] !== '^4.0.4'
+    || manifest.peerDependencies?.['@deepseek-ai/schemastery'] !== '^3.18.4') {
     throw new Error('package smoke: Cordis or Schemastery peer baseline is not on the verified DSH line')
   }
   const patch = await readFile(resolve(packageRoot, 'cordis.patch.yml'), 'utf8')

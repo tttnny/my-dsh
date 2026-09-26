@@ -12,6 +12,7 @@ import { apply as applyVideo } from '../src/video.ts'
 import { createAuthStore, defaultAuthStorePath } from '../src/auth-store.ts'
 import { createFileCapabilityGates } from '../src/capability-gates.ts'
 import type { AntigravityAuthService } from '../src/auth-service.ts'
+import { live } from './live-config.ts'
 
 const originalFetch = globalThis.fetch
 
@@ -36,14 +37,15 @@ describe('bootstrap lifecycle boundary', () => {
     const inject = vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback({
       connection: { fetch: { register: handle } },
       commands: { register: () => () => {} },
-      settings: { installSection: vi.fn() },
+      settings: { configure: vi.fn(() => () => {}) },
+      effect: vi.fn((setup: () => () => void) => setup()),
       get: (service: string) => service === 'webServer' ? { host: '127.0.0.1' } : undefined,
     }))
     const fetch = vi.fn()
     globalThis.fetch = fetch as typeof globalThis.fetch
     const setTimeout = vi.spyOn(globalThis, 'setTimeout')
 
-    applyAuth({ inject } as never)
+    applyAuth({ inject, on: vi.fn(() => () => {}) } as never)
 
     expect(fetch).not.toHaveBeenCalled()
     expect(setTimeout).not.toHaveBeenCalled()
@@ -66,12 +68,13 @@ describe('bootstrap lifecycle boundary', () => {
     const inject = vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback({
       connection: { fetch: { register: handle } },
       commands: { register: () => () => {} },
-      settings: { installSection: vi.fn() },
+      settings: { configure: vi.fn(() => () => {}) },
+      effect: vi.fn((setup: () => () => void) => setup()),
       get: (service: string) => service === 'webServer' ? { host: '0.0.0.0' } : undefined,
       logger: { warn },
     }))
 
-    applyAuth({ inject } as never)
+    applyAuth({ inject, on: vi.fn(() => () => {}) } as never)
 
     expect(handle).toHaveBeenCalledTimes(10)
     const route = handle.mock.calls[0]![0]
@@ -117,43 +120,40 @@ describe('bootstrap lifecycle boundary', () => {
       await gates.recordLlmFamily(subject, 'gpt-oss', 'passed')
 
       let masterEnabled = true
+      let volatileUpdate: (() => void) | undefined
       let provided: AntigravityAuthService | undefined
       let cleanup: (() => Promise<void>) | undefined
       const disposeAdapter = vi.fn()
       const registerAdapter = vi.fn(() => disposeAdapter)
+      const configure = vi.fn(() => () => {})
       const runtime = {
         connection: { fetch: { register: vi.fn(() => vi.fn()) } },
         commands: { register: vi.fn(() => vi.fn()) },
         llm: { registerAdapter, listProviders: vi.fn(() => []) },
         provide: vi.fn((_name: string, service: AntigravityAuthService) => { provided = service; return vi.fn(async () => {}) }),
         get: vi.fn((service: string) => service === 'webServer' ? { host: '127.0.0.1' } : undefined),
-        // Model the kernel's section attach: the resolved value is authoritative.
-        settings: {
-          installSection: (
-            _owner: unknown,
-            _namespace: string,
-            _schema: unknown,
-            _entry: unknown,
-            hooks: { setSource: (source: () => { enabled: boolean }) => void; onChange: () => void },
-          ) => {
-            hooks.setSource(() => ({ enabled: masterEnabled }))
-            hooks.onChange()
-          },
-        },
+        // Model the kernel's live-config seam: the row's own profile entry
+        // config is the settings form, and an edit is announced on the fiber.
+        settings: { configure },
         inject: vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback(runtime)),
+        on: vi.fn((event: string, listener: () => void) => {
+          if (event === 'loader/volatile-update') volatileUpdate = listener
+          return () => {}
+        }),
         effect: vi.fn((setup: () => () => Promise<void>) => { cleanup = setup() }),
       }
 
-      applyAuth(runtime as never, { enabled: true })
+      applyAuth(runtime as never, { enabled: { get: () => masterEnabled } })
       await vi.waitFor(() => expect(registerAdapter).toHaveBeenCalledOnce())
+      expect(configure).toHaveBeenCalledWith({ auto: true }, undefined)
 
       // The master switch disposes the model route live and restores it live.
       masterEnabled = false
-      provided?.publishMasterGate()
+      volatileUpdate?.()
       await vi.waitFor(() => expect(disposeAdapter).toHaveBeenCalledOnce())
 
       masterEnabled = true
-      provided?.publishMasterGate()
+      volatileUpdate?.()
       await vi.waitFor(() => expect(registerAdapter).toHaveBeenCalledTimes(2))
 
       await provided?.recordLlmFamilyGate('claude', 'protocol-drift')
@@ -182,10 +182,11 @@ describe('bootstrap lifecycle boundary', () => {
       web: { registerSearchProvider },
       get: vi.fn(() => auth),
       inject: vi.fn(),
+      on: vi.fn(() => () => {}),
       effect: vi.fn((setup: () => () => Promise<void>) => { cleanup = setup() }),
     }
 
-    applySearch(ctx as never, { enabled: true, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
+    applySearch(ctx as never, { enabled: live(true), model: live('antigravity-gemini-3.7-flash'), maxResults: live(10) })
     await new Promise<void>(resolve => setImmediate(resolve))
     expect(registerSearchProvider).not.toHaveBeenCalled()
 
@@ -216,10 +217,11 @@ describe('bootstrap lifecycle boundary', () => {
       web,
       get: vi.fn(() => auth),
       inject: vi.fn(),
+      on: vi.fn(() => () => {}),
       effect: vi.fn((setup: () => () => Promise<void>) => { cleanup = setup() }),
     }
 
-    applySearch(ctx as never, { enabled: true, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
+    applySearch(ctx as never, { enabled: live(true), model: live('antigravity-gemini-3.7-flash'), maxResults: live(10) })
     await new Promise<void>(resolve => setImmediate(resolve))
     expect(web.searchProviderId).toBe('deepseek-official')
 
@@ -251,10 +253,11 @@ describe('bootstrap lifecycle boundary', () => {
       web,
       get: vi.fn(() => auth),
       inject: vi.fn(),
+      on: vi.fn(() => () => {}),
       effect: vi.fn((setup: () => () => Promise<void>) => { cleanup = setup() }),
     }
 
-    applySearch(ctx as never, { enabled: false, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
+    applySearch(ctx as never, { enabled: live(false), model: live('antigravity-gemini-3.7-flash'), maxResults: live(10) })
     statusListener?.()
     await new Promise<void>(resolve => setImmediate(resolve))
     expect(web.registerSearchProvider).not.toHaveBeenCalled()
@@ -278,10 +281,11 @@ describe('bootstrap lifecycle boundary', () => {
       web: { registerSearchProvider },
       get: vi.fn(() => auth),
       inject: vi.fn(),
+      on: vi.fn(() => () => {}),
       effect: vi.fn((setup: () => () => Promise<void>) => setup()),
     }
 
-    applySearch(ctx as never, { enabled: true, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
+    applySearch(ctx as never, { enabled: live(true), model: live('antigravity-gemini-3.7-flash'), maxResults: live(10) })
     statusListener?.()
     pending[1]?.(gateStatus('search', 'poc-pending'))
     await new Promise<void>(resolve => setImmediate(resolve))
@@ -309,10 +313,11 @@ describe('bootstrap lifecycle boundary', () => {
       fs: {},
       get: vi.fn(() => auth),
       inject: vi.fn(),
+      on: vi.fn(() => () => {}),
       effect: vi.fn((setup: () => () => Promise<void>) => setup()),
     }
 
-    applyImage(ctx as never, { enabled: true, model: 'antigravity-gemini-3.1-flash-image', n: 1 })
+    applyImage(ctx as never, { enabled: live(true), model: live('antigravity-gemini-3.1-flash-image'), n: live(1) })
     await new Promise<void>(resolve => setImmediate(resolve))
 
     expect(register).toHaveBeenCalledTimes(2)
@@ -333,10 +338,11 @@ describe('bootstrap lifecycle boundary', () => {
       fs: {},
       get: vi.fn(() => auth),
       inject: vi.fn(),
+      on: vi.fn(() => () => {}),
       effect: vi.fn((setup: () => () => Promise<void>) => setup()),
     }
 
-    applyVideo(ctx as never, { enabled: true, model: 'antigravity-gemini-3.7-flash', maxBytes: 1024 })
+    applyVideo(ctx as never, { enabled: live(true), model: live('antigravity-gemini-3.7-flash'), maxBytes: live(1024) })
     await new Promise<void>(resolve => setImmediate(resolve))
 
     expect(register).not.toHaveBeenCalled()
@@ -359,12 +365,13 @@ describe('bootstrap lifecycle boundary', () => {
     const inject = vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback({
       connection: { fetch: { register: handle } },
       commands: { register: (definition: unknown) => { registered = definition as CommandDefinition; return () => {} } },
-      settings: { installSection: vi.fn() },
+      settings: { configure: vi.fn(() => () => {}) },
+      effect: vi.fn((setup: () => () => void) => setup()),
       get: (service: string) => service === 'webServer' ? { host: '0.0.0.0' } : undefined,
       logger: { warn },
     }))
 
-    applyAuth({ inject } as never)
+    applyAuth({ inject, on: vi.fn(() => () => {}) } as never)
     expect(registered).toBeDefined()
     expect(warn).not.toHaveBeenCalled()
 
@@ -384,12 +391,13 @@ describe('bootstrap lifecycle boundary', () => {
       const inject = vi.fn((_dependencies: readonly string[], callback: (ctx: unknown) => unknown) => callback({
         connection: { fetch: { register: handle } },
         commands: { register: (definition: unknown) => { registered = definition as CommandDefinition; return () => {} } },
-      settings: { installSection: vi.fn() },
+      settings: { configure: vi.fn(() => () => {}) },
+      effect: vi.fn((setup: () => () => void) => setup()),
         get: (service: string) => service === 'webServer' ? { host: '127.0.0.1' } : undefined,
         logger: { warn },
       }))
 
-      applyAuth({ inject } as never)
+      applyAuth({ inject, on: vi.fn(() => () => {}) } as never)
       expect(registered).toBeDefined()
       expect(warn).not.toHaveBeenCalled()
 

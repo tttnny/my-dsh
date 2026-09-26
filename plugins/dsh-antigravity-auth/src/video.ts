@@ -1,8 +1,9 @@
 /** Gated workspace-video understanding proof of concept. */
 
 import { Buffer } from 'node:buffer'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import { resolveModelWithTier } from '@cortexkit/antigravity-auth-core'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-settings'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -32,7 +33,8 @@ export const ANALYZE_VIDEO_TOOL_NAME = 'analyze_video'
 export const UNDERSTAND_VIDEO_TOOL_NAME = ANALYZE_VIDEO_TOOL_NAME
 export const ANTIGRAVITY_VIDEO_ENDPOINT = `${ANTIGRAVITY_WIRE_ORIGIN}/v1internal:generateContent` as const
 export const ANTIGRAVITY_VIDEO_MODEL = 'antigravity-gemini-3.7-flash'
-export const ANTIGRAVITY_VIDEO_SETTINGS_NAMESPACE = 'antigravity-video'
+/** Profile entry id of the Video row; the settings form's namespace. */
+export const ANTIGRAVITY_VIDEO_ENTRY_ID = 'antigravity-video'
 
 export interface AntigravityVideoSettings {
   readonly enabled: boolean
@@ -40,12 +42,17 @@ export interface AntigravityVideoSettings {
   readonly maxBytes?: number
 }
 
-export interface Config extends AntigravityVideoSettings {}
+/** Resolved profile config of the Video row; every field is a live reference. */
+export interface Config {
+  readonly enabled: Volatile<boolean>
+  readonly model: Volatile<string>
+  readonly maxBytes: Volatile<number>
+}
 
-export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true),
-  model: z.string().default(ANTIGRAVITY_VIDEO_MODEL),
-  maxBytes: z.number().step(1).min(1).max(32 * 1024 * 1024).default(32 * 1024 * 1024),
+export const Config = z.object({
+  enabled: z.boolean().default(true).volatile(),
+  model: z.string().default(ANTIGRAVITY_VIDEO_MODEL).volatile(),
+  maxBytes: z.number().step(1).min(1).max(32 * 1024 * 1024).default(32 * 1024 * 1024).volatile(),
 })
 
 export interface AntigravityVideoToolOptions {
@@ -144,7 +151,7 @@ export function buildVideoPayload(
   }
 }
 
-export function apply(ctx?: Context, config: Config = { enabled: true, model: ANTIGRAVITY_VIDEO_MODEL, maxBytes: 32 * 1024 * 1024 }): void {
+export function apply(ctx?: Context, config: Config = Config()): void {
   if (ctx === undefined) return
   const candidate = ctx as unknown as {
     tools?: { register: (definition: ToolDefinition) => () => void }
@@ -152,14 +159,18 @@ export function apply(ctx?: Context, config: Config = { enabled: true, model: AN
     get?: (name: string) => unknown
   }
   if (candidate.tools === undefined || candidate.fs === undefined) return
-  let current = (): AntigravityVideoSettings => config
+  // The profile entry's own config is the settings form: every field is
+  // volatile, so the loader commits an edit in place and this read is live.
+  const current = (): AntigravityVideoSettings => ({
+    enabled: config.enabled.get(),
+    model: config.model.get(),
+    maxBytes: config.maxBytes.get(),
+  })
   let lifecycle: CapabilityLifecycle | undefined
   ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, ANTIGRAVITY_VIDEO_SETTINGS_NAMESPACE, Config, config, {
-      setSource: source => { current = source; lifecycle?.sync() },
-      onChange: () => { lifecycle?.sync() },
-    })
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: true }, ctx.fiber))
   })
+  ctx.on('loader/volatile-update', () => { lifecycle?.sync() })
   const provided = candidate.get?.('antigravityAuth')
   const auth = isAuthService(provided) ? provided : createAntigravityAuthService()
   lifecycle = mountCapabilityLifecycle({

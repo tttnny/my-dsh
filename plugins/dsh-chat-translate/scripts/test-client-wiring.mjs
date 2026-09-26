@@ -87,18 +87,23 @@ globalThis.window.__ModuleLoader__ = {
 const registrations = []
 const injects = []
 const locales = []
-const scopeBinds = []
+/** Namespaces the plugin asked the shared configuration forms for. */
+const formLookups = []
+/** Namespaces the plugin gated its page on (`configForms.whileServed`). */
+const servedWatches = []
 const errors = []
 
 /** Set by the election case: another participant already holds the shared page. */
 let existingSections = []
 
-const scope = {
-  getSnapshot: () => ({ status: 'ready', value: undefined, writable: true, revision: 1, mode: 'host' }),
-  subscribe: () => () => {},
-  set: async () => {},
-  unset: async () => {},
-  mutate: async () => {},
+/** Client shape of `ConfigForm<T>`: the per-entry read/write face of the config. */
+let formSubscribes = 0
+const form = {
+  getSnapshot: () => ({ status: 'ready', value: { enabled: true }, writable: true, revision: 1, mode: 'host' }),
+  subscribe: () => { formSubscribes++; return () => {} },
+  set: async () => true,
+  unset: async () => true,
+  mutate: async () => true,
 }
 
 const services = {
@@ -122,7 +127,16 @@ const services = {
     entries: key => (key === 'settings.section' ? existingSections : []),
   },
   locale: { register: ns => { locales.push(ns); return () => {} }, bind: ns => key => `${ns}:${key}` },
-  settingsScope: { bind: spec => { scopeBinds.push(spec.namespace); return scope } },
+  // `whileServed` runs its registration once one of the namespaces is in the
+  // describe mirror; the fake answers immediately so the page/card paths below
+  // exercise the same code production runs.
+  configForms: {
+    get: ns => { formLookups.push(ns); return form },
+    whileServed: (namespaces, register) => {
+      servedWatches.push([...namespaces])
+      return register(new Set(namespaces))
+    },
+  },
   remote: tolerant,
   'remote.credentials': tolerant,
 }
@@ -194,7 +208,9 @@ check('card ordered after the other participants', card?.order === 30)
 check('card uses this plugin locale namespace', card?.locale === 'settings.chatTranslate')
 
 check('locale dictionaries registered', locales.includes('settings.chatTranslate'))
-check('settings scope bound to the Host namespace', scopeBinds.includes('dsh-chat-translate'))
+check('configuration form read for this plugin entry', formLookups.includes('dsh-chat-translate'))
+check('page gated on the Host serving this plugin entry', JSON.stringify(servedWatches[0]) === '["dsh-chat-translate"]')
+check('store bound to the shared configuration form', formSubscribes > 0)
 
 // Election case: another participant already holds the page.
 registrations.length = 0

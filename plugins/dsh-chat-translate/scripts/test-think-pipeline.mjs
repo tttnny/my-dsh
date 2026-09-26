@@ -22,7 +22,7 @@ import {
   splitBatchTranslation,
   splitOversizedBlock,
 } from '../src/server/pipeline/think.ts';
-import { createFakeSettingsScope, createFakeCredentials } from './test-helpers.mjs';
+import { createFakeSettingsEntry, createFakeCredentials } from './test-helpers.mjs';
 
 let passed = 0;
 let total = 0;
@@ -53,23 +53,23 @@ function echoBlocks(text) {
 }
 
 function makeDispatcher(initial = {}) {
-  const config = new ConfigManager(
-    createFakeSettingsScope({
-      enabled: true,
-      aiEnabled: true,
-      bingEnabled: true,
-      thinkEnabled: true,
-      baseUrl: 'http://127.0.0.1:9/v1',
-      model: 'test-model',
-      ...initial,
-    }),
-    new CredentialsReader(createFakeCredentials('test-key'))
-  );
+  // The fake entry is the live config source: `source.update` simulates one
+  // accepted edit of the profile entry's config section.
+  const source = createFakeSettingsEntry({
+    enabled: true,
+    aiEnabled: true,
+    bingEnabled: true,
+    thinkEnabled: true,
+    baseUrl: 'http://127.0.0.1:9/v1',
+    model: 'test-model',
+    ...initial,
+  });
+  const config = new ConfigManager(source, new CredentialsReader(createFakeCredentials('test-key')));
   const cache = new LruDiskCache(100, 'title-cache-test.json');
   const thinkCache = new LruDiskCache(100, 'think-cache-test.json');
   thinkCache.cache.clear();
   const dispatcher = new TranslationDispatcher(config, cache, undefined, thinkCache);
-  return { config, dispatcher, thinkCache, cache };
+  return { config, source, dispatcher, thinkCache, cache };
 }
 
 function useFakeAdapter(dispatcher, translate) {
@@ -163,8 +163,8 @@ await test('块标记被弄乱时整批作废', () => {
 
 await test('总开关或思考链开关关闭时原样返回且不发请求', async () => {
   for (const patch of [{ enabled: false }, { thinkEnabled: false }]) {
-    const { dispatcher } = makeDispatcher({ thinkEnabled: true });
-    await dispatcher.configManager.updateConfig(patch);
+    const { dispatcher, source } = makeDispatcher({ thinkEnabled: true });
+    await source.update(patch);
     let calls = 0;
     useFakeAdapter(dispatcher, async (text) => {
       calls++;

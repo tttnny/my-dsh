@@ -8,10 +8,12 @@ import type { A6ApiConfig } from '../types.js';
 /**
  * DSH 原生配置整合（消除插件独立配置文件 dsh-a6api-config.json）：
  * - 凭据（API Key / 系统访问令牌 / userId）→ ~/.dsh/.credentials.yaml（refs，0600）
- * - 非机密状态（baseURL / 模型列表）→ ~/.dsh/settings.yaml 的 llm-pi-ai.providers.a6api 块
- * - 读写优先走 DSH 原生缝 ctx.credentials / ctx.settings（env 优先语义、串行写队列、schema 校验、
- *   热发布）；原生服务缺失或写入失败时回退到直接读写两个文件（格式与 DSH 原生一致）。
- * - 旧版独立配置文件在启动时自动迁移（只填空不覆盖）并归档为 dsh-a6api-config.json.bak。
+ * - 非机密状态（baseURL / 模型列表）→ 当前 Profile 的 `llm-pi-ai` 条目配置（`ctx.settings` 是
+ *   SettingsForms：`describe()` 读，`update()`/`mutate()` 写，字段须为 Volatile 才可热更新；
+ *   旧 `~/.dsh/settings.yaml` 已被内核一次性导入并改名 `.imported`，不再是可读可写的落点）
+ * - 凭据 → `ctx.credentials`（env 优先语义），缺失时兜底直读 ~/.dsh/.credentials.yaml。
+ * - 配置服务的写失败直接抛出：0.1.7 起没有可替代的配置文件落点（见 syncModels）。
+ * - 旧版插件私有配置文件在启动时自动迁移（只填空不覆盖）并归档为 dsh-a6api-config.json.bak。
  */
 
 export const A6API_CRED_REF = 'A6API_API_KEY';
@@ -44,11 +46,7 @@ function credentialsFile(): string {
   return path.join(dshHome(), '.credentials.yaml');
 }
 
-function settingsFile(): string {
-  return path.join(dshHome(), 'settings.yaml');
-}
-
-/** 可选地取 DSH 原生服务；缺失时返回 undefined（调用方回退到文件直读写） */
+/** 取凭据服务；缺失时返回 undefined（凭据读写仍兜底直读 ~/.dsh/.credentials.yaml） */
 function getCredentials(ctx: any) {
   try {
     if (ctx && typeof ctx.get === 'function') return ctx.get('credentials');
@@ -56,6 +54,7 @@ function getCredentials(ctx: any) {
   return undefined;
 }
 
+/** 取设置表单服务（SettingsForms）；缺失时返回 undefined（读按默认值，写直接抛错） */
 function getSettings(ctx: any) {
   try {
     if (ctx && typeof ctx.get === 'function') return ctx.get('settings');
@@ -157,247 +156,6 @@ export async function writeCredentialKey(refKey: string, value: string): Promise
   await atomicWriteFile(cFile, lines.join('\n'), 0o600);
 }
 
-// ===== settings.yaml 手写读写（原生缝缺失/写入失败时的兜底） =====
-
-/** 解析 settings.yaml 中 llm-pi-ai.providers.a6api 块的模型 ID 列表 */
-async function readRawConfiguredModels(): Promise<string[]> {
-  try {
-    const yaml = await fsp.readFile(settingsFile(), 'utf8');
-    const lines = yaml.split(/\r?\n/);
-    let inA6 = false;
-    let inModels = false;
-    const modelIds: string[] = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      const indent = line.match(/^\s*/)?.[0].length ?? 0;
-      if (indent === 4 && trimmed.startsWith('a6api:')) {
-        inA6 = true;
-        inModels = false;
-        continue;
-      }
-      if (inA6 && indent <= 4 && !trimmed.startsWith('a6api:')) {
-        inA6 = false;
-        inModels = false;
-      }
-      if (inA6 && indent === 6 && trimmed.startsWith('models:')) {
-        inModels = true;
-        continue;
-      }
-      if (inModels && indent === 8 && trimmed.startsWith('- id:')) {
-        const id = trimmed.replace(/^- id:\s*/, '').trim();
-        if (id) modelIds.push(id);
-      }
-    }
-    return modelIds;
-  } catch {
-    return [];
-  }
-}
-
-/** 解析 settings.yaml 中 a6api 块的 baseURL（含 /v1 后缀） */
-async function readRawA6apiBaseURL(): Promise<string> {
-  try {
-    const yaml = await fsp.readFile(settingsFile(), 'utf8');
-    let inA6 = false;
-    for (const line of yaml.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const indent = line.match(/^\s*/)?.[0].length ?? 0;
-      if (indent === 4 && trimmed.startsWith('a6api:')) {
-        inA6 = true;
-        continue;
-      }
-      if (inA6 && indent <= 4 && !trimmed.startsWith('a6api:')) inA6 = false;
-      if (inA6 && indent === 6 && trimmed.startsWith('baseURL:')) {
-        return trimmed.replace(/^baseURL:\s*/, '').trim().replace(/^["']|["']$/g, '');
-      }
-    }
-  } catch {}
-  return '';
-}
-
-/** 定位 settings.yaml 中 `llm-pi-ai:` -> `providers:` -> `a6api:` 的行区间（供写入/移除共用） */
-function scanA6apiBlockRange(lines: string[]): {
-  a6Start: number;
-  a6End: number;
-  providersLineIdx: number;
-  llmLineIdx: number;
-} {
-  let inLlm = false;
-  let inProviders = false;
-  let inA6 = false;
-  let a6Start = -1;
-  let a6End = -1;
-  let providersLineIdx = -1;
-  let llmLineIdx = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const indent = line.match(/^\s*/)?.[0].length ?? 0;
-
-    if (indent === 0) {
-      inLlm = trimmed.startsWith('llm-pi-ai:');
-      if (inLlm) llmLineIdx = i;
-      inProviders = false;
-      inA6 = false;
-      continue;
-    }
-
-    if (inLlm && indent === 2 && trimmed.startsWith('providers:')) {
-      inProviders = true;
-      providersLineIdx = i;
-      inA6 = false;
-      continue;
-    }
-
-    if (inProviders && indent === 4) {
-      if (trimmed.startsWith('a6api:')) {
-        inA6 = true;
-        a6Start = i;
-        a6End = i + 1;
-      } else {
-        if (inA6) {
-          a6End = i;
-          inA6 = false;
-        }
-      }
-      continue;
-    }
-
-    if (inA6 && indent > 4) {
-      a6End = i + 1;
-    } else if (inA6 && indent <= 4) {
-      a6End = i;
-      inA6 = false;
-    }
-  }
-
-  return { a6Start, a6End, providersLineIdx, llmLineIdx };
-}
-
-/** 裸写 a6api 提供商块到 settings.yaml（原生缝写入失败时的兜底，格式与 DSH 原生一致）。
- *  注意：仅以非空模型列表调用（空列表走移除路径）；整块替换会丢弃用户在块内手工添加的
- *  其他字段（如 compat），与原生 update 的 merge 语义有差异，属兜底路径的已知取舍。 */
-async function writeRawA6apiBlock(baseURL: string, modelIds: string[]): Promise<void> {
-  const sFile = settingsFile();
-  let yaml = '';
-  try {
-    yaml = await fsp.readFile(sFile, 'utf8');
-  } catch {
-    yaml = 'llm-pi-ai:\n  providers:\n';
-  }
-
-  const modelEntries = modelIds.map((id) => {
-    // 参数以目录为准：有则写入，缺则省略（llm-pi-ai 用默认值兜底），绝不写推断值
-    const entry = getCatalogEntry(id);
-    const lines = [`        - id: ${id}`];
-    // name 用 JSON 双引号序列化（防 YAML 注入：冒号/#/换行），并去除换行
-    if (entry?.name) lines.push(`          name: ${JSON.stringify(String(entry.name).replace(/\r?\n/g, ' '))}`);
-    if (entry?.contextWindow != null) lines.push(`          contextWindow: ${entry.contextWindow}`);
-    if (entry?.maxTokens != null) lines.push(`          maxTokens: ${entry.maxTokens}`);
-    if (entry?.input && entry.input.length > 0) {
-      lines.push(`          input:`);
-      for (const m of entry.input) lines.push(`            - ${m}`);
-    }
-    if (entry?.reasoningEfforts && typeof entry.reasoningEfforts === 'object') {
-      lines.push(`          reasoningEfforts:`);
-      for (const [k, v] of Object.entries(entry.reasoningEfforts)) {
-        // null 值输出 valueless 键（如 `off: `，DSH 解析为 supported-send-nothing，与 native 路径语义一致）
-        lines.push(v ? `            ${k}: ${v}` : `            ${k}: `);
-      }
-    }
-    return lines.join('\n');
-  });
-
-  // Ensure OpenAI compatible endpoints in DSH settings.yaml have the /v1 suffix
-  const dshBaseUrl = baseURL.endsWith('/v1') ? baseURL : `${baseURL.replace(/\/+$/, '')}/v1`;
-
-  const a6apiBlockLines = [
-    `    a6api:`,
-    `      displayName: A6API`,
-    `      apiKeyEnv: ${A6API_CRED_REF}`,
-    `      api: openai-completions`,
-    `      baseURL: ${dshBaseUrl}`,
-    `      models:`,
-    ...modelEntries,
-  ];
-
-  const lines = yaml.split(/\r?\n/);
-  const { a6Start, a6End, providersLineIdx, llmLineIdx } = scanA6apiBlockRange(lines);
-
-  if (a6Start >= 0) {
-    // Replace existing a6api block
-    lines.splice(a6Start, a6End - a6Start, ...a6apiBlockLines);
-  } else if (providersLineIdx >= 0) {
-    // Insert under providers:
-    lines.splice(providersLineIdx + 1, 0, ...a6apiBlockLines);
-  } else if (llmLineIdx >= 0) {
-    // Insert providers: then a6api
-    lines.splice(llmLineIdx + 1, 0, `  providers:`, ...a6apiBlockLines);
-  } else {
-    // Insert llm-pi-ai: providers: a6api
-    lines.push(`llm-pi-ai:`, `  providers:`, ...a6apiBlockLines);
-  }
-
-  await atomicWriteFile(sFile, lines.join('\n'), 0o644);
-}
-
-/**
- * 裸写移除 a6api 块（原生缝缺失/失败时的兜底）。
- * DSH schema 对手写路由无合法的零模型表示，空模型列表 = 移除整个块；
- * 块移除后顺带清理空壳（providers/llm-pi-ai 下无其他键时一并删除），保持 YAML 合法。
- */
-async function removeRawA6apiBlock(): Promise<void> {
-  const sFile = settingsFile();
-  let yaml = '';
-  try {
-    yaml = await fsp.readFile(sFile, 'utf8');
-  } catch {
-    return; // 无文件或不可读，无事可做
-  }
-
-  const lines = yaml.split(/\r?\n/);
-  const { a6Start, a6End, providersLineIdx, llmLineIdx } = scanA6apiBlockRange(lines);
-  if (a6Start < 0) return;
-
-  lines.splice(a6Start, a6End - a6Start);
-
-  // 清理空壳：providers 下无其他 indent-4 provider 键 → 移除 providers 行；llm-pi-ai 下无其他 indent-2 键 → 移除 llm-pi-ai 行
-  if (providersLineIdx >= 0) {
-    let hasProvider = false;
-    for (let i = providersLineIdx + 1; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const indent = lines[i].match(/^\s*/)?.[0].length ?? 0;
-      if (indent <= 2) break;
-      if (indent === 4) {
-        hasProvider = true;
-        break;
-      }
-    }
-    if (!hasProvider) lines.splice(providersLineIdx, 1);
-  }
-  if (llmLineIdx >= 0) {
-    let hasLlmKey = false;
-    for (let i = llmLineIdx + 1; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const indent = lines[i].match(/^\s*/)?.[0].length ?? 0;
-      if (indent === 0) break;
-      if (indent === 2) {
-        hasLlmKey = true;
-        break;
-      }
-    }
-    if (!hasLlmKey) lines.splice(llmLineIdx, 1);
-  }
-
-  await atomicWriteFile(sFile, lines.join('\n'), 0o644);
-}
-
 // ===== 旧版独立配置文件（dsh-a6api-config.json）读取与规范化 =====
 
 /** 旧字段别名收敛：accessToken / systemAccessToken / sessionCookie 是同一个凭据的历代命名 */
@@ -461,11 +219,11 @@ function buildA6apiBlock(baseURL: string, modelIds: string[]): Record<string, an
 export interface ConfigAccess {
   /** 触发（并等待）旧配置文件的自动迁移；幂等，进程内只执行一次，失败不阻塞 */
   ensureMigrated(): Promise<void>;
-  /** 读取当前配置：原生缝优先，逐级兜底到旧文件 */
+  /** 读取当前配置：非机密字段只走 ctx.settings.describe()，凭据走 ctx.credentials；旧 dsh-a6api-config.json 仅在迁移前作末级兜底 */
   readConfig(): Promise<A6ApiConfig>;
   /** 写入凭据字段（空串 = 清除，走 unset）；settings 同步请用 syncModels */
   writeConfig(parts: Partial<Pick<A6ApiConfig, 'apiKey' | 'accessToken' | 'userId'>>): Promise<void>;
-  /** 把模型列表（与 baseURL）同步进 DSH settings.yaml 的 llm-pi-ai.providers.a6api 块 */
+  /** 把模型列表（与 baseURL）同步进当前 Profile `llm-pi-ai` 条目的 providers.a6api 块 */
   syncModels(baseURL: string, modelIds: string[]): Promise<void>;
   /** 当前 DSH 已配置的 a6api 模型 ID 列表 */
   getDshConfiguredModels(): Promise<string[]>;
@@ -497,14 +255,21 @@ export function createConfigAccess(ctx: any): ConfigAccess {
     return (await readCredentialKey(ref)) || '';
   };
 
-  /** 读 llm-pi-ai.providers.a6api 块：原生 settings.get 优先 */
+  /**
+   * 读 llm-pi-ai.providers.a6api 块：0.1.7 起配置由 Profile 条目承载——
+   * `ctx.settings` 是 SettingsForms，`describe()` 按条目 id 返回该条目的实时配置值；
+   * 旧的 `settings.get(ns)` 方法已随 0.1.6 的 SettingsProvider 一并删除。
+   */
   const readA6apiBlock = async (
     settings: any,
   ): Promise<{ baseURL?: string; models: string[] } | null> => {
     try {
-      if (settings && typeof settings.get === 'function') {
-        const llm = settings.get(SETTINGS_NS);
-        const block = llm && llm.providers ? llm.providers[PROVIDER_KEY] : undefined;
+      if (settings && typeof settings.describe === 'function') {
+        const descriptor = settings
+          .describe()
+          .find((row: any) => row && row.ns === SETTINGS_NS);
+        const value = descriptor ? descriptor.value : undefined;
+        const block = value && value.providers ? value.providers[PROVIDER_KEY] : undefined;
         if (block && typeof block === 'object') {
           return {
             baseURL: typeof block.baseURL === 'string' ? block.baseURL : undefined,
@@ -517,7 +282,7 @@ export function createConfigAccess(ctx: any): ConfigAccess {
         }
       }
     } catch (err: any) {
-      console.warn('[dsh-a6api] settings.get(llm-pi-ai) failed:', err?.message || err);
+      console.warn('[dsh-a6api] settings.describe(llm-pi-ai) failed:', err?.message || err);
     }
     return null;
   };
@@ -532,20 +297,16 @@ export function createConfigAccess(ctx: any): ConfigAccess {
     const accessToken = await resolveRef(creds, A6API_TOKEN_REF);
     const userId = await resolveRef(creds, A6API_USER_REF);
 
-    // 非机密状态：llm-pi-ai.providers.a6api 块（原生解析优先，裸读兜底）
+    // 非机密状态：只读 llm-pi-ai.providers.a6api 块（ctx.settings.describe()），无替代文件落点
     let baseURL = DEFAULT_BASE_URL;
     let activeModels: string[] = [];
     const block = await readA6apiBlock(settings);
     if (block) {
       if (block.baseURL) baseURL = stripV1(block.baseURL) || DEFAULT_BASE_URL;
       activeModels = block.models;
-    } else {
-      const rawBase = await readRawA6apiBaseURL();
-      if (rawBase) baseURL = stripV1(rawBase) || DEFAULT_BASE_URL;
-      activeModels = await readRawConfiguredModels();
     }
 
-    // 末级兜底：原生凭据为空且旧文件仍在（迁移未完成或失败）→ 旧文件只填空字段，
+    // 末级兜底：原生凭据为空且旧插件私有文件仍在（迁移未完成或失败）→ 旧文件只填空字段，
     // 非机密状态始终以原生 settings 为准（避免旧值遮蔽用户迁移失败后新改的节点/模型）
     if (!apiKey && !accessToken && fs.existsSync(legacyConfigFile())) {
       const legacy = await readLegacyConfig();
@@ -594,39 +355,26 @@ export function createConfigAccess(ctx: any): ConfigAccess {
 
   const syncModels = async (baseURL: string, modelIds: string[]): Promise<void> => {
     const settings = getSettings(ctx);
+    if (!settings || typeof settings.update !== 'function' || typeof settings.mutate !== 'function') {
+      throw new Error('[dsh-a6api] ctx.settings (SettingsForms) 不可用：无法同步 a6api 模型配置');
+    }
     if (modelIds.length === 0) {
       // DSH 硬约束：llm-pi-ai 对手写路由（a6api 不在内置 catalog）不存在合法的「零模型」表示，
       // assertServiceable 会拒绝 models: []（"resolves no models..."），写盘将毒化下次启动。
       // 空列表 = 移除整个 a6api 块（路由从 DSH 消失；baseURL 随块一并移除，属 schema 约束下的必然）。
-      if (settings && typeof settings.mutate === 'function') {
-        try {
-          await settings.mutate(SETTINGS_NS, [{ op: 'unset', path: ['providers', PROVIDER_KEY] }]);
-          return;
-        } catch (err: any) {
-          console.warn('[dsh-a6api] settings.mutate(llm-pi-ai) 移除 a6api 块失败，回退裸写 settings.yaml:', err?.message || err);
-        }
-      }
-      await removeRawA6apiBlock();
+      // 失败直接抛：0.1.7 起唯一落点是 Profile 条目配置，没有可回退的替代文件。
+      await settings.mutate(SETTINGS_NS, [{ op: 'unset', path: ['providers', PROVIDER_KEY] }]);
       return;
     }
 
     const block = buildA6apiBlock(baseURL, modelIds);
-    if (settings && typeof settings.update === 'function') {
-      try {
-        // 原生缝：命名空间串行写队列 + schema 校验 + 热发布（合并语义，不影响其他 provider）
-        await settings.update(SETTINGS_NS, { providers: { [PROVIDER_KEY]: block } });
-        return;
-      } catch (err: any) {
-        console.warn('[dsh-a6api] settings.update(llm-pi-ai) 失败，回退裸写 settings.yaml:', err?.message || err);
-      }
-    }
-    await writeRawA6apiBlock(baseURL, modelIds);
+    // 原生缝：条目串行写队列 + schema 校验 + 热发布（合并语义，不影响其他 provider）；失败直接抛。
+    await settings.update(SETTINGS_NS, { providers: { [PROVIDER_KEY]: block } });
   };
 
   const getDshConfiguredModels = async (): Promise<string[]> => {
     const block = await readA6apiBlock(getSettings(ctx));
-    if (block) return block.models;
-    return readRawConfiguredModels();
+    return block ? block.models : [];
   };
 
   /** 只填空：迁移值仅在当前无该 ref（含 env 覆盖）时写入；返回 false = 写入失败（需保留旧文件） */
@@ -687,10 +435,9 @@ export function createConfigAccess(ctx: any): ConfigAccess {
       return;
     }
 
-    // settings：仅当 a6api 块不存在时回填（绝不覆盖用户当前的 settings.yaml）
+    // settings：仅当 a6api 块不存在时回填（绝不覆盖用户已配置的 provider）
     const block = await readA6apiBlock(getSettings(ctx));
-    const blockExists = Boolean(block) || (await readRawConfiguredModels()).length > 0;
-    if (!blockExists && legacy.activeModels.length > 0) {
+    if (!block && legacy.activeModels.length > 0) {
       await syncModels(legacy.baseURL, legacy.activeModels);
     }
 

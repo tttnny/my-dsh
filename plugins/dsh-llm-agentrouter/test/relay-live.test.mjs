@@ -230,7 +230,7 @@ test('without the fence the relay rejects the harness User-Agent', { skip: skipU
   // on User-Agent alone, so the same key and body must fail unfenced. If this
   // ever passes, the gate is gone and the fence can be retired.
   const { Config } = await import('../lib/index.js')
-  const host = Config({ endpoint: ENDPOINT }).endpoints[ENDPOINT]
+  const host = Config({ endpoint: ENDPOINT }).endpoints.get()[ENDPOINT]
   const res = await fetch(`https://${host}/v1/chat/completions`, {
     method: 'POST',
     headers: {

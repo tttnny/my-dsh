@@ -1,6 +1,7 @@
 # @lynn123411/dsh-chat-translate bundle patch
 # 声明在 package.json 的 dsh.bundle.patch，`dsh plugin add` 后自动并入 profile 层栈。
-# 浏览器半区（lib/client.js）由 client-modules 依据 dsh.client 声明自动发现。
+# 这条 insert 行是 root loader entry（不是 preset 子树），client-modules 正是对这类行
+# 依据 dsh.client 声明服务浏览器半区（lib/client.js），所以插件本体单行即可。
 - insert:
     - id: dsh-chat-translate
       name: '@lynn123411/dsh-chat-translate'

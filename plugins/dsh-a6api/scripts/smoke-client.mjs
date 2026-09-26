@@ -97,14 +97,6 @@ const injects = []
 const locales = []
 const errors = []
 
-const scope = {
-  getSnapshot: () => ({ status: 'ready', value: undefined, base: undefined, user: undefined, revision: 1, writable: true, mode: 'host' }),
-  subscribe: () => () => {},
-  set: async () => {},
-  unset: async () => {},
-  mutate: async () => {},
-}
-
 /** Card registrations collected on the shared page's child slot. */
 const cardEntries = []
 /** Set by the election case: a pre-existing occupant of the shared page. */
@@ -152,7 +144,6 @@ const services = () => ({
     getSnapshot: () => ({ revision: 0 }),
     subscribe: () => () => {},
   },
-  settingsScope: { bind: (spec) => { injects.push(`bind:${spec.namespace}`); return scope } },
 })
 
 /**

@@ -6,12 +6,16 @@
  * 2. 用带内核 inject 守卫的假上下文跑 `apply()`：少声明服务会抛
  *    `cannot get property "x" without inject`，插件会整条 entry 变 failed 从页面消失，
  *    而宿主日志无异常——所以守卫必须在这里现身，且自身要有反例断言证明它还会抛；
- * 3. 顺带守住 class 名：`dsg-*` 在 JSX 与 CSS 之间只能一一对应，单边漂移只是样式静默失效。
+ * 3. 顺带守住 class 名：`dsg-*` 在 JSX 与 CSS 之间只能一一对应，单边漂移只是样式静默失效；
+ * 4. 守住 ui-primitives 的导出名：0.1.7 把 `Icon*Outline16/14/12` 成对改名成
+ *    `Icon*OutlineRegular/Medium`，漏改只是页面上少一个图标（React 对 undefined 组件
+ *    只 warning），没有任何运行时断言会现形，所以按安装副本的真实导出表点名核对。
  *
  * 运行：node scripts/smoke-client.mjs [plugin-dir]
  */
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -54,7 +58,6 @@ const platformModules = new Set([
   '@deepseek-ai/dsh-client-store',
   '@deepseek-ai/dsh-client-ui-slots',
   '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-ui-dockkit',
 ]);
 
 let exported;
@@ -163,6 +166,36 @@ test('JSX 里用到的 class 名都在 CSS 里', () => {
 test('CSS 里的 class 名都在 JSX 里用到（没有死样式）', () => {
   const dead = [...defined].filter((name) => !used.has(name));
   assert.deepEqual(dead, []);
+});
+
+// ui-primitives 的导出名核对：安装副本入口的导出表就是浏览器模块表会给的键，
+// 源里引的名字不在表里 = 页面上那一处是 undefined（React 只 warning、测试全绿）。
+const require = createRequire(import.meta.url);
+const primitivesEntry = join(
+  dirname(require.resolve('@deepseek-ai/dsh-client-ui-primitives/package.json')),
+  'lib',
+  'index.js',
+);
+const primitiveExports = new Set(
+  [...readFileSync(primitivesEntry, 'utf8').matchAll(/export \{([^}]*)\}/g)]
+    .flatMap((match) => match[1].split(',').map((name) => name.trim().split(/\s+as\s+/).pop()))
+    .filter((name) => name.length > 0),
+);
+const primitiveImports = new Set();
+for (const file of readdirSync(join(root, 'src', 'client'))) {
+  if (!/\.jsx?$/.test(file)) continue;
+  const source = readFileSync(join(root, 'src', 'client', file), 'utf8');
+  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*'@deepseek-ai\/dsh-client-ui-primitives'/g)) {
+    for (const name of match[1].split(',')) {
+      const identifier = name.trim().split(/\s+as\s+/).pop();
+      if (identifier.length > 0) primitiveImports.add(identifier);
+    }
+  }
+}
+test('引到的 ui-primitives 名字都在安装副本的导出表里（成对改名后漏改即失败）', () => {
+  assert.ok(primitiveImports.size > 0, '没有从 ui-primitives 引任何东西，下面的核对是空转');
+  const missing = [...primitiveImports].filter((name) => !primitiveExports.has(name));
+  assert.deepEqual(missing, []);
 });
 
 console.log('  浏览器半边：全部通过');

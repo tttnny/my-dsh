@@ -3,7 +3,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { apply, inject } from '../src/client/index.ts'
-import { ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE } from '../src/capability-master.ts'
+import { ANTIGRAVITY_AUTH_ENTRY_ID } from '../src/capability-master.ts'
 import type { AntigravityAuthKey } from '../src/client/locales.ts'
 import { createStatusView } from '../src/status.ts'
 
@@ -21,7 +21,7 @@ function bench(isLoopback = true) {
   const dictionaries = new Map<string, { zh: Record<AntigravityAuthKey, string>; en: Record<AntigravityAuthKey, string> }>()
   const slots: SlotRecord[] = []
   const listeners = new Set<() => void>()
-  const binds: string[] = []
+  const entries: string[] = []
   const scope = {
     getSnapshot: () => ({ status: 'ready', value: undefined, base: undefined, user: undefined, revision: 1, writable: true, mode: 'host' }),
     subscribe: () => () => {},
@@ -61,9 +61,9 @@ function bench(isLoopback = true) {
       },
     },
     connection: { isLoopback, rpc: { call } },
-    settingsScope: {
-      bind(spec: { namespace: string }) {
-        binds.push(spec.namespace)
+    configForms: {
+      get(entryId: string) {
+        entries.push(entryId)
         return scope
       },
     },
@@ -91,14 +91,14 @@ function bench(isLoopback = true) {
     dictionaries,
     listeners,
     slots,
-    binds,
+    entries,
     dispose: () => { for (const dispose of disposers.reverse()) dispose() },
   }
 }
 
 describe('Antigravity client apply', () => {
   it('declares its services and removes dictionaries, slots, and listeners on teardown', async () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'configForms'])
     const b = bench()
 
     expect(b.slots.map(record => record.options)).toEqual([
@@ -110,10 +110,10 @@ describe('Antigravity client apply', () => {
     await props?.rpc.status()
     expect(b.call).toHaveBeenCalledWith('/api', 'antigravity-auth/status', {}, undefined)
     expect(props?.t('title')).toBe('Antigravity Auth')
-    // The bundle reads one settings namespace per capability plus the master switch,
-    // and the client literal must match the namespace the Host row registers.
-    expect(b.binds).toEqual(['antigravity-master', 'antigravity-search', 'antigravity-image', 'antigravity-video'])
-    expect(b.binds[0]).toBe(ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE)
+    // The bundle reads one settings form per Host plugin entry, keyed by the
+    // profile entry id; the client literal must match the Host row's id.
+    expect(b.entries).toEqual(['antigravity-auth', 'antigravity-search', 'antigravity-image', 'antigravity-video'])
+    expect(b.entries[0]).toBe(ANTIGRAVITY_AUTH_ENTRY_ID)
     expect(props?.masterScope).toBeDefined()
 
     b.dispose()

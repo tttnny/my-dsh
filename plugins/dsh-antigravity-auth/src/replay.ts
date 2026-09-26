@@ -1,7 +1,6 @@
 /** Bounded, block-aligned replay metadata for Antigravity model turns. */
 
-import type { ReplayEnvelope, ToolSchema } from '@deepseek-ai/dsh-llm'
-import type { Message } from '@deepseek-ai/dsh-llm'
+import type { ReplayEnvelope, RequestMessage, ToolSchema } from '@deepseek-ai/dsh-llm'
 
 export const ANTIGRAVITY_REPLAY_VERSION = 1 as const
 const MAX_SIGNATURE_LENGTH = 16 * 1024
@@ -53,7 +52,7 @@ export function createReplayState(
 
 /** Validate replay metadata before it can affect a later private request. */
 export function compatibleReplayState(
-  message: Message,
+  message: RequestMessage,
   provider: string,
   model: string,
   blockKinds?: readonly ReplayBlockKind[],

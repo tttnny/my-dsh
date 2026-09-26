@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import type { Volatile } from '@deepseek-ai/cordis';
 import type { PluginConfig } from './types.ts';
 import type { CredentialsReader } from './credentials.ts';
 
@@ -21,9 +22,12 @@ export const THINK_TIMEOUT_MAX = 900000;
 export const THINK_CACHE_ENTRIES = 300;
 
 /**
- * The settings namespace this plugin owns. The user-editable layer lives in
- * the DSH-managed document (~/.dsh/settings.yaml) under this key; the
- * standalone ~/.dsh/dsh-chat-translate-config.json file is legacy (<=1.1).
+ * The settings namespace this plugin owns. Since 0.1.7 a namespace IS the
+ * Profile entry id, so the user-editable layer is the `config` row of
+ * `dsh-chat-translate` in the active profile's patch
+ * (`~/.dsh/profiles/<profile>/cordis.patch.yml`). The standalone
+ * ~/.dsh/dsh-chat-translate-config.json file is legacy (<=1.1) and is migrated
+ * once at boot.
  */
 export const SETTINGS_NAMESPACE = 'dsh-chat-translate';
 
@@ -42,17 +46,81 @@ export const DEFAULT_CONFIG: PluginConfig = {
 };
 
 /**
- * Minimal shape of the owner scope returned by `ctx.settings.register()`.
- * Keeping this structural (instead of importing the DSH package) lets tests
- * inject an in-memory fake and keeps the bundle free of host-service code.
+ * Live read face of this plugin's own Config, as `ConfigManager` consumes it.
+ *
+ * Keeping this structural (instead of importing the DSH packages) lets tests
+ * inject an in-memory fake and keeps the host bundle free of service code. The
+ * plugin has no write face of its own: an accepted edit is written by the
+ * browser configuration form into the profile patch, and DSH commits the new
+ * value into the `Volatile` refs this source reads.
  */
-export interface SettingsScopeLike {
+export interface ConfigSourceLike {
   /** Resolved value: schema defaults, then composition base, then user layer. */
   get(): PluginConfig;
-  /** Observe resolved-value changes; returns the disposer. */
+  /** Observe committed live edits; returns the disposer. */
   watch(listener: (config: PluginConfig) => void): () => void;
-  /** Merge a patch into the user layer and persist through the provider. */
-  update(patch: Partial<PluginConfig>): Promise<unknown>;
+}
+
+/**
+ * Fields of this plugin's Config as the runtime resolved them. Every field is
+ * declared `volatile()`, so each one is a stable ref DSH commits a live edit
+ * into rather than a snapshot taken at apply time.
+ */
+export interface PluginConfigRefs {
+  readonly enabled: Volatile<boolean>;
+  readonly concurrency: Volatile<number>;
+  readonly timeoutMs: Volatile<number>;
+  readonly aiTimeoutMs: Volatile<number>;
+  readonly thinkTimeoutMs: Volatile<number>;
+  readonly aiEnabled: Volatile<boolean>;
+  readonly bingEnabled: Volatile<boolean>;
+  readonly thinkEnabled: Volatile<boolean>;
+  readonly baseUrl: Volatile<string>;
+  readonly model: Volatile<string>;
+  readonly targetLang: Volatile<string>;
+}
+
+/**
+ * Read the current committed value of every Config field.
+ * @param refs - the runtime-resolved Config object.
+ * @returns A detached plain config value.
+ */
+export function readPluginConfig(refs: PluginConfigRefs): PluginConfig {
+  return {
+    enabled: refs.enabled.get(),
+    concurrency: refs.concurrency.get(),
+    timeoutMs: refs.timeoutMs.get(),
+    aiTimeoutMs: refs.aiTimeoutMs.get(),
+    thinkTimeoutMs: refs.thinkTimeoutMs.get(),
+    aiEnabled: refs.aiEnabled.get(),
+    bingEnabled: refs.bingEnabled.get(),
+    thinkEnabled: refs.thinkEnabled.get(),
+    baseUrl: refs.baseUrl.get(),
+    model: refs.model.get(),
+    targetLang: refs.targetLang.get(),
+  };
+}
+
+/**
+ * Adapt this plugin's runtime-resolved Config into the live source
+ * {@link ConfigManager} consumes.
+ *
+ * DSH commits an accepted live edit into the `Volatile` refs in place, then
+ * emits `loader/volatile-update` on the owning fiber — the listener is scoped
+ * to this plugin's own entry, so one subscription covers every field.
+ *
+ * @param onVolatileUpdate - subscribes to this plugin's volatile-commit event.
+ * @param refs - the runtime-resolved Config object.
+ * @returns The live read/watch source.
+ */
+export function createLiveConfigSource(
+  onVolatileUpdate: (listener: () => void) => () => void,
+  refs: PluginConfigRefs
+): ConfigSourceLike {
+  return {
+    get: () => readPluginConfig(refs),
+    watch: (listener) => onVolatileUpdate(() => listener(readPluginConfig(refs))),
+  };
 }
 
 /**
@@ -64,9 +132,8 @@ export type SettingsPathOpLike =
   | { op: 'unset'; path: string[] };
 
 /**
- * Provider-level write face the legacy migration needs: the settings service
- * itself (not the per-namespace owner scope), whose `mutate` applies path ops
- * under one revision fence.
+ * Provider-level write face the legacy migration needs: DSH's `ctx.settings`
+ * service itself, whose `mutate` applies path ops under one revision fence.
  */
 export interface SettingsMigrationTarget {
   describe(): Array<{ ns: string; user?: unknown; revision?: number }>;
@@ -74,21 +141,21 @@ export interface SettingsMigrationTarget {
 }
 
 /**
- * Config facade over the DSH `ctx.settings` service. No file I/O lives here
+ * Config facade over this plugin's own live Config. No file I/O lives here
  * anymore: persistence, atomic writes, external-edit hot reload and the
- * browser-facing describe/mutate API are all owned by DSH itself.
+ * browser-facing edit API are all owned by DSH itself.
  */
 export class ConfigManager {
-  private scope: SettingsScopeLike;
+  private source: ConfigSourceLike;
   private credentials: CredentialsReader;
 
-  constructor(scope: SettingsScopeLike, credentials: CredentialsReader) {
-    this.scope = scope;
+  constructor(source: ConfigSourceLike, credentials: CredentialsReader) {
+    this.source = source;
     this.credentials = credentials;
   }
 
   getConfig(): PluginConfig {
-    return this.scope.get();
+    return this.source.get();
   }
 
   /** Whether the AI channel has every required piece: baseUrl, model and key. */
@@ -102,22 +169,7 @@ export class ConfigManager {
   }
 
   onConfigChange(listener: (config: PluginConfig) => void): () => void {
-    return this.scope.watch(listener);
-  }
-
-  /**
-   * Merge a partial update into the settings namespace. Values are sanitized
-   * here (bounds, trimming) so the schema's own constraints act as a second
-   * line of defence rather than the only one.
-   *
-   * @internal Test-only. No production path calls this: the host writes the
-   * settings namespace from the browser through the DSH settings service, and
-   * this facade is only driven by `scripts/test-*.mjs` (regression suite).
-   * Kept (with this marker) so those tests keep exercising the sanitizer.
-   */
-  async updateConfig(partial: Partial<PluginConfig>): Promise<PluginConfig> {
-    await this.scope.update(sanitizePatch({ ...partial }));
-    return this.getConfig();
+    return this.source.watch(listener);
   }
 }
 

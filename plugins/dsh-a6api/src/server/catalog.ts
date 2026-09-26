@@ -13,10 +13,10 @@ import type { A6ApiModelMeta, CatalogModelEntry } from '../types.js';
  *   v1.4 起位于插件子目录（与 DSH「组件自建 home 子目录」惯例一致），不再占用
  *   `$DSH_HOME` 根目录；旧版根目录文件（<=1.3 `dsh-a6api-catalog.json`）首次读取时
  *   自动搬迁（保持数据无损），搬迁后旧文件即删除。
- * - 条目字段 = DSH settings.yaml 的 llm-pi-ai 原生模型字段（id/name/contextWindow/
+ * - 条目字段 = DSH llm-pi-ai 条目的原生模型字段（id/name/contextWindow/
  *   maxTokens/input/reasoningEfforts），外加内部附带的 brand（来自 A6API 市场渠道，
- *   仅用于可用模型卡片展示，不写入 settings.yaml）。
- * - 目录为唯一参数真相源：「可用模型」页写入 settings.yaml 时从此取字段，缺则省略
+ *   仅用于可用模型卡片展示，不写入 llm-pi-ai 条目配置）。
+ * - 目录为唯一参数真相源：「可用模型」页写入 llm-pi-ai 条目配置时从此取字段，缺则省略
  *   （由 llm-pi-ai 默认值兜底），不再有任何内置手写默认参数。
  */
 
@@ -144,7 +144,7 @@ export async function upsertCatalogEntries(entries: CatalogModelEntry[]): Promis
   });
 }
 
-/** 清空目录（重新从 A6API 拉取/OpenRouter 填充前使用）。settings.yaml 已启用条目不受影响 */
+/** 清空目录（重新从 A6API 拉取/OpenRouter 填充前使用）。llm-pi-ai 条目中已启用的模型不受影响 */
 export async function clearCatalog(): Promise<void> {
   await enqueueWrite(async () => {
     await writeCatalog([]);
@@ -228,7 +228,7 @@ export const DEFAULT_REASONING_EFFORTS: Record<string, string | null> = {
 
 /**
  * 解析模型元信息（同步）：目录数据优先，缺失时返回展示兜底值。
- * 注意：写 settings.yaml 时不要用此函数的兜底值——缺字段应省略（见 buildA6apiBlock）。
+ * 注意：写 llm-pi-ai 条目配置时不要用此函数的兜底值——缺字段应省略（见 buildA6apiBlock）。
  */
 export function resolveModelMeta(modelId: string): A6ApiModelMeta {
   const entry = getCatalogEntry(modelId);
@@ -448,7 +448,7 @@ export async function queryOpenRouter(ids: string[]): Promise<OrQueryResult> {
     if (maxOut != null && Number(maxOut) > 0) patch.maxTokens = Number(maxOut);
     const mods = orModalities(hit);
     if (mods.length > 0) patch.input = mods;
-    // name 仅允许用户手动填写：不从此处填充（用户未填则保持为空，写 settings.yaml 时省略）
+    // name 仅允许用户手动填写：不从此处填充（用户未填则保持为空，写 llm-pi-ai 条目配置时省略）
     updated.push({ id, ...patch });
   }
 

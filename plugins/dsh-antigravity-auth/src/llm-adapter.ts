@@ -30,10 +30,11 @@ import type {
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
-  Message,
   ReplayEnvelope,
+  RequestMessage,
   StreamChunk,
   TokenUsage,
+  ToolResultMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { CredentialCoordinator, HostCredential } from './credential-coordinator.ts'
 import {
@@ -900,11 +901,15 @@ function claudeToolTypeHint(value: unknown): string {
   return type
 }
 
-function mapMessage(message: Message, model: string, toolNames: Map<string, string>): Record<string, unknown> {
+function mapMessage(message: RequestMessage, model: string, toolNames: Map<string, string>): Record<string, unknown> {
+  const isClaude = antigravityModelFamily(model) === 'claude'
+  // A tool result is its own message role in 0.1.7 rather than a content block:
+  // it maps to one `functionResponse` part on a user-role turn, the wire shape
+  // this provider accepts.
+  if (message.role === 'tool') return { role: 'user', parts: [toolResultPart(message, isClaude, toolNames)] }
   const parts: Record<string, unknown>[] = []
   const replay = compatibleReplayState(message, ANTIGRAVITY_PROVIDER, model, contentKinds(message))
   const replayBlocks = replay?.blocks ?? []
-  const isClaude = antigravityModelFamily(model) === 'claude'
   let replayIndex = 0
   let sawClaudeFunctionCall = false
   for (const block of message.content) {
@@ -934,15 +939,6 @@ function mapMessage(message: Message, model: string, toolNames: Map<string, stri
         },
         ...(signature === undefined ? {} : { thoughtSignature: signature }),
       })
-    } else if (block.type === 'tool-result') {
-      const callId = requireToolCallId(block.toolCallId)
-      parts.push({
-        functionResponse: {
-          ...(isClaude ? { id: callId } : {}),
-          name: requireToolName(toolNames, callId),
-          response: { content: blocksToText(block.content) },
-        },
-      })
     } else if (block.type === 'image') {
       throw new LlmError('Antigravity text requests do not accept unresolved image blocks', 'UNSUPPORTED_MODALITY')
     }
@@ -953,14 +949,28 @@ function mapMessage(message: Message, model: string, toolNames: Map<string, stri
   }
 }
 
+/** One tool result as the provider's `functionResponse` part on a user-role turn. */
+function toolResultPart(message: ToolResultMessage, isClaude: boolean, toolNames: Map<string, string>): Record<string, unknown> {
+  const callId = requireToolCallId(message.toolCallId)
+  return {
+    functionResponse: {
+      ...(isClaude ? { id: callId } : {}),
+      name: requireToolName(toolNames, callId),
+      response: { content: blocksToText(message.content) },
+    },
+  }
+}
+
 async function mapMessageWithAttachments(
-  message: Message,
+  message: RequestMessage,
   model: string,
   toolNames: Map<string, string>,
   attachments: Pick<AttachmentStore, 'readImage'> | undefined,
   signal: AbortSignal | undefined,
 ): Promise<Record<string, unknown>> {
-  if (!message.content.some(block => block.type === 'image')) return mapMessage(message, model, toolNames)
+  // A tool result has no assistant-side inline-image slot, so its content is
+  // flattened to text by the shared mapping instead of erroring.
+  if (message.role === 'tool' || !message.content.some(block => block.type === 'image')) return mapMessage(message, model, toolNames)
   if (attachments === undefined) throw new LlmError('Antigravity image input requires the Host AttachmentStore', 'UNSUPPORTED_MODALITY')
   const replay = compatibleReplayState(message, ANTIGRAVITY_PROVIDER, model, contentKinds(message))
   const replayBlocks = replay?.blocks ?? []
@@ -997,15 +1007,6 @@ async function mapMessageWithAttachments(
           args: parseJsonObject(block.arguments),
         },
         ...(signature === undefined ? {} : { thoughtSignature: signature }),
-      })
-    } else if (block.type === 'tool-result') {
-      const callId = requireToolCallId(block.toolCallId)
-      parts.push({
-        functionResponse: {
-          ...(isClaude ? { id: callId } : {}),
-          name: requireToolName(toolNames, callId),
-          response: { content: blocksToText(block.content) },
-        },
       })
     }
   }
@@ -1059,7 +1060,7 @@ function requestSessionKey(options: GenerateOptions): string {
   return options.sessionId === undefined ? 'default' : `session:${fnv1a64Signed(String(options.sessionId))}`
 }
 
-function contentKinds(message: Message): Array<'text' | 'reasoning' | 'tool-call'> {
+function contentKinds(message: RequestMessage): Array<'text' | 'reasoning' | 'tool-call'> {
   return message.content.flatMap(block => block.type === 'text' || block.type === 'reasoning' || block.type === 'tool-call' ? [block.type] : [])
 }
 

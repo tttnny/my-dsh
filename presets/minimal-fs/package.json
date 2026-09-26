@@ -1,0 +1,40 @@
+{
+  "name": "@lynn123411/dsh-preset-minimal-fs",
+  "version": "0.1.0",
+  "description": "极简-文件：官方极简模式的身份＋文件工具（read / write / edit），不含任何 shell。工具目录就是这三个：没有 bash / pwsh、没有检索 / read_image、没有 skills / 计划 / 目标 / 子代理，专门用来对照测试模型在近乎零工具、无命令执行下的能力。",
+  "type": "module",
+  "exports": {
+    "./tool-filter": "./plugins/tool-filter/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "plugins",
+    "minimal-fs.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-preset",
+    "agent-preset",
+    "cordis"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tttnny/my-dsh.git",
+    "directory": "presets/minimal-fs"
+  },
+  "engines": {
+    "dsh": "0.1.7-rc.2",
+    "node": "^22.19 || >=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./minimal-fs.patch.yml"
+    }
+  }
+}

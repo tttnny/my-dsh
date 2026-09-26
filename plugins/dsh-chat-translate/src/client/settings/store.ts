@@ -18,28 +18,40 @@ export interface ClientSettingsState {
 export const THINK_TIMEOUT_MIN = 500;
 export const THINK_TIMEOUT_MAX = 900000;
 
-/** Settings namespace + credentials ref, mirroring the host constants. */
+/** Profile entry id (== settings namespace) + credentials ref, mirroring the host constants. */
 export const SETTINGS_NAMESPACE = 'dsh-chat-translate';
 export const TRANSLATE_API_KEY_REF = 'TRANSLATE_API_KEY';
 
 /**
- * Minimal structural shapes of the DSH browser services this store rides on:
- * `settingsScope` (from @deepseek-ai/dsh-client-ui-settings) and the
- * `credentials` Remote namespace. Keeping them structural keeps this bundle
- * free of host-service imports and lets tests inject fakes.
+ * One path-addressed edit, matching the wire shape the shared configuration
+ * form's `mutate` accepts.
  */
 export type SettingsPathOpLike =
   | { op: 'set'; path: string[]; value: unknown }
   | { op: 'unset'; path: string[] };
 
-export interface SettingsScopeLike {
+/**
+ * Minimal structural shape of the DSH shared configuration form this store
+ * rides on — `ConfigForm<T>` from @deepseek-ai/dsh-client-ui-settings, reached
+ * as `ctx.configForms.get(<profile entry id>)`. Keeping it structural keeps
+ * this bundle free of the settings package and lets tests inject fakes; the
+ * real form is a structural superset (it also carries `base`, `user` and
+ * `mode`).
+ */
+export interface ConfigFormLike {
   getSnapshot(): {
-    status: string;
+    /** `unavailable` when the Host does not serve this entry to this client. */
+    status: 'loading' | 'ready' | 'unavailable';
+    /** Resolved section: schema defaults, then composition base, then user layer. */
     value?: Record<string, unknown>;
+    /** Whether the Host document accepts writes; memory mode never does. */
     writable: boolean;
+    /** Namespace revision fencing the next write. */
+    revision?: number;
   };
   subscribe(listener: () => void): () => void;
-  mutate(ops: readonly SettingsPathOpLike[]): Promise<unknown>;
+  /** One revision-fenced batch of path writes; resolves to Host acceptance. */
+  mutate(ops: readonly SettingsPathOpLike[], expectedRevision?: number): Promise<unknown>;
 }
 
 /** Shape of every DSH client Remote call: {ok, value} / {ok, error} wrapper. */
@@ -68,23 +80,22 @@ const DEFAULT_STATE: ClientSettingsState = {
 };
 
 /**
- * Client settings store backed by the DSH settings namespace.
+ * Client settings store backed by this plugin's own configuration form.
  *
- * Since 1.2 there is no localStorage overlay and no custom config HTTP
- * endpoint: the store derives from the bound `settingsScope` (which mirrors
- * the host document and folds every write answer back), and each debounced
- * flush commits its touched fields as one `scope.mutate` batch — one
- * revision fence, serialized and persisted by DSH.
- * Without a bound scope (e.g. non-loopback pages, unit tests) it degrades to
- * an in-memory store with the same semantics DSH itself uses for memory
- * persistence.
+ * There is no localStorage overlay and no custom config HTTP endpoint: the
+ * store derives from the bound `ConfigForm`, which mirrors the profile entry's
+ * config section (schema defaults → composition base → user layer) and folds
+ * every accepted write back, and each debounced flush commits its touched
+ * fields as one `mutate` batch — one revision fence, serialized and persisted
+ * by DSH. Without a bound form (unit tests) it degrades to an in-memory store
+ * with the same semantics.
  */
 class SettingsStore {
   private state: ClientSettingsState = { ...DEFAULT_STATE };
   private listeners = new Set<() => void>();
-  private scope: SettingsScopeLike | null = null;
+  private form: ConfigFormLike | null = null;
   private credentials: CredentialsRemoteLike | null = null;
-  private unsubscribeScope: (() => void) | null = null;
+  private unsubscribeForm: (() => void) | null = null;
   private keyConfigured = false;
   private writeTimer: number | null = null;
   private pendingFields = new Set<string>();
@@ -93,15 +104,15 @@ class SettingsStore {
    * Bind the DSH services. Called once from the settings UI setup; re-binding
    * (e.g. after a reconnect) detaches the previous subscription first.
    */
-  attach(scope: SettingsScopeLike | null, credentials: CredentialsRemoteLike | null): void {
-    if (this.unsubscribeScope) {
-      this.unsubscribeScope();
-      this.unsubscribeScope = null;
+  attach(form: ConfigFormLike | null, credentials: CredentialsRemoteLike | null): void {
+    if (this.unsubscribeForm) {
+      this.unsubscribeForm();
+      this.unsubscribeForm = null;
     }
-    this.scope = scope;
+    this.form = form;
     this.credentials = credentials;
-    if (scope) {
-      this.unsubscribeScope = scope.subscribe(() => this.derive());
+    if (form) {
+      this.unsubscribeForm = form.subscribe(() => this.derive());
       this.derive();
     }
     void this.refreshKeyStatus();
@@ -118,10 +129,10 @@ class SettingsStore {
     };
   }
 
-  /** Map the resolved namespace value into client state and notify. */
+  /** Map the resolved section into client state and notify. */
   private derive(): void {
-    if (!this.scope) return;
-    const snap = this.scope.getSnapshot();
+    if (!this.form) return;
+    const snap = this.form.getSnapshot();
     const value = snap.value;
     if (!value || typeof value !== 'object') return;
     const next: ClientSettingsState = { ...this.state };
@@ -190,11 +201,11 @@ class SettingsStore {
 
   /**
    * Optimistically apply locally, then persist each touched field through the
-   * settings scope. Writes are trailing-debounced (300ms) so typing in the
+   * configuration form. Writes are trailing-debounced (300ms) so typing in the
    * baseUrl/model inputs collapses into a single queued mutation instead of
    * one write per keystroke — which would otherwise flash stale mirror values
-   * back into the inputs between commits. A failed write makes the scope
-   * reload its mirror, which re-derives this store from the host document
+   * back into the inputs between commits. A failed write makes the form reload
+   * its mirror, which re-derives this store from the Host document
    * (conflict-safe recovery).
    */
   async update(partial: Partial<ClientSettingsState>): Promise<void> {
@@ -217,7 +228,7 @@ class SettingsStore {
     };
     this.applyState(next);
 
-    if (this.scope) {
+    if (this.form) {
       const fields = [
         'enabled',
         'concurrency',
@@ -246,7 +257,7 @@ class SettingsStore {
   }
 
   private async flushWrite(): Promise<void> {
-    if (!this.scope) return;
+    if (!this.form) return;
     const fields = [...this.pendingFields];
     this.pendingFields.clear();
     if (fields.length === 0) return;
@@ -255,7 +266,7 @@ class SettingsStore {
       path: [field],
       value: this.state[field as keyof ClientSettingsState],
     }));
-    await this.scope.mutate(ops).catch(() => {});
+    await this.form.mutate(ops).catch(() => {});
   }
 
   async testChannel(channel: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
@@ -290,11 +301,11 @@ class SettingsStore {
       this.writeTimer = null;
     }
     this.pendingFields.clear();
-    if (this.unsubscribeScope) {
-      this.unsubscribeScope();
-      this.unsubscribeScope = null;
+    if (this.unsubscribeForm) {
+      this.unsubscribeForm();
+      this.unsubscribeForm = null;
     }
-    this.scope = null;
+    this.form = null;
     this.credentials = null;
     this.listeners.clear();
   }

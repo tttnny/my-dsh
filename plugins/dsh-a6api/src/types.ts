@@ -11,8 +11,8 @@ export interface A6ApiConfig {
 }
 
 /**
- * 模型目录条目（settings.yaml 的 llm-pi-ai 原生模型字段 + 内部 brand）。
- * 可选字段缺省 = 参数未获取/未填写，写 settings.yaml 时省略该字段（llm-pi-ai 默认值兜底）。
+ * 模型目录条目（llm-pi-ai 原生模型字段 + 内部 brand）。
+ * 可选字段缺省 = 参数未获取/未填写，写 llm-pi-ai 条目配置时省略该字段（llm-pi-ai 默认值兜底）。
  */
 export interface CatalogModelEntry {
   id: string;
@@ -22,7 +22,7 @@ export interface CatalogModelEntry {
   input?: ('text' | 'image')[];
   /** false = 明确非推理模型；dict = 档位 → wire 值（值可为 null，同 llm-pi-ai 语义） */
   reasoningEfforts?: Record<string, string | null> | false;
-  /** 仅插件内部使用：品牌来自 A6API 市场渠道，不写入 settings.yaml */
+  /** 仅插件内部使用：品牌来自 A6API 市场渠道，不写入 llm-pi-ai 条目配置 */
   brand?: string;
   /** 最近一次 OpenRouter 查询/人工修改时间 */
   updatedAt?: number;

@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-ask-user-grilling",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Form-presentation variant of the native ask_user_question: same tool description and shared-parameter descriptions verbatim, forced multi-select, an optional question number merged into the header, an optional markdown detail body, a recommendation marker normalized into the one label suffix the client renders, plus an auto-appended round-end supplement question. Its own browser half renders the transcript card for ask_user_grilling (question list, detail markdown, round-end supplement, rejected-round violations).",
   "type": "module",
   "main": "lib/index.js",
@@ -35,17 +35,24 @@
     "check": "pnpm build && pnpm test && pnpm assert:lib-untracked"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-tools": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-user-questions": "0.1.6-alpha.2"
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-user-questions": "0.1.7-rc.2"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-user-questions": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-tool-ask-user": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-user-questions": "0.1.7-rc.2",
     "esbuild": "^0.25.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "engines": {
-    "dsh": "0.1.6-alpha.2",
+    "dsh": "0.1.7-rc.2",
     "node": "^22.19 || >=24"
   },
   "publishConfig": {

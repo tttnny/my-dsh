@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Checkbox,
-  IconCloseOutline16,
+  IconCloseOutlineRegular,
   Input,
   Pill,
   Tag,
@@ -18,8 +18,8 @@ import type { CatalogModelEntry } from '../../types.js';
  * - 「从 OpenRouter 一键查询」：对全部模型查 OpenRouter 并填充参数（name 仅用户手动填写）；
  *   每行也可单独查询
  * - 筛选：可用模型（当前令牌白名单，与「可用模型」页同源）/ 参数状态（已填/未填）
- * - 行内编辑 settings.yaml 原生模型字段；保存后若该模型已在 DSH 启用，
- *   服务端立即重写 settings.yaml 对应条目（参数即时生效）
+ * - 行内编辑 llm-pi-ai 原生模型字段；保存后若该模型已在 DSH 启用，
+ *   服务端立即重写 llm-pi-ai 条目中该模型的配置（参数即时生效）
  */
 export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
   const [catalog, setCatalog] = useState<CatalogModelEntry[]>(store.getState().catalog);
@@ -309,7 +309,7 @@ export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
               <Button
                 variant="ghost"
                 size="sm"
-                icon={<IconCloseOutline16 />}
+                icon={<IconCloseOutlineRegular />}
                 aria-label={t('clearSearch')}
                 title={t('clearSearch')}
                 onClick={() => setSearch('')}

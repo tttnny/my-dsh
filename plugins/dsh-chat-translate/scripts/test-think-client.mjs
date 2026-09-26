@@ -100,7 +100,24 @@ const primitivesStub = new Proxy({}, { get: (_t, key) => (key === '__esModule' ?
 const api = factory((id) => (id === 'react'
   ? { useState: () => [null, () => {}], useEffect: () => {} }
   : (id === '@deepseek-ai/dsh-client-ui-primitives' ? primitivesStub : null)));
-api.apply({ effect: (fn) => { try { fn(); } catch (error) { console.log('[effect err]', error.message); } }, get: () => null });
+// Minimal stand-in for the services the client half declares (see
+// scripts/test-client-wiring.mjs for the full guard): the shared configuration
+// form the settings store rides, plus the locale seat.
+const thinkForm = {
+  getSnapshot: () => ({ status: 'ready', value: { enabled: true }, writable: true, revision: 1, mode: 'host' }),
+  subscribe: () => () => {},
+  set: async () => true,
+  unset: async () => true,
+  mutate: async () => true,
+};
+api.apply({
+  effect: (fn) => { try { fn(); } catch (error) { console.log('[effect err]', error.message); } },
+  get: () => null,
+  configForms: { get: () => thinkForm, whileServed: (namespaces, register) => register(new Set(namespaces)) },
+  locale: { register: () => () => {}, bind: (ns) => (key) => `${ns}:${key}` },
+  slots: { inject: (_key, callback) => { callback(); return () => {}; }, register: () => () => {}, entries: () => [] },
+  remote: { credentials: null },
+});
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const $ = (selector) => window.document.querySelector(selector);

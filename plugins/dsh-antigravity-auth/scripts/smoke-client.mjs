@@ -93,7 +93,7 @@ const services = () => ({
     getSnapshot: () => ({ revision: 0 }),
     subscribe: () => () => {},
   },
-  settingsScope: { bind: (spec) => { injects.push(`bind:${spec.namespace}`); return scope } },
+  configForms: { get: (entryId) => { injects.push(`get:${entryId}`); return scope } },
   connection: { isLoopback: false, rpc: { call: async () => ({ ok: true, value: {} }) } },
 })
 
@@ -131,7 +131,7 @@ require(`${join(root, 'lib/client.cjs')}`)
 
 check('bundle registers under its package id', requires[0] === '@lynn123411/dsh-antigravity-auth')
 check('apply/inject exported', typeof exported?.apply === 'function' && Array.isArray(exported?.inject))
-check("declares expected client dependencies", JSON.stringify(exported?.inject) === '["slots","locale","connection","settingsScope"]')
+check("declares expected client dependencies", JSON.stringify(exported?.inject) === '["slots","locale","connection","configForms"]')
 
 // Guard teeth test
 try {
@@ -166,9 +166,9 @@ check('page exposes one tab per registered card', tabs.length === 1 && tabs[0]?.
 check('tab label resolves to Antigravity', tabs[0]?.label === 'Antigravity')
 
 check('locale dictionaries registered', locales.includes('settings.antigravityAuth'))
-check('binds the master switch namespace', injects.includes('bind:antigravity-master'))
-check('binds every capability namespace', ['antigravity-search', 'antigravity-image', 'antigravity-video']
-  .every(namespace => injects.includes(`bind:${namespace}`)))
+check('reads the master switch form', injects.includes('get:antigravity-auth'))
+check('reads every capability form', ['antigravity-search', 'antigravity-image', 'antigravity-video']
+  .every(entry => injects.includes(`get:${entry}`)))
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 

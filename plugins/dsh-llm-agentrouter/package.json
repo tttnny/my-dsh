@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-llm-agentrouter",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "AgentRouter 中转聚合：一条 pi-ai 路由承载多模型（设置卡片内可从中转站拉取、逐个编辑模型与参数）+ 国内/国际端点一键切换 + 出站请求 User-Agent/402-配额改写围栏。模型列表写入内核「设置 - 模型」页所编辑的同一份 llm-pi-ai 路由数据。",
   "keywords": [
     "deepseek-harness",
@@ -52,13 +52,13 @@
   },
   "engines": {
     "node": ">=22",
-    "dsh": "0.1.6-alpha.2"
+    "dsh": "0.1.7-rc.2"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.2"
+    "@deepseek-ai/schemastery": "^3.18.4"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2"
+    "@deepseek-ai/cordis": "^4.0.4"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

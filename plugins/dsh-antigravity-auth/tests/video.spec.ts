@@ -4,7 +4,7 @@ import type { AntigravityVideoToolOptions } from '../src/video.ts'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 
 const mp4 = new Uint8Array([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0, 0, 0, 0])
-const agent = { session: { header: { cwd: '/workspace' }, snapshotEvents: () => [] } } as never
+const agent = { session: { header: { cwd: '/workspace' }, deriveMessages: () => [] } } as never
 const exec = { agent, signal: new AbortController().signal } as unknown as ToolRunContext
 
 function options(overrides: Partial<AntigravityVideoToolOptions> = {}): AntigravityVideoToolOptions {

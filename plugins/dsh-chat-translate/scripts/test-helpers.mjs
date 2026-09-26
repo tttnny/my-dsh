@@ -1,31 +1,40 @@
 // Shared fakes for the dsh-chat-translate test suites.
-// Since 1.2 the plugin rides DSH services (ctx.settings / ctx.credentials)
-// instead of files, so tests inject in-memory fakes with the same shapes.
+// The plugin rides DSH services (this plugin's own Config / ctx.settings /
+// ctx.credentials) instead of files, so tests inject in-memory fakes with the
+// same shapes.
 import { DEFAULT_CONFIG, SETTINGS_NAMESPACE } from '../src/server/config.ts';
 
 /**
- * In-memory stand-in for the owner scope returned by ctx.settings.register().
- * get() returns the merged config; update() applies the patch and notifies
- * watchers (mirroring DSH's resolved-value commit).
+ * In-memory stand-in for this plugin's settings entry, covering both faces the
+ * host half consumes:
+ *
+ * - `get` / `watch`: the live Config source `ConfigManager` reads. In the real
+ *   runtime those are the `Volatile` refs the entry's Config declares.
+ * - `update`: one accepted live edit — what the browser configuration form
+ *   writes into the profile entry.
+ * - `describe` / `mutate`: the provider-level `ctx.settings` face the one-shot
+ *   legacy-file migration writes through, under one revision fence.
  */
-export function createFakeSettingsScope(initial = {}) {
-  let config = { ...DEFAULT_CONFIG, ...initial };
-  let userLayer = undefined;
+export function createFakeSettingsEntry(initial = {}) {
+  let userLayer = Object.keys(initial).length > 0 ? { ...initial } : undefined;
   let revision = 1;
   const listeners = new Set();
+  /** Resolved value: schema defaults over the user layer. */
+  const value = () => ({ ...DEFAULT_CONFIG, ...(userLayer ?? {}) });
   const commit = () => {
     revision += 1;
-    for (const listener of [...listeners]) listener(config);
+    const next = value();
+    for (const listener of [...listeners]) listener(next);
   };
   return {
-    get: () => ({ ...config }),
+    get: value,
     watch: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    /** One accepted live edit of the entry's config section. */
     update: async (patch) => {
       userLayer = { ...(userLayer ?? {}), ...patch };
-      config = { ...config, ...patch };
       commit();
     },
     // Provider-level path write the legacy migration uses: one revision fence
@@ -47,7 +56,6 @@ export function createFakeSettingsScope(initial = {}) {
         else delete node[leaf];
       }
       userLayer = next;
-      config = { ...DEFAULT_CONFIG, ...next };
       commit();
     },
     // Minimal settings-service face for migration tests. Mirrors the real
@@ -58,14 +66,14 @@ export function createFakeSettingsScope(initial = {}) {
     ],
     setUserLayer: (user) => {
       userLayer = user;
-      config = { ...DEFAULT_CONFIG, ...user };
     },
   };
 }
 
 /**
- * In-memory stand-in for the DSH ctx.credentials service. Keys are plain
- * strings; TRANSLATE_API_KEY is the only ref the suites exercise.
+ * In-memory stand-in for the DSH credentials service (host half) and for the
+ * `remote.credentials` client API. Keys are plain strings; TRANSLATE_API_KEY
+ * is the only ref the suites exercise.
  */
 export function createFakeCredentials(initialKey = '') {
   let key = initialKey;

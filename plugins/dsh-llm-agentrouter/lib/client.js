@@ -185,9 +185,9 @@ window.__ModuleLoader__.load({
 		const FIELD = "endpoint";
 
 		/**
-		 * Read the endpoint from a resolved section, falling back to the default the
-		 * schema documents when the section is not readable yet.
-		 * @param {unknown} value - the scope snapshot's resolved value.
+		 * Read the endpoint from a resolved entry, falling back to the default the
+		 * schema documents when the entry is not readable yet.
+		 * @param {unknown} value - the form snapshot's resolved value.
 		 * @returns {string} an endpoint key.
 		 */
 		function endpointOf(value) {
@@ -198,7 +198,7 @@ window.__ModuleLoader__.load({
 		/**
 		 * Read the host table from a resolved section so each choice can show the
 		 * origin it actually means.
-		 * @param {unknown} value - the scope snapshot's resolved value.
+		 * @param {unknown} value - the form snapshot's resolved value.
 		 * @returns {Record<string, string>} host per endpoint key.
 		 */
 		function hostsOf(value) {
@@ -207,23 +207,23 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * The relay card: the endpoint radio group over this plugin's own settings
-		 * namespace, above the model list the route in `llm-pi-ai` actually serves.
+		 * The relay card: the endpoint radio group over this plugin's own profile
+		 * entry config, above the model list the route in `llm-pi-ai` actually serves.
 		 *
 		 * A choice writes immediately rather than staging behind a Save button. The
 		 * namespace has exactly one user-facing field and the write is reversible in
 		 * one click, so a staged form would add a step without protecting anything —
-		 * and `scope.set` already fences the write with the revision it read. The
-		 * two halves are independent: each reads and writes its own namespace, so a
-		 * deployment that exposes only one of them still renders the other.
+		 * and the form's own `set` already fences the write with the revision it read.
+		 * The two halves are independent: each reads and writes its own entry's form,
+		 * so a deployment that exposes only one of them still renders the other.
 		 *
-		 * @param {object} props - the injected scope faces plus the bound translator.
+		 * @param {object} props - the injected config forms plus the bound translator.
 		 * @returns {JSX.Element} the card.
 		 */
-		function EndpointCard({ scope, t, routeScope, operations }) {
+		function EndpointCard({ form, t, routeForm, operations }) {
 			const snapshot = react.useSyncExternalStore(
-				react.useCallback((listener) => scope.subscribe(listener), [scope]),
-				() => scope.getSnapshot(),
+				react.useCallback((listener) => form.subscribe(listener), [form]),
+				() => form.getSnapshot(),
 			);
 			const [pending, setPending] = react.useState(null);
 			const [failed, setFailed] = react.useState(false);
@@ -238,10 +238,14 @@ window.__ModuleLoader__.load({
 				setPending(endpoint);
 				setFailed(false);
 				Promise.resolve()
-					.then(() => scope.set(FIELD, endpoint))
+					.then(() => form.set(FIELD, endpoint))
 					.then(
-						() => {
+						// The form answers whether the Host accepted the write and runs its own
+						// recovery read; a refusal and a transport rejection are one outcome here:
+						// the choice did not land, so the card says so and leaves the section alone.
+						(accepted) => {
 							setPending(null);
+							if (!accepted) setFailed(true);
 						},
 						() => {
 							setPending(null);
@@ -313,7 +317,7 @@ window.__ModuleLoader__.load({
 						role: shown.kind === "error" ? "alert" : "status",
 						children: shown.text,
 					}),
-					routeScope === undefined ? null : jsx.jsx(ModelList, { routeScope, operations, t }),
+					routeForm === undefined ? null : jsx.jsx(ModelList, { routeForm, operations, t }),
 				],
 			});
 		}
@@ -321,12 +325,14 @@ window.__ModuleLoader__.load({
 
 		//#region model list
 		/**
-		 * The pi-ai settings namespace the relay route is declared in. This plugin's
-		 * model list is NOT its own preference: it is the `agentrouter` route's
-		 * `models` array, the same data the kernel's Models page edits, which is why
-		 * editing it is what changes the model picker. Spelled rather than imported,
-		 * for the same reason as SETTINGS_NS in the plugin region below: a browser
-		 * bundle must not depend on a Host package.
+		 * The profile entry id the relay route is declared in — `llm-pi-ai`'s own
+		 * patch row, which the adapter also registers as the settings namespace of
+		 * its configurable providers (`settingsPath: ["providers", route]`). This
+		 * plugin's model list is NOT its own preference: it is the `agentrouter`
+		 * route's `models` array, the same entry and the same path the kernel's
+		 * Models page edits, which is why editing it is what changes the model
+		 * picker. Spelled rather than imported, for the same reason as SETTINGS_NS in
+		 * the plugin region below: a browser bundle must not depend on a Host package.
 		 */
 		const PI_AI_SETTINGS_NS = "llm-pi-ai";
 		/** The route key inside that namespace this plugin owns. */
@@ -681,8 +687,8 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * Store faces for a caller that injects no Host operations — an older Host,
-		 * or a test rendering this component directly.
+		 * Store faces for a caller that injects no Host operations — a test rendering
+		 * this component directly, or a registration whose optional Remote is absent.
 		 */
 		const NO_OPERATIONS_STORE = { subscribe: () => () => {}, snapshot: () => 0 };
 
@@ -691,24 +697,25 @@ window.__ModuleLoader__.load({
 		 * serves, the 更新 action that asks the relay what it currently offers, and
 		 * the write that puts the result back on the route.
 		 *
-		 * Reads come from the shared settings mirror through the scope bound to
-		 * `llm-pi-ai`, so the card and the kernel's Models page can never disagree
-		 * about the route. Writes go through the Remote call the operations were
-		 * built with, NOT through `scope.set`: the mirror's write path reports a
-		 * refusal by silently reloading, while this card has to show the Host's own
-		 * diagnostic — a stale revision, or a payload the adapter's schema refused.
+		 * Reads come from the shared config form of the `llm-pi-ai` profile entry, so
+		 * the card and the kernel's Models page can never disagree about the route.
+		 * Writes go through the Remote call the operations were built with, NOT
+		 * through the form's `mutate`: that path answers only whether the Host
+		 * accepted, while this card has to show the Host's own diagnostic — a stale
+		 * revision, or a payload the adapter's schema refused. The kernel's own
+		 * Models page writes the same namespace the same way.
 		 *
 		 * An edit lives in this component until 保存; 重置 drops the draft and, when
 		 * the user layer owns the list, removes that override so the composition's
 		 * hand-declared list serves again.
 		 *
-		 * @param {object} props - the route scope, the Host operations, and `t`.
+		 * @param {object} props - the route form, the Host operations, and `t`.
 		 * @returns {JSX.Element} the model list.
 		 */
-		function ModelList({ routeScope, operations, t }) {
+		function ModelList({ routeForm, operations, t }) {
 			const snapshot = react.useSyncExternalStore(
-				react.useCallback((listener) => routeScope.subscribe(listener), [routeScope]),
-				() => routeScope.getSnapshot(),
+				react.useCallback((listener) => routeForm.subscribe(listener), [routeForm]),
+				() => routeForm.getSnapshot(),
 			);
 			const ops = operations ?? {};
 			// The optional Remote faces mount after this plugin activates, so the
@@ -1134,27 +1141,30 @@ window.__ModuleLoader__.load({
 		/** Dictionary namespace owned by this plugin. */
 		const NS = "settings.agentrouter";
 		/**
-		 * Settings namespace the Host half registers. Spelled rather than imported:
-		 * a browser bundle must not depend on a Host package, so both halves state
-		 * the same literal (the Host's is `AGENTROUTER_SETTINGS_NAMESPACE`).
+		 * This plugin's profile entry id — its settings namespace, and the key its
+		 * config form is addressed by. Spelled rather than imported: a browser bundle
+		 * must not depend on a Host package, so both halves state the same literal
+		 * (the Host's is `AGENTROUTER_SETTINGS_NAMESPACE`).
 		 */
 		const SETTINGS_NS = "llm-agentrouter";
 		/** Services this plugin needs from the browser runtime. */
-		const inject = ["slots", "locale", "settingsScope"];
+		const inject = ["slots", "locale", "configForms"];
 
 		/**
 		 * Register the endpoint card inside the shared 「API中转」 page, which this
-		 * plugin carries the shell for and claims when it activates first.
+		 * plugin carries the shell for and claims when it activates first, and bind
+		 * the two config forms it reads (this plugin's own entry, and the adapter's
+		 * route) out of the shared configuration forms service.
 		 * @param {object} ctx - the browser plugin context.
 		 */
 		function apply(ctx) {
 			ctx.effect(() => ctx.locale.register(NS, { zh, en }), "llm-agentrouter: dictionaries");
 			const t = ctx.locale.bind(NS);
-			const scope = ctx.settingsScope.bind({ namespace: SETTINGS_NS });
-			// The model list is not this plugin's own section: it is the `agentrouter`
-			// route inside the adapter's namespace, the same document the kernel's
-			// Models page edits, so the card derives from that namespace's mirror.
-			const routeScope = ctx.settingsScope.bind({ namespace: PI_AI_SETTINGS_NS });
+			const form = ctx.configForms.get(SETTINGS_NS);
+			// The model list is not this plugin's own entry: it is the `agentrouter`
+			// route inside the adapter's entry, the same document the kernel's Models
+			// page edits, so the card derives from that entry's shared config form.
+			const routeForm = ctx.configForms.get(PI_AI_SETTINGS_NS);
 			// Both Host faces are OPTIONAL reads: a deployment whose Client assembly
 			// mounts neither still shows the endpoint switch, and the model list
 			// degrades to read-only with the reason rendered instead of going blank.
@@ -1220,14 +1230,14 @@ window.__ModuleLoader__.load({
 				ctx.slots.register(
 					{
 						name: RELAY_ITEM_SLOT,
-						// id = the Host settings namespace; the shared page filters its
+						// id = this plugin's profile entry id; the shared page filters its
 						// panels by this id, so it must be the plugin's own key.
 						id: SETTINGS_NS,
 						order: 20,
 						// Rendered as the card's tab title inside the shared page.
 						label: () => t("title"),
 						locale: NS,
-						inject: () => ({ scope, t, routeScope, operations }),
+						inject: () => ({ form, t, routeForm, operations }),
 					},
 					EndpointCard,
 				),

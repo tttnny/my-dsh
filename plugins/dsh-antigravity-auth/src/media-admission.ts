@@ -219,31 +219,25 @@ export interface SessionImageCatalogEntry {
   readonly sequence: number
 }
 
-/** Traverse durable session history once for both authorization and image listing. */
+/** Traverse the derived conversation history once for both authorization and image listing. */
 export function sessionImageCatalog(agent: Agent): readonly SessionImageCatalogEntry[] {
   const result = new Map<string, SessionImageCatalogEntry>()
-  const visited = new WeakSet<object>()
   let sequence = 0
-  let visitedNodes = 0
-  const visit = (value: unknown, origin: SessionImageCatalogEntry['origin'], depth = 0): void => {
-    if ((typeof value !== 'object' || value === null) || depth > 64 || visitedNodes >= 10_000 || visited.has(value)) return
-    visited.add(value)
-    visitedNodes += 1
-    if (Array.isArray(value)) { for (const nested of value) visit(nested, origin, depth + 1); return }
-    if (!isRecord(value)) return
-    const attachment = value.type === 'image' ? parseImageRef(value.attachment) : undefined
-    if (attachment !== undefined) {
+  const visit = (content: readonly unknown[], origin: SessionImageCatalogEntry['origin']): void => {
+    for (const block of content) {
+      if (!isRecord(block) || block.type !== 'image') continue
+      const attachment = parseImageRef(block.attachment)
+      if (attachment === undefined) continue
       const handle = imageHandle(attachment)
       if (!result.has(handle)) result.set(handle, { handle, attachment, origin, sequence: sequence++ })
     }
-    if (value.type === 'tool-result' && Array.isArray(value.content)) visit(value.content, origin, depth + 1)
   }
-  for (const event of agent.session.snapshotEvents()) {
-    const rawEvent: unknown = event
-    if (!isRecord(rawEvent) || !isRecord(rawEvent.data)) continue
-    if (rawEvent.type === 'user/message') visit(rawEvent.data.content, 'user')
-    else if (rawEvent.type === 'assistant/message' && isRecord(rawEvent.data.message)) visit(rawEvent.data.message.content, 'reference')
-    else if (rawEvent.type === 'tool/result' && isRecord(rawEvent.data.message)) visit(rawEvent.data.message.content, 'generated')
+  // `deriveMessages()` is the derived, model-visible history of the durable log:
+  // user, assistant, and tool-role messages, each carrying flat content blocks.
+  for (const message of agent.session.deriveMessages()) {
+    if (message.role === 'user') visit(message.content, 'user')
+    else if (message.role === 'assistant') visit(message.content, 'reference')
+    else if (message.role === 'tool') visit(message.content, 'generated')
   }
   return [...result.values()]
 }

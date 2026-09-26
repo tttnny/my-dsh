@@ -40,8 +40,8 @@ const primitives = {
   },
   MarkdownText: ({ text }) => createElement('span', null, text),
   StateDot: () => createElement('span', null),
-  IconQuestionOutline14: () => null,
-  IconInspectOutline12: () => null,
+  IconQuestionOutlineRegular: () => null,
+  IconInspectOutlineRegular: () => null,
 };
 
 const registrations = [];

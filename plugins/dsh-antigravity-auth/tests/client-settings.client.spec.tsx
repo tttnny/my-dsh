@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AntigravityAuthSettings } from '../src/client/AntigravityAuthSettings.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -44,9 +44,9 @@ function rpcFixture(
   }
 }
 
-class ReceiverBoundSettingsScope<T> implements SettingsScope<T> {
+class ReceiverBoundConfigForm<T> implements ConfigForm<T> {
   private readonly listeners = new Set<() => void>()
-  private snapshot: SettingsScopeSnapshot<T>
+  private snapshot: ConfigFormSnapshot<T>
 
   constructor(value: T) {
     this.snapshot = {
@@ -66,7 +66,7 @@ class ReceiverBoundSettingsScope<T> implements SettingsScope<T> {
     for (const listener of Array.from(this.listeners)) listener()
   }
 
-  getSnapshot(): SettingsScopeSnapshot<T> {
+  getSnapshot(): ConfigFormSnapshot<T> {
     return this.snapshot
   }
 
@@ -75,9 +75,9 @@ class ReceiverBoundSettingsScope<T> implements SettingsScope<T> {
     return () => { this.listeners.delete(listener) }
   }
 
-  async mutate(): Promise<void> {}
-  async set(): Promise<void> {}
-  async unset(): Promise<void> {}
+  async mutate(): Promise<boolean> { return true }
+  async set(): Promise<boolean> { return true }
+  async unset(): Promise<boolean> { return true }
 }
 
 afterEach(() => {
@@ -85,8 +85,8 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-function masterScope(enabled: boolean): ReceiverBoundSettingsScope<AntigravityMasterSettings> {
-  return new ReceiverBoundSettingsScope<AntigravityMasterSettings>({ enabled })
+function masterScope(enabled: boolean): ReceiverBoundConfigForm<AntigravityMasterSettings> {
+  return new ReceiverBoundConfigForm<AntigravityMasterSettings>({ enabled })
 }
 
 /** A logged-in Host with every live gate passed, plus the master switch. */
@@ -118,9 +118,9 @@ function renderWithMaster(enabled: boolean, copy: typeof en = en) {
   )
   rpc.status = vi.fn().mockResolvedValue({ ok: true, value: { status } })
   const master = masterScope(enabled)
-  const search = new ReceiverBoundSettingsScope<AntigravitySearchSettings>({ enabled: true, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
-  const image = new ReceiverBoundSettingsScope<AntigravityImageSettings>({ enabled: true, model: 'antigravity-gemini-3.1-flash-image', n: 1 })
-  const video = new ReceiverBoundSettingsScope<AntigravityVideoSettings>({ enabled: true, model: 'antigravity-gemini-3.7-flash', maxBytes: 1024 })
+  const search = new ReceiverBoundConfigForm<AntigravitySearchSettings>({ enabled: true, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
+  const image = new ReceiverBoundConfigForm<AntigravityImageSettings>({ enabled: true, model: 'antigravity-gemini-3.1-flash-image', n: 1 })
+  const video = new ReceiverBoundConfigForm<AntigravityVideoSettings>({ enabled: true, model: 'antigravity-gemini-3.7-flash', maxBytes: 1024 })
   const view = render(
     <AntigravityAuthSettings
       rpc={rpc}
@@ -157,8 +157,8 @@ describe('Antigravity bootstrap settings', () => {
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
 
-  it('preserves the receiver when React subscribes to a Host SettingsScope', async () => {
-    const searchScope = new ReceiverBoundSettingsScope<AntigravitySearchSettings>({
+  it('preserves the receiver when React subscribes to a Host ConfigForm', async () => {
+    const searchScope = new ReceiverBoundConfigForm<AntigravitySearchSettings>({
       enabled: false,
       model: 'antigravity-gemini-3.7-flash',
       maxResults: 10,

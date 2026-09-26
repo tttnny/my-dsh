@@ -149,16 +149,16 @@ function stubSlots({ sectionEntries = [] } = {}) {
  * entry surfaces as a broken page instead of a silent no-op.
  *
  * @param {object} options - context options.
- * @param {object} options.scope - the settings scope stub the card writes through.
- * @param {object} options.routeScope - the `llm-pi-ai` scope stub the model list reads.
+ * @param {object} options.form - the plugin entry's config form stub the card writes through.
+ * @param {object} options.routeForm - the `llm-pi-ai` entry's config form stub the model list reads.
  * @param {object[]} options.sectionEntries - pre-existing `settings.section` rows.
  * @param {object} options.llm - the optional `remote.llm` face, when the runtime has one.
  * @param {object} options.settings - the optional `remote.settings` face.
  * @returns {object} the context plus the slot registry it carries.
  */
-function stubContext({ scope, routeScope, sectionEntries = [], llm, settings } = {}) {
+function stubContext({ form, routeForm, sectionEntries = [], llm, settings } = {}) {
   const { slots, registrations, injections, itemEntries, commit } = stubSlots({ sectionEntries })
-  const declared = new Set(['slots', 'locale', 'settingsScope'])
+  const declared = new Set(['slots', 'locale', 'configForms'])
   const optional = {}
   if (llm !== undefined) optional['remote.llm'] = llm
   if (settings !== undefined) optional['remote.settings'] = settings
@@ -171,9 +171,10 @@ function stubContext({ scope, routeScope, sectionEntries = [], llm, settings } =
       getSnapshot: () => ({ revision: 1 }),
       subscribe: () => () => {},
     },
-    // Two namespaces are bound: the plugin's own endpoint section and the
-    // adapter's route section the card edits models in.
-    settingsScope: { bind: (spec) => (spec.namespace === 'llm-pi-ai' ? routeScope : scope) },
+    // One shared config form per profile entry, keyed by entry id: this
+    // plugin's own entry, and the adapter's `llm-pi-ai` entry whose route the
+    // card edits models in.
+    configForms: { get: (entryId) => (entryId === 'llm-pi-ai' ? routeForm : form) },
   }
   const base = {
     ...services,
@@ -213,11 +214,12 @@ function stubContext({ scope, routeScope, sectionEntries = [], llm, settings } =
 }
 
 /**
- * A settings scope stub with the contract's snapshot shape.
+ * A config form stub with the shared contract's snapshot shape.
  * @param {object} overrides - snapshot fields overriding the ready defaults.
- * @returns {object} the scope plus the writes it recorded.
+ * @param {boolean} accepted - what a write answers; false is a Host refusal.
+ * @returns {object} the form plus the writes it recorded.
  */
-function stubScope(overrides = {}) {
+function stubForm(overrides = {}, accepted = true) {
   const writes = []
   let snapshot = {
     status: 'ready',
@@ -235,10 +237,12 @@ function stubScope(overrides = {}) {
     subscribe: () => () => {},
     set: (field, value) => {
       writes.push({ field, value })
-      snapshot = { ...snapshot, value: { ...snapshot.value, [field]: value } }
-      return Promise.resolve()
+      // A refused write leaves the section exactly as it stood, which is what
+      // the card's read-back has to observe.
+      if (accepted) snapshot = { ...snapshot, value: { ...snapshot.value, [field]: value } }
+      return Promise.resolve(accepted)
     },
-    unset: () => Promise.resolve(),
+    unset: () => Promise.resolve(accepted),
   }
 }
 
@@ -269,14 +273,14 @@ const ROUTE_MODELS = [
 const SENTINEL_BASE_URL = 'https://relay.agentrouter.internal/v1'
 
 /**
- * The `llm-pi-ai` scope stub: the adapter's own section, read by the model list.
+ * The `llm-pi-ai` form stub: the adapter's own entry, read by the model list.
  * @param {object} options - snapshot options.
  * @param {object[]} options.models - the models the resolved route serves.
  * @param {object} options.user - the raw user layer, present only when it owns the list.
  * @param {object} options.snapshot - further snapshot field overrides.
- * @returns {object} the scope stub.
+ * @returns {object} the form stub.
  */
-function stubRouteScope({ models = ROUTE_MODELS, user, snapshot = {} } = {}) {
+function stubRouteForm({ models = ROUTE_MODELS, user, snapshot = {} } = {}) {
   const value = {
     providers: {
       agentrouter: {
@@ -361,14 +365,14 @@ function stubT(key) {
 /**
  * Render the model list on its own.
  * @param {object} exports_ - the loaded bundle's exports.
- * @param {object} routeScope - the `llm-pi-ai` scope stub.
+ * @param {object} routeForm - the `llm-pi-ai` form stub.
  * @param {object} operations - the normalized Host operations the card calls.
  * @returns {Promise<object>} the react-test-renderer tree.
  */
-async function renderList(exports_, routeScope, operations) {
+async function renderList(exports_, routeForm, operations) {
   let tree
   await act(async () => {
-    tree = create(createElement(exports_.ModelList, { routeScope, operations, t: stubT }))
+    tree = create(createElement(exports_.ModelList, { routeForm, operations, t: stubT }))
   })
   return tree
 }
@@ -465,13 +469,13 @@ function applyBundle(options = {}) {
 /**
  * Render the card and return its tree.
  * @param {object} exports_ - the loaded bundle's exports.
- * @param {object} scope - the settings scope stub it reads.
+ * @param {object} form - the plugin entry's config form stub it reads.
  * @returns {Promise<object>} the react-test-renderer tree.
  */
-async function renderCard(exports_, scope) {
+async function renderCard(exports_, form) {
   let tree
   await act(async () => {
-    tree = create(createElement(exports_.EndpointCard, { scope, t: (key) => key }))
+    tree = create(createElement(exports_.EndpointCard, { form, t: (key) => key }))
   })
   return tree
 }
@@ -494,7 +498,7 @@ test('the bundle registers under its package id and declares the services it use
   const { registered, exports } = loadBundle()
   assert.equal(registered.id, '@lynn123411/dsh-llm-agentrouter', 'the id must match the package name the Host scans')
   assert.equal(typeof exports.apply, 'function')
-  assert.deepEqual(exports.inject, ['slots', 'locale', 'settingsScope'])
+  assert.deepEqual(exports.inject, ['slots', 'locale', 'configForms'])
   assert.equal(
     exports.SETTINGS_NS,
     'llm-agentrouter',
@@ -503,7 +507,7 @@ test('the bundle registers under its package id and declares the services it use
 })
 
 test('apply claims the shared page and registers one card into its child slot', () => {
-  const { registrations, injections, itemEntries } = applyBundle({ scope: stubScope() })
+  const { registrations, injections, itemEntries } = applyBundle({ form: stubForm() })
 
   assert.deepEqual(
     injections,
@@ -536,7 +540,7 @@ test('the card joins the page shell without ever redeclaring it', () => {
   // The loser's contract: the page row already exists, so the shell must stay
   // silent and only the card may register.
   const { registrations } = applyBundle({
-    scope: stubScope(),
+    form: stubForm(),
     sectionEntries: [{ options: { id: PAGE_ID } }],
   })
   assert.equal(
@@ -561,7 +565,7 @@ test('the dictionaries cover the shared page name too', () => {
 })
 
 test('the shell renders one tab per registered card and filters each panel by id', async () => {
-  const { registrations, commit } = applyBundle({ scope: stubScope() })
+  const { registrations, commit } = applyBundle({ form: stubForm() })
   const page = registrations.find((entry) => entry.options.name === 'settings.section')
 
   // Stand in for the other participant: dsh-a6api's card, registered first.
@@ -612,7 +616,7 @@ test('a card that registers after the page mounted appears as its own tab', asyn
   // The participants activate independently, so the roster must stay live: the
   // page may already be projected when a card lands — or lands before it, which
   // the roster test above covers.
-  const { registrations, commit } = applyBundle({ scope: stubScope() })
+  const { registrations, commit } = applyBundle({ form: stubForm() })
   const page = registrations.find((entry) => entry.options.name === 'settings.section')
 
   const rendered = []
@@ -649,7 +653,7 @@ test('a card that registers after the page mounted appears as its own tab', asyn
 
 test('the card renders both endpoints, marks the selected one, and names each host', async () => {
   const { exports } = loadBundle()
-  const tree = await renderCard(exports, stubScope())
+  const tree = await renderCard(exports, stubForm())
   const choices = choicesOf(tree)
   assert.deepEqual([...choices.keys()], ['cn', 'intl'], 'both endpoints are offered, domestic first')
   assert.equal(choices.get('cn').props['data-selected'], 'true', 'the stored endpoint is selected')
@@ -671,15 +675,15 @@ test('the card renders both endpoints, marks the selected one, and names each ho
 
 test('choosing the other endpoint writes exactly the endpoint field', async () => {
   const { exports } = loadBundle()
-  const scope = stubScope()
-  const tree = await renderCard(exports, scope)
+  const form = stubForm()
+  const tree = await renderCard(exports, form)
   const radios = tree.root.findAll((node) => node.type === 'input' && node.props.type === 'radio')
   assert.equal(radios.length, 2, 'one radio per endpoint')
   const intl = radios.find((node) => node.props.value === 'intl')
   await act(async () => {
     intl.props.onChange()
   })
-  assert.deepEqual(scope.writes, [{ field: 'endpoint', value: 'intl' }], 'one write, one field')
+  assert.deepEqual(form.writes, [{ field: 'endpoint', value: 'intl' }], 'one write, one field')
   assert.equal(
     choicesOf(tree).get('intl').props['data-selected'],
     'true',
@@ -687,11 +691,28 @@ test('choosing the other endpoint writes exactly the endpoint field', async () =
   )
 })
 
+test('a refused endpoint write is reported and leaves the selection where it stood', async () => {
+  const { exports } = loadBundle()
+  // The form answers `false` for a Host refusal and runs its own recovery read;
+  // the card must surface that as a failure instead of claiming the switch.
+  const form = stubForm({}, false)
+  const tree = await renderCard(exports, form)
+  const intl = tree.root
+    .findAll((node) => node.type === 'input' && node.props.type === 'radio')
+    .find((node) => node.props.value === 'intl')
+  await act(async () => {
+    intl.props.onChange()
+  })
+  assert.deepEqual(form.writes, [{ field: 'endpoint', value: 'intl' }], 'the attempt is still one write')
+  assert.deepEqual(statusOf(tree), { kind: 'error', text: 'failed' }, 'the card reports the refusal')
+  assert.equal(choicesOf(tree).get('cn').props['data-selected'], 'true', 'the stored endpoint still stands')
+})
+
 test('an unwritable or unreadable section offers no write', async () => {
   const { exports } = loadBundle()
   for (const overrides of [{ writable: false }, { status: 'loading', value: undefined }, { status: 'unavailable' }]) {
-    const scope = stubScope(overrides)
-    const tree = await renderCard(exports, scope)
+    const form = stubForm(overrides)
+    const tree = await renderCard(exports, form)
     const where = JSON.stringify(overrides)
     for (const choice of choicesOf(tree).values()) {
       assert.equal(choice.props['data-disabled'], 'true', `${where} must not invite a switch`)
@@ -703,13 +724,13 @@ test('an unwritable or unreadable section offers no write', async () => {
     await act(async () => {
       other.props.onChange()
     })
-    assert.deepEqual(scope.writes, [], `${where} must write nothing`)
+    assert.deepEqual(form.writes, [], `${where} must write nothing`)
   }
 })
 
 test('the model list shows the route’s own models and their declared parameters', async () => {
   const { exports } = loadBundle()
-  const tree = await renderList(exports, stubRouteScope(), {})
+  const tree = await renderList(exports, stubRouteForm(), {})
 
   const rows = tree.root.findAll((node) => node.type === 'li')
   assert.deepEqual(
@@ -743,7 +764,7 @@ test('update merges the relay’s listing and seeds only the new models with the
     // dead end, so 更新 is offered only alongside the ability to write.
     write: () => Promise.resolve({ ok: true, revision: 8 }),
   }
-  const tree = await renderList(exports, stubRouteScope(), operations)
+  const tree = await renderList(exports, stubRouteForm(), operations)
   await act(async () => {
     actionOf(tree, 'refresh').props.onClick()
   })
@@ -780,7 +801,7 @@ test('saving writes the drafted list as the route’s models, fenced by the revi
         : { ok: false, code: response.error.code, message: response.error.message }),
     ),
   }
-  const tree = await renderList(exports, stubRouteScope(), operations)
+  const tree = await renderList(exports, stubRouteForm(), operations)
   await act(async () => {
     actionOf(tree, 'refresh').props.onClick()
   })
@@ -825,7 +846,7 @@ test('a draft the adapter would refuse never reaches the Host', async () => {
       return Promise.resolve({ ok: true, revision: 9 })
     },
   }
-  const tree = await renderList(exports, stubRouteScope(), operations)
+  const tree = await renderList(exports, stubRouteForm(), operations)
   const save = async () => {
     await act(async () => {
       actionOf(tree, 'save').props.onClick()
@@ -869,7 +890,7 @@ test('a refused write keeps the draft and shows the Host’s own diagnostic', as
   const operations = {
     write: () => Promise.resolve({ ok: false, code: 'settings/refused', message: 'agentrouter: model "x" declares no protocol' }),
   }
-  const tree = await renderList(exports, stubRouteScope(), operations)
+  const tree = await renderList(exports, stubRouteForm(), operations)
   await act(async () => {
     inputOf(tree, 0, 'name').props.onChange({ target: { value: 'Renamed' } })
   })
@@ -889,7 +910,7 @@ test('a stale revision reads as a conflict rather than a generic refusal', async
   const operations = {
     write: () => Promise.resolve({ ok: false, code: 'settings/conflict', message: 'revision 9 stands' }),
   }
-  const tree = await renderList(exports, stubRouteScope(), operations)
+  const tree = await renderList(exports, stubRouteForm(), operations)
   await act(async () => {
     inputOf(tree, 0, 'name').props.onChange({ target: { value: 'Renamed' } })
   })
@@ -915,7 +936,7 @@ test('reset removes a user-owned list, and otherwise only drops the draft', asyn
   // that leaves an empty dict behind keeps the route looking user-owned.
   const owned = await renderList(
     exports,
-    stubRouteScope({ user: { providers: { agentrouter: { models: [{ id: 'glm-5.3' }] } } } }),
+    stubRouteForm({ user: { providers: { agentrouter: { models: [{ id: 'glm-5.3' }] } } } }),
     operations,
   )
   await act(async () => {
@@ -934,7 +955,7 @@ test('reset removes a user-owned list, and otherwise only drops the draft', asyn
   // A sibling the user set through another surface keeps its ancestor alive.
   const shared = await renderList(
     exports,
-    stubRouteScope({
+    stubRouteForm({
       user: { providers: { agentrouter: { models: [{ id: 'glm-5.3' }], maxTokens: 4096 } } },
     }),
     operations,
@@ -949,7 +970,7 @@ test('reset removes a user-owned list, and otherwise only drops the draft', asyn
   )
 
   // No stored override: there is nothing to unset, so a draft is simply dropped.
-  const drafted = await renderList(exports, stubRouteScope(), operations)
+  const drafted = await renderList(exports, stubRouteForm(), operations)
   assert.equal(actionOf(drafted, 'reset').props.disabled, true, 'nothing to reset before an edit')
   await act(async () => {
     inputOf(drafted, 0, 'name').props.onChange({ target: { value: 'Renamed' } })
@@ -979,7 +1000,7 @@ test('an unwritable or unreadable route section offers no edit, probe, or write'
   }
   for (const snapshot of [{ writable: false }, { status: 'unavailable', value: undefined }, { status: 'loading', value: undefined }]) {
     const where = JSON.stringify(snapshot)
-    const tree = await renderList(exports, stubRouteScope({ models: [], snapshot }), operations)
+    const tree = await renderList(exports, stubRouteForm({ models: [], snapshot }), operations)
     for (const name of ['refresh', 'save', 'add']) {
       assert.equal(actionOf(tree, name).props.disabled, true, `${where} must not offer ${name}`)
     }
@@ -993,7 +1014,7 @@ test('an unwritable or unreadable route section offers no edit, probe, or write'
   }
 
   // Disabled chrome is a hint; naming the reason is what the card owes the user.
-  const readOnly = await renderList(exports, stubRouteScope({ snapshot: { writable: false } }), operations)
+  const readOnly = await renderList(exports, stubRouteForm({ snapshot: { writable: false } }), operations)
   const hints = readOnly.root
     .findAll((node) => node.type === 'p' && node.props.className === 'dshAr_lead')
     .map((node) => node.props.children)
@@ -1009,7 +1030,7 @@ test('without the LLM Remote the probe is unavailable and says so, while editing
       return Promise.resolve({ ok: true, revision: 9 })
     },
   }
-  const tree = await renderList(exports, stubRouteScope(), operations)
+  const tree = await renderList(exports, stubRouteForm(), operations)
   assert.equal(actionOf(tree, 'refresh').props.disabled, true)
   const hints = tree.root
     .findAll((node) => node.type === 'p' && node.props.className === 'dshAr_lead')
@@ -1028,14 +1049,14 @@ test('without the LLM Remote the probe is unavailable and says so, while editing
 test('apply binds the adapter namespace and unwraps the Remote results the card consumes', async () => {
   const llm = stubLlm([{ id: 'gpt-6-astra' }])
   const settings = stubSettings({ ok: false, error: { code: 'settings/conflict', message: 'stale revision' } })
-  const scope = stubScope()
-  const routeScope = stubRouteScope()
-  const { registrations } = applyBundle({ scope, routeScope, llm, settings })
+  const form = stubForm()
+  const routeForm = stubRouteForm()
+  const { registrations } = applyBundle({ form, routeForm, llm, settings })
 
   const card = registrations.find((entry) => entry.options.name === ITEM_SLOT)
   const injected = card.options.inject()
-  assert.equal(injected.scope, scope, 'the endpoint switch keeps its own namespace')
-  assert.equal(injected.routeScope, routeScope, 'the model list reads the adapter’s namespace')
+  assert.equal(injected.form, form, 'the endpoint switch reads its own entry’s form')
+  assert.equal(injected.routeForm, routeForm, 'the model list reads the adapter entry’s form')
   assert.equal(injected.operations.available(), true, 'the probe face is reported present')
 
   const found = await injected.operations.discover({ provider: 'agentrouter', baseURL: SENTINEL_BASE_URL })
@@ -1051,7 +1072,7 @@ test('a runtime without the optional Remotes still mounts the card', async () =>
   // The two Host faces are optional reads, so their absence must not trip the
   // inject guard and take the whole plugin off the page — and a click in that
   // state answers with a reason instead of throwing.
-  const { registrations } = applyBundle({ scope: stubScope(), routeScope: stubRouteScope() })
+  const { registrations } = applyBundle({ form: stubForm(), routeForm: stubRouteForm() })
   const card = registrations.find((entry) => entry.options.name === ITEM_SLOT)
   const injected = card.options.inject()
   assert.equal(injected.operations.available(), false)
@@ -1069,8 +1090,8 @@ test('a Remote face that mounts after activation turns 更新 on without a reloa
   // The namespaces install asynchronously, so a face captured at activation could
   // read as absent for the whole session; the card must pick it up when it lands.
   const { exports } = loadBundle()
-  const routeScope = stubRouteScope()
-  const context = stubContext({ scope: stubScope(), routeScope })
+  const routeForm = stubRouteForm()
+  const context = stubContext({ form: stubForm(), routeForm })
   exports.apply(context.ctx)
   const card = context.registrations.find((entry) => entry.options.name === ITEM_SLOT)
   const injected = card.options.inject()
@@ -1079,7 +1100,7 @@ test('a Remote face that mounts after activation turns 更新 on without a reloa
   let tree
   await act(async () => {
     tree = create(createElement(exports.ModelList, {
-      routeScope,
+      routeForm,
       operations: injected.operations,
       t: stubT,
     }))
@@ -1100,23 +1121,23 @@ test('a Remote face that mounts after activation turns 更新 on without a reloa
   )
 })
 
-test('the card renders the model list under the endpoint choices when the route scope is injected', async () => {
+test('the card renders the model list under the endpoint choices when the route form is injected', async () => {
   const { exports } = loadBundle()
-  const routeScope = stubRouteScope()
+  const routeForm = stubRouteForm()
   let tree
   await act(async () => {
     tree = create(createElement(exports.EndpointCard, {
-      scope: stubScope(),
+      form: stubForm(),
       t: stubT,
-      routeScope,
+      routeForm,
       operations: { write: () => Promise.resolve({ ok: true, revision: 8 }) },
     }))
   })
   assert.equal(choicesOf(tree).size, 2, 'the endpoint switch is unchanged by the new section')
   assert.ok(rowOf_(tree, 'claude-opus-5') !== undefined, 'the route’s models are listed in the same tab')
 
-  // A card rendered without the route scope (an older caller) shows only the switch.
-  const legacy = await renderCard(exports, stubScope())
+  // A card injected without the route form shows only the switch.
+  const legacy = await renderCard(exports, stubForm())
   assert.deepEqual(
     legacy.root.findAll((node) => node.props['data-model-list'] !== undefined),
     [],
@@ -1128,7 +1149,7 @@ test('the inject guard every other case relies on really throws', () => {
   // A guard that stopped guarding would make the whole file pass while a real
   // page break (reading an undeclared service) went unnoticed, so the gate gets
   // its own counter-example.
-  const { ctx } = stubContext({ scope: stubScope(), routeScope: stubRouteScope() })
+  const { ctx } = stubContext({ form: stubForm(), routeForm: stubRouteForm() })
   assert.throws(() => ctx.remote, /cannot get property "remote" without inject/)
   assert.throws(() => ctx.llm, /cannot get property "llm" without inject/)
   assert.equal(ctx.get('remote.llm'), undefined, 'the optional read the card uses stays legal')

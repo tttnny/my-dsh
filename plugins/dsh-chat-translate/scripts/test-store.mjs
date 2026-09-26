@@ -1,4 +1,5 @@
-// SettingsStore unit tests: attach/derive, debounced scope writes,
+// SettingsStore unit tests: attach/derive over the shared configuration form,
+// debounced path-op writes,
 // credentials Remote {ok,value} unwrapping, and aiConfigured derivation.
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
@@ -41,13 +42,17 @@ function test(name, fn) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Client-shape fake of the settingsScope service (mirror + path writes). */
-function makeScope(initialValue) {
+/**
+ * Client-shape fake of `ConfigForm<T>` — the per-entry face
+ * `ctx.configForms.get(<profile entry id>)` returns: a mirror snapshot plus one
+ * revision-fenced path-write batch.
+ */
+function makeForm(initialValue) {
   const listeners = new Set();
   const mutations = [];
   let value = { ...initialValue };
   return {
-    getSnapshot: () => ({ status: 'ready', value, writable: true }),
+    getSnapshot: () => ({ status: 'ready', value, writable: true, revision: 1, mode: 'host' }),
     subscribe: (l) => {
       listeners.add(l);
       return () => listeners.delete(l);
@@ -98,22 +103,24 @@ test('defaults before attach', () => {
   assert.equal(s.aiConfigured, false);
 });
 
-await testAsync('attach derives state from the scope and key status from credentials', async () => {
-  settingsStore.attach(
-    makeScope({ enabled: false, concurrency: 7, baseUrl: 'http://x', model: 'm' }),
-    makeRemote()
-  );
+await testAsync('attach derives state from the form and key status from credentials', async () => {
+  const form = makeForm({ enabled: false, concurrency: 7, baseUrl: 'http://x', model: 'm' });
+  let subscribed = 0;
+  const subscribe = form.subscribe;
+  form.subscribe = (listener) => { subscribed++; return subscribe(listener); };
+  settingsStore.attach(form, makeRemote());
   await sleep(10); // let the async key-status refresh settle
+  assert.ok(subscribed > 0, 'the store subscribes so a Host-side change is picked up');
   const s = settingsStore.getState();
-  assert.equal(s.enabled, false, 'scope value derived');
+  assert.equal(s.enabled, false, 'form value derived');
   assert.equal(s.concurrency, 7);
   assert.equal(s.baseUrl, 'http://x');
   assert.equal(s.aiConfigured, true, 'baseUrl + model + configured key => aiConfigured');
 });
 
-await testAsync('update applies locally and writes through the scope debounced', async () => {
-  const scope = makeScope({});
-  settingsStore.attach(scope, makeRemote());
+await testAsync('update applies locally and writes through the form debounced', async () => {
+  const form = makeForm({});
+  settingsStore.attach(form, makeRemote());
   await sleep(10);
 
   settingsStore.update({ baseUrl: 'http://a' });
@@ -121,16 +128,16 @@ await testAsync('update applies locally and writes through the scope debounced',
   settingsStore.update({ model: 'm1' });
   assert.equal(settingsStore.getState().baseUrl, 'http://ab', 'optimistic local state');
 
-  assert.equal(scope.mutations.length, 0, 'no write before the debounce window elapses');
+  assert.equal(form.mutations.length, 0, 'no write before the debounce window elapses');
   await sleep(350);
-  assert.deepEqual(scope.mutations, [
+  assert.deepEqual(form.mutations, [
     { op: 'set', path: ['baseUrl'], value: 'http://ab' },
     { op: 'set', path: ['model'], value: 'm1' },
   ], 'trailing debounce collapses keystrokes into one batched path mutation');
 });
 
 await testAsync('saveApiKey writes through credentials Remote and refreshes status', async () => {
-  settingsStore.attach(makeScope({ baseUrl: 'http://x', model: 'm' }), makeRemote());
+  settingsStore.attach(makeForm({ baseUrl: 'http://x', model: 'm' }), makeRemote());
   await sleep(10);
 
   const res = await settingsStore.saveApiKey('sk-new');
@@ -140,7 +147,7 @@ await testAsync('saveApiKey writes through credentials Remote and refreshes stat
 
 await testAsync('saveApiKey surfaces a refused Remote write as failure', async () => {
   settingsStore.attach(
-    makeScope({ baseUrl: 'http://x', model: 'm' }),
+    makeForm({ baseUrl: 'http://x', model: 'm' }),
     makeRemote({ set: async () => ({ ok: false, error: { code: 'x', message: 'env-shadowed ref' } }) })
   );
   await sleep(10);
@@ -152,7 +159,7 @@ await testAsync('saveApiKey surfaces a refused Remote write as failure', async (
 
 await testAsync('saveApiKey with empty value unsets the ref', async () => {
   const remote = makeRemote();
-  settingsStore.attach(makeScope({}), remote);
+  settingsStore.attach(makeForm({}), remote);
   await sleep(10);
 
   const res = await settingsStore.saveApiKey('   ');

@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import {
   Button,
-  IconCloseOutline16,
-  IconRefreshOutline14,
+  IconCloseOutlineRegular,
+  IconRefreshOutlineRegular,
   Input,
   Pill,
   Tag,
@@ -171,7 +171,7 @@ export const A6ApiSettingsPanel: React.FC<PropsLocale<typeof NS>> = ({ t }) => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    icon={<IconCloseOutline16 />}
+                    icon={<IconCloseOutlineRegular />}
                     aria-label={t('clearSearch')}
                     title={t('clearSearch')}
                     onClick={() => setSearchQuery('')}
@@ -182,7 +182,7 @@ export const A6ApiSettingsPanel: React.FC<PropsLocale<typeof NS>> = ({ t }) => {
               <Button
                 variant="outline"
                 size="sm"
-                icon={<IconRefreshOutline14 />}
+                icon={<IconRefreshOutlineRegular />}
                 onClick={handleRefreshState}
                 disabled={refreshing || state.probeAllActive}
                 data-tooltip={

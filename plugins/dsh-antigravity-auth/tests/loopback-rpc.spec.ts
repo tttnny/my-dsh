@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { commandAccountMode, createLoopbackRpcGuard } from '../src/loopback-rpc.ts'
 
 const signal = new AbortController().signal
+/** The operator Peer Connection hands to every admitted request. */
+const peer = {} as never
 
 function success(value: unknown) {
   return Promise.resolve({ ok: true as const, value })
@@ -31,11 +33,11 @@ describe('loopback RPC guard', () => {
     const guard = createLoopbackRpcGuard('127.0.0.1', delegate)
 
     expect(guard.mode).toBe('enabled')
-    await expect(guard.handler('status', { value: 1 }, signal)).resolves.toEqual({
+    await expect(guard.handler('status', { value: 1 }, signal, peer)).resolves.toEqual({
       ok: true,
       value: { value: 1 },
     })
-    expect(delegate).toHaveBeenCalledWith('status', { value: 1 }, signal)
+    expect(delegate).toHaveBeenCalledWith('status', { value: 1 }, signal, peer)
   })
 
   it('keeps the real handler when WebServer is absent', async () => {
@@ -43,11 +45,11 @@ describe('loopback RPC guard', () => {
     const guard = createLoopbackRpcGuard(undefined, delegate)
 
     expect(guard.mode).toBe('enabled')
-    await expect(guard.handler('status', { value: 2 }, signal)).resolves.toEqual({
+    await expect(guard.handler('status', { value: 2 }, signal, peer)).resolves.toEqual({
       ok: true,
       value: { value: 2 },
     })
-    expect(delegate).toHaveBeenCalledWith('status', { value: 2 }, signal)
+    expect(delegate).toHaveBeenCalledWith('status', { value: 2 }, signal, peer)
   })
 
   it.each(['0.0.0.0', 'unknown-host'])('keeps the real handler on non-loopback bind %s', async bindHost => {
@@ -55,10 +57,10 @@ describe('loopback RPC guard', () => {
     const guard = createLoopbackRpcGuard(bindHost, delegate)
 
     expect(guard.mode).toBe('enabled')
-    await expect(guard.handler('status', { value: 3 }, signal)).resolves.toEqual({
+    await expect(guard.handler('status', { value: 3 }, signal, peer)).resolves.toEqual({
       ok: true,
       value: { value: 3 },
     })
-    expect(delegate).toHaveBeenCalledWith('status', { value: 3 }, signal)
+    expect(delegate).toHaveBeenCalledWith('status', { value: 3 }, signal, peer)
   })
 })

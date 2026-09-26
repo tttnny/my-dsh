@@ -60,7 +60,7 @@ export interface StoreState {
   probeAllDoneCount: number;
   /** 平台固定记录（卡片状态跟随官网） */
   pins: MarketplacePin[];
-  /** 模型目录（运行时 JSON，字段 = settings.yaml 原生模型字段 + brand） */
+  /** 模型目录（运行时 JSON，字段 = llm-pi-ai 原生模型字段 + brand） */
   catalog: CatalogModelEntry[];
   /** 目录操作进行中（获取市场模型 / OpenRouter 查询） */
   catalogBusy: 'fetch' | 'query' | null;
@@ -309,7 +309,7 @@ class A6ApiStore {
     }
   }
 
-  /** 修改目录条目参数；已启用模型由服务端即时重写 settings.yaml */
+  /** 修改目录条目参数；已启用模型由服务端即时重写 llm-pi-ai 条目配置 */
   public async updateCatalogEntry(
     id: string,
     patch: Partial<CatalogModelEntry>,

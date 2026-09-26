@@ -60,12 +60,19 @@ before(async () => {
 
 after(() => new Promise((resolve) => server.close(resolve)))
 
+/** The shared protocol a `.volatile()` config reference is written through. */
+const VOLATILE_WRITE = Symbol.for('cosmokit.volatile.write')
+
 /**
- * Activate the plugin with a stub Cordis context and a stub settings service.
+ * Activate the plugin with a stub Cordis context, the way the Loader does it:
+ * an entry config whose live fields are `.volatile()` references, plus the
+ * settings service the plugin declares its page policy to.
  *
- * The stub settings plane is what makes the endpoint observable: it hands the
- * plugin a scope whose `get()` reads a mutable section, exactly as the real
- * service does, so a test can switch endpoints the way the settings card does.
+ * `section()` replays what a settings write does to the process — the Host
+ * re-resolves the entry and writes each volatile field back into the SAME
+ * reference (`resolveConfig` in dsh-config-editor). That in-place write is the
+ * only thing that makes a switch observable without reinstalling the fence,
+ * so the test performs it rather than handing the plugin a new object.
  *
  * @param {object} overrides - fields overriding the schema defaults.
  * @returns {{dispose: () => void, section: (patch: object) => void}} the handle.
@@ -73,7 +80,6 @@ after(() => new Promise((resolve) => server.close(resolve)))
 async function activate(overrides) {
   const { apply, Config } = await import('../lib/index.js')
   const entry = Config(overrides)
-  let resolved = entry
   const disposers = []
   const ctx = {
     effect(fn) {
@@ -82,13 +88,7 @@ async function activate(overrides) {
     /** The real plugin reaches the settings service through `ctx.inject`. */
     inject(_services, callback) {
       callback({
-        settings: {
-          register: () => ({ get: () => resolved, watch: () => () => {} }),
-          installSection: (_owner, _ns, _schema, _entry, hooks) => {
-            hooks.setSource(() => resolved)
-            hooks.onChange()
-          },
-        },
+        settings: { configure: () => () => {} },
         effect(fn) {
           disposers.push(fn() ?? (() => {}))
         },
@@ -102,9 +102,14 @@ async function activate(overrides) {
     dispose: () => {
       for (const dispose of disposers.reverse()) dispose()
     },
-    /** Replace the resolved section, as a settings write does. */
+    /** Replace the resolved section, as a settings write does, in place. */
     section: (patch) => {
-      resolved = Config({ ...overrides, ...patch })
+      const next = Config({ ...overrides, ...patch })
+      for (const [key, field] of Object.entries(next)) {
+        if (typeof field === 'object' && field !== null && VOLATILE_WRITE in field) {
+          entry[key][VOLATILE_WRITE](field.get())
+        }
+      }
     },
   }
 }

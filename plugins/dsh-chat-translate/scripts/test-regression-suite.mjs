@@ -4,7 +4,7 @@
 // 2. Direct translation pass-through (no restrictive language skipping)
 // 3. Concurrency pool, Token mutex & Circuit breaker state machine
 // 4. LruDiskCache & ClientCache LRU eviction and TTL handling
-// 5. ConfigManager validation, atomic persistence, and change events
+// 5. ConfigManager live-config reads, change notification, and patch sanitizing
 // 6. NonDestructiveTranslationMount DOM preservation, toggle, and clean unmount
 // 7. HttpRouter DoS 1MB protection and endpoint handling
 
@@ -22,7 +22,8 @@ process.env.DSH_HOME = TMP_HOME;
 import { ContentMaskingPipeline, MaskRestoreError, isMaskLeak } from '../src/server/pipeline/masking.ts';
 import { hasLegacyMaskResidue, hasMaskResidue } from '../src/server/pipeline/mask-tokens.ts';
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
-import { ConfigManager } from '../src/server/config.ts';
+import { ConfigManager, createLiveConfigSource, sanitizePatch, DEFAULT_CONFIG } from '../src/server/config.ts';
+import { apply as applyHost, Config as HostConfig, inject as hostInject } from '../src/index.ts';
 import { LruDiskCache } from '../src/server/cache.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
 import { ClientCache } from '../src/client/translate/client-cache.ts';
@@ -33,7 +34,7 @@ import {
   THINK_ROUTE_PATH,
   TEST_CHANNEL_ROUTE_PATH,
 } from '../src/server/router.ts';
-import { createFakeSettingsScope, createFakeCredentials } from './test-helpers.mjs';
+import { createFakeSettingsEntry, createFakeCredentials } from './test-helpers.mjs';
 
 let passed = 0;
 let total = 0;
@@ -264,7 +265,8 @@ test('A model that reproduces a retired placeholder is treated as a damaged tran
 console.log('\n--- Suite 2: Concurrency Pool & Circuit Breaker State Machine ---');
 
 await testAsync('In-flight deduplication merges identical concurrent requests', async () => {
-  const config = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const entry = createFakeSettingsEntry();
+  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   await cache.init();
   const dispatcher = new TranslationDispatcher(config, cache);
@@ -283,7 +285,7 @@ await testAsync('In-flight deduplication merges identical concurrent requests', 
   };
   dispatcher.adapters.set('mock-dedup', mockAdapter);
   // Disable real channels so only the injected mock is active
-  await config.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 5 });
+  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 5 });
 
   const promises = [
     dispatcher.translateOne('Identical task text'),
@@ -300,7 +302,8 @@ await testAsync('In-flight deduplication merges identical concurrent requests', 
 });
 
 await testAsync('Circuit Breaker trips to OPEN after 3 failures and resets on recovery', async () => {
-  const config = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const entry = createFakeSettingsEntry();
+  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   const dispatcher = new TranslationDispatcher(config, cache);
 
@@ -319,7 +322,7 @@ await testAsync('Circuit Breaker trips to OPEN after 3 failures and resets on re
     },
   };
   dispatcher.adapters.set('unstable', unstableAdapter);
-  await config.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
 
   // 3 consecutive failures
   const r1 = await dispatcher.translateOne('Fail 1');
@@ -349,7 +352,8 @@ await testAsync('Circuit Breaker trips to OPEN after 3 failures and resets on re
 });
 
 await testAsync('A channel that mangles a mask token is discarded, never cached', async () => {
-  const config = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const entry = createFakeSettingsEntry();
+  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   cache.cache.clear();
   const dispatcher = new TranslationDispatcher(config, cache);
@@ -368,7 +372,7 @@ await testAsync('A channel that mangles a mask token is discarded, never cached'
     },
   };
   dispatcher.adapters.set('leaky', leakyAdapter);
-  await config.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
 
   const result = await dispatcher.translateOne(source);
   assert.equal(result.channel, 'fallback', 'a mangled mask must not be reported as a translation');
@@ -378,7 +382,8 @@ await testAsync('A channel that mangles a mask token is discarded, never cached'
 });
 
 await testAsync('A channel that drops a mask token keeps its fragment out of the cache', async () => {
-  const config = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const entry = createFakeSettingsEntry();
+  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   cache.cache.clear();
   const dispatcher = new TranslationDispatcher(config, cache);
@@ -392,7 +397,7 @@ await testAsync('A channel that drops a mask token keeps its fragment out of the
     translate: async () => '阅读文件',
   };
   dispatcher.adapters.set('dropping', dropping);
-  await config.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
 
   const result = await dispatcher.translateOne(source);
   assert.equal(result.channel, 'fallback');
@@ -401,7 +406,8 @@ await testAsync('A channel that drops a mask token keeps its fragment out of the
 });
 
 await testAsync('A translated string without masks but with a hallucinated placeholder is discarded', async () => {
-  const config = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const entry = createFakeSettingsEntry();
+  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   cache.cache.clear();
   const dispatcher = new TranslationDispatcher(config, cache);
@@ -413,7 +419,7 @@ await testAsync('A translated string without masks but with a hallucinated place
     translate: async () => '查找 __DSH_MASK_0__ 中的归属使用情况',
   };
   dispatcher.adapters.set('hallucinating', hallucinating);
-  await config.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
 
   const result = await dispatcher.translateOne('find attribution usage in dsh-llm');
   assert.equal(result.channel, 'fallback');
@@ -421,7 +427,8 @@ await testAsync('A translated string without masks but with a hallucinated place
 });
 
 await testAsync('A translation that keeps a placeholder the source documented is accepted', async () => {
-  const config = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const entry = createFakeSettingsEntry();
+  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   cache.cache.clear();
   const dispatcher = new TranslationDispatcher(config, cache);
@@ -439,7 +446,7 @@ await testAsync('A translation that keeps a placeholder the source documented is
     translate: async (text) => `用户反馈 \`${/⟦[a-z]{4}\d+⟧/.exec(text)[0]}\` 占位符泄漏进译文`,
   };
   dispatcher.adapters.set('faithful', faithful);
-  await config.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
 
   const result = await dispatcher.translateOne(source);
   assert.equal(result.channel, 'faithful', 'a placeholder the source documented is not a leak');
@@ -570,27 +577,39 @@ await testAsync('LruDiskCache retires a stale legacy file when the new cache exi
 // -------------------------------------------------------------
 // Suite 4: ConfigManager Validation & Change Notification
 // -------------------------------------------------------------
-console.log('\n--- Suite 4: ConfigManager Validation & Change Notification ---');
+console.log('\n--- Suite 4: ConfigManager Live Config & Change Notification ---');
 
-await testAsync('ConfigManager clamps numeric bounds and notifies listeners', async () => {
-  const cfg = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+await testAsync('ConfigManager reads the committed config and notifies subscribers', async () => {
+  const entry = createFakeSettingsEntry({ concurrency: 3 });
+  const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
 
-  let notified = false;
+  const seen = [];
   const unsub = cfg.onConfigChange((next) => {
-    notified = true;
-    assert.equal(next.concurrency, 100);
+    seen.push(next.concurrency);
   });
 
-  // Clamp concurrency to 100
-  await cfg.updateConfig({ concurrency: 9999 });
-  assert.equal(cfg.getConfig().concurrency, 100);
-  assert.equal(notified, true);
-
-  // Clamp timeoutMs to minimum 500
-  await cfg.updateConfig({ timeoutMs: 10 });
-  assert.equal(cfg.getConfig().timeoutMs, 500);
+  // One committed live edit (what the browser configuration form writes).
+  await entry.update({ concurrency: 8, bingEnabled: false });
+  assert.equal(cfg.getConfig().concurrency, 8, 'the facade reads the committed value');
+  assert.equal(cfg.getConfig().bingEnabled, false);
+  assert.deepEqual(seen, [8], 'the change notification carries the committed value');
 
   unsub();
+  await entry.update({ concurrency: 2 });
+  assert.deepEqual(seen, [8], 'an unsubscribed listener is not called');
+});
+
+test('sanitizePatch clamps numeric bounds and drops retired fields', () => {
+  // The legacy-file migration is the only remaining writer, and it sanitizes:
+  // one bad field must never take the whole migration down.
+  assert.equal(sanitizePatch({ concurrency: 9999 }).concurrency, 100);
+  assert.equal(sanitizePatch({ concurrency: 0 }).concurrency, 1);
+  assert.equal(sanitizePatch({ timeoutMs: 10 }).timeoutMs, 500);
+  assert.equal(sanitizePatch({ timeoutMs: 999999 }).timeoutMs, 10000);
+  assert.equal(sanitizePatch({ thinkTimeoutMs: 10 ** 9 }).thinkTimeoutMs, 900000);
+  assert.equal(sanitizePatch({ enabled: 'false' }).enabled, undefined);
+  assert.equal(sanitizePatch({ baseUrl: '  http://x  ' }).baseUrl, 'http://x');
+  assert.equal(sanitizePatch({ channels: ['bing'] }).channels, undefined);
 });
 
 // -------------------------------------------------------------
@@ -649,10 +668,11 @@ test('Mounts translation without destroying child nodes or event listeners', () 
 console.log('\n--- Suite 6: Connection exact Fetch routes ---');
 
 function makeRoutes() {
-  const cfg = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const entry = createFakeSettingsEntry();
+  const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   const dispatcher = new TranslationDispatcher(cfg, cache);
-  return { cfg, dispatcher, routes: createFetchRoutes(dispatcher) };
+  return { cfg, entry, dispatcher, routes: createFetchRoutes(dispatcher) };
 }
 
 function post(path, body) {
@@ -676,7 +696,7 @@ test('Fetch routes own exact POST paths with buffered bodies', () => {
 });
 
 await testAsync('Translate route answers a POST with dispatcher results', async () => {
-  const { cfg, dispatcher, routes } = makeRoutes();
+  const { entry, dispatcher, routes } = makeRoutes();
   dispatcher.adapters.set('mock', {
     id: 'mock',
     name: 'Mock',
@@ -684,7 +704,7 @@ await testAsync('Translate route answers a POST with dispatcher results', async 
     translate: async (t) => '译:' + t,
   });
   // Only the injected mock is active - real channels must not leak into the test.
-  await cfg.updateConfig({ aiEnabled: false, bingEnabled: false });
+  await entry.update({ aiEnabled: false, bingEnabled: false });
   const route = routes.find((r) => r.path === TRANSLATE_ROUTE_PATH);
   const res = await route.fetch(post(TRANSLATE_ROUTE_PATH, { texts: ['Hello'] }));
   assert.equal(res.status, 200);
@@ -708,6 +728,93 @@ await testAsync('Test-channel route proxies the probe through the dispatcher', a
   const res = await route.fetch(post(TEST_CHANNEL_ROUTE_PATH, { channel: 'bing' }));
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { ok: true, latencyMs: 1 });
+});
+
+// -------------------------------------------------------------
+// Suite 7: Host plugin contract (0.1.7 Config schema + apply())
+// -------------------------------------------------------------
+console.log('\n--- Suite 7: Host Config schema & apply() wiring ---');
+
+test('Config declares every field volatile so form and apply share one value', () => {
+  const result = HostConfig['~standard'].validate({});
+  assert.equal(result.issues, undefined, 'the schema accepts an empty profile row');
+  const value = result.value;
+  assert.deepEqual(Object.keys(value).sort(), Object.keys(DEFAULT_CONFIG).sort());
+  for (const [field, ref] of Object.entries(value)) {
+    assert.equal(typeof ref.get, 'function', `${field} must resolve to a live ref`);
+  }
+  // Schema defaults, not the removed owner-scope registration.
+  assert.equal(value.enabled.get(), DEFAULT_CONFIG.enabled);
+  assert.equal(value.concurrency.get(), DEFAULT_CONFIG.concurrency);
+  assert.equal(value.thinkTimeoutMs.get(), DEFAULT_CONFIG.thinkTimeoutMs);
+  assert.equal(value.targetLang.get(), DEFAULT_CONFIG.targetLang);
+});
+
+test('createLiveConfigSource forwards a committed live edit to subscribers', () => {
+  const held = { ...DEFAULT_CONFIG };
+  const refs = Object.fromEntries(
+    Object.keys(DEFAULT_CONFIG).map((field) => [field, { get: () => held[field] }])
+  );
+  // Stands in for `ctx.on('loader/volatile-update', …)` and its real disposer.
+  const commitListeners = new Set();
+  const source = createLiveConfigSource((listener) => {
+    commitListeners.add(listener);
+    return () => commitListeners.delete(listener);
+  }, refs);
+  const fire = () => { for (const listener of [...commitListeners]) listener(); };
+
+  assert.equal(source.get().concurrency, DEFAULT_CONFIG.concurrency);
+  const seen = [];
+  const off = source.watch((next) => seen.push(next.concurrency));
+
+  // DSH commits the accepted edit into the refs, then fires the event.
+  held.concurrency = 7;
+  fire();
+  assert.deepEqual(seen, [7], 'the subscriber sees the committed value');
+
+  off();
+  held.concurrency = 2;
+  fire();
+  assert.deepEqual(seen, [7], 'an unsubscribed listener is not called');
+});
+
+test('apply() wires the exact routes and opts out of the auto settings page', () => {
+  const routes = [];
+  const policies = [];
+  const held = { ...DEFAULT_CONFIG };
+  const config = Object.fromEntries(
+    Object.keys(DEFAULT_CONFIG).map((field) => [field, { get: () => held[field] }])
+  );
+  const ctx = {
+    settings: {
+      describe: () => [],
+      mutate: async () => {},
+      configure: (presentation) => { policies.push(presentation); return () => {}; },
+    },
+    credentials: {
+      resolve: async () => undefined,
+      describe: async () => ({ configured: false, writable: true }),
+      set: async () => {},
+      unset: async () => {},
+    },
+    connection: {
+      fetch: { register: (route) => { routes.push(route); return async () => {}; } },
+    },
+    on: () => () => {},
+    effect: (fn) => { fn(); return () => {}; },
+    inject: (names, callback) => { callback(ctx); },
+  };
+
+  // Hard dependencies are the DSH-owned config/secret surfaces.
+  assert.deepEqual(hostInject, ['settings', 'credentials']);
+  applyHost(ctx, config);
+
+  assert.deepEqual(
+    routes.map((route) => route.path),
+    [TRANSLATE_ROUTE_PATH, THINK_ROUTE_PATH, TEST_CHANNEL_ROUTE_PATH],
+    'the connection service receives the plugin\'s three exact routes'
+  );
+  assert.deepEqual(policies, [{ auto: false }], 'this plugin owns its settings page');
 });
 
 console.log('\n======================================================');

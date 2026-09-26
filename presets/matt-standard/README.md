@@ -1,23 +1,17 @@
 # matt-standard — Matt 标准工程模式
 
-官方 `standard` 组合（persona 保持官方原样）＋ Matt Pocock 的 26 个技能（`skills/`）＋ grilling 投递插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md)。行为要点：grilling 轮次先以散文预告本轮问题、再以 `ask_user_grilling` 表单投递作答；达成共识后不自动进入 plan mode。
+官方 `standard` 组合（persona 逐字取官方）＋ Matt Pocock 的 26 个技能（`skills/`）＋ grilling 投递插件。行为要点：grilling 轮次先以散文预告本轮问题、再以 `ask_user_grilling` 表单投递作答；达成共识后不自动进入 plan mode。
+
+本目录是一个可安装的 **bundle 包**：`package.json` 的 `dsh.bundle.patch` 指向 `matt-standard.patch.yml`，后者插入一条 `@deepseek-ai/dsh-agent-preset` 行，宣告 preset `matt-standard`（`order: 11`）。该行的 `config.plugins` 取 0.1.7-rc.2 官方 `standard` 组合逐字，只多两处 MATT 改动——工具行原位换成 grilling；`skill-filesystem.customSkillDirs` 指向本包 `skills/`。`skills/` 里的 26 个技能由那条 `!!js` 表达式在装载时从本包解析出来（`createRequire(baseUrl).resolve('@lynn123411/dsh-preset-matt-standard/package.json')`，`baseUrl` 是 profile 目录）。
 
 ## 安装与启用
 
-```bash
-# 1. 创建 preset 目录（preset id 必须为 matt-standard）
-mkdir -p ~/.dsh/.agent-presets/matt-standard
+1. 用 Plugin Manager 安装本目录：`action: install_bundle`，`target` 填本目录的绝对路径。它自己完成包安装与 bundle 选择，不要用 shell 手工复刻这两步。
+2. 装完后 `list_bundles` 应列出本包，`list_plugins` 应看到 `preset-matt-standard` 行已激活（激活失败会留在名册上并带诊断）。
+3. 重启 DSH，在新建会话界面选择「Matt 标准工程模式」。
 
-# 2. 复制 preset 配置文件与技能目录
-cp matt-standard/agent.cordis.yml matt-standard/preset.yml ~/.dsh/.agent-presets/matt-standard/
-cp -R matt-standard/skills ~/.dsh/.agent-presets/matt-standard/
-
-# 3. 安装 grilling 投递插件
-dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
-```
-
-重启 DSH 后，在新建会话界面选择「Matt 标准」即可。
+前置：grilling 适配插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md) 必须已按注册方式装进同一 profile。patch 里那条工具行消费它，缺了它该行不可解析，preset 会整体从模式选择里消失。
 
 ## 详细说明
 
-配置细节、实现原理与使用说明一律见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)：官方基线与逐处改动清单、`agent.cordis.yml` 两处改动块、`skills/grilling/SKILL.md` 四处本地改动的成品块、插件的注册安装要求、同步与校验步骤、DSH 或技能上游升级后的重打流程。本目录不含 README.md 之外的自有配置：`agent.cordis.yml` / `preset.yml` / `skills/` 就是成品，直接同步即用。
+相对官方基线的逐处改动清单、`skills/grilling/SKILL.md` 的四处本地适配、验证命令与重打流程，一律见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)。

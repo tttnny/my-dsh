@@ -14,7 +14,7 @@ DeepSeek Harness Web 界面的工具调用与思考链智能翻译插件。自�
 - **智能内容脱敏与占位符保护**：翻译前对多行代码块、内联代码、URL 链接、文件路径及 CLI 命令行参数进行占位符脱敏与鲁棒还原，杜绝代码与路径被误翻译。占位符为 `⟦<随机短码><序号>⟧` 形式的独立片段，构建时会在紧邻拉丁字母的一侧补一个空格，避免译回时与相邻单词粘连。译文只有在每个占位符都按原顺序被完整还原时才被采用：占位符被改写、遗失或多个重复时整条译文作废并换通道，退回原文，且绝不写入缓存；升级前旧格式写入的污染译文在读取时被驱逐。
 - **当前会话作用域**：仅翻译当前查看的会话，切换会话自动跟随新内容；视口懒加载（150px 缓冲）与文档顺序排队，译文按阅读顺序出现。
 - **智能调度与熔断保护**：工具标题走 1–100 动态并发限流队列、AI 30s / Bing 2s 超时、连续失败熔断自愈、在途请求合并去重、7 天 LRU 磁盘持久化缓存（工具标题 `~/.dsh/dsh-chat-translate/cache.json`，思考链 `~/.dsh/dsh-chat-translate/think-cache.json`）。
-- **DSH 原生配置接入**：配置走 DSH `settings` 服务（用户层写入 `~/.dsh/settings.yaml` 的 `dsh-chat-translate` 段）、密钥走 DSH `credentials` 服务、设置面板经 `settingsScope` 与 `credentials` Remote API 读写——无任何自研配置文件。
+- **DSH 原生配置接入**：配置就是本插件在 profile 里的插件配置——设置面板经 DSH 的共享配置表单（`ctx.configForms`）读写本插件配置条目 `dsh-chat-translate` 的 `config`，用户层落在当前 profile 的 patch；密钥走 DSH `credentials` 服务（`~/.dsh/.credentials.yaml` 的 `TRANSLATE_API_KEY`）。无任何自研配置文件。
 - **设置面板集成**：设置面板挂在「设置 - 阅读体验」页（本插件贡献其中一张卡片），页内提供总开关、AI/Bing 通道开关、「显示思考链翻译按钮」（默认打开）与思考链超时、Base URL 与模型配置、通道测试与并发数调节。按钮的显示还要求 AI 通道打开且已配置（Key / Base URL / 模型齐全），缺任何一条都不注入按钮并还原已翻译内容。
 
 ## 安装

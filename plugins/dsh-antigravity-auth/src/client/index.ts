@@ -3,7 +3,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { createAntigravityAuthRpcClient } from '../rpc-contract.ts'
@@ -24,7 +24,7 @@ export { en, zh } from './locales.ts'
 export type { AntigravityAuthKey } from './locales.ts'
 
 /** Client services required by the settings section and its loopback RPC. */
-export const inject = ['slots', 'locale', 'connection', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'configForms']
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -40,14 +40,14 @@ export function apply(ctx: ClientContext): void {
   const connection = (ctx as any).connection as ConnectionHandle
   const rpc = createAntigravityAuthRpcClient(connection.rpc)
   const t = ctx.locale.bind(NS) as AntigravityAuthSettingsProps['t']
-  const settingsScope = (ctx as ClientContext & { settingsScope?: { bind<T>(spec: { namespace: string; decode?: (value: unknown) => T | undefined }): SettingsScope<T> } }).settingsScope
-  // Namespace literals are the one thing that cannot be shared by value with the
-  // Host half without pulling its modules into this bundle; tests assert each
-  // literal against its Host constant.
-  const masterScope = settingsScope?.bind<AntigravityMasterSettings>({ namespace: 'antigravity-master', decode: decodeMasterSettings })
-  const searchScope = settingsScope?.bind<AntigravitySearchSettings>({ namespace: 'antigravity-search', decode: decodeSearchSettings })
-  const imageScope = settingsScope?.bind<AntigravityImageSettings>({ namespace: 'antigravity-image', decode: decodeImageSettings })
-  const videoScope = settingsScope?.bind<AntigravityVideoSettings>({ namespace: 'antigravity-video', decode: decodeVideoSettings })
+  // A settings form is keyed by the owning Host plugin entry id, which is the
+  // one thing that cannot be shared by value with the Host half without pulling
+  // its modules into this bundle; tests assert each literal against its Host
+  // constant.
+  const masterScope = ctx.configForms.get<AntigravityMasterSettings>('antigravity-auth')
+  const searchScope = ctx.configForms.get<AntigravitySearchSettings>('antigravity-search')
+  const imageScope = ctx.configForms.get<AntigravityImageSettings>('antigravity-image')
+  const videoScope = ctx.configForms.get<AntigravityVideoSettings>('antigravity-video')
   const listeners = new Set<() => void>()
   const subscribe = (listener: () => void): (() => void) => {
     listeners.add(listener)
@@ -69,33 +69,4 @@ export function apply(ctx: ClientContext): void {
     label: () => t('tabNav'),
     inject: (): AntigravityAuthSettingsProps => ({ rpc, t, subscribe, masterScope, searchScope, imageScope, videoScope }),
   }, AntigravityAuthSettings))
-}
-
-function decodeMasterSettings(value: unknown): AntigravityMasterSettings | undefined {
-  if (!isRecord(value) || typeof value.enabled !== 'boolean') return undefined
-  return { enabled: value.enabled }
-}
-
-function decodeSearchSettings(value: unknown): AntigravitySearchSettings | undefined {
-  if (!isRecord(value) || typeof value.enabled !== 'boolean' || typeof value.model !== 'string' || value.model.length === 0 || !positiveInteger(value.maxResults) || value.maxResults > 50) return undefined
-  return { enabled: value.enabled, model: value.model, maxResults: value.maxResults }
-}
-
-function decodeImageSettings(value: unknown): AntigravityImageSettings | undefined {
-  if (!isRecord(value) || typeof value.enabled !== 'boolean' || typeof value.model !== 'string' || value.model.length === 0 || !positiveInteger(value.n) || value.n > 4) return undefined
-  return { enabled: value.enabled, model: value.model, n: value.n }
-}
-
-function decodeVideoSettings(value: unknown): AntigravityVideoSettings | undefined {
-  if (!isRecord(value) || typeof value.enabled !== 'boolean' || typeof value.model !== 'string' || value.model.length === 0) return undefined
-  if (value.maxBytes !== undefined && (!positiveInteger(value.maxBytes) || value.maxBytes > 128 * 1024 * 1024)) return undefined
-  return { enabled: value.enabled, model: value.model, ...(typeof value.maxBytes === 'number' ? { maxBytes: value.maxBytes } : {}) }
-}
-
-function positiveInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) > 0
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

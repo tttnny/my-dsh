@@ -11,7 +11,8 @@ import { build } from 'esbuild';
 
 const pkgName = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).name;
 
-// Web shell 播种的平台模块表（@deepseek-ai/dsh-web-frontend 的 staticModules，逐条对齐）。
+// Web shell 播种的平台模块表（@deepseek-ai/dsh-web-frontend 的 staticModules）里本插件允许外部化的请求。
+// `@deepseek-ai/dsh-client-ui-dockkit` 已不是可安装的包（shell 只留一个空对象桩件），故不列入；
 // 其余 @deepseek-ai/* 一律不许出现在客户端 bundle 里：浏览器侧的模块表解答不了它，
 // 物化时才会抛，构建期拦下才有信号。
 const PLATFORM_MODULES = [
@@ -23,7 +24,6 @@ const PLATFORM_MODULES = [
   '@deepseek-ai/dsh-client-store',
   '@deepseek-ai/dsh-client-ui-slots',
   '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-ui-dockkit',
 ];
 
 // 宿主半边由 DSH 进程按 realpath 路由供给的内核包，inline 进来会造出第二份 registry。

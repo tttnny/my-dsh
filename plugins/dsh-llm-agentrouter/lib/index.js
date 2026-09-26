@@ -38,10 +38,11 @@ import z from '@deepseek-ai/schemastery'
 const name = 'llm-agentrouter'
 
 /**
- * Settings namespace this plugin owns.
+ * This plugin's profile entry id, which is also its settings namespace and the
+ * license key its configuration form is addressed by.
  *
- * It is also the key the browser half registers its card under, so the two
- * halves meet here without either importing the other.
+ * The id is declared by the bundle patch (`cordis.patch.yml`), and the browser
+ * half addresses the same literal without importing this module.
  */
 const AGENTROUTER_SETTINGS_NAMESPACE = 'llm-agentrouter'
 
@@ -53,6 +54,7 @@ const Config = z.object({
   endpoint: z
     .union([z.const('cn'), z.const('intl')])
     .default('cn')
+    .volatile()
     .description('relay endpoint requests are sent to: cn (domestic) or intl (international)'),
   /**
    * Host per endpoint key. Configuration rather than a constant so a moved
@@ -61,6 +63,7 @@ const Config = z.object({
   endpoints: z
     .dict(z.string())
     .default({ cn: 'ps.air-outer.com', intl: 'agentrouter.org' })
+    .volatile()
     .description('host for each endpoint key'),
   /**
    * The host the route's `baseURL` names. Requests to it are rewritten to the
@@ -70,6 +73,7 @@ const Config = z.object({
   sentinel: z
     .string()
     .default('relay.agentrouter.internal')
+    .volatile()
     .description('placeholder host in the route baseURL that the fence replaces with the selected endpoint'),
   /**
    * The exact User-Agent the relay accepts. It is the whole authentication of
@@ -79,6 +83,7 @@ const Config = z.object({
   userAgent: z
     .string()
     .default('claude-cli/2.1.161 (external, cli)')
+    .volatile()
     .description('User-Agent value sent to the relay in place of the harness attribution'),
   /** Report the installed fence once on activation. */
   announce: z.boolean().default(true),
@@ -91,8 +96,18 @@ const Config = z.object({
   quotaHint: z
     .string()
     .default('Claude / GPT 本批额度已用完，请等待下一批投放。')
+    .volatile()
     .description('text appended to relay 402 quota errors'),
 })
+
+/**
+ * Every field the fence reads carries `.volatile()` and is therefore a live
+ * reference rather than a snapshot: the settings plane writes the reference in
+ * place, the next request reads the new value, and no reload intervenes. That
+ * is also what makes these fields the ones the schema-derived config form
+ * shows and accepts writes to (`ctx.settings.describe`/`mutate`). `announce`
+ * is deliberately plain: it is read once, on activation.
+ */
 
 /**
  * Resolve a `fetch` argument to its URL without consuming a request body.
@@ -122,12 +137,13 @@ function urlOf(input) {
  */
 function routingTable(config) {
   const table = new Map()
-  const selected = config.endpoints[config.endpoint]
-  const sentinel = config.sentinel.trim().toLowerCase()
+  const endpoints = config.endpoints.get()
+  const selected = endpoints[config.endpoint.get()]
+  const sentinel = config.sentinel.get().trim().toLowerCase()
   if (sentinel.length > 0 && typeof selected === 'string' && selected.trim().length > 0) {
     table.set(sentinel, selected.trim())
   }
-  for (const host of Object.values(config.endpoints)) {
+  for (const host of Object.values(endpoints)) {
     if (typeof host !== 'string') continue
     const trimmed = host.trim()
     if (trimmed.length > 0) table.set(trimmed.toLowerCase(), trimmed)
@@ -151,21 +167,22 @@ function routingTable(config) {
  * rebuilds it as `application/json`. Every other response is left untouched.
  *
  * @param {typeof fetch} native - the fetch this wrapper delegates to.
- * @param {() => ReturnType<typeof Config>} current - reads the live section.
+ * @param {ReturnType<typeof Config>} config - the entry configuration; every
+ *   field read here is a `.volatile()` reference, so the value is the one the
+ *   settings plane last wrote, not the one activation resolved.
  * @returns {typeof fetch} the wrapping fetch.
  */
-function fenceFetch(native, current) {
+function fenceFetch(native, config) {
   return function agentRouterFetch(input, init) {
     const url = urlOf(input)
     if (url === undefined) return native(input, init)
 
-    const config = current()
     const destination = routingTable(config).get(url.host.toLowerCase())
     if (destination === undefined) return native(input, init)
 
     const isRequest = typeof Request === 'function' && input instanceof Request
     const headers = new Headers(init?.headers ?? (isRequest ? input.headers : undefined))
-    headers.set('user-agent', config.userAgent)
+    headers.set('user-agent', config.userAgent.get())
 
     // Same host means the sentinel was not involved: rewrite the header only,
     // and leave the caller's own URL object or Request identity alone.
@@ -185,7 +202,8 @@ function fenceFetch(native, current) {
     // as an event stream, which provider SDKs otherwise surface as an opaque
     // transport failure. Annotate those with the configured hint; every other
     // response passes through untouched.
-    return config.quotaHint === '' ? pending : annotateQuotaError(pending, config.quotaHint)
+    const hint = config.quotaHint.get()
+    return hint === '' ? pending : annotateQuotaError(pending, hint)
   }
 }
 
@@ -257,22 +275,18 @@ function requestInitOf(request) {
 }
 
 /**
- * Install the relay fence and expose its endpoint choice as a settings section.
+ * Install the relay fence and declare how this plugin's configuration is edited.
  * @param {import('@deepseek-ai/cordis').Context} ctx - the plugin's context.
  * @param {ReturnType<typeof Config>} config - resolved entry configuration.
  */
 function apply(ctx, config) {
-  // The section is the authority while a settings service exists; the composed
-  // entry is the fallback, so the fence works identically with no settings
-  // plane at all (headless, or before the service mounts).
-  let current = () => config
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, AGENTROUTER_SETTINGS_NAMESPACE, Config, config, {
-      setSource: (source) => {
-        current = source
-      },
-      onChange: () => {},
-    })
+  // The settings plane derives this plugin's form from the Config schema above
+  // and writes it back into the same `.volatile()` references the fence reads.
+  // `auto: false` because the endpoint card owns this plugin's UI (lib/client.js);
+  // the registration is optional, so a deployment with no settings service at all
+  // (headless, or before the service mounts) keeps the composed entry as-is.
+  ctx.inject(['settings'], (child) => {
+    child.effect(() => child.settings.configure({ auto: false }, ctx.fiber))
   })
 
   ctx.effect(() => {
@@ -281,7 +295,7 @@ function apply(ctx, config) {
       ctx.logger.warn('llm-agentrouter: no global fetch to fence; relay requests will be unroutable and rejected')
       return () => {}
     }
-    const fenced = fenceFetch(previous, () => current())
+    const fenced = fenceFetch(previous, config)
     globalThis.fetch = fenced
     return () => {
       // Restore only what this plugin installed: a later wrapper layered on top
@@ -294,9 +308,9 @@ function apply(ctx, config) {
     const table = routingTable(config)
     ctx.logger.info(
       'llm-agentrouter: endpoint %s (%s), sending %s',
-      config.endpoint,
-      table.get(config.sentinel.trim().toLowerCase()) ?? 'unrouted',
-      config.userAgent,
+      config.endpoint.get(),
+      table.get(config.sentinel.get().trim().toLowerCase()) ?? 'unrouted',
+      config.userAgent.get(),
     )
   }
 }

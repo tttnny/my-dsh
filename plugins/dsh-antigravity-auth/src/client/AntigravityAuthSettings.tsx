@@ -4,12 +4,12 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import type { ReactNode } from 'react'
 import {
   Button,
-  IconRefreshOutline14,
+  IconRefreshOutlineRegular,
   Input,
   StateDot,
   Switch,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { AntigravityAuthRpcClient } from '../rpc-contract.ts'
 import type { QuotaStatusView } from '../quota.ts'
 import type { AntigravitySearchSettings } from '../search.ts'
@@ -29,18 +29,18 @@ export interface AntigravityAuthSettingsProps {
   rpc: AntigravityAuthRpcClient
   t: (key: AntigravityAuthKey) => string
   subscribe: (listener: () => void) => () => void
-  masterScope?: SettingsScope<AntigravityMasterSettings>
-  searchScope?: SettingsScope<AntigravitySearchSettings>
-  imageScope?: SettingsScope<AntigravityImageSettings>
-  videoScope?: SettingsScope<AntigravityVideoSettings>
+  masterScope?: ConfigForm<AntigravityMasterSettings>
+  searchScope?: ConfigForm<AntigravitySearchSettings>
+  imageScope?: ConfigForm<AntigravityImageSettings>
+  videoScope?: ConfigForm<AntigravityVideoSettings>
 }
 
 type LoadState = 'loading' | 'ready' | 'error'
 type BooleanSettings = { readonly enabled: boolean }
-type SettingsSnapshot = ReturnType<SettingsScope<BooleanSettings>['getSnapshot']>
+type SettingsSnapshot = ConfigFormSnapshot<BooleanSettings>
 const EMPTY_SETTINGS_SNAPSHOT: SettingsSnapshot = { status: 'unavailable', value: undefined, base: undefined, user: undefined, revision: undefined, writable: false, mode: 'memory' }
 
-function useCapabilitySettings<T extends BooleanSettings>(scope: SettingsScope<T> | undefined): SettingsSnapshot & { readonly value: T | undefined } {
+function useCapabilitySettings<T extends BooleanSettings>(scope: ConfigForm<T> | undefined): SettingsSnapshot & { readonly value: T | undefined } {
   const subscribe = useCallback((listener: () => void) => scope?.subscribe(listener) ?? (() => {}), [scope])
   const getSnapshot = useCallback(() => scope?.getSnapshot() ?? EMPTY_SETTINGS_SNAPSHOT, [scope])
   return useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_SETTINGS_SNAPSHOT) as SettingsSnapshot & { readonly value: T | undefined }
@@ -359,7 +359,7 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, search
               disabled={loadState === 'loading' || quotaBusy}
               icon={
                 <span className={quotaBusy || loadState === 'loading' ? 'agy-spin-icon' : undefined}>
-                  <IconRefreshOutline14 />
+                  <IconRefreshOutlineRegular size={14} />
                 </span>
               }
               onClick={() => {

@@ -44,7 +44,7 @@ afterEach(async () => {
  * SessionStore + CommandRuntime, the plugin applied, and NO WebServer or
  * `connection` service. Commands dispatch through the real command runtime.
  */
-async function mountTerminal(): Promise<{ ctx: Context; agent: Agent }> {
+async function mountTerminal(): Promise<{ ctx: Context; agent: Agent; logged: unknown[] }> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-antigravity-terminal-'))
   tempDirs.push(root)
   const previousDataHome = process.env.XDG_DATA_HOME
@@ -56,9 +56,13 @@ async function mountTerminal(): Promise<{ ctx: Context; agent: Agent }> {
     await ctx.plugin(CommandRuntime)
     applyAuth(ctx)
     await new Promise<void>(resolve => setImmediate(resolve))
+    // The durable log is read through the post-commit append feed; the
+    // synchronous session-event readers are deprecated in 0.1.7.
+    const logged: unknown[] = []
+    ctx.on('session/event', (_session, event) => { logged.push(event) })
     const session = ctx.sessions.create(SessionId('antigravity-auth-terminal'))
     const agent = { id: session.id, session } as unknown as Agent
-    return { ctx, agent }
+    return { ctx, agent, logged }
   } finally {
     if (previousDataHome === undefined) delete process.env.XDG_DATA_HOME
     else process.env.XDG_DATA_HOME = previousDataHome
@@ -104,7 +108,7 @@ describe('antigravity-auth slash command on a terminal composition (no WebServer
   })
 
   it('hands the login authorization URL to the opener and keeps it out of the session log', async () => {
-    const { ctx, agent } = await mountTerminal()
+    const { ctx, agent, logged } = await mountTerminal()
     const service = (ctx as unknown as { get(name: string): AntigravityAuthService }).get('antigravityAuth')
     vi.spyOn(service, 'startLogin').mockResolvedValue({
       started: true,
@@ -129,10 +133,10 @@ describe('antigravity-auth slash command on a terminal composition (no WebServer
 
     // CommandRuntime persists the command lifecycle into the session; neither
     // command/run nor command/done may retain the OAuth state or PKCE challenge.
-    const logged = JSON.stringify(agent.session.ownEvents())
-    expect(logged).toContain('command/done')
-    expect(logged).not.toContain(SYNTHETIC_AUTHORIZATION_URL)
-    expect(logged).not.toContain('state=')
-    expect(logged).not.toContain('code_challenge')
+    const persisted = JSON.stringify(logged)
+    expect(persisted).toContain('command/done')
+    expect(persisted).not.toContain(SYNTHETIC_AUTHORIZATION_URL)
+    expect(persisted).not.toContain('state=')
+    expect(persisted).not.toContain('code_challenge')
   })
 })

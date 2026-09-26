@@ -8,7 +8,7 @@ import { ConfigManager, migrateLegacyConfigFile } from '../src/server/config.ts'
 import { LruDiskCache } from '../src/server/cache.ts';
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
-import { createFakeSettingsScope, createFakeCredentials } from './test-helpers.mjs';
+import { createFakeSettingsEntry, createFakeCredentials } from './test-helpers.mjs';
 
 // Isolate file-backed state into a temp dir.
 const TMP_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-chat-translate-chtest-'));
@@ -42,58 +42,61 @@ async function testAsync(name, fn) {
 console.log('=== Suite A: dual-channel truth table (user contract) ===');
 
 await testAsync('AI on+configured, Bing on -> AI only', async () => {
-  const { dispatcher, calls } = await setupDispatcher();
-  await dispatcher.configManager.updateConfig({ aiEnabled: true, bingEnabled: true, baseUrl: 'http://x', model: 'm' });
+  const { dispatcher, calls, source } = await setupDispatcher();
+  await source.update({ aiEnabled: true, bingEnabled: true, baseUrl: 'http://x', model: 'm' });
   const r = await dispatcher.translateOne('TT1: List files here');
   assert.deepEqual(calls, ['openai']);
   assert.equal(r.channel, 'openai');
 });
 
 await testAsync('AI on+NOT configured, Bing on -> Bing', async () => {
-  const { dispatcher, calls } = await setupDispatcher();
-  await dispatcher.configManager.updateConfig({ aiEnabled: true, bingEnabled: true });
+  const { dispatcher, calls, source } = await setupDispatcher();
+  await source.update({ aiEnabled: true, bingEnabled: true });
   const r = await dispatcher.translateOne('TT2: List files here');
   assert.deepEqual(calls, ['bing']);
   assert.equal(r.channel, 'bing');
 });
 
 await testAsync('AI on+NOT configured, Bing off -> no translation', async () => {
-  const { dispatcher, calls } = await setupDispatcher();
-  await dispatcher.configManager.updateConfig({ aiEnabled: true, bingEnabled: false });
+  const { dispatcher, calls, source } = await setupDispatcher();
+  await source.update({ aiEnabled: true, bingEnabled: false });
   const r = await dispatcher.translateOne('TT3: List files here');
   assert.deepEqual(calls, []);
   assert.equal(r.channel, 'fallback');
 });
 
 await testAsync('AI off, Bing on -> Bing', async () => {
-  const { dispatcher, calls } = await setupDispatcher();
-  await dispatcher.configManager.updateConfig({ aiEnabled: false, bingEnabled: true, baseUrl: 'http://x', model: 'm' });
+  const { dispatcher, calls, source } = await setupDispatcher();
+  await source.update({ aiEnabled: false, bingEnabled: true, baseUrl: 'http://x', model: 'm' });
   const r = await dispatcher.translateOne('TT4: List files here');
   assert.deepEqual(calls, ['bing']);
   assert.equal(r.channel, 'bing');
 });
 
 await testAsync('AI off, Bing off -> no translation', async () => {
-  const { dispatcher, calls } = await setupDispatcher();
-  await dispatcher.configManager.updateConfig({ aiEnabled: false, bingEnabled: false });
+  const { dispatcher, calls, source } = await setupDispatcher();
+  await source.update({ aiEnabled: false, bingEnabled: false });
   const r = await dispatcher.translateOne('TT5: List files here');
   assert.deepEqual(calls, []);
   assert.equal(r.channel, 'fallback');
 });
 
 await testAsync('AI failure falls back to Bing', async () => {
-  const { dispatcher, calls } = await setupDispatcher({ failOpenai: true });
-  await dispatcher.configManager.updateConfig({ aiEnabled: true, bingEnabled: true, baseUrl: 'http://x', model: 'm' });
+  const { dispatcher, calls, source } = await setupDispatcher({ failOpenai: true });
+  await source.update({ aiEnabled: true, bingEnabled: true, baseUrl: 'http://x', model: 'm' });
   const r = await dispatcher.translateOne('TT6: List files here');
   assert.deepEqual(calls, ['openai', 'bing']);
   assert.equal(r.channel, 'bing');
 });
 
 async function setupDispatcher({ failOpenai = false } = {}) {
-  const cfg = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
-  // Reset to a clean baseline — the fake scope is fresh per setup, so nothing
+  // The fake IS this plugin's settings entry: `get`/`watch` is the live config
+  // source ConfigManager reads, and `update` simulates one accepted live edit.
+  const source = createFakeSettingsEntry();
+  const cfg = new ConfigManager(source, new CredentialsReader(createFakeCredentials()));
+  // Reset to a clean baseline — the fake entry is fresh per setup, so nothing
   // leaks between tests by construction.
-  await cfg.updateConfig({ enabled: true, aiEnabled: false, bingEnabled: false, baseUrl: '', model: '', concurrency: 3 });
+  await source.update({ enabled: true, aiEnabled: false, bingEnabled: false, baseUrl: '', model: '', concurrency: 3 });
   const cache = new LruDiskCache();
   await cache.init();
   const dispatcher = new TranslationDispatcher(cfg, cache);
@@ -111,18 +114,19 @@ async function setupDispatcher({ failOpenai = false } = {}) {
       },
     });
   }
-  return { dispatcher, calls };
+  return { dispatcher, calls, source };
 }
 
 console.log('\n=== Suite B: circuit breaker half-open single-flight ===');
 
 await testAsync('Only one probe passes while half-open', async () => {
-  const cfg = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const source = createFakeSettingsEntry();
+  const cfg = new ConfigManager(source, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   await cache.init();
   const dispatcher = new TranslationDispatcher(cfg, cache);
   dispatcher.credentials = { getApiKey: () => 'sk-test' };
-  await cfg.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 5 });
+  await source.update({ aiEnabled: false, bingEnabled: false, concurrency: 5 });
 
   let calls = 0;
   let succeed = false;
@@ -169,12 +173,13 @@ await testAsync('Only one probe passes while half-open', async () => {
 });
 
 await testAsync('Empty probe result releases the single-flight flag', async () => {
-  const cfg = new ConfigManager(createFakeSettingsScope(), new CredentialsReader(createFakeCredentials()));
+  const source = createFakeSettingsEntry();
+  const cfg = new ConfigManager(source, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   await cache.init();
   const dispatcher = new TranslationDispatcher(cfg, cache);
   dispatcher.credentials = { getApiKey: () => 'sk-test' };
-  await cfg.updateConfig({ aiEnabled: false, bingEnabled: false, concurrency: 5 });
+  await source.update({ aiEnabled: false, bingEnabled: false, concurrency: 5 });
 
   let calls = 0;
   let empty = true;
@@ -224,17 +229,17 @@ await testAsync('Legacy config migrates into the settings namespace and the file
     JSON.stringify({ enabled: true, channels: ['bing'], baseUrl: ' http://x ', model: 'm', concurrency: 3 }),
     'utf-8'
   );
-  const scope = createFakeSettingsScope();
-  // The migration entry takes the provider-level face (namespace + path ops);
-  // the fake scope exposes the same mutate contract.
+  const entry = createFakeSettingsEntry();
+  // The migration takes the provider-level face (namespace + path ops);
+  // the fake entry exposes describe/mutate with the same contract.
   const settingsFace = {
-    describe: () => scope.describe(),
-    mutate: (ns, ops, revision) => scope.mutate(ns, ops, revision),
+    describe: () => entry.describe(),
+    mutate: (ns, ops, revision) => entry.mutate(ns, ops, revision),
   };
   const migrated = await migrateLegacyConfigFile(settingsFace, legacyPath);
   assert.equal(migrated, true, 'legacy values must be reported as migrated');
 
-  const cfg = new ConfigManager(scope, new CredentialsReader(createFakeCredentials()));
+  const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   assert.equal(cfg.getConfig().enabled, true);
   assert.equal(cfg.getConfig().baseUrl, 'http://x', 'string values are trimmed');
   assert.equal(cfg.getConfig().model, 'm');
@@ -252,15 +257,15 @@ await testAsync('Migration sanitizes per-field: bad values skipped, valid ones m
     JSON.stringify({ enabled: 'false', concurrency: 9999, baseUrl: ' http://x ', model: 'm' }),
     'utf-8'
   );
-  const scope = createFakeSettingsScope();
+  const entry = createFakeSettingsEntry();
   const settingsFace = {
-    describe: () => scope.describe(),
-    mutate: (ns, ops, revision) => scope.mutate(ns, ops, revision),
+    describe: () => entry.describe(),
+    mutate: (ns, ops, revision) => entry.mutate(ns, ops, revision),
   };
   const migrated = await migrateLegacyConfigFile(settingsFace, legacyPath);
   assert.equal(migrated, true, 'valid fields still migrate when others are rejected');
 
-  const cfg = new ConfigManager(scope, new CredentialsReader(createFakeCredentials()));
+  const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   assert.equal(cfg.getConfig().enabled, true, 'string "false" skipped -> schema default');
   assert.equal(cfg.getConfig().concurrency, 100, 'out-of-range clamped to the max');
   assert.equal(cfg.getConfig().baseUrl, 'http://x', 'valid string trimmed and migrated');
@@ -275,9 +280,9 @@ await testAsync('Migration keeps the file when the provider write fails (retry n
   // lose the user's values, so the file must stay for the next boot.
   const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-providerfail-config.json');
   await fs.writeFile(legacyPath, JSON.stringify({ baseUrl: 'http://x' }), 'utf-8');
-  const scope = createFakeSettingsScope();
+  const entry = createFakeSettingsEntry();
   const failingFace = {
-    describe: () => scope.describe(),
+    describe: () => entry.describe(),
     mutate: async () => {
       throw new Error('provider is read-only');
     },
@@ -285,23 +290,23 @@ await testAsync('Migration keeps the file when the provider write fails (retry n
   const migrated = await migrateLegacyConfigFile(failingFace, legacyPath);
   assert.equal(migrated, false, 'no migration reported');
   await fs.access(legacyPath); // must still exist
-  assert.equal(new ConfigManager(scope, new CredentialsReader(createFakeCredentials())).getConfig().baseUrl, '');
+  assert.equal(new ConfigManager(entry, new CredentialsReader(createFakeCredentials())).getConfig().baseUrl, '');
 });
 
 await testAsync('Migration never overwrites an existing user layer', async () => {
   const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-config.json');
   await fs.writeFile(legacyPath, JSON.stringify({ baseUrl: 'http://old', model: 'old-model' }), 'utf-8');
-  const scope = createFakeSettingsScope();
-  scope.setUserLayer({ baseUrl: 'http://new', model: 'new-model' }); // user already edited via UI
+  const entry = createFakeSettingsEntry();
+  entry.setUserLayer({ baseUrl: 'http://new', model: 'new-model' }); // user already edited via UI
 
   const settingsFace = {
-    describe: () => scope.describe(),
-    mutate: (ns, ops, revision) => scope.mutate(ns, ops, revision),
+    describe: () => entry.describe(),
+    mutate: (ns, ops, revision) => entry.mutate(ns, ops, revision),
   };
   const migrated = await migrateLegacyConfigFile(settingsFace, legacyPath);
   assert.equal(migrated, false, 'nothing migrated when a user layer exists');
 
-  const cfg = new ConfigManager(scope, new CredentialsReader(createFakeCredentials()));
+  const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   assert.equal(cfg.getConfig().baseUrl, 'http://new', 'existing user layer wins');
   assert.equal(cfg.getConfig().model, 'new-model');
 
@@ -310,12 +315,12 @@ await testAsync('Migration never overwrites an existing user layer', async () =>
 
 await testAsync('Missing or corrupt legacy file is a no-op', async () => {
   const missingPath = path.join(TMP_HOME, 'no-such-config.json');
-  const scope = createFakeSettingsScope();
-  assert.equal(await migrateLegacyConfigFile(scope, missingPath), false);
+  const entry = createFakeSettingsEntry();
+  assert.equal(await migrateLegacyConfigFile(entry, missingPath), false);
 
   const corruptPath = path.join(TMP_HOME, 'corrupt-config.json');
   await fs.writeFile(corruptPath, '{not json', 'utf-8');
-  assert.equal(await migrateLegacyConfigFile(scope, corruptPath), false);
+  assert.equal(await migrateLegacyConfigFile(entry, corruptPath), false);
   await assert.rejects(fs.access(corruptPath), 'corrupt legacy file is dropped');
 });
 

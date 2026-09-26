@@ -1,9 +1,10 @@
 /** Dedicated grounded Web Search provider and independently mounted Search row. */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { SEARCH_SYSTEM_INSTRUCTION, resolveModelWithTier } from '@cortexkit/antigravity-auth-core'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-settings'
 import { WebError } from '@deepseek-ai/dsh-web'
@@ -31,7 +32,8 @@ export const inject = ['web', 'antigravityAuth']
 export const ANTIGRAVITY_SEARCH_PROVIDER_ID = 'antigravity'
 export const ANTIGRAVITY_SEARCH_ENDPOINT = `${ANTIGRAVITY_WIRE_ORIGIN}/v1internal:generateContent` as const
 export const ANTIGRAVITY_SEARCH_MODEL = 'antigravity-gemini-3.7-flash'
-export const ANTIGRAVITY_SEARCH_SETTINGS_NAMESPACE = 'antigravity-search'
+/** Profile entry id of the Search row; the settings form's namespace. */
+export const ANTIGRAVITY_SEARCH_ENTRY_ID = 'antigravity-search'
 
 export interface AntigravitySearchSettings {
   enabled: boolean
@@ -39,12 +41,17 @@ export interface AntigravitySearchSettings {
   maxResults: number
 }
 
-export interface Config extends AntigravitySearchSettings {}
+/** Resolved profile config of the Search row; every field is a live reference. */
+export interface Config {
+  readonly enabled: Volatile<boolean>
+  readonly model: Volatile<string>
+  readonly maxResults: Volatile<number>
+}
 
-export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true),
-  model: z.string().default(ANTIGRAVITY_SEARCH_MODEL),
-  maxResults: z.number().step(1).min(1).max(50).default(10),
+export const Config = z.object({
+  enabled: z.boolean().default(true).volatile(),
+  model: z.string().default(ANTIGRAVITY_SEARCH_MODEL).volatile(),
+  maxResults: z.number().step(1).min(1).max(50).default(10).volatile(),
 })
 
 export interface AntigravitySearchProviderOptions {
@@ -387,18 +394,22 @@ export function buildGroundedSearchPayload(
 }
 
 /** Mount only the public Web Search seam; no fetch provider is registered. */
-export function apply(ctx?: Context, config: Config = { enabled: true, model: ANTIGRAVITY_SEARCH_MODEL, maxResults: 10 }): void {
+export function apply(ctx?: Context, config: Config = Config()): void {
   if (ctx === undefined) return
   const candidate = ctx as unknown as { web?: { registerSearchProvider: (value: WebSearchProvider) => () => void }; get?: (name: string) => unknown }
   if (candidate.web === undefined) return
-  let current = (): AntigravitySearchSettings => config
+  // The profile entry's own config is the settings form: every field is
+  // volatile, so the loader commits an edit in place and this read is live.
+  const current = (): AntigravitySearchSettings => ({
+    enabled: config.enabled.get(),
+    model: config.model.get(),
+    maxResults: config.maxResults.get(),
+  })
   let lifecycle: CapabilityLifecycle | undefined
   ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, ANTIGRAVITY_SEARCH_SETTINGS_NAMESPACE, Config, config, {
-      setSource: source => { current = source; lifecycle?.sync() },
-      onChange: () => { lifecycle?.sync() },
-    })
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: true }, ctx.fiber))
   })
+  ctx.on('loader/volatile-update', () => { lifecycle?.sync() })
   const provided = candidate.get?.('antigravityAuth')
   const auth = isAuthService(provided) ? provided : createAntigravityAuthService()
   lifecycle = mountCapabilityLifecycle({

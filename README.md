@@ -30,7 +30,7 @@
     </tr>
     <tr>
       <td><a href="./plugins/dsh-llm-agentrouter"><code>@lynn123411/dsh-llm-agentrouter</code></a></td>
-      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉：沿用 <code>llm-agentrouter</code> 命名空间；宿主沿用 <code>ctx.settings.installSection</code>，端点卡片与 <code>dsh-a6api</code> 同挂共享设置页「API中转」，已在 <code>0.1.6-alpha.2</code> 逐项实证兼容</td>
+      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效（要热更的字段以 <code>.volatile()</code> 声明，设置面由 Config schema 派生）<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉：沿用 <code>llm-agentrouter</code> 命名空间；配置落在当前 Profile 的插件条目里，端点卡片与 <code>dsh-a6api</code> 同挂共享设置页「API中转」</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter</code></td>
     </tr>
     <tr>
@@ -71,10 +71,10 @@
 
 | preset | 说明 |
 | --- | --- |
-| [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份与持久 shell（`prefix` 即完整系统提示词、关闭运行时快照；shell 那组行含 isolate realm 原样搬入）＋ 文件工具 `read` / `write` / `edit`。工具目录就是这四个——没有检索、`read_image`、技能、计划、目标、子代理。随附一行 preset 目录内的 `tool-filter` 插件在 `system-prompt/assemble` 处把 `read_image` 移出模型可见目录（`tools.restrict()` 只筛继承工具、兄弟行包注册表又输给 loader 的并发装载，两条路都已实测不成立） |
-| [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：官方 `standard` 组合（persona 零改动）+ Matt Pocock 26 个技能（[mattpocock/skills](https://github.com/mattpocock/skills)）+ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答；达成共识后不自动进入 plan mode |
-| [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式（实验性）**：官方 `ptc` 组合（persona 零改动，`mode: ptc` 下模型只见 `run_code`）+ 26 个 Matt 技能 + grilling 投递插件（grilling 轮次经 `run_code` 内的 `tools.ask_user_grilling` 投递） |
-| [matt-cordis](./presets/matt-cordis) | **Matt 创造模式**：官方 `cordis` 组合（persona 零改动，含 `tool-cordis` 动态插件工具集、两个随附技能、双平面引导）+ 26 个 Matt 技能并入 skills/ + grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答 |
+| [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份（`prefix` 即完整系统提示词、关闭运行时快照）＋ 文件工具 `read` / `write` / `edit`，**整组不含 shell**。工具目录就是这三个——没有 bash / pwsh、没有检索 / `read_image`、没有技能 / 计划 / 目标 / 子代理。随包的 `tool-filter` 行在 `system-prompt/assemble` 处把 `read_image` 移出模型可见目录（`tools.restrict()` 只筛继承工具、兄弟行包注册表又输给 loader 的并发装载，两条路都已实测不成立） |
+| [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：官方 `standard` 组合（persona 零改动）＋ Matt Pocock 26 个技能（[mattpocock/skills](https://github.com/mattpocock/skills)）＋ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答；达成共识后不自动进入 plan mode。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 11） |
+| [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式（实验性）**：官方 `ptc` 组合（persona 零改动，`mode: ptc` 下模型只见 `run_code`）＋ 26 个 Matt 技能（`skills/`）＋ grilling 投递插件（轮次经 `run_code` 内的 `tools.ask_user_grilling` 投递）；达成共识后不自动进入 plan mode。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 12） |
+| [matt-cordis](./presets/matt-cordis) | **Matt 创造模式**：官方 `cordis` 组合（persona 零改动，含 `tool-cordis` 工具行与官方随附的 3 个 cordis 技能）＋ 26 个 Matt 技能并入 `skills/` ＋ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 13） |
 
 ---
 
@@ -82,8 +82,7 @@
 
 | 目录 | 说明 |
 | --- | --- |
-| [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `matt-cordis`）同进程互斥」。**纯文档补丁（无脚本）**：从运行中的 DSH 进程反推它实际加载的副本再改，锚点/校验/回滚逐字写死在 README 里。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
-| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的手工改动点说明**：相对官方材料的逐处改动清单（`agent.cordis.yml` 两处 MATT-ADD + 一处 MATT-DEL、`skills/grilling/SKILL.md` 四处本地改动的成品块）、当前基线、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
+| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的改动点与重打说明**：相对官方 0.1.7-rc.2 preset patch 的逐处改动清单（包装与身份、技能目录 `customSkillDirs`、工具行 `tool-ask-user` → `tool-ask-user-grilling`、matt-cordis 的 persona 与两份 cordis 随附技能副本的处置）、`skills/grilling/SKILL.md` 四处本地适配的成品块、当前基线、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
 
 ---
 

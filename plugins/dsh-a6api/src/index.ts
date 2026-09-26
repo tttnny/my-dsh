@@ -708,7 +708,7 @@ export function apply(ctx: any): void {
               const modelIds = Array.isArray(body.modelIds) ? body.modelIds : [];
               const baseURL = body.baseURL || config.baseURL;
 
-              // 模型列表唯一真相源 = DSH settings.yaml 的 llm-pi-ai.providers.a6api.models
+              // 模型列表唯一真相源 = DSH llm-pi-ai 条目的 providers.a6api.models
               await configAccess.syncModels(baseURL, modelIds);
 
               const dshConfiguredModels = await configAccess.getDshConfiguredModels();
@@ -931,12 +931,12 @@ export function apply(ctx: any): void {
               }
             }
 
-            // GET /catalog — 模型目录全量（运行时 JSON，字段 = settings.yaml 原生模型字段 + brand）
+            // GET /catalog — 模型目录全量（运行时 JSON，字段 = llm-pi-ai 原生模型字段 + brand）
             if (pathname === '/catalog' && (req.method === 'GET' || req.method === 'HEAD')) {
               return sendJson(res, 200, { ok: true, catalog: getCatalog() });
             }
 
-            // POST /catalog/clear — 清空模型目录（重新拉取/填充前使用；settings.yaml 已启用条目不受影响）
+            // POST /catalog/clear — 清空模型目录（重新拉取/填充前使用；llm-pi-ai 条目中已启用的模型不受影响）
             if (pathname === '/catalog/clear' && req.method === 'POST') {
               await clearCatalog();
               // 目录品牌/参数参与 /state 卡片元数据（resolveModelMeta）：作废短缓存
@@ -989,8 +989,8 @@ export function apply(ctx: any): void {
                 return sendJson(res, 400, { ok: false, error: '目录为空，请先「从 A6API 获取市场模型」' });
               }
               const result = await queryOpenRouter(modelIds);
-              // 已启用模型参数可能被本次查询填充：与 /catalog/update 同一数据流（目录 → settings.yaml），
-              // 命中已启用模型时立即重写 settings.yaml，参数即时生效
+              // 已启用模型参数可能被本次查询填充：与 /catalog/update 同一数据流（目录 → llm-pi-ai 条目配置），
+              // 命中已启用模型时立即重写 llm-pi-ai 条目配置，参数即时生效
               if (result.updated.length > 0) {
                 try {
                   const config = await configAccess.readConfig();
@@ -1013,7 +1013,7 @@ export function apply(ctx: any): void {
             }
 
             // POST /catalog/update — 修改单个目录条目参数（name/contextWindow/maxTokens/input/reasoningEfforts）。
-            // 若该模型已在 DSH 启用，立即重写 settings.yaml 对应条目使参数即时生效。
+            // 若该模型已在 DSH 启用，立即重写 llm-pi-ai 条目中该模型的配置使参数即时生效。
             if (pathname === '/catalog/update' && req.method === 'POST') {
               const body = await parseJsonBody(req);
               const id = String(body.id || '').trim();
@@ -1065,7 +1065,7 @@ export function apply(ctx: any): void {
               const entry = await updateCatalogEntry(id, patch);
               if (!entry) return sendJson(res, 404, { ok: false, error: '目录中不存在该模型' });
 
-              // 已启用模型：立即重写 settings.yaml 对应条目（参数即时生效，单一数据流：目录 → settings.yaml）
+              // 已启用模型：立即重写 llm-pi-ai 条目中该模型的配置（参数即时生效，单一数据流：目录 → 条目配置）
               try {
                 const config = await configAccess.readConfig();
                 const dshModels = await configAccess.getDshConfiguredModels();

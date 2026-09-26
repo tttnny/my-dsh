@@ -6,10 +6,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createAntigravityAuthService } from '../src/auth-service.ts'
 import {
+  ANTIGRAVITY_AUTH_ENTRY_ID,
   ANTIGRAVITY_MASTER_DEFAULT_ENABLED,
-  ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE,
   Config as MasterConfig,
 } from '../src/capability-master.ts'
+import { live } from './live-config.ts'
 import { apply as applyImage } from '../src/image.ts'
 import { apply as applySearch } from '../src/search.ts'
 import { createStatusView } from '../src/status.ts'
@@ -56,13 +57,14 @@ function rowBench(kind: Kind) {
     ...(kind === 'video' ? { tools: { register }, fs: {} } : {}),
     get: vi.fn(() => auth),
     inject: vi.fn(),
+    on: vi.fn(() => () => {}),
     effect: vi.fn((setup: () => () => Promise<void>) => { setup() }),
   }
   const apply = kind === 'search'
-    ? () => applySearch(ctx as never, { enabled: true, model: 'antigravity-gemini-3.7-flash', maxResults: 10 })
+    ? () => applySearch(ctx as never, { enabled: live(true), model: live('antigravity-gemini-3.7-flash'), maxResults: live(10) })
     : kind === 'image'
-      ? () => applyImage(ctx as never, { enabled: true, model: 'antigravity-gemini-3.1-flash-image', n: 1 })
-      : () => applyVideo(ctx as never, { enabled: true, model: 'antigravity-gemini-3.7-flash', maxBytes: 1024 })
+      ? () => applyImage(ctx as never, { enabled: live(true), model: live('antigravity-gemini-3.1-flash-image'), n: live(1) })
+      : () => applyVideo(ctx as never, { enabled: live(true), model: live('antigravity-gemini-3.7-flash'), maxBytes: live(1024) })
   return {
     apply,
     register,
@@ -75,11 +77,11 @@ function rowBench(kind: Kind) {
 }
 
 describe('Antigravity master switch', () => {
-  it('registers a paused namespace the client binds by literal', () => {
-    expect(ANTIGRAVITY_MASTER_SETTINGS_NAMESPACE).toBe('antigravity-master')
+  it('resolves a paused live switch the client binds by literal', () => {
+    expect(ANTIGRAVITY_AUTH_ENTRY_ID).toBe('antigravity-auth')
     expect(ANTIGRAVITY_MASTER_DEFAULT_ENABLED).toBe(false)
-    expect(MasterConfig({})).toEqual({ enabled: false })
-    expect(MasterConfig({ enabled: true })).toEqual({ enabled: true })
+    expect(MasterConfig({}).enabled.get()).toBe(false)
+    expect(MasterConfig({ enabled: true }).enabled.get()).toBe(true)
   })
 
   it('reports the resolved switch and leaves a gate-less service enabled', async () => {

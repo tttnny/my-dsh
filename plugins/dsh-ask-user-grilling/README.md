@@ -25,11 +25,11 @@ DSH 原生 `ask_user_question`（[`@deepseek-ai/dsh-tool-ask-user`](https://www.
 
 - `scripts/test-recommendation.mjs`：推荐标记的归一化；
 - `scripts/test-card.mjs`：卡片模型（轮末补充题、`detail`、被拒、取消/中断、结果里多出来的 id、流式半截 JSON）；
-- `scripts/smoke-host.mjs`：用真 `defineTool` + 假 seam 跑 `execute()`，逐条断言上面的转换与拒绝，另断言载体行的 config 门禁与 config 校验；
+- `scripts/smoke-host.mjs`：真 cordis `Context`、真 `ctx.tools`（工具经真工具表注册并取回）、真 `ctx.userQuestions`（`ask()` 真走服务校验与 waterfall），只有「人怎么答」是假应答者；逐条断言上面的转换与拒绝，另断言工具描述与共有参数描述仍与原生逐字相同、载体行的 config 门禁与 config 校验；
 - `scripts/test-render.mjs`：用真 react 渲染构建出来的行组件，断言卡片的结构与文案（取词走真字典，缺键或缺参数即失败）；`ui-primitives` 是替身，真组件的外观在浏览器里看；
-- `scripts/smoke-client.mjs`：按 Web shell 的方式加载构建出来的 `lib/client.js`（`window.__ModuleLoader__.load` 桩件），用带内核 inject 守卫的假上下文断言 `tool.call.toolview` 的 keyed 注册与字典，并守住 `dsg-*` class 名在 JSX 与 CSS 之间不单边漂移。
+- `scripts/smoke-client.mjs`：按 Web shell 的方式加载构建出来的 `lib/client.js`（`window.__ModuleLoader__.load` 桩件），用带内核 inject 守卫的假上下文断言 `tool.call.toolview` 的 keyed 注册与字典，守住 `dsg-*` class 名在 JSX 与 CSS 之间不单边漂移，并核对客户端半边引的 ui-primitives 名字都在安装副本的导出表里。
 
-内核包（`@deepseek-ai/dsh-tools` / `@deepseek-ai/dsh-user-questions`）与界面侧副本从 DSH 运行副本 `~/.dsh/profiles/node_modules/` 解析（可用 `DSH_HOME` 改主目录）；`scripts/recommended-label-rule.mjs` 抄着界面侧「哪个 label 算推荐」那条正则，`smoke-host.mjs` 断言它仍与安装副本逐字相同，上游一改就当场失败。`src/` 是源码，`lib/` 是构建镜像、不入库（`pnpm build` 现打，`prepack` 在发布前打一次）。
+自检要的内核包与界面侧副本是本插件的 devDependencies（与 `engines.dsh` 同版本），`pnpm install` 后离线可跑、不指向任何 DSH 安装副本；`scripts/recommended-label-rule.mjs` 抄着界面侧「哪个 label 算推荐」那条正则，`smoke-host.mjs` 断言它仍与安装副本逐字相同，并断言工具描述与共有参数描述仍与原生 `ask_user_question` 逐字相同，上游一改就当场失败。`src/` 是源码，`lib/` 是构建镜像、不入库（`pnpm build` 现打，`prepack` 在发布前打一次）。
 
 ## 安装
 
@@ -44,6 +44,6 @@ dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 **profile 侧两处登记，缺一不可**：
 
 1. `dsh.profile.bundles` 里有 `@lynn123411/dsh-ask-user-grilling`。包内 `cordis.patch.yml` 会在 bundle 层插入一条 `id: lynn-ask-user-grilling-carrier`、`config: { carrier: true }` 的行；宿主半边在那条行下什么都不注册。这一条只为让 Web shell 服务本包的浏览器半边：客户端 bundle 只对 root loader 的 **enabled entry** 服务，而 preset 工具行是 `ctx.plugin` 直接挂的子树、不是 Loader entry。位置决定功能——少了它工具照常可用，只是 transcript 那一行退回原始 JSON；`carrier` 之外的 config 键或错类型当场抛，免得拼错的载体行静默把工具注册成 root layer 的全局工具。
-2. preset 的 `agent.cordis.yml` 里有工具行（`- id: tool-ask-user-grilling` / `name: '@lynn123411/dsh-ask-user-grilling'`）。工具与它的作用域由这一行注册。
+2. preset 的组合里有工具行（`- id: tool-ask-user-grilling` / `name: '@lynn123411/dsh-ask-user-grilling'`）。preset 由组合包的 patch 声明，这一行放在 `@deepseek-ai/dsh-agent-preset` 的 `config.plugins` 里；工具与它的作用域由这一行注册。
 
 改完 `src/` 必须重新 `pnpm build`：宿主半边与**新加入 profile bundle 层的这一行**要重启 DSH 实例（bundle 层在启动时组装）；已经在图里的客户端 bundle 由 `dsh-client-hmr` 轮询到改动后热换，页面自行重载，必要时硬刷新一次。

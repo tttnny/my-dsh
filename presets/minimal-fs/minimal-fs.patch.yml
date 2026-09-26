@@ -1,0 +1,48 @@
+# Agent preset minimal-fs, declared the 0.1.7 way: one
+# `@deepseek-ai/dsh-agent-preset` row inserted into the profile tree. The rows
+# this preset composes live verbatim under `config.plugins`; `name` /
+# `description` are the preset's display metadata and `id` stays `minimal-fs`.
+#
+# A preset row is imported with the declaring tree's baseUrl. For a bundle patch
+# that baseUrl is the PROFILE directory — measured on 0.1.7-rc.2, a probe preset
+# row saw `file:///<DSH_HOME>/profiles/web/` — so the old relative
+# `./plugins/tool-filter/index.js` specifier would resolve under the profile and
+# never reach this package. The filter row therefore names this package's
+# `./tool-filter` export, which Node resolves from the profile's node_modules
+# once this bundle is installed. See README.md「安装与启用」.
+- insert:
+    - id: preset-minimal-fs
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: minimal-fs
+        name: 极简-文件
+        description: '官方极简模式的身份 ＋ 文件工具（read / write / edit），不含任何 shell。工具目录就是这三个：没有 bash / pwsh、没有检索 / read_image、没有 skills / 计划 / 目标 / 子代理，专门用来对照测试模型在近乎零工具、无命令执行下的能力。'
+        order: 5
+        plugins:
+          # ── identity ──────────────────────────────────────────────────────
+          # The persona contract of the shipped `minimal` preset, verbatim: the
+          # prefix IS the whole system prompt, so global identity, Web
+          # orientation, tool guidance and later assembly listeners cannot add
+          # prompt text, and the model receives no runtime-context snapshots.
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a helpful software engineer assistant.
+              complete: true
+              includeRuntimeContext: false
+
+          # ── filesystem ────────────────────────────────────────────────────
+          # Registers `read` / `write` / `edit` (and `read_image`, when the host
+          # mounts `attachments`) in this preset's scope. The `fs` service, its
+          # observation policy, the sandbox, approval and persistence stay in the
+          # host composition.
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+
+          # ── catalog narrowing ─────────────────────────────────────────────
+          # `@deepseek-ai/dsh-tool-fs` has no per-tool switch, so `read_image` is
+          # removed from the assembled catalog by the `system-prompt/assemble`
+          # waterfall inside this row. The specifier is this package's
+          # `./tool-filter` export.
+          - id: tool-filter
+            name: '@lynn123411/dsh-preset-minimal-fs/tool-filter'

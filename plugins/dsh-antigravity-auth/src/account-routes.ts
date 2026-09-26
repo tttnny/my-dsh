@@ -26,7 +26,9 @@ export function registerAccountRoutes(
       let result
       try {
         result = method === `${namespace}/${endpoint}`
-          ? await handler(endpoint, payload, request.signal)
+          // The exact route already passed Connection's trust checks, so the
+          // admitted request speaks for the operator Peer by construction.
+          ? await handler(endpoint, payload, request.signal, connection.operator)
           : failure('bad-request', 'Account request method does not match its endpoint')
       } catch {
         result = failure('internal', 'Account request failed')

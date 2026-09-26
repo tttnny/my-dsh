@@ -1,39 +1,38 @@
 /**
- * 宿主半边自检：用假 seam 真跑 defineTool 包起来的 execute()，断言送进表单的每一处
- * 转换（题号并入标题、detail 落位、强制多选、推荐标记归一化、轮末补充题）与每一条
- * 拒绝（保留前缀、重复 id、空题干、空 label、同题重名 label）。
+ * 宿主半边自检：**真实的 0.1.7-rc.2 内核服务** + 假应答者，断言送进表单的每一处转换
+ * （题号并入标题、detail 落位、强制多选、推荐标记归一化、轮末补充题）与每一条拒绝
+ * （保留前缀、重复 id、空题干、空 label、同题重名 label）。
  *
- * seam 用假实现是必要的：真实 ask() 要等界面点选。断言对象只有本插件的转换——
- * defineTool 的入参校验走 DSH 真包，不是桩件。
+ * 承重点全在真货上：真 cordis `Context`、真 `ctx.tools`（ToolRuntime：工具经它注册、再经它取回）、
+ * 真 `ctx.userQuestions`（UserQuestionService：`ask()` 真走服务校验与 `user-questions/request`
+ * waterfall）。只有「人怎么答」是假的——真应答要等界面点选，这里在 waterfall 上挂一个假应答者。
  *
- * 内核包（@deepseek-ai/dsh-tools、@deepseek-ai/dsh-user-questions）由 DSH 运行副本
- * 供给，仓库根不放 node_modules（见 docs/rules/dev-copy.md）。
+ * 三个内核包是本插件的 devDependencies（与 engines.dsh 同版本）：自检不指向任何 DSH 安装副本，
+ * `pnpm install` 后即可离线跑（见 docs/rules/dev-copy.md）。
+ *
+ * 跑法：pnpm test / node scripts/smoke-host.mjs
  */
 import assert from 'node:assert/strict';
-import { registerHooks } from 'node:module';
+import { createRequire } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, join } from 'node:path';
 
-const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh');
-const kernelPackage = (name) => join(dshHome, 'profiles', 'node_modules', '@deepseek-ai', name, 'lib', 'index.js');
-for (const pkg of ['dsh-tools', 'dsh-user-questions']) {
-  if (!existsSync(kernelPackage(pkg))) throw new Error(`内核包未找到：${kernelPackage(pkg)}（用 DSH_HOME 指向 DSH 主目录）`);
-}
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    for (const pkg of ['dsh-tools', 'dsh-user-questions']) {
-      if (specifier === `@deepseek-ai/${pkg}`) return { url: pathToFileURL(kernelPackage(pkg)).href, shortCircuit: true };
-    }
-    return nextResolve(specifier, context);
-  },
-});
+import { Context } from '@deepseek-ai/cordis';
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
+import ToolRuntime from '@deepseek-ai/dsh-tools';
+import UserQuestionService from '@deepseek-ai/dsh-user-questions';
+import * as native from '@deepseek-ai/dsh-tool-ask-user';
 
-const clientCopy = join(dshHome, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-client-ui-user-questions', 'lib', 'client.js');
-if (!existsSync(clientCopy)) throw new Error(`界面侧副本未找到：${clientCopy}`);
+import * as plugin from '../lib/index.js';
 
-const plugin = await import('../lib/index.js');
+const require = createRequire(import.meta.url);
+/** 界面侧安装副本：`parseRecommendedLabel` 那条规则的事实来源。 */
+const clientBundle = join(
+  dirname(require.resolve('@deepseek-ai/dsh-client-ui-user-questions/package.json')),
+  'lib',
+  'client.js',
+);
+if (!existsSync(clientBundle)) throw new Error(`界面侧副本未找到：${clientBundle}`);
 
 let passed = 0;
 let total = 0;
@@ -46,28 +45,34 @@ function test(name, fn) {
 }
 
 /**
- * 装配一次插件，拿到注册进真 defineTool 的工具，并留下 seam 的收件箱。
- * @param {{(request: object): {answers: object[]}}} [answerer] - 假 seam 的应答实现。
+ * 起一个真内核 Context：systemPrompt / tools / userQuestions 都是真服务。
+ * @returns {Context} 装配好三个真服务的根上下文。
+ */
+function host() {
+  const ctx = new Context();
+  new SystemPrompt(ctx, {});
+  new ToolRuntime(ctx);
+  new UserQuestionService(ctx);
+  return ctx;
+}
+
+/**
+ * 装配一次插件：真内核服务、假应答者，工具从真工具表取回。
+ * @param {{(request: object): {answers: object[]}}} [answerer] - 假应答者的应答实现。
  * @param {object} [config] - loader 交给插件行的 config（载体行用 { carrier: true }）。
- * @returns {Promise<{tool: object, asked: object[]}>} 工具与每次调用的送审问题。
+ * @returns {Promise<{ctx: Context, tool: object|undefined, asked: object[]}>} 上下文、真工具表里取回的工具、每次送审的问题。
  */
 async function assemble(answerer, config) {
+  const ctx = host();
   const asked = [];
-  const ctx = {
-    tools: { register: () => {} },
-    userQuestions: {
-      ask: async (request) => {
-        asked.push(request);
-        return answerer === undefined
-          ? { answers: request.questions.map((question) => ({ id: question.id, selected: [] })) }
-          : answerer(request);
-      },
-    },
-  };
-  let tool;
-  ctx.tools.register = (registered) => { tool = registered; };
+  ctx.on('user-questions/request', (request) => {
+    asked.push(request);
+    return answerer === undefined
+      ? { answers: request.questions.map((question) => ({ id: question.id, selected: [] })) }
+      : answerer(request);
+  });
   plugin.apply(ctx, config);
-  return { tool, asked };
+  return { ctx, tool: ctx.tools.get('ask_user_grilling'), asked };
 }
 
 const exec = { signal: new AbortController().signal };
@@ -86,16 +91,23 @@ await test('导出的行身份与 inject 未变', async () => {
   assert.equal(shape.tool.name, 'ask_user_grilling');
 });
 
-await test('共有参数描述与原生逐字一致，本插件独有的参数留在旁边', async () => {
-  const nativeEntry = join(dshHome, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-tool-ask-user', 'lib', 'index.js');
-  const nativeSource = readFileSync(nativeEntry, 'utf8');
+await test('工具描述与共有参数描述与原生逐字一致，本插件独有的参数留在旁边', async () => {
+  const nativeCtx = host();
+  native.apply(nativeCtx);
+  const nativeTool = nativeCtx.tools.get('ask_user_question');
+  assert.ok(nativeTool !== undefined, '原生工具没有注册进真工具表');
+  assert.equal(shape.tool.description, nativeTool.description, '工具描述与原生不再逐字相同');
   const properties = shape.tool.parameters.properties.questions.items.properties;
+  const nativeProperties = nativeTool.parameters.properties.questions.items.properties;
   for (const key of ['id', 'question', 'header', 'options']) {
-    assert.ok(nativeSource.includes(`description: ${JSON.stringify(properties[key].description)}`), `${key} 的描述与原生不再逐字相同`);
+    assert.equal(properties[key].description, nativeProperties[key].description, `${key} 的描述与原生不再逐字相同`);
   }
   for (const key of ['label', 'description']) {
-    const optionText = properties.options.items.properties[key].description;
-    assert.ok(nativeSource.includes(`description: ${JSON.stringify(optionText)}`), `options.${key} 的描述与原生不再逐字相同`);
+    assert.equal(
+      properties.options.items.properties[key].description,
+      nativeProperties.options.items.properties[key].description,
+      `options.${key} 的描述与原生不再逐字相同`,
+    );
   }
   assert.deepEqual(
     Object.keys(properties).filter((key) => !['id', 'question', 'header', 'options'].includes(key)).sort(),
@@ -176,12 +188,24 @@ await test('轮末补充题：每次调用固定在末尾，且不撞模型 id',
   assert.equal(questions.length, 2);
 });
 
-await test('agent 透传：exec 里有就带，没有就不写这个键', async () => {
-  const { tool, asked } = await assemble();
-  await tool.execute({ questions: [{ id: 'a', question: '？' }] }, exec);
-  assert.equal('agent' in asked[0], false);
-  await tool.execute({ questions: [{ id: 'b', question: '？' }] }, { ...exec, agent: { id: 'agent-live' } });
-  assert.deepEqual(asked[1].agent, { id: 'agent-live' });
+await test('agent 透传：没有就省略这个键；有就真的送进 seam（真服务因此按 CALLER_NOT_LIVE 拒绝未注册的 agent）', async () => {
+  const omitted = await assemble();
+  await omitted.tool.execute({ questions: [{ id: 'a', question: '？' }] }, exec);
+  assert.equal('agent' in omitted.asked[0], false);
+
+  const agent = { id: 'agent-live' };
+  const rejected = await assemble();
+  await assert.rejects(
+    () => rejected.tool.execute({ questions: [{ id: 'b', question: '？' }] }, { ...exec, agent }),
+    (err) => err.code === 'CALLER_NOT_LIVE',
+  );
+  assert.deepEqual(rejected.asked, [], '被服务拒绝的请求不应抵达应答者');
+
+  const live = await assemble();
+  live.ctx.provide('agents');
+  live.ctx.set('agents', { get: (id) => (id === agent.id ? agent : undefined), roots: () => [agent] });
+  await live.tool.execute({ questions: [{ id: 'c', question: '？' }] }, { ...exec, agent });
+  assert.deepEqual(live.asked[0].agent, agent);
 });
 
 // --- 拒绝 ---
@@ -254,10 +278,10 @@ await test('config 校验：拼错的载体行当场抛，不静默多注册一�
 // --- 手抄的界面规则是否还在安装副本里 ---
 await test('测试里抄的推荐标记规则与安装副本逐字相同（漂移即失败）', async () => {
   const { CLIENT_ACCEPTS } = await import('./recommended-label-rule.mjs');
-  const source = readFileSync(clientCopy, 'utf8');
+  const source = readFileSync(clientBundle, 'utf8');
   assert.ok(
     source.includes(`const suffix = ${CLIENT_ACCEPTS};`),
-    `安装副本里已不是这条规则：${CLIENT_ACCEPTS}（去 ${clientCopy} 核对 parseRecommendedLabel）`,
+    `安装副本里已不是这条规则：${CLIENT_ACCEPTS}（去 ${clientBundle} 核对 parseRecommendedLabel）`,
   );
 });
 

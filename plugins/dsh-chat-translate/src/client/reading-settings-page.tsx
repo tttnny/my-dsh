@@ -25,6 +25,13 @@
  * cross-plugin value imports are forbidden by the client bundle purity gate.
  * It imports nothing but `react` plus type-only DSH packages on purpose, so
  * every participant's build configuration compiles it unchanged.
+ *
+ * Settings storage belongs to the card, not to this shell: since 0.1.7 a
+ * participant reads and writes its own Config through
+ * `ctx.configForms.get(<profile entry id>)` and gates the registration on
+ * `ctx.configForms.whileServed(...)`. The shell only stacks cards — it holds no
+ * settings service of its own, which is why it needs nothing beyond
+ * `ctx.slots` and the optional `locale`.
  */
 
 import { createElement, useState, useSyncExternalStore } from 'react'
@@ -71,7 +78,12 @@ type ReadingPageProps =
   & PropsRenderSlots<typeof READING_ITEM_SLOT>
   & InjectFace<ReadingPageFace>
 
-/** A registration label is a plain string or a thunk re-read per projection. */
+/**
+ * A registration label is a plain string or a thunk re-read per projection —
+ * the same `SlotLabel` the shipped `resolveSlotLabel` resolves. It is inlined
+ * rather than imported so this shared file stays value-import-free (see the
+ * header): every participant's build configuration compiles it unchanged.
+ */
 function readLabel(label: unknown): string {
   if (typeof label === 'function') return (label as () => string)()
   return typeof label === 'string' ? label : ''

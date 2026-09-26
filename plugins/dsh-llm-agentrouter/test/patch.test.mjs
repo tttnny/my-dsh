@@ -21,9 +21,12 @@ test('exactly one relay route is declared', () => {
 })
 
 test('the route baseURL addresses the host the fence rewrites', () => {
-  const { sentinel, endpoints } = Config({})
+  // Every field the fence reads is a `.volatile()` reference; a resolved default
+  // entry is what those references hold until a settings write replaces them.
+  const config = Config({})
+  const sentinel = config.sentinel.get()
   assert.equal(new URL(route.baseURL).host, sentinel, 'an unrewritten sentinel is the point of the design')
-  for (const host of Object.values(endpoints)) {
+  for (const host of Object.values(config.endpoints.get())) {
     assert.notEqual(host, sentinel, 'the sentinel must never be a real endpoint')
   }
 })
