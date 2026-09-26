@@ -3,6 +3,7 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { getCatalogEntry } from './catalog.js';
+import { deriveUserIdFromToken } from './a6api-client.js';
 import type { A6ApiConfig } from '../types.js';
 
 /**
@@ -231,6 +232,8 @@ export interface ConfigAccess {
 
 export function createConfigAccess(ctx: any): ConfigAccess {
   let migration: Promise<void> | null = null;
+  /** JWT 解出的账号 ID 只回写一次凭据，避免每个请求都重复写 */
+  let derivedUserIdPersisted = false;
 
   const ensureMigrated = (): Promise<void> => {
     if (!migration) {
@@ -295,7 +298,25 @@ export function createConfigAccess(ctx: any): ConfigAccess {
     // 凭据：原生 resolve（env 优先）→ 文件直读兜底
     const apiKey = await resolveRef(creds, A6API_CRED_REF);
     const accessToken = await resolveRef(creds, A6API_TOKEN_REF);
-    const userId = await resolveRef(creds, A6API_USER_REF);
+    let userId = await resolveRef(creds, A6API_USER_REF);
+
+    // 自举死锁兜底：平台管理接口要求 New-Api-User 头，而该 id 原本只能从这些接口里发现
+    // （fetchBalance 读 /api/user/self 的 data.id）。系统访问令牌是 JWT 时就地解出账号 id，
+    // 并一次性写回凭据，之后不再依赖解析。解不出则留给「基础配置」的账号 ID 输入框。
+    if (!userId) {
+      const derived = deriveUserIdFromToken(accessToken);
+      if (derived) {
+        userId = derived;
+        if (!derivedUserIdPersisted) {
+          derivedUserIdPersisted = true;
+          console.warn('[dsh-a6api] 已从系统访问令牌解出账号 ID 并写回凭据（New-Api-User）');
+          void writeConfig({ userId: derived }).catch((err: any) => {
+            derivedUserIdPersisted = false;
+            console.warn('[dsh-a6api] 写回账号 ID 失败:', err?.message || err);
+          });
+        }
+      }
+    }
 
     // 非机密状态：只读 llm-pi-ai.providers.a6api 块（ctx.settings.describe()），无替代文件落点
     let baseURL = DEFAULT_BASE_URL;

@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { fetchBalance, fetchTokenModels, fetchRecentLogs, fetchPriceFluctuation, formatRelativeTime, fetchMarketplacePins, fetchTokens, fetchChannelDetails, marketplacePin, marketplaceUnpin, marketplaceDisableChannel, marketplaceRestoreChannel } from './server/a6api-client.js';
+import { fetchBalance, fetchTokenModels, fetchRecentLogs, fetchPriceFluctuation, formatRelativeTime, fetchMarketplacePins, fetchTokens, fetchChannelDetails, marketplacePin, marketplaceUnpin, marketplaceDisableChannel, marketplaceRestoreChannel, deriveUserIdFromToken } from './server/a6api-client.js';
 import { getKnownMerchantsFromLogs, probeSingleModel } from './server/probe.js';
 import type { ProbeResult } from './server/probe.js';
 import { resolveModelMeta, getCatalog, upsertCatalogEntries, clearCatalog, queryOpenRouter, fetchMarketplaceModels, updateCatalogEntry } from './server/catalog.js';
@@ -17,6 +17,7 @@ export {
   fetchRecentLogs,
   fetchChannelDetails,
   fetchMarketplacePins,
+  deriveUserIdFromToken,
 } from './server/a6api-client.js';
 export { probeSingleModel, getKnownMerchantsFromLogs } from './server/probe.js';
 export {
@@ -569,6 +570,13 @@ export function apply(ctx: any): void {
                 activeModels: Array.isArray(body.activeModels) ? body.activeModels : current.activeModels,
               };
 
+              // 账号 ID 自举：管理接口要求 New-Api-User，而它原本只能从这些接口里发现。
+              // 系统访问令牌是 JWT 时先就地解出（解不出则等下面的 fetchBalance / 用户手填）。
+              if (!updated.userId) {
+                const derived = deriveUserIdFromToken(updated.accessToken);
+                if (derived) updated.userId = derived;
+              }
+
               // Validate access token and auto-fetch balance & userId
               const balance = await fetchBalance(updated.baseURL, updated.apiKey, updated.userId, updated.accessToken);
               if (balance?.userId) {
@@ -724,8 +732,12 @@ export function apply(ctx: any): void {
               const modelName = String(body.modelName || '').trim();
               if (!modelName) return sendJson(res, 400, { ok: false, error: '缺少模型名称' });
               const { userId, token } = webAuthOf(config);
-              if (!userId || !token) {
+              if (!token) {
                 return sendJson(res, 400, { ok: false, error: '需在「基础配置」填写系统访问令牌/会话后才能固定商家' });
+              }
+              if (!userId) {
+                // 原来的合并判断把「缺账号 ID」误报成「缺令牌」，用户填了令牌也看不懂。
+                return sendJson(res, 400, { ok: false, error: '缺少 a6api 账号 ID（平台管理接口要求 New-Api-User 头）：请在「基础配置」补填「账号 ID」；系统访问令牌是 JWT 时插件会自动解析' });
               }
               // 固定的是卡片当前展示的商家（无商家选择器）
               let card = cachedMerchantOf(modelName);

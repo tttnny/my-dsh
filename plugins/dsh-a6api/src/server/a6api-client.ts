@@ -82,6 +82,36 @@ export function buildWebHeaders(userId?: string, accessToken?: string): Record<s
   return headers;
 }
 
+/**
+ * 从系统访问令牌里解出账号 ID（平台 `New-Api-User` 头）。
+ *
+ * 平台的账户/商户类接口（`/api/user/self`、`/api/token/`、`/api/marketplace/*`）
+ * 强制要求 `New-Api-User: <账号 id>`，缺了这一律 401
+ * `Unauthorized, New-Api-User header not provided`；而这个 id 原本只能从
+ * `/api/user/self` 的 `data.id` 里发现——「没有 id 就取不到 id」的自举死锁。
+ *
+ * 令牌形如 `eyJhbGciOi...`（JWT）时其 payload 自带账号 id，这里就地解出即可打破死锁。
+ * 只做 base64url 解码与字段读取：**不验证签名**，令牌真伪仍由上游判定；解不出就返回
+ * undefined，调用方按「需要用户手填账号 ID」处理。
+ */
+export function deriveUserIdFromToken(accessToken?: string): string | undefined {
+  const raw = (accessToken || '').trim();
+  const parts = raw.split('.');
+  if (parts.length !== 3) return undefined;
+  try {
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const payload: any = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+    for (const key of ['id', 'uid', 'user_id', 'userId']) {
+      const v = payload?.[key];
+      if (v !== undefined && v !== null && /^\d+$/.test(String(v).trim())) return String(v).trim();
+    }
+  } catch {
+    // 非 JWT / 非法 base64：交给「账号 ID」输入框
+  }
+  return undefined;
+}
+
 /** Fetch User Balance (Real Account Balance Only) */
 export async function fetchBalance(
   baseURL: string,
@@ -626,6 +656,16 @@ function friendlyMarketMessage(msg: any): string {
   const s = String(msg || '');
   if (s === 'invalid_request') {
     return '上游拒绝了该操作(invalid_request)：参数未通过平台校验（可能是平台接口调整或固定记录已变化），请稍后重试或到官网处理';
+  }
+  // 鉴权类报错原样透出对用户不可读（英文 + 平台内部术语），改成可操作的说明
+  if (/New-Api-User header not provided/i.test(s)) {
+    return '上游拒绝：缺少账号 ID（平台要求 New-Api-User 头）。请在「基础配置」补填 a6api「账号 ID」——系统访问令牌是 JWT 时插件会自动解析，否则需从官网控制台个人设置复制。';
+  }
+  if (/New-Api-User does not match/i.test(s)) {
+    return '上游拒绝：账号 ID 与当前系统访问令牌不属于同一账号。请核对「基础配置」里的账号 ID。';
+  }
+  if (/not logged in and no access token provided/i.test(s)) {
+    return '上游拒绝：系统访问令牌无效或已过期。请到官网控制台「个人设置 - 安全设置」重新复制系统访问令牌。';
   }
   return s || '操作失败';
 }

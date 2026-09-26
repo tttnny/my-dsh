@@ -14,8 +14,10 @@ export const ConfigPanel: React.FC<{
 }> = ({ config, dshConfiguredModels, t }) => {
   const [apiKey, setApiKey] = useState(config.apiKey || '');
   const [accessToken, setAccessToken] = useState(config.accessToken || '');
+  const [userId, setUserId] = useState(config.userId || '');
   const [clearKey, setClearKey] = useState(false);
   const [clearToken, setClearToken] = useState(false);
+  const [clearUserId, setClearUserId] = useState(false);
   const [selectedNode, setSelectedNode] = useState(
     config.baseURL || 'https://api.a6api.com',
   );
@@ -38,12 +40,15 @@ export const ConfigPanel: React.FC<{
   // 值为占位符即表示「已保存密钥」，此时输入框留空展示，保存时不回传占位符
   const apiKeySet = apiKey === MASK;
   const tokenSet = accessToken === MASK;
+  const userIdSet = userId === MASK;
 
   useEffect(() => {
     setApiKey(config.apiKey || '');
     setAccessToken(config.accessToken || '');
+    setUserId(config.userId || '');
     setClearKey(false);
     setClearToken(false);
+    setClearUserId(false);
     setSelectedNode(config.baseURL || 'https://api.a6api.com');
     setCustomNode(
       config.baseURL && config.baseURL !== 'https://api.a6api.com' && config.baseURL !== 'https://a6.a6api.com'
@@ -61,9 +66,11 @@ export const ConfigPanel: React.FC<{
     // 未修改（占位符态）→ 不发送该字段，服务端保留原值；点击「清除」→ 发送空串删除
     const newApiKey = apiKeySet ? (clearKey ? '' : undefined) : apiKey.trim();
     const newToken = tokenSet ? (clearToken ? '' : undefined) : accessToken.trim();
+    const newUserId = userIdSet ? (clearUserId ? '' : undefined) : userId.trim();
     const ok = await store.saveConfig({
       ...(newApiKey !== undefined ? { apiKey: newApiKey } : {}),
       ...(newToken !== undefined ? { accessToken: newToken } : {}),
+      ...(newUserId !== undefined ? { userId: newUserId } : {}),
       baseURL: finalBaseUrl,
     });
     setSaving(false);
@@ -198,6 +205,36 @@ export const ConfigPanel: React.FC<{
                 {showHelp ? t('helpClose') : t('helpOpen')}
               </Button>
             </div>
+          </div>
+
+          {/* Account ID (New-Api-User) — the platform's account/merchant APIs require it */}
+          <div className="dsh-a6-field">
+            <div className="dsh-a6-field-header">
+              <label className="dsh-a6-label">{t('userIdLabel')}</label>
+              <div className="dsh-a6-field-header-actions">
+                {userIdSet && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setClearUserId(true);
+                      setUserId('');
+                    }}
+                  >
+                    {t('clear')}
+                  </Button>
+                )}
+              </div>
+            </div>
+            <Input
+              type="text"
+              placeholder={userIdSet ? t('userIdPlaceholderSet') : t('userIdPlaceholder')}
+              value={userIdSet ? '' : userId}
+              onChange={(e) => setUserId(e.target.value)}
+            />
+            <span className="dsh-a6-field-hint">
+              {userIdSet ? t('userIdHintSet') : t('userIdHint')}
+            </span>
           </div>
         </div>
 

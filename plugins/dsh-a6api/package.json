@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-a6api",
-  "version": "1.5.14",
+  "version": "1.5.15",
   "description": "A6API 多模型聚合站接入插件：原生 LLM 提供商注册、账户实时余额与价格波动监控、Token 白名单同步、商户线路探测与全景指标卡片",
   "license": "MIT",
   "author": "lynn123411",
@@ -63,8 +63,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "node scripts/smoke-client.mjs",
     "test:sync": "node scripts/test-sync-settings.mjs",
+    "test:auth-bootstrap": "node scripts/test-auth-bootstrap.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
-    "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm test:sync && pnpm assert:lib-untracked"
+    "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm test:sync && pnpm test:auth-bootstrap && pnpm assert:lib-untracked"
   },
   "engines": {
     "node": "^22.19 || >=24",

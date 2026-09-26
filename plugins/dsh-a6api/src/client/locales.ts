@@ -45,6 +45,7 @@ export type A6apiLocaleKey =
   | 'apiKeyLabel' | 'clear' | 'hide' | 'show'
   | 'apiKeyPlaceholderSet' | 'apiKeyPlaceholder' | 'apiKeyHintSet' | 'apiKeyHint'
   | 'tokenLabel' | 'tokenPlaceholderSet' | 'tokenPlaceholder' | 'tokenHintSet' | 'tokenHint'
+  | 'userIdLabel' | 'userIdPlaceholderSet' | 'userIdPlaceholder' | 'userIdHintSet' | 'userIdHint'
   | 'helpOpen' | 'helpClose' | 'helpTitle' | 'helpStep1Prefix' | 'helpStep1Suffix'
   | 'helpStep2Prefix' | 'helpStep2Suffix' | 'helpStep3'
   | 'integrationTitle' | 'integrationDescPrefix' | 'integrationDescSuffix'
@@ -157,6 +158,11 @@ export const en: Record<A6apiLocaleKey, string> = {
   tokenPlaceholder: 'Copy it from the console security settings, for example eyJhbGciOi...',
   tokenHintSet: 'System access token configured (stored only on this machine, never sent back to the page).',
   tokenHint: 'Used to sync the real account balance and merchant metrics without expiry.',
+  userIdLabel: 'Account ID (New-Api-User)',
+  userIdPlaceholderSet: 'Saved · enter a new ID to replace it',
+  userIdPlaceholder: 'Numeric account ID from the console, e.g. 12345',
+  userIdHintSet: 'Account ID configured; the platform account/merchant APIs authenticate with it.',
+  userIdHint: 'The platform requires this id as the New-Api-User header — without it balance sync and merchant pinning answer 401. It is shown in the console under Personal settings; when the access token is a JWT the plugin derives it automatically.',
   helpOpen: 'How to get it',
   helpClose: 'Hide guide',
   helpTitle: 'Steps to obtain the system access token (valid indefinitely):',
@@ -425,6 +431,11 @@ export const zh: Record<A6apiLocaleKey, string> = {
   tokenPlaceholder: '在控制台安全设置中复制，例如 eyJhbGciOi...',
   tokenHintSet: '已配置系统访问令牌（仅保存在本机，不回传界面）。',
   tokenHint: '用于免失效同步账户真实余额与商户指标。',
+  userIdLabel: '账号 ID（New-Api-User）',
+  userIdPlaceholderSet: '已保存 · 输入新 ID 可替换',
+  userIdPlaceholder: '控制台个人设置里的数字 ID，例如 12345',
+  userIdHintSet: '已配置账号 ID，平台账户/商户接口按它鉴权。',
+  userIdHint: '平台强制要求这个 id 作为 New-Api-User 头：缺了它余额同步与固定商家都会 401。可在官网控制台「个人设置」查看；系统访问令牌是 JWT 时插件会自动解析填入。',
   helpOpen: '获取教程',
   helpClose: '收起教程',
   helpTitle: '系统访问令牌获取步骤（永久有效）：',
