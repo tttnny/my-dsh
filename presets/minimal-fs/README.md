@@ -49,11 +49,11 @@ minimal-fs/
 ## 安装与启用
 
 ```bash
-# 1. 把这份 bundle 装进 profile（发布后可直接用包名）
+# 装进 profile（npm 包名）
 dsh plugin --profile web add @lynn123411/dsh-preset-minimal-fs
 
-# 本地开发副本：直接装仓库里的目录，命令会 link 进 profile 并在 dsh.profile.bundles 登记包名
-dsh plugin --profile web add "$PWD/presets/minimal-fs"
+# 本仓库开发副本：在仓库根执行，命令把目录 link 进 profile 并登记包名
+dsh plugin --profile web add ./presets/minimal-fs
 ```
 
 重启 DSH 后，在新建会话界面选择「极简-文件」即可。preset 的挂载在进程内只装载一次，改 `minimal-fs.patch.yml` 或 `plugins/` 后要**重启 DSH**，不会热更已挂载的那一份。

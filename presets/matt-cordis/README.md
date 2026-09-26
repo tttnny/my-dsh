@@ -6,9 +6,15 @@
 
 ## 安装与启用
 
-1. 用 Plugin Manager 安装本目录：`action: install_bundle`，`target` 填本目录的绝对路径。它自己完成包安装与 bundle 选择，不要用 shell 手工复刻这两步。
-2. 装完后 `list_bundles` 应列出本包，`list_plugins` 应看到 `preset-matt-cordis` 行已激活（激活失败会留在名册上并带诊断）。
-3. 重启 DSH，在新建会话界面选择「Matt 创造模式」。
+```bash
+# 装进 profile（npm 包名）
+dsh plugin --profile web add @lynn123411/dsh-preset-matt-cordis
+
+# 本仓库开发副本：在仓库根执行，命令把目录 link 进 profile 并登记包名
+dsh plugin --profile web add ./presets/matt-cordis
+```
+
+装完后 `list_bundles` 应列出本包、`list_plugins` 应看到 `preset-matt-cordis` 行已激活（激活失败会留在名册上并带诊断）。重启 DSH 后，在新建会话界面选择「Matt 创造模式」。
 
 前置：grilling 适配插件 [`@lynn123411/dsh-ask-user-grilling`](../../plugins/dsh-ask-user-grilling/README.md) 必须已按注册方式装进同一 profile。patch 里那条工具行消费它，缺了它该行不可解析，preset 会整体从模式选择里消失。
 

@@ -179,7 +179,7 @@ DSH="$(node tmp/dsh-0.1.7-migration/dshpkg.mjs dsh)/lib/bin.js"
 
 6. **包形态**：`cd presets/matt-<id> && npm pack --dry-run` 三份都 exit 0，各 79 个文件（`package.json` + `matt-<id>.patch.yml` + `README.md` + 26 个技能目录及其子文件）。
 
-7. **未跑的验证**：`install_bundle` 真装 + `list_plugins` 看 `preset-matt-<id>` 行的激活态、以及真会话里 `request/header` 的工具清单。这两条都要改 `~/.dsh` 或起真 app，不在本仓库交付物范围。`--dump-config-schema` 对含 `@deepseek-ai/dsh-agent-preset` 的组合树一律 exit 1（报 `unrecognized Loader tree carrier`）——这是它对该行的既有局限：**把官方 `standard.patch.yml` 当 overlay 跑，stderr 与本次成品逐字相同**（4 条基线 + 每多一条 preset 行多 1 条），不是本仓库引入的问题。
+7. **真装载（按 npm 包名补跑）**：0.1.7-rc.2 隔离 `DSH_HOME` 里 `dsh plugin --profile web add @lynn123411/dsh-preset-matt-<id>` 真装后 boot 一个探针宿主行，实测：三份都 `broken: null`、各自 `skills/` 的 26 个技能进 skills 服务、`tool-ask-user-grilling=up`、matt-ptc 的模型可见目录只有 `run_code`、matt-cordis 另有官方 3 个 cordis 技能与 `tool-cordis=up`（探针读 `systemPrompt.assemble({ scope })`，即模型可见工具目录）。`--dump-config-schema` 对含 `@deepseek-ai/dsh-agent-preset` 的组合树一律 exit 1（报 `unrecognized Loader tree carrier`）——这是它对该行的既有局限：**把官方 `standard.patch.yml` 当 overlay 跑，stderr 与本次成品逐字相同**（4 条基线 + 每多一条 preset 行多 1 条），不是本仓库引入的问题。
 
 ## 六、何时重打
 
@@ -189,4 +189,4 @@ DSH="$(node tmp/dsh-0.1.7-migration/dshpkg.mjs dsh)/lib/bin.js"
 - **同进程与官方 `cordis` 共存**：0.1.7-rc.2 起 Host inspect provider 由**宿主组合单点注册**（`dsh-web-app/cordis.patch.yml` 的 `cordis-inspect-providers` 行，`@deepseek-ai/dsh-tool-cordis/host`），per-preset 的 `tool-cordis` 行不再注册任何 provider，重复注册无从产生——**不需要任何幂等补丁**。判据：`--profile web --dump-config | grep -c "id: cordis-inspect-providers"` 期望 `1`；全安装树 `grep -rn "cordisInspect.register"` 应唯一命中 `dsh-tool-cordis/lib/types/host.js`。
 - **Matt 技能上游更新后**：整体覆盖 26 个技能目录（上游 `skills/engineering` 18 个 + `skills/productivity` 7 个 + `skills/in-progress/implement-spec`），再把三份 preset 的 `skills/grilling/SKILL.md` 按 §二 重做——上游逐字 + 改动①②③④（`matt-ptc` 用 PTC 形态的投递旁注；改动③ 是删句，覆盖上游文件后需手工再删一遍）。其余技能无本地改动。
 
-仓库 `presets/matt-*/` 即上述改动后的成品；日常使用 = 用 Plugin Manager `install_bundle` 装进 profile，重启 DSH 后在新建会话界面选择。
+仓库 `presets/matt-*/` 即上述改动后的成品；日常使用 = `dsh plugin --profile web add @lynn123411/dsh-preset-matt-<id>` 装进 profile（本仓库开发副本改传 `./presets/matt-<id>`），重启 DSH 后在新建会话界面选择。
