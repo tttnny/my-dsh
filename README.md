@@ -72,7 +72,6 @@
 | preset | 说明 |
 | --- | --- |
 | [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份与持久 shell（`prefix` 即完整系统提示词、关闭运行时快照；shell 那组行含 isolate realm 原样搬入）＋ 文件工具 `read` / `write` / `edit`。工具目录就是这四个——没有检索、`read_image`、技能、计划、目标、子代理。随附一行 preset 目录内的 `tool-filter` 插件在 `system-prompt/assemble` 处把 `read_image` 移出模型可见目录（`tools.restrict()` 只筛继承工具、兄弟行包注册表又输给 loader 的并发装载，两条路都已实测不成立） |
-| [ptc-cordis](./presets/ptc-cordis) | **PTC-Cordis 混合模式**：融合 PTC（`mode: ptc`：模型只见 `run_code`，全部工具经 SDK 以脚本调用）与 Cordis 动态插件编辑（`cordis_define`/`run`），含 `cordis-plugin-development` / `editing-cordis-compositions` 随附技能，开箱与官方 `standard` / `ptc` / `cordis` 并列可选 |
 | [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：官方 `standard` 组合（persona 零改动）+ Matt Pocock 26 个技能（[mattpocock/skills](https://github.com/mattpocock/skills)）+ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答；达成共识后不自动进入 plan mode |
 | [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式（实验性）**：官方 `ptc` 组合（persona 零改动，`mode: ptc` 下模型只见 `run_code`）+ 26 个 Matt 技能 + grilling 投递插件（grilling 轮次经 `run_code` 内的 `tools.ask_user_grilling` 投递） |
 | [matt-cordis](./presets/matt-cordis) | **Matt 创造模式**：官方 `cordis` 组合（persona 零改动，含 `tool-cordis` 动态插件工具集、两个随附技能、双平面引导）+ 26 个 Matt 技能并入 skills/ + grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答 |
@@ -83,7 +82,7 @@
 
 | 目录 | 说明 |
 | --- | --- |
-| [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `ptc-cordis` / `matt-cordis`）同进程互斥」。**纯文档补丁（无脚本）**：从运行中的 DSH 进程反推它实际加载的副本再改，锚点/校验/回滚逐字写死在 README 里。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
+| [patch-dsh-cordis-inspect-idempotent](./patches/patch-dsh-cordis-inspect-idempotent/) | 修复 `dsh-tool-cordis` Host inspect provider 注册非幂等导致的「含 tool-cordis 的预设（官方 `cordis` / `matt-cordis`）同进程互斥」。**纯文档补丁（无脚本）**：从运行中的 DSH 进程反推它实际加载的副本再改，锚点/校验/回滚逐字写死在 README 里。详见 [README](./patches/patch-dsh-cordis-inspect-idempotent/README.md) |
 | [patch-dsh-agent-loop-inbox-own-events](./patches/patch-dsh-agent-loop-inbox-own-events/) | 修复**分叉子会话继承源会话未认领排队消息**：inbox 投影折叠整个 snapshot（含 fork 继承前缀），而 `init(header, inheritedEventCount)` 拿到的切点未被使用——子会话一建好队列里就带着源会话那条消息，用户发的第一条只能排在它后面，幽灵消息先被认领发给模型。补丁让投影跳过继承前缀（只折叠该会话自己的事件）并作废旧投影缓存行。**纯文档补丁（无脚本）**：从运行中的 DSH 进程反推它实际加载的副本再改，锚点/校验/回滚逐字写死在 README 里。详见 [README](./patches/patch-dsh-agent-loop-inbox-own-events/README.md) |
 | [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的手工改动点说明**：相对官方材料的逐处改动清单（`agent.cordis.yml` 两处 MATT-ADD + 一处 MATT-DEL、`skills/grilling/SKILL.md` 四处本地改动的成品块）、当前基线、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
 

@@ -6,7 +6,7 @@
 
 ## 背景
 
-`dsh-tool-cordis`（官方 `cordis` 预设、`ptc-cordis`、`matt-cordis` 的创造能力来源）挂载时会向全局单例 `ctx.cordisInspect` 注册 Host inspect provider（`Service` / `Event` / `Builtin` / `Tool`）。该注册表（`dsh-cordis-host-runner` 的 `lib/types/inspect-registry.js`）**不做幂等**：
+`dsh-tool-cordis`（官方 `cordis` 预设、`matt-cordis` 的创造能力来源）挂载时会向全局单例 `ctx.cordisInspect` 注册 Host inspect provider（`Service` / `Event` / `Builtin` / `Tool`）。该注册表（`dsh-cordis-host-runner` 的 `lib/types/inspect-registry.js`）**不做幂等**：
 
 ```js
 register(registration) {
@@ -17,7 +17,7 @@ register(registration) {
 }
 ```
 
-因此同一 DSH 进程内先后挂载两个含 `tool-cordis` 的预设（官方 `cordis`、`ptc-cordis`、`matt-cordis` 任意两个）时，**第二个预设挂载失败**（`standingKeyFor` 报 `failed to apply loader entry tool-cordis`）。单开其中一个预设不受影响。
+因此同一 DSH 进程内先后挂载两个含 `tool-cordis` 的预设（官方 `cordis`、`matt-cordis` 任意两个）时，**第二个预设挂载失败**（`standingKeyFor` 报 `failed to apply loader entry tool-cordis`）。单开其中一个预设不受影响。
 
 ## 修复方案
 
@@ -32,7 +32,7 @@ register(registration) {
 改动后（8 行）：
 
 ```js
-	// local patch (user): idempotent cordisInspect host registration — presets that also carry tool-cordis (cordis, ptc-cordis,
+	// local patch (user): idempotent cordisInspect host registration — presets that also carry tool-cordis (cordis,
 	// matt-cordis) may coexist in one process; same-id host providers are
 	// skipped instead of throwing `already registered`.
 	const existingHostInspect = new Set(ctx.cordisInspect.list().filter(p => p.platform === "host").map(p => p.id));
@@ -122,8 +122,8 @@ node --check <目标文件>          # 语法必须通过
 - 补丁后 `node --check` 语法校验；
 - 实测（补丁前）：同进程挂载 `cordis` + `matt-cordis` → 第二个失败
   `Host Cordis inspect provider "Service" is already registered`；
-- 补丁后：重启 DSH，`standingKeyFor('matt-cordis')` 与 `standingKeyFor('ptc-cordis')`
-  均应返回 mounted OK，且可与官方 `cordis` 会话同进程并存。
+- 补丁后：重启 DSH，`standingKeyFor('matt-cordis')`
+  应返回 mounted OK，且可与官方 `cordis` 会话同进程并存。
 
 ## 已知限制
 

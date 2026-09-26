@@ -16,7 +16,7 @@ cp -R matt-cordis/skills ~/.dsh/.agent-presets/matt-cordis/
 dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling
 ```
 
-重启 DSH 后，在新建会话界面选择「Matt 创造模式」即可。单独使用本 preset 无需任何额外补丁；同进程与官方 `cordis` / `ptc-cordis` 混用时的共存要求见 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md)。
+重启 DSH 后，在新建会话界面选择「Matt 创造模式」即可。单独使用本 preset 无需任何额外补丁；同进程与官方 `cordis` 混用时的共存要求见 [patch-dsh-cordis-inspect-idempotent](../../patches/patch-dsh-cordis-inspect-idempotent/README.md)。
 
 ## 详细说明
 
