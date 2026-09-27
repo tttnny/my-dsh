@@ -5,10 +5,11 @@ DSH Web GUI 的访问鉴权补位：把当前实例**带 token 的访问地址**
 ## 特性
 
 - **`DSH_WEB_AUTH_URL` 托管环境变量**：每次 shell 调用即时解析的带 token 回环地址（`http://127.0.0.1:<port>/?token=…`），DSH 重启换 token 后自动跟随；不缓存、不落盘。
-- **提示词段落 `app:web-auth-url`**：紧随 `app:web-surface`（order + 10）贡献一段说明——只报变量名、不报值，并交代必需用法：第一次请求 `curl -c "$JAR" -b "$JAR" "$DSH_WEB_AUTH_URL"` 拿到 303 并种下 cookie，之后复用同一个 jar 即已授权。
-- **`prompt` 三档**：`env`（默认）只报变量名，token 不进提示词与 transcript；`inline` 把带 token 的地址直接写进段落（地址每次装配即时解析，重启后不过期，但 token 会随请求发给模型服务商并落盘进 session）；`off` 只保留环境变量。
+- **提示词段落 `app:web-auth-url`**：紧随 `app:web-surface`（order + 10）贡献一段说明——只报变量名、不报值，并交代必需用法：第一次请求 `curl -s -c "$JAR" -b "$JAR" -o /dev/null -w '%{http_code}' "$DSH_WEB_AUTH_URL"` 拿到 303 并种下 cookie，**之后复用同一个 jar、不再带 token**（token 只对 `GET /` 有效，其余路径带它一律 401）。
+- **`prompt` 三档**：`env`（默认）只报变量名，token 不进提示词与 transcript；`inline` 把带 token 的地址直接写进段落（地址每次装配即时解析，重启后不过期，但 token 会随请求发给模型服务商并落盘进 session）；`off` 只保留环境变量。两档共用同一份句式，只有地址那处被替换。
 - **无 web 部署静默降级**：CLI / TUI / 缺 `connection` 的组合下注册照常完成，但 `resolve` 返回空、段落渲染成空串，而空段落由内核 `renderPrompt` 过滤，系统提示词里不留痕迹。
 - **不新增端口、不新增凭据**：token 取自已装载的 `connection` 服务，与启动时打印到 stdout 的是同一个。
+- **`selfDir()`**：本插件自身安装目录的真实路径（预留工具，当前无调用方）。开发副本是 `link:` 软链接且 `~/.dsh` 与仓库常在不同卷，`ctx.pluginPackages.packageOf(...)` 会返回链接路径；`selfDir()` 走 Node 解析器 + `realpath`，正常发布安装下两者相同。
 
 ## 安装
 

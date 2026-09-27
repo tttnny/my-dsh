@@ -9,6 +9,9 @@
  *    `app:web-auth-url` 必须紧跟 `app:web-surface`。`getSectionOrder('WEB_SURFACE')`
  *    返回 undefined 时本插件算出的 order 是 NaN，真实 `section()` 会直接抛错。
  *
+ * 文案断言只钉**承重的那几件事**（两档都带引号的 curl 管道、env 档不出现 token、
+ * 末句的「别再用 token」），不钉整句子：段落文案今后再压也不该动自检。
+ *
  * 两个内核包是本插件的 devDependencies（与 engines.dsh 同版本），因此自检不需要
  * 指向任何 DSH 安装副本，`pnpm install` 后即可离线跑。文件末尾另有一段守卫
  * 反例：cordis 对未声明服务的属性读取真的抛错，上面的「用 ctx.inject 拿服务」
@@ -19,7 +22,7 @@
 
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,8 +33,9 @@ import * as ShellEnv from '@deepseek-ai/dsh-shell-env';
 
 const require = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
-const manifest = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'));
-const { apply, Config, inject, name } = await import('../lib/index.js');
+const packageDir = realpathSync(join(here, '..'));
+const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
+const { apply, Config, inject, name, selfDir } = await import('../lib/index.js');
 
 const PORT = 3080;
 const TOKEN = 'launch-token-example';
@@ -92,6 +96,14 @@ assert.equal(Config({}).prompt, 'env', 'prompt 默认必须是 env（token 不�
 assert.equal(Config({ prompt: 'inline' }).prompt, 'inline');
 assert.equal(Config({ prompt: 'off' }).prompt, 'off');
 assert.throws(() => Config({ prompt: 'nope' }), '非法 prompt 必须被 schema 拒绝');
+
+// --- selfDir：本插件自身安装目录（预留工具） ------------------------------
+// 钉「realpath 后的落点 = 本包目录」：开发副本下包名会被解析到 profiles 里的
+// 链接路径，只有 realpath 之后才回到仓库。不 realpath 的实现在开发副本当场挂。
+assert.equal(selfDir(), packageDir, 'selfDir 必须 realpath 回本包目录');
+assert.equal(realpathSync(selfDir()), selfDir(), 'selfDir 必须已经是 realpath，调用方不必再处理链接');
+assert.equal(existsSync(join(selfDir(), manifest.main)), true, 'selfDir 必须能拼出真实入口文件');
+assert.equal(existsSync(join(selfDir(), 'cordis.patch.yml')), true, 'selfDir 必须能拼出随包文件');
 
 assert.equal(manifest.engines.dsh, '0.1.7-rc.2', 'engines.dsh 必须是精确的目标版本');
 assert.equal(manifest.peerDependencies['@deepseek-ai/cordis'], '^4.0.4');
@@ -159,24 +171,41 @@ for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env
 
   const text = assembly.sections[mine].text;
   assert.ok(text.includes('DSH_WEB_AUTH_URL'), 'env 档必须报出变量名');
+  assert.ok(text.includes('DSH_WEB_URL'), '首句必须点到干净地址，才挂得上 app:web-surface 刚报的那台 GUI');
   assert.ok(!text.includes(TOKEN), 'env 档绝不能把 token 写进段落');
 
   const rendered = renderPrompt(assembly);
   assert.ok(rendered.includes('DSH_WEB_AUTH_URL'), 'env 档渲染后的系统提示词必须交代变量名');
   assert.ok(!rendered.includes(TOKEN), 'env 档渲染后的系统提示词里绝不能出现 token');
   assert.ok(
-    text.includes('401') && text.includes('303') && text.includes('$JAR'),
-    'env 档必须交代 401 / 303 / cookie jar 用法',
+    text.includes('curl -s -c "$JAR" -b "$JAR" -o /dev/null -w \'%{http_code}\' "$DSH_WEB_AUTH_URL"'),
+    'env 档必须给出带引号的 cookie jar 管道，且地址用变量引用的写法',
   );
+  assert.ok(text.includes('303'), 'env 档必须交代第一次请求拿 303 种下 cookie');
+  assert.ok(
+    /reuse that jar, not the token/.test(text),
+    'env 档必须点明 token 只用于换 cookie——其余路径带 token 一律 401',
+  );
+  assert.ok(text.length < 320, `段落已压到 ${String(text.length)} 字符，再涨就该走回那段解释性文案了`);
 }
 
 // --- inline / off 两档 ----------------------------------------------------
 {
   const { ctx } = await host();
   await mount(ctx, { prompt: 'inline' });
-  const rendered = renderPrompt(await ctx.systemPrompt.assemble({}));
+  const assembly = await ctx.systemPrompt.assemble({});
+  const text = assembly.sections.find((section) => section.name === SECTION_NAME).text;
+  const rendered = renderPrompt(assembly);
   assert.ok(rendered.includes(AUTH_URL), 'inline 档必须把带 token 的地址写进段落');
   assert.ok(!rendered.includes('DSH_WEB_AUTH_URL'), 'inline 档不再报变量名');
+  assert.ok(
+    text.includes(`"${AUTH_URL}"`),
+    'inline 档的地址也要带引号：两档共用同一份模板，只有地址被替换',
+  );
+  assert.ok(
+    /reuse that jar, not the token/.test(text),
+    'inline 档与 env 档同句式，收尾那句同样要在',
+  );
   assert.equal(ctx.shellEnv.collect({}).DSH_WEB_AUTH_URL, AUTH_URL, 'inline 档仍须托管环境变量');
 }
 {
@@ -199,7 +228,7 @@ for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env
   assert.notEqual(mine, undefined, '段落注册不依赖 web 部署，照常完成');
   assert.equal(mine.text, '', '缺 connection 时段落必须渲染成空串');
   assert.ok(
-    !renderPrompt(assembly).includes('Shell access to this Web GUI'),
+    !renderPrompt(assembly).includes('needs auth'),
     '空段落由真实 renderPrompt 过滤，系统提示词里不留痕迹',
   );
 }
