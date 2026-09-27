@@ -1,16 +1,19 @@
-// jsdom 验证：回答正文自动翻译、关闭开关立即还原英文、重新开启再次翻译。
+// jsdom 验证：过程折叠块里的正文自动翻译、折叠块之外的正文（最终汇总）不动、
+// 关闭开关立即还原英文、重新开启再次翻译。
 //
 // fixture 是内核真实的正文结构：flow row 带 data-chat-flow-kind /
 // data-chat-group-part="response"，正文是 <div class="<hash>_root"> 包着
 // <div class="<hash>_body"> 的 markdown 容器；同一行里还挂着 Think 卡与工具行，
-// 它们必须一个字都不翻。
+// 它们必须一个字都不翻。折叠块成员由内核标 `data-turn-process-member`，最终
+// 汇总那一行标 `data-turn-process-answer`——判据就用这两个属性，不靠轮尾行的
+// 先后去猜。
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
 const code = fs.readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
 const dom = new JSDOM(`<!doctype html><html><body>
   <div data-chat-flow>
-    <div data-chat-flow-kind="assistant-step" data-chat-group-part="response">
+    <div data-chat-flow-kind="assistant-step" data-chat-group-part="response" data-turn-process-member="1">
       <div class="hWmORq_root">
         <div class="hWmORq_body">
           <p>I traced the failing path to a stale lock file.</p>
@@ -26,6 +29,13 @@ const dom = new JSDOM(`<!doctype html><html><body>
       <div data-chat-call-id="c1"><div class="CY-8Ka_card"><div class="CY-8Ka_root" data-variant="bash" data-state="ok">
         <span class="CY-8Ka_title">Bash</span><span class="CY-8Ka_summary">Run integration test suite</span>
       </div></div></div>
+    </div>
+    <div data-chat-flow-kind="assistant-step" data-chat-group-part="response" data-turn-process-answer="1">
+      <div class="hWmORq_root">
+        <div class="hWmORq_body" id="final">
+          <p>Here is the final summary of everything I changed.</p>
+        </div>
+      </div>
     </div>
   </div>
 </body></html>`, { pretendToBeVisual: true, url: 'http://127.0.0.1:3080/' });
@@ -98,15 +108,19 @@ const ctx = {
 };
 exports.apply(ctx);
 
-const body = () => window.document.querySelector('.hWmORq_body');
-const paragraph = () => window.document.querySelector('.hWmORq_body p');
+const foldBody = () => window.document.querySelector('[data-turn-process-member] .hWmORq_body');
+const body = () => window.document.getElementById('final');
+const paragraph = () => foldBody().querySelector('p');
+const summary = () => body().querySelector('p');
 const think = () => window.document.querySelector('.lcKema_thinkBody p');
 const tool = () => window.document.querySelector('.CY-8Ka_summary');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 await wait(600);
-check('正文段落被翻译', paragraph()?.textContent?.startsWith('译<') === true);
+check('折叠块里的正文段落被翻译', paragraph()?.textContent?.startsWith('译<') === true);
 check('译文挂在原文位置（双语对照容器）', paragraph()?.getAttribute('data-tidy-translated') === 'true');
+check('折叠块之外的最终汇总一个字没翻', summary()?.textContent === 'Here is the final summary of everything I changed.');
+check('最终汇总不进请求', replyCalls.flat().every((block) => !block.includes('final summary')));
 check('Think 正文一个字没翻', think()?.textContent === 'A think paragraph that must stay English.');
 check('工具调用摘要一个字没翻', tool()?.textContent === 'Run integration test suite');
 check('请求发到正文块路由', replyCalls.length === 1 && replyCalls[0].length === 1);
@@ -123,7 +137,7 @@ check('还原后不被反噬重翻', paragraph()?.textContent === 'I traced the 
 // 关着的时候新落定的回答：重开之后必须补翻
 const lateParagraph = window.document.createElement('p');
 lateParagraph.textContent = 'A paragraph that settled while translation was off.';
-body().appendChild(lateParagraph);
+foldBody().appendChild(lateParagraph);
 await wait(400);
 check('关闭期间新段落保持原文', lateParagraph.textContent === 'A paragraph that settled while translation was off.');
 
@@ -150,6 +164,7 @@ const original = paragraph().querySelector('.dsh-tidy-original-shown');
 original?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 check('再点原文切回译文', visibleText(paragraph()).startsWith('译<') === true);
 check('请求总数没有因点击增加', replyCalls.length === callsBeforeToggle);
+check('最终汇总始终是英文原文', summary()?.textContent === 'Here is the final summary of everything I changed.');
 
 exports.chatTranslateObserver.disconnect();
 console.log(failures.length === 0 ? '\ntoggle-restore: PASS' : `\ntoggle-restore: FAIL (${failures.length})`);

@@ -1,10 +1,12 @@
-// jsdom 回归：回答正文自动翻译——落定前不翻、落定后按 markdown 块翻、代码块原样、
-// Think 卡与工具行永不翻、纯中文块跳过、失败保留原文、缓存命中不再请求、多块按
-// 阅读顺序挂载、块级点击原地切回原文。
+// jsdom 回归：过程折叠块里的正文自动翻译——落定前不翻、落定后按 markdown 块翻、
+// 代码块原样、Think 卡与工具行永不翻、纯中文块跳过、失败保留原文、缓存命中不再
+// 请求、多块按阅读顺序挂载、块级点击原地切回原文；折叠块之外的正文（最终汇总）
+// 一个字都不翻、也不进请求。
 //
 // fixture 照内核真实结构搭：flow row 带 data-chat-flow-kind / data-chat-group-part，
-// 正文是 <div class="<hash>_root" data-streaming><div class="<hash>_body">…，
-// 流式中的回答在 markdown 根上挂 data-streaming。
+// 折叠块成员由内核标 data-turn-process-member，最终汇总那一行标
+// data-turn-process-answer；正文是 <div class="<hash>_root" data-streaming><div
+// class="<hash>_body">…，流式中的回答在 markdown 根上挂 data-streaming。
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
@@ -13,7 +15,7 @@ const code = fs.readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8
 const HTML = [
   '<!doctype html><html><body>',
   '<div data-chat-flow>',
-  '  <div id="settled" data-chat-flow-kind="assistant-step" data-chat-group-part="response">',
+  '  <div id="settled" data-chat-flow-kind="assistant-step" data-chat-group-part="response" data-turn-process-member="1">',
   '    <div class="hWmORq_root"><div class="hWmORq_body">',
   '      <p>Stable paragraph one.</p>',
   '      <pre><code>const answer = 42;</code></pre>',
@@ -22,7 +24,7 @@ const HTML = [
   '      <p>这一段已经写好了，不需要翻译。</p>',
   '    </div></div>',
   '  </div>',
-  '  <div id="streaming" data-chat-flow-kind="assistant-step" data-chat-group-part="response">',
+  '  <div id="streaming" data-chat-flow-kind="assistant-step" data-chat-group-part="response" data-turn-process-member="1">',
   '    <div class="hWmORq_root" data-streaming><div class="hWmORq_body"><p>Still streaming paragraph.</p></div></div>',
   '  </div>',
   '  <div id="thinking" data-chat-flow-kind="assistant-step" data-chat-group-part="reasoning" data-variant="think">',
@@ -34,6 +36,11 @@ const HTML = [
   '  <div id="tool" data-chat-flow-kind="tool-call">',
   '    <div data-chat-call-id="c1"><div class="CY-8Ka_root" data-variant="bash" data-state="ok">',
   '      <span class="CY-8Ka_title">Bash</span><span class="CY-8Ka_summary">Run integration test suite</span>',
+  '    </div></div>',
+  '  </div>',
+  '  <div id="final" data-chat-flow-kind="assistant-step" data-chat-group-part="response" data-turn-process-answer="1">',
+  '    <div class="hWmORq_root"><div class="hWmORq_body">',
+  '      <p>Here is the final summary of everything I changed.</p>',
   '    </div></div>',
   '  </div>',
   '</div>',
@@ -138,6 +145,11 @@ check('嵌套子列表逐项翻译', mountedBlocks('#settled ul') >= 2);
 // 5. 纯中文块跳过
 check('已写好的中文段落不翻', $$('#settled p')[2]?.getAttribute('data-tidy-translated') === null);
 check('中文段落没有进请求', requestedBlocks.flat().every((block) => !block.includes('已经写好了')));
+
+// 5b. 折叠块之外的正文（最终汇总那一行）一个字都不翻
+check('最终汇总不翻', $('#final p')?.getAttribute('data-tidy-translated') === null);
+check('最终汇总没有译文容器', $('#final .dsh-tidy-translated-block') === null);
+check('最终汇总不进请求', requestedBlocks.flat().every((block) => !block.includes('final summary')));
 
 // 6. 请求形状：一次请求带上全部需要翻的块
 check('只发正文块路由的请求', replyCalls >= 1);

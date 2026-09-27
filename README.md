@@ -19,7 +19,7 @@
     <tr>
       <td><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
-      <td><b>聊天翻译</b><br>· 自动把回答正文的英文译成中文（仅当前会话，正文里给人读的那些段落）<br>· 回答流式输出时不翻，落定后整条转中文；中文段落原样保留，思考链正文 / 工具调用行 / 折叠摘要永不翻译<br>· 按 markdown 块级元素切分并打包（客户端 2048 估算 token、宿主 4096 输入 / 8192 输出 token），代码块原样保留，混合块只翻行内文字；命中缓存的块进入视口立即显示中文<br>· 非侵入式双语对照：点译文原地切回该块原文，块与块互不影响<br>· 请求走独立串行队列与独立超时（<code>aiTimeoutMs</code>，默认 600s），失败即保留原文<br>· OpenAI 兼容 AI 单通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
+      <td><b>聊天翻译</b><br>· 自动把回答正文的英文译成中文（仅当前会话，且只翻「用时 XXX」大折叠块里的正文）<br>· 范围判定用内核的 <code>data-turn-process-member</code> / <code>data-turn-process-answer</code>：折叠块之外的最终汇总、思考链正文 / 工具调用行 / 折叠摘要永不翻译<br>· 回答流式输出时不翻，落定后整条转中文；中文段落原样保留<br>· 按 markdown 块级元素切分并打包（客户端 2048 估算 token、宿主 4096 输入 / 8192 输出 token），代码块原样保留，混合块只翻行内文字；命中缓存的块进入视口立即显示中文<br>· 非侵入式双语对照：点译文原地切回该块原文，块与块互不影响<br>· 请求走独立串行队列与独立超时（<code>aiTimeoutMs</code>，默认 600s），失败即保留原文<br>· OpenAI 兼容 AI 单通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>
