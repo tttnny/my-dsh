@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, Tag } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Button, Tag, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { A6apiT } from '../locales.js';
 import { store } from '../store.js';
 import type { BalanceInfo, A6ApiConfig, ApiRoutingLogItem } from '../../types.js';
@@ -55,25 +55,26 @@ export const AccountPanel: React.FC<{
           </div>
 
           <div className="dsh-a6-balance-actions">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefreshBalance}
-              disabled={refreshing}
-              data-tooltip={t('refreshBalanceTip')}
-              data-tooltip-pos="down"
-            >
-              {refreshing ? t('refreshing') : t('refreshBalance')}
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => window.open(CONSOLE_URL, '_blank', 'noopener')}
-              data-tooltip={t('openConsoleTip')}
-              data-tooltip-pos="down-left"
-            >
-              {t('openConsole')}
-            </Button>
+            {/* 资产页在设置页滚动区内，`portal` 让气泡不受滚动容器裁剪 */}
+            <Tooltip label={t('refreshBalanceTip')} side="bottom" align="center" gap={6} portal>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshBalance}
+                disabled={refreshing}
+              >
+                {refreshing ? t('refreshing') : t('refreshBalance')}
+              </Button>
+            </Tooltip>
+            <Tooltip label={t('openConsoleTip')} side="bottom" align="end" gap={6} portal>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => window.open(CONSOLE_URL, '_blank', 'noopener')}
+              >
+                {t('openConsole')}
+              </Button>
+            </Tooltip>
           </div>
         </div>
 

@@ -7,6 +7,7 @@ import {
   Input,
   Pill,
   Tag,
+  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import { NS } from '../locales.js';
 import { store, type StoreState } from '../store.js';
@@ -92,15 +93,16 @@ export const A6ApiSettingsPanel: React.FC<PropsLocale<typeof NS>> = ({ t }) => {
 
         <div className="dsh-a6-header-badges">
           {state.balance?.hasAccountAuth && (
-            <button
-              type="button"
-              className="dsh-a6-header-balance-badge"
-              onClick={() => setActiveTab('account')}
-              title={t('balanceBadgeTip')}
-            >
-              <span className="dsh-a6-hb-label">{t('balanceLabel')}</span>
-              <span className="dsh-a6-hb-amount">{state.balance.accountBalanceFormatted}</span>
-            </button>
+            <Tooltip label={t('balanceBadgeTip')} side="bottom" align="center" gap={6} portal>
+              <button
+                type="button"
+                className="dsh-a6-header-balance-badge"
+                onClick={() => setActiveTab('account')}
+              >
+                <span className="dsh-a6-hb-label">{t('balanceLabel')}</span>
+                <span className="dsh-a6-hb-amount">{state.balance.accountBalanceFormatted}</span>
+              </button>
+            </Tooltip>
           )}
           <PricePill
             pf={state.priceFluctuation}
@@ -173,61 +175,57 @@ export const A6ApiSettingsPanel: React.FC<PropsLocale<typeof NS>> = ({ t }) => {
                     size="sm"
                     icon={<IconCloseOutlineRegular />}
                     aria-label={t('clearSearch')}
-                    title={t('clearSearch')}
                     onClick={() => setSearchQuery('')}
                   />
                 )}
               </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                icon={<IconRefreshOutlineRegular />}
-                onClick={handleRefreshState}
-                disabled={refreshing || state.probeAllActive}
-                data-tooltip={
-                  state.probeAllActive ? t('refreshBusyTip') : t('refreshTip')
-                }
-                data-tooltip-pos="down"
+              {/* 工具栏在设置页滚动区内，`portal` 让气泡不受滚动容器裁剪 */}
+              <Tooltip
+                label={state.probeAllActive ? t('refreshBusyTip') : t('refreshTip')}
+                side="bottom"
+                align="center"
+                gap={6}
+                portal
               >
-                {refreshing ? t('refreshing') : refreshSuccess ? t('refreshed') : t('refresh')}
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<IconRefreshOutlineRegular />}
+                  onClick={handleRefreshState}
+                  disabled={refreshing || state.probeAllActive}
+                >
+                  {refreshing ? t('refreshing') : refreshSuccess ? t('refreshed') : t('refresh')}
+                </Button>
+              </Tooltip>
 
               {state.probeAllActive ? (
                 <>
+                  <Tooltip label={t('probeAllProgressTip')} side="bottom" align="end" gap={6} portal>
+                    <Button variant="primary" size="sm" disabled>
+                      {t('probeAllProgress', {
+                        done: state.probeAllDoneCount,
+                        total: state.probeAllTotal,
+                      })}
+                    </Button>
+                  </Tooltip>
+                  <Tooltip label={t('cancelProbeTip')} side="bottom" align="end" gap={6} portal>
+                    <Button variant="outline" size="sm" onClick={handleCancelProbeAll}>
+                      {t('cancel')}
+                    </Button>
+                  </Tooltip>
+                </>
+              ) : (
+                <Tooltip label={t('probeAllTip')} side="bottom" align="end" gap={6} portal>
                   <Button
                     variant="primary"
                     size="sm"
-                    disabled
-                    data-tooltip={t('probeAllProgressTip')}
-                    data-tooltip-pos="down-left"
+                    onClick={handleProbeAll}
+                    disabled={state.models.length === 0}
                   >
-                    {t('probeAllProgress', {
-                      done: state.probeAllDoneCount,
-                      total: state.probeAllTotal,
-                    })}
+                    {t('probeAll')}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCancelProbeAll}
-                    data-tooltip={t('cancelProbeTip')}
-                    data-tooltip-pos="down-left"
-                  >
-                    {t('cancel')}
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleProbeAll}
-                  disabled={state.models.length === 0}
-                  data-tooltip={t('probeAllTip')}
-                  data-tooltip-pos="down-left"
-                >
-                  {t('probeAll')}
-                </Button>
+                </Tooltip>
               )}
             </div>
           </div>

@@ -6,6 +6,7 @@ import {
   Input,
   Pill,
   Tag,
+  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { A6apiT } from '../locales.js';
 import { store } from '../store.js';
@@ -238,36 +239,37 @@ export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
       {/* 头部工具栏 */}
       <div className="dsh-a6-section-header">
         <div className="dsh-a6-catalog-toolbar">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleFetchMarket}
-            disabled={busy !== null}
-            data-tooltip={t('fetchMarketTip')}
-            data-tooltip-pos="down"
-          >
-            {busy === 'fetch' ? t('fetching') : t('fetchMarket')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleQueryAll}
-            disabled={busy !== null || catalog.length === 0}
-            data-tooltip={t('queryOpenRouterTip')}
-            data-tooltip-pos="down"
-          >
-            {busy === 'query' ? t('querying') : t('queryOpenRouter')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleClear}
-            disabled={busy !== null || catalog.length === 0}
-            data-tooltip={t('clearCatalogTip')}
-            data-tooltip-pos="down"
-          >
-            {confirmClear ? t('confirmClear') : t('clearCatalog')}
-          </Button>
+          {/* 工具栏在设置页滚动区内，`portal` 让气泡不受滚动容器裁剪 */}
+          <Tooltip label={t('fetchMarketTip')} side="bottom" align="center" gap={6} portal>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleFetchMarket}
+              disabled={busy !== null}
+            >
+              {busy === 'fetch' ? t('fetching') : t('fetchMarket')}
+            </Button>
+          </Tooltip>
+          <Tooltip label={t('queryOpenRouterTip')} side="bottom" align="center" gap={6} portal>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleQueryAll}
+              disabled={busy !== null || catalog.length === 0}
+            >
+              {busy === 'query' ? t('querying') : t('queryOpenRouter')}
+            </Button>
+          </Tooltip>
+          <Tooltip label={t('clearCatalogTip')} side="bottom" align="center" gap={6} portal>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClear}
+              disabled={busy !== null || catalog.length === 0}
+            >
+              {confirmClear ? t('confirmClear') : t('clearCatalog')}
+            </Button>
+          </Tooltip>
           <div className="dsh-a6-catalog-count">
             {t('catalogCount', { total: catalog.length, avail: availCount, filled: filledCount })}
           </div>
@@ -311,7 +313,6 @@ export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
                 size="sm"
                 icon={<IconCloseOutlineRegular />}
                 aria-label={t('clearSearch')}
-                title={t('clearSearch')}
                 onClick={() => setSearch('')}
               />
             )}
@@ -349,15 +350,17 @@ export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
                     )}
                   </div>
                   <div className="dsh-a6-catalog-row-actions">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleQueryOne(entry.id)}
-                      disabled={busy !== null}
-                      data-tooltip={t('queryOneTip')}
-                    >
-                      {queryingId === entry.id ? t('querying') : t('queryOne')}
-                    </Button>
+                    {/* 行内按钮同在被 portal 裁剪的滚动区内 */}
+                    <Tooltip label={t('queryOneTip')} side="bottom" align="center" gap={6} portal>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleQueryOne(entry.id)}
+                        disabled={busy !== null}
+                      >
+                        {queryingId === entry.id ? t('querying') : t('queryOne')}
+                      </Button>
+                    </Tooltip>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -443,7 +446,7 @@ export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
                       <label className="dsh-a6-edit-field dsh-a6-edit-wide">
                         <span className="dsh-a6-label">
                           {t('fieldReasoning')}
-                          <span className="dsh-a6-field-hint dsh-a6-field-hint-inline">
+                          <span className="dsh-a6-hint dsh-a6-hint-inline">
                             {t('fieldReasoningFormat')}
                           </span>
                         </span>

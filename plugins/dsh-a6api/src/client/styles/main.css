@@ -383,6 +383,12 @@
   gap: 1px;
 }
 
+/* 价格两行同为 Tooltip 锚点：包成 inline-block，悬停命中区只覆盖文字本身 */
+.dsh-a6-price-top,
+.dsh-a6-price-btm {
+  display: inline-block;
+}
+
 .dsh-a6-price-top {
   font: var(--dsw-font-xs-strong-13);
   color: var(--dsw-alias-label-primary);
@@ -393,7 +399,7 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* 徽章外观由 Tag 原子提供，这里只留排布与 tooltip 锚点 */
+/* 徽章外观由 Tag 原子提供，这里只留排布；悬停提示由 ui-primitives Tooltip 承担 */
 .dsh-a6-ratio-pill,
 .dsh-a6-blend-pill {
   display: inline-flex;
@@ -523,7 +529,9 @@
   }
 }
 
+/* 两行时间戳同为 Tooltip 锚点：inline-block 让命中区与文字等宽 */
 .dsh-a6-time-ago {
+  display: inline-block;
   font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
 }
@@ -895,113 +903,133 @@
 
 /* ==========================================================================
    6. Configuration Tab Styles
+   —— 原生设置页形态：单列字段行（label / 控件 / hint），字段间 0.5px 发丝线
    ========================================================================== */
 .dsh-a6-config-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 4px;
 }
 
+/* 分组只由标题与留白划分，容器不画卡片 */
 .dsh-a6-config-section {
-  background: var(--dsw-alias-bg-layer-2);
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  padding: 20px 0 4px;
 }
 
-.dsh-a6-section-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.dsh-a6-config-section + .dsh-a6-config-section {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .dsh-a6-heading-title {
-  font: var(--dsw-font-xs-strong-13);
+  margin: 0;
+  font: var(--dsw-font-s-strong-14);
   color: var(--dsw-alias-label-primary);
 }
 
 .dsh-a6-heading-desc {
-  font: var(--dsw-font-xxxs-11);
+  margin: 4px 0 0;
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
 }
 
-/* 节点选择：胶囊外观由 Pill 原子提供，这里只管排布 */
-.dsh-a6-node-picker {
+/* 字段行容器：字段之间的分隔线由相邻选择器给出 */
+.dsh-a6-fields {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.dsh-a6-node-custom {
-  margin-top: 8px;
-}
-
-.dsh-a6-config-fields-grid {
-  display: flex;
-  gap: 14px;
-}
-
-@media (max-width: 768px) {
-  .dsh-a6-config-fields-grid {
-    flex-direction: column;
-  }
+  flex-direction: column;
+  margin-top: 4px;
 }
 
 .dsh-a6-field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  flex: 1;
+  gap: 6px;
+  padding: 12px 0;
 }
 
-.dsh-a6-field-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.dsh-a6-field + .dsh-a6-field {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
-.dsh-a6-field-header-actions {
+.dsh-a6-field-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
+/* 字段名（配置页字段行与模型目录内联编辑共用）：13/20 + 500 字重 */
 .dsh-a6-label {
-  font: var(--dsw-font-xxs-strong-12);
-  color: var(--dsw-alias-label-secondary);
+  flex: 1;
+  min-width: 0;
+  font: var(--dsw-font-xs-13);
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
 }
 
-.dsh-a6-field-hint {
-  font: var(--dsw-font-xxxs-11);
+.dsh-a6-field-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 密钥字段的明文开关：字段头部右侧的 24px 行内开关 */
+.dsh-a6-reveal-switch {
+  margin: 0 2px;
+}
+
+/* 24px 图标动作：ghost + sm 按钮自带配色，这里只把尺寸收到 24px */
+.dsh-a6-field-icon-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.dsh-a6-hint {
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
 }
 
-.dsh-a6-field-hint-inline {
+/* 跟在 label 后同行显示的 hint（模型目录的参数字段用） */
+.dsh-a6-hint-inline {
   margin-left: 6px;
 }
 
-.dsh-a6-field-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-top: 1px;
+.dsh-a6-field-value {
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
 }
 
+/* 节点选择：分段控件 + 它在下面回显的 URL */
+.dsh-a6-node-url {
+  overflow-wrap: anywhere;
+}
+
+.dsh-a6-node-custom {
+  width: 100%;
+}
+
+.dsh-a6-field-value code,
+.dsh-a6-heading-desc code {
+  background: var(--dsw-alias-markdown-inline-code);
+  padding: 1px 4px;
+  border-radius: var(--dsw-radius-xs);
+  font-family: var(--ds-font-family-code);
+}
+
+/* 教程抽屉：字段行内展开，不用自造配色 */
 .dsh-a6-help-drawer {
-  background: var(--dsw-alias-bg-layer-1);
-  border: 1px dashed var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
   padding: 10px 14px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
 }
 
 .dsh-a6-help-title {
-  font-weight: 500;
+  font: var(--dsw-font-xxs-strong-12);
   color: var(--dsw-alias-label-primary);
   margin-bottom: 4px;
 }
@@ -1017,36 +1045,8 @@
 .dsh-a6-help-list code {
   background: var(--dsw-alias-markdown-inline-code);
   padding: 1px 4px;
-  border-radius: 3px;
-  font: var(--dsw-font-xxxs-11);
+  border-radius: var(--dsw-radius-xs);
   font-family: var(--ds-font-family-code);
-}
-
-.dsh-a6-integration-card {
-  background: var(--dsw-alias-bg-layer-1);
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 8px;
-  padding: 10px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.dsh-a6-int-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font: var(--dsw-font-xxs-12);
-}
-
-.dsh-a6-int-key {
-  width: 100px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.dsh-a6-int-val {
-  font-weight: 500;
-  color: var(--dsw-alias-label-primary);
 }
 
 .dsh-a6-int-tags {
@@ -1055,20 +1055,13 @@
   flex-wrap: wrap;
 }
 
-.dsh-a6-empty-hint {
-  color: var(--dsw-alias-label-tertiary);
-  font: var(--dsw-font-xxs-12);
-}
-
+/* 保存条：内容宽度的主按钮，成功提示贴在左侧 */
 .dsh-a6-save-bar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 12px;
-}
-
-.dsh-a6-save-btn {
-  min-width: 100px;
+  padding: 16px 0 4px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .dsh-a6-success-msg {
@@ -1111,165 +1104,9 @@
 }
 
 /* ==========================================================================
-   8. Instant Custom Tooltip (Zero-Delay, High Contrast)
-   ========================================================================== */
-[data-tooltip] {
-  position: relative;
-}
-
-[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 7px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 6px 10px;
-  background: rgba(15, 23, 42, 0.96);
-  color: #f8fafc;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.4;
-  white-space: normal;
-  max-width: min(320px, 85vw);
-  width: max-content;
-  text-align: left;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.08s ease-out, visibility 0.08s ease-out;
-  z-index: 99999;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-[data-tooltip]::before {
-  content: '';
-  position: absolute;
-  bottom: calc(100% + 2px);
-  left: 50%;
-  transform: translateX(-50%);
-  border-width: 5px 5px 0 5px;
-  border-style: solid;
-  border-color: rgba(15, 23, 42, 0.94) transparent transparent transparent;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.04s ease-out, visibility 0.04s ease-out;
-  z-index: 99999;
-}
-
-[data-tooltip]:hover::after,
-[data-tooltip]:hover::before {
-  opacity: 1;
-  visibility: visible;
-}
-
-[data-tooltip-pos="left"]::after {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
-[data-tooltip-pos="left"]::before {
-  left: auto;
-  right: 14px;
-  transform: none;
-}
-
-[data-tooltip-pos="right"]::after {
-  left: 0;
-  right: auto;
-  transform: none;
-}
-
-[data-tooltip-pos="right"]::before {
-  left: 14px;
-  right: auto;
-  transform: none;
-}
-
-/* Down positions (for top toolbar and header buttons) */
-[data-tooltip-pos="down"]::after {
-  top: calc(100% + 7px);
-  bottom: auto;
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-}
-
-[data-tooltip-pos="down"]::before {
-  top: calc(100% + 2px);
-  bottom: auto;
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-  border-width: 0 5px 5px 5px;
-  border-color: transparent transparent rgba(15, 23, 42, 0.94) transparent;
-}
-
-[data-tooltip-pos="down-left"]::after {
-  top: calc(100% + 7px);
-  bottom: auto;
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
-[data-tooltip-pos="down-left"]::before {
-  top: calc(100% + 2px);
-  bottom: auto;
-  left: auto;
-  right: 14px;
-  transform: none;
-  border-width: 0 5px 5px 5px;
-  border-color: transparent transparent rgba(15, 23, 42, 0.94) transparent;
-}
-
-[data-tooltip-pos="down-right"]::after {
-  top: calc(100% + 7px);
-  bottom: auto;
-  left: 0;
-  right: auto;
-  transform: none;
-}
-
-[data-tooltip-pos="down-right"]::before {
-  top: calc(100% + 2px);
-  bottom: auto;
-  left: 14px;
-  right: auto;
-  transform: none;
-  border-width: 0 5px 5px 5px;
-  border-color: transparent transparent rgba(15, 23, 42, 0.94) transparent;
-}
-
-/* Card actions tooltip: keep centered (avoid left:0 right-edge overflow) */
-.dsh-a6-bar-actions [data-tooltip]:not([data-tooltip-pos])::after {
-  left: 50%;
-  transform: translateX(-50%);
-  right: auto;
-}
-
-.dsh-a6-bar-actions [data-tooltip]:not([data-tooltip-pos])::before {
-  left: 50%;
-  transform: translateX(-50%);
-  right: auto;
-}
-
-/* When JS portal tooltip is active, hide pseudo to avoid double rendering */
-body.dsh-a6api-tooltip-active [data-tooltip]::after,
-body.dsh-a6api-tooltip-active [data-tooltip]::before {
-  opacity: 0 !important;
-  visibility: hidden !important;
-}
-
-/* ==========================================================================
    8. 固定 / 禁用 状态徽标、操作按钮与固定确认弹窗
    ========================================================================== */
-/* 徽章外观由 Tag 原子提供，这里只留排布与 tooltip 锚点 */
+/* 徽章外观由 Tag 原子提供，这里只留排布与间距 */
 .dsh-a6-pin-badge {
   display: inline-flex;
   align-items: center;
@@ -1451,12 +1288,6 @@ body.dsh-a6api-tooltip-active [data-tooltip]::before {
   opacity: 0.45;
   pointer-events: none;
   user-select: none;
-}
-
-/* 浮层内禁用 CSS 伪元素 tooltip:JS portal tooltip 有 30ms 延迟,避免双提示且伪元素会被 overflow 裁剪 */
-.dsh-a6-dock-popup [data-tooltip]::after,
-.dsh-a6-dock-popup [data-tooltip]::before {
-  display: none;
 }
 
 /* 浮层顶部账户速览胶囊行:与设置页头部同款视觉,缩窄紧凑版(余额纯展示 + 价格波动可跳 + 模型市场直达) */

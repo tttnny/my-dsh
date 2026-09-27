@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Tag, type TagTone } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Button, Tag, Tooltip, type TagTone } from '@deepseek-ai/dsh-client-ui-primitives';
 import { dictionaryT, type A6apiT } from '../locales.js';
 import { store } from '../store.js';
 import type { ModelCardData } from '../../types.js';
@@ -266,23 +266,28 @@ export const MerchantCard: React.FC<{
                   </span>
                 </>
               )}
+              {/* 徽标自身较长（提示很长），底部居中并 `portal` 逃出卡片/浮层的裁剪与层叠上下文 */}
               {isPinnedHere && !isChannelDisabled && (
-                <span
-                  className="dsh-a6-pin-badge"
-                  data-tooltip={
+                <Tooltip
+                  label={
                     t('pinHereTipPrefix') +
                     (model.pinnedFallback === false ? t('pinHereStrict') : t('pinHereFallback')) +
                     pinTokenNote
                   }
-                  data-tooltip-pos="down"
+                  side="bottom"
+                  align="center"
+                  gap={6}
+                  maxWidth={320}
+                  portal
                 >
-                  <Tag tone="success">{t('pinBadgeHere')}</Tag>
-                </span>
+                  <span className="dsh-a6-pin-badge">
+                    <Tag tone="success">{t('pinBadgeHere')}</Tag>
+                  </span>
+                </Tooltip>
               )}
               {isPinnedElsewhere && (
-                <span
-                  className="dsh-a6-pin-badge"
-                  data-tooltip={
+                <Tooltip
+                  label={
                     t('pinElsewhereTipPrefix') +
                     (model.pinnedChannelId
                       ? t('pinElsewhereTargetChannel', { id: model.pinnedChannelId })
@@ -291,23 +296,34 @@ export const MerchantCard: React.FC<{
                     (!hasMerchant ? t('pinNoMerchantData') : '') +
                     pinTokenNote
                   }
-                  data-tooltip-pos="down"
+                  side="bottom"
+                  align="end"
+                  gap={6}
+                  maxWidth={320}
+                  portal
                 >
-                  <Tag tone="warning">
-                    {!hasMerchant && model.pinnedChannelId
-                      ? t('pinBadgeElsewhereChannel', { id: model.pinnedChannelId })
-                      : t('pinBadgeElsewhere')}
-                  </Tag>
-                </span>
+                  <span className="dsh-a6-pin-badge">
+                    <Tag tone="warning">
+                      {!hasMerchant && model.pinnedChannelId
+                        ? t('pinBadgeElsewhereChannel', { id: model.pinnedChannelId })
+                        : t('pinBadgeElsewhere')}
+                    </Tag>
+                  </span>
+                </Tooltip>
               )}
               {isChannelDisabled && (
-                <span
-                  className="dsh-a6-pin-badge"
-                  data-tooltip={t('pinDisabledTip')}
-                  data-tooltip-pos="down"
+                <Tooltip
+                  label={t('pinDisabledTip')}
+                  side="bottom"
+                  align="center"
+                  gap={6}
+                  maxWidth={320}
+                  portal
                 >
-                  <Tag tone="neutral">{t('pinBadgeDisabled')}</Tag>
-                </span>
+                  <span className="dsh-a6-pin-badge">
+                    <Tag tone="neutral">{t('pinBadgeDisabled')}</Tag>
+                  </span>
+                </Tooltip>
               )}
             </div>
             {merchant?.description && (
@@ -317,48 +333,57 @@ export const MerchantCard: React.FC<{
         </div>
 
         {/* Col 2: Pricing Summary + Ratio Tag */}
+        {/* 价格/倍率纯展示文案原先挂原生 title，现统一由 Tooltip 承担；
+            卡片与输入框浮层都可能被 overflow 裁剪，故一律 `portal` */}
         {merchant ? (
           <div className="dsh-a6-bar-pricing">
             <div className="dsh-a6-price-col">
-              <span className="dsh-a6-price-top" title={t('priceInput')}>
-                {merchant.input_price_cny}
-              </span>
-              <span className="dsh-a6-price-btm" title={t('priceCacheRead')}>
-                {merchant.cache_read_price_cny}
-              </span>
+              <Tooltip label={t('priceInput')} side="bottom" align="center" gap={6} portal>
+                <span className="dsh-a6-price-top">{merchant.input_price_cny}</span>
+              </Tooltip>
+              <Tooltip label={t('priceCacheRead')} side="bottom" align="center" gap={6} portal>
+                <span className="dsh-a6-price-btm">{merchant.cache_read_price_cny}</span>
+              </Tooltip>
             </div>
             <div className="dsh-a6-price-col">
-              <span className="dsh-a6-price-top" title={t('priceOutput')}>
-                {merchant.output_price_cny}
-              </span>
-              <span className="dsh-a6-price-btm" title={t('priceCacheWrite')}>
-                {merchant.cache_write_price_cny}
-              </span>
+              <Tooltip label={t('priceOutput')} side="bottom" align="center" gap={6} portal>
+                <span className="dsh-a6-price-top">{merchant.output_price_cny}</span>
+              </Tooltip>
+              <Tooltip label={t('priceCacheWrite')} side="bottom" align="center" gap={6} portal>
+                <span className="dsh-a6-price-btm">{merchant.cache_write_price_cny}</span>
+              </Tooltip>
             </div>
             {blend100mValid && (
-              <span className="dsh-a6-blend-pill" title={blendTitle}>
-                <Tag tone="success">{t('blendPill', { value: fmtSig(blend100m!) })}</Tag>
-              </span>
+              <Tooltip label={blendTitle!} side="bottom" align="end" gap={6} maxWidth={320} portal>
+                <span className="dsh-a6-blend-pill">
+                  <Tag tone="success">{t('blendPill', { value: fmtSig(blend100m!) })}</Tag>
+                </span>
+              </Tooltip>
             )}
-            <span className="dsh-a6-ratio-pill" title={t('ratioTip')}>
-              <Tag tone="info">{ratioText}</Tag>
-            </span>
+            <Tooltip label={t('ratioTip')} side="bottom" align="end" gap={6} maxWidth={320} portal>
+              <span className="dsh-a6-ratio-pill">
+                <Tag tone="info">{ratioText}</Tag>
+              </span>
+            </Tooltip>
           </div>
         ) : (
           <div className="dsh-a6-bar-pricing unprobed">
-            <div
-              className={`dsh-a6-unprobed-hint ${model.probeError ? 'error' : ''}`}
-              data-tooltip={model.probeError || undefined}
-              data-tooltip-pos="down"
-            >
-              {isProbing
-                ? t('probingMerchant')
-                : isQueued
-                  ? t('queuedProbe')
-                  : model.probeError
-                    ? t('probeFailed')
-                    : t('notProbed')}
-            </div>
+            {/* 无商户数据时只有在存在 probeError 才有可解释的文案；label 为空不渲染气泡 */}
+            {model.probeError ? (
+              <Tooltip label={model.probeError} side="bottom" align="center" gap={6} maxWidth={320} portal>
+                <div className="dsh-a6-unprobed-hint error">
+                  {isProbing
+                    ? t('probingMerchant')
+                    : isQueued
+                      ? t('queuedProbe')
+                      : t('probeFailed')}
+                </div>
+              </Tooltip>
+            ) : (
+              <div className="dsh-a6-unprobed-hint">
+                {isProbing ? t('probingMerchant') : isQueued ? t('queuedProbe') : t('notProbed')}
+              </div>
+            )}
           </div>
         )}
 
@@ -416,45 +441,58 @@ export const MerchantCard: React.FC<{
       </div>
 
       {/* 2. Bottom Footer: 时间戳左下角 + 操作按钮右下角 */}
+      {/* 卡片在「可用模型」列表与输入框浮层里都处于 overflow 容器内，气泡一律 `portal` */}
       <div className="dsh-a6-card-footer">
         <div className="dsh-a6-time-stack">
-          <span className="dsh-a6-time-ago" data-tooltip={t('lastSuccessTip')}>
-            {t('lastSuccessPrefix')}
-            {merchant?.last_success_text || t('lastSuccessFallback')}
-          </span>
-          <span
-            className={`dsh-a6-time-ago dsh-a6-route-snapshot${model.lastRoutedAt ? '' : ' never'}`}
-            data-tooltip={
+          <Tooltip label={t('lastSuccessTip')} side="bottom" align="center" gap={6} maxWidth={320} portal>
+            <span className="dsh-a6-time-ago">
+              {t('lastSuccessPrefix')}
+              {merchant?.last_success_text || t('lastSuccessFallback')}
+            </span>
+          </Tooltip>
+          <Tooltip
+            label={
               model.lastRoutedAt
                 ? t('personalTip', { time: formatAbsolute(model.lastRoutedAt) })
                 : t('personalTipNever')
             }
+            side="bottom"
+            align="center"
+            gap={6}
+            maxWidth={320}
+            portal
           >
-            {t('personalPrefix')}
-            {model.lastRoutedText || t('neverRouted')}
-          </span>
+            <span className={`dsh-a6-time-ago dsh-a6-route-snapshot${model.lastRoutedAt ? '' : ' never'}`}>
+              {t('personalPrefix')}
+              {model.lastRoutedText || t('neverRouted')}
+            </span>
+          </Tooltip>
         </div>
 
         {/* Col 6: 操作按钮组 — 卡片右下角 */}
         <div className="dsh-a6-bar-actions" onClick={(e) => e.stopPropagation()}>
           <div className="dsh-a6-bar-actions-btns">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleProbe}
-              disabled={isProbing || isQueued}
-              data-tooltip={isQueued ? t('probeTipQueued') : t('probeTip')}
+            {/* 禁用中的按钮同样需要 label 解释原因：Tooltip 照常生效，`disabled` 只加到 Button 上 */}
+            <Tooltip
+              label={isQueued ? t('probeTipQueued') : t('probeTip')}
+              side="bottom"
+              align="center"
+              gap={6}
+              portal
             >
-              {isProbing ? t('probingMerchant') : isQueued ? t('queuedProbe') : t('probeAction')}
-            </Button>
-
-            {isPinnedHere ? (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleUnpin}
-                disabled={isBusy || !canWebAction || model.pinTokenMatched === false || isProbing || isQueued}
-                data-tooltip={
+                onClick={handleProbe}
+                disabled={isProbing || isQueued}
+              >
+                {isProbing ? t('probingMerchant') : isQueued ? t('queuedProbe') : t('probeAction')}
+              </Button>
+            </Tooltip>
+
+            {isPinnedHere ? (
+              <Tooltip
+                label={
                   isProbing || isQueued
                     ? t('unpinTipProbing')
                     : model.pinTokenMatched === false
@@ -465,16 +503,23 @@ export const MerchantCard: React.FC<{
                           ? t('unpinTipUnknown')
                           : t('unpinTip')
                 }
+                side="bottom"
+                align="center"
+                gap={6}
+                portal
               >
-                {isBusy ? t('processing') : t('unpin')}
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUnpin}
+                  disabled={isBusy || !canWebAction || model.pinTokenMatched === false || isProbing || isQueued}
+                >
+                  {isBusy ? t('processing') : t('unpin')}
+                </Button>
+              </Tooltip>
             ) : (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleOpenPinConfirm}
-                disabled={isBusy || !hasMerchant || !canWebAction || isProbing || isQueued}
-                data-tooltip={
+              <Tooltip
+                label={
                   isProbing || isQueued
                     ? t('pinTipProbing')
                     : !hasMerchant
@@ -483,34 +528,48 @@ export const MerchantCard: React.FC<{
                         ? t('pinTipNoToken')
                         : t('pinTip')
                 }
+                side="bottom"
+                align="center"
+                gap={6}
+                portal
               >
-                {isBusy ? t('processing') : t('pin')}
-              </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleOpenPinConfirm}
+                  disabled={isBusy || !hasMerchant || !canWebAction || isProbing || isQueued}
+                >
+                  {isBusy ? t('processing') : t('pin')}
+                </Button>
+              </Tooltip>
             )}
 
             {isChannelDisabled ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRestore}
-                disabled={isBusy || !canWebAction || isProbing || isQueued}
-                data-tooltip={
+              <Tooltip
+                label={
                   isProbing || isQueued
                     ? t('restoreTipProbing')
                     : canWebAction
                       ? t('restoreTip')
                       : t('restoreTipNoToken')
                 }
+                side="bottom"
+                align="center"
+                gap={6}
+                portal
               >
-                {isBusy ? t('processing') : t('restore')}
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRestore}
+                  disabled={isBusy || !canWebAction || isProbing || isQueued}
+                >
+                  {isBusy ? t('processing') : t('restore')}
+                </Button>
+              </Tooltip>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDisable}
-                disabled={isBusy || !hasMerchant || !canWebAction || isProbing || isQueued}
-                data-tooltip={
+              <Tooltip
+                label={
                   isProbing || isQueued
                     ? t('disableTipProbing')
                     : !hasMerchant
@@ -519,29 +578,52 @@ export const MerchantCard: React.FC<{
                         ? t('disableTipNoToken')
                         : t('disableTip')
                 }
+                side="bottom"
+                align="center"
+                gap={6}
+                portal
               >
-                {isBusy ? t('processing') : t('disable')}
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDisable}
+                  disabled={isBusy || !hasMerchant || !canWebAction || isProbing || isQueued}
+                >
+                  {isBusy ? t('processing') : t('disable')}
+                </Button>
+              </Tooltip>
             )}
 
-            <Button
-              variant={model.inDsh ? 'outline' : 'primary'}
-              size="sm"
-              onClick={handleToggleDsh}
-              data-tooltip={model.inDsh ? t('addTipRemove') : t('addTip')}
+            <Tooltip
+              label={model.inDsh ? t('addTipRemove') : t('addTip')}
+              side="bottom"
+              align="center"
+              gap={6}
+              portal
             >
-              {model.inDsh ? t('removeModel') : t('addModel')}
-            </Button>
+              <Button
+                variant={model.inDsh ? 'outline' : 'primary'}
+                size="sm"
+                onClick={handleToggleDsh}
+              >
+                {model.inDsh ? t('removeModel') : t('addModel')}
+              </Button>
+            </Tooltip>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setExpanded(!expanded)}
-              data-tooltip={expanded ? t('collapseTip') : t('detailTip')}
-              data-tooltip-pos="left"
+            {/* 展开/收起是整组按钮最后一个：气泡改走右侧，避免盖住上面一排操作 */}
+            <Tooltip
+              label={expanded ? t('collapseTip') : t('detailTip')}
+              side="right"
+              align="center"
             >
-              {expanded ? t('collapse') : t('detail')}
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? t('collapse') : t('detail')}
+              </Button>
+            </Tooltip>
           </div>
         </div>
 

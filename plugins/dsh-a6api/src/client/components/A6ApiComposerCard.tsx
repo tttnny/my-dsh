@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
 import { store } from '../store.js';
 import { MerchantCard } from './MerchantCard.js';
 import { PricePill } from './PricePill.js';
@@ -174,23 +175,31 @@ export const A6ApiComposerCard: React.FC<A6ApiComposerCardProps> = ({
 
   return (
     <>
-      <button
-        ref={buttonRef}
-        type="button"
-        className="dsh-a6-dock-btn"
-        onClick={toggle}
-        aria-expanded={open}
-        aria-label="A6api"
-        data-tooltip={
+      {/* 按钮在输入框那一行里，气泡向上放会被 popup 挡：用原生 Tooltip 的 bottom/side 语义表达 */}
+      <Tooltip
+        label={
           hasA6apiModel
             ? open
               ? '收起 A6api 模型卡片'
               : '查看当前会话的 A6api 模型卡片'
             : '当前会话未使用 A6api 模型，卡片已置灰'
         }
+        side="bottom"
+        align="center"
+        gap={6}
+        portal
       >
-        A6api
-      </button>
+        <button
+          ref={buttonRef}
+          type="button"
+          className="dsh-a6-dock-btn"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-label="A6api"
+        >
+          A6api
+        </button>
+      </Tooltip>
 
       {open && pos && (
         <div
@@ -204,13 +213,18 @@ export const A6ApiComposerCard: React.FC<A6ApiComposerCardProps> = ({
               余额胶囊纯展示（不可点击），价格波动胶囊可跳官网处理，模型市场胶囊直达官网模型页 */}
           <div className="dsh-a6-dock-pills">
             {state.balance?.hasAccountAuth && (
-              <div
-                className="dsh-a6-header-balance-badge dsh-a6-dock-balance-pill"
-                title="账户余额（每 60 秒自动同步）"
+              <Tooltip
+                label="账户余额（每 60 秒自动同步）"
+                side="bottom"
+                align="center"
+                gap={6}
+                portal
               >
-                <span className="dsh-a6-hb-label">账户余额:</span>
-                <span className="dsh-a6-hb-amount">{state.balance.accountBalanceFormatted}</span>
-              </div>
+                <div className="dsh-a6-header-balance-badge dsh-a6-dock-balance-pill">
+                  <span className="dsh-a6-hb-label">账户余额:</span>
+                  <span className="dsh-a6-hb-amount">{state.balance.accountBalanceFormatted}</span>
+                </div>
+              </Tooltip>
             )}
             <PricePill
               pf={state.priceFluctuation}
