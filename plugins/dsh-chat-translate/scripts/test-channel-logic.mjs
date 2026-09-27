@@ -1,5 +1,5 @@
-// Channel truth table (user contract), legacy-config migration and
-// circuit-breaker single-flight probe verification.
+// Reply channel contract (one channel), retired-key cleanup, legacy-config
+// migration and circuit-breaker single-flight probe verification.
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -39,54 +39,56 @@ async function testAsync(name, fn) {
   }
 }
 
-console.log('=== Suite A: dual-channel truth table (user contract) ===');
+console.log('=== Suite A: reply channel contract (one channel) ===');
 
-await testAsync('AI on+configured, Bing on -> AI only', async () => {
+await testAsync('AI configured -> translated, channel openai', async () => {
   const { dispatcher, calls, source } = await setupDispatcher();
-  await source.update({ aiEnabled: true, bingEnabled: true, baseUrl: 'http://x', model: 'm' });
-  const r = await dispatcher.translateOne('TT1: List files here');
+  await source.update({ baseUrl: 'http://x', model: 'm' });
+  const results = await dispatcher.translateReplyBlocks(['TT1: List files here']);
   assert.deepEqual(calls, ['openai']);
-  assert.equal(r.channel, 'openai');
+  assert.equal(results[0].channel, 'openai');
+  assert.equal(results[0].ok, true);
 });
 
-await testAsync('AI on+NOT configured, Bing on -> Bing', async () => {
+await testAsync('AI not configured -> no request, original kept', async () => {
   const { dispatcher, calls, source } = await setupDispatcher();
-  await source.update({ aiEnabled: true, bingEnabled: true });
-  const r = await dispatcher.translateOne('TT2: List files here');
-  assert.deepEqual(calls, ['bing']);
-  assert.equal(r.channel, 'bing');
-});
-
-await testAsync('AI on+NOT configured, Bing off -> no translation', async () => {
-  const { dispatcher, calls, source } = await setupDispatcher();
-  await source.update({ aiEnabled: true, bingEnabled: false });
-  const r = await dispatcher.translateOne('TT3: List files here');
+  await source.update({ baseUrl: '', model: '' });
+  const results = await dispatcher.translateReplyBlocks(['TT2: List files here']);
   assert.deepEqual(calls, []);
-  assert.equal(r.channel, 'fallback');
+  assert.equal(results[0].ok, false);
+  assert.equal(results[0].translated, 'TT2: List files here');
+  assert.equal(results[0].channel, 'none');
 });
 
-await testAsync('AI off, Bing on -> Bing', async () => {
+await testAsync('master switch off -> no request, original kept', async () => {
   const { dispatcher, calls, source } = await setupDispatcher();
-  await source.update({ aiEnabled: false, bingEnabled: true, baseUrl: 'http://x', model: 'm' });
-  const r = await dispatcher.translateOne('TT4: List files here');
-  assert.deepEqual(calls, ['bing']);
-  assert.equal(r.channel, 'bing');
-});
-
-await testAsync('AI off, Bing off -> no translation', async () => {
-  const { dispatcher, calls, source } = await setupDispatcher();
-  await source.update({ aiEnabled: false, bingEnabled: false });
-  const r = await dispatcher.translateOne('TT5: List files here');
+  await source.update({ enabled: false, baseUrl: 'http://x', model: 'm' });
+  const results = await dispatcher.translateReplyBlocks(['TT3: List files here']);
   assert.deepEqual(calls, []);
-  assert.equal(r.channel, 'fallback');
+  assert.equal(results[0].translated, 'TT3: List files here');
 });
 
-await testAsync('AI failure falls back to Bing', async () => {
+await testAsync('AI failure keeps the original instead of falling back', async () => {
   const { dispatcher, calls, source } = await setupDispatcher({ failOpenai: true });
-  await source.update({ aiEnabled: true, bingEnabled: true, baseUrl: 'http://x', model: 'm' });
-  const r = await dispatcher.translateOne('TT6: List files here');
-  assert.deepEqual(calls, ['openai', 'bing']);
-  assert.equal(r.channel, 'bing');
+  await source.update({ baseUrl: 'http://x', model: 'm' });
+  const results = await dispatcher.translateReplyBlocks(['TT4: List files here']);
+  assert.deepEqual(calls, ['openai', 'openai'], 'batch then the per-piece retry');
+  assert.equal(results[0].ok, false);
+  assert.equal(results[0].translated, 'TT4: List files here');
+});
+
+await testAsync('a cooling-down channel is skipped without a request', async () => {
+  const { dispatcher, calls, source } = await setupDispatcher();
+  await source.update({ baseUrl: 'http://x', model: 'm' });
+  dispatcher.circuitStates.set('openai', {
+    state: 'open',
+    failureCount: 3,
+    openUntil: Date.now() + 30000,
+    probeInFlight: false,
+  });
+  const results = await dispatcher.translateReplyBlocks(['TT5: List files here']);
+  assert.deepEqual(calls, []);
+  assert.equal(results[0].ok, false);
 });
 
 async function setupDispatcher({ failOpenai = false } = {}) {
@@ -94,27 +96,24 @@ async function setupDispatcher({ failOpenai = false } = {}) {
   // source ConfigManager reads, and `update` simulates one accepted live edit.
   const source = createFakeSettingsEntry();
   const cfg = new ConfigManager(source, new CredentialsReader(createFakeCredentials()));
-  // Reset to a clean baseline — the fake entry is fresh per setup, so nothing
-  // leaks between tests by construction.
-  await source.update({ enabled: true, aiEnabled: false, bingEnabled: false, baseUrl: '', model: '', concurrency: 3 });
-  const cache = new LruDiskCache();
+  await source.update({ enabled: true, baseUrl: '', model: '' });
+  const cache = new LruDiskCache(100, `channel-test-${Math.random().toString(36).slice(2)}.json`);
   await cache.init();
   const dispatcher = new TranslationDispatcher(cfg, cache);
   dispatcher.credentials = { getApiKey: () => 'sk-test' };
   const calls = [];
-  for (const id of ['openai', 'bing']) {
-    dispatcher.adapters.set(id, {
-      id,
-      name: id,
-      isAvailable: () => true,
-      translate: async (t) => {
-        calls.push(id);
-        if (id === 'openai' && failOpenai) throw new Error('AI boom');
-        return `[${id}]${t}`;
-      },
-    });
-  }
-  return { dispatcher, calls, source };
+  dispatcher.adapters.set('openai', {
+    id: 'openai',
+    name: 'openai',
+    // Mirrors the real adapter's gate: base URL + model + key must all be set.
+    isAvailable: (config) => Boolean(config.baseUrl?.trim() && config.model?.trim()),
+    translate: async (t) => {
+      calls.push('openai');
+      if (failOpenai) throw new Error('AI boom');
+      return `[openai]${t}`;
+    },
+  });
+  return { dispatcher, calls, source, cache };
 }
 
 console.log('\n=== Suite B: circuit breaker half-open single-flight ===');
@@ -126,12 +125,12 @@ await testAsync('Only one probe passes while half-open', async () => {
   await cache.init();
   const dispatcher = new TranslationDispatcher(cfg, cache);
   dispatcher.credentials = { getApiKey: () => 'sk-test' };
-  await source.update({ aiEnabled: false, bingEnabled: false, concurrency: 5 });
+  await source.update({ baseUrl: 'http://x', model: 'm' });
 
   let calls = 0;
   let succeed = false;
-  dispatcher.adapters.set('unstable', {
-    id: 'unstable',
+  dispatcher.adapters.set('openai', {
+    id: 'openai',
     name: 'Unstable',
     isAvailable: () => true,
     translate: async (t) => {
@@ -142,34 +141,43 @@ await testAsync('Only one probe passes while half-open', async () => {
     },
   });
 
-  // Trip the circuit: 3 consecutive failures -> OPEN
-  await dispatcher.translateOne('F1');
-  await dispatcher.translateOne('F2');
-  await dispatcher.translateOne('F3');
-  const state = dispatcher.circuitStates.get('unstable');
+  // Trip the circuit through the reply path: a failing batch records one failure,
+  // its per-piece retry records another, and gate/retry count further failures
+  // while the breaker is still closed. Loop until OPEN rather than hard-coding
+  // the accounting, which is deliberately "failures, not requests".
+  const tripDeadline = Date.now() + 5000;
+  while (dispatcher.circuitStates.get('openai')?.state !== 'open') {
+    assert.ok(Date.now() < tripDeadline, 'repeated failures must eventually open the circuit');
+    await dispatcher.translateReplyBlocks([`F${calls}`]);
+  }
+  const state = dispatcher.circuitStates.get('openai');
   assert.equal(state.state, 'open');
 
-  // Fast-forward the cooling window -> next call enters half-open
+  // Fast-forward the cooling window -> the next call enters half-open.
   state.openUntil = Date.now() - 100;
 
-  // Fire 3 concurrent requests with the adapter healthy: exactly ONE may reach
-  // the adapter as probe; the other two must be blocked by the single-flight guard.
+  // Drive the breaker to half-open again, then fire 3 concurrent requests with
+  // the adapter healthy: exactly ONE may reach the adapter as the probe, the
+  // other two are refused by the single-flight gate.
+  state.state = 'open';
+  state.openUntil = Date.now() - 100;
+  state.probeInFlight = false;
   succeed = true;
   calls = 0;
   const results = await Promise.all([
-    dispatcher.translateOne('P1'),
-    dispatcher.translateOne('P2'),
-    dispatcher.translateOne('P3'),
+    dispatcher.translateReplyBlocks(['P1']),
+    dispatcher.translateReplyBlocks(['P2']),
+    dispatcher.translateReplyBlocks(['P3']),
   ]);
   assert.equal(calls, 1, 'half-open must allow exactly one in-flight probe');
-  const probed = results.filter((r) => r.channel === 'unstable').length;
-  assert.equal(probed, 1);
+  assert.equal(results.filter((r) => r[0].ok).length, 1, 'only the probe may be served');
   assert.equal(state.state, 'closed', 'successful probe resets the circuit to closed');
   assert.equal(state.probeInFlight, false);
 
   // Circuit is closed again: normal traffic flows
-  const r4 = await dispatcher.translateOne('P4');
-  assert.equal(r4.channel, 'unstable');
+  calls = 0;
+  await dispatcher.translateReplyBlocks(['P4']);
+  assert.equal(calls, 1, 'closed circuit lets the request through');
 });
 
 await testAsync('Empty probe result releases the single-flight flag', async () => {
@@ -179,11 +187,11 @@ await testAsync('Empty probe result releases the single-flight flag', async () =
   await cache.init();
   const dispatcher = new TranslationDispatcher(cfg, cache);
   dispatcher.credentials = { getApiKey: () => 'sk-test' };
-  await source.update({ aiEnabled: false, bingEnabled: false, concurrency: 5 });
+  await source.update({ baseUrl: 'http://x', model: 'm' });
 
   let calls = 0;
   let empty = true;
-  dispatcher.adapters.set('emptyish', {
+  dispatcher.adapters.set('openai', {
     id: 'emptyish',
     name: 'Emptyish',
     isAvailable: () => true,
@@ -194,19 +202,19 @@ await testAsync('Empty probe result releases the single-flight flag', async () =
     },
   });
 
-  // Empty results count as failures -> circuit opens after 3
-  await dispatcher.translateOne('E1');
-  await dispatcher.translateOne('E2');
-  await dispatcher.translateOne('E3');
-  const state = dispatcher.circuitStates.get('emptyish');
+  // Empty results count as failures -> the circuit opens on repeated empties.
+  while (dispatcher.circuitStates.get('openai')?.state !== 'open') {
+    await dispatcher.translateReplyBlocks([`E${calls}`]);
+  }
+  const state = dispatcher.circuitStates.get('openai');
   assert.equal(state.state, 'open', 'empty results must count as failures');
 
-  // Fast-forward -> half-open probe returns empty: the single-flight flag
-  // must be released, otherwise the channel would be bypassed forever.
+  // Fast-forward -> half-open, and the reply path's probe comes back empty: the
+  // single-flight flag must be released, otherwise the channel is bypassed forever.
   state.openUntil = Date.now() - 100;
   calls = 0;
-  const r = await dispatcher.translateOne('E4');
-  assert.equal(calls, 1, 'probe ran');
+  await dispatcher.translateReplyBlocks(['E-probe']);
+  assert.ok(calls >= 1, 'probe ran');
   assert.equal(state.probeInFlight, false, 'empty probe must release the flag');
   assert.equal(state.state, 'open', 'empty probe re-opens the circuit');
 
@@ -214,9 +222,8 @@ await testAsync('Empty probe result releases the single-flight flag', async () =
   state.openUntil = Date.now() - 100;
   empty = false;
   calls = 0;
-  const r2 = await dispatcher.translateOne('E5');
-  assert.equal(calls, 1);
-  assert.equal(r2.channel, 'emptyish');
+  await dispatcher.translateReplyBlocks(['E-recover']);
+  assert.ok(calls >= 1);
   assert.equal(state.state, 'closed');
 });
 
@@ -226,7 +233,7 @@ await testAsync('Legacy config migrates into the settings namespace and the file
   const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-config.json');
   await fs.writeFile(
     legacyPath,
-    JSON.stringify({ enabled: true, channels: ['bing'], baseUrl: ' http://x ', model: 'm', concurrency: 3 }),
+    JSON.stringify({ enabled: true, channels: ['bing'], baseUrl: ' http://x ', model: 'm', concurrency: 3, thinkEnabled: true }),
     'utf-8'
   );
   const entry = createFakeSettingsEntry();
@@ -244,6 +251,8 @@ await testAsync('Legacy config migrates into the settings namespace and the file
   assert.equal(cfg.getConfig().baseUrl, 'http://x', 'string values are trimmed');
   assert.equal(cfg.getConfig().model, 'm');
   assert.equal(cfg.getConfig().channels, undefined, 'retired channels field is dropped');
+  assert.equal(cfg.getConfig().concurrency, undefined, 'retired concurrency field is dropped');
+  assert.equal(cfg.getConfig().thinkEnabled, undefined, 'retired thinkEnabled field is dropped');
 
   await assert.rejects(fs.access(legacyPath), 'legacy file must be removed after migration');
 });
@@ -254,7 +263,7 @@ await testAsync('Migration sanitizes per-field: bad values skipped, valid ones m
   const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-mixed-config.json');
   await fs.writeFile(
     legacyPath,
-    JSON.stringify({ enabled: 'false', concurrency: 9999, baseUrl: ' http://x ', model: 'm' }),
+    JSON.stringify({ enabled: 'false', aiTimeoutMs: 99999999, baseUrl: ' http://x ', model: 'm' }),
     'utf-8'
   );
   const entry = createFakeSettingsEntry();
@@ -267,7 +276,7 @@ await testAsync('Migration sanitizes per-field: bad values skipped, valid ones m
 
   const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   assert.equal(cfg.getConfig().enabled, true, 'string "false" skipped -> schema default');
-  assert.equal(cfg.getConfig().concurrency, 100, 'out-of-range clamped to the max');
+  assert.equal(cfg.getConfig().aiTimeoutMs, 900000, 'out-of-range clamped to the max');
   assert.equal(cfg.getConfig().baseUrl, 'http://x', 'valid string trimmed and migrated');
   assert.equal(cfg.getConfig().model, 'm');
 

@@ -99,12 +99,12 @@ console.log('=== SettingsStore unit tests ===');
 test('defaults before attach', () => {
   const s = settingsStore.getState();
   assert.equal(s.enabled, true);
-  assert.equal(s.concurrency, 3);
+  assert.equal(s.aiTimeoutMs, 600000);
   assert.equal(s.aiConfigured, false);
 });
 
 await testAsync('attach derives state from the form and key status from credentials', async () => {
-  const form = makeForm({ enabled: false, concurrency: 7, baseUrl: 'http://x', model: 'm' });
+  const form = makeForm({ enabled: false, aiTimeoutMs: 120000, baseUrl: 'http://x', model: 'm' });
   let subscribed = 0;
   const subscribe = form.subscribe;
   form.subscribe = (listener) => { subscribed++; return subscribe(listener); };
@@ -113,7 +113,7 @@ await testAsync('attach derives state from the form and key status from credenti
   assert.ok(subscribed > 0, 'the store subscribes so a Host-side change is picked up');
   const s = settingsStore.getState();
   assert.equal(s.enabled, false, 'form value derived');
-  assert.equal(s.concurrency, 7);
+  assert.equal(s.aiTimeoutMs, 120000);
   assert.equal(s.baseUrl, 'http://x');
   assert.equal(s.aiConfigured, true, 'baseUrl + model + configured key => aiConfigured');
 });
@@ -134,6 +134,15 @@ await testAsync('update applies locally and writes through the form debounced', 
     { op: 'set', path: ['baseUrl'], value: 'http://ab' },
     { op: 'set', path: ['model'], value: 'm1' },
   ], 'trailing debounce collapses keystrokes into one batched path mutation');
+});
+
+await testAsync('an out-of-range timeout from the form is clamped', async () => {
+  settingsStore.attach(makeForm({ aiTimeoutMs: 10 ** 9 }), makeRemote());
+  await sleep(10);
+  assert.equal(settingsStore.getState().aiTimeoutMs, 900000);
+  settingsStore.attach(makeForm({ aiTimeoutMs: 1 }), makeRemote());
+  await sleep(10);
+  assert.equal(settingsStore.getState().aiTimeoutMs, 500);
 });
 
 await testAsync('saveApiKey writes through credentials Remote and refreshes status', async () => {

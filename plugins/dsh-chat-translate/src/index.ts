@@ -5,18 +5,15 @@ import {
   ConfigManager,
   createLiveConfigSource,
   migrateLegacyConfigFile,
+  retireRemovedConfigKeys,
   DEFAULT_CONFIG,
-  MAX_CONCURRENCY,
   AI_TIMEOUT_MIN,
   AI_TIMEOUT_MAX,
-  THINK_TIMEOUT_MIN,
-  THINK_TIMEOUT_MAX,
-  THINK_CACHE_ENTRIES,
   type PluginConfigRefs,
   type SettingsMigrationTarget,
 } from './server/config.ts';
 import { CredentialsReader, TRANSLATE_API_KEY_REF } from './server/credentials.ts';
-import { LruDiskCache } from './server/cache.ts';
+import { LruDiskCache, retireStoreFiles } from './server/cache.ts';
 import { TranslationDispatcher } from './server/dispatcher.ts';
 import { createFetchRoutes } from './server/router.ts';
 
@@ -43,23 +40,12 @@ export const inject = ['settings', 'credentials'];
  */
 export const Config = z.object({
   enabled: z.boolean().default(DEFAULT_CONFIG.enabled).volatile(),
-  concurrency: z.number().min(1).max(MAX_CONCURRENCY).default(DEFAULT_CONFIG.concurrency).volatile(),
-  timeoutMs: z.number().min(500).max(10000).default(DEFAULT_CONFIG.timeoutMs).volatile(),
   aiTimeoutMs: z
     .number()
     .min(AI_TIMEOUT_MIN)
     .max(AI_TIMEOUT_MAX)
     .default(DEFAULT_CONFIG.aiTimeoutMs)
     .volatile(),
-  thinkTimeoutMs: z
-    .number()
-    .min(THINK_TIMEOUT_MIN)
-    .max(THINK_TIMEOUT_MAX)
-    .default(DEFAULT_CONFIG.thinkTimeoutMs)
-    .volatile(),
-  aiEnabled: z.boolean().default(DEFAULT_CONFIG.aiEnabled).volatile(),
-  bingEnabled: z.boolean().default(DEFAULT_CONFIG.bingEnabled).volatile(),
-  thinkEnabled: z.boolean().default(DEFAULT_CONFIG.thinkEnabled).volatile(),
   baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl).volatile(),
   model: z.string().default(DEFAULT_CONFIG.model).volatile(),
   targetLang: z.string().default(DEFAULT_CONFIG.targetLang).volatile(),
@@ -99,8 +85,7 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
     credentials
   );
   const cache = new LruDiskCache(1000);
-  const thinkCache = new LruDiskCache(THINK_CACHE_ENTRIES, 'think-cache.json');
-  const dispatcher = new TranslationDispatcher(configManager, cache, credentials, thinkCache);
+  const dispatcher = new TranslationDispatcher(configManager, cache, credentials);
 
   // The 阅读体验 card is this entry's settings surface, so DSH must not also
   // derive a Plugins-page form for the same fields.
@@ -111,14 +96,17 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
     );
   });
 
-  // Initialize async resources: credentials cache, both disk cache pools, and
-  // the one-shot migration of the legacy dsh-chat-translate-config.json.
+  // Initialize async resources: credentials cache, the reply cache pool, the
+  // one-shot migration of the legacy dsh-chat-translate-config.json, and the
+  // one-shot retirement of everything this release removed — the think-chain
+  // pool file and the config keys the old schema declared.
   const legacyConfigPath = dshHomePath('dsh-chat-translate-config.json');
   const initPromise = Promise.all([
     credentials.init(),
     cache.init(),
-    thinkCache.init(),
     migrateLegacyConfigFile(ctx.settings, legacyConfigPath),
+    retireRemovedConfigKeys(ctx.settings),
+    retireStoreFiles(['think-cache.json']),
   ]).catch((err) => {
     console.warn('[dsh-chat-translate] Initialization error:', err);
   });
@@ -140,7 +128,7 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
     );
     return () => {
       void Promise.all(disposers.map((dispose) => dispose()))
-        .then(() => Promise.all([cache.dispose(), thinkCache.dispose()]))
+        .then(() => cache.dispose())
         .catch((err) => {
           console.warn('[dsh-chat-translate] Dispose translation routes error:', err);
         });

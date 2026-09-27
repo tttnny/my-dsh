@@ -9,18 +9,15 @@ import type { TranslationDispatcher } from './dispatcher.ts';
  * Config and credentials have no HTTP endpoints: since 1.2 the settings panel
  * reads and writes through DSH's own channels — the shared configuration form
  * (`ctx.configForms`) over the profile entry, and the `credentials` Remote API
- * for the key — so the plugin owns exactly three routes: short-text batch
- * translation, think-chain block translation, and the channel probe.
+ * for the key — so the plugin owns exactly two routes: reply-body block
+ * translation, and the channel probe.
  */
 
-/** Batch-translation route path. */
-export const TRANSLATE_ROUTE_PATH = '/api/dsh-chat-translate/translate';
+/** Reply-body block translation route path. */
+export const REPLY_ROUTE_PATH = '/api/dsh-chat-translate/translate-reply';
 
 /** Single-channel probe route path. */
 export const TEST_CHANNEL_ROUTE_PATH = '/api/dsh-chat-translate/test-channel';
-
-/** Think-chain block translation route path. */
-export const THINK_ROUTE_PATH = '/api/dsh-chat-translate/translate-think';
 
 function sendJson(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -53,41 +50,8 @@ export function createFetchRoutes(
   dispatcher: TranslationDispatcher,
   ready: Promise<unknown> = Promise.resolve()
 ): ConnectionFetchRoute[] {
-  const translate: ConnectionFetchRoute = {
-    path: TRANSLATE_ROUTE_PATH,
-    methods: ['POST'],
-    requestBody: 'buffered',
-    fetch: async (request) => {
-      await ready;
-      try {
-        const body = await readJson(request);
-        if (!body.ok) return body.response;
-        const parsed = body.value;
-        const rawTexts: unknown = parsed.texts !== undefined ? parsed.texts : parsed.text;
-
-        let texts: string[] = [];
-        if (Array.isArray(rawTexts)) {
-          texts = rawTexts.filter((t): t is string => typeof t === 'string');
-        } else if (typeof rawTexts === 'string') {
-          texts = [rawTexts];
-        }
-
-        const forceRefresh = Boolean(parsed.forceRefresh);
-
-        if (texts.length === 0) {
-          return sendJson(200, { ok: true, results: [] });
-        }
-
-        const results = await dispatcher.translateBatch(texts, forceRefresh);
-        return sendJson(200, { ok: true, results });
-      } catch (err: any) {
-        return sendJson(500, { ok: false, error: describeError(err) });
-      }
-    },
-  };
-
-  const think: ConnectionFetchRoute = {
-    path: THINK_ROUTE_PATH,
+  const reply: ConnectionFetchRoute = {
+    path: REPLY_ROUTE_PATH,
     methods: ['POST'],
     requestBody: 'buffered',
     fetch: async (request) => {
@@ -102,7 +66,7 @@ export function createFetchRoutes(
         if (blocks.length === 0) {
           return sendJson(200, { ok: true, results: [] });
         }
-        const results = await dispatcher.translateThinkBlocks(blocks);
+        const results = await dispatcher.translateReplyBlocks(blocks);
         return sendJson(200, { ok: true, results });
       } catch (err: any) {
         return sendJson(500, { ok: false, error: describeError(err) });
@@ -128,5 +92,5 @@ export function createFetchRoutes(
     },
   };
 
-  return [translate, think, testChannel];
+  return [reply, testChannel];
 }

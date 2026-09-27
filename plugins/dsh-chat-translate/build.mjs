@@ -1,8 +1,13 @@
 import { build } from 'esbuild';
-import { mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync, execSync } from 'node:child_process';
 
 mkdirSync('lib', { recursive: true });
+
+// Declaration output is a mirror of src/ like lib/ itself, and tsc never prunes
+// its outDir: a deleted or renamed module would otherwise keep shipping its old
+// .d.ts inside the published `lib`. Clean before emitting.
+rmSync('lib/types', { recursive: true, force: true });
 
 // Bundle id follows the package name (standard @lynn123411/dsh-* naming).
 const pkgName = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).name;

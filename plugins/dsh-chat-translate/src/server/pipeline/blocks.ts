@@ -1,12 +1,12 @@
 import { randomTokenId } from './mask-tokens.ts';
 
 /**
- * 思考正文翻译的请求预算。每次请求的输入估算 token 上限，与本地服务的
+ * 回答正文翻译的请求预算。每次请求的输入估算 token 上限，与本地服务的
  * prefill 批次（MAX_NUM_BATCHED_TOKENS）保持同一量级；输出上限写进请求体的
  * max_tokens，避免长文本把剩余上下文全部花在生成上。
  */
-export const THINK_MAX_INPUT_TOKENS = 4096;
-export const THINK_MAX_OUTPUT_TOKENS = 8192;
+export const REPLY_MAX_INPUT_TOKENS = 4096;
+export const REPLY_MAX_OUTPUT_TOKENS = 8192;
 
 /** 汉字与全角标点按一字一 token 计。 */
 const CJK_CHAR = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/;
@@ -68,7 +68,7 @@ function hardSlice(text: string, maxTokens: number): string[] {
  */
 export function splitOversizedBlock(
   text: string,
-  maxTokens: number = THINK_MAX_INPUT_TOKENS
+  maxTokens: number = REPLY_MAX_INPUT_TOKENS
 ): string[] {
   if (estimateTokens(text) <= maxTokens) return [text];
 
@@ -98,7 +98,7 @@ export function splitOversizedBlock(
 }
 
 /** 一个待翻译的片段：属于哪个块、块内第几段、以及该片段的掩码结果。 */
-export interface ThinkPieceShell<TMask> {
+export interface ReplyPieceShell<TMask> {
   block: number;
   index: number;
   text: string;
@@ -108,7 +108,7 @@ export interface ThinkPieceShell<TMask> {
 /** 把片段按原顺序打包成尽量少的请求，且每批不超过输入上限。 */
 export function packPieces<T extends { text: string }>(
   pieces: T[],
-  maxTokens: number = THINK_MAX_INPUT_TOKENS
+  maxTokens: number = REPLY_MAX_INPUT_TOKENS
 ): T[][] {
   const batches: T[][] = [];
   let current: T[] = [];
@@ -131,12 +131,12 @@ export function packPieces<T extends { text: string }>(
  * 块分隔标记：`⟪<4 letters><index>⟫`。外括号刻意与掩码占位符的 ⟦⟧ 不同形，
  * 掩码残留检测（只认 ⟦⟧）因此不会把这个标记当成泄漏。
  */
-export interface ThinkBatchFormat {
+export interface BatchFormat {
   id: string;
   token: (index: number) => string;
 }
 
-export function createThinkBatchFormat(): ThinkBatchFormat {
+export function createBatchFormat(): BatchFormat {
   const id = randomTokenId();
   return {
     id,
@@ -148,7 +148,7 @@ export function createThinkBatchFormat(): ThinkBatchFormat {
 const BATCH_TOKEN_PATTERN_SOURCE = '⟪([a-z]{4})(\\d+)⟫';
 
 /** 每个片段以单独一行标记开头，段与段之间空一行。 */
-export function buildBatchPayload(pieces: string[], format: ThinkBatchFormat): string {
+export function buildBatchPayload(pieces: string[], format: BatchFormat): string {
   return pieces.map((text, index) => `${format.token(index)}\n${text}`).join('\n\n');
 }
 
@@ -160,7 +160,7 @@ export function buildBatchPayload(pieces: string[], format: ThinkBatchFormat): s
  */
 export function splitBatchTranslation(
   translated: string,
-  format: ThinkBatchFormat,
+  format: BatchFormat,
   count: number
 ): string[] | null {
   const pattern = new RegExp(BATCH_TOKEN_PATTERN_SOURCE, 'gu');
@@ -187,6 +187,6 @@ export function splitBatchTranslation(
 }
 
 /** 翻译结果里是否还留着块标记（用于判定整批作废）。 */
-export function hasThinkBatchResidue(text: string): boolean {
+export function hasBatchResidue(text: string): boolean {
   return new RegExp(BATCH_TOKEN_PATTERN_SOURCE, 'u').test(text);
 }

@@ -30,8 +30,7 @@ import { ClientCache } from '../src/client/translate/client-cache.ts';
 import { NonDestructiveTranslationMount } from '../src/client/translate/mount.ts';
 import {
   createFetchRoutes,
-  TRANSLATE_ROUTE_PATH,
-  THINK_ROUTE_PATH,
+  REPLY_ROUTE_PATH,
   TEST_CHANNEL_ROUTE_PATH,
 } from '../src/server/router.ts';
 import { createFakeSettingsEntry, createFakeCredentials } from './test-helpers.mjs';
@@ -260,11 +259,11 @@ test('A model that reproduces a retired placeholder is treated as a damaged tran
 });
 
 // -------------------------------------------------------------
-// Suite 2: Concurrency Pool & Circuit Breaker State Machine
+// Suite 2: Reply Cache And Circuit Breaker State Machine
 // -------------------------------------------------------------
-console.log('\n--- Suite 2: Concurrency Pool & Circuit Breaker State Machine ---');
+console.log('\n--- Suite 2: Reply Cache & Circuit Breaker State Machine ---');
 
-await testAsync('In-flight deduplication merges identical concurrent requests', async () => {
+await testAsync('A repeated reply block is answered from the cache, not the adapter', async () => {
   const entry = createFakeSettingsEntry();
   const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
@@ -283,22 +282,15 @@ await testAsync('In-flight deduplication merges identical concurrent requests', 
       return `translated:${t}`;
     },
   };
-  dispatcher.adapters.set('mock-dedup', mockAdapter);
-  // Disable real channels so only the injected mock is active
-  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 5 });
+  dispatcher.adapters.set('openai', mockAdapter);
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
 
-  const promises = [
-    dispatcher.translateOne('Identical task text'),
-    dispatcher.translateOne('Identical task text'),
-    dispatcher.translateOne('Identical task text'),
-    dispatcher.translateOne('Identical task text'),
-    dispatcher.translateOne('Identical task text'),
-  ];
-
-  const results = await Promise.all(promises);
-  assert.equal(calls, 1, 'In-flight map must merge 5 identical requests into 1 network call');
-  assert.equal(results[0].translated, 'translated:Identical task text');
-  assert.equal(results[4].translated, 'translated:Identical task text');
+  const first = await dispatcher.translateReplyBlocks(['Identical task text']);
+  const second = await dispatcher.translateReplyBlocks(['Identical task text']);
+  assert.equal(calls, 1, 'the cache must answer the second request, not the adapter');
+  assert.equal(first[0].translated, 'translated:Identical task text');
+  assert.equal(second[0].translated, 'translated:Identical task text');
+  assert.equal(second[0].cached, true);
 });
 
 await testAsync('Circuit Breaker trips to OPEN after 3 failures and resets on recovery', async () => {
@@ -321,32 +313,31 @@ await testAsync('Circuit Breaker trips to OPEN after 3 failures and resets on re
       return `ok:${t}`;
     },
   };
-  dispatcher.adapters.set('unstable', unstableAdapter);
-  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  dispatcher.adapters.set('openai', unstableAdapter);
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
 
   // 3 consecutive failures
-  const r1 = await dispatcher.translateOne('Fail 1');
-  const r2 = await dispatcher.translateOne('Fail 2');
-  const r3 = await dispatcher.translateOne('Fail 3');
-  assert.equal(r1.channel, 'fallback');
-  assert.equal(r3.channel, 'fallback');
-  assert.equal(failCount, 3);
+  await dispatcher.translateReplyBlocks(['Fail 1']);
+  await dispatcher.translateReplyBlocks(['Fail 2']);
+  await dispatcher.translateReplyBlocks(['Fail 3']);
+  assert.ok(failCount >= 3, 'the adapter was really tried');
 
   // 4th call: circuit should be OPEN, skipping the adapter entirely
-  const r4 = await dispatcher.translateOne('Fail 4');
-  assert.equal(failCount, 3, 'Circuit is open: adapter must not be called');
-  assert.equal(r4.channel, 'fallback');
+  const callsBeforeOpen = failCount;
+  const r4 = await dispatcher.translateReplyBlocks(['Fail 4']);
+  assert.equal(failCount, callsBeforeOpen, 'Circuit is open: adapter must not be called');
+  assert.equal(r4[0].ok, false);
 
   // Fast-forward openUntil to simulate cooling timeout
-  const circuitState = dispatcher.circuitStates.get('unstable');
+  const circuitState = dispatcher.circuitStates.get('openai');
   assert.ok(circuitState);
   assert.equal(circuitState.state, 'open');
   circuitState.openUntil = Date.now() - 100; // time elapsed -> triggers half-open
 
   // Allow adapter to succeed on trial
   succeed = true;
-  const r5 = await dispatcher.translateOne('Recovery trial');
-  assert.equal(r5.translated, 'ok:Recovery trial');
+  const r5 = await dispatcher.translateReplyBlocks(['Recovery trial']);
+  assert.equal(r5[0].translated, 'ok:Recovery trial');
   assert.equal(circuitState.state, 'closed', 'Successful half-open probe resets circuit to closed');
   assert.equal(circuitState.failureCount, 0);
 });
@@ -371,14 +362,14 @@ await testAsync('A channel that mangles a mask token is discarded, never cached'
       return '阅读 DSH 里的内容';
     },
   };
-  dispatcher.adapters.set('leaky', leakyAdapter);
-  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  dispatcher.adapters.set('openai', leakyAdapter);
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
 
-  const result = await dispatcher.translateOne(source);
-  assert.equal(result.channel, 'fallback', 'a mangled mask must not be reported as a translation');
+  const result = (await dispatcher.translateReplyBlocks([source]))[0];
+  assert.equal(result.ok, false, 'a mangled mask must not be reported as a translation');
   assert.equal(result.translated, source, 'the original text must survive');
   assert.equal(cache.get(source), undefined, 'a mangled mask must not be cached');
-  assert.equal(calls, 1);
+  assert.equal(calls, 2, 'the batch and its per-piece retry both run');
 });
 
 await testAsync('A channel that drops a mask token keeps its fragment out of the cache', async () => {
@@ -396,11 +387,11 @@ await testAsync('A channel that drops a mask token keeps its fragment out of the
     // The engine translated the sentence but swallowed the protected fragment.
     translate: async () => '阅读文件',
   };
-  dispatcher.adapters.set('dropping', dropping);
-  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  dispatcher.adapters.set('openai', dropping);
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
 
-  const result = await dispatcher.translateOne(source);
-  assert.equal(result.channel, 'fallback');
+  const result = (await dispatcher.translateReplyBlocks([source]))[0];
+  assert.equal(result.ok, false);
   assert.equal(result.translated, source);
   assert.equal(cache.get(source), undefined);
 });
@@ -418,11 +409,11 @@ await testAsync('A translated string without masks but with a hallucinated place
     isAvailable: () => true,
     translate: async () => '查找 __DSH_MASK_0__ 中的归属使用情况',
   };
-  dispatcher.adapters.set('hallucinating', hallucinating);
-  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  dispatcher.adapters.set('openai', hallucinating);
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
 
-  const result = await dispatcher.translateOne('find attribution usage in dsh-llm');
-  assert.equal(result.channel, 'fallback');
+  const result = (await dispatcher.translateReplyBlocks(['find attribution usage in dsh-llm']))[0];
+  assert.equal(result.ok, false);
   assert.equal(result.translated, 'find attribution usage in dsh-llm');
 });
 
@@ -445,11 +436,11 @@ await testAsync('A translation that keeps a placeholder the source documented is
     // A faithful engine returns the token it was given, in place.
     translate: async (text) => `用户反馈 \`${/⟦[a-z]{4}\d+⟧/.exec(text)[0]}\` 占位符泄漏进译文`,
   };
-  dispatcher.adapters.set('faithful', faithful);
-  await entry.update({ aiEnabled: false, bingEnabled: false, concurrency: 1 });
+  dispatcher.adapters.set('openai', faithful);
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
 
-  const result = await dispatcher.translateOne(source);
-  assert.equal(result.channel, 'faithful', 'a placeholder the source documented is not a leak');
+  const result = (await dispatcher.translateReplyBlocks([source]))[0];
+  assert.equal(result.ok, true, 'a placeholder the source documented is not a leak');
   assert.equal(result.translated, '用户反馈 `__DSH_MASK_0__` 占位符泄漏进译文');
 });
 
@@ -585,31 +576,29 @@ await testAsync('ConfigManager reads the committed config and notifies subscribe
 
   const seen = [];
   const unsub = cfg.onConfigChange((next) => {
-    seen.push(next.concurrency);
+    seen.push(next.aiTimeoutMs);
   });
 
   // One committed live edit (what the browser configuration form writes).
-  await entry.update({ concurrency: 8, bingEnabled: false });
-  assert.equal(cfg.getConfig().concurrency, 8, 'the facade reads the committed value');
-  assert.equal(cfg.getConfig().bingEnabled, false);
-  assert.deepEqual(seen, [8], 'the change notification carries the committed value');
+  await entry.update({ aiTimeoutMs: 120000, baseUrl: 'http://x' });
+  assert.equal(cfg.getConfig().aiTimeoutMs, 120000, 'the facade reads the committed value');
+  assert.equal(cfg.getConfig().baseUrl, 'http://x');
+  assert.deepEqual(seen, [120000], 'the change notification carries the committed value');
 
   unsub();
-  await entry.update({ concurrency: 2 });
-  assert.deepEqual(seen, [8], 'an unsubscribed listener is not called');
+  await entry.update({ aiTimeoutMs: 90000 });
+  assert.deepEqual(seen, [120000], 'an unsubscribed listener is not called');
 });
 
 test('sanitizePatch clamps numeric bounds and drops retired fields', () => {
   // The legacy-file migration is the only remaining writer, and it sanitizes:
   // one bad field must never take the whole migration down.
-  assert.equal(sanitizePatch({ concurrency: 9999 }).concurrency, 100);
-  assert.equal(sanitizePatch({ concurrency: 0 }).concurrency, 1);
-  assert.equal(sanitizePatch({ timeoutMs: 10 }).timeoutMs, 500);
-  assert.equal(sanitizePatch({ timeoutMs: 999999 }).timeoutMs, 10000);
-  assert.equal(sanitizePatch({ thinkTimeoutMs: 10 ** 9 }).thinkTimeoutMs, 900000);
+  assert.equal(sanitizePatch({ aiTimeoutMs: 10 }).aiTimeoutMs, 500);
+  assert.equal(sanitizePatch({ aiTimeoutMs: 10 ** 9 }).aiTimeoutMs, 900000);
+  assert.equal(sanitizePatch({ aiTimeoutMs: 600000 }).aiTimeoutMs, 600000);
   assert.equal(sanitizePatch({ enabled: 'false' }).enabled, undefined);
   assert.equal(sanitizePatch({ baseUrl: '  http://x  ' }).baseUrl, 'http://x');
-  assert.equal(sanitizePatch({ channels: ['bing'] }).channels, undefined);
+  assert.deepEqual(sanitizePatch({ channels: ['bing'], concurrency: 3 }), {});
 });
 
 // -------------------------------------------------------------
@@ -688,44 +677,42 @@ test('Fetch routes own exact POST paths with buffered bodies', () => {
   assert.deepEqual(
     routes.map((route) => ({ path: route.path, methods: route.methods, requestBody: route.requestBody })),
     [
-      { path: TRANSLATE_ROUTE_PATH, methods: ['POST'], requestBody: 'buffered' },
-      { path: THINK_ROUTE_PATH, methods: ['POST'], requestBody: 'buffered' },
+      { path: REPLY_ROUTE_PATH, methods: ['POST'], requestBody: 'buffered' },
       { path: TEST_CHANNEL_ROUTE_PATH, methods: ['POST'], requestBody: 'buffered' },
     ]
   );
 });
 
-await testAsync('Translate route answers a POST with dispatcher results', async () => {
+await testAsync('Reply route answers a POST with dispatcher results', async () => {
   const { entry, dispatcher, routes } = makeRoutes();
-  dispatcher.adapters.set('mock', {
-    id: 'mock',
+  dispatcher.adapters.set('openai', {
+    id: 'openai',
     name: 'Mock',
     isAvailable: () => true,
     translate: async (t) => '译:' + t,
   });
-  // Only the injected mock is active - real channels must not leak into the test.
-  await entry.update({ aiEnabled: false, bingEnabled: false });
-  const route = routes.find((r) => r.path === TRANSLATE_ROUTE_PATH);
-  const res = await route.fetch(post(TRANSLATE_ROUTE_PATH, { texts: ['Hello'] }));
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
+  const route = routes.find((r) => r.path === REPLY_ROUTE_PATH);
+  const res = await route.fetch(post(REPLY_ROUTE_PATH, { blocks: ['Hello'] }));
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.ok, true);
   assert.equal(body.results[0].translated, '译:Hello');
 });
 
-await testAsync('Translate route answers a malformed body with 400', async () => {
+await testAsync('Reply route answers a malformed body with 400', async () => {
   const { routes } = makeRoutes();
-  const route = routes.find((r) => r.path === TRANSLATE_ROUTE_PATH);
-  const res = await route.fetch(post(TRANSLATE_ROUTE_PATH, '{not json'));
+  const route = routes.find((r) => r.path === REPLY_ROUTE_PATH);
+  const res = await route.fetch(post(REPLY_ROUTE_PATH, '{not json'));
   assert.equal(res.status, 400);
   assert.equal((await res.json()).ok, false);
 });
 
 await testAsync('Test-channel route proxies the probe through the dispatcher', async () => {
   const { dispatcher, routes } = makeRoutes();
-  dispatcher.testChannel = async (id) => ({ ok: id === 'bing', latencyMs: 1 });
+  dispatcher.testChannel = async (id) => ({ ok: id === 'openai', latencyMs: 1 });
   const route = routes.find((r) => r.path === TEST_CHANNEL_ROUTE_PATH);
-  const res = await route.fetch(post(TEST_CHANNEL_ROUTE_PATH, { channel: 'bing' }));
+  const res = await route.fetch(post(TEST_CHANNEL_ROUTE_PATH, { channel: 'openai' }));
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { ok: true, latencyMs: 1 });
 });
@@ -745,8 +732,9 @@ test('Config declares every field volatile so form and apply share one value', (
   }
   // Schema defaults, not the removed owner-scope registration.
   assert.equal(value.enabled.get(), DEFAULT_CONFIG.enabled);
-  assert.equal(value.concurrency.get(), DEFAULT_CONFIG.concurrency);
-  assert.equal(value.thinkTimeoutMs.get(), DEFAULT_CONFIG.thinkTimeoutMs);
+  assert.equal(value.aiTimeoutMs.get(), DEFAULT_CONFIG.aiTimeoutMs);
+  assert.equal(value.baseUrl.get(), DEFAULT_CONFIG.baseUrl);
+  assert.equal(value.model.get(), DEFAULT_CONFIG.model);
   assert.equal(value.targetLang.get(), DEFAULT_CONFIG.targetLang);
 });
 
@@ -763,19 +751,19 @@ test('createLiveConfigSource forwards a committed live edit to subscribers', () 
   }, refs);
   const fire = () => { for (const listener of [...commitListeners]) listener(); };
 
-  assert.equal(source.get().concurrency, DEFAULT_CONFIG.concurrency);
+  assert.equal(source.get().aiTimeoutMs, DEFAULT_CONFIG.aiTimeoutMs);
   const seen = [];
-  const off = source.watch((next) => seen.push(next.concurrency));
+  const off = source.watch((next) => seen.push(next.aiTimeoutMs));
 
   // DSH commits the accepted edit into the refs, then fires the event.
-  held.concurrency = 7;
+  held.aiTimeoutMs = 120000;
   fire();
-  assert.deepEqual(seen, [7], 'the subscriber sees the committed value');
+  assert.deepEqual(seen, [120000], 'the subscriber sees the committed value');
 
   off();
-  held.concurrency = 2;
+  held.aiTimeoutMs = 20000;
   fire();
-  assert.deepEqual(seen, [7], 'an unsubscribed listener is not called');
+  assert.deepEqual(seen, [120000], 'an unsubscribed listener is not called');
 });
 
 test('apply() wires the exact routes and opts out of the auto settings page', () => {
@@ -811,8 +799,8 @@ test('apply() wires the exact routes and opts out of the auto settings page', ()
 
   assert.deepEqual(
     routes.map((route) => route.path),
-    [TRANSLATE_ROUTE_PATH, THINK_ROUTE_PATH, TEST_CHANNEL_ROUTE_PATH],
-    'the connection service receives the plugin\'s three exact routes'
+    [REPLY_ROUTE_PATH, TEST_CHANNEL_ROUTE_PATH],
+    'the connection service receives the plugin\'s two exact routes'
   );
   assert.deepEqual(policies, [{ auto: false }], 'this plugin owns its settings page');
 });

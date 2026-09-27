@@ -31,22 +31,22 @@ interface ClientContext {
 }
 
 /**
- * Mount the tool-call / think-chain translation observer and the settings UI
- * card inside the shared reading-settings page.
+ * Mount the reply-body translation observer and the settings UI card inside the
+ * shared reading-settings page.
  * @param ctx - DSH browser client context.
  */
 export function apply(ctx: ClientContext): void {
-  // 1. Mount tool title / think summary translation observer (current session only)
-  ctx.effect(() => chatTranslateObserver.start(document), 'dsh-chat-translate: title translate observer');
+  // 1. Mount the reply-body observer (current session only)
+  ctx.effect(() => chatTranslateObserver.start(document), 'dsh-chat-translate: reply translate observer');
 
   // 2. Join the shared 「阅读体验」 settings page (claim it, or register a card into it)
   ctx.effect(() => setupSettingsUi(ctx), 'dsh-chat-translate: settings section');
 }
 
 export { chatTranslateObserver } from './translate/observer.ts';
+export { replyTranslator, collectReplyUnits, chunkUnits, needsTranslation } from './translate/reply.ts';
 export { setupSettingsUi } from './settings/ui.tsx';
 export { NonDestructiveTranslationMount } from './translate/mount.ts';
-export { StreamDebounceViewportObserver } from './translate/viewport-observer.ts';
 export { clientCache } from './translate/client-cache.ts';
 export { lazyQueue } from './translate/lazy.ts';
 export { settingsStore } from './settings/store.ts';

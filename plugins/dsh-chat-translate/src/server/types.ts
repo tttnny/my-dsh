@@ -1,12 +1,6 @@
 export interface PluginConfig {
-  enabled: boolean;
-  concurrency: number; // 1-100, default 3
-  timeoutMs: number; // Bing channel timeout, default 2000
-  aiTimeoutMs: number; // AI channel timeout, default 30000
-  thinkTimeoutMs: number; // think-chain request timeout, default 600000
-  aiEnabled: boolean; // AI (OpenAI-compatible) channel switch
-  bingEnabled: boolean; // Bing web translation channel switch
-  thinkEnabled: boolean; // think-chain translation switch; AI channel only
+  enabled: boolean; // master switch for reply-body translation
+  aiTimeoutMs: number; // AI request timeout for one packed reply batch
   baseUrl: string; // OpenAI-compatible base URL; empty = AI not configured
   model: string; // model name; empty = AI not configured
   targetLang: string; // target language, default 'zh-Hans'
@@ -45,8 +39,8 @@ export interface ITranslationAdapter {
   ): Promise<string>;
 }
 
-/** One reasoning block's outcome, aligned by index with the request's block list. */
-export interface ThinkBlockResult {
+/** One reply block's outcome, aligned by index with the request's block list. */
+export interface ReplyBlockResult {
   original: string;
   translated: string;
   ok: boolean;

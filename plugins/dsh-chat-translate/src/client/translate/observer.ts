@@ -1,19 +1,27 @@
-import { clientCache } from './client-cache.ts';
 import { lazyQueue } from './lazy.ts';
-import {
-  CLASS_ORIGINAL_HIDDEN,
-  CLASS_ORIGINAL_SHOWN,
-  NonDestructiveTranslationMount,
-} from './mount.ts';
-import { thinkTranslator } from './think.ts';
+import { NonDestructiveTranslationMount } from './mount.ts';
 
-// Case-insensitive match: DSH builds vary the summary class casing across
-// versions (MISisG_summary / _48RFeq_summary). Only tool-call rows are targets;
-// a Think card's collapsed summary is excluded in isToolSummarySpan.
-const TOOL_TITLE_SELECTOR = '[class*="summary" i]';
 
-/** Think cards, the root both renderers mark. */
-const THINK_CARD_SELECTOR = '[data-variant="think"]';
+/**
+ * The assistant reply body, as the DSH Web UI emits it.
+ *
+ * A flow row carries `data-chat-flow-kind` (the node kind) and
+ * `data-chat-group-part` (`"response"` for the answer prose, `"reasoning"` for
+ * the Think card); the prose itself renders as
+ * `<div class="<hash>_root" data-streaming><div class="<hash>_body">…</div></div>`.
+ * Hashed CSS-module class names vary between DSH builds, so every selector here
+ * anchors on the data attributes and treats the class name only as a fallback.
+ */
+const REPLY_ROW_SELECTOR = '[data-chat-flow-kind][data-chat-group-part="response"]';
+const MARKDOWN_BODY_SELECTOR = '[class*="body" i]';
+
+/** Every card that must never be translated: Think text and tool rows. */
+const EXCLUDED_SELECTOR = [
+  '[data-variant="think"]',
+  '[data-chat-call-id]',
+  '[data-slot="tool.call.toolview"]',
+  '[data-chat-group-part="reasoning"]',
+].join(',');
 
 /**
  * Current-session scroll container (the conversation layout re-renders this
@@ -25,49 +33,13 @@ const SESSION_ROOT_SELECTOR = '[data-conversation-scroll], [data-chat-flow]';
 /** How often (ms) we re-check that the observed root is still the live one. */
 const ROOT_CHECK_INTERVAL_MS = 3000;
 
-function isToolSummarySpan(span: HTMLElement): boolean {
-  if (!span || span.nodeType !== 1) return false;
-  if (span.hasAttribute('aria-hidden')) return false;
-
-  // The Think card's collapsed summary — the truncated first line of the
-  // reasoning — is never translated. Its body is handled by thinkTranslator
-  // instead, so exclude the whole card here.
-  if (span.closest(THINK_CARD_SELECTOR)) return false;
-
-  // Never match parent rows or containers that contain title, leading icon, chevron or nested summary
-  if (span.querySelector?.('[class*="title"], [class*="leading"], [class*="chevron"], [class*="sep"], [class*="summary" i]')) {
-    return false;
-  }
-
-  const cls = span.className || '';
-  if (/title|leading|icon|badge|chevron|separator|sep\b|row\b|root\b|card\b/i.test(cls)) return false;
-
-  // Never translate fold toggle ("展开"/"收起") or Think card's own title badge ("Think"/"思考")
-  const rawToggle = (span.textContent || '').trim();
-  if (
-    rawToggle.length <= 12 &&
-    /^(展开|收起|展开全部|收起全部|Expand|Collapse|Show more|Show less|Think|思考)$/i.test(rawToggle)
-  ) {
-    return false;
-  }
-  if (rawToggle === 'Think' || rawToggle === '思考') return false;
-  if (
-    span.closest('button, [role="button"]') &&
-    rawToggle.length <= 12 &&
-    /展开|收起|Expand|Collapse|Think|思考/i.test(rawToggle)
-  ) {
-    return false;
-  }
-
-  // Must belong to tool call or think block card
-  if (
-    span.closest(
-      '[data-chat-call-id], [data-slot="tool.call.toolview"], [data-sample], [data-variant], [data-tool], [data-disclosure-row]'
-    )
-  ) {
-    return true;
-  }
-  return false;
+/**
+ * 一条回答是「落定」还是「流式中」：`data-streaming` 由 markdown 根在流式
+ * 期间挂着，流式结束就消失。流式中的正文会被渲染器反复重写，这时翻译只会被
+ * 下一次重写冲掉，所以一律等到它落定。
+ */
+function isStreaming(root: HTMLElement): boolean {
+  return root.hasAttribute('data-streaming');
 }
 
 export class ChatTranslateObserver {
@@ -75,18 +47,26 @@ export class ChatTranslateObserver {
   private rootElement: HTMLElement | null = null;
   private rootCheckTimer: number | null = null;
   private isEnabled = true;
-  /** 设置里的思考链开关；与总开关一起决定按钮是否存在。 */
-  private thinkEnabled = false;
+  /**
+   * 已经交给翻译器的正文容器，避免同一条回答在每次 DOM 变动时重扫。总开关重开
+   * 时清空：关着的那段时间落定的回答需要补翻。
+   */
+  private handled = new WeakSet<HTMLElement>();
 
   constructor() {
     this.handleMutations = this.handleMutations.bind(this);
   }
 
   setEnabled(enabled: boolean): void {
+    if (enabled === this.isEnabled) return;
     this.isEnabled = enabled;
-    thinkTranslator.setEnabled(enabled && this.thinkEnabled);
     if (enabled) {
       lazyQueue.setEnabled(true);
+      // 关着的时候扫过的回答要重新登记：那时它们没有被翻译（也可能正是没有
+      // Key 的时候落定的），重开之后必须补上。
+      this.handled = new WeakSet<HTMLElement>();
+      this.observer?.disconnect();
+      this.observer = null;
       this.start();
     } else {
       this.restoreOriginals();
@@ -98,23 +78,7 @@ export class ChatTranslateObserver {
   private restoreOriginals(): void {
     const scope = this.rootElement ?? document;
     NonDestructiveTranslationMount.restore(scope);
-  }
-
-  /**
-   * 设置里的思考链开关：关掉就撤掉所有翻译按钮并还原思考卡里的译文，工具标题
-   * 译文不动。
-   */
-  setThinkEnabled(enabled: boolean): void {
-    this.thinkEnabled = enabled;
-    thinkTranslator.setEnabled(this.isEnabled && enabled);
-  }
-
-  /**
-   * AI 通道的可用性（通道开关打开且 Key / Base URL / 模型齐全）。不可用时同样
-   * 不注入按钮：思考链翻译只能走这条通道。
-   */
-  setThinkConfigured(configured: boolean): void {
-    thinkTranslator.setConfigured(configured);
+    this.handled = new WeakSet<HTMLElement>();
   }
 
   /**
@@ -154,13 +118,10 @@ export class ChatTranslateObserver {
       const root = this.findRoot(documentRef);
 
       this.rootElement = root;
-      thinkTranslator.setScope(root);
 
-      // 1. Initial scan of existing tool elements and think cards. Whatever is
-      // already on screen when a session root appears is history: those rows
-      // are translated in place.
+      // 1. Initial scan. Whatever is already on screen when a session root
+      // appears is history: those replies are translated in place.
       this.scanContainer(root);
-      this.scanThink(root);
 
       // 2. Setup MutationObserver
       if (!this.observer) {
@@ -170,15 +131,9 @@ export class ChatTranslateObserver {
           subtree: true,
           attributes: true,
           characterData: true,
-          attributeFilter: [
-            'data-state',
-            'data-tool',
-            'data-variant',
-            'data-sample',
-            'aria-expanded',
-            'data-open',
-            'data-expanded',
-          ],
+          // `data-streaming` disappearing on the markdown root is the settle
+          // signal this whole controller waits for.
+          attributeFilter: ['data-streaming', 'data-chat-flow-kind', 'data-chat-group-part'],
         });
       }
     };
@@ -219,147 +174,105 @@ export class ChatTranslateObserver {
     for (const mutation of mutations) {
       if (mutation.type === 'childList') {
         let addedElement = false;
-        let changedOwner: HTMLElement | null = null;
         for (let i = 0; i < mutation.addedNodes.length; i++) {
           const node = mutation.addedNodes[i];
           if (node instanceof HTMLElement) {
-            const owner = this.mountedOwner(node);
-            if (owner) {
-              changedOwner = owner;
-              continue;
-            }
             if (NonDestructiveTranslationMount.isOwnNode(node)) continue;
             addedElement = true;
             this.scanNode(node);
-            this.scanThink(node);
           }
         }
         // 只换掉了文本节点（流式重渲染里最常见的一种提交）时，新增节点里没有
-        // 元素，必须回到父元素重扫，否则流式中的新段落永远等不到翻译。
+        // 元素，必须回到父元素重扫，否则新落定的段落永远等不到翻译。
         const target = mutation.target;
         if (target instanceof HTMLElement) {
-          const owner = this.mountedOwner(target);
-          if (owner) {
-            changedOwner = owner;
-          } else if (!addedElement && !NonDestructiveTranslationMount.isOwnNode(target)) {
+          if (!addedElement && !NonDestructiveTranslationMount.isOwnNode(target)) {
             this.scanNode(target);
-            this.scanThink(target);
           }
         }
-        if (changedOwner) this.handleOriginalTextChange(changedOwner);
       } else if (mutation.type === 'attributes') {
         const target = mutation.target;
         if (target instanceof HTMLElement) {
           if (NonDestructiveTranslationMount.isOwnNode(target)) continue;
           this.scanNode(target);
-          this.scanThink(target);
         }
       } else if (mutation.type === 'characterData') {
-        const owner = this.mountedOwner(mutation.target);
-        if (owner) {
-          this.handleOriginalTextChange(owner);
-          continue;
-        }
         const parent = mutation.target.parentElement;
         if (parent instanceof HTMLElement) {
           if (NonDestructiveTranslationMount.isOwnNode(parent)) continue;
           this.scanNode(parent);
-          this.scanThink(parent);
         }
       }
     }
   }
 
-  /**
-   * 变更发生在我们移进隐藏容器的原文里时，返回挂载了译文的那个元素。React
-   * 就地改写它自己创建的文本节点，所以「原文变了」只能从这条路径看到。
-   */
-  private mountedOwner(node: Node): HTMLElement | null {
-    const element = node instanceof HTMLElement ? node : node.parentElement;
-    if (!element) return null;
-    const wrapper = element.closest<HTMLElement>(
-      `.${CLASS_ORIGINAL_HIDDEN}, .${CLASS_ORIGINAL_SHOWN}`
-    );
-    if (!wrapper) return null;
-    const owner = wrapper.parentElement;
-    return owner instanceof HTMLElement && owner.dataset.tidyTranslated === 'true' ? owner : null;
-  }
-
-  /**
-   * 已挂载行的隐藏原文被上游改写了（ask_user 计数、失败摘要、todo 计数）：
-   * 命中缓存就原地换译文，否则请求新译文后原地换。行始终可见，不出现英文。
-   */
-  private handleOriginalTextChange(owner: HTMLElement): void {
-    if (!isToolSummarySpan(owner)) return;
-    const current = NonDestructiveTranslationMount.extractVisibleText(owner);
-    if (!current || current === owner.dataset.original) return;
-
-    const cached = clientCache.get(current);
-    if (cached) {
-      NonDestructiveTranslationMount.mount(owner, cached, { originalText: current });
-      return;
-    }
-    lazyQueue.observe(owner, current);
-  }
-
   private scanContainer(container: HTMLElement): void {
-    const spans = container.querySelectorAll<HTMLElement>(TOOL_TITLE_SELECTOR);
-    spans.forEach((span) => {
-      if (isToolSummarySpan(span)) {
-        this.processSpan(span);
-      }
+    if (this.tryBody(container)) return;
+    container.querySelectorAll<HTMLElement>(REPLY_ROW_SELECTOR).forEach((row) => {
+      this.scanRow(row);
     });
   }
 
   private scanNode(node: HTMLElement): void {
-    if (node.matches?.(TOOL_TITLE_SELECTOR) && isToolSummarySpan(node)) {
-      this.processSpan(node);
-    }
+    // 落定事件就发生在这一个元素上（`data-streaming` 被摘掉），先看它自己。
+    if (this.tryBody(node)) return;
 
-    const spans = node.querySelectorAll<HTMLElement>(TOOL_TITLE_SELECTOR);
-    spans.forEach((span) => {
-      if (isToolSummarySpan(span)) {
-        this.processSpan(span);
-      }
+    const row = node.closest<HTMLElement>(REPLY_ROW_SELECTOR);
+    if (row !== null) this.scanRow(row);
+
+    node.querySelectorAll<HTMLElement>(REPLY_ROW_SELECTOR).forEach((child) => {
+      this.scanRow(child);
+    });
+  }
+
+  /** 一行 flow item 里的正文容器；没有正文（工具行、Think 卡）就什么都不做。 */
+  private scanRow(row: HTMLElement): void {
+    row.querySelectorAll<HTMLElement>(MARKDOWN_BODY_SELECTOR).forEach((body) => {
+      this.tryBody(body);
     });
   }
 
   /**
-   * 交给思考正文翻译控制器：命中节点所在的卡片，以及它下面（或它就是）的
-   * 全部思考卡片。
+   * 判定并交给翻译器：这个元素自己是不是一条可翻译的正文容器（或其内部有）。
+   * @returns 是否命中一条正文容器。
    */
-  private scanThink(node: ParentNode): void {
-    if (!thinkTranslator.isEnabled()) return;
-    if (node instanceof HTMLElement) {
-      const card = node.closest<HTMLElement>(THINK_CARD_SELECTOR);
-      if (card) thinkTranslator.syncCard(card);
-    }
-    if (!node.querySelectorAll) return;
-    node.querySelectorAll<HTMLElement>(THINK_CARD_SELECTOR).forEach((card) => {
-      thinkTranslator.syncCard(card);
-    });
+  private tryBody(element: HTMLElement): boolean {
+    const body = this.bodyOf(element);
+    if (body === null) return false;
+    this.requestTranslate(body);
+    return true;
   }
 
-  private processSpan(span: HTMLElement): void {
-    if (NonDestructiveTranslationMount.isMounted(span)) {
-      // 已挂载的行由 handleOriginalTextChange 跟进原文变化。
-      return;
-    }
+  /**
+   * 元素自己或它内部落定的正文容器。已排除 Think 卡与工具行；流式中的回答
+   * 直接返回 null，等 `data-streaming` 消失时观察器会再进来一次。
+   */
+  private bodyOf(element: HTMLElement): HTMLElement | null {
+    if (element.closest(EXCLUDED_SELECTOR) !== null) return null;
 
-    const text = NonDestructiveTranslationMount.extractVisibleText(span);
-    if (!text) return;
+    const row = element.closest<HTMLElement>(REPLY_ROW_SELECTOR);
+    const candidate =
+      row !== null && element.matches(MARKDOWN_BODY_SELECTOR)
+        ? element
+        : element.querySelector<HTMLElement>(`${REPLY_ROW_SELECTOR} ${MARKDOWN_BODY_SELECTOR}`);
+    if (candidate === null) return null;
+    if (candidate.closest(EXCLUDED_SELECTOR) !== null) return null;
 
-    // Check fast client cache
-    const cached = clientCache.get(text);
-    if (cached) {
-      NonDestructiveTranslationMount.mount(span, cached, {
-        originalText: text,
-      });
-      return;
-    }
+    // 流式中的正文要等落定：观察器在 `data-streaming` 消失时会再扫一次。
+    const root = candidate.closest<HTMLElement>('[data-streaming]') ?? candidate;
+    if (isStreaming(root)) return null;
 
-    // Send to viewport lazy queue
-    lazyQueue.observe(span, text);
+    return candidate;
+  }
+
+  /**
+   * 把一条落定的正文交给视口懒队列：视口内立刻翻、视口外的等滚到再翻，
+   * 命中缓存的由翻译器立即挂上。同一条回答只登记一次。
+   */
+  private requestTranslate(body: HTMLElement): void {
+    if (this.handled.has(body)) return;
+    this.handled.add(body);
+    lazyQueue.observe(body);
   }
 
   disconnect(): void {

@@ -4,19 +4,16 @@ import { testServerChannel } from '../translate/api.ts';
 
 export interface ClientSettingsState {
   enabled: boolean;
-  concurrency: number;
-  aiEnabled: boolean;
-  bingEnabled: boolean;
-  thinkEnabled: boolean;
-  thinkTimeoutMs: number;
+  aiTimeoutMs: number;
   baseUrl: string;
   model: string;
+  /** 派生值：Key / Base URL / 模型齐全，正文才会被翻译。 */
   aiConfigured: boolean;
 }
 
-/** 思考链翻译超时的取值范围，与宿主半边保持一致。 */
-export const THINK_TIMEOUT_MIN = 500;
-export const THINK_TIMEOUT_MAX = 900000;
+/** 正文单次请求超时的取值范围，与宿主半边保持一致。 */
+export const AI_TIMEOUT_MIN = 500;
+export const AI_TIMEOUT_MAX = 900000;
 
 /** Profile entry id (== settings namespace) + credentials ref, mirroring the host constants. */
 export const SETTINGS_NAMESPACE = 'dsh-chat-translate';
@@ -69,11 +66,7 @@ export interface CredentialsRemoteLike {
 
 const DEFAULT_STATE: ClientSettingsState = {
   enabled: true,
-  concurrency: 3,
-  aiEnabled: true,
-  bingEnabled: true,
-  thinkEnabled: true,
-  thinkTimeoutMs: 600000,
+  aiTimeoutMs: 600000,
   baseUrl: '',
   model: '',
   aiConfigured: false,
@@ -137,18 +130,11 @@ class SettingsStore {
     if (!value || typeof value !== 'object') return;
     const next: ClientSettingsState = { ...this.state };
     if (typeof value.enabled === 'boolean') next.enabled = value.enabled;
-    const c = value.concurrency;
-    if (typeof c === 'number' && Number.isFinite(c)) {
-      next.concurrency = Math.min(Math.max(Math.round(c), 1), 100);
-    }
-    if (typeof value.aiEnabled === 'boolean') next.aiEnabled = value.aiEnabled;
-    if (typeof value.bingEnabled === 'boolean') next.bingEnabled = value.bingEnabled;
-    if (typeof value.thinkEnabled === 'boolean') next.thinkEnabled = value.thinkEnabled;
-    const thinkTimeout = value.thinkTimeoutMs;
-    if (typeof thinkTimeout === 'number' && Number.isFinite(thinkTimeout)) {
-      next.thinkTimeoutMs = Math.min(
-        Math.max(Math.round(thinkTimeout), THINK_TIMEOUT_MIN),
-        THINK_TIMEOUT_MAX
+    const timeout = value.aiTimeoutMs;
+    if (typeof timeout === 'number' && Number.isFinite(timeout)) {
+      next.aiTimeoutMs = Math.min(
+        Math.max(Math.round(timeout), AI_TIMEOUT_MIN),
+        AI_TIMEOUT_MAX
       );
     }
     if (typeof value.baseUrl === 'string') next.baseUrl = value.baseUrl;
@@ -165,12 +151,6 @@ class SettingsStore {
         chatTranslateObserver.setEnabled(this.state.enabled);
       } catch {}
     }
-    // 思考链翻译只在总开关、自身开关、AI 通道开关与 AI 配置都齐备时才提供
-    // 按钮；任何一条不满足都会撤掉按钮并还原已挂载的思考正文译文。
-    try {
-      chatTranslateObserver.setThinkEnabled(this.state.enabled && this.state.thinkEnabled);
-      chatTranslateObserver.setThinkConfigured(this.state.aiEnabled && this.state.aiConfigured);
-    } catch {}
     this.notify();
   }
 
@@ -209,36 +189,22 @@ class SettingsStore {
    * (conflict-safe recovery).
    */
   async update(partial: Partial<ClientSettingsState>): Promise<void> {
-    let sanitizedConcurrency = this.state.concurrency;
-    if (typeof partial.concurrency === 'number' && Number.isFinite(partial.concurrency)) {
-      sanitizedConcurrency = Math.min(Math.max(Math.round(partial.concurrency), 1), 100);
-    }
-    let sanitizedThinkTimeout = this.state.thinkTimeoutMs;
-    if (typeof partial.thinkTimeoutMs === 'number' && Number.isFinite(partial.thinkTimeoutMs)) {
-      sanitizedThinkTimeout = Math.min(
-        Math.max(Math.round(partial.thinkTimeoutMs), THINK_TIMEOUT_MIN),
-        THINK_TIMEOUT_MAX
+    let sanitizedTimeout = this.state.aiTimeoutMs;
+    if (typeof partial.aiTimeoutMs === 'number' && Number.isFinite(partial.aiTimeoutMs)) {
+      sanitizedTimeout = Math.min(
+        Math.max(Math.round(partial.aiTimeoutMs), AI_TIMEOUT_MIN),
+        AI_TIMEOUT_MAX
       );
     }
     const next: ClientSettingsState = {
       ...this.state,
       ...partial,
-      concurrency: sanitizedConcurrency,
-      thinkTimeoutMs: sanitizedThinkTimeout,
+      aiTimeoutMs: sanitizedTimeout,
     };
     this.applyState(next);
 
     if (this.form) {
-      const fields = [
-        'enabled',
-        'concurrency',
-        'aiEnabled',
-        'bingEnabled',
-        'thinkEnabled',
-        'thinkTimeoutMs',
-        'baseUrl',
-        'model',
-      ] as const;
+      const fields = ['enabled', 'aiTimeoutMs', 'baseUrl', 'model'] as const;
       for (const field of fields) {
         if (partial[field] !== undefined) {
           this.pendingFields.add(field);

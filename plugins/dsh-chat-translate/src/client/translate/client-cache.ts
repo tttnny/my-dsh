@@ -1,11 +1,10 @@
 import { isMaskLeak } from '../../server/pipeline/masking.ts';
 
-/** 工具标题译文的缓存键与容量。 */
-const TITLE_CACHE_KEY = 'dsh-chat-translate:cache';
-const TITLE_MAX_ENTRIES = 500;
-/** 思考正文译文的缓存键与容量：与工具标题分池，互不挤占。 */
-const THINK_CACHE_KEY = 'dsh-chat-translate:think-cache';
-const THINK_MAX_ENTRIES = 300;
+/** 正文译文的缓存键与容量。这一版沿用了旧缓存的文件名与键：零迁移，旧条目按 TTL 自然淘汰。 */
+const CACHE_KEY = 'dsh-chat-translate:cache';
+const MAX_ENTRIES = 500;
+/** 上一版思考链译文池的键，本版一次性清掉。 */
+const RETIRED_CACHE_KEYS = ['dsh-chat-translate:think-cache'];
 /** Entries older than this are treated as expired. */
 const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -22,7 +21,7 @@ export class ClientCache {
   private storageKey: string;
   private maxEntries: number;
 
-  constructor(storageKey: string = TITLE_CACHE_KEY, maxEntries: number = TITLE_MAX_ENTRIES) {
+  constructor(storageKey: string = CACHE_KEY, maxEntries: number = MAX_ENTRIES) {
     this.storageKey = storageKey;
     this.maxEntries = maxEntries;
     this.load();
@@ -130,8 +129,22 @@ export class ClientCache {
   }
 }
 
-/** 工具标题译文缓存。 */
-export const clientCache = new ClientCache();
+/**
+ * 一次性清掉上一版留下的思考链译文池。浏览器里没有「启动钩子」，所以这段在
+ * 模块加载时跑一次：键不存在就是空操作。
+ */
+function retireClientCaches(): void {
+  if (typeof localStorage === 'undefined') return;
+  for (const key of RETIRED_CACHE_KEYS) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // 隐私模式等存储不可用：留着也无害，本版不再读它。
+    }
+  }
+}
 
-/** 思考正文译文缓存：独立存储键与容量，不挤占工具标题的缓存。 */
-export const thinkClientCache = new ClientCache(THINK_CACHE_KEY, THINK_MAX_ENTRIES);
+retireClientCaches();
+
+/** 正文译文缓存：本插件唯一的客户端缓存池。 */
+export const clientCache = new ClientCache();

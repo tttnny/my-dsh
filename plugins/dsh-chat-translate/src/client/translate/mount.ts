@@ -6,7 +6,8 @@
  * rather than destroying them with `element.textContent = translated`.
  *
  * Displays the translated text in a companion container (<span class="dsh-tidy-translated-block">).
- * Clicking the translation toggles between original and translated text in-place.
+ * Clicking the translation switches that one block back to its original, and
+ * clicking the original switches it back to the translation.
  */
 
 export const CLASS_ORIGINAL_HIDDEN = 'dsh-tidy-original-hidden';
@@ -149,30 +150,6 @@ export class NonDestructiveTranslationMount {
       element.classList?.contains(CLASS_ORIGINAL_SHOWN) === true ||
       element.classList?.contains(CLASS_RUN) === true
     );
-  }
-
-  /**
-   * 把一个作用域里的全部挂载译文一起翻面。思考链只由卡片标题右侧的按钮调用
-   * 它，正文里的点击不再改变原文与译文。
-   */
-  static toggleGroup(scope: ParentNode, showOriginal: boolean): void {
-    const mounted = scope.querySelectorAll<HTMLElement>('[data-tidy-translated="true"]');
-    for (const element of mounted) {
-      const origWrapper = element.querySelector<HTMLElement>(
-        `:scope > .${CLASS_ORIGINAL_HIDDEN}, :scope > .${CLASS_ORIGINAL_SHOWN}`
-      );
-      const transWrapper = element.querySelector<HTMLElement>(`:scope > .${CLASS_TRANSLATED_BLOCK}`);
-      if (!origWrapper || !transWrapper) continue;
-      if (showOriginal) {
-        origWrapper.style.display = 'inline';
-        origWrapper.className = CLASS_ORIGINAL_SHOWN;
-        transWrapper.style.display = 'none';
-      } else {
-        origWrapper.style.display = 'none';
-        origWrapper.className = CLASS_ORIGINAL_HIDDEN;
-        transWrapper.style.display = 'inline';
-      }
-    }
   }
 
   /**

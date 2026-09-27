@@ -20,7 +20,7 @@ export class LruDiskCache {
 
   /** Legacy root-level cache file (<=1.1); moved under the plugin subdir. */
   private legacyPath: string;
-  /** Only the original title cache carries a pre-1.2 root-level predecessor. */
+  /** Only the original cache file carries a pre-1.2 root-level predecessor. */
   private hasLegacyPredecessor: boolean;
 
   constructor(maxEntries = 1000, fileName = 'cache.json') {
@@ -37,8 +37,6 @@ export class LruDiskCache {
   async init(): Promise<void> {
     // One-shot relocation of the pre-1.2 cache file, keeping its value. When
     // the new file already exists (newer cache), the legacy file is retired.
-    // The think-chain pool never had a root-level predecessor: read straight
-    // from its own file.
     if (!this.hasLegacyPredecessor) {
       await this.loadFile(this.filePath);
       return;
@@ -186,4 +184,28 @@ export class LruDiskCache {
       await this.flush();
     }
   }
+}
+
+/**
+ * One-shot retirement of store files an earlier release owned. Repo rule: a
+ * capability's leftovers go away in the change that removes the capability, so
+ * a retired pool file is deleted rather than left to rot in the user's home.
+ *
+ * Absent files and unreadable paths both produce `false`; this never throws —
+ * a failed cleanup must not stop the plugin from loading.
+ *
+ * @param fileNames - file names under the plugin's own home directory.
+ * @returns whether at least one file was removed.
+ */
+export async function retireStoreFiles(fileNames: readonly string[]): Promise<boolean> {
+  let removed = false;
+  for (const fileName of fileNames) {
+    try {
+      await fs.unlink(dshHomePath('dsh-chat-translate', fileName));
+      removed = true;
+    } catch {
+      // Missing (the common case) or undeletable — nothing to report.
+    }
+  }
+  return removed;
 }

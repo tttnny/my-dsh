@@ -110,7 +110,7 @@ export function TidySettingsPanel(
           />
         </div>
         <div className="dsh-tidy-desc">
-          {withSamples(t('masterDesc'), { example: 'Locate DSH home directory structure' })}
+          {withSamples(t('masterDesc'), { example: 'I traced the failing path to a stale lock file.' })}
         </div>
       </div>
 
@@ -120,197 +120,129 @@ export function TidySettingsPanel(
           <div className="dsh-tidy-card">
             <div className="dsh-tidy-title">
               <span>{t('aiTitle')}</span>
-              <Switch
-                checked={state.aiEnabled}
-                onChange={(next: boolean) => settingsStore.update({ aiEnabled: next })}
-                label={t('enableAi')}
-              />
-            </div>
-            <div className="dsh-tidy-desc">
               <Tag tone={state.aiConfigured ? 'success' : 'warning'}>
                 {t(state.aiConfigured ? 'badgeConfigured' : 'badgeUnconfigured')}
-              </Tag>{' '}
-              {t('aiFallbackNote')}
+              </Tag>
             </div>
+            <div className="dsh-tidy-desc">{t('aiRule')}</div>
 
-            {state.aiEnabled && (
-              <>
-                <div className="dsh-tidy-row">
-                  <div className="dsh-tidy-row-info">
-                    <div className="dsh-tidy-row-title">{t('apiKeyTitle')}</div>
-                    <div className="dsh-tidy-row-desc">
-                      {withSamples(t('apiKeyDesc'), {
-                        home: CREDENTIALS_PATH,
-                        ref: TRANSLATE_API_KEY_REF,
-                      })}
-                    </div>
-                  </div>
-                  <div className="dsh-tidy-input-row">
-                    <Input
-                      type="password"
-                      className="dsh-tidy-field-wide"
-                      placeholder={state.aiConfigured ? t('apiKeyPlaceholderConfigured') : 'sk-...'}
-                      value={apiKeyInput}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKeyInput(e.target.value)}
-                      aria-label={t('apiKeyTitle')}
-                    />
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={savingKey}
-                      onClick={handleSaveKey}
-                    >
-                      {savingKey ? t('saving') : t('save')}
-                    </Button>
-                  </div>
-                </div>
-                {keyMsg && (
-                  <div className={`dsh-tidy-test-result ${keyMsg.ok ? 'ok' : 'fail'}`}>{keyMsg.text}</div>
-                )}
-
-                <div className="dsh-tidy-row">
-                  <div className="dsh-tidy-row-info">
-                    <div className="dsh-tidy-row-title">{t('baseUrlTitle')}</div>
-                    <div className="dsh-tidy-row-desc">
-                      {withSamples(t('baseUrlDesc'), {
-                        url1: 'https://api.openai.com/v1',
-                        url2: 'https://api.deepseek.com/v1',
-                      })}
-                    </div>
-                  </div>
-                  <Input
-                    type="text"
-                    className="dsh-tidy-field-wide"
-                    placeholder="https://api.openai.com/v1"
-                    value={state.baseUrl}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      settingsStore.update({ baseUrl: e.target.value })
-                    }
-                    aria-label={t('baseUrlTitle')}
-                  />
-                </div>
-                <div className="dsh-tidy-row">
-                  <div className="dsh-tidy-row-info">
-                    <div className="dsh-tidy-row-title">{t('modelTitle')}</div>
-                    <div className="dsh-tidy-row-desc">
-                      {withSamples(t('modelDesc'), {
-                        model1: 'gpt-4o-mini',
-                        model2: 'deepseek-chat',
-                      })}
-                    </div>
-                  </div>
-                  <Input
-                    type="text"
-                    className="dsh-tidy-field-wide"
-                    placeholder="gpt-4o-mini"
-                    value={state.model}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      settingsStore.update({ model: e.target.value })
-                    }
-                    aria-label={t('modelTitle')}
-                  />
-                </div>
-                <div className="dsh-tidy-row">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={testing?.running}
-                    onClick={() => runTest('openai')}
-                  >
-                    {testing?.running ? t('testing') : t('test')}
-                  </Button>
-                  {testing?.channel === 'openai' && !testing.running && (
-                    <span className={`dsh-tidy-test-result ${testing.ok ? 'ok' : 'fail'}`}>{testing.message}</span>
-                  )}
-                </div>
-
-                <div className="dsh-tidy-row">
-                  <div className="dsh-tidy-row-info">
-                    <div className="dsh-tidy-row-title">{t('thinkEnableTitle')}</div>
-                    <div className="dsh-tidy-row-desc">{t('thinkEnableDesc')}</div>
-                  </div>
-                  <Switch
-                    checked={state.thinkEnabled}
-                    onChange={(next: boolean) => settingsStore.update({ thinkEnabled: next })}
-                    label={t('thinkEnableTitle')}
-                  />
-                </div>
-
-                {state.thinkEnabled && (
-                  <div className="dsh-tidy-row">
-                    <div className="dsh-tidy-row-info">
-                      <div className="dsh-tidy-row-title">{t('thinkTimeoutTitle')}</div>
-                      <div className="dsh-tidy-row-desc">{t('thinkTimeoutDesc')}</div>
-                    </div>
-                    <Input
-                      type="number"
-                      className="dsh-tidy-field-timeout"
-                      min={500}
-                      max={900000}
-                      step={1000}
-                      value={state.thinkTimeoutMs}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (!Number.isFinite(val)) return;
-                        settingsStore.update({
-                          thinkTimeoutMs: Math.min(Math.max(val, 500), 900000),
-                        });
-                      }}
-                      aria-label={t('thinkTimeoutTitle')}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* 3. Bing 通道 */}
-          <div className="dsh-tidy-card">
-            <div className="dsh-tidy-title">
-              <span>{t('bingTitle')}</span>
-              <Switch
-                checked={state.bingEnabled}
-                onChange={(next: boolean) => settingsStore.update({ bingEnabled: next })}
-                label={t('enableBing')}
-              />
-            </div>
-            <div className="dsh-tidy-desc">{t('bingDesc')}</div>
-          </div>
-
-          {/* 4. 行为说明 */}
-          <div className="dsh-tidy-card">
-            <div className="dsh-tidy-row-title">{t('behaviorTitle')}</div>
-            <ul className="dsh-tidy-desc dsh-tidy-behavior-list">
-              <li>{t('behavior1')}</li>
-              <li>{t('behavior2')}</li>
-              <li>{t('behavior3')}</li>
-              <li>{t('behavior4')}</li>
-              <li>{t('behavior5')}</li>
-            </ul>
-          </div>
-
-          {/* 5. 并发控制 */}
-          <div className="dsh-tidy-card">
             <div className="dsh-tidy-row">
               <div className="dsh-tidy-row-info">
-                <div className="dsh-tidy-row-title">{t('concurrencyTitle')}</div>
-                <div className="dsh-tidy-row-desc">{t('concurrencyDesc')}</div>
+                <div className="dsh-tidy-row-title">{t('apiKeyTitle')}</div>
+                <div className="dsh-tidy-row-desc">
+                  {withSamples(t('apiKeyDesc'), {
+                    home: CREDENTIALS_PATH,
+                    ref: TRANSLATE_API_KEY_REF,
+                  })}
+                </div>
+              </div>
+              <div className="dsh-tidy-input-row">
+                <Input
+                  type="password"
+                  className="dsh-tidy-field-wide"
+                  placeholder={state.aiConfigured ? t('apiKeyPlaceholderConfigured') : 'sk-...'}
+                  value={apiKeyInput}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKeyInput(e.target.value)}
+                  aria-label={t('apiKeyTitle')}
+                />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={savingKey}
+                  onClick={handleSaveKey}
+                >
+                  {savingKey ? t('saving') : t('save')}
+                </Button>
+              </div>
+            </div>
+            {keyMsg && (
+              <div className={`dsh-tidy-test-result ${keyMsg.ok ? 'ok' : 'fail'}`}>{keyMsg.text}</div>
+            )}
+
+            <div className="dsh-tidy-row">
+              <div className="dsh-tidy-row-info">
+                <div className="dsh-tidy-row-title">{t('baseUrlTitle')}</div>
+                <div className="dsh-tidy-row-desc">
+                  {withSamples(t('baseUrlDesc'), {
+                    url1: 'https://api.openai.com/v1',
+                    url2: 'https://api.deepseek.com/v1',
+                  })}
+                </div>
+              </div>
+              <Input
+                type="text"
+                className="dsh-tidy-field-wide"
+                placeholder="https://api.openai.com/v1"
+                value={state.baseUrl}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  settingsStore.update({ baseUrl: e.target.value })
+                }
+                aria-label={t('baseUrlTitle')}
+              />
+            </div>
+            <div className="dsh-tidy-row">
+              <div className="dsh-tidy-row-info">
+                <div className="dsh-tidy-row-title">{t('modelTitle')}</div>
+                <div className="dsh-tidy-row-desc">
+                  {withSamples(t('modelDesc'), {
+                    model1: 'gpt-4o-mini',
+                    model2: 'deepseek-chat',
+                  })}
+                </div>
+              </div>
+              <Input
+                type="text"
+                className="dsh-tidy-field-wide"
+                placeholder="gpt-4o-mini"
+                value={state.model}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  settingsStore.update({ model: e.target.value })
+                }
+                aria-label={t('modelTitle')}
+              />
+            </div>
+            <div className="dsh-tidy-row">
+              <div className="dsh-tidy-row-info">
+                <div className="dsh-tidy-row-title">{t('timeoutTitle')}</div>
+                <div className="dsh-tidy-row-desc">{t('timeoutDesc')}</div>
               </div>
               <Input
                 type="number"
-                className="dsh-tidy-field-count"
-                min={1}
-                max={100}
-                step={1}
-                value={state.concurrency}
+                className="dsh-tidy-field-timeout"
+                min={500}
+                max={900000}
+                step={1000}
+                value={state.aiTimeoutMs}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                   const val = parseInt(e.target.value, 10);
                   if (!Number.isFinite(val)) return;
-                  settingsStore.update({ concurrency: Math.min(Math.max(val, 1), 100) });
+                  settingsStore.update({
+                    aiTimeoutMs: Math.min(Math.max(val, 500), 900000),
+                  });
                 }}
-                aria-label={t('concurrencyTitle')}
+                aria-label={t('timeoutTitle')}
               />
             </div>
+
+            <div className="dsh-tidy-row">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={testing?.running}
+                onClick={() => runTest('openai')}
+              >
+                {testing?.running ? t('testing') : t('test')}
+              </Button>
+              {testing?.channel === 'openai' && !testing.running && (
+                <span className={`dsh-tidy-test-result ${testing.ok ? 'ok' : 'fail'}`}>{testing.message}</span>
+              )}
+            </div>
+          </div>
+
+          {/* 3. 行为说明 */}
+          <div className="dsh-tidy-card">
+            <div className="dsh-tidy-row-title">{t('behaviorTitle')}</div>
+            <div className="dsh-tidy-desc">{t('behaviorRule')}</div>
           </div>
         </>
       )}

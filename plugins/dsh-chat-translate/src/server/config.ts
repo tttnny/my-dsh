@@ -3,23 +3,13 @@ import type { Volatile } from '@deepseek-ai/cordis';
 import type { PluginConfig } from './types.ts';
 import type { CredentialsReader } from './credentials.ts';
 
-/** Hard cap for the translation concurrency pool. */
-export const MAX_CONCURRENCY = 100;
-
-/** Bounds for the AI channel request timeout. */
-export const AI_TIMEOUT_MIN = 500;
-export const AI_TIMEOUT_MAX = 120000;
-
 /**
- * Bounds for the think-chain request timeout. A full reasoning block can take
- * minutes on a local model, so this budget is far larger than the short-text
- * AI timeout and is bounded separately.
+ * Bounds for the AI channel request timeout. One request carries a packed run
+ * of whole reply blocks, and a local model can take minutes on that much
+ * prose, so the budget is long-form rather than the old short-text scale.
  */
-export const THINK_TIMEOUT_MIN = 500;
-export const THINK_TIMEOUT_MAX = 900000;
-
-/** Entries kept in the think-chain cache pool, separate from the title pool. */
-export const THINK_CACHE_ENTRIES = 300;
+export const AI_TIMEOUT_MIN = 500;
+export const AI_TIMEOUT_MAX = 900000;
 
 /**
  * The settings namespace this plugin owns. Since 0.1.7 a namespace IS the
@@ -33,17 +23,30 @@ export const SETTINGS_NAMESPACE = 'dsh-chat-translate';
 
 export const DEFAULT_CONFIG: PluginConfig = {
   enabled: true,
-  concurrency: 3,
-  timeoutMs: 2000,
-  aiTimeoutMs: 30000,
-  thinkTimeoutMs: 600000,
-  aiEnabled: true,
-  bingEnabled: true,
-  thinkEnabled: true,
+  aiTimeoutMs: 600000,
   baseUrl: '',
   model: '',
   targetLang: 'zh-Hans',
 };
+
+/**
+ * Config keys an earlier release declared and this one no longer reads. DSH
+ * resolves unknown keys through a non-strict schema and simply ignores them, so
+ * a leftover from an upgraded profile would linger in the patch forever unless
+ * it is actively unset once.
+ *
+ * `channels` predates 1.1 and was already retired then; it rides the same list
+ * so one pass cleans any generation of an old profile.
+ */
+export const RETIRED_CONFIG_KEYS = [
+  'channels',
+  'concurrency',
+  'timeoutMs',
+  'thinkTimeoutMs',
+  'aiEnabled',
+  'bingEnabled',
+  'thinkEnabled',
+] as const;
 
 /**
  * Live read face of this plugin's own Config, as `ConfigManager` consumes it.
@@ -68,13 +71,7 @@ export interface ConfigSourceLike {
  */
 export interface PluginConfigRefs {
   readonly enabled: Volatile<boolean>;
-  readonly concurrency: Volatile<number>;
-  readonly timeoutMs: Volatile<number>;
   readonly aiTimeoutMs: Volatile<number>;
-  readonly thinkTimeoutMs: Volatile<number>;
-  readonly aiEnabled: Volatile<boolean>;
-  readonly bingEnabled: Volatile<boolean>;
-  readonly thinkEnabled: Volatile<boolean>;
   readonly baseUrl: Volatile<string>;
   readonly model: Volatile<string>;
   readonly targetLang: Volatile<string>;
@@ -88,13 +85,7 @@ export interface PluginConfigRefs {
 export function readPluginConfig(refs: PluginConfigRefs): PluginConfig {
   return {
     enabled: refs.enabled.get(),
-    concurrency: refs.concurrency.get(),
-    timeoutMs: refs.timeoutMs.get(),
     aiTimeoutMs: refs.aiTimeoutMs.get(),
-    thinkTimeoutMs: refs.thinkTimeoutMs.get(),
-    aiEnabled: refs.aiEnabled.get(),
-    bingEnabled: refs.bingEnabled.get(),
-    thinkEnabled: refs.thinkEnabled.get(),
     baseUrl: refs.baseUrl.get(),
     model: refs.model.get(),
     targetLang: refs.targetLang.get(),
@@ -182,26 +173,11 @@ export class ConfigManager {
 export function sanitizePatch(input: Record<string, unknown>): Partial<PluginConfig> {
   const next: Partial<PluginConfig> = {};
   if (typeof input.enabled === 'boolean') next.enabled = input.enabled;
-  if (typeof input.aiEnabled === 'boolean') next.aiEnabled = input.aiEnabled;
-  if (typeof input.bingEnabled === 'boolean') next.bingEnabled = input.bingEnabled;
-  if (typeof input.thinkEnabled === 'boolean') next.thinkEnabled = input.thinkEnabled;
 
-  if (typeof input.concurrency === 'number' && Number.isFinite(input.concurrency)) {
-    next.concurrency = Math.min(Math.max(Math.round(input.concurrency), 1), MAX_CONCURRENCY);
-  }
-  if (typeof input.timeoutMs === 'number' && Number.isFinite(input.timeoutMs)) {
-    next.timeoutMs = Math.min(Math.max(Math.round(input.timeoutMs), 500), 10000);
-  }
   if (typeof input.aiTimeoutMs === 'number' && Number.isFinite(input.aiTimeoutMs)) {
     next.aiTimeoutMs = Math.min(
       Math.max(Math.round(input.aiTimeoutMs), AI_TIMEOUT_MIN),
       AI_TIMEOUT_MAX
-    );
-  }
-  if (typeof input.thinkTimeoutMs === 'number' && Number.isFinite(input.thinkTimeoutMs)) {
-    next.thinkTimeoutMs = Math.min(
-      Math.max(Math.round(input.thinkTimeoutMs), THINK_TIMEOUT_MIN),
-      THINK_TIMEOUT_MAX
     );
   }
   if (typeof input.baseUrl === 'string') next.baseUrl = input.baseUrl.trim();
@@ -210,6 +186,43 @@ export function sanitizePatch(input: Record<string, unknown>): Partial<PluginCon
     next.targetLang = input.targetLang.trim();
   }
   return next;
+}
+
+/**
+ * One-shot retirement of config keys an earlier release declared. DSH hands
+ * unknown keys through rather than rejecting them, so without this pass a
+ * profile that predates the reply-body rewrite keeps dead keys forever.
+ *
+ * A tolerant, per-key unset: only keys the user layer actually carries are
+ * written, and a failed write is logged and retried on the next boot rather
+ * than taking down plugin load.
+ *
+ * @param settings - DSH's own settings service (the `mutate` write face).
+ * @returns whether any retired key was removed.
+ */
+export async function retireRemovedConfigKeys(
+  settings: SettingsMigrationTarget
+): Promise<boolean> {
+  const descriptor = settings.describe().find((d) => d.ns === SETTINGS_NAMESPACE);
+  const user = descriptor?.user;
+  if (typeof user !== 'object' || user === null || Array.isArray(user)) return false;
+
+  const record = user as Record<string, unknown>;
+  const ops: SettingsPathOpLike[] = RETIRED_CONFIG_KEYS.filter(
+    (key) => record[key] !== undefined
+  ).map((key) => ({ op: 'unset', path: [key] }));
+  if (ops.length === 0) return false;
+
+  try {
+    await settings.mutate(SETTINGS_NAMESPACE, ops, descriptor?.revision);
+  } catch (err) {
+    console.warn(
+      '[dsh-chat-translate] Failed to retire removed config keys; will retry on next boot:',
+      err
+    );
+    return false;
+  }
+  return true;
 }
 
 /**

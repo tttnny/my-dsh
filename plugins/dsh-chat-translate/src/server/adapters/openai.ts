@@ -13,7 +13,7 @@ import type { KeyReader } from '../credentials.ts';
  * DeepSeek, Qwen, Ollama and any other service exposing the standard endpoint.
  */
 
-/** Map Bing-style targetLang codes to a natural language name for the prompt. */
+/** Map a targetLang code to a natural language name for the prompt. */
 const LANG_HINTS: Record<string, string> = {
   'zh-hans': 'Simplified Chinese',
   'zh-cn': 'Simplified Chinese',
@@ -34,13 +34,16 @@ const LANG_HINTS: Record<string, string> = {
 /**
  * The translator instruction. The placeholder is described by its shape alone:
  * naming any of its characters gives a small model something to echo. The
- * multi-part variant adds the block markers of a packed think-chain request —
- * same bracket-shape description, so the model never sees a token it could
- * reproduce as a word.
+ * multi-part variant adds the block markers of a packed reply request — same
+ * bracket-shape description, so the model never sees a token it could
+ * reproduce as a word. Both variants state the pass-through rule for text that
+ * is already in the target language, which is what keeps an already-Chinese
+ * paragraph inside a mostly-English reply untouched.
  */
 function buildSystemPrompt(langName: string, mode: 'plain' | 'blocks'): string {
   const base =
     `You are a professional translator. Translate the user's message into ${langName}. ` +
+    `If a passage is already in ${langName}, keep it exactly as it is. ` +
     `Output ONLY the translated text — no explanations, no quotation marks, no extra words. ` +
     `Some fragments of the message are opaque code between the bracket ` +
     `characters U+27E6 and U+27E7. Copy each such fragment into your output ` +
@@ -69,9 +72,7 @@ export class OpenAiCompatibleAdapter implements ITranslationAdapter {
   }
 
   isAvailable(config: PluginConfig): boolean {
-    return Boolean(
-      config.aiEnabled && config.baseUrl?.trim() && config.model?.trim() && this.credentials.getApiKey()
-    );
+    return Boolean(config.baseUrl?.trim() && config.model?.trim() && this.credentials.getApiKey());
   }
 
   async translate(

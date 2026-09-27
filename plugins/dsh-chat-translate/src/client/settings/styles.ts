@@ -79,10 +79,6 @@ export const SETTINGS_CSS = String.raw`
   width: 120px;
 }
 
-.dsh-tidy-field-count {
-  width: 88px;
-}
-
 .dsh-tidy-test-result {
   margin-left: 10px;
   font: var(--dsw-font-xxs-12);
@@ -96,11 +92,4 @@ export const SETTINGS_CSS = String.raw`
   color: var(--dsw-alias-state-error-primary);
 }
 
-.dsh-tidy-behavior-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
 `;

@@ -1,27 +1,32 @@
-// 思考链翻译的宿主侧回归：估算、切分、打包、标记还原、串行队列、缓存分池、
-// 通道选择与路由形状。
+// 正文翻译的宿主侧回归：估算、切分、打包、标记还原、串行队列、单缓存池、
+// 单通道与路由形状。
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
 // 隔离文件状态：缓存与配置都写到临时目录，绝不碰真实的 ~/.dsh。
-const TMP_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-chat-translate-think-'));
+const TMP_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-chat-translate-reply-'));
 process.env.DSH_HOME = TMP_HOME;
 
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
-import { ConfigManager, sanitizePatch } from '../src/server/config.ts';
-import { LruDiskCache } from '../src/server/cache.ts';
+import {
+  ConfigManager,
+  RETIRED_CONFIG_KEYS,
+  retireRemovedConfigKeys,
+  sanitizePatch,
+} from '../src/server/config.ts';
+import { LruDiskCache, retireStoreFiles } from '../src/server/cache.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
-import { createFetchRoutes, THINK_ROUTE_PATH } from '../src/server/router.ts';
+import { createFetchRoutes, REPLY_ROUTE_PATH } from '../src/server/router.ts';
 import {
   buildBatchPayload,
-  createThinkBatchFormat,
+  createBatchFormat,
   estimateTokens,
   packPieces,
   splitBatchTranslation,
   splitOversizedBlock,
-} from '../src/server/pipeline/think.ts';
+} from '../src/server/pipeline/blocks.ts';
 import { createFakeSettingsEntry, createFakeCredentials } from './test-helpers.mjs';
 
 let passed = 0;
@@ -37,6 +42,12 @@ async function test(name, fn) {
     console.error('  FAIL ' + name + ':', err.message);
     throw err;
   }
+}
+
+/** 假设置条目当前用户层的内容（迁移断言用）。 */
+function describeUser(source) {
+  const entry = source.describe().find((item) => item.ns === 'dsh-chat-translate');
+  return entry?.user ?? {};
 }
 
 /** 把打包后的负载按标记原样回显，用来模拟一个守规矩的翻译模型。 */
@@ -57,19 +68,15 @@ function makeDispatcher(initial = {}) {
   // accepted edit of the profile entry's config section.
   const source = createFakeSettingsEntry({
     enabled: true,
-    aiEnabled: true,
-    bingEnabled: true,
-    thinkEnabled: true,
     baseUrl: 'http://127.0.0.1:9/v1',
     model: 'test-model',
     ...initial,
   });
   const config = new ConfigManager(source, new CredentialsReader(createFakeCredentials('test-key')));
-  const cache = new LruDiskCache(100, 'title-cache-test.json');
-  const thinkCache = new LruDiskCache(100, 'think-cache-test.json');
-  thinkCache.cache.clear();
-  const dispatcher = new TranslationDispatcher(config, cache, undefined, thinkCache);
-  return { config, source, dispatcher, thinkCache, cache };
+  const cache = new LruDiskCache(100, 'reply-cache-test.json');
+  cache.cache.clear();
+  const dispatcher = new TranslationDispatcher(config, cache);
+  return { config, source, dispatcher, cache };
 }
 
 function useFakeAdapter(dispatcher, translate) {
@@ -89,7 +96,7 @@ function manyBlocks() {
   return Array.from({ length: 4 }, (_, index) => 'word '.repeat(720).trim() + ' #' + index);
 }
 
-console.log('=== dsh-chat-translate 思考链翻译回归 ===');
+console.log('=== dsh-chat-translate 正文翻译回归 ===');
 await test('estimateTokens 保守估算：汉字一字一 token，其余三字符一 token', () => {
   assert.equal(estimateTokens('中文'), 2);
   assert.equal(estimateTokens('abcdef'), 2);
@@ -126,7 +133,7 @@ await test('打包把相邻片段合到上限以内，且不重排、不丢段',
 });
 
 await test('块标记负载与切回互为逆运算', () => {
-  const format = createThinkBatchFormat();
+  const format = createBatchFormat();
   const pieces = ['第一段原文。', 'second paragraph', 'third one'];
   const payload = buildBatchPayload(pieces, format);
   assert.ok(payload.startsWith(format.token(0)));
@@ -138,7 +145,7 @@ await test('块标记负载与切回互为逆运算', () => {
 });
 
 await test('块标记被弄乱时整批作废', () => {
-  const format = createThinkBatchFormat();
+  const format = createBatchFormat();
   const good = format.token(0) + '\nA\n\n' + format.token(1) + '\nB';
   assert.deepEqual(splitBatchTranslation(good, format, 2), ['A', 'B']);
   assert.equal(splitBatchTranslation(good, format, 3), null, '标记数不足');
@@ -161,45 +168,43 @@ await test('块标记被弄乱时整批作废', () => {
   assert.equal(splitBatchTranslation(format.token(0) + '\nA\n\n' + format.token(1) + '\n', format, 2), null, '空段');
 });
 
-await test('总开关或思考链开关关闭时原样返回且不发请求', async () => {
-  for (const patch of [{ enabled: false }, { thinkEnabled: false }]) {
-    const { dispatcher, source } = makeDispatcher({ thinkEnabled: true });
-    await source.update(patch);
-    let calls = 0;
-    useFakeAdapter(dispatcher, async (text) => {
-      calls++;
-      return text;
-    });
-    const results = await dispatcher.translateThinkBlocks(['一段思考']);
-    assert.equal(calls, 0);
-    assert.equal(results[0].translated, '一段思考');
-    assert.equal(results[0].ok, false);
-    assert.equal(results[0].channel, 'none');
-  }
+await test('总开关关闭时原样返回且不发请求', async () => {
+  const { dispatcher, source } = makeDispatcher();
+  await source.update({ enabled: false });
+  let calls = 0;
+  useFakeAdapter(dispatcher, async (text) => {
+    calls++;
+    return text;
+  });
+  const results = await dispatcher.translateReplyBlocks(['一段正文']);
+  assert.equal(calls, 0);
+  assert.equal(results[0].translated, '一段正文');
+  assert.equal(results[0].ok, false);
+  assert.equal(results[0].channel, 'none');
 });
 
 await test('AI 未配置时不发请求、保留原文', async () => {
   const { dispatcher } = makeDispatcher();
-  const results = await dispatcher.translateThinkBlocks(['一段思考']);
+  const results = await dispatcher.translateReplyBlocks(['一段正文']);
   assert.equal(results[0].ok, false);
-  assert.equal(results[0].translated, '一段思考');
+  assert.equal(results[0].translated, '一段正文');
 });
 
-await test('思考链翻译只走 AI 通道，Bing 从不参与', async () => {
+await test('正文只有 openai 一条通道：别的适配器不参与', async () => {
   const { dispatcher } = makeDispatcher();
-  let bingCalls = 0;
-  dispatcher.adapters.set('bing', {
-    id: 'bing',
-    name: 'Fake Bing',
+  let otherCalls = 0;
+  dispatcher.adapters.set('other', {
+    id: 'other',
+    name: 'Fake other channel',
     isAvailable: () => true,
     translate: async (text) => {
-      bingCalls++;
-      return 'bing:' + text;
+      otherCalls++;
+      return 'other:' + text;
     },
   });
   useFakeAdapter(dispatcher, async (text) => 'ai:' + text);
-  const results = await dispatcher.translateThinkBlocks(['Hello world']);
-  assert.equal(bingCalls, 0);
+  const results = await dispatcher.translateReplyBlocks(['Hello world']);
+  assert.equal(otherCalls, 0);
   assert.equal(results[0].channel, 'openai');
   assert.equal(results[0].translated, 'ai:Hello world');
 });
@@ -212,13 +217,13 @@ await test('单段请求带 max_tokens 与 plain 模式；多段打包带 blocks
     return options?.mode === 'blocks' ? echoBlocks(text) : '译:' + text;
   });
 
-  const short = await dispatcher.translateThinkBlocks(['Short paragraph']);
+  const short = await dispatcher.translateReplyBlocks(['Short paragraph']);
   assert.equal(seen[0].options.mode, 'plain');
   assert.equal(seen[0].options.maxTokens, 8192);
   assert.equal(short[0].translated, '译:Short paragraph');
 
   seen.length = 0;
-  const long = await dispatcher.translateThinkBlocks(manyBlocks());
+  const long = await dispatcher.translateReplyBlocks(manyBlocks());
   assert.equal(seen.length, 2, '四块应打包成两个请求');
   assert.equal(seen[0].options.mode, 'blocks', '合并的那一批走 blocks 模式');
   assert.equal(seen[1].options.mode, 'plain', '落单的那一批走 plain 模式');
@@ -228,11 +233,11 @@ await test('单段请求带 max_tokens 与 plain 模式；多段打包带 blocks
   assert.ok(long.every((result) => result.translated.startsWith('译:word')));
 });
 
-await test('掩码占位符在思考链里同样还原', async () => {
+await test('掩码占位符在正文里同样还原', async () => {
   const { dispatcher } = makeDispatcher();
   useFakeAdapter(dispatcher, async (text) => '请看 ' + text);
   const source = 'Read src/server/dispatcher.ts and https://example.com/docs now';
-  const results = await dispatcher.translateThinkBlocks([source]);
+  const results = await dispatcher.translateReplyBlocks([source]);
   assert.equal(results[0].ok, true);
   assert.ok(results[0].translated.includes('src/server/dispatcher.ts'), '路径必须原样回来');
   assert.ok(results[0].translated.includes('https://example.com/docs'), 'URL 必须原样回来');
@@ -247,7 +252,7 @@ await test('整批标记损坏时退回逐段单发', async () => {
     if (options?.mode === 'blocks') return '完全丢掉了标记的译文';
     return '译:' + text;
   });
-  const results = await dispatcher.translateThinkBlocks(manyBlocks());
+  const results = await dispatcher.translateReplyBlocks(manyBlocks());
   assert.equal(modes[0], 'blocks', '第一批是多段打包');
   assert.ok(modes.length >= 2);
   assert.ok(modes.slice(1).every((mode) => mode === 'plain'), '整批失败后必须逐段单发：' + modes.join(','));
@@ -256,38 +261,37 @@ await test('整批标记损坏时退回逐段单发', async () => {
 });
 
 await test('单段也失败时保留原文且不写缓存', async () => {
-  const { dispatcher, thinkCache } = makeDispatcher();
+  const { dispatcher, cache } = makeDispatcher();
   useFakeAdapter(dispatcher, async () => {
     throw new Error('503');
   });
-  const results = await dispatcher.translateThinkBlocks(['一段会失败的思考']);
+  const results = await dispatcher.translateReplyBlocks(['一段会失败的正文']);
   assert.equal(results[0].ok, false);
-  assert.equal(results[0].translated, '一段会失败的思考');
-  assert.equal(thinkCache.get('一段会失败的思考'), undefined);
+  assert.equal(results[0].translated, '一段会失败的正文');
+  assert.equal(cache.get('一段会失败的正文'), undefined);
 });
 
-await test('思考链译文进独立缓存池，命中后不再请求', async () => {
-  const { dispatcher, thinkCache, cache } = makeDispatcher();
+await test('正文译文进唯一的缓存池，命中后不再请求', async () => {
+  const { dispatcher, cache } = makeDispatcher();
   let calls = 0;
   useFakeAdapter(dispatcher, async (text) => {
     calls++;
     return '译:' + text;
   });
-  const first = await dispatcher.translateThinkBlocks(['A stable paragraph']);
+  const first = await dispatcher.translateReplyBlocks(['A stable paragraph']);
   assert.equal(first[0].ok, true);
   assert.equal(calls, 1);
-  assert.equal(thinkCache.get('a stable paragraph'), '译:A stable paragraph');
-  assert.equal(cache.get('a stable paragraph'), undefined, '不得写进工具标题的池');
+  assert.equal(cache.get('a stable paragraph'), '译:A stable paragraph');
 
-  const second = await dispatcher.translateThinkBlocks(['A stable paragraph']);
+  const second = await dispatcher.translateReplyBlocks(['A stable paragraph']);
   assert.equal(calls, 1, '第二次必须命中缓存');
   assert.equal(second[0].cached, true);
   assert.equal(second[0].channel, 'cache');
   assert.equal(second[0].translated, '译:A stable paragraph');
 });
 
-await test('思考链请求串行执行，同时最多一个在途', async () => {
-  const { dispatcher } = makeDispatcher({ concurrency: 50 });
+await test('正文请求串行执行，同时最多一个在途', async () => {
+  const { dispatcher } = makeDispatcher();
   let active = 0;
   let peak = 0;
   useFakeAdapter(dispatcher, async (text) => {
@@ -298,33 +302,38 @@ await test('思考链请求串行执行，同时最多一个在途', async () =>
     return '译:' + text;
   });
   await Promise.all([
-    dispatcher.translateThinkBlocks(['First concurrent block']),
-    dispatcher.translateThinkBlocks(['Second concurrent block']),
-    dispatcher.translateThinkBlocks(['Third concurrent block']),
+    dispatcher.translateReplyBlocks(['First concurrent block']),
+    dispatcher.translateReplyBlocks(['Second concurrent block']),
+    dispatcher.translateReplyBlocks(['Third concurrent block']),
   ]);
-  assert.equal(peak, 1, '思考链必须串行，peak=' + peak);
+  assert.equal(peak, 1, '正文请求必须串行，peak=' + peak);
 });
 
-await test('思考链设置项在 sanitizePatch 里被夹到范围内', () => {
-  assert.equal(sanitizePatch({ thinkEnabled: true }).thinkEnabled, true);
-  assert.equal(sanitizePatch({ thinkEnabled: 'yes' }).thinkEnabled, undefined);
-  assert.equal(sanitizePatch({ thinkTimeoutMs: 10 }).thinkTimeoutMs, 500);
-  assert.equal(sanitizePatch({ thinkTimeoutMs: 10 ** 9 }).thinkTimeoutMs, 900000);
-  assert.equal(sanitizePatch({ thinkTimeoutMs: 600000 }).thinkTimeoutMs, 600000);
+await test('退役的配置键在 sanitizePatch 里被丢掉', () => {
+  const patch = sanitizePatch({
+    enabled: true,
+    concurrency: 8,
+    timeoutMs: 2000,
+    thinkEnabled: true,
+    thinkTimeoutMs: 600000,
+    aiEnabled: true,
+    bingEnabled: true,
+  });
+  assert.deepEqual(patch, { enabled: true });
 });
 
-await test('translate-think 路由按块返回，坏请求体给 400', async () => {
+await test('正文路由按块返回，坏请求体给 400', async () => {
   const { dispatcher } = makeDispatcher();
   useFakeAdapter(dispatcher, async (text, signal, config, options) =>
     options?.mode === 'blocks' ? echoBlocks(text) : '译:' + text
   );
   const routes = createFetchRoutes(dispatcher);
-  const route = routes.find((entry) => entry.path === THINK_ROUTE_PATH);
-  assert.ok(route, '思考链路由必须存在');
+  const route = routes.find((entry) => entry.path === REPLY_ROUTE_PATH);
+  assert.ok(route, '正文路由必须存在');
   assert.equal(route.requestBody, 'buffered');
 
   const post = (body) =>
-    new Request('http://127.0.0.1' + THINK_ROUTE_PATH, {
+    new Request('http://127.0.0.1' + REPLY_ROUTE_PATH, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -344,6 +353,49 @@ await test('translate-think 路由按块返回，坏请求体给 400', async () 
   assert.equal(malformed.status, 400);
 });
 
+await test('升级遗留：退役的配置键被一次性清掉', async () => {
+  const source = createFakeSettingsEntry();
+  // A profile that predates this release: every retired key sits in the user layer.
+  source.setUserLayer({ enabled: true, concurrency: 3, thinkEnabled: true, bingEnabled: true });
+  const settings = {
+    describe: () => source.describe(),
+    mutate: (ns, ops, revision) => source.mutate(ns, ops, revision),
+  };
+
+  assert.equal(await retireRemovedConfigKeys(settings), true, 'must report the cleanup');
+  for (const key of RETIRED_CONFIG_KEYS) {
+      assert.equal(describeUser(source)[key], undefined, `${key} must be gone from the user layer`);
+  }
+  assert.equal(describeUser(source).enabled, true, 'surviving keys are untouched');
+  assert.equal(await retireRemovedConfigKeys(settings), false, 'a second boot is a no-op');
+});
+
+await test('升级遗留：退役的配置键清理失败时不抛错（下次启动重试）', async () => {
+  const source = createFakeSettingsEntry();
+  source.setUserLayer({ concurrency: 3 });
+  const failing = {
+    describe: () => source.describe(),
+    mutate: async () => {
+      throw new Error('provider is read-only');
+    },
+  };
+  assert.equal(await retireRemovedConfigKeys(failing), false);
+});
+
+await test('升级遗留：退役的思考链缓存文件被删除，缺失时也不报错', async () => {
+  const path = await import('node:path');
+  const home = process.env.DSH_HOME;
+  assert.ok(home, 'the suite runs under an isolated DSH_HOME');
+  const pluginDir = path.join(home, 'dsh-chat-translate');
+  await fs.mkdir(pluginDir, { recursive: true });
+  const stale = path.join(pluginDir, 'think-cache.json');
+  await fs.writeFile(stale, '{"stale":"译文"}', 'utf-8');
+
+  assert.equal(await retireStoreFiles(['think-cache.json']), true, 'the stale pool file is removed');
+  await assert.rejects(fs.access(stale), 'the retired pool file must be gone');
+  assert.equal(await retireStoreFiles(['think-cache.json']), false, 'missing file is a quiet no-op');
+});
+
 console.log('');
-console.log('思考链回归：' + passed + '/' + total + ' 通过');
+console.log('正文回归：' + passed + '/' + total + ' 通过');
 process.exit(passed === total ? 0 : 1);
