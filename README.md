@@ -19,7 +19,7 @@
     <tr>
       <td><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
-      <td><b>聊天翻译</b><br>· 接管助手行渲染（keyed slot <code>assistant-step</code>），正文块不论源语言一律送模型改写成自然简体中文——整段中文同样照送、顺机器腔；Think 卡 / 工具调用行 / 用户消息 / 代码块不翻，与宿主渲染逐分支等价，接管器抛错自动退位给宿主<br>· 译文按原 markdown 结构经基线组件 <code>MarkdownText</code> 重渲染，表格 / 列表 / 加粗 / 行内代码保真<br>· 左缘细线：读译文实线、读原文虚线、未译无线；模型返回一模一样也算翻过<br>· 开关两个入口：输入框下方那一行的「译」胶囊与「阅读体验」设置页总开关，读写同一个 <code>enabled</code><br>· 落定且进入视口才整行请求，串行单在途 + 熔断；磁盘缓存按提示词修订号（<code>PROMPT_REVISION</code>）整体作废，换提示词不让旧译文串代<br>· OpenAI 兼容 AI 单通道（Key / Base URL / 模型齐备才翻，Key 存 <code>~/.dsh/.credentials.yaml</code>）<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
+      <td><b>聊天翻译</b><br>· 接管助手行渲染（keyed slot <code>assistant-step</code>），正文块不论源语言一律送模型改写成自然简体中文——整段中文同样照送、顺机器腔；Think 卡 / 工具调用行 / 用户消息 / 代码块不翻，与宿主渲染逐分支等价，接管器抛错自动退位给宿主<br>· 译文按原 markdown 结构经基线组件 <code>MarkdownText</code> 重渲染，表格 / 列表 / 加粗 / 行内代码保真<br>· 左缘细线：读译文灰线、读原文蓝线、未译无线；模型返回一模一样也算翻过<br>· 开关两个入口：输入框下方那一行的「译」胶囊与「阅读体验」设置页总开关，读写同一个 <code>enabled</code><br>· 落定且进入视口才整行请求，串行单在途 + 熔断；磁盘缓存按提示词修订号（<code>PROMPT_REVISION</code>）整体作废，换提示词不让旧译文串代<br>· OpenAI 兼容 AI 单通道（Key / Base URL / 模型齐备才翻，Key 存 <code>~/.dsh/.credentials.yaml</code>）<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>

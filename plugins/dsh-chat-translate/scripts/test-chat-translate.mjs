@@ -4,9 +4,9 @@
 // 2. 翻译呈现判断：成功才挂载，「原样回」同样挂载带标记，失败与未落定（null）
 //    显示原文；reasoning 分组不送译，texts 与 outcomes 同域对齐；
 // 3. 翻译池：同键同文本幂等、文本换代重请求、逐批落定逐批可见、partial 行再
-//    ensure 重走、结果落定换代作废、LRU 行数上限；
+//    ensure 重走且同代封顶、结果落定换代作废、LRU 行数上限；
 // 4. 呈现策略：ui-chat 的 transcriptView 值（含 legacy 值）映射到策略表；
-// 5. 左缘细线只标「当前显示译文」：点回原文时线消失、块保持可点。
+// 5. 左缘细线：灰线=读译文、蓝线=读原文（有译文备着）、无线=没译成。
 import assert from 'node:assert/strict';
 
 let passed = 0;
@@ -447,32 +447,33 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
 });
 
 // ---------------------------------------------------------------
-// 5. 左缘细线：实线=正在读译文，虚线=有译文但读原文，无线=没译成
+// 5. 左缘细线：灰线=正在读译文，蓝线=有译文但读原文，无线=没译成
+//    （0.5px 虚线会被抗锯齿糊成实线，区分走色相不走线型）
 // ---------------------------------------------------------------
 
-await test('实线标译文、虚线标「有译文的原文态」，未译无线', () => {
+await test('灰线标译文、蓝线标「有译文的原文态」，未译无线', () => {
   assert.equal(proseClassNames(false, false), undefined, '未挂译文的块没有任何标记类');
   assert.equal(proseClassNames(false, true), undefined, '未挂译文谈不上原文态');
   const showingTranslation = proseClassNames(true, false);
-  assert.match(showingTranslation, /dsh-ct-prose-translated/, '显示译文时挂实线');
-  assert.ok(!showingTranslation.includes('dsh-ct-prose-original'), '译文态不挂虚线类');
+  assert.match(showingTranslation, /dsh-ct-prose-translated/, '显示译文时挂灰线');
+  assert.ok(!showingTranslation.includes('dsh-ct-prose-original'), '译文态不挂蓝线类');
   assert.match(showingTranslation, /dsh-ct-prose-clickable/, '译文态整块可点');
   const showingOriginal = proseClassNames(true, true);
-  assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '原文态不挂实线');
-  assert.match(showingOriginal, /dsh-ct-prose-original/, '原文态挂虚线：有译文的线索保留');
+  assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '原文态不挂灰线');
+  assert.match(showingOriginal, /dsh-ct-prose-original/, '原文态挂蓝线：有译文的线索保留');
   assert.match(showingOriginal, /dsh-ct-prose-clickable/, '原文态仍可点击切回译文');
 });
 
-await test('实线与虚线同宽同位：切换只换线型，文字不横跳', () => {
+await test('两色线同宽同位：切换只换色相，文字不横跳', () => {
   assert.match(
     ASSISTANT_CSS,
-    /\.dsh-ct-prose-translated\{border-left:0\.5px solid/,
-    '译文线是 0.5px 实线'
+    /\.dsh-ct-prose-translated\{border-left:0\.5px solid var\(--dsw-alias-border-l2\)\}/,
+    '译文线是 0.5px 中性 hairline'
   );
   assert.match(
     ASSISTANT_CSS,
-    /\.dsh-ct-prose-original\{border-left:0\.5px dashed/,
-    '原文态线是 0.5px 虚线'
+    /\.dsh-ct-prose-original\{border-left:0\.5px solid color-mix\(in srgb, var\(--dsw-alias-state-business-primary\) 65%, transparent\)\}/,
+    '原文态线是 0.5px 主色 hairline（色相区分，线型不背这个锅）'
   );
 });
 
