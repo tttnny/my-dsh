@@ -1,12 +1,12 @@
-// jsdom 回归：过程折叠块里的正文自动翻译——落定前不翻、落定后按 markdown 块翻、
-// 代码块原样、Think 卡与工具行永不翻、纯中文块跳过、失败保留原文、缓存命中不再
-// 请求、多块按阅读顺序挂载、块级点击原地切回原文；折叠块之外的正文（最终汇总）
-// 一个字都不翻、也不进请求。
+// jsdom 回归：助手回答正文自动翻译——落定前不翻、落定后按 markdown 块翻、代码块
+// 原样、Think 卡与工具行永不翻、失败保留原文、缓存命中不再请求、多块按阅读顺序
+// 挂载、块级点击原地切回原文。凡 response 行的落定正文都译：最终汇总同样译，
+// 纯中文块也一律送翻译服务。
 //
 // fixture 照内核真实结构搭：flow row 带 data-chat-flow-kind / data-chat-group-part，
-// 折叠块成员由内核标 data-turn-process-member，最终汇总那一行标
-// data-turn-process-answer；正文是 <div class="<hash>_root" data-streaming><div
-// class="<hash>_body">…，流式中的回答在 markdown 根上挂 data-streaming。
+// 并照内核那样挂 data-turn-process-member / data-turn-process-answer（判据与它们
+// 无关）；正文是 <div class="<hash>_root" data-streaming><div class="<hash>_body">…，
+// 流式中的回答在 markdown 根上挂 data-streaming。
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
@@ -142,16 +142,16 @@ check('代码块内没有译文容器', $('#settled pre .dsh-tidy-translated-blo
 check('混合块的外层文字拆成行内片段', $('#settled .dsh-tidy-run > .dsh-tidy-translated-block') !== null);
 check('嵌套子列表逐项翻译', mountedBlocks('#settled ul') >= 2);
 
-// 5. 纯中文块跳过
-check('已写好的中文段落不翻', $$('#settled p')[2]?.getAttribute('data-tidy-translated') === null);
-check('中文段落没有进请求', requestedBlocks.flat().every((block) => !block.includes('已经写好了')));
+// 5. 纯中文块也送翻译（不再按「不含拉丁字母」跳过）
+check('中文段落也被翻译', $$('#settled p')[2]?.getAttribute('data-tidy-translated') === 'true');
+check('中文段落进请求', requestedBlocks.flat().some((block) => block.includes('已经写好了')));
 
-// 5b. 折叠块之外的正文（最终汇总那一行）一个字都不翻
-check('最终汇总不翻', $('#final p')?.getAttribute('data-tidy-translated') === null);
-check('最终汇总没有译文容器', $('#final .dsh-tidy-translated-block') === null);
-check('最终汇总不进请求', requestedBlocks.flat().every((block) => !block.includes('final summary')));
+// 5b. 折叠块之外的正文（最终汇总那一行）同样翻译
+check('最终汇总被翻译', $('#final p')?.getAttribute('data-tidy-translated') === 'true');
+check('最终汇总挂上译文', visibleText($('#final p')) === '译<Here is the final summary of everything I changed.>');
+check('最终汇总进请求', requestedBlocks.flat().some((block) => block.includes('final summary')));
 
-// 6. 请求形状：一次请求带上全部需要翻的块
+// 6. 请求形状：正文的每一段各成请求，装载该段全部块
 check('只发正文块路由的请求', replyCalls >= 1);
 check(
   '一次请求装载整条回答的块',
@@ -162,7 +162,13 @@ check(
       'Nested item text',
       'Second item text',
       'Tail paragraph.',
+      '这一段已经写好了，不需要翻译。',
     ])
+);
+check(
+  '最终汇总单独成请求',
+  JSON.stringify(requestedBlocks[1]) ===
+    JSON.stringify(['Here is the final summary of everything I changed.'])
 );
 
 // 7. 块级点击原地切回原文

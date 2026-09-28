@@ -9,7 +9,7 @@ import { estimateTokens } from '../../server/pipeline/blocks.ts';
  *
  * 目标只取正文容器里的 markdown 块级元素；混合块（列表项文字 + 子列表 /
  * 代码块）拆成行内片段，嵌套的块级子节点留在原位；代码块（pre）及其内部一律
- * 不动；已经全是中文的块不送翻，也就不占缓存与请求。
+ * 不动。每一块都送翻译服务——包括整段中文的块，由模型决定改写还是原样回。
  */
 
 const BLOCK_TAGS = new Set([
@@ -42,12 +42,6 @@ const NESTED_BOUNDARY_SELECTOR = [...BLOCK_TAGS, ...CONTAINER_TAGS, 'PRE']
  */
 const REQUEST_TOKENS = 2048;
 
-/**
- * 已经不需要翻译的块：整块不含任何拉丁字母（汉字、假名、标点、数字都算）。
- * 交付正文里常夹着已经写好的中文段落，送出去只是白花一次请求。
- */
-const HAS_LATIN = /[A-Za-z]/;
-
 /** 稳定的翻译单位：一块级元素，或一段行内节点。 */
 export interface ReplyUnit {
   element?: HTMLElement;
@@ -64,19 +58,14 @@ function hasNestedBoundary(element: HTMLElement): boolean {
   return element.querySelector(NESTED_BOUNDARY_SELECTOR) !== null;
 }
 
-/** 该单位是否需要翻译：含拉丁字母才送，纯中文块原样留着。 */
-export function needsTranslation(text: string): boolean {
-  return HAS_LATIN.test(text);
-}
-
-/** 收集正文里全部可翻译单位，跳过已挂译文的部分、代码块与纯中文块。 */
+/** 收集正文里全部可翻译单位，跳过已挂译文的部分与代码块；空文本之外一律成单位。 */
 export function collectReplyUnits(body: HTMLElement): ReplyUnit[] {
   const units: ReplyUnit[] = [];
 
   const pushRun = (nodes: Node[]): void => {
     if (nodes.length === 0) return;
     const text = nodes.map((node) => node.textContent ?? '').join('').trim();
-    if (!text || !needsTranslation(text)) return;
+    if (!text) return;
     const anchor = nodes[0];
     if (anchor === undefined) return;
     units.push({ nodes, text, anchor });
@@ -123,7 +112,7 @@ export function collectReplyUnits(body: HTMLElement): ReplyUnit[] {
     if (isMountedElement(element)) return;
     if (!hasNestedBoundary(element)) {
       const text = (element.textContent ?? '').trim();
-      if (text && needsTranslation(text)) units.push({ element, text, anchor: element });
+      if (text) units.push({ element, text, anchor: element });
       return;
     }
     walk(element);

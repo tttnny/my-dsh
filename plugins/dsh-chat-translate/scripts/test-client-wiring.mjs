@@ -110,19 +110,27 @@ const services = {
   slots: {
     inject: (key, callback) => {
       injects.push(`slot:${key}`)
+      const before = registrations.length
       try { callback() } catch (error) { errors.push(`slots.inject(${key}) threw: ${error?.message}`) }
-      return () => {}
+      // The real kernel tears down this contribution's registrations when the
+      // declaration collapses; the fake records them so a disposer check can
+      // observe the same teardown.
+      const created = registrations.slice(before)
+      return () => { for (const rec of created) rec.dispose() }
     },
     register: (options, component) => {
-      registrations.push({
+      const rec = {
         name: options.name,
         id: options.id,
         order: options.order,
         locale: options.locale,
         children: options.children === undefined ? undefined : Object.keys(options.children),
         component,
-      })
-      return () => {}
+        disposed: false,
+      }
+      rec.dispose = () => { rec.disposed = true }
+      registrations.push(rec)
+      return rec.dispose
     },
     entries: key => (key === 'settings.section' ? existingSections : []),
   },
@@ -212,6 +220,16 @@ check('configuration form read for this plugin entry', formLookups.includes('dsh
 check('page gated on the Host serving this plugin entry', JSON.stringify(servedWatches[0]) === '["dsh-chat-translate"]')
 check('store bound to the shared configuration form', formSubscribes > 0)
 
+// 输入框下方那一行的翻译开关：经 slots.inject 注册进 ui-conversation 声明的
+// conversation.composer.dock，order -2 排在 dsh-a6api 胶囊（-1）的左侧。
+const dock = registrations.find(r => r.name === 'conversation.composer.dock')
+check('composer dock toggle registered', dock !== undefined)
+check('dock entry keyed by its own id', dock?.id === 'dsh-chat-translate-toggle')
+check('dock entry sits left of the a6api pill', dock?.order === -2)
+check('dock entry uses this plugin locale namespace', dock?.locale === 'settings.chatTranslate')
+check('dock entry exposes a component', typeof dock?.component === 'function')
+check('dock contributed through slots.inject', injects.includes('slot:conversation.composer.dock'))
+
 // Election case: another participant already holds the page.
 registrations.length = 0
 errors.length = 0
@@ -219,7 +237,18 @@ existingSections = [{ options: { id: 'reading' } }]
 exported.apply(makeCtx(exported.inject ?? []))
 check('page is not claimed twice', registrations.every(r => r.name !== 'settings.section'))
 check('card still registers beside the other participant', registrations.some(r => r.name === 'reading.settings.item'))
+check('dock registers independently of the page election', registrations.some(r => r.name === 'conversation.composer.dock'))
 check('election path stays error-free', errors.length === 0)
+
+// Disposal: the dock contribution carries a disposer that tears its registration down.
+registrations.length = 0
+const dockSetupCtx = makeCtx(exported.inject ?? [])
+const dockOff = exported.setupComposerToggle(dockSetupCtx)
+check('dock setup returns a disposer', typeof dockOff === 'function')
+const dockRec = registrations.find(r => r.name === 'conversation.composer.dock')
+check('dock setup registers once', registrations.filter(r => r.name === 'conversation.composer.dock').length === 1)
+if (typeof dockOff === 'function') dockOff()
+check('disposer tears down the dock registration', dockRec?.disposed === true)
 
 console.log(failures.length === 0 ? '\nwiring: PASS' : `\nwiring: FAIL (${failures.length})`)
 process.exit(failures.length === 0 ? 0 : 1)

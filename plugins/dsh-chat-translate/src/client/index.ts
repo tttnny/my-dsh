@@ -1,5 +1,6 @@
 import { chatTranslateObserver } from './translate/observer.ts';
 import { setupSettingsUi } from './settings/ui.tsx';
+import { setupComposerToggle } from './composer/dock-toggle.tsx';
 // Type-only, erased from the bundle: the renderer augments Context with the
 // `slots` service the shared 「阅读体验」 page shell consumes, and the settings
 // contract declares the `settings.section` slot its page component renders into.
@@ -31,8 +32,8 @@ interface ClientContext {
 }
 
 /**
- * Mount the reply-body translation observer and the settings UI card inside the
- * shared reading-settings page.
+ * Mount the reply-body translation observer, the settings UI card inside the
+ * shared reading-settings page, and the translation toggle in the composer dock.
  * @param ctx - DSH browser client context.
  */
 export function apply(ctx: ClientContext): void {
@@ -41,11 +42,15 @@ export function apply(ctx: ClientContext): void {
 
   // 2. Join the shared 「阅读体验」 settings page (claim it, or register a card into it)
   ctx.effect(() => setupSettingsUi(ctx), 'dsh-chat-translate: settings section');
+
+  // 3. 「译」开关：输入框下方那一行，与设置页总开关同一个 enabled
+  ctx.effect(() => setupComposerToggle(ctx), 'dsh-chat-translate: composer dock toggle');
 }
 
 export { chatTranslateObserver } from './translate/observer.ts';
-export { replyTranslator, collectReplyUnits, chunkUnits, needsTranslation } from './translate/reply.ts';
+export { replyTranslator, collectReplyUnits, chunkUnits } from './translate/reply.ts';
 export { setupSettingsUi } from './settings/ui.tsx';
+export { setupComposerToggle, ComposerTranslateToggle } from './composer/dock-toggle.tsx';
 export { NonDestructiveTranslationMount } from './translate/mount.ts';
 export { clientCache } from './translate/client-cache.ts';
 export { lazyQueue } from './translate/lazy.ts';

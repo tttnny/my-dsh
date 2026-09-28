@@ -1,12 +1,11 @@
-// jsdom 验证：过程折叠块里的正文自动翻译、折叠块之外的正文（最终汇总）不动、
-// 关闭开关立即还原英文、重新开启再次翻译。
+// jsdom 验证：助手回答正文自动翻译（折叠块内外一律，最终汇总同样译）、关闭开关
+// 立即还原英文、重新开启再次翻译。Think 卡与工具行的正文由排除规则挡住，一个字
+// 都不翻。
 //
 // fixture 是内核真实的正文结构：flow row 带 data-chat-flow-kind /
-// data-chat-group-part="response"，正文是 <div class="<hash>_root"> 包着
-// <div class="<hash>_body"> 的 markdown 容器；同一行里还挂着 Think 卡与工具行，
-// 它们必须一个字都不翻。折叠块成员由内核标 `data-turn-process-member`，最终
-// 汇总那一行标 `data-turn-process-answer`——判据就用这两个属性，不靠轮尾行的
-// 先后去猜。
+// data-chat-group-part="response"，并照内核那样挂上 data-turn-process-member /
+// data-turn-process-answer（判据与它们无关）；正文是 <div class="<hash>_root">
+// 包着 <div class="<hash>_body"> 的 markdown 容器；同一行里还挂着 Think 卡与工具行。
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
@@ -119,16 +118,17 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 await wait(600);
 check('折叠块里的正文段落被翻译', paragraph()?.textContent?.startsWith('译<') === true);
 check('译文挂在原文位置（双语对照容器）', paragraph()?.getAttribute('data-tidy-translated') === 'true');
-check('折叠块之外的最终汇总一个字没翻', summary()?.textContent === 'Here is the final summary of everything I changed.');
-check('最终汇总不进请求', replyCalls.flat().every((block) => !block.includes('final summary')));
+check('折叠块之外的最终汇总同样翻译', summary()?.textContent?.startsWith('译<') === true);
+check('最终汇总进请求', replyCalls.flat().some((block) => block.includes('final summary')));
 check('Think 正文一个字没翻', think()?.textContent === 'A think paragraph that must stay English.');
 check('工具调用摘要一个字没翻', tool()?.textContent === 'Run integration test suite');
-check('请求发到正文块路由', replyCalls.length === 1 && replyCalls[0].length === 1);
+check('两段正文各成一请求', replyCalls.length === 2 && replyCalls.every((call) => call.length === 1));
 
 // 通过 SettingsStore 关掉总开关：立即还原英文
 await exports.settingsStore.update({ enabled: false });
 await wait(150);
 check('关闭开关后还原英文', paragraph()?.textContent === 'I traced the failing path to a stale lock file.');
+check('最终汇总随开关还原英文', summary()?.textContent === 'Here is the final summary of everything I changed.');
 check('还原后不再带翻译标记', paragraph()?.getAttribute('data-tidy-translated') === null);
 
 await wait(400);
@@ -164,7 +164,7 @@ const original = paragraph().querySelector('.dsh-tidy-original-shown');
 original?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 check('再点原文切回译文', visibleText(paragraph()).startsWith('译<') === true);
 check('请求总数没有因点击增加', replyCalls.length === callsBeforeToggle);
-check('最终汇总始终是英文原文', summary()?.textContent === 'Here is the final summary of everything I changed.');
+check('最终汇总在重开后同样被翻译', summary()?.textContent?.startsWith('译<') === true);
 
 exports.chatTranslateObserver.disconnect();
 console.log(failures.length === 0 ? '\ntoggle-restore: PASS' : `\ntoggle-restore: FAIL (${failures.length})`);

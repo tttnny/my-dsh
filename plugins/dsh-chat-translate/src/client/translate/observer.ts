@@ -6,18 +6,11 @@ import { NonDestructiveTranslationMount } from './mount.ts';
  * 要翻译的正文，以及它为什么是这一段。
  *
  * 一行 flow item（`data-chat-flow-kind`）里的 `data-chat-group-part="response"`
- * 正文有两处来源，内核用同一组属性渲染它们：
+ * 正文都要翻：过程折叠块里每一步露出的正文、最终汇总那一步的正文，一视同仁。
+ * response 行之外的东西——Think 卡、思考链、工具调用行——由排除规则挡住，
+ * 永不翻译；代码块由翻译管线原样保留。
  *
- * - **过程折叠块**里每一步露出的正文（`processMember`）；
- * - **最终汇总**那一步的正文（`processAnswer`）。
- *
- * 内核自己就把这个区别标在 flow item 包装元素上（ui-chat 的 ChatNodeSeat）：
- * 折叠块成员带 `data-turn-process-member`，最终汇总带
- * `data-turn-process-answer`（compactAnswer）。因此判据直接沿用内核的属性,
- * 而不是自己按轮尾行的先后去猜——「轮尾行之前」需要轮尾行已经挂上，进行中的
- * 轮次一个字都匹配不到，会把折叠块里的正文整片漏掉。
- *
- * 这两个属性在流式期间不稳定，所以范围判定在**落定之后**做；流式中的正文等
+ * 行结构在流式期间不稳定，所以范围判定在**落定之后**做；流式中的正文等
  * `data-streaming` 消失时会再进来一次。
  *
  * 正文自身渲染成 `<div class="<hash>_root" data-streaming><div
@@ -26,11 +19,6 @@ import { NonDestructiveTranslationMount } from './mount.ts';
  */
 const REPLY_ROW_SELECTOR = '[data-chat-flow-kind][data-chat-group-part="response"]';
 const MARKDOWN_BODY_SELECTOR = '[class*="body" i]';
-
-/** 折叠块里的正文：内核标了 `data-turn-process-member` 的 flow item。 */
-const PROCESS_MEMBER_SELECTOR = '[data-turn-process-member]';
-/** 最终汇总那一步：同一行上带 `data-turn-process-answer`，永不翻译。 */
-const PROCESS_ANSWER_SELECTOR = '[data-turn-process-answer]';
 
 /** Every card that must never be translated: Think text and tool rows. */
 const EXCLUDED_SELECTOR = [
@@ -57,20 +45,6 @@ const ROOT_CHECK_INTERVAL_MS = 3000;
  */
 function isStreaming(root: HTMLElement): boolean {
   return root.hasAttribute('data-streaming');
-}
-
-/**
- * 这段正文是否落在过程折叠块里。判据就是内核自己的：所在 flow item 带
- * `data-turn-process-member`，且不带 `data-turn-process-answer`。
- *
- * 进行中的轮次同样带这个属性，所以折叠块里的正文不必等轮次结束就能翻。
- */
-function isInsideProcessDisclosure(element: HTMLElement): boolean {
-  const row = element.closest<HTMLElement>(PROCESS_MEMBER_SELECTOR);
-  if (row === null || !row.contains(element)) return false;
-  if (row.matches(PROCESS_ANSWER_SELECTOR)) return false;
-  if (row.querySelector(PROCESS_ANSWER_SELECTOR) !== null) return false;
-  return true;
 }
 
 export class ChatTranslateObserver {
@@ -165,14 +139,12 @@ export class ChatTranslateObserver {
           subtree: true,
           attributes: true,
           characterData: true,
-          // `data-streaming` 从 markdown 根上消失就是落定信号；`data-turn-process-*`
-          // 是内核改判「哪些 flow item 属于折叠块」时动的属性，它一变就要重扫。
+          // `data-streaming` 从 markdown 根上消失就是落定信号；flow-kind 与
+          // group-part 决定一行算不算 response 正文，它们一变就要重扫。
           attributeFilter: [
             'data-streaming',
             'data-chat-flow-kind',
             'data-chat-group-part',
-            'data-turn-process-member',
-            'data-turn-process-answer',
           ],
         });
       }
@@ -249,8 +221,8 @@ export class ChatTranslateObserver {
   /**
    * 扫一棵子树，把里面**全部**该翻的正文容器交给翻译器。
    *
-   * 不再「命中第一个就返回」：一个容器里可以有好几行 response（折叠块里每一步
-   * 露出的一段正文就是一行），只取第一个会把后面那些整片漏掉。
+   * 不再「命中第一个就返回」：一个容器里可以有好几行 response（折叠块的每一步、
+   * 最终汇总，各占一行），只取第一个会把后面那些整片漏掉。
    */
   private scanContainer(container: Element | null): void {
     this.tryBodies(container);
@@ -299,15 +271,14 @@ export class ChatTranslateObserver {
   }
 
   /**
-   * 这个元素自己是不是一条该翻的正文容器：落定的、落在过程折叠块里的 markdown
-   * 正文，且不被排除规则挡住（Think 卡、工具行、最终汇总都不算）。
+   * 这个元素自己是不是一条该翻的正文容器：落定的、response 行里的 markdown
+   * 正文，且不被排除规则挡住（Think 卡、工具行不算；最终汇总同样译）。
    */
   private isTranslatableBody(element: Element): element is HTMLElement {
     if (!(element instanceof HTMLElement)) return false;
     if (!element.matches(MARKDOWN_BODY_SELECTOR)) return false;
     if (element.closest(EXCLUDED_SELECTOR) !== null) return false;
     if (element.closest(REPLY_ROW_SELECTOR) === null) return false;
-    if (!isInsideProcessDisclosure(element)) return false;
 
     // 流式中的正文要等落定：观察器在 `data-streaming` 消失时会再扫一次。
     const root = element.closest<HTMLElement>('[data-streaming]') ?? element;

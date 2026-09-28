@@ -15,7 +15,7 @@ export const zh = {
   masterTitle: '翻译总开关',
   enableTranslation: '启用翻译',
   masterDesc:
-    '自动把回答正文里需要阅读的英文翻成中文（如 {example}），思考卡与工具调用行一律不翻，代码块原样保留。译文挂在原文位置上，点击译文可原地切回原文。回答还在流式输出时不翻，落定后整条转为中文；已经写好的中文段落原样保留。只作用于当前查看的会话，译文不写回会话上下文。',
+    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送。Think 卡与工具调用行不翻，代码块原样保留。译文挂在原文位置上，点击译文可原地切回原文。回答还在流式输出时不翻，落定后整条转为中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
 
   aiTitle: 'AI 翻译（OpenAI 兼容协议）',
   aiRule: '只有这一条通道：Key / Base URL / 模型齐备才会翻译，缺任何一项都保持原文。',
@@ -47,7 +47,11 @@ export const zh = {
 
   behaviorTitle: '翻译范围',
   behaviorRule:
-    '需要阅读的回答正文；思考链正文、工具调用标题与折叠摘要永不翻译，代码块及其内部原样保留。',
+    '助手回答正文一律翻译，包括最终汇总与整段中文的块。思考链正文、工具调用标题与折叠摘要不翻译，代码块及其内部原样保留。',
+
+  dockLabel: '译',
+  dockOn: '正文翻译已开启，点击关闭',
+  dockOff: '正文翻译已关闭，点击开启',
 } as const;
 
 /** Locale keys this plugin renders. */
@@ -61,7 +65,7 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   masterTitle: 'Translation master switch',
   enableTranslation: 'Enable translation',
   masterDesc:
-    'Translates the English prose in assistant replies (e.g. {example}) into Chinese. Think cards and tool-call rows are never translated, and code blocks stay untouched. The translation is mounted in place of the original and clicking it switches back to the original in place. A reply that is still streaming is left alone until it settles, and paragraphs already written in Chinese pass through unchanged. Applies to the session you are viewing only; translations never enter the conversation context.',
+    'Translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and even blocks written entirely in Chinese are sent for translation. Think cards and tool-call rows are never translated, and code blocks stay untouched. The translation is mounted in place of the original and clicking it switches back to the original in place. A reply that is still streaming is left alone until it settles. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
 
   aiTitle: 'AI translation (OpenAI-compatible)',
   aiRule:
@@ -94,7 +98,11 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
 
   behaviorTitle: 'What gets translated',
   behaviorRule:
-    'The assistant reply prose you have to read. Think-chain text, tool-call titles and folded summaries are never translated; code blocks and their contents stay untouched.',
+    'All assistant reply prose, the final summary and Chinese-only blocks included. Think-chain text, tool-call titles and folded summaries are never translated; code blocks and their contents stay untouched.',
+
+  dockLabel: 'Translate',
+  dockOn: 'Translation is on; click to turn it off',
+  dockOff: 'Translation is off; click to turn it on',
 };
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
