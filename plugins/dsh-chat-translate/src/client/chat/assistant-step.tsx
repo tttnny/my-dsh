@@ -37,7 +37,7 @@ import { chatTranslate } from './translate-store.ts';
 import { planAssistantRow } from './row-plan.ts';
 import { isBareBlockClick } from './click-guard.ts';
 import type { AssistantBlockLike } from './row-plan.ts';
-import { ensureAssistantStyles } from './styles.ts';
+import { ensureAssistantStyles, proseClassNames } from './styles.ts';
 
 // ---- 宿主 contract 的结构性镜像（source of truth: ui-chat slots.d.ts） ----
 
@@ -323,12 +323,14 @@ function ProseBlock({
   pathImages,
 }: ProseBlockProps): ReactElement {
   const processed = translated !== null;
-  const source = processed && !showOriginal ? (translated as string) : text;
+  const showTranslation = processed && !showOriginal;
+  const source = showTranslation ? (translated as string) : text;
   return React.createElement(
     'div',
     {
-      className: processed ? 'dsh-ct-prose-translated' : void 0,
-      'data-translated': processed ? 'true' : void 0,
+      // 细线只标「当前显示译文」：点回原文时线消失，块保持可点切回。
+      className: proseClassNames(processed, showOriginal),
+      'data-translated': showTranslation ? 'true' : void 0,
       // 容器内含链接等交互内容，不套 role=button（非法嵌套）；可聚焦 + 键盘
       // Enter/Space 即切换，满足官方「键盘可达」门。
       tabIndex: processed ? 0 : void 0,

@@ -5,7 +5,8 @@
 //    显示原文；reasoning 分组不送译，texts 与 outcomes 同域对齐；
 // 3. 翻译池：同键同文本幂等、文本换代重请求、逐批落定逐批可见、partial 行再
 //    ensure 重走、结果落定换代作废、LRU 行数上限；
-// 4. 呈现策略：ui-chat 的 transcriptView 值（含 legacy 值）映射到策略表。
+// 4. 呈现策略：ui-chat 的 transcriptView 值（含 legacy 值）映射到策略表；
+// 5. 左缘细线只标「当前显示译文」：点回原文时线消失、块保持可点。
 import assert from 'node:assert/strict';
 
 let passed = 0;
@@ -26,6 +27,7 @@ const { planAssistantRow } = await import('../src/client/chat/row-plan.ts');
 const { createTranslateStore, chunkTexts } = await import('../src/client/chat/translate-store.ts');
 const { isBareBlockClick } = await import('../src/client/chat/click-guard.ts');
 const { createChatPresentation, POLICY_BY_MODE } = await import('../src/client/chat/presentation.ts');
+const { proseClassNames } = await import('../src/client/chat/styles.ts');
 
 // ---------------------------------------------------------------
 // 1+2. 行渲染计划
@@ -416,6 +418,21 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
   const fallback = createChatPresentation();
   fallback.attach(null);
   assert.equal(fallback.getSnapshot(), POLICY_BY_MODE.standard);
+});
+
+// ---------------------------------------------------------------
+// 5. 左缘细线随显示态
+// ---------------------------------------------------------------
+
+await test('细线只标「当前显示译文」：点回原文时线消失、块保持可点', () => {
+  assert.equal(proseClassNames(false, false), undefined, '未挂译文的块没有任何标记类');
+  assert.equal(proseClassNames(false, true), undefined, '未挂译文谈不上原文态');
+  const showingTranslation = proseClassNames(true, false);
+  assert.match(showingTranslation, /dsh-ct-prose-translated/, '显示译文时挂左缘细线');
+  assert.match(showingTranslation, /dsh-ct-prose-clickable/, '译文态整块可点');
+  const showingOriginal = proseClassNames(true, true);
+  assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '显示原文时细线随之消失');
+  assert.match(showingOriginal, /dsh-ct-prose-clickable/, '原文态仍可点击切回译文');
 });
 
 console.log('');

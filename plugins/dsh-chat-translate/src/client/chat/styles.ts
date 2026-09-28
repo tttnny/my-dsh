@@ -20,9 +20,10 @@ const CSS = [
   '.dsh-ct-body .md-table-wide>table{z-index:1;position:relative}',
   // ---- 已停止标记（宿主 .hWmORq_stopped 等价） ----
   '.dsh-ct-stopped{border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);align-self:flex-start;padding:0 6px;font-size:11px;line-height:18px}',
-  // ---- 「已翻译」标记：正文块左缘一条中性 hairline，整块可点击切换 ----
-  '.dsh-ct-prose-translated{border-left:0.5px solid var(--dsw-alias-border-l2);padding-left:12px;cursor:pointer}',
-  '.dsh-ct-prose-translated:focus-visible{outline:1.5px solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px;border-radius:var(--dsw-radius-sm)}',
+  // ---- 「已翻译」交互与标记：可点态常驻（含左缘内缩），细线只标当前显示译文 ----
+  '.dsh-ct-prose-clickable{padding-left:12px;cursor:pointer}',
+  '.dsh-ct-prose-clickable:focus-visible{outline:1.5px solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px;border-radius:var(--dsw-radius-sm)}',
+  '.dsh-ct-prose-translated{border-left:0.5px solid var(--dsw-alias-border-l2)}',
   // ---- ReasoningRow（宿主 lcKema_* 等价，前缀换成 dsh-ct-think） ----
   '.dsh-ct-think-root{flex-direction:column;display:flex}',
   '.dsh-ct-think-root:not([data-expanded]){contain:size layout;height:calc(24px + var(--dsh-content-font-delta,0px))}',
@@ -44,6 +45,17 @@ const CSS = [
   // ---- 无障碍：屏幕阅读器专用文本 ----
   '.dsh-ct-visually-hidden{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}',
 ].join('');
+
+/**
+ * 正文块的标记类名单点：有译文才可点（常驻内缩 + 光标），左缘细线只在
+ * **正在显示译文**时挂——用户点回原文，细线随之消失，块仍可点回译文。
+ */
+export function proseClassNames(processed: boolean, showOriginal: boolean): string | undefined {
+  if (!processed) return void 0;
+  return showOriginal
+    ? 'dsh-ct-prose-clickable'
+    : 'dsh-ct-prose-clickable dsh-ct-prose-translated';
+}
 
 /** 注入接管样式；重复调用是空操作。 */
 export function ensureAssistantStyles(): void {
