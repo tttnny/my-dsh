@@ -105,16 +105,23 @@ assert.equal(realpathSync(selfDir()), selfDir(), 'selfDir 必须已经是 realpa
 assert.equal(existsSync(join(selfDir(), manifest.main)), true, 'selfDir 必须能拼出真实入口文件');
 assert.equal(existsSync(join(selfDir(), 'cordis.patch.yml')), true, 'selfDir 必须能拼出随包文件');
 
-assert.equal(manifest.engines.dsh, '0.1.7-rc.2', 'engines.dsh 必须是精确的目标版本');
+assert.equal(manifest.engines.dsh, '>=0.1.7-rc.2', 'engines.dsh 必须声明不低于基线 0.1.7-rc.2 的支持范围');
 assert.equal(manifest.peerDependencies['@deepseek-ai/cordis'], '^4.0.4');
 assert.equal(installedVersion('@deepseek-ai/cordis'), '4.0.4', 'cordis 必须对齐安装版本');
 assert.equal(manifest.dependencies['@deepseek-ai/schemastery'], '^3.18.4');
 assert.equal(installedVersion('@deepseek-ai/schemastery'), '3.18.4', 'schemastery 必须对齐安装版本');
+// engines.dsh 自 0.1.7-rc.2 起写成 >=0.1.7-rc.2（大于等于当前版本），而 devDependencies
+// 仍定向安装基线版本 0.1.7-rc.2，两者刻意不同：声明层必须写同一个范围，安装层必须钉住基线。
 for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env']) {
   assert.equal(
-    installedVersion(pkg),
+    manifest.devDependencies[pkg],
     manifest.engines.dsh,
-    `${pkg} 的 devDependency 必须与 engines.dsh 同版本，否则自检跑的不是目标版本`,
+    `${pkg} 的 devDependency 必须与 engines.dsh 写同一个版本范围`,
+  );
+  assert.equal(
+    installedVersion(pkg),
+    '0.1.7-rc.2',
+    '自检跑的内核包必须仍是基线版本 0.1.7-rc.2',
   );
 }
 

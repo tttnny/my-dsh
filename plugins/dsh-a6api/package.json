@@ -69,13 +69,13 @@
   },
   "engines": {
     "node": "^22.19 || >=24",
-    "dsh": "0.1.7-rc.2"
+    "dsh": ">=0.1.7-rc.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-home-paths": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.1.7-rc.2",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.18",
     "esbuild": "^0.25.0",
@@ -85,8 +85,8 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-home-paths": "0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.7-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.1.7-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

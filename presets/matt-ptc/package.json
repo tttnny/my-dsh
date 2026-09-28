@@ -28,7 +28,7 @@
     "directory": "presets/matt-ptc"
   },
   "engines": {
-    "dsh": "0.1.7-rc.2",
+    "dsh": ">=0.1.7-rc.2",
     "node": "^22.19 || >=24"
   },
   "publishConfig": {

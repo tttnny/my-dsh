@@ -46,11 +46,11 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-shell-env": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.1.7-rc.2"
+    "@deepseek-ai/dsh-shell-env": ">=0.1.7-rc.2",
+    "@deepseek-ai/dsh-system-prompt": ">=0.1.7-rc.2"
   },
   "engines": {
-    "dsh": "0.1.7-rc.2",
+    "dsh": ">=0.1.7-rc.2",
     "node": "^22.19 || >=24"
   },
   "publishConfig": {
