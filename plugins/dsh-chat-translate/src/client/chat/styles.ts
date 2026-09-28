@@ -1,8 +1,8 @@
 /**
  * 助手行接管所需的样式：与宿主 `AssistantMarkdown` / `ReasoningRow` 逐条对齐
  * 的等价规则（字号、行距、gap、粘性折叠头、running 微光、summary 遮罩等），
- * 加上本插件唯一新增的视觉词汇——左缘 hairline 的色相标记：灰线=正在读译文，
- * 蓝线=有译文但正在读原文（再点即切回），无线=没译成。
+ * 加上本插件唯一新增的视觉词汇——左缘线的色相与粗细标记：蓝粗线（1px）=正在
+ * 读译文，灰细线（0.5px）=有译文但正在读原文（再点即切回），无线=没译成。
  *
  * 全部颜色与尺寸走 `--dsw-alias-*` / `--dsh-*` 主题别名，中性平边按官方规则
  * 画 0.5px hairline；动画声明尊重 `prefers-reduced-motion`。样式随 bundle 注入
@@ -21,12 +21,12 @@ export const ASSISTANT_CSS = [
   '.dsh-ct-body .md-table-wide>table{z-index:1;position:relative}',
   // ---- 已停止标记（宿主 .hWmORq_stopped 等价） ----
   '.dsh-ct-stopped{border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);align-self:flex-start;padding:0 6px;font-size:11px;line-height:18px}',
-  // ---- 「已翻译」交互与标记：可点态常驻（含左缘内缩）；区分走色相不走线型
-  //      （0.5px 虚线会被抗锯齿糊成实线）——灰线=读译文，蓝线=读原文备着译文 ----
+  // ---- 「已翻译」交互与标记：可点态常驻（含左缘内缩）；区分走色相+粗细
+  //      （0.5px 虚线会被抗锯齿糊成实线）——蓝粗线=读译文，灰细线=读原文备着译文 ----
   '.dsh-ct-prose-clickable{padding-left:12px;cursor:pointer}',
   '.dsh-ct-prose-clickable:focus-visible{outline:1.5px solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px;border-radius:var(--dsw-radius-sm)}',
-  '.dsh-ct-prose-translated{border-left:0.5px solid var(--dsw-alias-border-l2)}',
-  '.dsh-ct-prose-original{border-left:0.5px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 65%, transparent)}',
+  '.dsh-ct-prose-translated{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 65%, transparent)}',
+  '.dsh-ct-prose-original{border-left:0.5px solid var(--dsw-alias-border-l2)}',
   // ---- ReasoningRow（宿主 lcKema_* 等价，前缀换成 dsh-ct-think） ----
   '.dsh-ct-think-root{flex-direction:column;display:flex}',
   '.dsh-ct-think-root:not([data-expanded]){contain:size layout;height:calc(24px + var(--dsh-content-font-delta,0px))}',
@@ -50,8 +50,9 @@ export const ASSISTANT_CSS = [
 ].join('');
 
 /**
- * 正文块的标记类名单点：有译文才可点（常驻内缩 + 光标）；左缘线型随显示态——
- * 译文挂实线、原文态挂虚线（保留「这块有译文、点了能切回」的线索），没译无线。
+ * 正文块的标记类名单点：有译文才可点（常驻内缩 + 光标）；左缘线的色相与粗细
+ * 随显示态——译文挂 1px 蓝线、原文态挂 0.5px 灰线（保留「这块有译文、点了能
+ * 切回」的线索），没译无线。线宽只差 0.5px，切换不跳字。
  */
 export function proseClassNames(processed: boolean, showOriginal: boolean): string | undefined {
   if (!processed) return void 0;

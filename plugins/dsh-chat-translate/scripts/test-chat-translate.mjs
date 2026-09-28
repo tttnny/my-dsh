@@ -447,33 +447,33 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
 });
 
 // ---------------------------------------------------------------
-// 5. 左缘细线：灰线=正在读译文，蓝线=有译文但读原文，无线=没译成
-//    （0.5px 虚线会被抗锯齿糊成实线，区分走色相不走线型）
+// 5. 左缘线标：蓝粗线=正在读译文，灰细线=有译文但读原文，无线=没译成
+//    （0.5px 虚线会被抗锯齿糊成实线，区分走色相+宽度）
 // ---------------------------------------------------------------
 
-await test('灰线标译文、蓝线标「有译文的原文态」，未译无线', () => {
+await test('蓝线标译文、灰线标「有译文的原文态」，未译无线', () => {
   assert.equal(proseClassNames(false, false), undefined, '未挂译文的块没有任何标记类');
   assert.equal(proseClassNames(false, true), undefined, '未挂译文谈不上原文态');
   const showingTranslation = proseClassNames(true, false);
-  assert.match(showingTranslation, /dsh-ct-prose-translated/, '显示译文时挂灰线');
-  assert.ok(!showingTranslation.includes('dsh-ct-prose-original'), '译文态不挂蓝线类');
+  assert.match(showingTranslation, /dsh-ct-prose-translated/, '显示译文时挂蓝线');
+  assert.ok(!showingTranslation.includes('dsh-ct-prose-original'), '译文态不挂灰线类');
   assert.match(showingTranslation, /dsh-ct-prose-clickable/, '译文态整块可点');
   const showingOriginal = proseClassNames(true, true);
-  assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '原文态不挂灰线');
-  assert.match(showingOriginal, /dsh-ct-prose-original/, '原文态挂蓝线：有译文的线索保留');
+  assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '原文态不挂蓝线');
+  assert.match(showingOriginal, /dsh-ct-prose-original/, '原文态挂灰线：有译文的线索保留');
   assert.match(showingOriginal, /dsh-ct-prose-clickable/, '原文态仍可点击切回译文');
 });
 
-await test('两色线同宽同位：切换只换色相，文字不横跳', () => {
+await test('译文线 1px 主色、原文线 0.5px 中性：色相与粗细双重区分', () => {
   assert.match(
     ASSISTANT_CSS,
-    /\.dsh-ct-prose-translated\{border-left:0\.5px solid var\(--dsw-alias-border-l2\)\}/,
-    '译文线是 0.5px 中性 hairline'
+    /\.dsh-ct-prose-translated\{border-left:1px solid color-mix\(in srgb, var\(--dsw-alias-state-business-primary\) 65%, transparent\)\}/,
+    '译文线是 1px 主色（粗一点的蓝）'
   );
   assert.match(
     ASSISTANT_CSS,
-    /\.dsh-ct-prose-original\{border-left:0\.5px solid color-mix\(in srgb, var\(--dsw-alias-state-business-primary\) 65%, transparent\)\}/,
-    '原文态线是 0.5px 主色 hairline（色相区分，线型不背这个锅）'
+    /\.dsh-ct-prose-original\{border-left:0\.5px solid var\(--dsw-alias-border-l2\)\}/,
+    '原文态线是 0.5px 中性 hairline（细灰）'
   );
 });
 
