@@ -1,8 +1,6 @@
 import {
   createMaskTokenFormat,
-  hasAnyMaskResidue,
   hasMaskResidue,
-  LEGACY_MASK_TOKEN_PATTERN_SOURCE,
   matchMaskToken,
   MASK_TOKEN_PATTERN_SOURCE,
   MASK_TOKEN_PREFIX_PATTERN_SOURCE,
@@ -16,11 +14,6 @@ export interface MaskResult {
    * must discard that translation instead of showing a repaired guess.
    */
   unmask: (translatedText: string) => string;
-  /**
-   * Retired-format tokens the source itself contained. They come back on
-   * purpose and are content, so the caller's leak check must not flag them.
-   */
-  legacyFragments: string[];
 }
 
 /** Which spaces `mask()` inserted directly before and after a token. */
@@ -56,13 +49,10 @@ export class ContentMaskingPipeline {
       return {
         maskedText: text,
         unmask: (t: string) => t,
-        legacyFragments: [],
       };
     }
 
     const masks: string[] = [];
-    /** Indices whose fragment already was a retired-format token. */
-    const legacyIndexes = new Set<number>();
     /** Which spaces `placeToken` inserted around a fragment. */
     const inserted: InsertedSpacing[] = [];
     const format = createMaskTokenFormat();
@@ -104,20 +94,8 @@ export class ContentMaskingPipeline {
         return addFragment(match, whole[offset - 1], whole[offset + match.length], onPlace);
       });
 
-    // 0. Retired-format placeholders in the source are protected first: the
-    //    unmask step rejects retired tokens, so leaving one in the text sent to
-    //    the engine would discard an otherwise usable translation of a sentence
-    //    that merely documents the old format. Runs before the code rules, so a
-    //    legacy token inside inline code survives as one fragment instead of
-    //    being swallowed by the surrounding code match.
-    let processed = wrapRule(
-      text,
-      new RegExp(LEGACY_MASK_TOKEN_PATTERN_SOURCE, 'giu'),
-      (index) => legacyIndexes.add(index)
-    );
-
     // 1. Multi-line code blocks (```...``` or ~~~...~~~)
-    processed = wrapRule(processed, /(?:```|~~~)[\s\S]*?(?:```|~~~)/g);
+    let processed = wrapRule(text, /(?:```|~~~)[\s\S]*?(?:```|~~~)/g);
 
     // 2. Inline code (`...`)
     processed = wrapRule(processed, /`[^`\n]+`/g);
@@ -128,8 +106,9 @@ export class ContentMaskingPipeline {
     // 4. File paths and filenames with known extensions.
     //    Every alternative is anchored on a left boundary (`.`/`/` accepted
     //    only when preceded by a word char or start) so a match can never start
-    //    mid-path: `src/server` inside `src/server/dispatcher.ts` used to split
-    //    the path into `src⟦…0⟧`, masking the slash away.
+    //    mid-path: without the anchor a pattern free to start anywhere splits
+    //    `src/server/dispatcher.ts` into `src⟦…0⟧` + remainder, masking the
+    //    slash away and handing the engine a broken path.
     processed = wrapRule(
       processed,
       /(?:\/[\w.\-\\\/]+|(?<=[\w.\-])\.\.?[\\\/][\w.\-\\\/]+|(?<=^|[\s([{"'`])[a-zA-Z]:[\\\/][\w.\-\\\/]+|(?<![^\s([{"'`])\b(?:[\w.\-]+\/)+[\w.\-]+\.[a-zA-Z0-9]+\b|(?<![^\s([{"'`])\b[\w.\-]+\.(?:ts|tsx|js|jsx|json|ya?ml|md|py|go|rs|c|cpp|h|hpp|css|scss|html|sh|bash|mjs|cjs|toml|lock|log|env|svg|png|jpe?g|gif|tar|gz|zip|xml|sql)\b)/g
@@ -144,7 +123,7 @@ export class ContentMaskingPipeline {
     const unmask = (translatedText: string): string => {
       if (!translatedText) return translatedText;
       if (masks.length === 0) {
-        if (hasAnyMaskResidue(translatedText)) {
+        if (hasMaskResidue(translatedText)) {
           throw new MaskRestoreError(
             'translation carries a mask token while the source had none',
             0,
@@ -153,13 +132,12 @@ export class ContentMaskingPipeline {
         }
         return translatedText;
       }
-      return replaceMaskTokens(translatedText, format.id, masks, inserted, legacyIndexes);
+      return replaceMaskTokens(translatedText, format.id, masks, inserted);
     };
 
     return {
       maskedText: processed,
       unmask,
-      legacyFragments: [...legacyIndexes].map((index) => masks[index]).filter((f) => f !== undefined),
     };
   }
 }
@@ -174,16 +152,14 @@ export class ContentMaskingPipeline {
  * spacing the translation produced around the fragment survives untouched.
  *
  * @throws MaskRestoreError when the text does not carry every token exactly
- *   once, or still shows a current-format token or a retired token that the
- *   source did not already contain — the caller discards such a translation
- *   instead of rendering a repaired guess.
+ *   once, or still shows a token of some other pass or a damaged one — the
+ *   caller discards such a translation instead of rendering a repaired guess.
  */
 export function replaceMaskTokens(
   text: string,
   id: string,
   masks: string[],
-  inserted?: InsertedSpacing[],
-  legacyIndexes: ReadonlySet<number> = new Set()
+  inserted?: InsertedSpacing[]
 ): string {
   // Two scanners, one pass: the complete-token scanner drives the loop, and the
   // prefix scanner catches a complete token whose closing bracket the engine
@@ -241,17 +217,7 @@ export function replaceMaskTokens(
 
   out += text.slice(cursor);
 
-  // Retired-format tokens restored from documented source text are content, not
-  // residue; every other occurrence still means a token reached the screen.
-  const documented = new Set<string>();
-  for (const index of legacyIndexes) {
-    const fragment = masks[index];
-    if (fragment !== undefined) documented.add(fragment.toLowerCase());
-  }
-  const residue = (out.match(new RegExp(LEGACY_MASK_TOKEN_PATTERN_SOURCE, 'giu')) ?? []).filter(
-    (fragment) => !documented.has(fragment.toLowerCase())
-  );
-  if (seen.size !== masks.length || hasMaskResidue(out) || residue.length > 0) {
+  if (seen.size !== masks.length || hasMaskResidue(out)) {
     throw new MaskRestoreError(
       `translation does not reproduce every protected fragment (expected ${masks.length}, found ${seen.size})`,
       masks.length,
@@ -263,12 +229,13 @@ export function replaceMaskTokens(
 }
 
 /**
- * True when a translated string still shows a mask token to the user.
- * Callers use it to discard a poisoned translation (and to evict poisoned
- * cache entries written by earlier releases).
+ * True when a translated string still shows a mask token to the user. Callers
+ * use it to discard a poisoned translation, to keep it out of the caches, and
+ * to drop poisoned entries when a cache document is loaded (the file on disk
+ * outlives the process and may carry anything).
  */
 export function isMaskLeak(translatedText: string): boolean {
-  return hasAnyMaskResidue(translatedText);
+  return hasMaskResidue(translatedText);
 }
 
 export { hasMaskResidue };

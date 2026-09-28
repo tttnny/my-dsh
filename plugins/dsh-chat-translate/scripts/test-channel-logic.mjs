@@ -1,10 +1,10 @@
-// Reply channel contract (one channel), retired-key cleanup, legacy-config
-// migration and circuit-breaker single-flight probe verification.
+// Reply channel contract (one channel) and circuit-breaker single-flight
+// probe verification.
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ConfigManager, migrateLegacyConfigFile } from '../src/server/config.ts';
+import { ConfigManager } from '../src/server/config.ts';
 import { LruDiskCache } from '../src/server/cache.ts';
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
@@ -227,113 +227,7 @@ await testAsync('Empty probe result releases the single-flight flag', async () =
   assert.equal(state.state, 'closed');
 });
 
-console.log('\n=== Suite C: legacy config migration (pre-1.2 standalone file) ===');
-
-await testAsync('Legacy config migrates into the settings namespace and the file is removed', async () => {
-  const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-config.json');
-  await fs.writeFile(
-    legacyPath,
-    JSON.stringify({ enabled: true, channels: ['bing'], baseUrl: ' http://x ', model: 'm', concurrency: 3, thinkEnabled: true }),
-    'utf-8'
-  );
-  const entry = createFakeSettingsEntry();
-  // The migration takes the provider-level face (namespace + path ops);
-  // the fake entry exposes describe/mutate with the same contract.
-  const settingsFace = {
-    describe: () => entry.describe(),
-    mutate: (ns, ops, revision) => entry.mutate(ns, ops, revision),
-  };
-  const migrated = await migrateLegacyConfigFile(settingsFace, legacyPath);
-  assert.equal(migrated, true, 'legacy values must be reported as migrated');
-
-  const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
-  assert.equal(cfg.getConfig().enabled, true);
-  assert.equal(cfg.getConfig().baseUrl, 'http://x', 'string values are trimmed');
-  assert.equal(cfg.getConfig().model, 'm');
-  assert.equal(cfg.getConfig().channels, undefined, 'retired channels field is dropped');
-  assert.equal(cfg.getConfig().concurrency, undefined, 'retired concurrency field is dropped');
-  assert.equal(cfg.getConfig().thinkEnabled, undefined, 'retired thinkEnabled field is dropped');
-
-  await assert.rejects(fs.access(legacyPath), 'legacy file must be removed after migration');
-});
-
-await testAsync('Migration sanitizes per-field: bad values skipped, valid ones migrate', async () => {
-  // A hand-edited string "false" must not block the rest of the migration;
-  // out-of-range numerics are clamped to the schema bounds.
-  const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-mixed-config.json');
-  await fs.writeFile(
-    legacyPath,
-    JSON.stringify({ enabled: 'false', aiTimeoutMs: 99999999, baseUrl: ' http://x ', model: 'm' }),
-    'utf-8'
-  );
-  const entry = createFakeSettingsEntry();
-  const settingsFace = {
-    describe: () => entry.describe(),
-    mutate: (ns, ops, revision) => entry.mutate(ns, ops, revision),
-  };
-  const migrated = await migrateLegacyConfigFile(settingsFace, legacyPath);
-  assert.equal(migrated, true, 'valid fields still migrate when others are rejected');
-
-  const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
-  assert.equal(cfg.getConfig().enabled, true, 'string "false" skipped -> schema default');
-  assert.equal(cfg.getConfig().aiTimeoutMs, 900000, 'out-of-range clamped to the max');
-  assert.equal(cfg.getConfig().baseUrl, 'http://x', 'valid string trimmed and migrated');
-  assert.equal(cfg.getConfig().model, 'm');
-
-  await assert.rejects(fs.access(legacyPath), 'file removed after migration');
-});
-
-await testAsync('Migration keeps the file when the provider write fails (retry next boot)', async () => {
-  // A sanitized patch can only be rejected by a provider-level failure
-  // (read-only document, disk trouble); destroying the only copy then would
-  // lose the user's values, so the file must stay for the next boot.
-  const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-providerfail-config.json');
-  await fs.writeFile(legacyPath, JSON.stringify({ baseUrl: 'http://x' }), 'utf-8');
-  const entry = createFakeSettingsEntry();
-  const failingFace = {
-    describe: () => entry.describe(),
-    mutate: async () => {
-      throw new Error('provider is read-only');
-    },
-  };
-  const migrated = await migrateLegacyConfigFile(failingFace, legacyPath);
-  assert.equal(migrated, false, 'no migration reported');
-  await fs.access(legacyPath); // must still exist
-  assert.equal(new ConfigManager(entry, new CredentialsReader(createFakeCredentials())).getConfig().baseUrl, '');
-});
-
-await testAsync('Migration never overwrites an existing user layer', async () => {
-  const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-config.json');
-  await fs.writeFile(legacyPath, JSON.stringify({ baseUrl: 'http://old', model: 'old-model' }), 'utf-8');
-  const entry = createFakeSettingsEntry();
-  entry.setUserLayer({ baseUrl: 'http://new', model: 'new-model' }); // user already edited via UI
-
-  const settingsFace = {
-    describe: () => entry.describe(),
-    mutate: (ns, ops, revision) => entry.mutate(ns, ops, revision),
-  };
-  const migrated = await migrateLegacyConfigFile(settingsFace, legacyPath);
-  assert.equal(migrated, false, 'nothing migrated when a user layer exists');
-
-  const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
-  assert.equal(cfg.getConfig().baseUrl, 'http://new', 'existing user layer wins');
-  assert.equal(cfg.getConfig().model, 'new-model');
-
-  await assert.rejects(fs.access(legacyPath), 'legacy file must still be removed');
-});
-
-await testAsync('Missing or corrupt legacy file is a no-op', async () => {
-  const missingPath = path.join(TMP_HOME, 'no-such-config.json');
-  const entry = createFakeSettingsEntry();
-  assert.equal(await migrateLegacyConfigFile(entry, missingPath), false);
-
-  const corruptPath = path.join(TMP_HOME, 'corrupt-config.json');
-  await fs.writeFile(corruptPath, '{not json', 'utf-8');
-  assert.equal(await migrateLegacyConfigFile(entry, corruptPath), false);
-  await assert.rejects(fs.access(corruptPath), 'corrupt legacy file is dropped');
-});
-
-console.log('\n=== Suite D: CredentialsReader over the DSH credentials service ===');
+console.log('\n=== Suite C: CredentialsReader over the DSH credentials service ===');
 
 await testAsync('init loads the stored key; setApiKey stores and refreshes the cache', async () => {
   const service = createFakeCredentials('sk-old');

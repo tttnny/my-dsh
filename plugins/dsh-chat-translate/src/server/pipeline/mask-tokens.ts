@@ -5,13 +5,11 @@
  * Wire format: `⟦xkbdt3⟧` — U+27E6/U+27E7 (mathematical white square brackets)
  * around `<4-letter random id><index>`.
  *
- * Design constraints, each one a measured failure of an earlier format against
- * real MT engines:
+ * Design constraints, each one a measured failure against real MT engines:
  *
- *  - No letters spelling a pronounceable word and no underscores. The previous
- *    `__DSHMASKxkbdt_3__` format named a token that small models abbreviated
- *    back to its recognizable core: the UI showed bare `DSH` runs instead of
- *    the protected fragments.
+ *  - No letters spelling a pronounceable word and no underscores: engines
+ *    abbreviate tokens with such a shape back to their recognizable core, and
+ *    bare `DSH` runs then show in the UI instead of the protected fragments.
  *  - Random letters keep two mask passes in the same session from colliding and
  *    make the token unambiguous in the translated text.
  *  - `matchMaskToken` accepts exactly what this module emits (plus the same
@@ -61,18 +59,6 @@ export const MASK_TOKEN_PATTERN_SOURCE = '⟦([a-z]{4})(\\d+)⟧';
  * bracket. Used to resolve a token the engine truncated.
  */
 export const MASK_TOKEN_PREFIX_PATTERN_SOURCE = '⟦\\s*([a-z]{4})(\\d+)';
-
-/**
- * Retired `__DSH_MASK_<index>__` / `__DSHMASKx<id>_<index>__` tokens. Nothing
- * emits them anymore: `mask()` rewrites any that appear in the source into the
- * current format, and the detectors below evict cache entries written by
- * releases that emitted them.
- */
-const LEGACY_MASK_PATTERN_SOURCE =
-  '_{1,2}DSH\\s*_*\\s*MASKx?\\s*(?:_?\\s*\\d+|_*([a-z]{2,8})\\s*_+\\s*(\\d+))_{0,2}';
-
-/** Regex source for one retired-format token, for text that still contains one. */
-export const LEGACY_MASK_TOKEN_PATTERN_SOURCE = LEGACY_MASK_PATTERN_SOURCE;
 
 export interface MaskTokenMatch {
   /** Index into the mask list of the `mask()` call that produced the token. */
@@ -132,29 +118,4 @@ export function findMaskTokens(text: string): Array<{ match: MaskTokenMatch; raw
 export function hasMaskResidue(text: string): boolean {
   if (!text) return false;
   return new RegExp(MASK_TOKEN_PATTERN_SOURCE, 'iu').test(text);
-}
-
-/** True when `text` carries a token of a retired format. */
-export function hasLegacyMaskResidue(text: string): boolean {
-  if (!text) return false;
-  return new RegExp(LEGACY_MASK_PATTERN_SOURCE, 'iu').test(text);
-}
-
-/**
- * Residue test for a value that must never be shown or cached: either a
- * current-format token or any retired-format token.
- */
-export function hasAnyMaskResidue(text: string): boolean {
-  return hasMaskResidue(text) || hasLegacyMaskResidue(text);
-}
-
-/**
- * Retired-format tokens inside source text, so `mask()` can protect them with a
- * current-format token of their own. A source that talks about the old
- * placeholder format must survive translation, and the unmask step rejects any
- * retired-format token it sees.
- */
-export function findLegacyMaskTokens(text: string): string[] {
-  if (!text) return [];
-  return text.match(new RegExp(LEGACY_MASK_TOKEN_PATTERN_SOURCE, 'giu')) ?? [];
 }

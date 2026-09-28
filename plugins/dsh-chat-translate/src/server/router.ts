@@ -6,8 +6,8 @@ import type { TranslationDispatcher } from './dispatcher.ts';
  * Translation proxy surface, carried by Connection's exact Fetch routes below
  * the shared `/api` channel.
  *
- * Config and credentials have no HTTP endpoints: since 1.2 the settings panel
- * reads and writes through DSH's own channels — the shared configuration form
+ * Config and credentials have no HTTP endpoints: the settings panel reads and
+ * writes through DSH's own channels — the shared configuration form
  * (`ctx.configForms`) over the profile entry, and the `credentials` Remote API
  * for the key — so the plugin owns exactly two routes: reply-body block
  * translation, and the channel probe.

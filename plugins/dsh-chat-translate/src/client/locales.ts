@@ -15,7 +15,7 @@ export const zh = {
   masterTitle: '翻译总开关',
   enableTranslation: '启用翻译',
   masterDesc:
-    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送。Think 卡与工具调用行不翻，代码块原样保留。译文挂在原文位置上，点击译文可原地切回原文。回答还在流式输出时不翻，落定后整条转为中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
+    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送，由模型一并改写成自然中文、顺掉机器腔。Think 卡与工具调用行不翻，代码块原样保留。翻译过的块左缘有一条细线——模型认为原样最好、返回一模一样的文字时同样算翻译过、同样挂线；点击这样的块可在译文与原文间切换，没线的块就是没译成。译文按原 markdown 格式重新渲染，表格、列表、加粗与行内代码保持结构。回答还在流式输出时不翻，落定后按阅读顺序逐段出中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
 
   aiTitle: 'AI 翻译（OpenAI 兼容协议）',
   aiRule: '只有这一条通道：Key / Base URL / 模型齐备才会翻译，缺任何一项都保持原文。',
@@ -47,7 +47,7 @@ export const zh = {
 
   behaviorTitle: '翻译范围',
   behaviorRule:
-    '助手回答正文一律翻译，包括最终汇总与整段中文的块。思考链正文、工具调用标题与折叠摘要不翻译，代码块及其内部原样保留。',
+    '助手回答正文一律翻译，包括最终汇总与整段中文的块：中文块同样交给模型改写成自然中文，意义、术语与数字不变。思考链正文、工具调用标题与折叠摘要不翻译，代码块及其内部原样保留。',
 
   dockLabel: '译',
   dockOn: '正文翻译已开启，点击关闭',
@@ -65,7 +65,7 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   masterTitle: 'Translation master switch',
   enableTranslation: 'Enable translation',
   masterDesc:
-    'Translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and even blocks written entirely in Chinese are sent for translation. Think cards and tool-call rows are never translated, and code blocks stay untouched. The translation is mounted in place of the original and clicking it switches back to the original in place. A reply that is still streaming is left alone until it settles. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
+    'Translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and blocks written entirely in Chinese go through the model too, which rewrites them into natural Chinese and smooths out machine-flavored phrasing. Think cards and tool-call rows are never translated, and code blocks stay untouched. A processed block gets a thin left edge — even when the model decides the original wording is already best and returns it unchanged, it still counts as translated and still gets the edge; click such a block to switch between translation and original, and an unmarked block simply did not translate. Translations are re-rendered as Markdown, so tables, lists, bold runs and inline code keep their structure. A reply that is still streaming is left alone until it settles, then prose turns to Chinese paragraph by paragraph in reading order. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
 
   aiTitle: 'AI translation (OpenAI-compatible)',
   aiRule:
@@ -98,7 +98,7 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
 
   behaviorTitle: 'What gets translated',
   behaviorRule:
-    'All assistant reply prose, the final summary and Chinese-only blocks included. Think-chain text, tool-call titles and folded summaries are never translated; code blocks and their contents stay untouched.',
+    'All assistant reply prose, the final summary and Chinese-only blocks included: Chinese blocks are also handed to the model, which rewrites them into natural Chinese while keeping meaning, terms and numbers unchanged. Think-chain text, tool-call titles and folded summaries are never translated; code blocks and their contents stay untouched.',
 
   dockLabel: 'Translate',
   dockOn: 'Translation is on; click to turn it off',

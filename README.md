@@ -19,7 +19,7 @@
     <tr>
       <td><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
-      <td><b>聊天翻译</b><br>· 自动把助手回答正文译成中文（仅当前会话）：「用时 XXX」大折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送；思考链正文 / 工具调用行 / 折叠摘要不翻，代码块原样保留<br>· 开关两个入口：输入框下方那一行的「译」胶囊与「阅读体验」设置页总开关，读写同一个 <code>enabled</code><br>· 回答流式输出时不翻，落定后整条转中文；按 markdown 块级元素切分并打包（客户端 2048 估算 token、宿主 4096 输入 / 8192 输出 token），混合块只翻行内文字；命中缓存的块进入视口立即显示中文<br>· 非侵入式双语对照：点译文原地切回该块原文，块与块互不影响<br>· 请求走独立串行队列与独立超时（<code>aiTimeoutMs</code>，默认 600s），失败即保留原文<br>· OpenAI 兼容 AI 单通道（可配 Base URL / 模型，Key 存 <code>~/.dsh/.credentials.yaml</code>）<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
+      <td><b>聊天翻译</b><br>· 接管助手行渲染（keyed slot <code>assistant-step</code>），正文块不论源语言一律送模型改写成自然简体中文——整段中文同样照送、顺机器腔；Think 卡 / 工具调用行 / 用户消息 / 代码块不翻，与宿主渲染逐分支等价，接管器抛错自动退位给宿主<br>· 译文按原 markdown 结构经基线组件 <code>MarkdownText</code> 重渲染，表格 / 列表 / 加粗 / 行内代码保真<br>· 翻译过的块左缘一条细线，点击在译文与原文间切换；模型返回一模一样也算翻过、同样挂线<br>· 开关两个入口：输入框下方那一行的「译」胶囊与「阅读体验」设置页总开关，读写同一个 <code>enabled</code><br>· 落定且进入视口才整行请求，串行单在途 + 熔断；磁盘缓存按提示词修订号（<code>PROMPT_REVISION</code>）整体作废，换提示词不让旧译文串代<br>· OpenAI 兼容 AI 单通道（Key / Base URL / 模型齐备才翻，Key 存 <code>~/.dsh/.credentials.yaml</code>）<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>

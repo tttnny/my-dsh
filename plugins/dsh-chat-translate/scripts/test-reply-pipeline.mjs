@@ -10,13 +10,8 @@ const TMP_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-chat-translate-rep
 process.env.DSH_HOME = TMP_HOME;
 
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
-import {
-  ConfigManager,
-  RETIRED_CONFIG_KEYS,
-  retireRemovedConfigKeys,
-  sanitizePatch,
-} from '../src/server/config.ts';
-import { LruDiskCache, retireStoreFiles } from '../src/server/cache.ts';
+import { ConfigManager } from '../src/server/config.ts';
+import { LruDiskCache } from '../src/server/cache.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
 import { createFetchRoutes, REPLY_ROUTE_PATH } from '../src/server/router.ts';
 import {
@@ -42,12 +37,6 @@ async function test(name, fn) {
     console.error('  FAIL ' + name + ':', err.message);
     throw err;
   }
-}
-
-/** 假设置条目当前用户层的内容（迁移断言用）。 */
-function describeUser(source) {
-  const entry = source.describe().find((item) => item.ns === 'dsh-chat-translate');
-  return entry?.user ?? {};
 }
 
 /** 把打包后的负载按标记原样回显，用来模拟一个守规矩的翻译模型。 */
@@ -290,6 +279,47 @@ await test('正文译文进唯一的缓存池，命中后不再请求', async ()
   assert.equal(second[0].translated, '译:A stable paragraph');
 });
 
+await test('缓存文档带提示词修订号：修订号变了旧池整池作废', async () => {
+  const path = await import('node:path');
+  const home = process.env.DSH_HOME;
+  const file = 'rev-cache-test.json';
+  const first = new LruDiskCache(50, file, 'r1');
+  await first.init();
+  first.set('一段正文', '更自然的中文正文');
+  await first.flush();
+
+  const same = new LruDiskCache(50, file, 'r1');
+  await same.init();
+  assert.equal(same.get('一段正文'), '更自然的中文正文', '同修订号必须命中');
+
+  const bumped = new LruDiskCache(50, file, 'r2');
+  await bumped.init();
+  assert.equal(bumped.get('一段正文'), undefined, '换修订号后旧译文不得再命中');
+
+  // 落盘文档的形态本身就是 { rev, entries }：肉眼可辨是哪一代提示词的产物。
+  const onDisk = JSON.parse(
+    await fs.readFile(path.join(home, 'dsh-chat-translate', file), 'utf-8')
+  );
+  assert.equal(onDisk.rev, 'r1', '文档必须登记写入它的修订号');
+  assert.ok(onDisk.entries['一段正文'], '条目在 entries 之下');
+});
+
+await test('没有修订号的文档视为陌生代际，直接作废', async () => {
+  const path = await import('node:path');
+  const home = process.env.DSH_HOME;
+  const file = 'norev-cache-test.json';
+  const dir = path.join(home, 'dsh-chat-translate');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    path.join(dir, file),
+    JSON.stringify({ '一段正文': { t: Date.now(), v: '旧形态译文' } }),
+    'utf-8'
+  );
+  const cache = new LruDiskCache(50, file, 'r1');
+  await cache.init();
+  assert.equal(cache.get('一段正文'), undefined, '陌生形态不得被当作现行池读取');
+});
+
 await test('正文请求串行执行，同时最多一个在途', async () => {
   const { dispatcher } = makeDispatcher();
   let active = 0;
@@ -307,19 +337,6 @@ await test('正文请求串行执行，同时最多一个在途', async () => {
     dispatcher.translateReplyBlocks(['Third concurrent block']),
   ]);
   assert.equal(peak, 1, '正文请求必须串行，peak=' + peak);
-});
-
-await test('退役的配置键在 sanitizePatch 里被丢掉', () => {
-  const patch = sanitizePatch({
-    enabled: true,
-    concurrency: 8,
-    timeoutMs: 2000,
-    thinkEnabled: true,
-    thinkTimeoutMs: 600000,
-    aiEnabled: true,
-    bingEnabled: true,
-  });
-  assert.deepEqual(patch, { enabled: true });
 });
 
 await test('正文路由按块返回，坏请求体给 400', async () => {
@@ -351,49 +368,6 @@ await test('正文路由按块返回，坏请求体给 400', async () => {
 
   const malformed = await route.fetch(post('{not json'));
   assert.equal(malformed.status, 400);
-});
-
-await test('升级遗留：退役的配置键被一次性清掉', async () => {
-  const source = createFakeSettingsEntry();
-  // A profile that predates this release: every retired key sits in the user layer.
-  source.setUserLayer({ enabled: true, concurrency: 3, thinkEnabled: true, bingEnabled: true });
-  const settings = {
-    describe: () => source.describe(),
-    mutate: (ns, ops, revision) => source.mutate(ns, ops, revision),
-  };
-
-  assert.equal(await retireRemovedConfigKeys(settings), true, 'must report the cleanup');
-  for (const key of RETIRED_CONFIG_KEYS) {
-      assert.equal(describeUser(source)[key], undefined, `${key} must be gone from the user layer`);
-  }
-  assert.equal(describeUser(source).enabled, true, 'surviving keys are untouched');
-  assert.equal(await retireRemovedConfigKeys(settings), false, 'a second boot is a no-op');
-});
-
-await test('升级遗留：退役的配置键清理失败时不抛错（下次启动重试）', async () => {
-  const source = createFakeSettingsEntry();
-  source.setUserLayer({ concurrency: 3 });
-  const failing = {
-    describe: () => source.describe(),
-    mutate: async () => {
-      throw new Error('provider is read-only');
-    },
-  };
-  assert.equal(await retireRemovedConfigKeys(failing), false);
-});
-
-await test('升级遗留：退役的思考链缓存文件被删除，缺失时也不报错', async () => {
-  const path = await import('node:path');
-  const home = process.env.DSH_HOME;
-  assert.ok(home, 'the suite runs under an isolated DSH_HOME');
-  const pluginDir = path.join(home, 'dsh-chat-translate');
-  await fs.mkdir(pluginDir, { recursive: true });
-  const stale = path.join(pluginDir, 'think-cache.json');
-  await fs.writeFile(stale, '{"stale":"译文"}', 'utf-8');
-
-  assert.equal(await retireStoreFiles(['think-cache.json']), true, 'the stale pool file is removed');
-  await assert.rejects(fs.access(stale), 'the retired pool file must be gone');
-  assert.equal(await retireStoreFiles(['think-cache.json']), false, 'missing file is a quiet no-op');
 });
 
 console.log('');

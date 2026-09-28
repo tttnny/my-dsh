@@ -13,7 +13,7 @@ import {
   MaskRestoreError,
   type MaskResult,
 } from './pipeline/masking.ts';
-import { findLegacyMaskTokens, hasMaskResidue } from './pipeline/mask-tokens.ts';
+import { hasMaskResidue } from './pipeline/mask-tokens.ts';
 import {
   buildBatchPayload,
   createBatchFormat,
@@ -39,8 +39,6 @@ interface ReplyPiece {
   index: number;
   text: string;
   mask: MaskResult;
-  /** 源文本本来就有、还原时必须放行的旧格式标记。 */
-  legacy: Set<string>;
 }
 
 /** 片段在结果映射里的键。 */
@@ -132,7 +130,6 @@ export class TranslationDispatcher {
           index,
           text: mask.maskedText,
           mask,
-          legacy: new Set(mask.legacyFragments.map((fragment) => fragment.toLowerCase())),
         });
       }
     }
@@ -260,10 +257,7 @@ export class TranslationDispatcher {
         throw new Error('reply translation left a block marker behind');
       }
       const finalText = piece.mask.unmask(answer);
-      const leftovers = findLegacyMaskTokens(finalText).filter(
-        (fragment) => !piece.legacy.has(fragment.toLowerCase())
-      );
-      if (hasMaskResidue(finalText) || leftovers.length > 0) {
+      if (hasMaskResidue(finalText)) {
         throw new Error('reply translation left a mask placeholder behind');
       }
       out.set(replyPieceKey(piece), finalText);

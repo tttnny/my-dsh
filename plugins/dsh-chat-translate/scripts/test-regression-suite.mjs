@@ -1,18 +1,16 @@
 // Comprehensive Automated Regression Test Suite for dsh-chat-translate
 // Tests:
 // 1. ContentMaskingPipeline placeholder masking & robust unmasking
-// 2. Direct translation pass-through (no restrictive language skipping)
-// 3. Concurrency pool, Token mutex & Circuit breaker state machine
-// 4. LruDiskCache & ClientCache LRU eviction and TTL handling
-// 5. ConfigManager live-config reads, change notification, and patch sanitizing
-// 6. NonDestructiveTranslationMount DOM preservation, toggle, and clean unmount
-// 7. HttpRouter DoS 1MB protection and endpoint handling
+// 2. All reply blocks dispatched regardless of language (no skipping; Chinese is rewritten too)
+// 3. Serial request queue & circuit breaker state machine
+// 4. LruDiskCache revision gating, LRU eviction and TTL handling
+// 5. ConfigManager live-config reads and change notification
+// 6. HttpRouter DoS 1MB protection and endpoint handling
 
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { JSDOM } from 'jsdom';
 
 // Isolate all file-backed state (config/cache/credentials) into a temp dir so
 // the suite never reads or overwrites the real ~/.dsh files.
@@ -20,14 +18,13 @@ const TMP_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-chat-translate-tes
 process.env.DSH_HOME = TMP_HOME;
 
 import { ContentMaskingPipeline, MaskRestoreError, isMaskLeak } from '../src/server/pipeline/masking.ts';
-import { hasLegacyMaskResidue, hasMaskResidue } from '../src/server/pipeline/mask-tokens.ts';
+import { hasMaskResidue } from '../src/server/pipeline/mask-tokens.ts';
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
-import { ConfigManager, createLiveConfigSource, sanitizePatch, DEFAULT_CONFIG } from '../src/server/config.ts';
+import { ConfigManager, createLiveConfigSource, DEFAULT_CONFIG } from '../src/server/config.ts';
 import { apply as applyHost, Config as HostConfig, inject as hostInject } from '../src/index.ts';
 import { LruDiskCache } from '../src/server/cache.ts';
+import { PROMPT_REVISION } from '../src/server/prompt-revision.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
-import { ClientCache } from '../src/client/translate/client-cache.ts';
-import { NonDestructiveTranslationMount } from '../src/client/translate/mount.ts';
 import {
   createFetchRoutes,
   REPLY_ROUTE_PATH,
@@ -152,17 +149,14 @@ test('Rejects a translation that rewrote, dropped, duplicated or invented a toke
     'one token duplicated': `阅读 ${token(0)} 并修复 ${token(1)} ${token(1)}`,
     'foreign pass id': `阅读 ⟦zzzz0⟧ 并修复 ${token(1)}`,
     'out-of-range index': `阅读 ${token(0)} 并修复 ⟦${id}9⟧`,
-    'retired placeholder format': '阅读 __DSH_MASK_0__ 并修复 __DSH_MASK_1__',
   };
   for (const [name, out] of Object.entries(poisoned)) {
     assert.throws(() => unmask(out), MaskRestoreError, `accepted: ${name} — ${JSON.stringify(out)}`);
   }
 });
 
-test('isMaskLeak flags tokens of the current and of retired formats only', () => {
+test('isMaskLeak flags current-format tokens only', () => {
   assert.equal(isMaskLeak('查看 ⟦abcd3⟧ 中的归属使用情况'), true);
-  assert.equal(isMaskLeak('查看 __DSH_MASK_0__ 中的归属使用情况'), true);
-  assert.equal(isMaskLeak('查看 __DSHMASKxkbdt_3__ 中的归属使用情况'), true);
   assert.equal(isMaskLeak('正常的一段译文。'), false);
   assert.equal(isMaskLeak('dshmask 不是占位符'), false);
   assert.equal(isMaskLeak('the dsh mask utility'), false);
@@ -173,22 +167,6 @@ test('A source that documents a placeholder still round-trips', () => {
   const { maskedText, unmask } = pipeline.mask(source);
   assert.equal(unmask(maskedText), source);
   assert.equal(hasMaskResidue(unmask(maskedText)), false);
-});
-
-test('hasLegacyMaskResidue requires a token-shaped legacy match', () => {
-  assert.equal(hasLegacyMaskResidue('__DSH_MASK_0__'), true);
-  assert.equal(hasLegacyMaskResidue('__DSHMASKxkbdt_12__'), true);
-  assert.equal(hasLegacyMaskResidue('prose about the dsh mask feature'), false);
-  assert.equal(hasLegacyMaskResidue('DSH MASK env var'), false);
-});
-
-test('isMaskLeak flags tokens of the current and of retired formats only', () => {
-  assert.equal(isMaskLeak('查看 ⟦abcd3⟧ 中的归属使用情况'), true);
-  assert.equal(isMaskLeak('查看 __DSH_MASK_0__ 中的归属使用情况'), true);
-  assert.equal(isMaskLeak('查看 __DSHMASKxkbdt_3__ 中的归属使用情况'), true);
-  assert.equal(isMaskLeak('正常的一段译文。'), false);
-  assert.equal(isMaskLeak('dshmask 不是占位符'), false);
-  assert.equal(isMaskLeak('the dsh mask utility'), false);
 });
 
 test('Mask rules never swallow an already-inserted token (no nested masks)', () => {
@@ -250,12 +228,6 @@ test('A token dropped or rewritten by the engine rejects the whole translation',
   assert.throws(() => unmask('定位 目录'), MaskRestoreError);
   assert.throws(() => unmask('定位 ⟦zzzz0⟧ 目录'), MaskRestoreError);
   assert.throws(() => unmask('定位 ⟦⟧ 目录'), MaskRestoreError);
-});
-
-test('A model that reproduces a retired placeholder is treated as a damaged translation', () => {
-  const { unmask } = pipeline.mask('Locate `DSH_HOME` directory');
-  // The engine dropped the current token and shipped the retired format instead.
-  assert.throws(() => unmask('定位 __DSH_MASK_0__ 目录'), MaskRestoreError);
 });
 
 // -------------------------------------------------------------
@@ -407,7 +379,7 @@ await testAsync('A translated string without masks but with a hallucinated place
     id: 'hallucinating',
     name: 'Hallucinating',
     isAvailable: () => true,
-    translate: async () => '查找 __DSH_MASK_0__ 中的归属使用情况',
+    translate: async () => '查找 ⟦abcd0⟧ 中的归属使用情况',
   };
   dispatcher.adapters.set('openai', hallucinating);
   await entry.update({ baseUrl: 'http://x', model: 'm' });
@@ -427,14 +399,15 @@ await testAsync('A translation that keeps a placeholder the source documented is
   const source = 'The user reports `__DSH_MASK_0__` placeholders leaking into translations';
   const { maskedText, unmask } = pipeline.mask(source);
   assert.equal(unmask(maskedText), source, 'a documented placeholder must round-trip');
-  assert.ok(!maskedText.includes('__DSH_MASK_0__'), 'the retired token is protected, not sent raw');
+  assert.ok(!maskedText.includes('__DSH_MASK_0__'), 'the token-shaped string is masked like any other code fragment');
 
   const faithful = {
     id: 'faithful',
     name: 'Faithful',
     isAvailable: () => true,
-    // A faithful engine returns the token it was given, in place.
-    translate: async (text) => `用户反馈 \`${/⟦[a-z]{4}\d+⟧/.exec(text)[0]}\` 占位符泄漏进译文`,
+    // A faithful engine returns the token it was given, in place. The inline
+    // code span (backticks included) IS the fragment, so no backticks to add.
+    translate: async (text) => `用户反馈 ${/⟦[a-z]{4}\d+⟧/.exec(text)[0]} 占位符泄漏进译文`,
   };
   dispatcher.adapters.set('openai', faithful);
   await entry.update({ baseUrl: 'http://x', model: 'm' });
@@ -448,28 +421,6 @@ await testAsync('A translation that keeps a placeholder the source documented is
 // Suite 3: LRU Cache Semantics & TTL
 // -------------------------------------------------------------
 console.log('\n--- Suite 3: LRU Cache Semantics & TTL ---');
-
-test('ClientCache implements strict LRU eviction order', () => {
-  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' });
-  global.localStorage = dom.window.localStorage;
-  global.window = dom.window;
-
-  const clientCache = new ClientCache();
-  clientCache.memCache.clear();
-
-  // Insert 3 items
-  clientCache.set('a', 'alpha');
-  clientCache.set('b', 'beta');
-  clientCache.set('c', 'gamma');
-
-  // Access 'a' to refresh its position in LRU (making 'b' the oldest)
-  const aVal = clientCache.get('a');
-  assert.equal(aVal, 'alpha');
-
-  // Verify internal map order: oldest should be 'b'
-  const keys = Array.from(clientCache.memCache.keys());
-  assert.deepEqual(keys, ['b', 'c', 'a']);
-});
 
 await testAsync('LruDiskCache handles TTL expiration and LRU eviction', async () => {
   const cache = new LruDiskCache(3);
@@ -497,12 +448,12 @@ test('LruDiskCache refuses to store and evicts mask-leaked translations', () => 
   cache.set('clean', '干净译文');
   assert.equal(cache.get('clean'), '干净译文');
 
-  cache.set('poisoned', '查找 __DSHMASK_abcd_0__ 中的内容');
+  cache.set('poisoned', '查找 ⟦abcd0⟧ 中的内容');
   assert.equal(cache.get('poisoned'), undefined, 'a leaked translation must never be stored');
 
   // An entry that entered the map by other means (e.g. a poisoned on-disk
-  // entry loaded before this guard existed) is evicted on read.
-  cache.cache.set('warm', { t: Date.now(), v: '比较 __DSH_MASK_1__ 中的行为' });
+  // entry) is evicted on read: the leak check guards every read path.
+  cache.cache.set('warm', { t: Date.now(), v: '比较 ⟦wxyz1⟧ 中的行为' });
   assert.equal(cache.get('warm'), undefined, 'a warm poisoned entry is evicted on read');
   assert.equal(cache.cache.has('warm'), false);
 });
@@ -514,9 +465,14 @@ await testAsync('LruDiskCache drops mask-leaked entries while loading from disk'
   await fs.writeFile(
     cachePath,
     JSON.stringify({
-      ok: { t: now, v: '正常译文' },
-      leaked: { t: now, v: '在 __DSHMASK_abcd_0__ 中查找' },
-      legacyLeaked: '定位 _DSH_MASK_0 目录',
+      rev: PROMPT_REVISION,
+      entries: {
+        ok: { t: now, v: '正常译文' },
+        leaked: { t: now, v: '在 ⟦abcd0⟧ 中查找' },
+        // 无时间戳 / 非字符串译文：陌生形态，读取时被丢掉。
+        noTime: { v: '没有时间戳' },
+        notString: { t: now, v: 42 },
+      },
     }),
     'utf-8'
   );
@@ -525,44 +481,12 @@ await testAsync('LruDiskCache drops mask-leaked entries while loading from disk'
   await cache.init();
   assert.equal(cache.get('ok'), '正常译文');
   assert.equal(cache.get('leaked'), undefined, 'poisoned on-disk entry must be dropped');
-  assert.equal(cache.get('legacyLeaked'), undefined, 'poisoned legacy entry must be dropped');
+  assert.equal(cache.get('noTime'), undefined, 'entry without a timestamp must be dropped');
+  assert.equal(cache.get('notString'), undefined, 'entry with a non-string value must be dropped');
 
-  // Leave no cache file behind: the relocation test below asserts on the
-  // pre-1.2 root-level layout and needs the plugin subdir to be empty.
+  // Leave no cache file behind: other tests in this suite start from an empty
+  // plugin cache directory.
   await fs.rm(cachePath, { force: true });
-});
-
-await testAsync('LruDiskCache relocates the legacy root-level cache file', async () => {
-  const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-cache.json');
-  const now = Date.now();
-  await fs.writeFile(legacyPath, JSON.stringify({ k1: { t: now, v: 'v1' } }), 'utf-8');
-
-  const cache = new LruDiskCache();
-  await cache.init();
-  assert.equal(cache.get('k1'), 'v1', 'legacy entry survives the relocation');
-
-  const newPath = path.join(TMP_HOME, 'dsh-chat-translate', 'cache.json');
-  await fs.access(newPath); // the plugin subdir + file must exist now
-  await assert.rejects(fs.access(legacyPath), 'legacy file removed after relocation');
-
-  cache.set('k2', 'v2');
-  await cache.flush();
-  const onDisk = JSON.parse(await fs.readFile(newPath, 'utf-8'));
-  assert.ok(onDisk.k2, 'flush writes to the relocated path');
-});
-
-await testAsync('LruDiskCache retires a stale legacy file when the new cache exists', async () => {
-  const newPath = path.join(TMP_HOME, 'dsh-chat-translate', 'cache.json');
-  const now = Date.now();
-  await fs.writeFile(newPath, JSON.stringify({ fresh: { t: now, v: 'nv' } }), 'utf-8');
-  const legacyPath = path.join(TMP_HOME, 'dsh-chat-translate-cache.json');
-  await fs.writeFile(legacyPath, JSON.stringify({ stale: { t: now, v: 'ov' } }), 'utf-8');
-
-  const cache = new LruDiskCache();
-  await cache.init();
-  assert.equal(cache.get('fresh'), 'nv', 'new cache wins');
-  assert.equal(cache.get('stale'), undefined, 'stale legacy entries are not merged');
-  await assert.rejects(fs.access(legacyPath), 'stale legacy file retired');
 });
 
 // -------------------------------------------------------------
@@ -571,7 +495,7 @@ await testAsync('LruDiskCache retires a stale legacy file when the new cache exi
 console.log('\n--- Suite 4: ConfigManager Live Config & Change Notification ---');
 
 await testAsync('ConfigManager reads the committed config and notifies subscribers', async () => {
-  const entry = createFakeSettingsEntry({ concurrency: 3 });
+  const entry = createFakeSettingsEntry();
   const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
 
   const seen = [];
@@ -588,67 +512,6 @@ await testAsync('ConfigManager reads the committed config and notifies subscribe
   unsub();
   await entry.update({ aiTimeoutMs: 90000 });
   assert.deepEqual(seen, [120000], 'an unsubscribed listener is not called');
-});
-
-test('sanitizePatch clamps numeric bounds and drops retired fields', () => {
-  // The legacy-file migration is the only remaining writer, and it sanitizes:
-  // one bad field must never take the whole migration down.
-  assert.equal(sanitizePatch({ aiTimeoutMs: 10 }).aiTimeoutMs, 500);
-  assert.equal(sanitizePatch({ aiTimeoutMs: 10 ** 9 }).aiTimeoutMs, 900000);
-  assert.equal(sanitizePatch({ aiTimeoutMs: 600000 }).aiTimeoutMs, 600000);
-  assert.equal(sanitizePatch({ enabled: 'false' }).enabled, undefined);
-  assert.equal(sanitizePatch({ baseUrl: '  http://x  ' }).baseUrl, 'http://x');
-  assert.deepEqual(sanitizePatch({ channels: ['bing'], concurrency: 3 }), {});
-});
-
-// -------------------------------------------------------------
-// Suite 5: NonDestructiveTranslationMount DOM Lifecycle
-// -------------------------------------------------------------
-console.log('\n--- Suite 5: NonDestructiveTranslationMount DOM Lifecycle ---');
-
-test('Mounts translation without destroying child nodes or event listeners', () => {
-  const dom = new JSDOM('<!doctype html><html><body><div id="target"><span class="title">Bash</span><code class="cmd">npm test</code></div></body></html>');
-  const target = dom.window.document.getElementById('target');
-  assert.ok(target);
-
-  let clicked = false;
-  target.querySelector('.cmd')?.addEventListener('click', () => { clicked = true; });
-
-  // Mount translation
-  NonDestructiveTranslationMount.mount(target, '运行测试命令');
-  assert.equal(NonDestructiveTranslationMount.isMounted(target), true);
-
-  // Translation container should be visible
-  const transBlock = target.querySelector('.dsh-tidy-translated-block');
-  assert.ok(transBlock);
-  assert.equal(transBlock.textContent, '运行测试命令');
-
-  // Original nodes must be preserved inside .dsh-tidy-original-hidden
-  const origWrapper = target.querySelector('.dsh-tidy-original-hidden');
-  assert.ok(origWrapper);
-  assert.equal(origWrapper.querySelector('.title')?.textContent, 'Bash');
-  assert.equal(origWrapper.querySelector('.cmd')?.textContent, 'npm test');
-
-  // Interactive toggle: clicking transBlock shows original
-  transBlock.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-  assert.equal((origWrapper).style.display, 'inline');
-  assert.equal((transBlock).style.display, 'none');
-
-  // Clicking origWrapper toggles back
-  origWrapper.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-  assert.equal((transBlock).style.display, 'inline');
-  assert.equal((origWrapper).style.display, 'none');
-
-  // Event listener on original node still works
-  origWrapper.querySelector('.cmd')?.dispatchEvent(new dom.window.MouseEvent('click'));
-  assert.equal(clicked, true);
-
-  // Clean unmount restores original DOM structure
-  NonDestructiveTranslationMount.unmount(target);
-  assert.equal(target.querySelector('.dsh-tidy-translated-block'), null);
-  assert.equal(target.querySelector('.dsh-tidy-original-hidden'), null);
-  assert.equal(target.querySelector('.title')?.textContent, 'Bash');
-  assert.equal(target.querySelector('.cmd')?.textContent, 'npm test');
 });
 
 // -------------------------------------------------------------
@@ -735,7 +598,6 @@ test('Config declares every field volatile so form and apply share one value', (
   assert.equal(value.aiTimeoutMs.get(), DEFAULT_CONFIG.aiTimeoutMs);
   assert.equal(value.baseUrl.get(), DEFAULT_CONFIG.baseUrl);
   assert.equal(value.model.get(), DEFAULT_CONFIG.model);
-  assert.equal(value.targetLang.get(), DEFAULT_CONFIG.targetLang);
 });
 
 test('createLiveConfigSource forwards a committed live edit to subscribers', () => {
@@ -775,8 +637,6 @@ test('apply() wires the exact routes and opts out of the auto settings page', ()
   );
   const ctx = {
     settings: {
-      describe: () => [],
-      mutate: async () => {},
       configure: (presentation) => { policies.push(presentation); return () => {}; },
     },
     credentials: {

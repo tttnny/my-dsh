@@ -1,19 +1,15 @@
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
 import z from '@deepseek-ai/schemastery';
-import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
 import {
   ConfigManager,
   createLiveConfigSource,
-  migrateLegacyConfigFile,
-  retireRemovedConfigKeys,
   DEFAULT_CONFIG,
   AI_TIMEOUT_MIN,
   AI_TIMEOUT_MAX,
   type PluginConfigRefs,
-  type SettingsMigrationTarget,
 } from './server/config.ts';
 import { CredentialsReader, TRANSLATE_API_KEY_REF } from './server/credentials.ts';
-import { LruDiskCache, retireStoreFiles } from './server/cache.ts';
+import { LruDiskCache } from './server/cache.ts';
 import { TranslationDispatcher } from './server/dispatcher.ts';
 import { createFetchRoutes } from './server/router.ts';
 
@@ -21,13 +17,12 @@ import { createFetchRoutes } from './server/router.ts';
 export const name = 'dsh-chat-translate';
 
 /**
- * Hard dependencies: settings and credentials are the DSH-owned config/secret
- * surfaces this plugin rides on. The plugin's own values arrive as its resolved
- * Config, so `settings` is only the provider-level write face the one-shot
- * legacy-file migration needs. The translation routes register through the
- * connection service when a Web carrier composes it, so apply takes that
- * service through ctx.inject and the plugin still loads in compositions
- * without one.
+ * Hard dependencies: credentials is the DSH-owned secret surface this plugin
+ * rides on, and settings carries the entry's automatic-page policy. The
+ * plugin's own values arrive as its resolved Config. The translation routes
+ * register through the connection service when a Web carrier composes it, so
+ * apply takes that service through ctx.inject and the plugin still loads in
+ * compositions without one.
  */
 export const inject = ['settings', 'credentials'];
 
@@ -48,13 +43,12 @@ export const Config = z.object({
     .volatile(),
   baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl).volatile(),
   model: z.string().default(DEFAULT_CONFIG.model).volatile(),
-  targetLang: z.string().default(DEFAULT_CONFIG.targetLang).volatile(),
 });
 
 interface HostContext {
   connection: HostConnectionHandle;
   fiber: unknown;
-  settings: SettingsMigrationTarget & {
+  settings: {
     /** Register this entry's automatic-page policy; `auto: false` opts out. */
     configure(presentation: { auto?: boolean }, owner?: unknown): () => void;
   };
@@ -96,18 +90,8 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
     );
   });
 
-  // Initialize async resources: credentials cache, the reply cache pool, the
-  // one-shot migration of the legacy dsh-chat-translate-config.json, and the
-  // one-shot retirement of everything this release removed — the think-chain
-  // pool file and the config keys the old schema declared.
-  const legacyConfigPath = dshHomePath('dsh-chat-translate-config.json');
-  const initPromise = Promise.all([
-    credentials.init(),
-    cache.init(),
-    migrateLegacyConfigFile(ctx.settings, legacyConfigPath),
-    retireRemovedConfigKeys(ctx.settings),
-    retireStoreFiles(['think-cache.json']),
-  ]).catch((err) => {
+  // Initialize async resources: the credential cache and the reply cache pool.
+  const initPromise = Promise.all([credentials.init(), cache.init()]).catch((err) => {
     console.warn('[dsh-chat-translate] Initialization error:', err);
   });
 

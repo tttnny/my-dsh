@@ -2,9 +2,9 @@
  * API-key access through the DSH `ctx.credentials` service.
  *
  * The service owns ~/.dsh/.credentials.yaml (refs section, 0600 perms, env
- * shadowing, cross-process locking). The pre-1.2 hand-rolled YAML parser is
- * gone: reads go through `resolve`, writes through `set`/`unset`, and the
- * host's `credentials/reference-updated` event keeps the sync cache warm.
+ * shadowing, cross-process locking): reads go through `resolve`, writes through
+ * `set`/`unset`, and the host's `credentials/reference-updated` event keeps
+ * the sync cache warm.
  */
 
 /** Refs key that holds the translation API key. */

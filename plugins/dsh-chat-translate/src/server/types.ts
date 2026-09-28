@@ -3,7 +3,6 @@ export interface PluginConfig {
   aiTimeoutMs: number; // AI request timeout for one packed reply batch
   baseUrl: string; // OpenAI-compatible base URL; empty = AI not configured
   model: string; // model name; empty = AI not configured
-  targetLang: string; // target language, default 'zh-Hans'
 }
 
 export interface TranslateItemResult {

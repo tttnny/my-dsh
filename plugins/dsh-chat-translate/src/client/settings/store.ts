@@ -1,5 +1,4 @@
 import { describeError } from '../../describe-error.ts';
-import { chatTranslateObserver } from '../translate/observer.ts';
 import { testServerChannel } from '../translate/api.ts';
 
 export interface ClientSettingsState {
@@ -144,13 +143,7 @@ class SettingsStore {
 
   private applyState(next: ClientSettingsState): void {
     next.aiConfigured = Boolean(next.baseUrl && next.model && this.keyConfigured);
-    const enabledChanged = next.enabled !== this.state.enabled;
     this.state = next;
-    if (enabledChanged) {
-      try {
-        chatTranslateObserver.setEnabled(this.state.enabled);
-      } catch {}
-    }
     this.notify();
   }
 

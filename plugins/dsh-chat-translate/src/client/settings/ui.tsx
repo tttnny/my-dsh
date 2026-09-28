@@ -263,8 +263,8 @@ export function setupSettingsUi(ctx: any): void {
   // Ride DSH's shared configuration forms: `ctx.configForms.get(<profile entry
   // id>)` is the read/write face of THIS plugin's own Config schema — it
   // mirrors the Host's config section for the entry and folds every accepted
-  // write back. `remote.credentials` writes the API key. No custom config HTTP
-  // endpoint since 1.2, and no per-namespace settings scope since 0.1.7.
+  // write back. `remote.credentials` writes the API key. There is no custom
+  // config HTTP endpoint and no per-namespace settings scope.
   const configForms = ctx.configForms;
   const remoteCredentials = ctx.remote?.credentials ?? null;
   try {
@@ -276,9 +276,8 @@ export function setupSettingsUi(ctx: any): void {
   // The locale service is declared through the client `inject` table, so cordis
   // installs it before this body runs and `ctx.locale` cannot miss it.
   // Registering the dictionary HERE is what the card's seat `t` resolves
-  // against; a non-waiting sample left it unregistered and the card then fell
-  // back to the shell's `common` namespace, rendering every unknown key as its
-  // own key text.
+  // against; without the registration the card falls back to the shell's
+  // `common` namespace and renders every unknown key as its own key text.
   const locale = ctx.locale;
   if (locale && typeof locale.register === 'function') {
     ctx.effect(
@@ -288,9 +287,9 @@ export function setupSettingsUi(ctx: any): void {
   }
   const t = locale && typeof locale.bind === 'function'
     ? locale.bind(NS)
-    // Key-aware fallback: an earlier revision returned `zh.pageNav` for EVERY
-    // key, which labelled the shared page's tab with the page name instead of
-    // this plugin's own title whenever the locale service was not yet there.
+    // Key-aware fallback: one fixed label for every key would dress the shared
+    // page's tab in the wrong text whenever the locale service is not yet
+    // there, so the fallback answers each key with its own zh value.
     : (key: ChatTranslateLocaleKey): string => zh[key] ?? key;
 
   try {

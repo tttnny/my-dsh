@@ -28,7 +28,7 @@ const check = (label, ok) => {
   else { console.log(`  FAIL ${label}`); failures.push(label) }
 }
 
-// --- DOM surface: the observer starts at apply time, the card only registers ---
+// --- DOM surface: apply registers the row takeover; styles inject once ---
 
 const stubElement = {
   addEventListener() {}, removeEventListener() {}, appendChild() {}, remove() {},
@@ -40,7 +40,7 @@ const stubElement = {
 }
 globalThis.window = {
   document: stubElement, location: { href: 'http://127.0.0.1/' }, addEventListener() {}, removeEventListener() {},
-  // Real timers (the observer arms a re-probe interval) kept off the event loop.
+  // Real timers kept off the event loop.
   setInterval: (fn, ms) => { const t = setInterval(fn, ms); t?.unref?.(); return t },
   clearInterval: t => clearInterval(t),
   setTimeout: (fn, ms) => { const t = setTimeout(fn, ms); t?.unref?.(); return t },
@@ -122,8 +122,11 @@ const services = {
       const rec = {
         name: options.name,
         id: options.id,
+        key: options.key,
         order: options.order,
+        priority: options.priority,
         locale: options.locale,
+        entryInject: options.inject,
         children: options.children === undefined ? undefined : Object.keys(options.children),
         component,
         disposed: false,
@@ -230,14 +233,36 @@ check('dock entry uses this plugin locale namespace', dock?.locale === 'settings
 check('dock entry exposes a component', typeof dock?.component === 'function')
 check('dock contributed through slots.inject', injects.includes('slot:conversation.composer.dock'))
 
+// 接管助手行：conversation.chat.node 的 keyed seat，key assistant-step，
+// priority -1 排在宿主默认注册之前；presentation hook 由注册项的 inject 供给。
+const takeover = registrations.find(r => r.name === 'conversation.chat.node')
+check('assistant-step takeover registered', takeover !== undefined)
+check('takeover keyed to assistant-step', takeover?.key === 'assistant-step')
+check('takeover shadows the host renderer (priority -1)', takeover?.priority === -1)
+check('takeover reuses the host chat locale', takeover?.locale === 'chat')
+// memo() 的产物是对象而非函数（本桩件的 react 把一切折叠为代理对象），
+// 接线层只断言注册携带了渲染载体。
+check('takeover entry exposes a component', takeover?.component != null)
+check('takeover contributed through slots.inject', injects.includes('slot:conversation.chat.node'))
+const injected = takeover?.entryInject?.()
+check('takeover injects the live presentation hook',
+  typeof injected?.hooks?.presentation?.getSnapshot === 'function' &&
+  typeof injected?.hooks?.presentation?.subscribe === 'function')
+check('presentation defaults to standard policy', injected?.hooks?.presentation?.getSnapshot().mode === 'standard')
+
+// 「工作细节」模式跟随宿主：apply 读 ui-chat 的配置面。
+check('chat presentation reads the ui-chat config form', formLookups.includes('ui-chat'))
+
 // Election case: another participant already holds the page.
 registrations.length = 0
 errors.length = 0
+formLookups.length = 0
 existingSections = [{ options: { id: 'reading' } }]
 exported.apply(makeCtx(exported.inject ?? []))
 check('page is not claimed twice', registrations.every(r => r.name !== 'settings.section'))
 check('card still registers beside the other participant', registrations.some(r => r.name === 'reading.settings.item'))
 check('dock registers independently of the page election', registrations.some(r => r.name === 'conversation.composer.dock'))
+check('takeover registers independently of the page election', registrations.some(r => r.name === 'conversation.chat.node'))
 check('election path stays error-free', errors.length === 0)
 
 // Disposal: the dock contribution carries a disposer that tears its registration down.

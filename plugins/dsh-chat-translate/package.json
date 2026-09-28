@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-chat-translate",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "Assistant reply-body translation for the DeepSeek Harness Web UI (OpenAI-compatible channel)",
   "license": "MIT",
   "author": "lynn123411",
@@ -61,7 +61,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node scripts/test-client-wiring.mjs && node scripts/test-regression-suite.mjs && node scripts/test-channel-logic.mjs && node scripts/test-store.mjs && node scripts/test-toggle-restore.mjs && node scripts/test-reply-pipeline.mjs && node scripts/test-reply-client.mjs",
+    "test": "node scripts/test-client-wiring.mjs && node scripts/test-chat-translate.mjs && node scripts/test-regression-suite.mjs && node scripts/test-channel-logic.mjs && node scripts/test-store.mjs && node scripts/test-reply-pipeline.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
     "check": "pnpm typecheck && pnpm build && pnpm test && pnpm assert:lib-untracked"
   },
