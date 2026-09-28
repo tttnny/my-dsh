@@ -15,7 +15,7 @@ export const zh = {
   masterTitle: '翻译总开关',
   enableTranslation: '启用翻译',
   masterDesc:
-    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送，由模型一并改写成自然中文、顺掉机器腔。Think 卡与工具调用行不翻，代码块原样保留。正在显示译文的块左缘有一条细线，点回原文时细线消失——线标的是当前正在读的那一版；点击已翻译的块可在译文与原文间切换，模型认为原样最好、返回一模一样的文字时同样算翻译过、同样可切。译文按原 markdown 格式重新渲染，表格、列表、加粗与行内代码保持结构。回答还在流式输出时不翻，落定后按阅读顺序逐段出中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
+    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送，由模型一并改写成自然中文、顺掉机器腔。Think 卡与工具调用行不翻，代码块原样保留。翻译过的块左缘有一条细线：显示译文时是实线，点回原文变虚线（提示这里备着译文，再点即切回），没译成的没有线——线型一眼分清「有没有译」和「正在读哪一版」。点击已翻译的块可在译文与原文间切换，模型认为原样最好、返回一模一样的文字时同样算翻译过、同样可切。译文按原 markdown 格式重新渲染，表格、列表、加粗与行内代码保持结构。回答还在流式输出时不翻，落定后按阅读顺序逐段出中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
 
   aiTitle: 'AI 翻译（OpenAI 兼容协议）',
   aiRule: '只有这一条通道：Key / Base URL / 模型齐备才会翻译，缺任何一项都保持原文。',
@@ -65,7 +65,7 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   masterTitle: 'Translation master switch',
   enableTranslation: 'Enable translation',
   masterDesc:
-    'Translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and blocks written entirely in Chinese go through the model too, which rewrites them into natural Chinese and smooths out machine-flavored phrasing. Think cards and tool-call rows are never translated, and code blocks stay untouched. A block currently showing its translation carries a thin left edge, and the edge disappears when you click back to the original — it marks the version you are reading. Click any translated block to switch between translation and original; even when the model decides the original wording is already best and returns it unchanged, it still counts as translated and stays switchable. Translations are re-rendered as Markdown, so tables, lists, bold runs and inline code keep their structure. A reply that is still streaming is left alone until it settles, then prose turns to Chinese paragraph by paragraph in reading order. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
+    'Translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and blocks written entirely in Chinese go through the model too, which rewrites them into natural Chinese and smooths out machine-flavored phrasing. Think cards and tool-call rows are never translated, and code blocks stay untouched. A translated block carries a thin left edge: solid while its translation shows, dashed while you read the original (a translation is waiting one click away), and absent when nothing translated — the line style tells at a glance both what exists and what you are reading. Click any translated block to switch between translation and original; even when the model decides the original wording is already best and returns it unchanged, it still counts as translated and stays switchable. Translations are re-rendered as Markdown, so tables, lists, bold runs and inline code keep their structure. A reply that is still streaming is left alone until it settles, then prose turns to Chinese paragraph by paragraph in reading order. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
 
   aiTitle: 'AI translation (OpenAI-compatible)',
   aiRule:

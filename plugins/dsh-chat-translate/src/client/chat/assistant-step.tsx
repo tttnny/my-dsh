@@ -328,7 +328,7 @@ function ProseBlock({
   return React.createElement(
     'div',
     {
-      // 细线只标「当前显示译文」：点回原文时线消失，块保持可点切回。
+      // 线型随显示态：实线=译文，虚线=有译文但读原文（仍可点切回），无线=没译。
       className: proseClassNames(processed, showOriginal),
       'data-translated': showTranslation ? 'true' : void 0,
       // 容器内含链接等交互内容，不套 role=button（非法嵌套）；可聚焦 + 键盘

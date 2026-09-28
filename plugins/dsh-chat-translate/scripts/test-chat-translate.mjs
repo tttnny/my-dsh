@@ -27,7 +27,7 @@ const { planAssistantRow } = await import('../src/client/chat/row-plan.ts');
 const { createTranslateStore, chunkTexts } = await import('../src/client/chat/translate-store.ts');
 const { isBareBlockClick } = await import('../src/client/chat/click-guard.ts');
 const { createChatPresentation, POLICY_BY_MODE } = await import('../src/client/chat/presentation.ts');
-const { proseClassNames } = await import('../src/client/chat/styles.ts');
+const { proseClassNames, ASSISTANT_CSS } = await import('../src/client/chat/styles.ts');
 
 // ---------------------------------------------------------------
 // 1+2. 行渲染计划
@@ -447,18 +447,33 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
 });
 
 // ---------------------------------------------------------------
-// 5. 左缘细线随显示态
+// 5. 左缘细线：实线=正在读译文，虚线=有译文但读原文，无线=没译成
 // ---------------------------------------------------------------
 
-await test('细线只标「当前显示译文」：点回原文时线消失、块保持可点', () => {
+await test('实线标译文、虚线标「有译文的原文态」，未译无线', () => {
   assert.equal(proseClassNames(false, false), undefined, '未挂译文的块没有任何标记类');
   assert.equal(proseClassNames(false, true), undefined, '未挂译文谈不上原文态');
   const showingTranslation = proseClassNames(true, false);
-  assert.match(showingTranslation, /dsh-ct-prose-translated/, '显示译文时挂左缘细线');
+  assert.match(showingTranslation, /dsh-ct-prose-translated/, '显示译文时挂实线');
+  assert.ok(!showingTranslation.includes('dsh-ct-prose-original'), '译文态不挂虚线类');
   assert.match(showingTranslation, /dsh-ct-prose-clickable/, '译文态整块可点');
   const showingOriginal = proseClassNames(true, true);
-  assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '显示原文时细线随之消失');
+  assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '原文态不挂实线');
+  assert.match(showingOriginal, /dsh-ct-prose-original/, '原文态挂虚线：有译文的线索保留');
   assert.match(showingOriginal, /dsh-ct-prose-clickable/, '原文态仍可点击切回译文');
+});
+
+await test('实线与虚线同宽同位：切换只换线型，文字不横跳', () => {
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-prose-translated\{border-left:0\.5px solid/,
+    '译文线是 0.5px 实线'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-prose-original\{border-left:0\.5px dashed/,
+    '原文态线是 0.5px 虚线'
+  );
 });
 
 console.log('');
