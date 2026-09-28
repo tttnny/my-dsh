@@ -12,14 +12,18 @@ export interface BlockOutcome {
 /**
  * 一行正文的翻译状态。outcomes 与 texts 同下标，null = 该块所在批尚未落定：
  * 每批返回就地填入并通知，长回答按阅读顺序逐段出中文，不憋到最后一批。
- * 全部批落定后：无失败即 done；有失败标 partial——partial 行允许下一次
- * ensure 重走（渲染层的下一次触发是滚出视口再回来、或行重挂载），失败的
- * 块因此自然重试，成功的块由宿主磁盘缓存直接命中、不再花模型调用。
+ * 全部批落定后：无失败即 done；有失败标 partial——partial 行允许后续 ensure
+ * 重走（渲染层的下一次触发是滚出视口再回来、或行重挂载），失败的块因此
+ * 自然重试，成功的块由宿主磁盘缓存直接命中、不再花模型调用。重走有上限
+ * （MAX_ROW_ATTEMPTS）：确定性失败（如弱模型丢占位符）不该被滚动无限续杯，
+ * 封顶后保持原文直到文本换代重置。
  */
 export interface RowState {
   status: 'pending' | 'partial' | 'done';
   texts: readonly string[];
   outcomes: readonly (BlockOutcome | null)[];
+  /** 这一代文本已经完整跑过几轮（首跑计 1）。 */
+  attempts: number;
 }
 
 /** 送译一行正文的取数面：默认走宿主路由，测试注入假实现。 */
@@ -27,6 +31,9 @@ export type ReplyFetcher = (texts: string[]) => Promise<ReplyBlockResult[]>;
 
 /** 同时在池的行数上限：LRU 淘汰最久未读的整行；行文本本身仍归宿主会话持有。 */
 export const MAX_TRANSLATED_ROWS = 200;
+
+/** 同一代文本最多完整跑几轮；封顶后不再打通道，直到文本换代重置额度。 */
+export const MAX_ROW_ATTEMPTS = 3;
 
 /**
  * 一次 HTTP 请求装载的估算 token 上限：与宿主的打包输入上限同值同源
@@ -60,7 +67,7 @@ export function chunkTexts(texts: readonly string[]): string[][] {
  * 行键由渲染层给出（会话内锚点序号），文本数组参与一致性判断：同键不同文本
  * 视为行换了一代内容，整行重新请求——这保证重渲染或会话切换后不会把旧译文
  * 配到新文本上。请求幂等：同键同文本、且上一代已落定成功或仍在途的 ensure
- * 不再发请求；只有 partial（有失败块）的同代 ensure 会重走。在途期间换代，
+ * 不再发请求；只有 partial（有失败块）的同代 ensure 会重走，且同代封顶三次。在途期间换代，
  * 迟到的旧代结果直接丢弃。
  *
  * 本模块不依赖 React：渲染层用 useSyncExternalStore 订阅版本，再读 getState。
@@ -103,15 +110,20 @@ export class ChatTranslateStore {
    */
   ensure(rowKey: string, texts: readonly string[]): boolean {
     const current = this.rows.get(rowKey);
+    let attempts = 1;
     if (current !== undefined && sameTexts(current.texts, texts)) {
-      // 同代：done/pending 短路；partial 重走——失败块的「自然重试」入口。
+      // 同代：done/pending 短路；partial 重走——失败块的「自然重试」入口，
+      // 但同代封顶：确定性失败不该被滚动无限续杯。
       if (current.status !== 'partial') return false;
+      if (current.attempts >= MAX_ROW_ATTEMPTS) return false;
+      attempts = current.attempts + 1;
     }
     const snapshot = [...texts];
     const next: RowState = {
       status: 'pending',
       texts: snapshot,
       outcomes: snapshot.map(() => null),
+      attempts,
     };
     this.rows.delete(rowKey);
     this.rows.set(rowKey, next);
@@ -147,7 +159,12 @@ export class ChatTranslateStore {
       // 逐批可见：行仍是这一代才写入，写完通知——先回的段先出中文。
       const live = this.rows.get(rowKey);
       if (live === undefined || live.status !== 'pending' || !sameTexts(live.texts, texts)) return;
-      this.rows.set(rowKey, { status: 'pending', texts: live.texts, outcomes: [...outcomes] });
+      this.rows.set(rowKey, {
+        status: 'pending',
+        texts: live.texts,
+        outcomes: [...outcomes],
+        attempts: live.attempts,
+      });
       this.bump();
     }
     const state = this.rows.get(rowKey);
@@ -157,6 +174,7 @@ export class ChatTranslateStore {
         status: anyFailed ? 'partial' : 'done',
         texts: state.texts,
         outcomes,
+        attempts: state.attempts,
       });
       this.bump();
     }

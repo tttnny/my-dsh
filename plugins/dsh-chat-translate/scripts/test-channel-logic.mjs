@@ -227,6 +227,87 @@ await testAsync('Empty probe result releases the single-flight flag', async () =
   assert.equal(state.state, 'closed');
 });
 
+await testAsync('半开探针一批请求都没发出也必须归还单飞槽位', async () => {
+  const source = createFakeSettingsEntry();
+  const cfg = new ConfigManager(source, new CredentialsReader(createFakeCredentials()));
+  const cache = new LruDiskCache();
+  await cache.init();
+  const dispatcher = new TranslationDispatcher(cfg, cache);
+  dispatcher.credentials = { getApiKey: () => 'sk-test' };
+  await source.update({ baseUrl: 'http://x', model: 'm' });
+
+  let calls = 0;
+  let healthy = false;
+  dispatcher.adapters.set('openai', {
+    id: 'openai',
+    name: 'Unstable',
+    isAvailable: () => true,
+    translate: async (t) => {
+      calls++;
+      if (!healthy) throw new Error('boom');
+      return `ok:${t}`;
+    },
+  });
+
+  while (dispatcher.circuitStates.get('openai')?.state !== 'open') {
+    await dispatcher.translateReplyBlocks([`F${calls}`]);
+  }
+  const state = dispatcher.circuitStates.get('openai');
+
+  // 冷却到期，探针拿到的却是一批纯空白块（或全缓存命中）：一批都不会发往
+  // 适配器。若槽位不还，通道就此无声锁死——每次授予都不记账，永久 half-open。
+  state.openUntil = Date.now() - 100;
+  const callsBefore = calls;
+  await dispatcher.translateReplyBlocks(['   ', '\n\n']);
+  assert.equal(calls, callsBefore, '空白块不发请求');
+  assert.equal(state.probeInFlight, false, '授予后零批次也必须归还探针槽位');
+
+  // 下一个真实请求仍能受派探针：通道恢复即闭环。
+  state.openUntil = Date.now() - 100;
+  healthy = true;
+  const probe = await dispatcher.translateReplyBlocks(['real text']);
+  assert.equal(probe[0].ok, true, '槽位归还后下一个调用可正常受派探针');
+  assert.equal(state.state, 'closed');
+});
+
+await testAsync('内容级拒收（掩码片段丢失）不得计入熔断账本', async () => {
+  const source = createFakeSettingsEntry();
+  const cfg = new ConfigManager(source, new CredentialsReader(createFakeCredentials()));
+  const cache = new LruDiskCache();
+  await cache.init();
+  const dispatcher = new TranslationDispatcher(cfg, cache);
+  dispatcher.credentials = { getApiKey: () => 'sk-test' };
+  await source.update({ baseUrl: 'http://x', model: 'm' });
+
+  let calls = 0;
+  dispatcher.adapters.set('openai', {
+    id: 'openai',
+    name: 'TokenDropper',
+    isAvailable: () => true,
+    // 通道活着：HTTP 正常返回，只是这个弱模型总丢 ⟦…⟧ 占位符。
+    translate: async () => {
+      calls++;
+      return '一段丢光了占位符的译文';
+    },
+  });
+
+  const dense = 'Look at `alpha` and `beta` before shipping.';
+  for (let round = 0; round < 3; round++) {
+    const results = await dispatcher.translateReplyBlocks([dense]);
+    assert.equal(results[0].ok, false, '丢占位符的整块必须拒收保原文');
+  }
+  assert.notEqual(
+    dispatcher.circuitStates.get('openai')?.state,
+    'open',
+    '内容拒收不是通道故障：请求都成功返回了，不该把健康的通道挡在冷却里'
+  );
+
+  // 后续普通英文块照常被翻译，不受前面拒收的影响。
+  const later = await dispatcher.translateReplyBlocks(['Plain sentence without fragments.']);
+  assert.equal(later[0].ok, true, '内容拒收之后通道必须立即可用');
+  assert.equal(later[0].translated, '一段丢光了占位符的译文');
+});
+
 console.log('\n=== Suite C: CredentialsReader over the DSH credentials service ===');
 
 await testAsync('init loads the stored key; setApiKey stores and refreshes the cache', async () => {

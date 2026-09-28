@@ -33,6 +33,14 @@ type CircuitStateEnum = 'closed' | 'open' | 'half-open';
  */
 const CHANNEL_ID = 'openai';
 
+/**
+ * 内容级拒收：通道正常返回了响应，只是这份内容没通过校验（块标记或
+ * ⟦…⟧ 占位符被改写、丢失）。症状是「这一块翻不了」而不是「通道死了」：
+ * 它不计入熔断账本——把一次弱模型丢 token 记成通道故障，会让一段密集
+ * 代码引用把其他所有行的翻译挡在冷却期外。
+ */
+class ContentRejectedError extends Error {}
+
 /** 正文的一个待翻译片段：所属块、块内序号、掩码文本与还原信息。 */
 interface ReplyPiece {
   block: number;
@@ -108,6 +116,24 @@ export class TranslationDispatcher {
     // refused, so a flapping service gets exactly one trial request.
     if (this.isCircuitOpen(CHANNEL_ID)) return results;
 
+    try {
+      return await this.serveReplyBlocks(blocks, results, adapter, config);
+    } finally {
+      // 单飞槽位归还：拿到探针位的调用必须无条件归还。零批次的调用（全空白
+      // 块或全缓存命中）一趟也不会走到 record*——不还槽位就等于半开态永久
+      // 拒绝所有人，通道无声锁死。record* 的归还与此同向，重复归还是空操作。
+      const state = this.circuitStates.get(CHANNEL_ID);
+      if (state) state.probeInFlight = false;
+    }
+  }
+
+  /** 熔断授予之后的正文执行段：切块、打包、请求、拼装。 */
+  private async serveReplyBlocks(
+    blocks: string[],
+    results: ReplyBlockResult[],
+    adapter: ITranslationAdapter,
+    config: PluginConfig
+  ): Promise<ReplyBlockResult[]> {
     const pieces: ReplyPiece[] = [];
     for (let block = 0; block < blocks.length; block++) {
       const text = (blocks[block] ?? '').trim();
@@ -178,6 +204,8 @@ export class TranslationDispatcher {
    * 时会自然重试。
    *
    * 熔断记账按「批」算：一次批请求失败记一次，逐片段重试失败再各记一次。
+   * 内容级拒收除外：响应都正常回来了，通道是活的——拒收记一次成功，
+   * 坏内容只作废坏内容自己，不把其他行挡在冷却期外。
    */
   private async translateReplyBatch(
     adapter: ITranslationAdapter,
@@ -189,7 +217,7 @@ export class TranslationDispatcher {
       this.recordSuccess(CHANNEL_ID);
       return outcome;
     } catch (err) {
-      this.recordFailure(CHANNEL_ID);
+      this.accountBatch(err);
       console.warn(
         `[dsh-chat-translate] reply batch of ${batch.length} failed, retrying per block: ${describeError(err)}`
       );
@@ -202,13 +230,22 @@ export class TranslationDispatcher {
           out.set(key, value);
         }
       } catch (err) {
-        this.recordFailure(CHANNEL_ID);
+        this.accountBatch(err);
         console.warn(
           `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
         );
       }
     }
     return out;
+  }
+
+  /** 失败记账的分类：传输故障计数，内容拒收证明通道活着。 */
+  private accountBatch(err: unknown): void {
+    if (err instanceof ContentRejectedError) {
+      this.recordSuccess(CHANNEL_ID);
+    } else {
+      this.recordFailure(CHANNEL_ID);
+    }
   }
 
   /** 发出一次正文请求并把结果还原成每个片段的最终译文。 */
@@ -239,7 +276,7 @@ export class TranslationDispatcher {
         );
         const parts = splitBatchTranslation(answer, format, batch.length);
         if (parts === null) {
-          throw new Error('reply block markers did not survive the translation');
+          throw new ContentRejectedError('reply block markers did not survive the translation');
         }
         answers = parts;
       }
@@ -254,11 +291,16 @@ export class TranslationDispatcher {
         throw new Error(`reply block ${piece.block} #${piece.index} came back empty`);
       }
       if (hasBatchResidue(answer)) {
-        throw new Error('reply translation left a block marker behind');
+        throw new ContentRejectedError('reply translation left a block marker behind');
       }
-      const finalText = piece.mask.unmask(answer);
+      let finalText: string;
+      try {
+        finalText = piece.mask.unmask(answer);
+      } catch (unmaskErr) {
+        throw new ContentRejectedError(describeError(unmaskErr));
+      }
       if (hasMaskResidue(finalText)) {
-        throw new Error('reply translation left a mask placeholder behind');
+        throw new ContentRejectedError('reply translation left a mask placeholder behind');
       }
       out.set(replyPieceKey(piece), finalText);
     });

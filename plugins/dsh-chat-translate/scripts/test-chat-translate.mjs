@@ -323,6 +323,32 @@ await test('partial 行再 ensure 会重走；done 行同文本短路', async ()
   assert.equal(calls, 2);
 });
 
+await test('失败行重试有上限：同代三次封顶不再发请求；文本换代重置', async () => {
+  let calls = 0;
+  const store = createTranslateStore(async () => {
+    calls++;
+    throw new Error('down');
+  });
+  const flush = async () => {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  // 同一代文本连跑三轮（首轮 ensure + 两次滚回视口的自然重试）。
+  for (let round = 1; round <= 3; round++) {
+    store.ensure('a1', ['x']);
+    await flush();
+  }
+  assert.equal(calls, 3, '每轮各请求一次');
+  assert.equal(store.getState('a1').status, 'partial');
+  assert.equal(store.ensure('a1', ['x']), false, '同代封顶后 ensure 不再重走');
+  await flush();
+  assert.equal(calls, 3, '封顶意味着不再打通道');
+  // 文本换代：额度重置，照走。
+  store.ensure('a1', ['x', 'y']);
+  await flush();
+  assert.equal(calls, 4, '新代文本重新获得完整重试额度');
+});
+
 await test('逐批落定：先回的段先可见，不等最后一批', async () => {
   const big = '汉'.repeat(6000); // 独自成批
   const gates = [deferred(), deferred()];
