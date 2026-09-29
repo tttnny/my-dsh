@@ -1,8 +1,8 @@
 import {
   requestTranslateReply,
   type ReplyBlockResult,
-  type ReplyFailReason,
 } from '../translate/api.ts';
+import type { ReplyFailReason } from '../../server/types.ts';
 import { estimateTokens, REPLY_MAX_INPUT_TOKENS } from '../../server/pipeline/blocks.ts';
 
 /** 一行正文的按块翻译结果，与请求的 texts 数组按下标对齐。 */
@@ -11,7 +11,7 @@ export interface BlockOutcome {
   translated: string;
   /** 该块是否翻译成功。 */
   ok: boolean;
-  /** 仅 ok=false 时出现：败因决定 presentation 画红实线（transport）还是红虚线（content）。 */
+  /** 仅 ok=false 时出现；线型映射单点在 row-plan → styles 的 ProseMark。 */
   reason?: ReplyFailReason;
 }
 

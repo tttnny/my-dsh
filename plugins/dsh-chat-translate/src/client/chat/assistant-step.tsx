@@ -296,13 +296,10 @@ const ReasoningRow = memo(function ReasoningRow({
 
 interface ProseBlockProps {
   text: string;
-  /** 非 null = 该块有译好的中文（成功落定）。 */
+  /** 成功落定的中文源文本（仅 mark='translated' 时作为渲染源）。 */
   translated: string | null;
-  /** 非 null = 试过而败：实线红（transport）或虚线红（content），整块可点补跑。 */
-  fail: 'transport' | 'content' | null;
-  /** 整行在途、这块尚无结果：灰脉动、不可点。 */
-  inflight: boolean;
-  showOriginal: boolean;
+  /** 左缘线状态，单点算自 row-plan；可点性、重试指引、脉动全由它决定。 */
+  mark: ProseMark;
   onToggle: () => void;
   onRetry: () => void;
   streaming: boolean;
@@ -323,12 +320,18 @@ function blockClick(event: React.MouseEvent<HTMLDivElement>, action: () => void)
   if (isBareBlockClick(guardEvent, typeof window === 'undefined' ? undefined : window)) action();
 }
 
+const PROSE_CLICKABLE: ReadonlySet<ProseMark> = new Set([
+  'translated',
+  'original-view',
+  'fail-transport',
+  'fail-content',
+]);
+const PROSE_RETRY: ReadonlySet<ProseMark> = new Set(['fail-transport', 'fail-content']);
+
 function ProseBlock({
   text,
   translated,
-  fail,
-  inflight,
-  showOriginal,
+  mark,
   onToggle,
   onRetry,
   streaming,
@@ -336,27 +339,14 @@ function ProseBlock({
   mentions,
   pathImages,
 }: ProseBlockProps): ReactElement {
-  const mark: ProseMark =
-    translated !== null
-      ? showOriginal
-        ? 'original-view'
-        : 'translated'
-      : fail !== null
-        ? fail === 'content'
-          ? 'fail-content'
-          : 'fail-transport'
-        : inflight
-          ? 'inflight'
-          : null;
-  const clickable = mark === 'translated' || mark === 'original-view' || fail !== null;
-  const action = translated !== null ? onToggle : onRetry;
+  const clickable = mark !== null && PROSE_CLICKABLE.has(mark);
+  const retrying = mark !== null && PROSE_RETRY.has(mark);
+  const action = retrying ? onRetry : onToggle;
   const source = mark === 'translated' ? (translated as string) : text;
   const copy = rowCopy();
   return React.createElement(
     'div',
     {
-      // 色相+线型+粗细随显示态：蓝=译文，灰细=读原文备着译文，红实=传输失败，
-      // 红虚=内容拒收，灰脉动=在途，无线=没送过模型。
       className: proseClassNames(mark),
       'data-translated': mark === 'translated' ? 'true' : void 0,
       // 容器内含链接等交互内容，不套 role=button（非法嵌套）；可聚焦 + 键盘
@@ -373,7 +363,7 @@ function ProseBlock({
           }
         : void 0,
     },
-    fail !== null &&
+    retrying &&
       React.createElement(Tooltip, {
         label: () => copy.retryTip,
         side: 'right',
@@ -386,7 +376,7 @@ function ProseBlock({
           React.createElement(IconRefreshOutlineRegular, { size: 10 })
         ) as Parameters<typeof Tooltip>[0]['children'],
       }),
-    fail !== null && React.createElement('span', { className: 'dsh-ct-visually-hidden' }, copy.retryAria),
+    retrying && React.createElement('span', { className: 'dsh-ct-visually-hidden' }, copy.retryAria),
     React.createElement(MarkdownText, {
       text: source,
       streaming,
@@ -454,6 +444,8 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     chatTranslate.ensure(rowKey, plan.texts);
   }, [streaming, canTranslate, inView, rowKey, plan]);
 
+  const [originalKeys, setOriginalKeys] = useState<ReadonlySet<number>>(() => new Set());
+
   const rowState = chatTranslate.getState(rowKey);
   const displayed = useMemo(
     () =>
@@ -465,8 +457,9 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
         canTranslate,
         outcomes: rowState?.outcomes,
         rowStatus: rowState?.status,
+        originalKeys,
       }),
-    [blocks, streaming, interrupted, groupPart, canTranslate, rowState]
+    [blocks, streaming, interrupted, groupPart, canTranslate, rowState, originalKeys]
   );
 
   const reasoningHidden =
@@ -479,7 +472,6 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     turnProcess?.setOpen(true);
   }, [turnProcess]);
 
-  const [originalKeys, setOriginalKeys] = useState<ReadonlySet<number>>(() => new Set());
   const toggleBlock = useCallback((key: number) => {
     setOriginalKeys((current) => {
       const next = new Set(current);
@@ -508,9 +500,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
             key: entry.key,
             text: entry.text,
             translated: entry.translated,
-            fail: entry.fail,
-            inflight: entry.inflight,
-            showOriginal: originalKeys.has(entry.key),
+            mark: entry.mark,
             onToggle: () => toggleBlock(entry.key),
             onRetry: retryRow,
             streaming,

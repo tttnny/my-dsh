@@ -1,9 +1,7 @@
 import { describeError } from '../../describe-error.ts';
+import type { ReplyFailReason } from '../../server/types.ts';
 
-/** 失败分类：与宿主半边同名类型对齐——传输失败画红实线、内容拒收画红虚线。 */
-export type ReplyFailReason = 'transport' | 'content';
-
-/** 正文一个块的翻译结果，与请求的块列表按下标对齐。 */
+/** 正文一个块的翻译结果，与请求的块列表按下标对齐（败因分类单点：server/types.ts）。 */
 export interface ReplyBlockResult {
   original: string;
   translated: string;

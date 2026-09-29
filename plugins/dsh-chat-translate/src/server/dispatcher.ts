@@ -34,8 +34,8 @@ const CHANNEL_ID = 'openai';
 /**
  * 内容级拒收：通道正常返回了响应，只是这份内容没通过校验（块标记或
  * ⟦…⟧ 占位符被改写、丢失）。它是失败分类账本的输入：这类败因记
- * `content`（客户端挂红虚线），其余一律 `transport`（红实线）。没有熔断
- * 账本——每行只跑首跑，失败等用户手点，通道故障由用户直接看见。
+ * `content`，其余一律 `transport`；线型映射单点在 server/types.ts 与
+ * styles.ts 的 ProseMark。每行只跑首跑，失败等用户点击救活。
  */
 class ContentRejectedError extends Error {}
 
@@ -52,8 +52,12 @@ function replyPieceKey(piece: { block: number; index: number }): string {
   return `${piece.block}:${piece.index}`;
 }
 
-/** 片段败因账本：pieceKey → 历次尝试记下的败因集合。 */
-type FailureLedger = Map<string, Set<ReplyFailReason>>;
+/**
+ * 片段败因账本：pieceKey → 败因。transport 是吸收态——通道伤过一次就按
+ * transport 报，content 不再覆盖；从未记账的缺失同样按 transport 兜底
+ * （说不清败因时「重试可能有用」是更诚实的默认）。
+ */
+type FailureLedger = Map<string, ReplyFailReason>;
 
 /** 败因分类：只有对返回内容本身的拒收算 content，其余都说明通道受过伤。 */
 function classifyReplyError(err: unknown): ReplyFailReason {
@@ -66,24 +70,14 @@ function recordLedgerFailure(
   reason: ReplyFailReason
 ): void {
   for (const key of keys) {
-    let reasons = ledger.get(key);
-    if (!reasons) {
-      reasons = new Set<ReplyFailReason>();
-      ledger.set(key, reasons);
-    }
-    reasons.add(reason);
+    if (reason === 'transport' || !ledger.has(key)) ledger.set(key, reason);
   }
 }
 
-/**
- * 块败因合成：任一缺失片段的历次尝试里出现过 transport，整块按传输失败报
- * （通道伤过，重试有意义）；只有全部尝试都以内容拒收终结才记 content。
- * 没留账的缺失按 transport 报（防御分支，打包路径不该走到）。
- */
+/** 块败因合成：缺失片段里只要不是清一色的 content，整块按 transport 报。 */
 function blockFailReason(ledger: FailureLedger, block: number, total: number): ReplyFailReason {
   for (let index = 0; index < total; index++) {
-    const reasons = ledger.get(`${block}:${index}`);
-    if (!reasons || reasons.size === 0 || reasons.has('transport')) return 'transport';
+    if (ledger.get(replyPieceKey({ block, index })) !== 'content') return 'transport';
   }
   return 'content';
 }
@@ -117,7 +111,7 @@ export class TranslationDispatcher {
    * 时退回逐片段单发。调用方传进来的每个块要么整块译出、要么整块保持原文：
    * 任一片段缺失（含掩码还原不通过）都让该块作废，避免半中半英的段落；失败块
    * 带 `reason` 分类（见 {@link blockFailReason}），客户端据此画红实线或红虚线。
-   * 没有熔断：每行只跑首跑一次，失败的救活由用户的点击发起。
+   * 每行只跑首跑一次，失败的救活由用户的点击发起。
    *
    * 客户端按与宿主同源的 4096 估算 token 切批，所以一个 markdown 块可能跨多次
    * 调用；每次调用都独立决定成败，不会出现「前一段已挂译文、后一段失败」的

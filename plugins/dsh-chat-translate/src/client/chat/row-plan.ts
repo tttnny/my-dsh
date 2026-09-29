@@ -6,19 +6,20 @@
  *    groupPart 怎么过滤、tool-call 块为什么在这里被跳过（工具行是 flow 里
  *    独立的行，由宿主自己渲染）、连续 image 怎么合成一组、未知块落 JSON、
  *    「已停止」标记的出现条件。
- * 2. 翻译的呈现判断，落在正文块的三个互斥字段上：
- *    - `translated`：该块有译好的中文（翻译成功落定；「模型认为原样最好、
- *      返回同样的文字」同样是成功——标记传达「这段过了模型」，不是「这段变过」）。
- *    - `fail`：该块试过而没成，败因决定红线线型；点它 = 手动整行补跑。
- *    - `inflight`：整行已登记在途、这块尚无结果——呈现层放灰脉动。
- *    空白块（trim 后为空）不进送译清单、不占下标、永不挂线：它没送过模型，
- *    重试也永远不会成，挂线只会留下一条消不掉的标记。
+ * 2. 翻译呈现的单点判断：正文块在什么状态下挂什么线，直接产出 styles.ts
+ *    的 `ProseMark`（词汇与类名映射单点在 styles.ts；败因分类在
+ *    server/types.ts）。判据一次算清：成功落定=蓝线（用户点了读原文则灰细
+ *    线——`originalKeys` 进来折进 mark）；失败=按 reason 分红实/红虚；
+ * 行已登记在途且这块尚无结果=灰脉动；其余（空白块、流式、开关关、未登记）
+ *    =无线。模型原样返回同样算成功：标记传达「这段过了模型」，不是「变过」。
+ *    空白块（trim 后为空）不进送译清单、不占下标、永不挂线——它没送过模型，
+ *    重试也永远不会成，挂线只会留下消不掉的标记。
  *
- * 渲染层（assistant-step.tsx）把计划变成 JSX；改动这里的等价分支必须同时对照
+ * 渲染层（assistant-step.tsx）只消费 mark；改动这里的等价分支必须同时对照
  * 宿主实现。
  */
 import type { BlockOutcome } from './translate-store.ts';
-import type { ReplyFailReason } from '../translate/api.ts';
+import type { ProseMark } from './styles.ts';
 
 /** 助手行块数据的结构性镜像（值边不跨包，type-only 世界）。 */
 export interface AssistantBlockLike {
@@ -32,17 +33,10 @@ export type RowPlanEntry =
   /** 思考块：blockIndex 供「流式尾块」判定，key 是条目在计划里的位置（React 键）。 */
   | { type: 'reasoning'; key: number; blockIndex: number; text: string }
   /**
-   * 正文块：translated 非 null 显示该译文；fail 非 null 显示原文挂红线、可点
-   * 重试；inflight 显示原文加灰脉动；三者全空 = 无线纯原文。
+   * 正文块：mark 即左缘线状态（可点性、重试指引、脉动全由它决定）；
+   * translated 仅在成功时非 null，供 mark==='translated' 时换源文本渲染。
    */
-  | {
-      type: 'prose';
-      key: number;
-      text: string;
-      translated: string | null;
-      fail: ReplyFailReason | null;
-      inflight: boolean;
-    }
+  | { type: 'prose'; key: number; text: string; translated: string | null; mark: ProseMark }
   | { type: 'images'; key: number; attachments: readonly unknown[] }
   | { type: 'unknown'; key: number; block: unknown }
   | { type: 'stopped'; key: number };
@@ -71,6 +65,8 @@ export interface RowPlanInput {
   outcomes?: readonly (BlockOutcome | null)[];
   /** 池里这行的状态：pending 时未落定的块显灰脉动，未登记什么都不显。 */
   rowStatus?: 'pending' | 'settled';
+  /** 用户点了「读原文」的正文块（按条目 key）：把译文态折成 original-view。 */
+  originalKeys?: ReadonlySet<number>;
 }
 
 /** trim 后为空的块不送译、不挂线、不占下标——判据单点在这里。 */
@@ -79,7 +75,8 @@ function isBlankText(value: string | undefined): boolean {
 }
 
 export function planAssistantRow(input: RowPlanInput): RowPlan {
-  const { blocks, streaming, interrupted, groupPart, canTranslate, outcomes, rowStatus } = input;
+  const { blocks, streaming, interrupted, groupPart, canTranslate, outcomes, rowStatus, originalKeys } =
+    input;
 
   // 宿主守卫逐字等价：只有 tool-call 块、又非流式非中断的行不渲染。
   const hasVisible = streaming || interrupted || blocks.some((block) => block.kind !== 'tool-call');
@@ -119,16 +116,23 @@ export function planAssistantRow(input: RowPlanInput): RowPlan {
         if (!blank) textIndex += 1;
         // key 一律用条目位置：块下标在 groupPart 过滤后可能与行尾追加项撞
         // React 键（如 reasoning 被过滤的 interrupted 行）。
+        const key = entries.length;
         const attemptable = !blank && canTranslate && !streaming;
         const outcome = attemptable && outcomes !== undefined ? outcomes[index] ?? null : null;
+        let mark: ProseMark = null;
+        if (outcome !== null && outcome.ok) {
+          mark = originalKeys?.has(key) ? 'original-view' : 'translated';
+        } else if (outcome !== null) {
+          mark = outcome.reason === 'content' ? 'fail-content' : 'fail-transport';
+        } else if (attemptable && rowStatus === 'pending') {
+          mark = 'inflight';
+        }
         entries.push({
           type: 'prose',
-          key: entries.length,
+          key,
           text: block.text ?? '',
           translated: outcome !== null && outcome.ok ? outcome.translated : null,
-          fail: outcome !== null && !outcome.ok ? outcome.reason ?? 'transport' : null,
-          // 在途脉动只给「已登记、这一批还没落定」的非空白块；行未登记什么都不显。
-          inflight: attemptable && outcome === null && rowStatus === 'pending',
+          mark,
         });
         break;
       }

@@ -2,19 +2,21 @@
 // Tests:
 // 1. ContentMaskingPipeline placeholder masking & robust unmasking
 // 2. All reply blocks dispatched regardless of language (no skipping; Chinese is rewritten too)
-// 3. Serial request queue & failure-reason classification (no circuit breaker)
+// 3. Serial request queue & failure-reason classification (user-initiated retries)
 // 4. LruDiskCache revision gating, LRU eviction and TTL handling
 // 5. ConfigManager live-config reads and change notification
 // 6. HttpRouter DoS 1MB protection and endpoint handling
 
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 
-// Isolate all file-backed state (config/cache/credentials) into a temp dir so
-// the suite never reads or overwrites the real ~/.dsh files.
-const TMP_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-chat-translate-test-'));
+// Isolate all file-backed state (config/cache/credentials) under ./tmp so the
+// suite never reads or overwrites the real ~/.dsh files (system /tmp is
+// off-limits per repo instructions).
+const TMP_ROOT = path.join(import.meta.dirname, 'tmp');
+await fs.mkdir(TMP_ROOT, { recursive: true });
+const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'suite-'));
 process.env.DSH_HOME = TMP_HOME;
 
 import { ContentMaskingPipeline, MaskRestoreError, isMaskLeak } from '../src/server/pipeline/masking.ts';
@@ -231,7 +233,7 @@ test('A token dropped or rewritten by the engine rejects the whole translation',
 });
 
 // -------------------------------------------------------------
-// Suite 2: Reply Cache & Failure Semantics (no auto-retry, no breaker)
+// Suite 2: Reply Cache & Failure Semantics (one first-run per row)
 // -------------------------------------------------------------
 console.log('\n--- Suite 2: Reply Cache & Failure Semantics ---');
 
@@ -266,8 +268,8 @@ await testAsync('A repeated reply block is answered from the cache, not the adap
 });
 
 await testAsync('A transport failure stays transport; the next call may pass freely', async () => {
-  // 没有熔断账本：失败的行等的是用户的点击，不是冷却期。下一次调用（新行
-  // 的首跑，或点击后同代文本的重发）照旧打到适配器。
+  // 落定的行等的是用户的点击，不是冷却期：下一次调用（新行的首跑，或点击
+  // 后同代文本的重发）照旧打到适配器。
   const entry = createFakeSettingsEntry();
   const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
@@ -652,6 +654,8 @@ test('apply() wires the exact routes and opts out of the auto settings page', ()
   );
   assert.deepEqual(policies, [{ auto: false }], 'this plugin owns its settings page');
 });
+
+await fs.rm(TMP_HOME, { recursive: true, force: true });
 
 console.log('\n======================================================');
 console.log(`All ${passed}/${total} regression tests PASSED successfully!`);

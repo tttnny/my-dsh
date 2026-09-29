@@ -2,11 +2,13 @@
 // 单通道与路由形状。
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 
-// 隔离文件状态：缓存与配置都写到临时目录，绝不碰真实的 ~/.dsh。
-const TMP_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-chat-translate-reply-'));
+// 隔离文件状态：缓存与配置都写到仓库本地的 ./tmp（系统 /tmp 禁用），
+// 绝不碰真实的 ~/.dsh。
+const TMP_ROOT = path.join(import.meta.dirname, 'tmp');
+await fs.mkdir(TMP_ROOT, { recursive: true });
+const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'reply-'));
 process.env.DSH_HOME = TMP_HOME;
 
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
@@ -368,6 +370,8 @@ await test('正文路由按块返回，坏请求体给 400', async () => {
   const malformed = await route.fetch(post('{not json'));
   assert.equal(malformed.status, 400);
 });
+
+await fs.rm(TMP_HOME, { recursive: true, force: true });
 
 console.log('');
 console.log('正文回归：' + passed + '/' + total + ' 通过');

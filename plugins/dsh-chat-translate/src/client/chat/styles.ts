@@ -34,7 +34,7 @@ export const ASSISTANT_CSS = [
   '.dsh-ct-prose-original{border-left:0.5px solid var(--dsw-alias-border-l2)}',
   // ---- 失败标记：红实线=传输失败（重试大概率有意义），红虚线=内容拒收
   //      （重打包未必再丢）；两者都可点，点=整行手动补跑 ----
-  '.dsh-ct-prose-failed{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
+  '.dsh-ct-prose-failed-solid{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
   '.dsh-ct-prose-failed-dashed{border-left:1px dashed color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
   // ---- 在途：灰 1px 线脉动（与成功态同 padding，转蓝不跳字）；
   //      prefers-reduced-motion 降级为静态灰线 ----
@@ -69,9 +69,8 @@ export const ASSISTANT_CSS = [
 ].join('');
 
 /**
- * 正文块的左缘线标记单点：mark 由渲染层从行计划算出（translated 且正在读
- * 译文 / 有译文正读原文 / 两种失败 / 在途 / 无线）。可点态共用 padding 与
- * 光标，线型之间切换不跳字。
+ * 正文块左缘线的状态词汇：单点在 row-plan 算出（`planAssistantRow` 直接产出
+ * mark），渲染层只消费、样式层只翻成类名——「实线/虚线/脉动」不再多处重算。
  */
 export type ProseMark =
   | 'translated'
@@ -81,6 +80,7 @@ export type ProseMark =
   | 'inflight'
   | null;
 
+/** mark → 类名单点：可点态共用 padding 与光标，线型之间切换不跳字。 */
 export function proseClassNames(mark: ProseMark): string | undefined {
   switch (mark) {
     case 'translated':
@@ -88,7 +88,7 @@ export function proseClassNames(mark: ProseMark): string | undefined {
     case 'original-view':
       return 'dsh-ct-prose-clickable dsh-ct-prose-original';
     case 'fail-transport':
-      return 'dsh-ct-prose-clickable dsh-ct-prose-failed dsh-ct-prose-retryable';
+      return 'dsh-ct-prose-clickable dsh-ct-prose-failed-solid dsh-ct-prose-retryable';
     case 'fail-content':
       return 'dsh-ct-prose-clickable dsh-ct-prose-failed-dashed dsh-ct-prose-retryable';
     case 'inflight':

@@ -122,7 +122,7 @@ await test('停止标记：interrupted 行尾追加，纯思考行在 response �
   assert.ok(onlyReasoning.entries.some((e) => e.type === 'stopped'));
 });
 
-await test('译文呈现：成功挂载并带标记；原样回同样挂载；失败带败因', () => {
+await test('译文呈现：成功挂载并带标记；原样回同样挂载；失败按败因分线', () => {
   const blocks = [{ kind: 'text', text: '这是一段已经很自然的中文。' }, { kind: 'text', text: 'tail' }];
   const outcomes = [
     { translated: '这是一段已经很自然的中文。', ok: true }, // 原样回
@@ -130,15 +130,21 @@ await test('译文呈现：成功挂载并带标记；原样回同样挂载；�
   ];
   const plan = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled' });
   assert.equal(plan.entries[0].translated, '这是一段已经很自然的中文。');
+  assert.equal(plan.entries[0].mark, 'translated', '原样回同样挂线');
   assert.equal(plan.entries[1].translated, null, '失败的块不得显示译文');
-  assert.equal(plan.entries[1].fail, 'content', '败因直达渲染层，决定虚线');
+  assert.equal(plan.entries[1].mark, 'fail-content', '败因直达计划层，决定虚线');
+  const viewing = planAssistantRow({
+    blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled',
+    originalKeys: new Set([0]),
+  });
+  assert.equal(viewing.entries[0].mark, 'original-view', '点了读原文：蓝线折成灰细线');
+  assert.equal(viewing.entries[0].translated, '这是一段已经很自然的中文。', '读原文不抹掉已成功的结果');
   const streaming = planAssistantRow({ blocks, streaming: true, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled' });
   assert.equal(streaming.entries[0].translated, null, '流式中不得换译文');
-  assert.equal(streaming.entries[1].fail, null, '流式中连红线都不挂');
-  assert.equal(streaming.entries[1].inflight, false);
+  assert.equal(streaming.entries[1].mark, null, '流式中连红线都不挂');
   const disabled = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: false, outcomes, rowStatus: 'settled' });
   assert.equal(disabled.entries[0].translated, null, '开关关闭时一切按原文');
-  assert.equal(disabled.entries[1].fail, null, '开关关闭时红线也一并撤下');
+  assert.equal(disabled.entries[1].mark, null, '开关关闭时红线也一并撤下');
 });
 
 await test('空白块不送译、不占位、永不挂线', () => {
@@ -156,11 +162,10 @@ await test('空白块不送译、不占位、永不挂线', () => {
     rowStatus: 'pending',
   });
   assert.deepEqual(plan.texts, ['hi'], '空白块不进送译清单');
-  assert.equal(plan.entries[0].translated, null);
-  assert.equal(plan.entries[0].fail, null);
-  assert.equal(plan.entries[0].inflight, false, '空白块连在途脉动都不显');
+  assert.equal(plan.entries[0].mark, null, '空白块连在途脉动都不显');
   assert.equal(plan.entries[1].translated, '嗨', '非空白块按压缩后的下标对齐 outcomes');
-  assert.equal(plan.entries[2].inflight, false);
+  assert.equal(plan.entries[1].mark, 'translated');
+  assert.equal(plan.entries[2].mark, null);
 });
 
 await test('在途脉动只给「已登记、未落定」的块；行未登记什么都不显', () => {
@@ -173,11 +178,10 @@ await test('在途脉动只给「已登记、未落定」的块；行未登记�
     outcomes: [{ translated: '一', ok: true }, null],
     rowStatus: 'pending',
   });
-  assert.equal(registered.entries[0].translated, '一');
-  assert.equal(registered.entries[1].inflight, true, '待决批的块显灰脉动');
-  assert.equal(registered.entries[1].fail, null);
+  assert.equal(registered.entries[0].mark, 'translated');
+  assert.equal(registered.entries[1].mark, 'inflight', '待决批的块显灰脉动');
   const unregistered = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true });
-  assert.equal(unregistered.entries[0].inflight, false, '没进池就没有脉动');
+  assert.equal(unregistered.entries[0].mark, null, '没进池就没有脉动');
   assert.equal(unregistered.entries[0].translated, null);
   const settled = planAssistantRow({
     blocks,
@@ -187,8 +191,7 @@ await test('在途脉动只给「已登记、未落定」的块；行未登记�
     outcomes: [{ translated: '一', ok: true }, { translated: 'two', ok: false, reason: 'transport' }],
     rowStatus: 'settled',
   });
-  assert.equal(settled.entries[1].inflight, false, '落定的失败块不再脉动');
-  assert.equal(settled.entries[1].fail, 'transport');
+  assert.equal(settled.entries[1].mark, 'fail-transport', '落定的失败块红实线，不再脉动');
 });
 
 await test('React 键唯一：groupPart 过滤 + interrupted 追加项不撞键', () => {
@@ -526,7 +529,7 @@ await test('标记名单点：线型随状态，可点态含两种红线，在�
   assert.match(showingOriginal, /dsh-ct-prose-clickable dsh-ct-prose-original/, '灰细线仍可点切回');
   const transport = proseClassNames('fail-transport');
   assert.match(transport, /dsh-ct-prose-clickable/, '红线整块可点=重试');
-  assert.match(transport, /dsh-ct-prose-failed(?!-dashed)/, '传输失败挂实线红');
+  assert.match(transport, /dsh-ct-prose-failed-solid/, '传输失败挂实线红');
   assert.ok(!transport.includes('failed-dashed'));
   const content = proseClassNames('fail-content');
   assert.match(content, /dsh-ct-prose-failed-dashed/, '内容拒收挂虚线红');
@@ -550,7 +553,7 @@ await test('线的色相与粗细：蓝 1px 主色、灰 0.5px 中性、红走 e
   );
   assert.match(
     ASSISTANT_CSS,
-    /\.dsh-ct-prose-failed\{border-left:1px solid color-mix\(in srgb, var\(--dsw-alias-state-error-primary\) 65%, transparent\)\}/,
+    /\.dsh-ct-prose-failed-solid\{border-left:1px solid color-mix\(in srgb, var\(--dsw-alias-state-error-primary\) 65%, transparent\)\}/,
     '传输失败是 1px error 色实线'
   );
   assert.match(

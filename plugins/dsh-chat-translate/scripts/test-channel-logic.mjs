@@ -1,10 +1,8 @@
 // Reply channel contract (one channel) and the failure-reason ledger.
-// The reply path has no circuit breaker: every row gets exactly its one
-// first-run attempt, failures report their reason (transport vs content) and
-// only the user's click re-runs a row.
+// Every row gets exactly its one first-run attempt; failures report their
+// reason (transport vs content) and only the user's click re-runs a row.
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { ConfigManager } from '../src/server/config.ts';
 import { LruDiskCache } from '../src/server/cache.ts';
@@ -12,8 +10,10 @@ import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
 import { createFakeSettingsEntry, createFakeCredentials } from './test-helpers.mjs';
 
-// Isolate file-backed state into a temp dir.
-const TMP_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-chat-translate-chtest-'));
+// Isolate file-backed state under ./tmp (repo-local; system /tmp is off-limits).
+const TMP_ROOT = path.join(import.meta.dirname, 'tmp');
+await fs.mkdir(TMP_ROOT, { recursive: true });
+const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'chtest-'));
 process.env.DSH_HOME = TMP_HOME;
 
 let passed = 0;
@@ -135,7 +135,7 @@ await testAsync('whitespace-only blocks never reach the channel', async () => {
   assert.equal(results[2].ok, true);
 });
 
-console.log('\n=== Suite B: failure-reason ledger (no circuit breaker) ===');
+console.log('\n=== Suite B: failure-reason ledger (retries are user-initiated) ===');
 
 await testAsync('a transport failure reports reason transport', async () => {
   const { dispatcher, source } = await setupDispatcher({
@@ -244,7 +244,7 @@ await testAsync('refresh picks up external changes and a missing key reads empty
 });
 
 test('the dispatcher exposes no circuit-breaker surface anymore', () => {
-  // 熔断整体删除后的防回归：账本、探针、冷却字段都不得复活。
+  // 防回归：重试与冷却不由宿主发起——任何账本/探针字段都不得复活。
   const entry = createFakeSettingsEntry();
   const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const dispatcher = new TranslationDispatcher(cfg, new LruDiskCache());
@@ -252,6 +252,8 @@ test('the dispatcher exposes no circuit-breaker surface anymore', () => {
   assert.equal('isCircuitOpen' in dispatcher, false);
   assert.equal('recordFailure' in dispatcher, false);
 });
+
+await fs.rm(TMP_HOME, { recursive: true, force: true });
 
 console.log('\n======================================================');
 console.log(`All ${passed}/${total} channel-logic tests PASSED successfully!`);
