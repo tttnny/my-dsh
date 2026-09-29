@@ -5,19 +5,6 @@ export interface PluginConfig {
   model: string; // model name; empty = AI not configured
 }
 
-export interface TranslateItemResult {
-  original: string;
-  translated: string;
-  channel: string;
-  cached: boolean;
-}
-
-export interface TranslateResponse {
-  ok: boolean;
-  results: TranslateItemResult[];
-  error?: string;
-}
-
 /** Per-request knobs an adapter may honor; channels that cannot use them ignore the argument. */
 export interface TranslateAdapterOptions {
   /** Generation cap written into the request body; omitted lets the server decide. */
@@ -38,11 +25,23 @@ export interface ITranslationAdapter {
   ): Promise<string>;
 }
 
+/**
+ * Why a failed block failed. `transport` covers anything that says the channel
+ * was hurt (timeouts, HTTP errors, broken streams, empty returns); `content`
+ * covers only rejections of the returned text itself (a ⟦…⟧ mask placeholder or
+ * a ⟪…⟫ batch marker that did not survive the translation). The client draws
+ * the line marker from this: solid red for transport, dashed red for content —
+ * and both stay clickable, because a re-packed row can hand the same piece a
+ * different batch shape or prompt mode and a weak model may carry it next time.
+ */
+export type ReplyFailReason = 'transport' | 'content';
+
 /** One reply block's outcome, aligned by index with the request's block list. */
 export interface ReplyBlockResult {
   original: string;
   translated: string;
   ok: boolean;
   cached: boolean;
-  channel: string;
+  /** Present only when `ok` is false. */
+  reason?: ReplyFailReason;
 }

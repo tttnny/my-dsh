@@ -3,6 +3,7 @@ import { setupComposerToggle } from './composer/dock-toggle.tsx';
 import { AssistantStepView } from './chat/assistant-step.tsx';
 import { chatPresentation } from './chat/presentation.ts';
 import { ensureAssistantStyles } from './chat/styles.ts';
+import { bindRowCopy } from './locales.ts';
 // Type-only, erased from the bundle: the renderer augments Context with the
 // `slots` service the shared 「阅读体验」 page shell consumes, and the settings
 // contract declares the `settings.section` slot its page component renders into.
@@ -46,6 +47,8 @@ interface ClientContext {
  */
 export function apply(ctx: ClientContext): void {
   ensureAssistantStyles();
+  // 行渲染器的私有文案（红线重试提示）绑上本命名空间的活翻译器。
+  bindRowCopy(ctx.locale);
 
   // 1. 接管助手行：keyed slot 的替换语义，priority -1 排在宿主默认注册（0）之前
   //    渲染；本渲染器抛错时按框架退位规则退出 cell，宿主原渲染器回位。

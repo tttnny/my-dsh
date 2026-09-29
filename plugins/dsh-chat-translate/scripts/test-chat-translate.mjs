@@ -1,12 +1,14 @@
 // 客户端重写的核心回归（无浏览器）：
 // 1. 行渲染计划与宿主 AssistantMarkdown 的分支等价（空行守卫、groupPart 过滤、
 //    tool-call 跳过、image 连组、未知块、停止标记、React 键唯一）；
-// 2. 翻译呈现判断：成功才挂载，「原样回」同样挂载带标记，失败与未落定（null）
-//    显示原文；reasoning 分组不送译，texts 与 outcomes 同域对齐；
-// 3. 翻译池：同键同文本幂等、文本换代重请求、逐批落定逐批可见、partial 行再
-//    ensure 重走且同代封顶、结果落定换代作废、LRU 行数上限；
+// 2. 翻译呈现判断：成功挂载（「原样回」同样挂载），失败带败因（红实线/红虚线
+//    的判据），在途只给已登记行的未落定块（灰脉动），空白块不送译、不占位、
+//    永不挂线；reasoning 分组不送译，texts 与 outcomes 同域对齐；
+// 3. 翻译池：同键同文本幂等、文本换代重请求、逐批落定逐批可见、落定后无任何
+//    自动重走、manual ensure 整行补跑且成功块保持挂线、LRU 行数上限；
 // 4. 呈现策略：ui-chat 的 transcriptView 值（含 legacy 值）映射到策略表；
-// 5. 左缘细线：灰线=读译文、蓝线=读原文（有译文备着）、无线=没译成。
+// 5. 左缘线标：蓝=译文、灰细=读原文备译文、红实/红虚=两种败因、灰脉动=在途、
+//    无线=没送过模型。
 import assert from 'node:assert/strict';
 
 let passed = 0;
@@ -28,6 +30,11 @@ const { createTranslateStore, chunkTexts } = await import('../src/client/chat/tr
 const { isBareBlockClick } = await import('../src/client/chat/click-guard.ts');
 const { createChatPresentation, POLICY_BY_MODE } = await import('../src/client/chat/presentation.ts');
 const { proseClassNames, ASSISTANT_CSS } = await import('../src/client/chat/styles.ts');
+
+const flush = async () => {
+  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
+};
 
 // ---------------------------------------------------------------
 // 1+2. 行渲染计划
@@ -115,19 +122,73 @@ await test('停止标记：interrupted 行尾追加，纯思考行在 response �
   assert.ok(onlyReasoning.entries.some((e) => e.type === 'stopped'));
 });
 
-await test('译文呈现：成功挂载并带标记；原样回同样挂载；失败与流式显示原文', () => {
+await test('译文呈现：成功挂载并带标记；原样回同样挂载；失败带败因', () => {
   const blocks = [{ kind: 'text', text: '这是一段已经很自然的中文。' }, { kind: 'text', text: 'tail' }];
   const outcomes = [
     { translated: '这是一段已经很自然的中文。', ok: true }, // 原样回
-    { translated: '尾巴译文', ok: false }, // 失败
+    { translated: '尾巴译文', ok: false, reason: 'content' }, // 失败
   ];
-  const plan = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true, outcomes });
+  const plan = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled' });
   assert.equal(plan.entries[0].translated, '这是一段已经很自然的中文。');
   assert.equal(plan.entries[1].translated, null, '失败的块不得显示译文');
-  const streaming = planAssistantRow({ blocks, streaming: true, interrupted: false, canTranslate: true, outcomes });
+  assert.equal(plan.entries[1].fail, 'content', '败因直达渲染层，决定虚线');
+  const streaming = planAssistantRow({ blocks, streaming: true, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled' });
   assert.equal(streaming.entries[0].translated, null, '流式中不得换译文');
-  const disabled = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: false, outcomes });
+  assert.equal(streaming.entries[1].fail, null, '流式中连红线都不挂');
+  assert.equal(streaming.entries[1].inflight, false);
+  const disabled = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: false, outcomes, rowStatus: 'settled' });
   assert.equal(disabled.entries[0].translated, null, '开关关闭时一切按原文');
+  assert.equal(disabled.entries[1].fail, null, '开关关闭时红线也一并撤下');
+});
+
+await test('空白块不送译、不占位、永不挂线', () => {
+  const blocks = [
+    { kind: 'text', text: '  \n ' },
+    { kind: 'text', text: 'hi' },
+    { kind: 'text', text: '' },
+  ];
+  const plan = planAssistantRow({
+    blocks,
+    streaming: false,
+    interrupted: false,
+    canTranslate: true,
+    outcomes: [{ translated: '嗨', ok: true }],
+    rowStatus: 'pending',
+  });
+  assert.deepEqual(plan.texts, ['hi'], '空白块不进送译清单');
+  assert.equal(plan.entries[0].translated, null);
+  assert.equal(plan.entries[0].fail, null);
+  assert.equal(plan.entries[0].inflight, false, '空白块连在途脉动都不显');
+  assert.equal(plan.entries[1].translated, '嗨', '非空白块按压缩后的下标对齐 outcomes');
+  assert.equal(plan.entries[2].inflight, false);
+});
+
+await test('在途脉动只给「已登记、未落定」的块；行未登记什么都不显', () => {
+  const blocks = [{ kind: 'text', text: 'one' }, { kind: 'text', text: 'two' }];
+  const registered = planAssistantRow({
+    blocks,
+    streaming: false,
+    interrupted: false,
+    canTranslate: true,
+    outcomes: [{ translated: '一', ok: true }, null],
+    rowStatus: 'pending',
+  });
+  assert.equal(registered.entries[0].translated, '一');
+  assert.equal(registered.entries[1].inflight, true, '待决批的块显灰脉动');
+  assert.equal(registered.entries[1].fail, null);
+  const unregistered = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true });
+  assert.equal(unregistered.entries[0].inflight, false, '没进池就没有脉动');
+  assert.equal(unregistered.entries[0].translated, null);
+  const settled = planAssistantRow({
+    blocks,
+    streaming: false,
+    interrupted: false,
+    canTranslate: true,
+    outcomes: [{ translated: '一', ok: true }, { translated: 'two', ok: false, reason: 'transport' }],
+    rowStatus: 'settled',
+  });
+  assert.equal(settled.entries[1].inflight, false, '落定的失败块不再脉动');
+  assert.equal(settled.entries[1].fail, 'transport');
 });
 
 await test('React 键唯一：groupPart 过滤 + interrupted 追加项不撞键', () => {
@@ -180,18 +241,6 @@ await test('reasoning 分组不送译：texts 与本组渲染的正文块同域'
   assert.equal(response.entries[0].translated, '答案', 'response 行的第 0 块对齐 outcomes[0]');
 });
 
-await test('逐批中间态：null 结果位呈现原文、不挂线', () => {
-  const plan = planAssistantRow({
-    blocks: [{ kind: 'text', text: 'one' }, { kind: 'text', text: 'two' }],
-    streaming: false,
-    interrupted: false,
-    canTranslate: true,
-    outcomes: [{ translated: '一', ok: true }, null],
-  });
-  assert.equal(plan.entries[0].translated, '一');
-  assert.equal(plan.entries[1].translated, null, '未落定的块按原文呈现');
-});
-
 // ---------------------------------------------------------------
 // 3. 翻译池
 // ---------------------------------------------------------------
@@ -223,7 +272,7 @@ await test('同键同文本幂等：只请求一次；结果按下标对齐', as
   let calls = 0;
   const store = createTranslateStore(async (texts) => {
     calls++;
-    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false, channel: 'mock' }));
+    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
   });
   store.ensure('a1', ['one', 'two']);
   store.ensure('a1', ['one', 'two']);
@@ -231,7 +280,7 @@ await test('同键同文本幂等：只请求一次；结果按下标对齐', as
   await Promise.resolve();
   assert.equal(calls, 1);
   const state = store.getState('a1');
-  assert.equal(state.status, 'done');
+  assert.equal(state.status, 'settled');
   assert.equal(state.outcomes[1].translated, '译:two');
 });
 
@@ -239,7 +288,7 @@ await test('文本换代：同键不同文本整行重新请求', async () => {
   const seen = [];
   const store = createTranslateStore(async (texts) => {
     seen.push(texts.join('|'));
-    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false, channel: 'mock' }));
+    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
   });
   store.ensure('a1', ['one']);
   await new Promise((r) => setTimeout(r, 0));
@@ -249,17 +298,19 @@ await test('文本换代：同键不同文本整行重新请求', async () => {
   assert.equal(store.getState('a1').outcomes[0].translated, '译:one changed');
 });
 
-await test('失败结果归一：!ok 或空译文映射为失败保原文', async () => {
+await test('失败结果归一：!ok、空译文与缺 reason 各按败因落账', async () => {
   const store = createTranslateStore(async (texts) => [
-    { original: texts[0], translated: '坏的', ok: false, cached: false, channel: 'mock' },
-    { original: texts[1], translated: '   ', ok: true, cached: false, channel: 'mock' },
+    { original: texts[0], translated: '坏的', ok: false, cached: false, reason: 'content' },
+    { original: texts[1], translated: '   ', ok: true, cached: false },
+    { original: texts[2], translated: 'x', ok: false, cached: false },
   ]);
-  store.ensure('a1', ['bad', 'blank']);
-  await new Promise((r) => setTimeout(r, 0));
+  store.ensure('a1', ['bad', 'blank', 'no-reason']);
+  await flush();
   const state = store.getState('a1');
   assert.deepEqual(state.outcomes, [
-    { translated: 'bad', ok: false },
-    { translated: 'blank', ok: false },
+    { translated: 'bad', ok: false, reason: 'content' },
+    { translated: 'blank', ok: false, reason: 'transport' },
+    { translated: 'no-reason', ok: false, reason: 'transport' },
   ]);
 });
 
@@ -270,16 +321,16 @@ await test('在途期间行换代：旧代结果不得覆盖新代 pending', asy
     if (first) {
       first = false;
       await gate.promise;
-      return texts.map((t) => ({ original: t, translated: '旧代:' + t, ok: true, cached: false, channel: 'mock' }));
+      return texts.map((t) => ({ original: t, translated: '旧代:' + t, ok: true, cached: false }));
     }
-    return texts.map((t) => ({ original: t, translated: '新代:' + t, ok: true, cached: false, channel: 'mock' }));
+    return texts.map((t) => ({ original: t, translated: '新代:' + t, ok: true, cached: false }));
   });
   store.ensure('a1', ['one']);
   store.ensure('a1', ['one', 'two']); // 换代
   await new Promise((r) => setTimeout(r, 0));
   await new Promise((r) => setTimeout(r, 0));
   let state = store.getState('a1');
-  assert.equal(state.status, 'done');
+  assert.equal(state.status, 'settled');
   assert.equal(state.outcomes.length, 2);
   assert.equal(state.outcomes[0].translated, '新代:one', '旧代迟到的结果必须被丢弃');
   gate.resolve();
@@ -288,65 +339,79 @@ await test('在途期间行换代：旧代结果不得覆盖新代 pending', asy
   assert.equal(state.outcomes[0].translated, '新代:one', '旧代结果不得回写');
 });
 
-await test('请求异常按失败处理：行落 partial，等待下一次自然重试', async () => {
+await test('请求异常按失败处理：行落 settled、块按 transport 挂线', async () => {
   const store = createTranslateStore(async () => {
     throw new Error('boom');
   });
   store.ensure('a1', ['x']);
-  await new Promise((r) => setTimeout(r, 0));
-  await new Promise((r) => setTimeout(r, 0));
+  await flush();
   const state = store.getState('a1');
-  assert.equal(state.status, 'partial', '有失败块就不算落定成功');
+  assert.equal(state.status, 'settled', '落定即终态：没有自动补跑在等它');
   assert.equal(state.outcomes[0].ok, false);
+  assert.equal(state.outcomes[0].reason, 'transport');
 });
 
-await test('partial 行再 ensure 会重走；done 行同文本短路', async () => {
+await test('落定行 ensure 短路；manual 补跑整行重发且成功块不闪', async () => {
   let calls = 0;
-  let fail = true;
+  let failSecond = true;
   const store = createTranslateStore(async (texts) => {
     calls++;
-    if (fail) throw new Error('down');
-    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false, channel: 'mock' }));
+    return texts.map((t, i) =>
+      failSecond && i === 1
+        ? { original: t, translated: t, ok: false, cached: false, reason: 'content' }
+        : { original: t, translated: '译:' + t, ok: true, cached: false }
+    );
   });
-  store.ensure('a1', ['x']);
-  await new Promise((r) => setTimeout(r, 0));
-  await new Promise((r) => setTimeout(r, 0));
-  assert.equal(store.getState('a1').status, 'partial');
-  fail = false;
-  assert.equal(store.ensure('a1', ['x']), true, 'partial 的同文本 ensure 必须重新请求');
-  await new Promise((r) => setTimeout(r, 0));
-  await new Promise((r) => setTimeout(r, 0));
-  const done = store.getState('a1');
-  assert.equal(done.status, 'done');
-  assert.equal(done.outcomes[0].translated, '译:x');
-  assert.equal(store.ensure('a1', ['x']), false, 'done 的同文本 ensure 短路');
-  assert.equal(calls, 2);
-});
-
-await test('失败行重试有上限：同代三次封顶不再发请求；文本换代重置', async () => {
-  let calls = 0;
-  const store = createTranslateStore(async () => {
-    calls++;
-    throw new Error('down');
-  });
-  const flush = async () => {
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
-  };
-  // 同一代文本连跑三轮（首轮 ensure + 两次滚回视口的自然重试）。
-  for (let round = 1; round <= 3; round++) {
-    store.ensure('a1', ['x']);
-    await flush();
-  }
-  assert.equal(calls, 3, '每轮各请求一次');
-  assert.equal(store.getState('a1').status, 'partial');
-  assert.equal(store.ensure('a1', ['x']), false, '同代封顶后 ensure 不再重走');
-  await flush();
-  assert.equal(calls, 3, '封顶意味着不再打通道');
-  // 文本换代：额度重置，照走。
   store.ensure('a1', ['x', 'y']);
   await flush();
-  assert.equal(calls, 4, '新代文本重新获得完整重试额度');
+  assert.equal(store.getState('a1').status, 'settled');
+  assert.equal(store.getState('a1').outcomes[1].reason, 'content');
+
+  assert.equal(store.ensure('a1', ['x', 'y']), false, '自动 ensure 短路——滚动不再触发任何重走');
+  assert.equal(calls, 1, '落定行没有被池再次打通道（首跑就那一次批请求）');
+
+  failSecond = false;
+  assert.equal(store.ensure('a1', ['x', 'y'], true), true, 'manual=true 是唯一的补跑入口');
+  const mid = store.getState('a1');
+  assert.equal(mid.status, 'pending');
+  assert.equal(mid.outcomes[0].translated, '译:x', '补跑瞬间已成功块当场种回，译文不闪');
+  assert.equal(mid.outcomes[1], null, '失败块清空结果位进在途');
+  await flush();
+  const done = store.getState('a1');
+  assert.equal(done.status, 'settled');
+  assert.equal(done.outcomes[1].translated, '译:y');
+});
+
+await test('手动补跑无限次：落定→补跑→再落定→再补跑，每次都真发', async () => {
+  let calls = 0;
+  const store = createTranslateStore(async (texts) => {
+    calls++;
+    return texts.map((t) => ({ original: t, translated: t, ok: false, cached: false, reason: 'content' }));
+  });
+  store.ensure('a1', ['x']);
+  await flush();
+  for (let round = 0; round < 5; round++) {
+    assert.equal(store.ensure('a1', ['x'], true), true, '第 ' + (round + 1) + ' 次手点必须重发，没有额度封顶');
+    await flush();
+  }
+  assert.equal(calls, 6);
+  assert.equal(store.getState('a1').status, 'settled');
+});
+
+await test('在途时再点（含 manual）是空操作：脉动就是「已在跑」的答复', async () => {
+  const gate = deferred();
+  let calls = 0;
+  const store = createTranslateStore(async (texts) => {
+    calls++;
+    await gate.promise;
+    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
+  });
+  store.ensure('a1', ['x']);
+  assert.equal(store.ensure('a1', ['x'], true), false, 'pending 行连手点都不重发');
+  assert.equal(calls, 1);
+  gate.resolve();
+  await flush();
+  assert.equal(store.getState('a1').status, 'settled');
 });
 
 await test('逐批落定：先回的段先可见，不等最后一批', async () => {
@@ -356,7 +421,7 @@ await test('逐批落定：先回的段先可见，不等最后一批', async ()
   const store = createTranslateStore(async (texts) => {
     const gate = gates[batch++];
     await gate.promise;
-    return texts.map((t) => ({ original: t, translated: '译:' + t.slice(0, 8), ok: true, cached: false, channel: 'mock' }));
+    return texts.map((t) => ({ original: t, translated: '译:' + t.slice(0, 8), ok: true, cached: false }));
   });
   store.ensure('a1', ['first', big]);
   await new Promise((r) => setTimeout(r, 0));
@@ -365,11 +430,11 @@ await test('逐批落定：先回的段先可见，不等最后一批', async ()
   let state = store.getState('a1');
   assert.equal(state.status, 'pending', '还有批在途');
   assert.equal(state.outcomes[0].translated, '译:first', '第一批落定即可渲染');
-  assert.equal(state.outcomes[1], null, '第二批未回仍是空位（该块呈现原文）');
+  assert.equal(state.outcomes[1], null, '第二批未回仍是空位（该块显灰脉动）');
   gates[1].resolve();
   await new Promise((r) => setTimeout(r, 0));
   state = store.getState('a1');
-  assert.equal(state.status, 'done');
+  assert.equal(state.status, 'settled');
   assert.ok(state.outcomes[1].ok);
 });
 
@@ -387,27 +452,27 @@ await test('批间隔离：一批失败只败这一批，其余批译文照常�
   const big = '汉'.repeat(6000);
   const store = createTranslateStore(async (batch) => {
     if (batch.includes('bad')) throw new Error('this batch dies');
-    return batch.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false, channel: 'mock' }));
+    return batch.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
   });
   store.ensure('a1', ['good1', big, 'bad', 'good2']);
-  await new Promise((r) => setTimeout(r, 0));
-  await new Promise((r) => setTimeout(r, 0));
-  await new Promise((r) => setTimeout(r, 0));
+  await flush();
+  await flush();
+  await flush();
   const state = store.getState('a1');
-  assert.equal(state.status, 'partial');
+  assert.equal(state.status, 'settled');
   // 切批结果：[good1] / [big] / [bad, good2]（bad 与 good2 余量同批）。
   // 死批整批败（含同批的 good2——失败面就是批），前后两批不受牵连。
-  assert.deepEqual(state.outcomes.map((o) => [o.translated, o.ok]), [
-    ['译:good1', true],
-    ['译:' + big, true],
-    ['bad', false],
-    ['good2', false],
+  assert.deepEqual(state.outcomes.map((o) => [o.translated, o.ok, o.reason]), [
+    ['译:good1', true, undefined],
+    ['译:' + big, true, undefined],
+    ['bad', false, 'transport'],
+    ['good2', false, 'transport'],
   ]);
 });
 
 await test('行数 LRU 上限：超出后淘汰最久未读的行', () => {
   const store = createTranslateStore(async (texts) =>
-    texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false, channel: 'mock' }))
+    texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }))
   );
   for (let i = 0; i < 260; i++) store.ensure('row' + i, ['t' + i]);
   assert.equal(store.getState('row0'), undefined, '最早登记的行应被淘汰');
@@ -447,24 +512,32 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
 });
 
 // ---------------------------------------------------------------
-// 5. 左缘线标：蓝粗线=正在读译文，灰细线=有译文但读原文，无线=没译成
-//    （0.5px 虚线会被抗锯齿糊成实线，区分走色相+宽度）
+// 5. 左缘线标：蓝=读译文，灰细=读原文备译文，红实=传输失败，红虚=内容拒收，
+//    灰脉动=在途，无线=没送过模型（后两种失败态整块可点=手动补跑）
 // ---------------------------------------------------------------
 
-await test('蓝线标译文、灰线标「有译文的原文态」，未译无线', () => {
-  assert.equal(proseClassNames(false, false), undefined, '未挂译文的块没有任何标记类');
-  assert.equal(proseClassNames(false, true), undefined, '未挂译文谈不上原文态');
-  const showingTranslation = proseClassNames(true, false);
-  assert.match(showingTranslation, /dsh-ct-prose-translated/, '显示译文时挂蓝线');
-  assert.ok(!showingTranslation.includes('dsh-ct-prose-original'), '译文态不挂灰线类');
-  assert.match(showingTranslation, /dsh-ct-prose-clickable/, '译文态整块可点');
-  const showingOriginal = proseClassNames(true, true);
+await test('标记名单点：线型随状态，可点态含两种红线，在途不可点', () => {
+  assert.equal(proseClassNames(null), undefined, '没送过模型的块没有任何标记类');
+  const translated = proseClassNames('translated');
+  assert.match(translated, /dsh-ct-prose-clickable dsh-ct-prose-translated/);
+  assert.ok(!translated.includes('dsh-ct-prose-original'), '译文态不挂灰线类');
+  const showingOriginal = proseClassNames('original-view');
   assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '原文态不挂蓝线');
-  assert.match(showingOriginal, /dsh-ct-prose-original/, '原文态挂灰线：有译文的线索保留');
-  assert.match(showingOriginal, /dsh-ct-prose-clickable/, '原文态仍可点击切回译文');
+  assert.match(showingOriginal, /dsh-ct-prose-clickable dsh-ct-prose-original/, '灰细线仍可点切回');
+  const transport = proseClassNames('fail-transport');
+  assert.match(transport, /dsh-ct-prose-clickable/, '红线整块可点=重试');
+  assert.match(transport, /dsh-ct-prose-failed(?!-dashed)/, '传输失败挂实线红');
+  assert.ok(!transport.includes('failed-dashed'));
+  const content = proseClassNames('fail-content');
+  assert.match(content, /dsh-ct-prose-failed-dashed/, '内容拒收挂虚线红');
+  assert.match(content, /dsh-ct-prose-retryable/, '两种红线都带 ↻ 悬停锚点');
+  const inflight = proseClassNames('inflight');
+  assert.match(inflight, /dsh-ct-prose-inflight/);
+  assert.ok(!inflight.includes('clickable'), '在途脉动态不可点（点了也是空操作）');
+  assert.ok(!inflight.includes('retryable'), '在途不露重试指引');
 });
 
-await test('译文线 1px 主色、原文线 0.5px 中性：色相与粗细双重区分', () => {
+await test('线的色相与粗细：蓝 1px 主色、灰 0.5px 中性、红走 error 色相', () => {
   assert.match(
     ASSISTANT_CSS,
     /\.dsh-ct-prose-translated\{border-left:1px solid color-mix\(in srgb, var\(--dsw-alias-state-business-primary\) 65%, transparent\)\}/,
@@ -474,6 +547,26 @@ await test('译文线 1px 主色、原文线 0.5px 中性：色相与粗细双�
     ASSISTANT_CSS,
     /\.dsh-ct-prose-original\{border-left:0\.5px solid var\(--dsw-alias-border-l2\)\}/,
     '原文态线是 0.5px 中性 hairline（细灰）'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-prose-failed\{border-left:1px solid color-mix\(in srgb, var\(--dsw-alias-state-error-primary\) 65%, transparent\)\}/,
+    '传输失败是 1px error 色实线'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-prose-failed-dashed\{border-left:1px dashed color-mix\(in srgb, var\(--dsw-alias-state-error-primary\) 65%, transparent\)\}/,
+    '内容拒收是 1px error 色虚线（0.5px 虚线会被抗锯齿糊平，必须 1px 起）'
+  );
+});
+
+await test('在途灰脉动：动画声明存在且尊重 prefers-reduced-motion', () => {
+  assert.match(ASSISTANT_CSS, /\.dsh-ct-prose-inflight\{padding-left:12px;border-left:1px solid var\(--dsw-alias-border-l2\);animation:/);
+  assert.match(ASSISTANT_CSS, /@keyframes dsh-ct-prose-inflight-pulse/);
+  assert.match(
+    ASSISTANT_CSS,
+    /@media \(prefers-reduced-motion:reduce\)\{\.dsh-ct-prose-inflight\{animation:none\}\}/,
+    'reduced-motion 降级为静态灰线'
   );
 });
 

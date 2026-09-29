@@ -1,29 +1,30 @@
-import { requestTranslateReply, type ReplyBlockResult } from '../translate/api.ts';
+import {
+  requestTranslateReply,
+  type ReplyBlockResult,
+  type ReplyFailReason,
+} from '../translate/api.ts';
 import { estimateTokens, REPLY_MAX_INPUT_TOKENS } from '../../server/pipeline/blocks.ts';
 
 /** 一行正文的按块翻译结果，与请求的 texts 数组按下标对齐。 */
 export interface BlockOutcome {
   /** 模型产出的中文（Markdown 源文本）；失败时等于原文。 */
   translated: string;
-  /** 该块是否翻译成功。失败的块界面保持原文、不标记。 */
+  /** 该块是否翻译成功。 */
   ok: boolean;
+  /** 仅 ok=false 时出现：败因决定 presentation 画红实线（transport）还是红虚线（content）。 */
+  reason?: ReplyFailReason;
 }
 
 /**
  * 一行正文的翻译状态。outcomes 与 texts 同下标，null = 该块所在批尚未落定：
  * 每批返回就地填入并通知，长回答按阅读顺序逐段出中文，不憋到最后一批。
- * 全部批落定后：无失败即 done；有失败标 partial——partial 行允许后续 ensure
- * 重走（渲染层的下一次触发是滚出视口再回来、或行重挂载），失败的块因此
- * 自然重试，成功的块由宿主磁盘缓存直接命中、不再花模型调用。重走有上限
- * （MAX_ROW_ATTEMPTS）：确定性失败（如弱模型丢占位符）不该被滚动无限续杯，
- * 封顶后保持原文直到文本换代重置。
+ * 全部批落定后 status 转 settled——落定即终态：这里没有任何自动补跑，
+ * 失败块的救活只由用户的点击发起（ensure 的 manual 参数）。
  */
 export interface RowState {
-  status: 'pending' | 'partial' | 'done';
+  status: 'pending' | 'settled';
   texts: readonly string[];
   outcomes: readonly (BlockOutcome | null)[];
-  /** 这一代文本已经完整跑过几轮（首跑计 1）。 */
-  attempts: number;
 }
 
 /** 送译一行正文的取数面：默认走宿主路由，测试注入假实现。 */
@@ -31,9 +32,6 @@ export type ReplyFetcher = (texts: string[]) => Promise<ReplyBlockResult[]>;
 
 /** 同时在池的行数上限：LRU 淘汰最久未读的整行；行文本本身仍归宿主会话持有。 */
 export const MAX_TRANSLATED_ROWS = 200;
-
-/** 同一代文本最多完整跑几轮；封顶后不再打通道，直到文本换代重置额度。 */
-export const MAX_ROW_ATTEMPTS = 3;
 
 /**
  * 一次 HTTP 请求装载的估算 token 上限：与宿主的打包输入上限同值同源
@@ -66,8 +64,10 @@ export function chunkTexts(texts: readonly string[]): string[][] {
  *
  * 行键由渲染层给出（会话内锚点序号），文本数组参与一致性判断：同键不同文本
  * 视为行换了一代内容，整行重新请求——这保证重渲染或会话切换后不会把旧译文
- * 配到新文本上。请求幂等：同键同文本、且上一代已落定成功或仍在途的 ensure
- * 不再发请求；只有 partial（有失败块）的同代 ensure 会重走，且同代封顶三次。在途期间换代，
+ * 配到新文本上。请求幂等：同键同文本且仍在途的 ensure 不发第二个请求；已落定
+ * 的行同样短路——**除非** manual=true，那是用户点了某个红线块发起的手动补跑，
+ * 无限次、不设额度。手动补跑时上一代已成功的块保持挂线（结果从上一代种下，
+ * 服务端磁盘缓存让它们秒回），只有尚无译文的块显示在途脉动。在途期间换代，
  * 迟到的旧代结果直接丢弃。
  *
  * 本模块不依赖 React：渲染层用 useSyncExternalStore 订阅版本，再读 getState。
@@ -106,37 +106,40 @@ export class ChatTranslateStore {
 
   /**
    * 确保该行按当前文本被翻译。
-   * @returns 是否发出了新的请求（同代 done/pending 与换代前的登记之外都是 false）。
+   * @param manual - 用户点击失败块发起的补跑：已落定的同代行只有这条路会重发。
+   * @returns 是否发出了新的请求。
    */
-  ensure(rowKey: string, texts: readonly string[]): boolean {
+  ensure(rowKey: string, texts: readonly string[], manual = false): boolean {
     const current = this.rows.get(rowKey);
-    let attempts = 1;
+    let seed: (BlockOutcome | null)[] | null = null;
     if (current !== undefined && sameTexts(current.texts, texts)) {
-      // 同代：done/pending 短路；partial 重走——失败块的「自然重试」入口，
-      // 但同代封顶：确定性失败不该被滚动无限续杯。
-      if (current.status !== 'partial') return false;
-      if (current.attempts >= MAX_ROW_ATTEMPTS) return false;
-      attempts = current.attempts + 1;
+      // 在途：再点是空操作，脉动本身就是「已在跑」的答复。
+      if (current.status === 'pending') return false;
+      if (!manual) return false;
+      // 手动补跑：上一代已成功的块当场种回，重发期间译文不闪。
+      seed = current.outcomes.map((outcome) => (outcome !== null && outcome.ok ? { ...outcome } : null));
     }
     const snapshot = [...texts];
     const next: RowState = {
       status: 'pending',
       texts: snapshot,
-      outcomes: snapshot.map(() => null),
-      attempts,
+      outcomes: seed ?? snapshot.map(() => null),
     };
     this.rows.delete(rowKey);
     this.rows.set(rowKey, next);
     this.prune();
     this.bump();
-    if (snapshot.length > 0) void this.run(rowKey, snapshot);
+    if (snapshot.length > 0) void this.run(rowKey, snapshot, seed ?? snapshot.map(() => null));
     return true;
   }
 
-  private async run(rowKey: string, texts: readonly string[]): Promise<void> {
+  private async run(
+    rowKey: string,
+    texts: readonly string[],
+    outcomes: (BlockOutcome | null)[]
+  ): Promise<void> {
     // 去重靠 ensure 的同代短路；换代后的并发在途允许存在——迟到的旧代结果
     // 由每批落定处的快照核对丢弃。
-    const outcomes: (BlockOutcome | null)[] = texts.map(() => null);
     let offset = 0;
     for (const batch of chunkTexts(texts)) {
       let results: ReplyBlockResult[] = [];
@@ -144,7 +147,7 @@ export class ChatTranslateStore {
         results = await this.fetch(batch);
       } catch {
         // 取数面的异常与失败结果同义：该批保持原文。api 层自身已兜底，这里
-        // 防的是 fetcher 实现抛错的形态。
+        // 防的是 fetcher 实现抛错的形态——异常说不出败因，按传输失败报。
         results = [];
       }
       for (let i = 0; i < batch.length; i++) {
@@ -152,7 +155,11 @@ export class ChatTranslateStore {
         if (result !== undefined && result.ok && result.translated && result.translated.trim()) {
           outcomes[offset + i] = { translated: result.translated, ok: true };
         } else {
-          outcomes[offset + i] = { translated: batch[i] ?? texts[offset + i] ?? '', ok: false };
+          outcomes[offset + i] = {
+            translated: batch[i] ?? texts[offset + i] ?? '',
+            ok: false,
+            reason: result?.reason ?? 'transport',
+          };
         }
       }
       offset += batch.length;
@@ -163,18 +170,15 @@ export class ChatTranslateStore {
         status: 'pending',
         texts: live.texts,
         outcomes: [...outcomes],
-        attempts: live.attempts,
       });
       this.bump();
     }
     const state = this.rows.get(rowKey);
     if (state?.status === 'pending' && sameTexts(state.texts, texts)) {
-      const anyFailed = outcomes.some((outcome) => outcome === null || !outcome.ok);
       this.rows.set(rowKey, {
-        status: anyFailed ? 'partial' : 'done',
+        status: 'settled',
         texts: state.texts,
         outcomes,
-        attempts: state.attempts,
       });
       this.bump();
     }

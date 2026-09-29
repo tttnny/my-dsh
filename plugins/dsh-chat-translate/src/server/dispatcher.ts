@@ -3,6 +3,7 @@ import type {
   ITranslationAdapter,
   PluginConfig,
   ReplyBlockResult,
+  ReplyFailReason,
 } from './types.ts';
 import type { ConfigManager } from './config.ts';
 import { LruDiskCache } from './cache.ts';
@@ -10,7 +11,6 @@ import type { KeyReader } from './credentials.ts';
 import { OpenAiCompatibleAdapter } from './adapters/openai.ts';
 import {
   ContentMaskingPipeline,
-  MaskRestoreError,
   type MaskResult,
 } from './pipeline/masking.ts';
 import { hasMaskResidue } from './pipeline/mask-tokens.ts';
@@ -24,20 +24,18 @@ import {
   REPLY_MAX_OUTPUT_TOKENS,
 } from './pipeline/blocks.ts';
 
-type CircuitStateEnum = 'closed' | 'open' | 'half-open';
-
 /**
- * The one and only channel id for the reply path. Both the adapter registry and
- * the circuit-breaker ledger key on it, so a test can swap the adapter without
- * the breaker losing track of which channel it is accounting for.
+ * The one and only channel id for the reply path: the adapter registry keys on
+ * it, so a test can swap the adapter without the reply path losing track of
+ * which adapter serves it.
  */
 const CHANNEL_ID = 'openai';
 
 /**
  * 内容级拒收：通道正常返回了响应，只是这份内容没通过校验（块标记或
- * ⟦…⟧ 占位符被改写、丢失）。症状是「这一块翻不了」而不是「通道死了」：
- * 它不计入熔断账本——把一次弱模型丢 token 记成通道故障，会让一段密集
- * 代码引用把其他所有行的翻译挡在冷却期外。
+ * ⟦…⟧ 占位符被改写、丢失）。它是失败分类账本的输入：这类败因记
+ * `content`（客户端挂红虚线），其余一律 `transport`（红实线）。没有熔断
+ * 账本——每行只跑首跑，失败等用户手点，通道故障由用户直接看见。
  */
 class ContentRejectedError extends Error {}
 
@@ -54,11 +52,40 @@ function replyPieceKey(piece: { block: number; index: number }): string {
   return `${piece.block}:${piece.index}`;
 }
 
-interface CircuitState {
-  state: CircuitStateEnum;
-  failureCount: number;
-  openUntil: number;
-  probeInFlight: boolean; // single-flight guard for half-open probes
+/** 片段败因账本：pieceKey → 历次尝试记下的败因集合。 */
+type FailureLedger = Map<string, Set<ReplyFailReason>>;
+
+/** 败因分类：只有对返回内容本身的拒收算 content，其余都说明通道受过伤。 */
+function classifyReplyError(err: unknown): ReplyFailReason {
+  return err instanceof ContentRejectedError ? 'content' : 'transport';
+}
+
+function recordLedgerFailure(
+  ledger: FailureLedger,
+  keys: readonly string[],
+  reason: ReplyFailReason
+): void {
+  for (const key of keys) {
+    let reasons = ledger.get(key);
+    if (!reasons) {
+      reasons = new Set<ReplyFailReason>();
+      ledger.set(key, reasons);
+    }
+    reasons.add(reason);
+  }
+}
+
+/**
+ * 块败因合成：任一缺失片段的历次尝试里出现过 transport，整块按传输失败报
+ * （通道伤过，重试有意义）；只有全部尝试都以内容拒收终结才记 content。
+ * 没留账的缺失按 transport 报（防御分支，打包路径不该走到）。
+ */
+function blockFailReason(ledger: FailureLedger, block: number, total: number): ReplyFailReason {
+  for (let index = 0; index < total; index++) {
+    const reasons = ledger.get(`${block}:${index}`);
+    if (!reasons || reasons.size === 0 || reasons.has('transport')) return 'transport';
+  }
+  return 'content';
 }
 
 export class TranslationDispatcher {
@@ -67,7 +94,6 @@ export class TranslationDispatcher {
   private credentials: KeyReader;
   private masking = new ContentMaskingPipeline();
   private adapters = new Map<string, ITranslationAdapter>();
-  private circuitStates = new Map<string, CircuitState>();
   /** 正文请求的串行队列尾，保证同时最多一个在途请求。 */
   private replyTail: Promise<void> = Promise.resolve();
 
@@ -89,10 +115,13 @@ export class TranslationDispatcher {
    *
    * 每个块先按输入上限切成片段，再各自掩码、相邻片段打包成一个请求；整批失败
    * 时退回逐片段单发。调用方传进来的每个块要么整块译出、要么整块保持原文：
-   * 任一片段缺失（含掩码还原不通过）都让该块作废，避免半中半英的段落。
+   * 任一片段缺失（含掩码还原不通过）都让该块作废，避免半中半英的段落；失败块
+   * 带 `reason` 分类（见 {@link blockFailReason}），客户端据此画红实线或红虚线。
+   * 没有熔断：每行只跑首跑一次，失败的救活由用户的点击发起。
    *
-   * 客户端按 2048 估算 token 分块，所以一个 markdown 块可能跨多次调用；每次
-   * 调用都独立决定成败，不会出现「前一段已挂译文、后一段失败」的半截结果。
+   * 客户端按与宿主同源的 4096 估算 token 切批，所以一个 markdown 块可能跨多次
+   * 调用；每次调用都独立决定成败，不会出现「前一段已挂译文、后一段失败」的
+   * 半截结果。
    */
   async translateReplyBlocks(blocks: string[]): Promise<ReplyBlockResult[]> {
     const results: ReplyBlockResult[] = blocks.map((original) => ({
@@ -100,34 +129,20 @@ export class TranslationDispatcher {
       translated: original,
       ok: false,
       cached: false,
-      channel: 'none',
+      reason: 'transport' as ReplyFailReason,
     }));
 
     const config = this.configManager.getConfig();
     if (!config.enabled) return results;
 
-    // The channel id is fixed: the reply path has exactly one channel, and the
-    // circuit is accounted under that id whatever adapter object serves it.
+    // The channel id is fixed: the reply path has exactly one channel.
     const adapter = this.adapters.get(CHANNEL_ID);
     if (!adapter || !adapter.isAvailable(config)) return results;
 
-    // The breaker gate: a cooling channel is skipped outright, and while
-    // half-open only the single in-flight probe may pass — everyone else is
-    // refused, so a flapping service gets exactly one trial request.
-    if (this.isCircuitOpen(CHANNEL_ID)) return results;
-
-    try {
-      return await this.serveReplyBlocks(blocks, results, adapter, config);
-    } finally {
-      // 单飞槽位归还：拿到探针位的调用必须无条件归还。零批次的调用（全空白
-      // 块或全缓存命中）一趟也不会走到 record*——不还槽位就等于半开态永久
-      // 拒绝所有人，通道无声锁死。record* 的归还与此同向，重复归还是空操作。
-      const state = this.circuitStates.get(CHANNEL_ID);
-      if (state) state.probeInFlight = false;
-    }
+    return this.serveReplyBlocks(blocks, results, adapter, config);
   }
 
-  /** 熔断授予之后的正文执行段：切块、打包、请求、拼装。 */
+  /** 通道可用之后的正文执行段：切块、打包、请求、拼装。 */
   private async serveReplyBlocks(
     blocks: string[],
     results: ReplyBlockResult[],
@@ -145,7 +160,6 @@ export class TranslationDispatcher {
           translated: cached,
           ok: true,
           cached: true,
-          channel: 'cache',
         };
         continue;
       }
@@ -160,10 +174,11 @@ export class TranslationDispatcher {
       }
     }
 
+    const ledger: FailureLedger = new Map();
     const translated = new Map<string, string>();
     for (const batch of packPieces(pieces)) {
       const outcome = await this.runReplySerial(() =>
-        this.translateReplyBatch(adapter, batch, config)
+        this.translateReplyBatch(adapter, batch, config, ledger)
       );
       for (const [key, value] of outcome) translated.set(key, value);
     }
@@ -182,7 +197,10 @@ export class TranslationDispatcher {
         }
         parts.push(part);
       }
-      if (!complete) continue;
+      if (!complete) {
+        results[block].reason = blockFailReason(ledger, block, total);
+        continue;
+      }
       const original = blocks[block]!;
       const finalText = parts.join('');
       this.cache.set(original.trim().toLowerCase(), finalText);
@@ -191,7 +209,6 @@ export class TranslationDispatcher {
         translated: finalText,
         ok: true,
         cached: false,
-        channel: CHANNEL_ID,
       };
     }
 
@@ -200,24 +217,23 @@ export class TranslationDispatcher {
 
   /**
    * 一整批一次请求；失败则该批逐片段单发重试一次，仍失败的片段直接放弃
-   * （保留原文），不在界面上留提示。失败的片段不进缓存，因此下一次滚回视口
-   * 时会自然重试。
+   * （保留原文）——救活它的是用户的点击，不是后台流量。失败的片段不进缓存。
    *
-   * 熔断记账按「批」算：一次批请求失败记一次，逐片段重试失败再各记一次。
-   * 内容级拒收除外：响应都正常回来了，通道是活的——拒收记一次成功，
-   * 坏内容只作废坏内容自己，不把其他行挡在冷却期外。
+   * 每次失败都按败因记进片段的分类账本（{@link FailureLedger}）：批请求的
+   * 失败摊到批内每个片段，单发重试的失败只记该片段；块级 reason 由缺失片段
+   * 的账本合成（任一尝试是传输伤 → transport；全部是内容拒收 → content）。
    */
   private async translateReplyBatch(
     adapter: ITranslationAdapter,
     batch: ReplyPiece[],
-    config: PluginConfig
+    config: PluginConfig,
+    ledger: FailureLedger
   ): Promise<Map<string, string>> {
+    const pieceKeys = batch.map((piece) => replyPieceKey(piece));
     try {
-      const outcome = await this.requestReplyBatch(adapter, batch, config);
-      this.recordSuccess(CHANNEL_ID);
-      return outcome;
+      return await this.requestReplyBatch(adapter, batch, config);
     } catch (err) {
-      this.accountBatch(err);
+      recordLedgerFailure(ledger, pieceKeys, classifyReplyError(err));
       console.warn(
         `[dsh-chat-translate] reply batch of ${batch.length} failed, retrying per block: ${describeError(err)}`
       );
@@ -230,22 +246,13 @@ export class TranslationDispatcher {
           out.set(key, value);
         }
       } catch (err) {
-        this.accountBatch(err);
+        recordLedgerFailure(ledger, [replyPieceKey(piece)], classifyReplyError(err));
         console.warn(
           `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
         );
       }
     }
     return out;
-  }
-
-  /** 失败记账的分类：传输故障计数，内容拒收证明通道活着。 */
-  private accountBatch(err: unknown): void {
-    if (err instanceof ContentRejectedError) {
-      this.recordSuccess(CHANNEL_ID);
-    } else {
-      this.recordFailure(CHANNEL_ID);
-    }
   }
 
   /** 发出一次正文请求并把结果还原成每个片段的最终译文。 */
@@ -319,10 +326,7 @@ export class TranslationDispatcher {
 
   /**
    * 通道探针：设置面板的「测试 AI 通道」按钮走这里。探测文本用一句英文正文，
-   * 与真实请求同形。
-   *
-   * 探针是用户主动发起的连通性检查，因此不写也不读熔断账本：连点几次测试
-   * 不该把正文翻译挡在冷却期外，正文的失败也不该让按钮变哑。
+   * 与真实请求同形；它一次请求都不写正文账本，正文的成败也不影响按钮。
    */
   async testChannel(channelId: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
     const adapter = this.adapters.get(channelId);
@@ -353,64 +357,6 @@ export class TranslationDispatcher {
       return { ok: false, latencyMs, error: 'Empty translation returned' };
     } catch (err: any) {
       return { ok: false, latencyMs: Date.now() - start, error: describeError(err) };
-    }
-  }
-
-  private isCircuitOpen(channelId: string): boolean {
-    let state = this.circuitStates.get(channelId);
-    if (!state) return false;
-
-    if (state.state === 'open') {
-      if (Date.now() >= state.openUntil) {
-        // Timeout elapsed -> transition to half-open; the first caller becomes
-        // the single in-flight probe.
-        state.state = 'half-open';
-        state.probeInFlight = true;
-        return false;
-      }
-      return true;
-    }
-
-    if (state.state === 'half-open') {
-      // Single-flight: exactly one probe may run at a time, all others wait.
-      if (state.probeInFlight) return true;
-      state.probeInFlight = true;
-      return false;
-    }
-
-    return false;
-  }
-
-  private recordSuccess(channelId: string): void {
-    const state = this.circuitStates.get(channelId);
-    if (state) {
-      state.state = 'closed';
-      state.failureCount = 0;
-      state.openUntil = 0;
-      state.probeInFlight = false;
-    }
-  }
-
-  private recordFailure(channelId: string): void {
-    let state = this.circuitStates.get(channelId);
-    if (!state) {
-      state = { state: 'closed', failureCount: 0, openUntil: 0, probeInFlight: false };
-      this.circuitStates.set(channelId, state);
-    }
-
-    if (state.state === 'half-open') {
-      // Probe failed -> trip back to open for 30s
-      state.state = 'open';
-      state.failureCount = 3;
-      state.openUntil = Date.now() + 30000;
-      state.probeInFlight = false;
-      return;
-    }
-
-    state.failureCount++;
-    if (state.failureCount >= 3) {
-      state.state = 'open';
-      state.openUntil = Date.now() + 30000; // Open circuit for 30 seconds
     }
   }
 }

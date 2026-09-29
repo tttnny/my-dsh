@@ -15,7 +15,7 @@ export const zh = {
   masterTitle: '翻译总开关',
   enableTranslation: '启用翻译',
   masterDesc:
-    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送，由模型一并改写成自然中文、顺掉机器腔。Think 卡与工具调用行不翻，代码块原样保留。翻译过的块左缘有一条竖线：显示译文时是稍粗的蓝线，点回原文变细灰线（提示这里备着译文，再点即切回），没译成的没有线——线的颜色与粗细一眼分清「有没有译」和「正在读哪一版」。点击已翻译的块可在译文与原文间切换，模型认为原样最好、返回一模一样的文字时同样算翻译过、同样可切。译文按原 markdown 格式重新渲染，表格、列表、加粗与行内代码保持结构。回答还在流式输出时不翻，落定后按阅读顺序逐段出中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
+    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送，由模型一并改写成自然中文、顺掉机器腔。Think 卡与工具调用行不翻，代码块原样保留。正文块的左缘一条竖线报出状态：正在读译文是蓝线，备着译文正读原文是灰细线，没译成是红线（实线=通道问题、重试多半有意义，虚线=模型改坏了受保护片段、重打包后未必再犯），正在请求是灰脉动线，没送过模型或开关关闭没有线。点击已翻译的块在译文与原文间切换——模型认为原样最好、返回一模一样的文字时同样算翻译过、同样可切；点击挂红线的块则整行重新翻译，已成功的块保持显示不打扰。失败不再自动重试，通道恢复后由你的点击救活。译文按原 markdown 格式重新渲染，表格、列表、加粗与行内代码保持结构。回答还在流式输出时不翻，落定后按阅读顺序逐段出中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
 
   aiTitle: 'AI 翻译（OpenAI 兼容协议）',
   aiRule: '只有这一条通道：Key / Base URL / 模型齐备才会翻译，缺任何一项都保持原文。',
@@ -47,11 +47,14 @@ export const zh = {
 
   behaviorTitle: '翻译范围',
   behaviorRule:
-    '助手回答正文一律翻译，包括最终汇总与整段中文的块：中文块同样交给模型改写成自然中文，意义、术语与数字不变。思考链正文、工具调用标题与折叠摘要不翻译，代码块及其内部原样保留。',
+    '助手回答正文一律翻译，包括最终汇总与整段中文的块：中文块同样交给模型改写成自然中文，意义、术语与数字不变；空白块不送译、不挂线。思考链正文、工具调用标题与折叠摘要不翻译，代码块及其内部原样保留。',
 
   dockLabel: '译',
   dockOn: '正文翻译已开启，点击关闭',
   dockOff: '正文翻译已关闭，点击开启',
+
+  retryTip: '点击重试翻译',
+  retryAria: '翻译失败，按 Enter 重试',
 } as const;
 
 /** Locale keys this plugin renders. */
@@ -65,7 +68,7 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   masterTitle: 'Translation master switch',
   enableTranslation: 'Enable translation',
   masterDesc:
-    'Translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and blocks written entirely in Chinese go through the model too, which rewrites them into natural Chinese and smooths out machine-flavored phrasing. Think cards and tool-call rows are never translated, and code blocks stay untouched. A translated block carries a left edge line: a slightly thicker blue one while its translation shows, a thin grey one while you read the original (a translation is waiting one click away), and none at all when nothing translated — colour and weight together tell at a glance both what exists and what you are reading. Click any translated block to switch between translation and original; even when the model decides the original wording is already best and returns it unchanged, it still counts as translated and stays switchable. Translations are re-rendered as Markdown, so tables, lists, bold runs and inline code keep their structure. A reply that is still streaming is left alone until it settles, then prose turns to Chinese paragraph by paragraph in reading order. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
+    'Automatically translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and blocks written entirely in Chinese go through the model too, which rewrites them into natural Chinese and smooths out machine-flavored phrasing. Think cards and tool-call rows are never translated, and code blocks stay untouched. Each prose block reports its state with a left-edge line: blue while its translation reads, thin grey while the original reads with a translation waiting one click away, red when translation failed (solid = a channel problem where retrying likely helps; dashed = the model mangled a protected fragment, a chance it survives a re-packed retry), a grey pulse while a request is in flight, and nothing at all when the block was never sent or the switch is off. Click a translated block to switch between translation and original — even when the model returns the wording unchanged it counts as translated and stays switchable; click a red-lined block to re-run the whole row, with already-successful blocks kept on screen undisturbed. Failures are never retried automatically: once the channel recovers, your click revives the row. Translations are re-rendered as Markdown, so tables, lists, bold runs and inline code keep their structure. A reply that is still streaming is left alone until it settles, then prose turns to Chinese paragraph by paragraph in reading order. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
 
   aiTitle: 'AI translation (OpenAI-compatible)',
   aiRule:
@@ -98,15 +101,40 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
 
   behaviorTitle: 'What gets translated',
   behaviorRule:
-    'All assistant reply prose, the final summary and Chinese-only blocks included: Chinese blocks are also handed to the model, which rewrites them into natural Chinese while keeping meaning, terms and numbers unchanged. Think-chain text, tool-call titles and folded summaries are never translated; code blocks and their contents stay untouched.',
+    'All assistant reply prose, the final summary and Chinese-only blocks included: Chinese blocks are also handed to the model, which rewrites them into natural Chinese while keeping meaning, terms and numbers unchanged; blank blocks are never sent and never marked. Think-chain text, tool-call titles and folded summaries are never translated; code blocks and their contents stay untouched.',
 
   dockLabel: 'Translate',
   dockOn: 'Translation is on; click to turn it off',
   dockOff: 'Translation is off; click to turn it on',
+
+  retryTip: 'Click to retry the translation',
+  retryAria: 'Translation failed — press Enter to retry',
 };
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     'settings.chatTranslate': ChatTranslateLocaleKey;
   }
+}
+
+/**
+ * 助手行渲染器的自带文案通道：行的 `t` 座次是宿主 `chat` 词典（chrome 文案
+ * 与宿主逐字一致），插件私有的「重试」词汇不在其中。客户端启动时把本命名
+ * 空间的活翻译器绑进来（`locale.bind(NS)`，语言切换即随动），渲染层在渲染时
+ * 经 {@link rowCopy} 取。未绑定（单测/无 locale 服务）回退 zh 字面量，与宿主
+ * 默认语言一致。
+ */
+let rowT: (key: ChatTranslateLocaleKey) => string = (key) => zh[key] ?? key;
+
+export function bindRowCopy(
+  locale: { bind?(namespace: string): (key: string) => string } | null | undefined
+): void {
+  if (locale && typeof locale.bind === 'function') {
+    const bound = locale.bind(NS);
+    if (typeof bound === 'function') rowT = bound as typeof rowT;
+  }
+}
+
+export function rowCopy(): { retryTip: string; retryAria: string } {
+  return { retryTip: rowT('retryTip'), retryAria: rowT('retryAria') };
 }

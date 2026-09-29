@@ -1,12 +1,16 @@
 import { describeError } from '../../describe-error.ts';
 
+/** 失败分类：与宿主半边同名类型对齐——传输失败画红实线、内容拒收画红虚线。 */
+export type ReplyFailReason = 'transport' | 'content';
+
 /** 正文一个块的翻译结果，与请求的块列表按下标对齐。 */
 export interface ReplyBlockResult {
   original: string;
   translated: string;
   ok: boolean;
   cached: boolean;
-  channel: string;
+  /** 仅 ok=false 时出现。 */
+  reason?: ReplyFailReason;
 }
 
 /**
@@ -20,7 +24,7 @@ export async function requestTranslateReply(blocks: string[]): Promise<ReplyBloc
       translated: block,
       ok: false,
       cached: false,
-      channel: 'fallback-client',
+      reason: 'transport' as ReplyFailReason,
     }));
 
   if (!Array.isArray(blocks) || blocks.length === 0) return [];

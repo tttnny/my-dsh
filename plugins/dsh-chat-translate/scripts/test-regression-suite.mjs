@@ -2,7 +2,7 @@
 // Tests:
 // 1. ContentMaskingPipeline placeholder masking & robust unmasking
 // 2. All reply blocks dispatched regardless of language (no skipping; Chinese is rewritten too)
-// 3. Serial request queue & circuit breaker state machine
+// 3. Serial request queue & failure-reason classification (no circuit breaker)
 // 4. LruDiskCache revision gating, LRU eviction and TTL handling
 // 5. ConfigManager live-config reads and change notification
 // 6. HttpRouter DoS 1MB protection and endpoint handling
@@ -231,9 +231,9 @@ test('A token dropped or rewritten by the engine rejects the whole translation',
 });
 
 // -------------------------------------------------------------
-// Suite 2: Reply Cache And Circuit Breaker State Machine
+// Suite 2: Reply Cache & Failure Semantics (no auto-retry, no breaker)
 // -------------------------------------------------------------
-console.log('\n--- Suite 2: Reply Cache & Circuit Breaker State Machine ---');
+console.log('\n--- Suite 2: Reply Cache & Failure Semantics ---');
 
 await testAsync('A repeated reply block is answered from the cache, not the adapter', async () => {
   const entry = createFakeSettingsEntry();
@@ -265,53 +265,38 @@ await testAsync('A repeated reply block is answered from the cache, not the adap
   assert.equal(second[0].cached, true);
 });
 
-await testAsync('Circuit Breaker trips to OPEN after 3 failures and resets on recovery', async () => {
+await testAsync('A transport failure stays transport; the next call may pass freely', async () => {
+  // 没有熔断账本：失败的行等的是用户的点击，不是冷却期。下一次调用（新行
+  // 的首跑，或点击后同代文本的重发）照旧打到适配器。
   const entry = createFakeSettingsEntry();
   const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const cache = new LruDiskCache();
   const dispatcher = new TranslationDispatcher(config, cache);
 
-  let failCount = 0;
-  let succeed = false;
+  let fail = true;
+  let calls = 0;
   const unstableAdapter = {
     id: 'unstable',
     name: 'Unstable',
     isAvailable: () => true,
     translate: async (t) => {
-      if (!succeed) {
-        failCount++;
-        throw new Error('503 Service Unavailable');
-      }
+      calls++;
+      if (fail) throw new Error('503 Service Unavailable');
       return `ok:${t}`;
     },
   };
   dispatcher.adapters.set('openai', unstableAdapter);
   await entry.update({ baseUrl: 'http://x', model: 'm' });
 
-  // 3 consecutive failures
-  await dispatcher.translateReplyBlocks(['Fail 1']);
-  await dispatcher.translateReplyBlocks(['Fail 2']);
-  await dispatcher.translateReplyBlocks(['Fail 3']);
-  assert.ok(failCount >= 3, 'the adapter was really tried');
+  const down = await dispatcher.translateReplyBlocks(['Fail 1']);
+  assert.equal(down[0].ok, false);
+  assert.equal(down[0].reason, 'transport');
 
-  // 4th call: circuit should be OPEN, skipping the adapter entirely
-  const callsBeforeOpen = failCount;
-  const r4 = await dispatcher.translateReplyBlocks(['Fail 4']);
-  assert.equal(failCount, callsBeforeOpen, 'Circuit is open: adapter must not be called');
-  assert.equal(r4[0].ok, false);
-
-  // Fast-forward openUntil to simulate cooling timeout
-  const circuitState = dispatcher.circuitStates.get('openai');
-  assert.ok(circuitState);
-  assert.equal(circuitState.state, 'open');
-  circuitState.openUntil = Date.now() - 100; // time elapsed -> triggers half-open
-
-  // Allow adapter to succeed on trial
-  succeed = true;
-  const r5 = await dispatcher.translateReplyBlocks(['Recovery trial']);
-  assert.equal(r5[0].translated, 'ok:Recovery trial');
-  assert.equal(circuitState.state, 'closed', 'Successful half-open probe resets circuit to closed');
-  assert.equal(circuitState.failureCount, 0);
+  fail = false;
+  const revived = await dispatcher.translateReplyBlocks(['Fail 1']);
+  assert.equal(revived[0].ok, true, '无冷却、无额度：下一次调用直接打到通道');
+  assert.equal(revived[0].translated, 'ok:Fail 1');
+  assert.ok(calls >= 2);
 });
 
 await testAsync('A channel that mangles a mask token is discarded, never cached', async () => {
@@ -339,6 +324,7 @@ await testAsync('A channel that mangles a mask token is discarded, never cached'
 
   const result = (await dispatcher.translateReplyBlocks([source]))[0];
   assert.equal(result.ok, false, 'a mangled mask must not be reported as a translation');
+  assert.equal(result.reason, 'content');
   assert.equal(result.translated, source, 'the original text must survive');
   assert.equal(cache.get(source), undefined, 'a mangled mask must not be cached');
   assert.equal(calls, 2, 'the batch and its per-piece retry both run');
@@ -364,6 +350,7 @@ await testAsync('A channel that drops a mask token keeps its fragment out of the
 
   const result = (await dispatcher.translateReplyBlocks([source]))[0];
   assert.equal(result.ok, false);
+  assert.equal(result.reason, 'content', '丢片段是内容拒收');
   assert.equal(result.translated, source);
   assert.equal(cache.get(source), undefined);
 });
@@ -386,6 +373,7 @@ await testAsync('A translated string without masks but with a hallucinated place
 
   const result = (await dispatcher.translateReplyBlocks(['find attribution usage in dsh-llm']))[0];
   assert.equal(result.ok, false);
+  assert.equal(result.reason, 'content', '凭空造出占位符同样是内容拒收');
   assert.equal(result.translated, 'find attribution usage in dsh-llm');
 });
 

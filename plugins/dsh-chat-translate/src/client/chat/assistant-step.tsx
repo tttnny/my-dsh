@@ -6,9 +6,11 @@
  * 1. 正文块从数据层拿**原始 markdown**（`AssistantBlock.text`），译文同样按
  *    markdown 交给宿主公开基线组件 `MarkdownText` 重渲染：格式保真由官方
  *    渲染器负责，本文件不产生任何自拼 markup。
- * 2. 「已翻译」是渲染状态：落定、开关开启、进入视口后逐行请求；成功的块
- *    （包括模型认为原样最好的块）挂译文、左缘一条细线、点击在译文与原文间
- *    切换；失败的块保持原文、无标记，下一次条件满足自然重试。
+ * 2. 「已翻译/没译成」是渲染状态：落定、开关开启、进入视口后逐行首跑；成功
+ *    的块（包括模型认为原样最好的块）挂译文、左缘蓝线、点击在译文与原文间
+ *    切换；失败的块保持原文、左缘挂红线（实线=传输失败、虚线=内容拒收），
+ *    整块可点=手动整行补跑，无限次、无自动重试；已登记在途而尚无结果的块
+ *    显灰脉动。
  *
  * 除正文外的行内容与宿主逐分支等价：reasoning 行走折叠（含 Turn-process
  * 隐藏与 beforematch 揭示）、连续 image 组交回 owner 的 renderMessageImages、
@@ -22,9 +24,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExterna
 import type { ReactElement, ReactNode } from 'react';
 import {
   DisclosureRow,
+  IconRefreshOutlineRegular,
   IconThinkOutlineRegular,
   JsonBlock,
   MarkdownText,
+  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import type {
   MarkdownCodeLabels,
@@ -36,7 +40,9 @@ import { settingsStore } from '../settings/store.ts';
 import { chatTranslate } from './translate-store.ts';
 import { planAssistantRow } from './row-plan.ts';
 import { isBareBlockClick } from './click-guard.ts';
+import { rowCopy } from '../locales.ts';
 import type { AssistantBlockLike } from './row-plan.ts';
+import type { ProseMark } from './styles.ts';
 import { ensureAssistantStyles, proseClassNames } from './styles.ts';
 
 // ---- 宿主 contract 的结构性镜像（source of truth: ui-chat slots.d.ts） ----
@@ -182,9 +188,9 @@ const subscribeSettings = (listener: () => void): (() => void) => settingsStore.
 const subscribeTranslate = (listener: () => void): (() => void) => chatTranslate.subscribe(listener);
 
 /**
- * 行的视口在场状态（150px 缓冲）：进入视口才放行翻译请求。
- * 不做一次性锁死——离开再回来会把值翻回 false→true，给 partial 行的
- * 「自然重试」提供触发点；done 行的 ensure 本就有同代短路，重复翻动零成本。
+ * 行的视口在场状态（150px 缓冲）：进入视口才放行首跑请求。落定后的行不再
+ * 有自动重走——滚出再回来只触发 ensure 的同代短路（pending/settled 都不发
+ * 第二个请求），失败的救活只由块上的点击发起。
  */
 function useSettledInView(ref: React.RefObject<HTMLElement | null>, armed: boolean): boolean {
   const noObserver = typeof IntersectionObserver === 'undefined';
@@ -286,14 +292,19 @@ const ReasoningRow = memo(function ReasoningRow({
   );
 });
 
-// ---- 正文块：原文/译文一个壳里切换 ----
+// ---- 正文块：译文/原文切换与失败重试共用一个壳 ----
 
 interface ProseBlockProps {
   text: string;
-  /** null = 暂无可用译文（未落定或失败），显示原文、无标记。 */
+  /** 非 null = 该块有译好的中文（成功落定）。 */
   translated: string | null;
+  /** 非 null = 试过而败：实线红（transport）或虚线红（content），整块可点补跑。 */
+  fail: 'transport' | 'content' | null;
+  /** 整行在途、这块尚无结果：灰脉动、不可点。 */
+  inflight: boolean;
   showOriginal: boolean;
   onToggle: () => void;
+  onRetry: () => void;
   streaming: boolean;
   labels: MarkdownLabels;
   mentions: MarkdownFileMentions | undefined;
@@ -301,52 +312,81 @@ interface ProseBlockProps {
 }
 
 /**
- * 切换判定：落在块内交互元素（链接、代码块复制钮等）上的点击归那个元素，
- * 不连带切块；拖选译文松手产生的 click 同样忽略。
+ * 点击判定：落在块内交互元素（链接、代码块复制钮等）上的点击归那个元素，
+ * 不连带切块/重试；拖选译文松手产生的 click 同样忽略。
  */
-function blockClick(event: React.MouseEvent<HTMLDivElement>, onToggle: () => void): void {
+function blockClick(event: React.MouseEvent<HTMLDivElement>, action: () => void): void {
   const guardEvent = {
     target: event.target as { closest?(selector: string): unknown } | null,
     currentTarget: event.currentTarget,
   };
-  if (isBareBlockClick(guardEvent, typeof window === 'undefined' ? undefined : window)) onToggle();
+  if (isBareBlockClick(guardEvent, typeof window === 'undefined' ? undefined : window)) action();
 }
 
 function ProseBlock({
   text,
   translated,
+  fail,
+  inflight,
   showOriginal,
   onToggle,
+  onRetry,
   streaming,
   labels,
   mentions,
   pathImages,
 }: ProseBlockProps): ReactElement {
-  const processed = translated !== null;
-  const showTranslation = processed && !showOriginal;
-  const source = showTranslation ? (translated as string) : text;
+  const mark: ProseMark =
+    translated !== null
+      ? showOriginal
+        ? 'original-view'
+        : 'translated'
+      : fail !== null
+        ? fail === 'content'
+          ? 'fail-content'
+          : 'fail-transport'
+        : inflight
+          ? 'inflight'
+          : null;
+  const clickable = mark === 'translated' || mark === 'original-view' || fail !== null;
+  const action = translated !== null ? onToggle : onRetry;
+  const source = mark === 'translated' ? (translated as string) : text;
+  const copy = rowCopy();
   return React.createElement(
     'div',
     {
-      // 色相+粗细随显示态：蓝粗线=译文，灰细线=有译文但读原文（仍可点切回），无线=没译。
-      className: proseClassNames(processed, showOriginal),
-      'data-translated': showTranslation ? 'true' : void 0,
+      // 色相+线型+粗细随显示态：蓝=译文，灰细=读原文备着译文，红实=传输失败，
+      // 红虚=内容拒收，灰脉动=在途，无线=没送过模型。
+      className: proseClassNames(mark),
+      'data-translated': mark === 'translated' ? 'true' : void 0,
       // 容器内含链接等交互内容，不套 role=button（非法嵌套）；可聚焦 + 键盘
-      // Enter/Space 即切换，满足官方「键盘可达」门。
-      tabIndex: processed ? 0 : void 0,
-      onClick: processed
-        ? (event: React.MouseEvent<HTMLDivElement>) => blockClick(event, onToggle)
-        : void 0,
-      onKeyDown: processed
+      // Enter/Space 即切换/重试，满足官方「键盘可达」门。
+      tabIndex: clickable ? 0 : void 0,
+      onClick: clickable ? (event: React.MouseEvent<HTMLDivElement>) => blockClick(event, action) : void 0,
+      onKeyDown: clickable
         ? (event: React.KeyboardEvent<HTMLDivElement>) => {
             if (event.target !== event.currentTarget) return;
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
-              onToggle();
+              action();
             }
           }
         : void 0,
     },
+    fail !== null &&
+      React.createElement(Tooltip, {
+        label: () => copy.retryTip,
+        side: 'right',
+        portal: true,
+        // Tooltip 把交互注到手里的锚点元素上；锚点只在悬停/聚焦时露出。
+        // 断言的是「Tooltip 注入 AnchorProps 之后」的形状——运行时由它自己装配。
+        children: React.createElement(
+          'span',
+          { className: 'dsh-ct-retry', 'aria-hidden': true },
+          React.createElement(IconRefreshOutlineRegular, { size: 10 })
+        ) as Parameters<typeof Tooltip>[0]['children'],
+      }),
+    fail !== null && React.createElement('span', { className: 'dsh-ct-visually-hidden' }, copy.retryAria),
     React.createElement(MarkdownText, {
       text: source,
       streaming,
@@ -424,6 +464,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
         groupPart,
         canTranslate,
         outcomes: rowState?.outcomes,
+        rowStatus: rowState?.status,
       }),
     [blocks, streaming, interrupted, groupPart, canTranslate, rowState]
   );
@@ -448,6 +489,12 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     });
   }, []);
 
+  // 手动补跑：点任一红线块 = 整行重发（无限次、不设额度）；在途再点是空
+  // 操作——store 的 pending 短路让它是安全的，灰脉动本身就是「已在跑」的答复。
+  const retryRow = useCallback(() => {
+    chatTranslate.ensure(rowKey, plan.texts, true);
+  }, [rowKey, plan]);
+
   // 早退在所有 hook 之后：行形态在 null 与可见之间切换时 hook 序列不变。
   if (displayed.entries === null) return null;
 
@@ -461,8 +508,11 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
             key: entry.key,
             text: entry.text,
             translated: entry.translated,
+            fail: entry.fail,
+            inflight: entry.inflight,
             showOriginal: originalKeys.has(entry.key),
             onToggle: () => toggleBlock(entry.key),
+            onRetry: retryRow,
             streaming,
             labels,
             mentions,

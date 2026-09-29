@@ -169,7 +169,7 @@ await test('总开关关闭时原样返回且不发请求', async () => {
   assert.equal(calls, 0);
   assert.equal(results[0].translated, '一段正文');
   assert.equal(results[0].ok, false);
-  assert.equal(results[0].channel, 'none');
+  assert.equal(results[0].reason, 'transport');
 });
 
 await test('AI 未配置时不发请求、保留原文', async () => {
@@ -194,7 +194,7 @@ await test('正文只有 openai 一条通道：别的适配器不参与', async 
   useFakeAdapter(dispatcher, async (text) => 'ai:' + text);
   const results = await dispatcher.translateReplyBlocks(['Hello world']);
   assert.equal(otherCalls, 0);
-  assert.equal(results[0].channel, 'openai');
+  assert.equal(results[0].cached, false, '新鲜译出的块不走缓存标记');
   assert.equal(results[0].translated, 'ai:Hello world');
 });
 
@@ -275,7 +275,6 @@ await test('正文译文进唯一的缓存池，命中后不再请求', async ()
   const second = await dispatcher.translateReplyBlocks(['A stable paragraph']);
   assert.equal(calls, 1, '第二次必须命中缓存');
   assert.equal(second[0].cached, true);
-  assert.equal(second[0].channel, 'cache');
   assert.equal(second[0].translated, '译:A stable paragraph');
 });
 
