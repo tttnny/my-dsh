@@ -125,7 +125,7 @@ await testAsync('whitespace-only blocks never reach the channel', async () => {
 
 console.log('\n=== Suite B: failure-reason ledger (retries are user-initiated) ===');
 
-await testAsync('a transport failure reports reason transport', async () => {
+await testAsync('a transport failure reports reason transport with the error as detail', async () => {
   const { dispatcher, source } = await setupDispatcher({
     translate: () => {
       throw new Error('ECONNREFUSED');
@@ -135,9 +135,10 @@ await testAsync('a transport failure reports reason transport', async () => {
   const results = await dispatcher.translateReplyBlocks(['Look at `alpha` before shipping.']);
   assert.equal(results[0].ok, false);
   assert.equal(results[0].reason, 'transport');
+  assert.match(results[0].detail, /ECONNREFUSED/, '悬停细节带出通道报错原文');
 });
 
-await testAsync('a reply that breaks the markdown shape reports reason content', async () => {
+await testAsync('a reply that breaks the markdown shape reports reason content with the mismatch as detail', async () => {
   const { dispatcher, source } = await setupDispatcher({
     // 通道活着：HTTP 正常返回，只是这个弱模型把单行拆成了两行——
     // 逐行形状核对当场拒收（反引号增减不拦，行数不）。
@@ -147,12 +148,13 @@ await testAsync('a reply that breaks the markdown shape reports reason content',
   const results = await dispatcher.translateReplyBlocks(['Look at `alpha` and `beta` before shipping.']);
   assert.equal(results[0].ok, false);
   assert.equal(results[0].reason, 'content');
+  assert.match(results[0].detail, /line count changed \(1 -> 2\)/, '悬停细节直说哪条判据没过');
 });
 
 await testAsync('multi-piece block: succeeded pieces never poison the content verdict', async () => {
   // 超长块切成两片、落进两批：前一片（纯中文）正常译出，后一片被模型拆行。
-  // 块级 reason 只能评判缺失的片段——成功片段本就不记账，把它们当 transport
-  // 判据会把红虚线误报成红实线（审查复现的真 bug）。
+  // 块级败因只能评判缺失的片段——成功片段本就不记账，把它们当 transport
+  // 判据会把形状拒收误报成传输伤（审查复现的真 bug）。
   const { dispatcher, source } = await setupDispatcher({
     translate: async (t) => {
       if (t.includes('`')) return '这一批被拆成\n两行的译文';

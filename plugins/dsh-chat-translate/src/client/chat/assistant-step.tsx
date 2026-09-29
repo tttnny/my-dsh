@@ -8,9 +8,8 @@
  *    渲染器负责，本文件不产生任何自拼 markup。
  * 2. 「已翻译/没译成」是渲染状态：落定、开关开启、进入视口后逐行首跑；成功
  *    的块（包括模型认为原样最好的块）挂译文、左缘蓝线、点击在译文与原文间
- *    切换；失败的块保持原文、左缘挂红线（实线=传输失败、虚线=形状拒收），
- *    整块可点=手动整行补跑，无限次、无自动重试；已登记在途而尚无结果的块
- *    显灰脉动。
+ *    切换；失败的块保持原文、左缘挂红实线（悬停报出败因），整块可点=手动
+ *    整行补跑，无限次、无自动重试；已登记在途而尚无结果的块显灰脉动。
  *
  * 除正文外的行内容与宿主逐分支等价：reasoning 行走折叠（含 Turn-process
  * 隐藏与 beforematch 揭示）、连续 image 组交回 owner 的 renderMessageImages、
@@ -40,7 +39,7 @@ import { settingsStore } from '../settings/store.ts';
 import { planAssistantRow } from './row-plan.ts';
 import { isBareBlockClick } from './click-guard.ts';
 import { rowCopy } from '../locales.ts';
-import type { AssistantBlockLike } from './row-plan.ts';
+import type { AssistantBlockLike, ProseFailure } from './row-plan.ts';
 import type { ProseMark } from './styles.ts';
 import { ensureAssistantStyles, proseAction, proseClassNames } from './styles.ts';
 import { chatTranslate, sameTexts } from './translate-store.ts';
@@ -300,6 +299,8 @@ interface ProseBlockProps {
   translated: string | null;
   /** 左缘线状态，单点算自 row-plan；可点性、重试指引、脉动全由它决定。 */
   mark: ProseMark;
+  /** 仅 mark='failed' 时非 null：悬停文案的败因载荷（标签 + 技术细节）。 */
+  fail: ProseFailure | null;
   onToggle: () => void;
   onRetry: () => void;
   streaming: boolean;
@@ -324,6 +325,7 @@ function ProseBlock({
   text,
   translated,
   mark,
+  fail,
   onToggle,
   onRetry,
   streaming,
@@ -374,9 +376,10 @@ function ProseBlock({
   );
   if (!retrying) return block;
   // Tooltip 锚在失败块本身：正文任意处悬停、键盘聚焦都即刻出泡——锚在那条
-  // 10px 装饰图标上则两个通道都够不着（图标 aria-hidden、从不接收焦点）。
+  // 10px 装饰图标上则两个通道都够不着（图标 aria-hidden、从不接收焦点）。泡里
+  // 报的是败因（本地化标签 — 服务端技术细节），不再是「怎么重试」的指引。
   return React.createElement(Tooltip, {
-    label: () => copy.retryTip,
+    label: () => copy.failTitle(fail?.reason ?? 'transport', fail?.detail),
     side: 'right',
     portal: true,
     children: block as Parameters<typeof Tooltip>[0]['children'],
@@ -501,6 +504,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
             text: entry.text,
             translated: entry.translated,
             mark: entry.mark,
+            fail: entry.fail,
             onToggle: () => toggleBlock(entry.key),
             onRetry: retryRow,
             streaming,

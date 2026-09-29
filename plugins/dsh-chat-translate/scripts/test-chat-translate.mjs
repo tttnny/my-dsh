@@ -1,14 +1,15 @@
 // 客户端重写的核心回归（无浏览器）：
 // 1. 行渲染计划与宿主 AssistantMarkdown 的分支等价（空行守卫、groupPart 过滤、
 //    tool-call 跳过、image 连组、未知块、停止标记、React 键唯一）；
-// 2. 翻译呈现判断：成功挂载（「原样回」同样挂载），失败带败因（红实线/红虚线
-//    的判据），在途只给已登记行的未落定块（灰脉动），空白块不送译、不占位、
-//    永不挂线；reasoning 分组不送译，texts 与 outcomes 同域对齐；
+// 2. 翻译呈现判断：成功挂载（「原样回」同样挂载），失败一律同一条红实线、
+//    败因载荷（fail: reason+detail）随悬停文案，在途只给已登记行的未落定块
+//    （灰脉动），空白块不送译、不占位、永不挂线；reasoning 分组不送译，
+//    texts 与 outcomes 同域对齐；
 // 3. 翻译池：同键同文本幂等、文本换代重请求、逐批落定逐批可见、落定后无任何
 //    自动重走、manual ensure 整行补跑且成功块保持挂线、LRU 行数上限；
 // 4. 呈现策略：ui-chat 的 transcriptView 值（含 legacy 值）映射到策略表；
-// 5. 左缘线标：蓝=译文、灰细=读原文备译文、红实/红虚=两种败因、灰脉动=在途、
-//    无线=没送过模型。
+// 5. 左缘线标：蓝=译文、灰细=读原文备译文、红实=失败（一律一种）、
+//    灰脉动=在途、无线=没送过模型。
 import assert from 'node:assert/strict';
 
 let passed = 0;
@@ -123,17 +124,22 @@ await test('停止标记：interrupted 行尾追加，纯思考行在 response �
   assert.ok(onlyReasoning.entries.some((e) => e.type === 'stopped'));
 });
 
-await test('译文呈现：成功挂载并带标记；原样回同样挂载；失败按败因分线', () => {
+await test('译文呈现：成功挂载并带标记；原样回同样挂载；失败一律同一条线', () => {
   const blocks = [{ kind: 'text', text: '这是一段已经很自然的中文。' }, { kind: 'text', text: 'tail' }];
   const outcomes = [
     { translated: '这是一段已经很自然的中文。', ok: true }, // 原样回
-    { translated: '尾巴译文', ok: false, reason: 'content' }, // 失败
+    { translated: '尾巴译文', ok: false, reason: 'content', detail: 'line count changed (1 -> 2)' }, // 失败
   ];
   const plan = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled' });
   assert.equal(plan.entries[0].translated, '这是一段已经很自然的中文。');
   assert.equal(plan.entries[0].mark, 'translated', '原样回同样挂线');
   assert.equal(plan.entries[1].translated, null, '失败的块不得显示译文');
-  assert.equal(plan.entries[1].mark, 'fail-content', '败因直达计划层，决定虚线');
+  assert.equal(plan.entries[1].mark, 'failed', '两类败因共用同一条红实线标记');
+  assert.deepEqual(
+    plan.entries[1].fail,
+    { reason: 'content', detail: 'line count changed (1 -> 2)' },
+    'fail 载荷直达计划层，供 Tooltip 悬停报因'
+  );
   const viewing = planAssistantRow({
     blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled',
     originalKeys: new Set([0]),
@@ -192,7 +198,8 @@ await test('在途脉动只给「已登记、未落定」的块；行未登记�
     outcomes: [{ translated: '一', ok: true }, { translated: 'two', ok: false, reason: 'transport' }],
     rowStatus: 'settled',
   });
-  assert.equal(settled.entries[1].mark, 'fail-transport', '落定的失败块红实线，不再脉动');
+  assert.equal(settled.entries[1].mark, 'failed', '落定的失败块红实线，不再脉动');
+  assert.equal(settled.entries[1].fail.reason, 'transport', '传输伤只进悬停载荷，不再换线型');
 });
 
 await test('React 键唯一：groupPart 过滤 + interrupted 追加项不撞键', () => {
@@ -302,9 +309,9 @@ await test('文本换代：同键不同文本整行重新请求', async () => {
   assert.equal(store.getState('a1').outcomes[0].translated, '译:one changed');
 });
 
-await test('失败结果归一：!ok、空译文与缺 reason 各按败因落账', async () => {
+await test('失败结果归一：!ok、空译文与缺 reason 各按败因落账；服务端 detail 原样带过', async () => {
   const store = createTranslateStore(async (texts) => [
-    { original: texts[0], translated: '坏的', ok: false, cached: false, reason: 'content' },
+    { original: texts[0], translated: '坏的', ok: false, cached: false, reason: 'content', detail: 'line count changed (1 -> 2)' },
     { original: texts[1], translated: '   ', ok: true, cached: false },
     { original: texts[2], translated: 'x', ok: false, cached: false },
   ]);
@@ -312,7 +319,7 @@ await test('失败结果归一：!ok、空译文与缺 reason 各按败因落账
   await flush();
   const state = store.getState('a1');
   assert.deepEqual(state.outcomes, [
-    { translated: 'bad', ok: false, reason: 'content' },
+    { translated: 'bad', ok: false, reason: 'content', detail: 'line count changed (1 -> 2)' },
     { translated: 'blank', ok: false, reason: 'transport' },
     { translated: 'no-reason', ok: false, reason: 'transport' },
   ]);
@@ -516,11 +523,11 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
 });
 
 // ---------------------------------------------------------------
-// 5. 左缘线标：蓝=读译文，灰细=读原文备译文，红实=传输失败，红虚=形状拒收，
-//    灰脉动=在途，无线=没送过模型（后两种失败态整块可点=手动补跑）
+// 5. 左缘线标：蓝=读译文，灰细=读原文备译文，红实=失败（悬停报因），
+//    灰脉动=在途，无线=没送过模型（失败态整块可点=手动补跑）
 // ---------------------------------------------------------------
 
-await test('标记名单点：线型随状态，可点态含两种红线，在途不可点', () => {
+await test('标记名单点：线型随状态，失败一条红线，在途不可点', () => {
   assert.equal(proseClassNames(null), undefined, '没送过模型的块没有任何标记类');
   const translated = proseClassNames('translated');
   assert.match(translated, /dsh-ct-prose-clickable dsh-ct-prose-translated/);
@@ -528,13 +535,10 @@ await test('标记名单点：线型随状态，可点态含两种红线，在�
   const showingOriginal = proseClassNames('original-view');
   assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '原文态不挂蓝线');
   assert.match(showingOriginal, /dsh-ct-prose-clickable dsh-ct-prose-original/, '灰细线仍可点切回');
-  const transport = proseClassNames('fail-transport');
-  assert.match(transport, /dsh-ct-prose-clickable/, '红线整块可点=重试');
-  assert.match(transport, /dsh-ct-prose-failed-solid/, '传输失败挂实线红');
-  assert.ok(!transport.includes('failed-dashed'));
-  const content = proseClassNames('fail-content');
-  assert.match(content, /dsh-ct-prose-failed-dashed/, '形状拒收挂虚线红');
-  assert.match(content, /dsh-ct-prose-retryable/, '两种红线都带 ↻ 悬停锚点');
+  const failed = proseClassNames('failed');
+  assert.match(failed, /dsh-ct-prose-clickable/, '红线整块可点=重试');
+  assert.match(failed, /dsh-ct-prose-failed/, '失败挂实线红');
+  assert.match(failed, /dsh-ct-prose-retryable/, '失败块带 ↻ 悬停锚点');
   const inflight = proseClassNames('inflight');
   assert.match(inflight, /dsh-ct-prose-inflight/);
   assert.ok(!inflight.includes('clickable'), '在途脉动态不可点（点了也是空操作）');
@@ -554,14 +558,10 @@ await test('线的色相与粗细：蓝 1px 主色、灰 0.5px 中性、红走 e
   );
   assert.match(
     ASSISTANT_CSS,
-    /\.dsh-ct-prose-failed-solid\{border-left:1px solid color-mix\(in srgb, var\(--dsw-alias-state-error-primary\) 65%, transparent\)\}/,
-    '传输失败是 1px error 色实线'
+    /\.dsh-ct-prose-failed\{border-left:1px solid color-mix\(in srgb, var\(--dsw-alias-state-error-primary\) 65%, transparent\)\}/,
+    '失败是 1px error 色实线——不分败因，一律实线'
   );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-prose-failed-dashed\{border-left:1px dashed color-mix\(in srgb, var\(--dsw-alias-state-error-primary\) 65%, transparent\)\}/,
-    '形状拒收是 1px error 色虚线（0.5px 虚线会被抗锯齿糊平，必须 1px 起）'
-  );
+  assert.ok(!ASSISTANT_CSS.includes('dashed'), '失败只有一条实线，样式表里没有虚线');
 });
 
 await test('在途灰脉动：动画声明存在且尊重 prefers-reduced-motion', () => {
@@ -577,8 +577,7 @@ await test('在途灰脉动：动画声明存在且尊重 prefers-reduced-motion
 await test('动作单点：mark 唯一决定 toggle / retry / 不可点', () => {
   assert.equal(proseAction('translated'), 'toggle');
   assert.equal(proseAction('original-view'), 'toggle', '读原文态仍可点切回');
-  assert.equal(proseAction('fail-transport'), 'retry', '红实线整块可点=补跑');
-  assert.equal(proseAction('fail-content'), 'retry', '红虚线同样可点');
+  assert.equal(proseAction('failed'), 'retry', '红线整块可点=补跑');
   assert.equal(proseAction('inflight'), null, '在途脉动不可点');
   assert.equal(proseAction(null), null);
 });

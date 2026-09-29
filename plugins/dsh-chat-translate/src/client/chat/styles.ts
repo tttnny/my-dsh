@@ -3,11 +3,10 @@
  * 的等价规则（字号、行距、gap、粘性折叠头、running 微光、summary 遮罩等），
  * 加上本插件唯一新增的视觉词汇——正文块左缘的线：
  * 蓝粗线（1px 主色）=正在读译文；灰细线（0.5px 中性）=有译文但正在读原文
- * （再点即切回）；红实线（1px error 色）=传输失败，点它整行补跑；红虚线
- * （1px error 色）=形状拒收（模型改坏了 markdown 结构：行数、缩进、块记号、
- * 表格竖线、链接数任一不齐），同样可点补跑——补跑会重掷打包标记并重新问一次模型；
+ * （再点即切回）；红实线（1px error 色）=翻译失败，悬停报出败因，点它整行
+ * 补跑——补跑会重掷打包标记并重新问一次模型，形状拒收未必再犯；
  * 灰脉动=整行在途、这块尚无结果；无线=没送过模型（含空白块）或开关关闭。
- * 虚线必须 1px 起步：0.5px 虚线会被抗锯齿糊成实线，区分走色相+线型+粗细。
+ * 失败不分线型：传输伤与形状拒收同一条实线，区别只在悬停文案里说清。
  *
  * 全部颜色与尺寸走 `--dsw-alias-*` / `--dsh-*` 主题别名，中性平边按官方规则
  * 画 0.5px hairline；动画声明尊重 `prefers-reduced-motion`。样式随 bundle 注入
@@ -26,16 +25,15 @@ export const ASSISTANT_CSS = [
   '.dsh-ct-body .md-table-wide>table{z-index:1;position:relative}',
   // ---- 已停止标记（宿主 .hWmORq_stopped 等价） ----
   '.dsh-ct-stopped{border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);align-self:flex-start;padding:0 6px;font-size:11px;line-height:18px}',
-  // ---- 「已翻译」交互与标记：可点态常驻（含左缘内缩）；区分走色相+粗细
-  //      （0.5px 虚线会被抗锯齿糊成实线）——蓝粗线=读译文，灰细线=读原文备着译文 ----
+  // ---- 「已翻译」交互与标记：可点态常驻（含左缘内缩）——蓝粗线=读译文，
+  //      灰细线=读原文备着译文；区分走色相+粗细 ----
   '.dsh-ct-prose-clickable{padding-left:12px;cursor:pointer}',
   '.dsh-ct-prose-clickable:focus-visible{outline:1.5px solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px;border-radius:var(--dsw-radius-sm)}',
   '.dsh-ct-prose-translated{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 65%, transparent)}',
   '.dsh-ct-prose-original{border-left:0.5px solid var(--dsw-alias-border-l2)}',
-  // ---- 失败标记：红实线=传输失败（重试大概率有意义），红虚线=形状拒收
-  //      （重新问一次模型，未必再犯）；两者都可点，点=整行手动补跑 ----
-  '.dsh-ct-prose-failed-solid{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
-  '.dsh-ct-prose-failed-dashed{border-left:1px dashed color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
+  // ---- 失败标记：一律 1px error 色红实线（不分传输伤与形状拒收，区别进
+  //      悬停文案）；可点，点=整行手动补跑 ----
+  '.dsh-ct-prose-failed{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
   // ---- 在途：灰 1px 线脉动（与成功态同 padding，转蓝不跳字）；
   //      prefers-reduced-motion 降级为静态灰线 ----
   '.dsh-ct-prose-inflight{padding-left:12px;border-left:1px solid var(--dsw-alias-border-l2);animation:1.4s ease-in-out infinite alternate dsh-ct-prose-inflight-pulse}',
@@ -70,15 +68,10 @@ export const ASSISTANT_CSS = [
 
 /**
  * 正文块左缘线的状态词汇：单点在 row-plan 算出（`planAssistantRow` 直接产出
- * mark），渲染层只消费、样式层只翻成类名——「实线/虚线/脉动」不再多处重算。
+ * mark），渲染层只消费、样式层只翻成类名——「线型与脉动」不再多处重算。
+ * 失败只有 `failed` 一种：同一条红实线，败因走悬停文案。
  */
-export type ProseMark =
-  | 'translated'
-  | 'original-view'
-  | 'fail-transport'
-  | 'fail-content'
-  | 'inflight'
-  | null;
+export type ProseMark = 'translated' | 'original-view' | 'failed' | 'inflight' | null;
 
 /** mark → 点击动作单点：切换、重试、不可点三选一（渲染层照此接线）。 */
 export type ProseAction = 'toggle' | 'retry' | null;
@@ -88,8 +81,7 @@ export function proseAction(mark: ProseMark): ProseAction {
     case 'translated':
     case 'original-view':
       return 'toggle';
-    case 'fail-transport':
-    case 'fail-content':
+    case 'failed':
       return 'retry';
     default:
       return null;
@@ -103,10 +95,8 @@ export function proseClassNames(mark: ProseMark): string | undefined {
       return 'dsh-ct-prose-clickable dsh-ct-prose-translated';
     case 'original-view':
       return 'dsh-ct-prose-clickable dsh-ct-prose-original';
-    case 'fail-transport':
-      return 'dsh-ct-prose-clickable dsh-ct-prose-failed-solid dsh-ct-prose-retryable';
-    case 'fail-content':
-      return 'dsh-ct-prose-clickable dsh-ct-prose-failed-dashed dsh-ct-prose-retryable';
+    case 'failed':
+      return 'dsh-ct-prose-clickable dsh-ct-prose-failed dsh-ct-prose-retryable';
     case 'inflight':
       return 'dsh-ct-prose-inflight';
     default:

@@ -30,8 +30,8 @@ const CHANNEL_ID = 'openai';
 /**
  * 形状拒收：通道正常返回了响应，只是这份内容没通过结构核对——逐行签名
  * （行数、缩进、块记号、表格竖线、链接个数）与原文不齐，或译文里还留着
- * `⟪…⟫` 打包标记。这类败因记 `content`（红虚线），其余一律
- * `transport`（红实线）。每行只跑首跑，失败等用户点击救活。
+ * `⟪…⟫` 打包标记。这类败因记 `content`，其余一律 `transport`；两类失败画
+ * 同一条红实线，分类只喂悬停文案的标签。每行只跑首跑，失败等用户点击救活。
  */
 class ContentRejectedError extends Error {}
 
@@ -56,25 +56,28 @@ function replyPieceKey(piece: { block: number; index: number }): string {
 /** 块的一个拼装部件：逐字保留段（代码围栏、纯空白段、片段头尾另存）或片段引用。 */
 type BlockPart = { verbatim: string } | { piece: number };
 
-/**
- * 片段败因账本：pieceKey → 败因。transport 是吸收态——通道伤过一次就按
- * transport 报，content 不再覆盖；从未记账的缺失同样按 transport 兜底
- * （说不清败因时「重试可能有用」是更诚实的默认）。
- */
-type FailureLedger = Map<string, ReplyFailReason>;
-
-/** 败因分类：只有对返回内容本身的拒收算 content，其余都说明通道受过伤。 */
-function classifyReplyError(err: unknown): ReplyFailReason {
-  return err instanceof ContentRejectedError ? 'content' : 'transport';
+/** 一次片段失败的完整记账：分类 + 可直接进悬停文案的技术细节。 */
+interface ReplyFailure {
+  reason: ReplyFailReason;
+  detail: string;
 }
 
-function recordLedgerFailure(
-  ledger: FailureLedger,
-  keys: readonly string[],
-  reason: ReplyFailReason
-): void {
+/**
+ * 片段败因账本：pieceKey → 败因。transport 是吸收态——通道伤过一次就按
+ * transport 报（含其细节），content 不再覆盖；从未记账的缺失同样按
+ * transport 兜底（说不清败因时「重试可能有用」是更诚实的默认）。
+ */
+type FailureLedger = Map<string, ReplyFailure>;
+
+/** 败因分类：只有对返回内容本身的拒收算 content，其余都说明通道受过伤。 */
+function classifyReplyFailure(err: unknown): ReplyFailure {
+  if (err instanceof ContentRejectedError) return { reason: 'content', detail: err.message };
+  return { reason: 'transport', detail: describeError(err) };
+}
+
+function recordLedgerFailure(ledger: FailureLedger, keys: readonly string[], failure: ReplyFailure): void {
   for (const key of keys) {
-    if (reason === 'transport' || !ledger.has(key)) ledger.set(key, reason);
+    if (failure.reason === 'transport' || !ledger.has(key)) ledger.set(key, failure);
   }
 }
 
@@ -83,12 +86,17 @@ function recordLedgerFailure(
  * 当 transport 判据会把「前段批成功、后段历次形状拒收」的多片段块误报成传输
  * 失败（超长块的切片几乎必然落进不同批，这是常见路径而非防御分支）。缺失片段
  * 里只要不是清一色的 content，整块按 transport 报；清一色 content 才记 content。
+ * 细节取第一个说得出话的缺失片段。
  */
-function blockFailReason(ledger: FailureLedger, block: number, missing: readonly number[]): ReplyFailReason {
+function blockFailure(ledger: FailureLedger, block: number, missing: readonly number[]): ReplyFailure {
+  let content: ReplyFailure | undefined;
   for (const index of missing) {
-    if (ledger.get(replyPieceKey({ block, index })) !== 'content') return 'transport';
+    const failure = ledger.get(replyPieceKey({ block, index }));
+    if (failure === undefined) return { reason: 'transport', detail: 'no translation came back' };
+    if (failure.reason === 'transport') return failure;
+    content ??= failure;
   }
-  return 'content';
+  return content ?? { reason: 'transport', detail: 'no translation came back' };
 }
 
 /** 把一段文本拆成 {head, core, tail}；core 为全空白时返回 null（整段逐字保留）。 */
@@ -130,8 +138,9 @@ export class TranslationDispatcher {
    * 核对保证，不向模型索要任何占位符。
    *
    * 调用方传进来的每个块要么整块译出、要么整块保持原文：任一片段缺失都让该块
-   * 作废，避免半中半英的段落；失败块带 `reason` 分类（见 {@link blockFailReason}），
-   * 客户端据此画红实线或红虚线。每行只跑首跑一次，失败的救活由用户的点击发起。
+   * 作废，避免半中半英的段落；失败块带 `reason` 分类与 `detail` 一句技术细节
+   * （见 {@link blockFailure}），客户端一律画红实线、悬停报出败因。每行只跑
+   * 首跑一次，失败的救活由用户的点击发起。
    *
    * 客户端按与宿主同源的 4096 估算 token 切批，所以一个 markdown 块可能跨多次
    * 调用；每次调用都独立决定成败，不会出现「前一段已挂译文、后一段失败」的
@@ -222,7 +231,9 @@ export class TranslationDispatcher {
         parts.push(value);
       }
       if (missing.length > 0) {
-        results[block].reason = blockFailReason(ledger, block, missing);
+        const failure = blockFailure(ledger, block, missing);
+        results[block].reason = failure.reason;
+        results[block].detail = failure.detail;
         continue;
       }
       // 全围栏块（零片段）也走到这里：拼回即原文，按「已是最终形态」记成功
@@ -245,8 +256,8 @@ export class TranslationDispatcher {
    * 一整批一次请求；失败则该批逐片段单发重试一次，仍失败的片段直接放弃
    * （保留原文）——救活它的是用户的点击，不是后台流量。失败的片段不进缓存。
    *
-   * 每次失败都按败因记进片段的分类账本（{@link FailureLedger}）：批请求的
-   * 失败摊到批内每个片段，单发重试的失败只记该片段；块级 reason 由缺失片段
+   * 每次失败都按败因记进片段的账本（{@link FailureLedger}）：批请求的
+   * 失败摊到批内每个片段，单发重试的失败只记该片段；块级败因由缺失片段
    * 的账本合成（任一尝试是传输伤 → transport；全部是形状拒收 → content）。
    */
   private async translateReplyBatch(
@@ -259,7 +270,7 @@ export class TranslationDispatcher {
     try {
       return await this.requestReplyBatch(adapter, batch, config);
     } catch (err) {
-      recordLedgerFailure(ledger, pieceKeys, classifyReplyError(err));
+      recordLedgerFailure(ledger, pieceKeys, classifyReplyFailure(err));
       console.warn(
         `[dsh-chat-translate] reply batch of ${batch.length} failed, retrying per block: ${describeError(err)}`
       );
@@ -272,7 +283,7 @@ export class TranslationDispatcher {
           out.set(key, value);
         }
       } catch (err) {
-        recordLedgerFailure(ledger, [replyPieceKey(piece)], classifyReplyError(err));
+        recordLedgerFailure(ledger, [replyPieceKey(piece)], classifyReplyFailure(err));
         console.warn(
           `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
         );
@@ -312,10 +323,17 @@ export class TranslationDispatcher {
         );
         const parts = splitBatchTranslation(answer, format, batch.length);
         if (parts === null) {
-          throw new ContentRejectedError('reply block markers did not survive the translation');
+          throw new ContentRejectedError('batch markers did not survive the answer');
         }
         answers = parts;
       }
+    } catch (err) {
+      // 超时打断的原始报错（AbortError 一类）说不出「超时」二字，就地换成
+      // 能进悬停文案的说法；形状拒收与通道本身的重试语义不受影响。
+      if (abortCtrl.signal.aborted && !(err instanceof ContentRejectedError)) {
+        throw new Error(`channel timed out after ${timeout}ms`);
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }
@@ -324,16 +342,14 @@ export class TranslationDispatcher {
     batch.forEach((piece, index) => {
       const answer = (answers[index] ?? '').trim();
       if (!answer) {
-        throw new Error(`reply block ${piece.block} #${piece.index} came back empty`);
+        throw new Error('translation came back empty');
       }
       if (hasBatchResidue(answer)) {
-        throw new ContentRejectedError('reply translation left a block marker behind');
+        throw new ContentRejectedError('the translation kept a batch marker (⟪…⟫) behind');
       }
       const mismatch = shapeMismatch(piece.text, answer);
       if (mismatch !== null) {
-        throw new ContentRejectedError(
-          `reply piece ${piece.block} #${piece.index} broke the markdown shape: ${mismatch}`
-        );
+        throw new ContentRejectedError(mismatch);
       }
       out.set(replyPieceKey(piece), piece.head + restoreLinkTargets(piece.text, answer) + piece.tail);
     });

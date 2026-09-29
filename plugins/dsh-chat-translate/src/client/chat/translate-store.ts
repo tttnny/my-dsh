@@ -8,8 +8,10 @@ export interface BlockOutcome {
   translated: string;
   /** 该块是否翻译成功。 */
   ok: boolean;
-  /** 仅 ok=false 时出现；线型映射单点在 row-plan → styles 的 ProseMark。 */
+  /** 仅 ok=false 时出现；失败一律同一条红实线，reason 只选悬停文案的标签。 */
   reason?: ReplyFailReason;
+  /** 仅 ok=false 时可能出现：服务端给出的技术细节，拼在标签后进悬停文案。 */
+  detail?: string;
 }
 
 /**
@@ -155,10 +157,12 @@ export class ChatTranslateStore {
         if (result !== undefined && result.ok && result.translated && result.translated.trim()) {
           outcomes[offset + i] = { translated: result.translated, ok: true };
         } else {
+          const detail = typeof result?.detail === 'string' && result.detail !== '' ? result.detail : undefined;
           outcomes[offset + i] = {
             translated: batch[i] ?? texts[offset + i] ?? '',
             ok: false,
             reason: result?.reason ?? 'transport',
+            ...(detail === undefined ? {} : { detail }),
           };
         }
       }
