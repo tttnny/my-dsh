@@ -3,10 +3,10 @@
  * 的等价规则（字号、行距、gap、粘性折叠头、running 微光、summary 遮罩等），
  * 加上本插件唯一新增的视觉词汇——正文块左缘的线：
  * 蓝粗线（1px 主色）=正在读译文；灰细线（0.5px 中性）=有译文但正在读原文
- * （再点即切回）；红实线（1px error 色）=翻译失败，悬停报出败因，点它整行
- * 补跑——补跑会重掷打包标记并重新问一次模型，形状拒收未必再犯；
- * 灰脉动=整行在途、这块尚无结果；无线=没送过模型（含空白块）或开关关闭。
- * 失败不分线型：传输伤与形状拒收同一条实线，区别只在悬停文案里说清。
+ * （再点即切回）；红实线（1px error 色）=翻译失败（通道伤：超时、断流、空
+ * 返回），悬停报出细节，点它整行补跑；灰脉动=整行在途、这块尚无结果；
+ * 无线=没送过模型（含空白块）或开关关闭。
+ * 译文的结构漂移不再挂红线——由宿主按原文修回、重掷或照收，红线只剩通道伤一种。
  *
  * 全部颜色与尺寸走 `--dsw-alias-*` / `--dsh-*` 主题别名，中性平边按官方规则
  * 画 0.5px hairline；动画声明尊重 `prefers-reduced-motion`。样式随 bundle 注入
@@ -31,8 +31,8 @@ export const ASSISTANT_CSS = [
   '.dsh-ct-prose-clickable:focus-visible{outline:1.5px solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px;border-radius:var(--dsw-radius-sm)}',
   '.dsh-ct-prose-translated{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 65%, transparent)}',
   '.dsh-ct-prose-original{border-left:0.5px solid var(--dsw-alias-border-l2)}',
-  // ---- 失败标记：一律 1px error 色红实线（不分传输伤与形状拒收，区别进
-  //      悬停文案）；可点，点=整行手动补跑 ----
+  // ---- 失败标记：1px error 色红实线（只剩通道伤一种，悬停报细节）；
+  //      可点，点=整行手动补跑 ----
   '.dsh-ct-prose-failed{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
   // ---- 在途：灰 1px 线脉动（与成功态同 padding，转蓝不跳字）；
   //      prefers-reduced-motion 降级为静态灰线 ----

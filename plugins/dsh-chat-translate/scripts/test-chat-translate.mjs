@@ -2,7 +2,7 @@
 // 1. 行渲染计划与宿主 AssistantMarkdown 的分支等价（空行守卫、groupPart 过滤、
 //    tool-call 跳过、image 连组、未知块、停止标记、React 键唯一）；
 // 2. 翻译呈现判断：成功挂载（「原样回」同样挂载），失败一律同一条红实线、
-//    败因载荷（fail: reason+detail）随悬停文案，在途只给已登记行的未落定块
+//    悬停载荷（fail: 一句通道细节），在途只给已登记行的未落定块
 //    （灰脉动），空白块不送译、不占位、永不挂线；reasoning 分组不送译，
 //    texts 与 outcomes 同域对齐；
 // 3. 翻译池：同键同文本幂等、文本换代重请求、逐批落定逐批可见、落定后无任何
@@ -128,17 +128,17 @@ await test('译文呈现：成功挂载并带标记；原样回同样挂载；�
   const blocks = [{ kind: 'text', text: '这是一段已经很自然的中文。' }, { kind: 'text', text: 'tail' }];
   const outcomes = [
     { translated: '这是一段已经很自然的中文。', ok: true }, // 原样回
-    { translated: '尾巴译文', ok: false, reason: 'content', detail: 'line count changed (1 -> 2)' }, // 失败
+    { translated: '尾巴译文', ok: false, detail: 'channel timed out after 600000ms' }, // 通道伤
   ];
   const plan = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled' });
   assert.equal(plan.entries[0].translated, '这是一段已经很自然的中文。');
   assert.equal(plan.entries[0].mark, 'translated', '原样回同样挂线');
   assert.equal(plan.entries[1].translated, null, '失败的块不得显示译文');
-  assert.equal(plan.entries[1].mark, 'failed', '两类败因共用同一条红实线标记');
-  assert.deepEqual(
+  assert.equal(plan.entries[1].mark, 'failed', '失败块挂同一条红实线标记');
+  assert.equal(
     plan.entries[1].fail,
-    { reason: 'content', detail: 'line count changed (1 -> 2)' },
-    'fail 载荷直达计划层，供 Tooltip 悬停报因'
+    'channel timed out after 600000ms',
+    'fail 一句技术细节直达计划层，供 Tooltip 悬停报因'
   );
   const viewing = planAssistantRow({
     blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled',
@@ -195,11 +195,11 @@ await test('在途脉动只给「已登记、未落定」的块；行未登记�
     streaming: false,
     interrupted: false,
     canTranslate: true,
-    outcomes: [{ translated: '一', ok: true }, { translated: 'two', ok: false, reason: 'transport' }],
+    outcomes: [{ translated: '一', ok: true }, { translated: 'two', ok: false, detail: 'channel timed out after 600000ms' }],
     rowStatus: 'settled',
   });
   assert.equal(settled.entries[1].mark, 'failed', '落定的失败块红实线，不再脉动');
-  assert.equal(settled.entries[1].fail.reason, 'transport', '传输伤只进悬停载荷，不再换线型');
+  assert.equal(settled.entries[1].fail, 'channel timed out after 600000ms', '细节只进悬停载荷，不碰线型');
 });
 
 await test('React 键唯一：groupPart 过滤 + interrupted 追加项不撞键', () => {
@@ -309,19 +309,19 @@ await test('文本换代：同键不同文本整行重新请求', async () => {
   assert.equal(store.getState('a1').outcomes[0].translated, '译:one changed');
 });
 
-await test('失败结果归一：!ok、空译文与缺 reason 各按败因落账；服务端 detail 原样带过', async () => {
+await test('失败结果归一：!ok 与空译文各按原文落账；服务端 detail 原样带过', async () => {
   const store = createTranslateStore(async (texts) => [
-    { original: texts[0], translated: '坏的', ok: false, cached: false, reason: 'content', detail: 'line count changed (1 -> 2)' },
+    { original: texts[0], translated: '坏的', ok: false, cached: false, detail: 'channel timed out after 600000ms' },
     { original: texts[1], translated: '   ', ok: true, cached: false },
     { original: texts[2], translated: 'x', ok: false, cached: false },
   ]);
-  store.ensure('a1', ['bad', 'blank', 'no-reason']);
+  store.ensure('a1', ['bad', 'blank', 'no-detail']);
   await flush();
   const state = store.getState('a1');
   assert.deepEqual(state.outcomes, [
-    { translated: 'bad', ok: false, reason: 'content', detail: 'line count changed (1 -> 2)' },
-    { translated: 'blank', ok: false, reason: 'transport' },
-    { translated: 'no-reason', ok: false, reason: 'transport' },
+    { translated: 'bad', ok: false, detail: 'channel timed out after 600000ms' },
+    { translated: 'blank', ok: false },
+    { translated: 'no-detail', ok: false },
   ]);
 });
 
@@ -350,7 +350,7 @@ await test('在途期间行换代：旧代结果不得覆盖新代 pending', asy
   assert.equal(state.outcomes[0].translated, '新代:one', '旧代结果不得回写');
 });
 
-await test('请求异常按失败处理：行落 settled、块按 transport 挂线', async () => {
+await test('请求异常按失败处理：行落 settled、块挂线但说不出细节', async () => {
   const store = createTranslateStore(async () => {
     throw new Error('boom');
   });
@@ -359,7 +359,7 @@ await test('请求异常按失败处理：行落 settled、块按 transport 挂�
   const state = store.getState('a1');
   assert.equal(state.status, 'settled', '落定即终态：没有自动补跑在等它');
   assert.equal(state.outcomes[0].ok, false);
-  assert.equal(state.outcomes[0].reason, 'transport');
+  assert.equal(state.outcomes[0].detail, undefined, '取数面抛错说不出细节');
 });
 
 await test('落定行 ensure 短路；manual 补跑整行重发且成功块不闪', async () => {
@@ -369,14 +369,14 @@ await test('落定行 ensure 短路；manual 补跑整行重发且成功块不�
     calls++;
     return texts.map((t, i) =>
       failSecond && i === 1
-        ? { original: t, translated: t, ok: false, cached: false, reason: 'content' }
+        ? { original: t, translated: t, ok: false, cached: false, detail: 'channel timed out' }
         : { original: t, translated: '译:' + t, ok: true, cached: false }
     );
   });
   store.ensure('a1', ['x', 'y']);
   await flush();
   assert.equal(store.getState('a1').status, 'settled');
-  assert.equal(store.getState('a1').outcomes[1].reason, 'content');
+  assert.equal(store.getState('a1').outcomes[1].detail, 'channel timed out');
 
   assert.equal(store.ensure('a1', ['x', 'y']), false, '自动 ensure 短路——滚动不再触发任何重走');
   assert.equal(calls, 1, '落定行没有被池再次打通道（首跑就那一次批请求）');
@@ -397,7 +397,7 @@ await test('手动补跑无限次：落定→补跑→再落定→再补跑，�
   let calls = 0;
   const store = createTranslateStore(async (texts) => {
     calls++;
-    return texts.map((t) => ({ original: t, translated: t, ok: false, cached: false, reason: 'content' }));
+    return texts.map((t) => ({ original: t, translated: t, ok: false, cached: false }));
   });
   store.ensure('a1', ['x']);
   await flush();
@@ -473,11 +473,11 @@ await test('批间隔离：一批失败只败这一批，其余批译文照常�
   assert.equal(state.status, 'settled');
   // 切批结果：[good1] / [big] / [bad, good2]（bad 与 good2 余量同批）。
   // 死批整批败（含同批的 good2——失败面就是批），前后两批不受牵连。
-  assert.deepEqual(state.outcomes.map((o) => [o.translated, o.ok, o.reason]), [
+  assert.deepEqual(state.outcomes.map((o) => [o.translated, o.ok, o.detail]), [
     ['译:good1', true, undefined],
     ['译:' + big, true, undefined],
-    ['bad', false, 'transport'],
-    ['good2', false, 'transport'],
+    ['bad', false, undefined],
+    ['good2', false, undefined],
   ]);
 });
 

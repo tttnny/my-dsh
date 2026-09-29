@@ -8,20 +8,18 @@
  *    code 段（``` 或 ~~~ 围栏，含未闭合的到块尾）永不送模型；4 空格缩进代码不
  *    单独识别（聊天正文里几乎不出现，无记号行的行首缩进由形状签名兜住，
  *    记号行的缩进则随前缀修回）。
- * 2. `lineSignatures`：一行 markdown 的结构签名——块记号的**类别**（标题 h、
+ * 2. `lineSignature`：一行 markdown 的结构签名——块记号的**类别**（标题 h、
  *    引用 q、无序列表 l、有序列表 n）、无记号行的缩进宽、表格竖线数、链接个数。
- *    段译文与原段逐行对签名，任何一行不齐即形状不符（content 败因）。反引号的
- *    增减**不拦**：行内代码是样式不是骨架，拦它只会把能看的译文打成红线；
- *    记号的层级、字符、序号与列表缩进同样**不拦**（`##`→`###`、`-`→`*`、
- *    `1.`→`2.`、`>`→`>>`）——它们是渲染等价的漂移，交给 restoreLineShapes
- *    修回，而不是把整块长回答一票否决。真破渲染的仍是：行合并/拆开、表格列
- *    错位、记号整个丢（列表变段落）、链接丢没、无记号行缩进漂移（变代码块）。
+ *    记号的层级、字符、序号与列表缩进不进签名——渲染等价的漂移交给 repairShape
+ *    修回，而不是把整块长回答一票否决。真破渲染的仍是：正文行并拢/拆开、表格
+ *    列错位、记号整个丢（列表变段落）、链接丢没、无记号行缩进漂移（变代码块）。
  * 3. `restoreLinkTargets`：链接按出现序对齐后，把原文的 URL 逐个拼回译文——
  *    模型只译 `[文字]`，`(URL)` 由构造保住。个数不等在签名核对里已经出局。
  *    引用式定义行 `[id]: URL` 同账：计数进签名、目标由回填保住。
- * 4. `restoreLineShapes`：过了签名的译文逐行把「前导空白 + 块记号」拼回原文
- *    同款——类别核对保证两侧同角色，前缀修回让标题层级、列表符号、序号、
- *    引用深度与列表缩进的漂移在成品里根本不存在。
+ * 4. `repairShape`：核对与修形一次过——空行漂移按原文布局重排（弱模型最爱
+ *    吞空行，非空行签名对得上就不算破损），行首「前导空白 + 块记号」逐行换
+ *    回原文同款（`##`→`###`、`-`→`*`、序号、引用深度、列表缩进的漂移就此
+ *    消失）。修不了才回报错误行与理由，进 content 败因的悬停文案。
  */
 
 export interface MarkdownSegment {
@@ -116,24 +114,160 @@ function lineSignature(line: string): string {
   return `${indent}|${cls}|${pipes}|${links}`;
 }
 
-/** 逐行结构签名；行数不同在比较处即判不符。 */
-function lineSignatures(text: string): string[] {
-  return text.split('\n').map(lineSignature);
+/** 形状核对的只读错误视图：repairShape 的 error 侧。null = 可成立。 */
+export function shapeMismatch(original: string, translated: string): string | null {
+  return repairShape(original, translated).error;
 }
 
-/** 形状核对：逐行签名全等。返回 null = 通过，否则给出不符的行号说明。 */
-export function shapeMismatch(original: string, translated: string): string | null {
-  const want = lineSignatures(original);
-  const got = lineSignatures(translated);
-  if (want.length !== got.length) {
-    return `line count changed (${want.length} -> ${got.length})`;
-  }
-  for (let index = 0; index < want.length; index++) {
-    if (want[index] !== got[index]) {
-      return `structure changed at line ${index + 1} (${want[index]} -> ${got[index]})`;
+export interface ShapeRepair {
+  /** 修好的文本：原文骨架（空行布局 + 行首前缀）+ 译文正文；null = 修不了。 */
+  text: string | null;
+  /** 修不了时的一句理由，直接进悬停文案。 */
+  error: string | null;
+}
+
+function isBlankLine(line: string): boolean {
+  return line.trim() === '';
+}
+
+function indentWidth(line: string): number {
+  return (/^[ \t]*/.exec(line) ?? [''])[0].replace(/\t/g, '  ').length;
+}
+
+/**
+ * 结构行 = 不可重排的行：带块记号（标题/引用/列表）、含竖线（表格行）、
+ * 引用式定义行、缩进 >3 的缩进代码。其余非空行是散文行——软换行对渲染
+ * 不可见，译文爱并成一行还是拆成几行都随它。
+ */
+function isStructuralLine(line: string): boolean {
+  if (isBlankLine(line)) return false;
+  return (
+    LINE_SHAPE_PREFIX.test(line) ||
+    line.includes('|') ||
+    LINK_DEF_LINE.test(line) ||
+    indentWidth(line) > 3
+  );
+}
+
+/** 连续非空行 = 一个段落块；块的数量与顺序就是 markdown 的骨架。 */
+function paragraphBlocks(text: string): string[][] {
+  const blocks: string[][] = [];
+  let cur: string[] | null = null;
+  for (const line of text.split('\n')) {
+    if (isBlankLine(line)) {
+      if (cur !== null) blocks.push(cur);
+      cur = null;
+    } else {
+      (cur ??= []).push(line);
     }
   }
-  return null;
+  if (cur !== null) blocks.push(cur);
+  return blocks;
+}
+
+function blockLinks(block: readonly string[]): number {
+  let n = 0;
+  for (const line of block) {
+    n += (line.match(LINK_SPAN) ?? []).length + (LINK_DEF_LINE.test(line) ? 1 : 0);
+  }
+  return n;
+}
+
+/** 单行修形：签名核对已保证两侧同角色，把译文行首换成原文同款前缀。 */
+function spliceLineShape(want: string, got: string): string {
+  const w = LINE_SHAPE_PREFIX.exec(want);
+  if (w === null) return got;
+  const g = LINE_SHAPE_PREFIX.exec(got);
+  if (g === null || markerClass((w[1] ?? '').trim()) !== markerClass((g[1] ?? '').trim())) {
+    return got;
+  }
+  return `${w[0]}${got.slice(g[0].length)}`;
+}
+
+/**
+ * 形状修复：核对与修形一次过，能修的绝不成败因。骨架按**段落块**对齐——
+ * 1. 块数必须相等（模型把两段并拢、或把一段劈开，才是真破损）；空行布局
+ *    一律取原文——模型吞空行、多空行都被重排消化。
+ * 2. 块内**结构行**逐一对齐（记号类别、表格竖线数、链接个数、缩进代码的
+ *    缩进），行首前缀修回原文同款：`##`→`###`、`-`→`*`、序号、引用深度、
+ *    列表缩进的漂移就此消失。
+ * 3. 块内**散文行自由重排**：弱模型把硬折行的英文段落译成一整行中文是常态，
+ *    软换行渲染无感；只查整块的链接总数不丢——重排吞不掉 `[文字](URL)`。
+ * 4. 块首行的结构/散文属性不得互换：段落被并进列表项（或反之）是渲染破损。
+ */
+export function repairShape(original: string, translated: string): ShapeRepair {
+  const wantLines = original.split('\n');
+  const gotLines = translated.split('\n');
+  const wantBlocks = paragraphBlocks(original);
+  let gotBlocks = paragraphBlocks(translated);
+  if (wantBlocks.length !== gotBlocks.length) {
+    // 空行漂移改了块数：非空行若逐行签名 1:1 对得上，按原文的非空行位重排。
+    const wantFilled = wantLines.filter((line) => !isBlankLine(line));
+    const gotFilled = gotLines.filter((line) => !isBlankLine(line));
+    if (wantFilled.length !== gotFilled.length) {
+      return { text: null, error: `line count changed (${wantLines.length} -> ${gotLines.length})` };
+    }
+    for (let index = 0; index < wantFilled.length; index++) {
+      const sw = lineSignature(wantFilled[index] ?? '');
+      const sg = lineSignature(gotFilled[index] ?? '');
+      if (sw !== sg) {
+        return { text: null, error: `structure changed at line ${index + 1} (${sw} -> ${sg})` };
+      }
+    }
+    let cursor = 0;
+    gotBlocks = wantBlocks.map((block) => block.map(() => gotFilled[cursor++] ?? ''));
+  }
+  // 逐块核对 + 修形。hint 是原文行标游标，指向当前块首行。
+  const repaired: string[][] = [];
+  let hint = 0;
+  for (let index = 0; index < wantBlocks.length; index++) {
+    const wb = wantBlocks[index]!;
+    const gb = gotBlocks[index] ?? [];
+    while (hint < wantLines.length && wantLines[hint] !== wb[0]) hint++;
+    const start = hint + 1;
+    const wStruct = wb.filter(isStructuralLine);
+    const gStruct = gb.filter(isStructuralLine);
+    if (wStruct.length !== gStruct.length) {
+      return { text: null, error: `structure changed at line ${start} (markers ${wStruct.length} -> ${gStruct.length})` };
+    }
+    if (isStructuralLine(wb[0] ?? '') !== isStructuralLine(gb[0] ?? '')) {
+      return { text: null, error: `structure changed at line ${start} (block start swapped)` };
+    }
+    if (blockLinks(wb) !== blockLinks(gb)) {
+      return { text: null, error: `structure changed at line ${start} (links ${blockLinks(wb)} -> ${blockLinks(gb)})` };
+    }
+    for (let k = 0; k < wStruct.length; k++) {
+      const sw = lineSignature(wStruct[k] ?? '');
+      const sg = lineSignature(gStruct[k] ?? '');
+      if (sw !== sg) {
+        return { text: null, error: `structure changed at line ${start} (${sw} -> ${sg})` };
+      }
+    }
+    let cursor = 0;
+    repaired.push(
+      gb.map((line) => {
+        if (!isStructuralLine(line)) return line;
+        return spliceLineShape(wStruct[cursor++] ?? line, line);
+      })
+    );
+    hint += wb.length;
+  }
+  // 重装配：空行布局取原文，正文块按序放修好的译文行。
+  const out: string[] = [];
+  let bi = 0;
+  let inBlock = false;
+  for (const line of wantLines) {
+    if (isBlankLine(line)) {
+      inBlock = false;
+      out.push(line);
+      continue;
+    }
+    if (!inBlock) {
+      out.push(...(repaired[bi++] ?? [line]));
+      inBlock = true;
+    }
+  }
+  return { text: out.join('\n'), error: null };
 }
 
 /**
@@ -175,26 +309,17 @@ export function restoreLinkTargets(original: string, translated: string): string
 }
 
 /**
- * 逐行把「前导空白 + 块记号」拼回原文同款：签名核对已保证两侧行数相等、
- * 记号类别一致，这里把译文每行的行首前缀换成原文的——标题层级（`##`→`###`）、
- * 列表符号（`-`→`*`）、序号（`2.`→`1.`）、引用深度（`>`→`>>`）与列表缩进
- * 这些渲染等价的漂移就此消失，成品永远带着原文的骨架。记号之后的正文一字
- * 不动；原文行没有记号前缀时整行原样。
+ * 两侧链接总数是否相等——回填的前置条件：等数才谈得上按出现序对齐；
+ * 不等时回填会把原文 URL 串到错的链接上，宁可不回填。
+ */
+export function linkCountsMatch(a: string, b: string): boolean {
+  return blockLinks(a.split('\n')) === blockLinks(b.split('\n'));
+}
+
+/**
+ * 只修形不核对的旧口：转手 repairShape——行首前缀修回与空行重排都在那里。
+ * 修不了时原样返回（调用方自己先看 repairShape 的 error）。
  */
 export function restoreLineShapes(original: string, translated: string): string {
-  const want = original.split('\n');
-  const got = translated.split('\n');
-  if (want.length !== got.length) return translated;
-  return got
-    .map((line, index) => {
-      const w = LINE_SHAPE_PREFIX.exec(want[index] ?? '');
-      if (w === null) return line;
-      const g = LINE_SHAPE_PREFIX.exec(line);
-      if (g === null) return line;
-      // 类别不等时不动手——真到这一步是签名核对放行的边界（如无记号行），
-      // 修回只会覆盖模型的内容，越权。
-      if (markerClass((w[1] ?? '').trim()) !== markerClass((g[1] ?? '').trim())) return line;
-      return `${w[0]}${line.slice(g[0].length)}`;
-    })
-    .join('\n');
+  return repairShape(original, translated).text ?? translated;
 }

@@ -158,7 +158,7 @@ await test('总开关关闭时原样返回且不发请求', async () => {
   assert.equal(calls, 0);
   assert.equal(results[0].translated, '一段正文');
   assert.equal(results[0].ok, false);
-  assert.equal(results[0].reason, 'transport');
+  assert.equal(results[0].detail, undefined, '开关关闭不发请求，也说不出细节');
 });
 
 await test('AI 未配置时不发请求、保留原文', async () => {

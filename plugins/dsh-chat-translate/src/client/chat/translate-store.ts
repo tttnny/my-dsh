@@ -1,5 +1,5 @@
 import { requestTranslateReply } from '../translate/api.ts';
-import type { ReplyBlockResult, ReplyFailReason } from '../../server/types.ts';
+import type { ReplyBlockResult } from '../../server/types.ts';
 import { estimateTokens, REPLY_MAX_INPUT_TOKENS } from '../../server/pipeline/blocks.ts';
 
 /** 一行正文的按块翻译结果，与请求的 texts 数组按下标对齐。 */
@@ -8,8 +8,6 @@ export interface BlockOutcome {
   translated: string;
   /** 该块是否翻译成功。 */
   ok: boolean;
-  /** 仅 ok=false 时出现；失败一律同一条红实线，reason 只选悬停文案的标签。 */
-  reason?: ReplyFailReason;
   /** 仅 ok=false 时可能出现：服务端给出的技术细节，拼在标签后进悬停文案。 */
   detail?: string;
 }
@@ -149,7 +147,7 @@ export class ChatTranslateStore {
         results = await this.fetch(batch);
       } catch {
         // 取数面的异常与失败结果同义：该批保持原文。api 层自身已兜底，这里
-        // 防的是 fetcher 实现抛错的形态——异常说不出败因，按传输失败报。
+        // 防的是 fetcher 实现抛错的形态——异常说不出细节，悬停只报「翻译失败」。
         results = [];
       }
       for (let i = 0; i < batch.length; i++) {
@@ -161,7 +159,6 @@ export class ChatTranslateStore {
           outcomes[offset + i] = {
             translated: batch[i] ?? texts[offset + i] ?? '',
             ok: false,
-            reason: result?.reason ?? 'transport',
             ...(detail === undefined ? {} : { detail }),
           };
         }

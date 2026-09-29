@@ -39,7 +39,7 @@ import { settingsStore } from '../settings/store.ts';
 import { planAssistantRow } from './row-plan.ts';
 import { isBareBlockClick } from './click-guard.ts';
 import { rowCopy } from '../locales.ts';
-import type { AssistantBlockLike, ProseFailure } from './row-plan.ts';
+import type { AssistantBlockLike } from './row-plan.ts';
 import type { ProseMark } from './styles.ts';
 import { ensureAssistantStyles, proseAction, proseClassNames } from './styles.ts';
 import { chatTranslate, sameTexts } from './translate-store.ts';
@@ -299,8 +299,8 @@ interface ProseBlockProps {
   translated: string | null;
   /** 左缘线状态，单点算自 row-plan；可点性、重试指引、脉动全由它决定。 */
   mark: ProseMark;
-  /** 仅 mark='failed' 时非 null：悬停文案的败因载荷（标签 + 技术细节）。 */
-  fail: ProseFailure | null;
+  /** 仅 mark='failed' 时非 null：悬停文案的技术细节（通道伤一句）。 */
+  fail: string | null;
   onToggle: () => void;
   onRetry: () => void;
   streaming: boolean;
@@ -379,7 +379,7 @@ function ProseBlock({
   // 10px 装饰图标上则两个通道都够不着（图标 aria-hidden、从不接收焦点）。泡里
   // 报的是败因（本地化标签 — 服务端技术细节），不再是「怎么重试」的指引。
   return React.createElement(Tooltip, {
-    label: () => copy.failTitle(fail?.reason ?? 'transport', fail?.detail),
+    label: () => copy.failTitle(fail),
     side: 'right',
     portal: true,
     children: block as Parameters<typeof Tooltip>[0]['children'],

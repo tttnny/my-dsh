@@ -7,19 +7,17 @@
  *    独立的行，由宿主自己渲染）、连续 image 怎么合成一组、未知块落 JSON、
  *    「已停止」标记的出现条件。
  * 2. 翻译呈现的单点判断：正文块在什么状态下挂什么线，直接产出 styles.ts
- *    的 `ProseMark`（词汇与类名映射单点在 styles.ts；败因分类在
- *    server/types.ts）。判据一次算清：成功落定=蓝线（用户点了读原文则灰细
- *    线——`originalKeys` 进来折进 mark）；失败=红实线一根，`fail` 载荷
- *    （reason+detail）只喂悬停文案；行已登记在途且这块尚无结果=灰脉动；
- *    其余（空白块、流式、开关关、未登记）=无线。模型原样返回同样算成功：
- *    标记传达「这段过了模型」，不是「变过」。
+ *    的 `ProseMark`（词汇与类名映射单点在 styles.ts）。判据一次算清：成功落定
+ *    =蓝线（用户点了读原文则灰细线——`originalKeys` 进来折进 mark）；失败
+ *    （通道伤）=红实线一根，`fail` 一句技术细节只喂悬停文案；行已登记在途且
+ *    这块尚无结果=灰脉动；其余（空白块、流式、开关关、未登记）=无线。模型
+ *    原样返回同样算成功：标记传达「这段过了模型」，不是「变过」。
  *    空白块（trim 后为空）不进送译清单、不占下标、永不挂线——它没送过模型，
  *    重试也永远不会成，挂线只会留下消不掉的标记。
  *
  * 渲染层（assistant-step.tsx）只消费 mark；改动这里的等价分支必须同时对照
  * 宿主实现。
  */
-import type { ReplyFailReason } from '../../server/types.ts';
 import type { BlockOutcome } from './translate-store.ts';
 import type { ProseMark } from './styles.ts';
 
@@ -31,22 +29,14 @@ export interface AssistantBlockLike {
   readonly block?: unknown;
 }
 
-/**
- * 失败块的悬停载荷：reason 选本地化标签，detail 是服务端原样的技术一句，
- * 拼在标签之后。线型不从这里出——失败一律同一条红实线。
- */
-export interface ProseFailure {
-  reason: ReplyFailReason;
-  detail?: string;
-}
-
 export type RowPlanEntry =
   /** 思考块：blockIndex 供「流式尾块」判定，key 是条目在计划里的位置（React 键）。 */
   | { type: 'reasoning'; key: number; blockIndex: number; text: string }
   /**
    * 正文块：mark 即左缘线状态（可点性、重试指引、脉动全由它决定）；
    * translated 仅在成功时非 null，供 mark==='translated' 时换源文本渲染；
-   * fail 仅在 mark==='failed' 时非 null，供 Tooltip 报出败因。
+   * fail 仅在 mark==='failed' 时非 null——服务端的技术一句，Tooltip 悬停
+   * 报因用，缺省时只报「翻译失败」。线型不从这里出：失败一律同一条红实线。
    */
   | {
       type: 'prose';
@@ -54,7 +44,7 @@ export type RowPlanEntry =
       text: string;
       translated: string | null;
       mark: ProseMark;
-      fail: ProseFailure | null;
+      fail: string | null;
     }
   | { type: 'images'; key: number; attachments: readonly unknown[] }
   | { type: 'unknown'; key: number; block: unknown }
@@ -139,12 +129,12 @@ export function planAssistantRow(input: RowPlanInput): RowPlan {
         const attemptable = !blank && canTranslate && !streaming;
         const outcome = attemptable && outcomes !== undefined ? outcomes[index] ?? null : null;
         let mark: ProseMark = null;
-        let fail: ProseFailure | null = null;
+        let fail: string | null = null;
         if (outcome !== null && outcome.ok) {
           mark = originalKeys?.has(key) ? 'original-view' : 'translated';
         } else if (outcome !== null) {
           mark = 'failed';
-          fail = { reason: outcome.reason ?? 'transport', detail: outcome.detail };
+          fail = outcome.detail ?? null;
         } else if (attemptable && rowStatus === 'pending') {
           mark = 'inflight';
         }

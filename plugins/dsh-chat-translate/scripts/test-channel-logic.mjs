@@ -80,17 +80,16 @@ await testAsync('AI configured -> translated from the channel, not the cache', a
   assert.equal(results[0].ok, true);
   assert.equal(results[0].cached, false);
   assert.equal(results[0].translated, '[openai]TT1: List files here');
-  assert.equal(results[0].reason, undefined, '成功块不带败因');
+  assert.equal(results[0].detail, undefined, '成功块不带失败细节');
 });
 
-await testAsync('AI not configured -> no request, original kept, transport reason', async () => {
+await testAsync('AI not configured -> no request, original kept', async () => {
   const { dispatcher, calls, source } = await setupDispatcher();
   await source.update({ baseUrl: '', model: '' });
   const results = await dispatcher.translateReplyBlocks(['TT2: List files here']);
   assert.deepEqual(calls, []);
   assert.equal(results[0].ok, false);
   assert.equal(results[0].translated, 'TT2: List files here');
-  assert.equal(results[0].reason, 'transport');
 });
 
 await testAsync('master switch off -> no request, original kept', async () => {
@@ -123,9 +122,9 @@ await testAsync('whitespace-only blocks never reach the channel', async () => {
   assert.equal(results[2].ok, true);
 });
 
-console.log('\n=== Suite B: failure-reason ledger (retries are user-initiated) ===');
+console.log('\n=== Suite B: failure detail ledger (only channel wounds fail; retries are user-initiated) ===');
 
-await testAsync('a transport failure reports reason transport with the error as detail', async () => {
+await testAsync('a transport failure reports the error as detail', async () => {
   const { dispatcher, source } = await setupDispatcher({
     translate: () => {
       throw new Error('ECONNREFUSED');
@@ -134,74 +133,62 @@ await testAsync('a transport failure reports reason transport with the error as 
   await source.update({ baseUrl: 'http://x', model: 'm' });
   const results = await dispatcher.translateReplyBlocks(['Look at `alpha` before shipping.']);
   assert.equal(results[0].ok, false);
-  assert.equal(results[0].reason, 'transport');
   assert.match(results[0].detail, /ECONNREFUSED/, '悬停细节带出通道报错原文');
 });
 
-await testAsync('a reply that breaks the markdown shape reports reason content with the mismatch as detail', async () => {
+await testAsync('markdown shape drift is repaired or accepted, never a failure', async () => {
   const { dispatcher, source } = await setupDispatcher({
-    // 通道活着：HTTP 正常返回，只是这个弱模型把单行拆成了两行——
-    // 逐行形状核对当场拒收（反引号增减不拦，行数不）。
+    // 通道活着，弱模型把单行拆成两行——软换行渲染无感，照收。
     translate: async () => '一段拆成\n两行的译文',
   });
   await source.update({ baseUrl: 'http://x', model: 'm' });
   const results = await dispatcher.translateReplyBlocks(['Look at `alpha` and `beta` before shipping.']);
-  assert.equal(results[0].ok, false);
-  assert.equal(results[0].reason, 'content');
-  assert.match(results[0].detail, /line count changed \(1 -> 2\)/, '悬停细节直说哪条判据没过');
+  assert.equal(results[0].ok, true, '形状漂移不再否决内容');
+  assert.equal(results[0].detail, undefined);
 });
 
-await testAsync('multi-piece block: succeeded pieces never poison the content verdict', async () => {
-  // 超长块切成两片、落进两批：前一片（纯中文）正常译出，后一片被模型拆行。
-  // 块级败因只能评判缺失的片段——成功片段本就不记账，把它们当 transport
-  // 判据会把形状拒收误报成传输伤（审查复现的真 bug）。
+await testAsync('a heading-level drift comes back with the original marker', async () => {
+  const { dispatcher, source } = await setupDispatcher({
+    translate: async () => '### 标题译文',
+  });
+  await source.update({ baseUrl: 'http://x', model: 'm' });
+  const results = await dispatcher.translateReplyBlocks(['## Heading']);
+  assert.equal(results[0].ok, true);
+  assert.equal(results[0].translated, '## 标题译文', '层级由构造修回原文');
+});
+
+await testAsync('multi-piece block: a transport wound on one piece fails the whole block', async () => {
+  // 超长块切两片落两批：前一片正常译出，后一片通道断了——任一片段缺失即整块
+  // 作废（避免半中半英），细节取自那个失败片段。
   const { dispatcher, source } = await setupDispatcher({
     translate: async (t) => {
-      if (t.includes('`')) return '这一批被拆成\n两行的译文';
+      if (t.includes('`')) throw new Error('stream reset');
       return '译:' + t.slice(0, 20);
     },
   });
   await source.update({ baseUrl: 'http://x', model: 'm' });
-  const head = '中'.repeat(4200); // 4200 token：独占首批，带代码的后片必然分批
+  const head = '中'.repeat(4200);
   const tail = 'Then look at `alpha` and `beta` before shipping this paragraph now.';
   const results = await dispatcher.translateReplyBlocks([head + '\n\n' + tail]);
-  assert.equal(results[0].ok, false);
-  assert.equal(results[0].reason, 'content', '缺失之外的成功片段不得掺进败因合成');
+  assert.equal(results[0].ok, false, '任一片段通道失败即整块回退原文');
+  assert.match(results[0].detail, /stream reset/, '细节来自失败片段');
 });
 
-await testAsync('mixed attempts: any transport wound wins over content rejections', async () => {
-  const { dispatcher, source } = await setupDispatcher({
-    // 打包批里丢标记（内容拒收），单发重试时通道断了（传输伤）——
-    // 块按 transport 报：救活它的意义大于认命。
-    translate: async (t, _n, options) => {
-      if (options?.mode === 'blocks') return '完全丢掉了标记的译文';
-      throw new Error('stream reset');
-    },
-  });
-  await source.update({ baseUrl: 'http://x', model: 'm' });
-  const first = 'Look at `alpha` and `beta` before shipping.';
-  const second = 'Check `gamma` too.';
-  const results = await dispatcher.translateReplyBlocks([first, second]);
-  assert.equal(results[0].ok, false);
-  assert.equal(results[0].reason, 'transport', '批的内容拒收 + 单发的传输伤 = transport');
-  assert.equal(results[1].reason, 'transport');
-});
-
-await testAsync('one poisoned block never blocks the other blocks', async () => {
+await testAsync('one failed block never blocks the other blocks', async () => {
   const { dispatcher, source, cache } = await setupDispatcher({
-    // 守规矩的回显，但对含 poison 的片段交拆行的假译。
+    // 含 boom 的片段通道报错，其余正常回显。
     translate: async (t, _n, options) => {
-      if (t.includes('poison')) return '坏\n掉了';
+      if (t.includes('boom')) throw new Error('500 server error');
       return options?.mode === 'blocks' ? echoMarkers(t) : `译:${t}`;
     },
   });
   await source.update({ baseUrl: 'http://x', model: 'm' });
-  const dense = 'a poison `alpha` fragment';
+  const bad = 'a boom `alpha` fragment';
   const plain = 'An ordinary English sentence.';
-  const results = await dispatcher.translateReplyBlocks([dense, plain]);
-  assert.equal(results[0].ok, false);
-  assert.equal(results[0].reason, 'content', '两次尝试都只以形状拒收终结');
-  assert.equal(results[1].ok, true, '同批的普通块在单发补试里必须照常译出');
+  const results = await dispatcher.translateReplyBlocks([bad, plain]);
+  assert.equal(results[0].ok, false, '坏块保持原文');
+  assert.match(results[0].detail, /500 server error/);
+  assert.equal(results[1].ok, true, '同批的普通块必须照常译出');
   assert.ok(results[1].translated.startsWith('译:'));
   assert.ok(cache.get(plain.toLowerCase()), '译出的普通块进了缓存池');
 });

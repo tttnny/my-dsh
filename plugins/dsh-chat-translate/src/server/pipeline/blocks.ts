@@ -129,7 +129,7 @@ export function packPieces<T extends { text: string }>(
 
 /**
  * 打包标记：`⟪<4 letters><index>⟫`——打包请求的框架，每段以标记行开头。
- * 它只活在一次请求的负载里；译文残留 ⟪…⟫ 即形状拒收。
+ * 它只活在一次请求的负载里；译文残留 ⟪…⟫ 由宿主直接剥除，不成败因。
  */
 export interface BatchFormat {
   id: string;
@@ -186,7 +186,10 @@ export function splitBatchTranslation(
   return parts;
 }
 
-/** 翻译结果里是否还留着打包标记（用于判定整批作废）。 */
-export function hasBatchResidue(text: string): boolean {
-  return new RegExp(BATCH_TOKEN_PATTERN_SOURCE, 'u').test(text);
+/**
+ * 剥除译文里残留的 ⟪…⟫ 打包标记：标记只是请求脚手架，模型带回来就删掉——
+ * 形状问题不否决内容，残留也不再是拒收理由。
+ */
+export function stripBatchMarkers(text: string): string {
+  return text.replace(new RegExp(BATCH_TOKEN_PATTERN_SOURCE, 'gu'), '');
 }

@@ -23,15 +23,16 @@ import type { KeyReader } from '../credentials.ts';
  * Every passage is processed, including passages already in Chinese: weak
  * models write stiff machine-flavored Chinese ("硅基中文"), and that is the
  * same defect translation fixes, so Chinese gets a polishing pass too. Input
- * is reply Markdown and output is re-rendered as Markdown by the client, and
- * the host verifies the shape line by line (line counts, indent on
- * marker-free lines, block-marker class, table pipes, link counts) before
- * accepting an answer — marker-level drift (heading depth, bullet char, list
- * numbering or indentation) is repaired by the host rather than rejected, so
- * the instruction states exactly what is checked, and tells the model link
- * targets must be copied verbatim (the host restores them anyway; the rule
- * keeps the parentheses intact). Inline code is styling, not structure: its
- * contents may be translated and the backticks may drift without veto.
+ * is reply Markdown and output is re-rendered as Markdown by the client. The
+ * host repairs the answer's shape back to the source (block alignment, marker
+ * prefixes, blank-line layout, link targets) and, when it cannot, still shows
+ * the translation rather than vetoing it — so the instruction asks the model
+ * to keep the structure line by line (line counts, indentation, block markers,
+ * table pipes, links) because closer output means less repair, never because a
+ * mismatch fails. It also tells the model link targets must be copied verbatim
+ * (the host restores them anyway; the rule keeps the parentheses intact).
+ * Inline code is styling, not structure: its contents may be translated and
+ * the backticks may drift without veto.
  *
  * Prompt semantics are registered in `prompt-revision.ts`; changing what this
  * prompt asks the model to do means bumping that revision with it.

@@ -1,5 +1,5 @@
 import { describeError } from '../../describe-error.ts';
-import type { ReplyBlockResult, ReplyFailReason } from '../../server/types.ts';
+import type { ReplyBlockResult } from '../../server/types.ts';
 
 /**
  * 请求翻译回答正文的块。宿主侧按输入上限打包、串行发送，客户端超时交给
@@ -12,7 +12,6 @@ export async function requestTranslateReply(blocks: string[]): Promise<ReplyBloc
       translated: block,
       ok: false,
       cached: false,
-      reason: 'transport' satisfies ReplyFailReason,
     }));
 
   if (!Array.isArray(blocks) || blocks.length === 0) return [];

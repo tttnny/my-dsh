@@ -3,7 +3,6 @@ import type {
   ITranslationAdapter,
   PluginConfig,
   ReplyBlockResult,
-  ReplyFailReason,
 } from './types.ts';
 import type { ConfigManager } from './config.ts';
 import { LruDiskCache } from './cache.ts';
@@ -12,16 +11,16 @@ import { OpenAiCompatibleAdapter } from './adapters/openai.ts';
 import {
   buildBatchPayload,
   createBatchFormat,
-  hasBatchResidue,
   packPieces,
   splitBatchTranslation,
   splitOversizedBlock,
+  stripBatchMarkers,
   REPLY_MAX_OUTPUT_TOKENS,
 } from './pipeline/blocks.ts';
 import {
-  restoreLineShapes,
+  linkCountsMatch,
+  repairShape,
   restoreLinkTargets,
-  shapeMismatch,
   splitMarkdownSegments,
 } from './pipeline/segments.ts';
 
@@ -31,15 +30,6 @@ import {
  * which adapter serves it.
  */
 const CHANNEL_ID = 'openai';
-
-/**
- * 形状拒收：通道正常返回了响应，只是这份内容没通过结构核对——逐行签名
- * （行数、无记号行缩进、记号类别、表格竖线、链接个数）与原文不齐，或译文里
- * 还留着 `⟪…⟫` 打包标记。记号层级与列表缩进的漂移不在其列——那由行首形状
- * 修回兜住。这类败因记 `content`，其余一律 `transport`；两类失败画同一条
- * 红实线，分类只喂悬停文案的标签。每行只跑首跑，失败等用户点击救活。
- */
-class ContentRejectedError extends Error {}
 
 /**
  * 正文的一个待翻译片段：所属块、块内片段序号，以及拆出来的头尾空白与核心文本
@@ -62,47 +52,26 @@ function replyPieceKey(piece: { block: number; index: number }): string {
 /** 块的一个拼装部件：逐字保留段（代码围栏、纯空白段、片段头尾另存）或片段引用。 */
 type BlockPart = { verbatim: string } | { piece: number };
 
-/** 一次片段失败的完整记账：分类 + 可直接进悬停文案的技术细节。 */
-interface ReplyFailure {
-  reason: ReplyFailReason;
-  detail: string;
-}
-
 /**
- * 片段败因账本：pieceKey → 败因。transport 是吸收态——通道伤过一次就按
- * transport 报（含其细节），content 不再覆盖；从未记账的缺失同样按
- * transport 兜底（说不清败因时「重试可能有用」是更诚实的默认）。
+ * 片段失败账本：pieceKey → 一句技术细节（进悬停文案）。只有通道伤会留账——
+ * 译文形状问题由修复、重掷、照收三层消化，不再是否决理由。从未记账的缺失
+ * 兜底为「没译回来」，因为说不出细节时这就是最诚实的描述。
  */
-type FailureLedger = Map<string, ReplyFailure>;
+type FailureLedger = Map<string, string>;
 
-/** 败因分类：只有对返回内容本身的拒收算 content，其余都说明通道受过伤。 */
-function classifyReplyFailure(err: unknown): ReplyFailure {
-  if (err instanceof ContentRejectedError) return { reason: 'content', detail: err.message };
-  return { reason: 'transport', detail: describeError(err) };
-}
-
-function recordLedgerFailure(ledger: FailureLedger, keys: readonly string[], failure: ReplyFailure): void {
+function recordLedgerFailure(ledger: FailureLedger, keys: readonly string[], detail: string): void {
   for (const key of keys) {
-    if (failure.reason === 'transport' || !ledger.has(key)) ledger.set(key, failure);
+    if (!ledger.has(key)) ledger.set(key, detail);
   }
 }
 
-/**
- * 块败因合成：只评判**缺失**的片段——成功译出的片段本就不记账，把「没留账」
- * 当 transport 判据会把「前段批成功、后段历次形状拒收」的多片段块误报成传输
- * 失败（超长块的切片几乎必然落进不同批，这是常见路径而非防御分支）。缺失片段
- * 里只要不是清一色的 content，整块按 transport 报；清一色 content 才记 content。
- * 细节取第一个说得出话的缺失片段。
- */
-function blockFailure(ledger: FailureLedger, block: number, missing: readonly number[]): ReplyFailure {
-  let content: ReplyFailure | undefined;
+/** 块败因细节：取第一个说得出话的缺失片段。 */
+function blockFailureDetail(ledger: FailureLedger, block: number, missing: readonly number[]): string {
   for (const index of missing) {
-    const failure = ledger.get(replyPieceKey({ block, index }));
-    if (failure === undefined) return { reason: 'transport', detail: 'no translation came back' };
-    if (failure.reason === 'transport') return failure;
-    content ??= failure;
+    const detail = ledger.get(replyPieceKey({ block, index }));
+    if (detail !== undefined) return detail;
   }
-  return content ?? { reason: 'transport', detail: 'no translation came back' };
+  return 'no translation came back';
 }
 
 /** 把一段文本拆成 {head, core, tail}；core 为全空白时返回 null（整段逐字保留）。 */
@@ -139,16 +108,17 @@ export class TranslationDispatcher {
    *
    * 每个块先按 markdown 结构切成段：代码围栏与纯空白段**逐字保留、永不送
    * 模型**；散文段再按输入上限切片、各自成片段。相邻片段打包成一个请求；整批
-   * 失败时退回逐片段单发。每个片段的译文要过形状核对（逐行结构签名与原文全
-   * 等：行数、无记号行缩进、记号类别、表格竖线数、链接个数）并通过行首形状
-   * 修回与链接目标回填才算成立——「翻译后 markdown 语法没问题」由构造与
-   * 核对保证，不向模型索要任何占位符；渲染等价的样式漂移（`##`→`###`、
-   * `-`→`*`、序号与列表缩进）修回原样而不拒收。
+   * 失败时退回逐片段单发。每个片段的译文过 `repairShape`（段落块对齐 + 前缀
+   * 修回 + 空行重排）并通过链接目标回填才算修好。
+   *
+   * **形状问题不否决内容**：修不好的片段自动重掷一次；再修不好就照收模型的
+   * 译文（链接数不等时不回填，其余原样）——原文一键可回，可读的译文优先于
+   * 一根红线。失败只剩通道伤一种：超时、断流、空返回，红实线 + 悬停报细节，
+   * 救活由用户的点击发起。
    *
    * 调用方传进来的每个块要么整块译出、要么整块保持原文：任一片段缺失都让该块
-   * 作废，避免半中半英的段落；失败块带 `reason` 分类与 `detail` 一句技术细节
-   * （见 {@link blockFailure}），客户端一律画红实线、悬停报出败因。每行只跑
-   * 首跑一次，失败的救活由用户的点击发起。
+   * 作废，避免半中半英的段落；失败块带 `detail` 一句技术细节。每行只跑首跑
+   * 一次，通道恢复后由点击救活。
    *
    * 客户端按与宿主同源的 4096 估算 token 切批，所以一个 markdown 块可能跨多次
    * 调用；每次调用都独立决定成败，不会出现「前一段已挂译文、后一段失败」的
@@ -160,7 +130,6 @@ export class TranslationDispatcher {
       translated: original,
       ok: false,
       cached: false,
-      reason: 'transport' as ReplyFailReason,
     }));
 
     const config = this.configManager.getConfig();
@@ -239,9 +208,7 @@ export class TranslationDispatcher {
         parts.push(value);
       }
       if (missing.length > 0) {
-        const failure = blockFailure(ledger, block, missing);
-        results[block].reason = failure.reason;
-        results[block].detail = failure.detail;
+        results[block].detail = blockFailureDetail(ledger, block, missing);
         continue;
       }
       // 全围栏块（零片段）也走到这里：拼回即原文，按「已是最终形态」记成功
@@ -261,12 +228,12 @@ export class TranslationDispatcher {
   }
 
   /**
-   * 一整批一次请求；失败则该批逐片段单发重试一次，仍失败的片段直接放弃
-   * （保留原文）——救活它的是用户的点击，不是后台流量。失败的片段不进缓存。
+   * 一整批一次请求；批内修不好的片段与整批的失败都退回逐片段单发。单发仍
+   * 修不好的**照收**（见 {@link translateReplyBlocks}）——只有通道伤才让片段
+   * 缺失，失败的片段不进缓存。
    *
-   * 每次失败都按败因记进片段的账本（{@link FailureLedger}）：批请求的
-   * 失败摊到批内每个片段，单发重试的失败只记该片段；块级败因由缺失片段
-   * 的账本合成（任一尝试是传输伤 → transport；全部是形状拒收 → content）。
+   * 每次通道失败都记进片段账本（{@link FailureLedger}）：批请求的失败摊到
+   * 批内每个片段，单发的失败只记该片段；块级细节由缺失片段的账本合成。
    */
   private async translateReplyBatch(
     adapter: ITranslationAdapter,
@@ -274,38 +241,77 @@ export class TranslationDispatcher {
     config: PluginConfig,
     ledger: FailureLedger
   ): Promise<Map<string, string>> {
-    const pieceKeys = batch.map((piece) => replyPieceKey(piece));
+    const out = new Map<string, string>();
+    const stragglers: ReplyPiece[] = [];
     try {
-      return await this.requestReplyBatch(adapter, batch, config);
+      const answers = await this.fetchReplyAnswers(adapter, batch, config);
+      batch.forEach((piece, index) => {
+        const answer = answers[index] ?? '';
+        const repair = repairShape(piece.text, answer);
+        if (repair.text !== null) {
+          out.set(replyPieceKey(piece), this.assemble(piece, repair.text, true));
+        } else {
+          stragglers.push(piece);
+        }
+      });
     } catch (err) {
-      recordLedgerFailure(ledger, pieceKeys, classifyReplyFailure(err));
+      recordLedgerFailure(ledger, batch.map((piece) => replyPieceKey(piece)), describeError(err));
       console.warn(
         `[dsh-chat-translate] reply batch of ${batch.length} failed, retrying per block: ${describeError(err)}`
       );
+      stragglers.push(...batch);
     }
 
-    const out = new Map<string, string>();
-    for (const piece of batch) {
-      try {
-        for (const [key, value] of await this.requestReplyBatch(adapter, [piece], config)) {
-          out.set(key, value);
+    for (const piece of stragglers) {
+      const key = replyPieceKey(piece);
+      if (out.has(key)) continue;
+      let answer: string | null = null;
+      // 修不好的形状自动重掷一次：弱模型的漂移是随机的，再问一次常常就齐了。
+      // 通道伤不重掷——断了就断了，重试只是白烧流量，救活归用户的点击。
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          answer = (await this.fetchReplyAnswers(adapter, [piece], config))[0] ?? '';
+        } catch (err) {
+          if (answer === null) {
+            recordLedgerFailure(ledger, [key], describeError(err));
+            console.warn(
+              `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
+            );
+          }
+          break;
         }
-      } catch (err) {
-        recordLedgerFailure(ledger, [replyPieceKey(piece)], classifyReplyFailure(err));
-        console.warn(
-          `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
-        );
+        if (repairShape(piece.text, answer).text !== null) break;
       }
+      if (answer === null) continue;
+      const repair = repairShape(piece.text, answer);
+      if (repair.text !== null) {
+        out.set(key, this.assemble(piece, repair.text, true));
+        continue;
+      }
+      // 第三层防线：照收。结构没修齐也展示模型的译文——链接数不等时不回填
+      // （回填会把 URL 串到错的链接上），其余原样；读不顺还有原文一键可回。
+      console.warn(
+        `[dsh-chat-translate] reply block ${piece.block} #${piece.index} shape kept as the model wrote it: ${repair.error}`
+      );
+      out.set(key, this.assemble(piece, answer, linkCountsMatch(piece.text, answer)));
     }
     return out;
   }
 
-  /** 发出一次正文请求，并对每个片段的返回做形状核对与链接回填。 */
-  private async requestReplyBatch(
+  /** 片段的最终拼装：头尾空白 + （可选）链接回填 + 译文。 */
+  private assemble(piece: ReplyPiece, text: string, restoreLinks: boolean): string {
+    return piece.head + (restoreLinks ? restoreLinkTargets(piece.text, text) : text) + piece.tail;
+  }
+
+  /**
+   * 发出一次正文请求，返回逐片段的裸答案（打包标记已剥除、首尾已 trim）。
+   * 空返回与打包拆不回都按通道失败抛出——形状对不对在这里不算败因。
+   */
+  private async fetchReplyAnswers(
     adapter: ITranslationAdapter,
     batch: ReplyPiece[],
     config: PluginConfig
-  ): Promise<Map<string, string>> {
+  ): Promise<string[]> {
     const timeout = config.aiTimeoutMs || 600000;
     const abortCtrl = new AbortController();
     const timer = setTimeout(() => abortCtrl.abort(), timeout);
@@ -331,14 +337,14 @@ export class TranslationDispatcher {
         );
         const parts = splitBatchTranslation(answer, format, batch.length);
         if (parts === null) {
-          throw new ContentRejectedError('batch markers did not survive the answer');
+          throw new Error('batch markers did not survive the answer');
         }
         answers = parts;
       }
     } catch (err) {
       // 超时打断的原始报错（AbortError 一类）说不出「超时」二字，就地换成
-      // 能进悬停文案的说法；形状拒收与通道本身的重试语义不受影响。
-      if (abortCtrl.signal.aborted && !(err instanceof ContentRejectedError)) {
+      // 能进悬停文案的说法。
+      if (abortCtrl.signal.aborted) {
         throw new Error(`channel timed out after ${timeout}ms`);
       }
       throw err;
@@ -346,25 +352,11 @@ export class TranslationDispatcher {
       clearTimeout(timer);
     }
 
-    const out = new Map<string, string>();
-    batch.forEach((piece, index) => {
-      const answer = (answers[index] ?? '').trim();
-      if (!answer) {
-        throw new Error('translation came back empty');
-      }
-      if (hasBatchResidue(answer)) {
-        throw new ContentRejectedError('the translation kept a batch marker (⟪…⟫) behind');
-      }
-      const mismatch = shapeMismatch(piece.text, answer);
-      if (mismatch !== null) {
-        throw new ContentRejectedError(mismatch);
-      }
-      // 先修回行首形状（标题层级、列表符号、序号、引用深度、列表缩进的漂移
-      // 就此消失），再回填链接目标——两者都只动骨架，模型的译文正文一字不碰。
-      const repaired = restoreLineShapes(piece.text, answer);
-      out.set(replyPieceKey(piece), piece.head + restoreLinkTargets(piece.text, repaired) + piece.tail);
-    });
-    return out;
+    const stripped = answers.map((answer) => stripBatchMarkers(answer).trim());
+    if (stripped.some((answer) => answer === '')) {
+      throw new Error('translation came back empty');
+    }
+    return stripped;
   }
 
   /** 串行执行器：同时最多一个在途请求。 */

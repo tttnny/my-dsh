@@ -129,8 +129,28 @@ test('shapeMismatch accepts a pure content rewrite and flags structural edits', 
   assert.ok(shapeMismatch(original, '| a | b |\n| --- | --- |\n| `x` | [t](u) [v](w) |'), '链接个数变了');
   assert.equal(shapeMismatch('- item', '* item'), null, '列表记号换字符不拦——前缀由构造修回');
   assert.ok(shapeMismatch('## Head', 'Head'), '标题记号整个丢了仍拦');
-  assert.ok(shapeMismatch('  plain', 'plain'), '无记号行缩进丢了仍拦');
+  assert.equal(shapeMismatch('  plain', 'plain'), null, '散文行缩进漂移不拦：软换行渲染无感');
+  assert.ok(shapeMismatch('plain', '    indented'), '散文行缩进超 3 格变代码块仍拦');
   assert.ok(shapeMismatch('> quote', 'quote'), '引用记号整个丢了仍拦');
+});
+
+test('prose re-wrap and blank-line drift are repaired, block merges are rejected', () => {
+  // 弱模型把硬折行的英文段落译成一整行中文——行数变了，渲染没变。
+  const wrapped = 'the quick brown fox\njumps over the lazy dog';
+  assert.equal(shapeMismatch(wrapped, '敏捷的棕狐跳过懒狗'), null, '散文并成一行不拦');
+  assert.equal(
+    restoreLineShapes(wrapped, '敏捷的棕狐\n跳过懒狗\n还多拆了一行'),
+    '敏捷的棕狐\n跳过懒狗\n还多拆了一行',
+    '散文自由重排'
+  );
+  // 吞空行：非空行签名对得上，按原文空行布局重排。
+  const twoPara = 'alpha\n\nbeta';
+  assert.equal(shapeMismatch(twoPara, '甲\n乙'), null, '吞掉的空行按原文补回');
+  assert.equal(restoreLineShapes(twoPara, '甲\n乙'), '甲\n\n乙', '段落分隔复原');
+  // 真并段：两段并成一段且非空行数也变了——骨架破了，拦。
+  assert.ok(shapeMismatch('alpha\n\nbeta', 'alpha beta merged'), '两段并一段仍拦（非空行数对不上）');
+  // 列表项合并：一个块里记号数变了，拦。
+  assert.ok(shapeMismatch('- one\n- two', '- one and two merged'), '两条列表并一条仍拦');
 });
 
 test('marker-level drift is repaired to the original shape, never rejected', () => {
@@ -196,25 +216,35 @@ await testAsync('A transport failure stays transport; the next call may pass fre
 
   const down = await dispatcher.translateReplyBlocks(['Fail 1']);
   assert.equal(down[0].ok, false);
-  assert.equal(down[0].reason, 'transport');
+  assert.match(down[0].detail, /503 Service Unavailable/, '通道伤把细节带进悬停');
 
   fail = false;
   const up = await dispatcher.translateReplyBlocks(['Fail 1']);
   assert.equal(up[0].ok, true, '无冷却、无额度：下一次调用直接打到通道');
 });
 
-await testAsync('A reply that breaks the markdown shape is discarded, never cached', async () => {
-  // 单行被模型拆成两行——段落结构真破了，这才是形状拒收该拦的事。
-  const { entry, cache, dispatcher, calls } = makeDispatcher(async () => '阅读调度器\n并修文档规则');
+await testAsync('Markdown shape drift is accepted, never discarded', async () => {
+  // 单行散文被模型拆成两行——软换行渲染无感，照收，不再是拒收理由。
+  const { entry, cache, dispatcher } = makeDispatcher(async () => '阅读调度器\n并修文档规则');
   await entry.update({ baseUrl: 'http://x', model: 'm' });
 
   const source = 'Read `dispatcher.ts` and fix docs/rules/plugins.md';
   const result = (await dispatcher.translateReplyBlocks([source]))[0];
-  assert.equal(result.ok, false, '行数变了 = 结构破损，不得当作译文展示');
-  assert.equal(result.reason, 'content');
-  assert.equal(result.translated, source, 'the original text must survive');
-  assert.equal(cache.get(source.toLowerCase()), undefined, 'a shape break must not be cached');
-  assert.equal(calls.length, 2, 'the batch and its per-piece retry both run');
+  assert.equal(result.ok, true, '散文重排不是破损，译文照常展示');
+  assert.ok(result.translated.includes('阅读调度器'), '模型的译文被采纳');
+  assert.ok(cache.get(source.toLowerCase()), '照收的译文进缓存');
+});
+
+await testAsync('A genuine block merge still keeps the original', async () => {
+  // 骨架真破了（两段并一段、非空行数对不上）且重掷仍破——照收策略下模型译文
+  // 结构会漂，但通道正常时块不再回退原文；这里锁定的仍是「非空行数对不上」
+  // 这一类 repairShape 修不了的路径最终也照收，红线只留给通道伤。
+  const { entry, dispatcher } = makeDispatcher(async () => '甲乙丙全挤成一行');
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
+  const source = 'one\n\ntwo\n\nthree';
+  const result = (await dispatcher.translateReplyBlocks([source]))[0];
+  assert.equal(result.ok, true, '形状修不齐也照收，不否决内容');
+  assert.equal(result.translated, '甲乙丙全挤成一行', '模型译文原样进成品');
 });
 
 await testAsync('Inline code may be translated, added or dropped without veto', async () => {
@@ -226,13 +256,14 @@ await testAsync('Inline code may be translated, added or dropped without veto', 
   assert.ok(result.translated.includes('`调度器`'), '反引号增减放行，只是样式漂移');
 });
 
-await testAsync('A hallucinated batch marker rejects the answer as content', async () => {
+await testAsync('A hallucinated batch marker is stripped, not a rejection', async () => {
   const { entry, dispatcher } = makeDispatcher(async () => '译文里混着 ⟪abcd0⟫ 标记');
   await entry.update({ baseUrl: 'http://x', model: 'm' });
 
   const result = (await dispatcher.translateReplyBlocks(['Some English prose.']))[0];
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'content', '残留的打包标记是内容级拒收，不是通道伤');
+  assert.equal(result.ok, true, '残留标记不再是拒收理由');
+  assert.ok(!result.translated.includes('⟪'), '打包标记被剥干净');
+  assert.ok(result.translated.includes('译文里混着'), '正文照常保留');
 });
 
 await testAsync('Link targets survive a model rewrite by construction', async () => {
