@@ -78,7 +78,7 @@
 
 | 目录 | 说明 |
 | --- | --- |
-| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的改动点与重打说明**：相对官方 0.1.7-rc.2 preset patch 的逐处改动清单（包装与身份、技能目录 `customSkillDirs`、工具行 `tool-ask-user` → `tool-ask-user-grilling`、matt-cordis 的 persona 与两份 cordis 随附技能副本的处置）、`skills/grilling/SKILL.md` 四处本地适配的成品块、当前基线、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
+| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的改动点与重打说明**：相对官方 0.1.7-rc.2 preset patch 的逐处改动清单（包装与身份、技能目录 `customSkillDirs`、工具行 `tool-ask-user` → `tool-ask-user-grilling`、matt-cordis 的 persona 与两份 cordis 随附技能副本的处置）、`skills/grilling/SKILL.md` 五处本地适配的成品块、当前基线、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
 
 ---
 

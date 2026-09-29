@@ -20,4 +20,4 @@ dsh plugin --profile web add ./presets/matt-standard ./plugins/dsh-ask-user-gril
 
 ## 详细说明
 
-相对官方基线的逐处改动清单、`skills/grilling/SKILL.md` 的四处本地适配、验证命令与重打流程，一律见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)。
+相对官方基线的逐处改动清单、`skills/grilling/SKILL.md` 的五处本地适配、验证命令与重打流程，一律见 [patches/matt-presets-bootstrap/README.md](../../patches/matt-presets-bootstrap/README.md)。
