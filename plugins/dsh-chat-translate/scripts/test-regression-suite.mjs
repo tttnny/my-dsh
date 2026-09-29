@@ -19,7 +19,7 @@ await fs.mkdir(TMP_ROOT, { recursive: true });
 const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'suite-'));
 process.env.DSH_HOME = TMP_HOME;
 
-import { splitMarkdownSegments, shapeMismatch, restoreLinkTargets } from '../src/server/pipeline/segments.ts';
+import { splitMarkdownSegments, shapeMismatch, restoreLinkTargets, restoreLineShapes } from '../src/server/pipeline/segments.ts';
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { ConfigManager, createLiveConfigSource, DEFAULT_CONFIG } from '../src/server/config.ts';
 import { apply as applyHost, Config as HostConfig, inject as hostInject } from '../src/index.ts';
@@ -127,10 +127,24 @@ test('shapeMismatch accepts a pure content rewrite and flags structural edits', 
   assert.equal(shapeMismatch(original, '| a | b |\n| --- | --- |\n| x | [t](u) |'), null, '反引号丢了不拦：行内代码是样式不是骨架');
   assert.equal(shapeMismatch(original, '| a | b |\n| --- | --- |\n| `x` | [t](u) `多出来的` |'), null, '反引号多了也不拦');
   assert.ok(shapeMismatch(original, '| a | b |\n| --- | --- |\n| `x` | [t](u) [v](w) |'), '链接个数变了');
-  assert.ok(shapeMismatch('- item', '* item'), '列表记号换了字符');
-  assert.ok(shapeMismatch('## Head', 'Head'), '标题记号丢了');
-  assert.ok(shapeMismatch('  plain', 'plain'), '缩进丢了');
-  assert.ok(shapeMismatch('> quote', 'quote'), '引用记号丢了');
+  assert.equal(shapeMismatch('- item', '* item'), null, '列表记号换字符不拦——前缀由构造修回');
+  assert.ok(shapeMismatch('## Head', 'Head'), '标题记号整个丢了仍拦');
+  assert.ok(shapeMismatch('  plain', 'plain'), '无记号行缩进丢了仍拦');
+  assert.ok(shapeMismatch('> quote', 'quote'), '引用记号整个丢了仍拦');
+});
+
+test('marker-level drift is repaired to the original shape, never rejected', () => {
+  // 真实频发的败因：长回答里模型把 ## 写成 ###、把 - 写成 *、把 2. 重排成 1.
+  // ——渲染等价的样式漂移，一票否决整块是浪费，逐行修回前缀才是正解。
+  assert.equal(shapeMismatch('## Head', '### 标题'), null, '标题层级漂移是样式，不是破损');
+  assert.equal(restoreLineShapes('## Head', '### 标题'), '## 标题', '层级修回原文');
+  assert.equal(restoreLineShapes('- item', '* 项目'), '- 项目', '列表符号修回');
+  assert.equal(restoreLineShapes('1. a\n2. b', '1. 甲\n1. 甲'), '1. 甲\n2. 甲', '序号修回、正文不动');
+  assert.equal(restoreLineShapes('> q', '>> 引'), '> 引', '引用深度修回');
+  assert.equal(shapeMismatch('  - a', '- b'), null, '记号行的缩进漂移不拦');
+  assert.equal(restoreLineShapes('  - a', '- b'), '  - b', '列表缩进随前缀修回');
+  assert.equal(restoreLineShapes('plain text', '平常文字'), '平常文字', '无记号行不动手');
+  assert.ok(shapeMismatch('# One', 'Two'), '记号整个丢了仍拦');
 });
 
 test('restoreLinkTargets keeps translated text and copies urls back verbatim', () => {
@@ -231,6 +245,16 @@ await testAsync('Link targets survive a model rewrite by construction', async ()
   assert.equal(result.ok, true);
   assert.ok(result.translated.includes('https://example.com/a?b=c'), 'URL 逐字拼回');
   assert.ok(result.translated.includes('[文档]'), '链接文字保留模型的翻译');
+});
+
+await testAsync('A heading-level drift comes back repaired, not red-lined', async () => {
+  // 截图里的真实场景：最终回答 ## 开头，模型回成了 ### ——过去整块拒收，
+  // 现在层级由构造修回，块照常译出。
+  const { entry, dispatcher } = makeDispatcher(async () => '### 这两条要求的落点');
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
+  const result = (await dispatcher.translateReplyBlocks(['## The two settled points']))[0];
+  assert.equal(result.ok, true, '层级漂移不该拒收整块');
+  assert.equal(result.translated, '## 这两条要求的落点', '成品带原文层级');
 });
 
 await testAsync('Code fences never reach the channel and splice back verbatim', async () => {

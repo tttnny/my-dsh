@@ -18,7 +18,12 @@ import {
   splitOversizedBlock,
   REPLY_MAX_OUTPUT_TOKENS,
 } from './pipeline/blocks.ts';
-import { restoreLinkTargets, shapeMismatch, splitMarkdownSegments } from './pipeline/segments.ts';
+import {
+  restoreLineShapes,
+  restoreLinkTargets,
+  shapeMismatch,
+  splitMarkdownSegments,
+} from './pipeline/segments.ts';
 
 /**
  * The one and only channel id for the reply path: the adapter registry keys on
@@ -29,9 +34,10 @@ const CHANNEL_ID = 'openai';
 
 /**
  * 形状拒收：通道正常返回了响应，只是这份内容没通过结构核对——逐行签名
- * （行数、缩进、块记号、表格竖线、链接个数）与原文不齐，或译文里还留着
- * `⟪…⟫` 打包标记。这类败因记 `content`，其余一律 `transport`；两类失败画
- * 同一条红实线，分类只喂悬停文案的标签。每行只跑首跑，失败等用户点击救活。
+ * （行数、无记号行缩进、记号类别、表格竖线、链接个数）与原文不齐，或译文里
+ * 还留着 `⟪…⟫` 打包标记。记号层级与列表缩进的漂移不在其列——那由行首形状
+ * 修回兜住。这类败因记 `content`，其余一律 `transport`；两类失败画同一条
+ * 红实线，分类只喂悬停文案的标签。每行只跑首跑，失败等用户点击救活。
  */
 class ContentRejectedError extends Error {}
 
@@ -134,8 +140,10 @@ export class TranslationDispatcher {
    * 每个块先按 markdown 结构切成段：代码围栏与纯空白段**逐字保留、永不送
    * 模型**；散文段再按输入上限切片、各自成片段。相邻片段打包成一个请求；整批
    * 失败时退回逐片段单发。每个片段的译文要过形状核对（逐行结构签名与原文全
-   * 等）并通过链接目标回填才算成立——「翻译后 markdown 语法没问题」由构造与
-   * 核对保证，不向模型索要任何占位符。
+   * 等：行数、无记号行缩进、记号类别、表格竖线数、链接个数）并通过行首形状
+   * 修回与链接目标回填才算成立——「翻译后 markdown 语法没问题」由构造与
+   * 核对保证，不向模型索要任何占位符；渲染等价的样式漂移（`##`→`###`、
+   * `-`→`*`、序号与列表缩进）修回原样而不拒收。
    *
    * 调用方传进来的每个块要么整块译出、要么整块保持原文：任一片段缺失都让该块
    * 作废，避免半中半英的段落；失败块带 `reason` 分类与 `detail` 一句技术细节
@@ -351,7 +359,10 @@ export class TranslationDispatcher {
       if (mismatch !== null) {
         throw new ContentRejectedError(mismatch);
       }
-      out.set(replyPieceKey(piece), piece.head + restoreLinkTargets(piece.text, answer) + piece.tail);
+      // 先修回行首形状（标题层级、列表符号、序号、引用深度、列表缩进的漂移
+      // 就此消失），再回填链接目标——两者都只动骨架，模型的译文正文一字不碰。
+      const repaired = restoreLineShapes(piece.text, answer);
+      out.set(replyPieceKey(piece), piece.head + restoreLinkTargets(piece.text, repaired) + piece.tail);
     });
     return out;
   }

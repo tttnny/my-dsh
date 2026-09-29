@@ -31,10 +31,12 @@ export interface ITranslationAdapter {
  * `transport` covers anything that says the channel was hurt (timeouts, HTTP
  * errors, broken streams, empty returns); `content` covers only rejections of
  * the returned text itself: the per-line markdown shape check (line counts,
- * indent, block markers, table pipes, link counts) did not match the source,
- * or a ⟪…⟫ batch marker survived into the answer. Both stay clickable: a
- * manual re-run re-rolls the batch marker id and re-asks the model, so a
- * shape rejection may well pass next time.
+ * indent on marker-free lines, block-marker class, table pipes, link counts)
+ * did not match the source, or a ⟪…⟫ batch marker survived into the answer.
+ * Rendering-equivalent drift (heading level, bullet char, list numbering or
+ * indentation) is repaired by construction, never rejected. Both kinds stay
+ * clickable: a manual re-run re-rolls the batch marker id and re-asks the
+ * model, so a shape rejection may well pass next time.
  */
 export type ReplyFailReason = 'transport' | 'content';
 

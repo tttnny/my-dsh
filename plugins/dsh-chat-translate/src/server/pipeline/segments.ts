@@ -6,15 +6,22 @@
  * 三件事：
  * 1. `splitMarkdownSegments`：把块切成 code / prose 段的有序清单，拼接恒等于原文。
  *    code 段（``` 或 ~~~ 围栏，含未闭合的到块尾）永不送模型；4 空格缩进代码不
- *    单独识别（聊天正文里几乎不出现，行首缩进由形状签名兜住）。
- * 2. `lineSignatures`：一行 markdown 的结构签名——缩进宽、块记号（标题/引用/
- *    列表符）、表格竖线数、链接个数。段译文与原段逐行对签名，任何一行不齐即
- *    形状不符（content 败因）。反引号的增减**不拦**：行内代码是样式不是骨架，
- *    拦它只会把能看的译文打成红线；真破渲染的是行合并/拆开、表格列错位、
- *    列表变段落、链接丢没。
+ *    单独识别（聊天正文里几乎不出现，无记号行的行首缩进由形状签名兜住，
+ *    记号行的缩进则随前缀修回）。
+ * 2. `lineSignatures`：一行 markdown 的结构签名——块记号的**类别**（标题 h、
+ *    引用 q、无序列表 l、有序列表 n）、无记号行的缩进宽、表格竖线数、链接个数。
+ *    段译文与原段逐行对签名，任何一行不齐即形状不符（content 败因）。反引号的
+ *    增减**不拦**：行内代码是样式不是骨架，拦它只会把能看的译文打成红线；
+ *    记号的层级、字符、序号与列表缩进同样**不拦**（`##`→`###`、`-`→`*`、
+ *    `1.`→`2.`、`>`→`>>`）——它们是渲染等价的漂移，交给 restoreLineShapes
+ *    修回，而不是把整块长回答一票否决。真破渲染的仍是：行合并/拆开、表格列
+ *    错位、记号整个丢（列表变段落）、链接丢没、无记号行缩进漂移（变代码块）。
  * 3. `restoreLinkTargets`：链接按出现序对齐后，把原文的 URL 逐个拼回译文——
  *    模型只译 `[文字]`，`(URL)` 由构造保住。个数不等在签名核对里已经出局。
  *    引用式定义行 `[id]: URL` 同账：计数进签名、目标由回填保住。
+ * 4. `restoreLineShapes`：过了签名的译文逐行把「前导空白 + 块记号」拼回原文
+ *    同款——类别核对保证两侧同角色，前缀修回让标题层级、列表符号、序号、
+ *    引用深度与列表缩进的漂移在成品里根本不存在。
  */
 
 export interface MarkdownSegment {
@@ -72,24 +79,41 @@ export function splitMarkdownSegments(text: string): MarkdownSegment[] {
   return segments;
 }
 
-const BLOCK_MARKER = /^(#{1,6}[ \t]|>+[ \t]?|[-*+][ \t]|\d{1,3}[.)][ \t])/;
+// 行首形状前缀（全匹配 = 前导空白 + 块记号，捕获组 = 记号本体）：嵌套列表的
+// 缩进记号行也认——签名按类别放行，缩进随前缀一起修回。
+const LINE_SHAPE_PREFIX = /^[ \t]*(#{1,6}[ \t]|>+[ \t]?|[-*+][ \t]|\d{1,3}[.)][ \t])/;
 // 链接目标允许一层平衡括号（CommonMark 裸目标规则），捕获组取到完整 URL。
 const LINK_SPAN = /\[[^\]]*\]\(((?:[^()]|\([^()]*\))*)\)/g;
 // 引用式定义行 `[id]: URL`：与内联链接同账——计数进签名、目标由回填保住。
 const LINK_DEF_LINE = /^( {0,3}\[[^\]]+\]:[ \t]*)(\S+)([ \t]*\r?)$/;
 
+/** 记号类别：标题 h、引用 q、无序列表 l、有序列表 n；层级与字符不进类别。 */
+function markerClass(marker: string): string {
+  if (marker === '') return '';
+  const head = marker[0]!;
+  if (head === '#') return 'h';
+  if (head === '>') return 'q';
+  if (head === '-' || head === '*' || head === '+') return 'l';
+  return 'n';
+}
+
 /**
  * 一行的结构签名；两行签名相等 ⇔ 结构角色相等。
  * 反引号不在签名里：行内代码是样式不是骨架，增减一对不破渲染（点原文一键
  * 可回），拦它只会把能看的译文打成红线。行尾 \r 同样不进签名——模型把
- * CRLF 归一成 LF 是渲染无感的改写，不该拦。
+ * CRLF 归一成 LF 是渲染无感的改写，不该拦。块记号只认类别：`##`→`###`、
+ * `-`→`*`、序号与引用深度的漂移由 restoreLineShapes 拼回原样，不值得拒收
+ * 整块；记号行的缩进也不进签名（它属于会被修回的前缀），无记号行的缩进仍是
+ * 硬判据——凭空多出四个空格会把段落变成代码块。
  */
 function lineSignature(line: string): string {
-  const indent = (/^[ \t]*/.exec(line) ?? [''])[0].replace(/\t/g, '  ').length;
-  const marker = BLOCK_MARKER.exec(line)?.[1]?.trim() ?? '';
+  const marker = LINE_SHAPE_PREFIX.exec(line)?.[1]?.trim() ?? '';
+  const cls = markerClass(marker);
+  const indent =
+    cls === '' ? (/^[ \t]*/.exec(line) ?? [''])[0].replace(/\t/g, '  ').length : 'i';
   const pipes = (line.match(/\|/g) ?? []).length;
   const links = (line.match(LINK_SPAN) ?? []).length + (LINK_DEF_LINE.test(line) ? 1 : 0);
-  return `${indent}|${marker}|${pipes}|${links}`;
+  return `${indent}|${cls}|${pipes}|${links}`;
 }
 
 /** 逐行结构签名；行数不同在比较处即判不符。 */
@@ -148,4 +172,29 @@ export function restoreLinkTargets(original: string, translated: string): string
       .join('\n');
   }
   return out;
+}
+
+/**
+ * 逐行把「前导空白 + 块记号」拼回原文同款：签名核对已保证两侧行数相等、
+ * 记号类别一致，这里把译文每行的行首前缀换成原文的——标题层级（`##`→`###`）、
+ * 列表符号（`-`→`*`）、序号（`2.`→`1.`）、引用深度（`>`→`>>`）与列表缩进
+ * 这些渲染等价的漂移就此消失，成品永远带着原文的骨架。记号之后的正文一字
+ * 不动；原文行没有记号前缀时整行原样。
+ */
+export function restoreLineShapes(original: string, translated: string): string {
+  const want = original.split('\n');
+  const got = translated.split('\n');
+  if (want.length !== got.length) return translated;
+  return got
+    .map((line, index) => {
+      const w = LINE_SHAPE_PREFIX.exec(want[index] ?? '');
+      if (w === null) return line;
+      const g = LINE_SHAPE_PREFIX.exec(line);
+      if (g === null) return line;
+      // 类别不等时不动手——真到这一步是签名核对放行的边界（如无记号行），
+      // 修回只会覆盖模型的内容，越权。
+      if (markerClass((w[1] ?? '').trim()) !== markerClass((g[1] ?? '').trim())) return line;
+      return `${w[0]}${line.slice(g[0].length)}`;
+    })
+    .join('\n');
 }

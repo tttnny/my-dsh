@@ -24,9 +24,11 @@ import type { KeyReader } from '../credentials.ts';
  * models write stiff machine-flavored Chinese ("硅基中文"), and that is the
  * same defect translation fixes, so Chinese gets a polishing pass too. Input
  * is reply Markdown and output is re-rendered as Markdown by the client, and
- * the host verifies the shape line by line (line counts, indent, block
- * markers, table pipes, link counts) before accepting an answer — so the
- * instruction states exactly what is checked, and tells the model link
+ * the host verifies the shape line by line (line counts, indent on
+ * marker-free lines, block-marker class, table pipes, link counts) before
+ * accepting an answer — marker-level drift (heading depth, bullet char, list
+ * numbering or indentation) is repaired by the host rather than rejected, so
+ * the instruction states exactly what is checked, and tells the model link
  * targets must be copied verbatim (the host restores them anyway; the rule
  * keeps the parentheses intact). Inline code is styling, not structure: its
  * contents may be translated and the backticks may drift without veto.
