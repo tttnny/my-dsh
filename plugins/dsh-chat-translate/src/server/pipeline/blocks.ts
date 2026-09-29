@@ -1,4 +1,12 @@
-import { randomTokenId } from './mask-tokens.ts';
+
+/** 每次打包请求重掷的 4 字母随机 id：让标记无法被当成词、也不会跨请求撞车。 */
+function randomTokenId(): string {
+  let out = '';
+  for (let i = 0; i < 4; i++) {
+    out += 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)];
+  }
+  return out;
+}
 
 /**
  * 回答正文翻译的请求预算。每次请求的输入估算 token 上限，与本地服务的
@@ -128,8 +136,8 @@ export function packPieces<T extends { text: string }>(
 }
 
 /**
- * 块分隔标记：`⟪<4 letters><index>⟫`。外括号刻意与掩码占位符的 ⟦⟧ 不同形，
- * 掩码残留检测（只认 ⟦⟧）因此不会把这个标记当成泄漏。
+ * 块分隔标记：`⟪<4 letters><index>⟫`——打包请求的框架，每段以标记行开头。
+ * 它只活在一次请求的负载里；译文残留 ⟪…⟫ 即形状拒收。
  */
 export interface BatchFormat {
   id: string;

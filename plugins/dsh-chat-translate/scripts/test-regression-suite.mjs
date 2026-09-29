@@ -1,11 +1,11 @@
 // Comprehensive Automated Regression Test Suite for dsh-chat-translate
 // Tests:
-// 1. ContentMaskingPipeline placeholder masking & robust unmasking
+// 1. Structural reassembly: fence segmentation, per-line shape check, link-target restore
 // 2. All reply blocks dispatched regardless of language (no skipping; Chinese is rewritten too)
 // 3. Serial request queue & failure-reason classification (user-initiated retries)
 // 4. LruDiskCache revision gating, LRU eviction and TTL handling
 // 5. ConfigManager live-config reads and change notification
-// 6. HttpRouter DoS 1MB protection and endpoint handling
+// 6. Connection exact Fetch routes and endpoint handling
 
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
@@ -19,8 +19,7 @@ await fs.mkdir(TMP_ROOT, { recursive: true });
 const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'suite-'));
 process.env.DSH_HOME = TMP_HOME;
 
-import { ContentMaskingPipeline, MaskRestoreError, isMaskLeak } from '../src/server/pipeline/masking.ts';
-import { hasMaskResidue } from '../src/server/pipeline/mask-tokens.ts';
+import { splitMarkdownSegments, shapeMismatch, restoreLinkTargets } from '../src/server/pipeline/segments.ts';
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { ConfigManager, createLiveConfigSource, DEFAULT_CONFIG } from '../src/server/config.ts';
 import { apply as applyHost, Config as HostConfig, inject as hostInject } from '../src/index.ts';
@@ -61,175 +60,89 @@ async function testAsync(name, fn) {
   }
 }
 
+/** 原样回显 ⟪…⟫ 标记负载的每个段，模拟守规矩的多段翻译。 */
+function echoMarkers(text) {
+  const matches = [...text.matchAll(/⟪([a-z]{4})(\d+)⟫/g)];
+  return matches
+    .map((match, index) => {
+      const start = match.index + match[0].length;
+      const end = index + 1 < matches.length ? matches[index + 1].index : text.length;
+      return match[0] + '\n译:' + text.slice(start, end).trim();
+    })
+    .join('\n\n');
+}
+
+function makeDispatcher(translate) {
+  const entry = createFakeSettingsEntry();
+  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
+  const cache = new LruDiskCache(100, `regression-${Math.random().toString(36).slice(2)}.json`);
+  const dispatcher = new TranslationDispatcher(config, cache);
+  const calls = [];
+  dispatcher.adapters.set('openai', {
+    id: 'openai',
+    name: 'Fake',
+    isAvailable: () => true,
+    translate: async (t, signal, cfg, options) => {
+      calls.push({ text: t, options });
+      return translate(t, calls.length, options);
+    },
+  });
+  return { entry, cache, dispatcher, calls };
+}
+
 console.log('=== Starting dsh-chat-translate Regression Test Suite ===\n');
 
 // -------------------------------------------------------------
-// Suite 1: ContentMaskingPipeline Placeholder Protection
+// Suite 1: Structural reassembly (segments, shape, links)
 // -------------------------------------------------------------
-console.log('--- Suite 1: ContentMaskingPipeline Placeholder Protection ---');
+console.log('--- Suite 1: Structural reassembly ---');
 
-const pipeline = new ContentMaskingPipeline();
-
-// The wire token carries a random id, so tests must derive it from the masked
-// text instead of hard-coding a literal.
-function tokenIndexIn(maskedText, index) {
-  const hit = [...maskedText.matchAll(/⟦([a-z]{4})(\d+)⟧/gi)].find((m) => Number(m[2]) === index);
-  if (!hit) throw new Error(`mask token #${index} not found in ${JSON.stringify(maskedText)}`);
-  return hit[0];
-}
-
-test('Masks multi-line code blocks with backticks and tildes', () => {
-  const input = 'Here is some code:\n```typescript\nconst answer: number = 42;\nconsole.log(answer);\n```\nAnd more text.';
-  const { maskedText, unmask } = pipeline.mask(input);
-  assert.ok(!maskedText.includes('const answer'));
-
-  const simulatedTranslation = `这是代码：\n${tokenIndexIn(maskedText, 0)}\n以及更多文本。`;
-  const unmasked = unmask(simulatedTranslation);
-  assert.ok(unmasked.includes('const answer: number = 42;'));
-  assert.ok(unmasked.startsWith('这是代码：'));
+test('splitMarkdownSegments round-trips and classifies fences', () => {
+  const text = 'Intro `code` line.\n\n```bash\nnpm publish --tag latest\n```\n\nOutro.';
+  const segments = splitMarkdownSegments(text);
+  assert.equal(segments.map((s) => s.text).join(''), text, '拼接恒等于原文');
+  assert.deepEqual(segments.map((s) => s.kind), ['prose', 'code', 'prose']);
+  assert.ok(segments[1].text.startsWith('```bash'));
+  assert.ok(segments[1].text.endsWith('```\n'), '段尾换行归属前一段');
 });
 
-test('Masks inline code spans', () => {
-  const input = 'Please execute `pnpm run build` and `pnpm run typecheck` before releasing.';
-  const { maskedText, unmask } = pipeline.mask(input);
-
-  const simulated = `请在发布前执行 ${tokenIndexIn(maskedText, 0)} 和 ${tokenIndexIn(maskedText, 1)}。`;
-  const unmasked = unmask(simulated);
-  assert.equal(unmasked, '请在发布前执行 `pnpm run build` 和 `pnpm run typecheck`。');
+test('tilde fences and unclosed fences become code segments', () => {
+  const tilde = 'a\n~~~sh\ncode\n~~~\nb';
+  assert.deepEqual(splitMarkdownSegments(tilde).map((s) => s.kind), ['prose', 'code', 'prose']);
+  const unclosed = 'a\n```js\nnever closed\nstill code';
+  const segments = splitMarkdownSegments(unclosed);
+  assert.deepEqual(segments.map((s) => s.kind), ['prose', 'code']);
+  assert.equal(segments.map((s) => s.text).join(''), unclosed);
 });
 
-test('Masks URLs accurately', () => {
-  const input = 'Check the documentation at https://cn.bing.com/translator?q=test&lang=zh-Hans for updates.';
-  const { maskedText, unmask } = pipeline.mask(input);
-
-  const simulated = `查看文档位于 ${tokenIndexIn(maskedText, 0)} 获取更新。`;
-  const unmasked = unmask(simulated);
-  assert.equal(unmasked, '查看文档位于 https://cn.bing.com/translator?q=test&lang=zh-Hans 获取更新。');
+test('a fence of the other marker does not close an open fence', () => {
+  const text = '```js\n~~~\nnot a close\n```';
+  const segments = splitMarkdownSegments(text);
+  assert.deepEqual(segments.map((s) => s.kind), ['code']);
 });
 
-test('Round-trips every masked construct through an unchanged translation', () => {
-  const inputs = [
-    'Here is some code:\n```typescript\nconst answer: number = 42;\n```\nAnd more text.',
-    'Please execute `pnpm run build` and `pnpm run typecheck` before releasing.',
-    'Check the documentation at https://cn.bing.com/translator?q=test&lang=zh-Hans for updates.',
-    'Files located at /etc/nginx/nginx.conf, src/server/dispatcher.ts, and C:\\Users\\test\\config.json',
-    'Look at node_modules/.pnpm/x@1.0.0/node_modules/y/index.js please',
-    '/usr/local/bin/node --version',
-    'Run command with --concurrency=5 --force-refresh -p 3080 and -rf',
-    'a **bold** word and src/a.b glob',
-  ];
-  for (const input of inputs) {
-    const { maskedText, unmask } = pipeline.mask(input);
-    assert.equal(unmask(maskedText), input, `round-trip failed for ${JSON.stringify(input)}`);
-  }
+test('shapeMismatch accepts a pure content rewrite and flags structural edits', () => {
+  const original = '| a | b |\n| --- | --- |\n| `x` | [t](u) |';
+  const good = '| 甲 | 乙 |\n| --- | --- |\n| `x 的译文` | [标题](u) |';
+  assert.equal(shapeMismatch(original, good), null, '逐字改内容、结构不动 = 通过');
+  assert.ok(shapeMismatch(original, '| 甲 | 乙 |\n| --- |'), '行数变了');
+  assert.ok(shapeMismatch(original, '| a |\n| --- |\n| x | y |'), '竖线数变了');
+  assert.equal(shapeMismatch(original, '| a | b |\n| --- | --- |\n| x | [t](u) |'), null, '反引号丢了不拦：行内代码是样式不是骨架');
+  assert.equal(shapeMismatch(original, '| a | b |\n| --- | --- |\n| `x` | [t](u) `多出来的` |'), null, '反引号多了也不拦');
+  assert.ok(shapeMismatch(original, '| a | b |\n| --- | --- |\n| `x` | [t](u) [v](w) |'), '链接个数变了');
+  assert.ok(shapeMismatch('- item', '* item'), '列表记号换了字符');
+  assert.ok(shapeMismatch('## Head', 'Head'), '标题记号丢了');
+  assert.ok(shapeMismatch('  plain', 'plain'), '缩进丢了');
 });
 
-test('Resolves a token whose closing bracket the engine dropped', () => {
-  const input = 'Let me check these host-side service names in 0.1.6: `webServer`, `storageDomain`, `settings`';
-  const { maskedText, unmask } = pipeline.mask(input);
-  assert.equal(unmask(maskedText), input);
-
-  const id = /⟦([a-z]{4})0⟧/.exec(maskedText)[1];
-  const opened = maskedText.replace(`⟦${id}0⟧`, `⟦${id}0`);
-  assert.equal(unmask(opened), input);
-});
-
-test('Rejects a translation that rewrote, dropped, duplicated or invented a token', () => {
-  const input = 'Read src/server/dispatcher.ts and fix docs/rules/plugins.md';
-  const { maskedText, unmask } = pipeline.mask(input);
-  const id = /⟦([a-z]{4})0⟧/.exec(maskedText)[1];
-  const token = (i) => `⟦${id}${i}⟧`;
-
-  const healthy = `阅读 ${token(0)} 并修复 ${token(1)}`;
-  assert.equal(unmask(healthy), '阅读 src/server/dispatcher.ts 并修复 docs/rules/plugins.md');
-
-  const poisoned = {
-    'token abbreviated to a bare word': '阅读 DSH 并修复 DSH',
-    'token core kept, id and index lost': '阅读 DSHMASK 并修复 DSHMASK',
-    'index dropped': `阅读 ⟦${id}⟧ 并修复 ⟦${id}⟧`,
-    'one token dropped': `阅读 ${token(0)} 并修复`,
-    'one token duplicated': `阅读 ${token(0)} 并修复 ${token(1)} ${token(1)}`,
-    'foreign pass id': `阅读 ⟦zzzz0⟧ 并修复 ${token(1)}`,
-    'out-of-range index': `阅读 ${token(0)} 并修复 ⟦${id}9⟧`,
-  };
-  for (const [name, out] of Object.entries(poisoned)) {
-    assert.throws(() => unmask(out), MaskRestoreError, `accepted: ${name} — ${JSON.stringify(out)}`);
-  }
-});
-
-test('isMaskLeak flags current-format tokens only', () => {
-  assert.equal(isMaskLeak('查看 ⟦abcd3⟧ 中的归属使用情况'), true);
-  assert.equal(isMaskLeak('正常的一段译文。'), false);
-  assert.equal(isMaskLeak('dshmask 不是占位符'), false);
-  assert.equal(isMaskLeak('the dsh mask utility'), false);
-});
-
-test('A source that documents a placeholder still round-trips', () => {
-  const source = 'The user reports `__DSH_MASK_0__` placeholders leaking into translations';
-  const { maskedText, unmask } = pipeline.mask(source);
-  assert.equal(unmask(maskedText), source);
-  assert.equal(hasMaskResidue(unmask(maskedText)), false);
-});
-
-test('Mask rules never swallow an already-inserted token (no nested masks)', () => {
-  const input = 'See https://example.com/a/b.ts and node_modules/.pnpm/x@1.0.0/node_modules/y/index.js';
-  const { maskedText } = pipeline.mask(input);
-  const tokens = maskedText.match(/⟦[a-z]{4}\d+⟧/g) ?? [];
-  assert.equal(tokens.length, new Set(tokens).size, 'a duplicated/nested token was produced');
-  for (const token of tokens) {
-    assert.ok(!token.slice(1).includes('⟦'), 'token contains a nested token');
-  }
-});
-
-test('A path is masked as one unit, never split mid-path', () => {
-  const { maskedText } = pipeline.mask('Edit src/server/dispatcher.ts to fix the bug');
-  assert.ok(!maskedText.includes('src⟦'), `path was split: ${JSON.stringify(maskedText)}`);
-  assert.equal((maskedText.match(/⟦[a-z]{4}\d+⟧/g) ?? []).length, 1);
-});
-
-test('Masks file paths (Linux, Windows, relative, source files)', () => {
-  const input = 'Files located at /etc/nginx/nginx.conf, src/server/dispatcher.ts, and C:\\Users\\test\\config.json';
-  const { maskedText, unmask } = pipeline.mask(input);
-  assert.ok(!maskedText.includes('/etc/nginx/nginx.conf'));
-  assert.ok(!maskedText.includes('src/server/dispatcher.ts'));
-
-  const unmasked = unmask(maskedText);
-  assert.equal(unmasked, input);
-});
-
-test('Masks CLI flags and options', () => {
-  const input = 'Run command with --concurrency=5 --force-refresh -p 3080 and -rf';
-  const { maskedText, unmask } = pipeline.mask(input);
-  assert.ok(!maskedText.includes('--concurrency=5'));
-  assert.ok(!maskedText.includes('--force-refresh'));
-
-  const unmasked = unmask(maskedText);
-  assert.equal(unmasked, input);
-});
-
-test('A token touching a Latin word is spaced out so the engine cannot merge it', () => {
-  const input = 'Fix src/server/dispatcher.ts now';
-  const { maskedText, unmask } = pipeline.mask(input);
-  const id = /⟦([a-z]{4})0⟧/.exec(maskedText)[1];
-
-  assert.ok(maskedText.includes(` ⟦${id}0⟧ `), `token stayed glued to the source: ${JSON.stringify(maskedText)}`);
-  assert.equal(unmask(maskedText), input);
-  // The engine keeps the spaced token but rewrites the surrounding words; the
-  // inserted spaces go away with the token and no word is welded to another.
-  assert.equal(unmask(`修复 ⟦${id}0⟧ 立即`), '修复 src/server/dispatcher.ts 立即');
-});
-
-test('A token dropped or rewritten by the engine rejects the whole translation', () => {
-  const input = 'Locate `DSH_HOME` directory';
-  const { maskedText, unmask } = pipeline.mask(input);
-  const id = /⟦([a-z]{4})0⟧/.exec(maskedText)[1];
-  assert.equal(unmask(maskedText), input);
-  // Closing bracket dropped: still resolvable.
-  assert.equal(unmask(`定位 ⟦${id}0 目录`), '定位 `DSH_HOME` 目录');
-  // Token gone entirely, and a token whose id was rewritten.
-  assert.throws(() => unmask('定位 目录'), MaskRestoreError);
-  assert.throws(() => unmask('定位 ⟦zzzz0⟧ 目录'), MaskRestoreError);
-  assert.throws(() => unmask('定位 ⟦⟧ 目录'), MaskRestoreError);
+test('restoreLinkTargets keeps translated text and copies urls back verbatim', () => {
+  const original = 'see [the docs](https://example.com/a?b=c) and ![img](/i.png)';
+  const translated = '看 [文档](https://例子.com/被改了) 还有 ![图](/换了的.png)';
+  assert.equal(
+    restoreLinkTargets(original, translated),
+    '看 [文档](https://example.com/a?b=c) 还有 ![图](/i.png)'
+  );
+  assert.equal(restoreLinkTargets('no links here', '没有链接'), '没有链接');
 });
 
 // -------------------------------------------------------------
@@ -238,56 +151,24 @@ test('A token dropped or rewritten by the engine rejects the whole translation',
 console.log('\n--- Suite 2: Reply Cache & Failure Semantics ---');
 
 await testAsync('A repeated reply block is answered from the cache, not the adapter', async () => {
-  const entry = createFakeSettingsEntry();
-  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
-  const cache = new LruDiskCache();
-  await cache.init();
-  const dispatcher = new TranslationDispatcher(config, cache);
-
-  let calls = 0;
-  // Mock mock adapter
-  const mockAdapter = {
-    id: 'mock-dedup',
-    name: 'Mock Dedup',
-    isAvailable: () => true,
-    translate: async (t) => {
-      calls++;
-      await new Promise((r) => setTimeout(r, 60));
-      return `translated:${t}`;
-    },
-  };
-  dispatcher.adapters.set('openai', mockAdapter);
+  const { entry, dispatcher, calls } = makeDispatcher(async (t) => `translated:${t}`);
   await entry.update({ baseUrl: 'http://x', model: 'm' });
 
   const first = await dispatcher.translateReplyBlocks(['Identical task text']);
   const second = await dispatcher.translateReplyBlocks(['Identical task text']);
-  assert.equal(calls, 1, 'the cache must answer the second request, not the adapter');
+  assert.equal(calls.length, 1, 'the cache must answer the second request, not the adapter');
   assert.equal(first[0].translated, 'translated:Identical task text');
-  assert.equal(second[0].translated, 'translated:Identical task text');
   assert.equal(second[0].cached, true);
 });
 
 await testAsync('A transport failure stays transport; the next call may pass freely', async () => {
   // 落定的行等的是用户的点击，不是冷却期：下一次调用（新行的首跑，或点击
   // 后同代文本的重发）照旧打到适配器。
-  const entry = createFakeSettingsEntry();
-  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
-  const cache = new LruDiskCache();
-  const dispatcher = new TranslationDispatcher(config, cache);
-
   let fail = true;
-  let calls = 0;
-  const unstableAdapter = {
-    id: 'unstable',
-    name: 'Unstable',
-    isAvailable: () => true,
-    translate: async (t) => {
-      calls++;
-      if (fail) throw new Error('503 Service Unavailable');
-      return `ok:${t}`;
-    },
-  };
-  dispatcher.adapters.set('openai', unstableAdapter);
+  const { entry, dispatcher } = makeDispatcher(async (t) => {
+    if (fail) throw new Error('503 Service Unavailable');
+    return `ok:${t}`;
+  });
   await entry.update({ baseUrl: 'http://x', model: 'm' });
 
   const down = await dispatcher.translateReplyBlocks(['Fail 1']);
@@ -295,116 +176,67 @@ await testAsync('A transport failure stays transport; the next call may pass fre
   assert.equal(down[0].reason, 'transport');
 
   fail = false;
-  const revived = await dispatcher.translateReplyBlocks(['Fail 1']);
-  assert.equal(revived[0].ok, true, '无冷却、无额度：下一次调用直接打到通道');
-  assert.equal(revived[0].translated, 'ok:Fail 1');
-  assert.ok(calls >= 2);
+  const up = await dispatcher.translateReplyBlocks(['Fail 1']);
+  assert.equal(up[0].ok, true, '无冷却、无额度：下一次调用直接打到通道');
 });
 
-await testAsync('A channel that mangles a mask token is discarded, never cached', async () => {
-  const entry = createFakeSettingsEntry();
-  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
-  const cache = new LruDiskCache();
-  cache.cache.clear();
-  const dispatcher = new TranslationDispatcher(config, cache);
-
-  const source = 'Read src/server/dispatcher.ts';
-  let calls = 0;
-  const leakyAdapter = {
-    id: 'leaky',
-    name: 'Leaky',
-    isAvailable: () => true,
-    translate: async () => {
-      calls++;
-      // Simulates an engine rewrite that defeats placeholder restoration: the
-      // protected fragment is replaced by the first word of the old marker.
-      return '阅读 DSH 里的内容';
-    },
-  };
-  dispatcher.adapters.set('openai', leakyAdapter);
+await testAsync('A reply that breaks the markdown shape is discarded, never cached', async () => {
+  // 单行被模型拆成两行——段落结构真破了，这才是形状拒收该拦的事。
+  const { entry, cache, dispatcher, calls } = makeDispatcher(async () => '阅读调度器\n并修文档规则');
   await entry.update({ baseUrl: 'http://x', model: 'm' });
 
+  const source = 'Read `dispatcher.ts` and fix docs/rules/plugins.md';
   const result = (await dispatcher.translateReplyBlocks([source]))[0];
-  assert.equal(result.ok, false, 'a mangled mask must not be reported as a translation');
+  assert.equal(result.ok, false, '行数变了 = 结构破损，不得当作译文展示');
   assert.equal(result.reason, 'content');
   assert.equal(result.translated, source, 'the original text must survive');
-  assert.equal(cache.get(source), undefined, 'a mangled mask must not be cached');
-  assert.equal(calls, 2, 'the batch and its per-piece retry both run');
+  assert.equal(cache.get(source.toLowerCase()), undefined, 'a shape break must not be cached');
+  assert.equal(calls.length, 2, 'the batch and its per-piece retry both run');
 });
 
-await testAsync('A channel that drops a mask token keeps its fragment out of the cache', async () => {
-  const entry = createFakeSettingsEntry();
-  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
-  const cache = new LruDiskCache();
-  cache.cache.clear();
-  const dispatcher = new TranslationDispatcher(config, cache);
-
-  const source = 'Read src/server/dispatcher.ts';
-  const dropping = {
-    id: 'dropping',
-    name: 'Dropping',
-    isAvailable: () => true,
-    // The engine translated the sentence but swallowed the protected fragment.
-    translate: async () => '阅读文件',
-  };
-  dispatcher.adapters.set('openai', dropping);
+await testAsync('Inline code may be translated, added or dropped without veto', async () => {
+  const { entry, dispatcher } = makeDispatcher(async () => '现在看看 `调度器` 和 `规则` 吧');
   await entry.update({ baseUrl: 'http://x', model: 'm' });
 
-  const result = (await dispatcher.translateReplyBlocks([source]))[0];
+  const result = (await dispatcher.translateReplyBlocks(['Look at `dispatcher` now']))[0];
+  assert.equal(result.ok, true, '反引号内是内容，不是语法——允许翻译');
+  assert.ok(result.translated.includes('`调度器`'), '反引号增减放行，只是样式漂移');
+});
+
+await testAsync('A hallucinated batch marker rejects the answer as content', async () => {
+  const { entry, dispatcher } = makeDispatcher(async () => '译文里混着 ⟪abcd0⟫ 标记');
+  await entry.update({ baseUrl: 'http://x', model: 'm' });
+
+  const result = (await dispatcher.translateReplyBlocks(['Some English prose.']))[0];
   assert.equal(result.ok, false);
-  assert.equal(result.reason, 'content', '丢片段是内容拒收');
-  assert.equal(result.translated, source);
-  assert.equal(cache.get(source), undefined);
+  assert.equal(result.reason, 'content', '残留的块标记是内容级拒收，不是通道伤');
 });
 
-await testAsync('A translated string without masks but with a hallucinated placeholder is discarded', async () => {
-  const entry = createFakeSettingsEntry();
-  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
-  const cache = new LruDiskCache();
-  cache.cache.clear();
-  const dispatcher = new TranslationDispatcher(config, cache);
-
-  const hallucinating = {
-    id: 'hallucinating',
-    name: 'Hallucinating',
-    isAvailable: () => true,
-    translate: async () => '查找 ⟦abcd0⟧ 中的归属使用情况',
-  };
-  dispatcher.adapters.set('openai', hallucinating);
+await testAsync('Link targets survive a model rewrite by construction', async () => {
+  const { entry, dispatcher } = makeDispatcher(
+    async () => '看 [文档](https://例子.com/被翻译过的地址)'
+  );
   await entry.update({ baseUrl: 'http://x', model: 'm' });
 
-  const result = (await dispatcher.translateReplyBlocks(['find attribution usage in dsh-llm']))[0];
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'content', '凭空造出占位符同样是内容拒收');
-  assert.equal(result.translated, 'find attribution usage in dsh-llm');
+  const result = (await dispatcher.translateReplyBlocks(['see [the docs](https://example.com/a?b=c)']))[0];
+  assert.equal(result.ok, true);
+  assert.ok(result.translated.includes('https://example.com/a?b=c'), 'URL 逐字拼回');
+  assert.ok(result.translated.includes('[文档]'), '链接文字保留模型的翻译');
 });
 
-await testAsync('A translation that keeps a placeholder the source documented is accepted', async () => {
-  const entry = createFakeSettingsEntry();
-  const config = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
-  const cache = new LruDiskCache();
-  cache.cache.clear();
-  const dispatcher = new TranslationDispatcher(config, cache);
-
-  const source = 'The user reports `__DSH_MASK_0__` placeholders leaking into translations';
-  const { maskedText, unmask } = pipeline.mask(source);
-  assert.equal(unmask(maskedText), source, 'a documented placeholder must round-trip');
-  assert.ok(!maskedText.includes('__DSH_MASK_0__'), 'the token-shaped string is masked like any other code fragment');
-
-  const faithful = {
-    id: 'faithful',
-    name: 'Faithful',
-    isAvailable: () => true,
-    // A faithful engine returns the token it was given, in place. The inline
-    // code span (backticks included) IS the fragment, so no backticks to add.
-    translate: async (text) => `用户反馈 ${/⟦[a-z]{4}\d+⟧/.exec(text)[0]} 占位符泄漏进译文`,
-  };
-  dispatcher.adapters.set('openai', faithful);
+await testAsync('Code fences never reach the channel and splice back verbatim', async () => {
+  const { entry, dispatcher, calls } = makeDispatcher(async (t, _n, options) =>
+    options?.mode === 'blocks' ? echoMarkers(t) : `译:${t}`
+  );
   await entry.update({ baseUrl: 'http://x', model: 'm' });
 
+  const fence = '```bash\nnpm publish --tag latest\n```';
+  const source = `Intro paragraph.\n\n${fence}\n\nOutro paragraph.`;
   const result = (await dispatcher.translateReplyBlocks([source]))[0];
-  assert.equal(result.ok, true, 'a placeholder the source documented is not a leak');
-  assert.equal(result.translated, '用户反馈 `__DSH_MASK_0__` 占位符泄漏进译文');
+  assert.equal(result.ok, true);
+  assert.ok(!calls.some((call) => call.text.includes('npm publish')), '围栏内容从不进请求');
+  assert.ok(result.translated.includes(fence), '代码块逐字拼回');
+  assert.ok(result.translated.startsWith('译:Intro paragraph.'));
 });
 
 // -------------------------------------------------------------
@@ -431,24 +263,7 @@ await testAsync('LruDiskCache handles TTL expiration and LRU eviction', async ()
   assert.equal(cache.get('k4'), 'v4', 'k4 should still exist');
 });
 
-test('LruDiskCache refuses to store and evicts mask-leaked translations', () => {
-  const cache = new LruDiskCache(10);
-  cache.cache.clear();
-
-  cache.set('clean', '干净译文');
-  assert.equal(cache.get('clean'), '干净译文');
-
-  cache.set('poisoned', '查找 ⟦abcd0⟧ 中的内容');
-  assert.equal(cache.get('poisoned'), undefined, 'a leaked translation must never be stored');
-
-  // An entry that entered the map by other means (e.g. a poisoned on-disk
-  // entry) is evicted on read: the leak check guards every read path.
-  cache.cache.set('warm', { t: Date.now(), v: '比较 ⟦wxyz1⟧ 中的行为' });
-  assert.equal(cache.get('warm'), undefined, 'a warm poisoned entry is evicted on read');
-  assert.equal(cache.cache.has('warm'), false);
-});
-
-await testAsync('LruDiskCache drops mask-leaked entries while loading from disk', async () => {
+await testAsync('LruDiskCache drops malformed entries while loading from disk', async () => {
   const cachePath = path.join(TMP_HOME, 'dsh-chat-translate', 'cache.json');
   const now = Date.now();
   await fs.mkdir(path.dirname(cachePath), { recursive: true });
@@ -458,7 +273,6 @@ await testAsync('LruDiskCache drops mask-leaked entries while loading from disk'
       rev: PROMPT_REVISION,
       entries: {
         ok: { t: now, v: '正常译文' },
-        leaked: { t: now, v: '在 ⟦abcd0⟧ 中查找' },
         // 无时间戳 / 非字符串译文：陌生形态，读取时被丢掉。
         noTime: { v: '没有时间戳' },
         notString: { t: now, v: 42 },
@@ -470,7 +284,6 @@ await testAsync('LruDiskCache drops mask-leaked entries while loading from disk'
   const cache = new LruDiskCache();
   await cache.init();
   assert.equal(cache.get('ok'), '正常译文');
-  assert.equal(cache.get('leaked'), undefined, 'poisoned on-disk entry must be dropped');
   assert.equal(cache.get('noTime'), undefined, 'entry without a timestamp must be dropped');
   assert.equal(cache.get('notString'), undefined, 'entry with a non-string value must be dropped');
 

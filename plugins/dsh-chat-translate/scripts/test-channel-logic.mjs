@@ -1,4 +1,4 @@
-// Reply channel contract (one channel) and the failure-reason ledger.
+// Reply channel contract (one channel) and the failure-reason ledger (shape checks).
 // Every row gets exactly its one first-run attempt; failures report their
 // reason (transport vs content) and only the user's click re-runs a row.
 import assert from 'node:assert/strict';
@@ -149,10 +149,11 @@ await testAsync('a transport failure reports reason transport', async () => {
   assert.equal(results[0].reason, 'transport');
 });
 
-await testAsync('a channel that mangles placeholders reports reason content', async () => {
+await testAsync('a reply that breaks the markdown shape reports reason content', async () => {
   const { dispatcher, source } = await setupDispatcher({
-    // 通道活着：HTTP 正常返回，只是这个弱模型总丢 ⟦…⟧ 占位符。
-    translate: async () => '一段丢光了占位符的译文',
+    // 通道活着：HTTP 正常返回，只是这个弱模型把单行拆成了两行——
+    // 逐行形状核对当场拒收（反引号增减不拦，行数不）。
+    translate: async () => '一段拆成\n两行的译文',
   });
   await source.update({ baseUrl: 'http://x', model: 'm' });
   const results = await dispatcher.translateReplyBlocks(['Look at `alpha` and `beta` before shipping.']);
@@ -161,12 +162,12 @@ await testAsync('a channel that mangles placeholders reports reason content', as
 });
 
 await testAsync('multi-piece block: succeeded pieces never poison the content verdict', async () => {
-  // 超长块切成两片、落进两批：前一片（纯中文，无掩码）正常译出，后一片带
-  // ⟦…⟧ 占位符被丢光。块级 reason 只能评判缺失的片段——成功片段本就不记账，
-  // 把它们当 transport 判据会把红虚线误报成红实线（审查复现的真 bug）。
+  // 超长块切成两片、落进两批：前一片（纯中文）正常译出，后一片被模型拆行。
+  // 块级 reason 只能评判缺失的片段——成功片段本就不记账，把它们当 transport
+  // 判据会把红虚线误报成红实线（审查复现的真 bug）。
   const { dispatcher, source } = await setupDispatcher({
     translate: async (t) => {
-      if (t.includes('⟦')) return '这一批把占位符丢光了';
+      if (t.includes('`')) return '这一批被拆成\n两行的译文';
       return '译:' + t.slice(0, 20);
     },
   });
@@ -198,9 +199,9 @@ await testAsync('mixed attempts: any transport wound wins over content rejection
 
 await testAsync('one poisoned block never blocks the other blocks', async () => {
   const { dispatcher, source, cache } = await setupDispatcher({
-    // 守规矩的回显（原样带回掩码 token），但对含 poison 的密集代码块交假译。
+    // 守规矩的回显，但对含 poison 的片段交拆行的假译。
     translate: async (t, _n, options) => {
-      if (t.includes('poison')) return '坏掉了';
+      if (t.includes('poison')) return '坏\n掉了';
       return options?.mode === 'blocks' ? echoMarkers(t) : `译:${t}`;
     },
   });
@@ -209,7 +210,7 @@ await testAsync('one poisoned block never blocks the other blocks', async () => 
   const plain = 'An ordinary English sentence.';
   const results = await dispatcher.translateReplyBlocks([dense, plain]);
   assert.equal(results[0].ok, false);
-  assert.equal(results[0].reason, 'content', '两次尝试都只以内容拒收终结');
+  assert.equal(results[0].reason, 'content', '两次尝试都只以形状拒收终结');
   assert.equal(results[1].ok, true, '同批的普通块在单发补试里必须照常译出');
   assert.ok(results[1].translated.startsWith('译:'));
   assert.ok(cache.get(plain.toLowerCase()), '译出的普通块进了缓存池');
@@ -262,13 +263,14 @@ await testAsync('refresh picks up external changes and a missing key reads empty
 });
 
 test('the dispatcher exposes no circuit-breaker surface anymore', () => {
-  // 防回归：重试与冷却不由宿主发起——任何账本/探针字段都不得复活。
+  // 防回归：重试与冷却不由宿主发起——任何账本/探针/掩码字段都不得复活。
   const entry = createFakeSettingsEntry();
   const cfg = new ConfigManager(entry, new CredentialsReader(createFakeCredentials()));
   const dispatcher = new TranslationDispatcher(cfg, new LruDiskCache());
   assert.equal('circuitStates' in dispatcher, false);
   assert.equal('isCircuitOpen' in dispatcher, false);
   assert.equal('recordFailure' in dispatcher, false);
+  assert.equal('masking' in dispatcher, false, '占位符掩码管线已整体退役');
 });
 
 await fs.rm(TMP_HOME, { recursive: true, force: true });

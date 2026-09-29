@@ -28,12 +28,12 @@ export interface ITranslationAdapter {
 /**
  * Why a failed block failed. `transport` covers anything that says the channel
  * was hurt (timeouts, HTTP errors, broken streams, empty returns); `content`
- * covers only rejections of the returned text itself (a ⟦…⟧ mask placeholder or
- * a ⟪…⟫ batch marker that did not survive the translation). The client draws
- * the line marker from this: solid red for transport, dashed red for content —
- * and both stay clickable: a manual re-run re-rolls the mask and batch marker
- * ids — and cached sibling pieces drop out of the packing — so a weak model
- * may carry the fragment next time.
+ * covers only rejections of the returned text itself: the per-line markdown
+ * shape check (line counts, indent, block markers, table pipes, link counts)
+ * did not match the source, or a ⟪…⟫ batch marker survived into the answer. The client draws the line marker from this: solid red for transport,
+ * dashed red for content — and both stay clickable: a manual re-run re-rolls
+ * the batch marker id and re-asks the model, so a shape rejection may well
+ * pass next time.
  */
 export type ReplyFailReason = 'transport' | 'content';
 

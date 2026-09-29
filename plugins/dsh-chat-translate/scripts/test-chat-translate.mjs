@@ -516,7 +516,7 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
 });
 
 // ---------------------------------------------------------------
-// 5. 左缘线标：蓝=读译文，灰细=读原文备译文，红实=传输失败，红虚=内容拒收，
+// 5. 左缘线标：蓝=读译文，灰细=读原文备译文，红实=传输失败，红虚=形状拒收，
 //    灰脉动=在途，无线=没送过模型（后两种失败态整块可点=手动补跑）
 // ---------------------------------------------------------------
 
@@ -533,7 +533,7 @@ await test('标记名单点：线型随状态，可点态含两种红线，在�
   assert.match(transport, /dsh-ct-prose-failed-solid/, '传输失败挂实线红');
   assert.ok(!transport.includes('failed-dashed'));
   const content = proseClassNames('fail-content');
-  assert.match(content, /dsh-ct-prose-failed-dashed/, '内容拒收挂虚线红');
+  assert.match(content, /dsh-ct-prose-failed-dashed/, '形状拒收挂虚线红');
   assert.match(content, /dsh-ct-prose-retryable/, '两种红线都带 ↻ 悬停锚点');
   const inflight = proseClassNames('inflight');
   assert.match(inflight, /dsh-ct-prose-inflight/);
@@ -560,7 +560,7 @@ await test('线的色相与粗细：蓝 1px 主色、灰 0.5px 中性、红走 e
   assert.match(
     ASSISTANT_CSS,
     /\.dsh-ct-prose-failed-dashed\{border-left:1px dashed color-mix\(in srgb, var\(--dsw-alias-state-error-primary\) 65%, transparent\)\}/,
-    '内容拒收是 1px error 色虚线（0.5px 虚线会被抗锯齿糊平，必须 1px 起）'
+    '形状拒收是 1px error 色虚线（0.5px 虚线会被抗锯齿糊平，必须 1px 起）'
   );
 });
 

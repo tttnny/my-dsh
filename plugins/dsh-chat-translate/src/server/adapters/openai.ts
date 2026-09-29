@@ -14,18 +14,22 @@ import type { KeyReader } from '../credentials.ts';
  */
 
 /**
- * The translator instruction. The placeholder is described by its shape alone:
- * naming any of its characters gives a small model something to echo. The
- * multi-part variant adds the block markers of a packed reply request — same
- * bracket-shape description, so the model never sees a token it could
- * reproduce as a word.
+ * The translator instruction. Code fences are cut out before the model ever
+ * sees the message (pipeline/segments.ts), so there is nothing here about
+ * them beyond the fence-shaped batch markers, which are described by bracket
+ * shape alone: naming any of their characters gives a small model something
+ * to echo.
  *
  * Every passage is processed, including passages already in Chinese: weak
  * models write stiff machine-flavored Chinese ("硅基中文"), and that is the
  * same defect translation fixes, so Chinese gets a polishing pass too. Input
- * is reply Markdown and output is re-rendered as Markdown by the client, so
- * the instruction pins the markup: translate prose only, never add, remove,
- * or reorder Markdown syntax.
+ * is reply Markdown and output is re-rendered as Markdown by the client, and
+ * the host verifies the shape line by line (line counts, indent, block
+ * markers, table pipes, link counts) before accepting an answer — so the
+ * instruction states exactly what is checked, and tells the model link
+ * targets must be copied verbatim (the host restores them anyway; the rule
+ * keeps the parentheses intact). Inline code is styling, not structure: its
+ * contents may be translated and the backticks may drift without veto.
  *
  * Prompt semantics are registered in `prompt-revision.ts`; changing what this
  * prompt asks the model to do means bumping that revision with it.
@@ -41,17 +45,17 @@ function buildSystemPrompt(mode: 'plain' | 'blocks'): string {
     `${TARGET_LANGUAGE}: smooth out stiff or machine-translated phrasing while ` +
     `keeping the meaning, tone, proper names, numbers and technical terms ` +
     `unchanged. Never drop content and never add content. ` +
-    `The message is Markdown that will be re-rendered as Markdown: translate ` +
-    `the prose only, and keep every Markdown construct exactly as authored — ` +
-    `headings, list markers, table pipes and cell order, quote markers, bold ` +
-    `and emphasis runs, links, and inline code. Never add, remove, reorder, ` +
-    `or nest Markdown syntax of your own. ` +
+    `The message is Markdown that will be re-rendered as Markdown, and its ` +
+    `structure is verified line by line: keep the same number of lines, the ` +
+    `same indentation, the same heading, quote and list markers, the same ` +
+    `table rows and pipe counts, and the same number of links. Inline code ` +
+    `contents may stay as they are or be translated where that reads better. ` +
+    `For a link ` +
+    `[text](target), translate only the text and copy the target inside the ` +
+    `parentheses character-for-character. Never add, remove, reorder or nest ` +
+    `Markdown syntax of your own. ` +
     `Output ONLY the resulting text — no explanations, no quotation marks, no extra words, ` +
-    `no code fence around the whole answer. ` +
-    `Some fragments of the message are opaque code between the bracket ` +
-    `characters U+27E6 and U+27E7. Copy each such fragment into your output ` +
-    `character-for-character, keeping its position in the sentence. ` +
-    `Never invent such a fragment and never remove one.`;
+    `no code fence around the whole answer.`;
   if (mode === 'plain') return base;
   return (
     base +

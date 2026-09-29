@@ -1,5 +1,5 @@
-// 正文翻译的宿主侧回归：估算、切分、打包、标记还原、串行队列、单缓存池、
-// 单通道与路由形状。
+// 正文翻译的宿主侧回归：估算、切分、打包、结构核对与重装配、串行队列、
+// 单缓存池、单通道与路由形状。
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -224,15 +224,31 @@ await test('单段请求带 max_tokens 与 plain 模式；多段打包带 blocks
   assert.ok(long.every((result) => result.translated.startsWith('译:word')));
 });
 
-await test('掩码占位符在正文里同样还原', async () => {
+await test('路径与 URL 原样随文往返，形状核对放行内容级翻译', async () => {
   const { dispatcher } = makeDispatcher();
   useFakeAdapter(dispatcher, async (text) => '请看 ' + text);
   const source = 'Read src/server/dispatcher.ts and https://example.com/docs now';
   const results = await dispatcher.translateReplyBlocks([source]);
   assert.equal(results[0].ok, true);
-  assert.ok(results[0].translated.includes('src/server/dispatcher.ts'), '路径必须原样回来');
-  assert.ok(results[0].translated.includes('https://example.com/docs'), 'URL 必须原样回来');
-  assert.ok(!results[0].translated.includes('⟦'), '不得留下掩码标记');
+  assert.ok(results[0].translated.includes('src/server/dispatcher.ts'));
+  assert.ok(results[0].translated.includes('https://example.com/docs'));
+});
+
+await test('多片段块拼回保留段间空行（头尾空白由重装配补回）', async () => {
+  const { dispatcher } = makeDispatcher();
+  useFakeAdapter(dispatcher, async (text, _s, _c, options) =>
+    options?.mode === 'blocks' ? echoBlocks(text) : '译:' + text
+  );
+  const para = 'word '.repeat(1200).trim(); // 约 2000 估算 token
+  const source = [para, para, para].join('\n\n');
+  const results = await dispatcher.translateReplyBlocks([source]);
+  assert.equal(results[0].ok, true);
+  // 两片：第一片含前两段的空行、第二片是末段——片尾空行由拆下的 tail 补回。
+  assert.equal(
+    results[0].translated,
+    `译:${para}\n\n${para}\n\n译:${para}`,
+    '段间距一个都不能丢'
+  );
 });
 
 await test('整批标记损坏时退回逐段单发', async () => {

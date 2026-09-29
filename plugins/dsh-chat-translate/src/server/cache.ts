@@ -1,7 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
-import { isMaskLeak } from './pipeline/masking.ts';
 import { PROMPT_REVISION } from './prompt-revision.ts';
 
 /** Entries older than this are treated as expired. */
@@ -61,16 +60,20 @@ export class LruDiskCache {
     }
   }
 
-  /** Adopt loaded entries, dropping poisoned or malformed ones. */
+  /** Adopt loaded entries, dropping malformed ones. */
   private loadEntries(raw: Record<string, unknown>): void {
     for (const [k, entry] of Object.entries(raw)) {
-      if (entry && typeof entry === 'object' && typeof (entry as CacheEntry).v === 'string') {
-        const value = entry as CacheEntry;
-        // The document on disk outlives the process: check every entry
-        // against the mask-leak guard before it can be served again.
-        if (typeof value.t === 'number' && Number.isFinite(value.t) && !isMaskLeak(value.v)) {
-          this.cache.set(k, value);
-        }
+      const value = entry as CacheEntry | undefined;
+      // The document on disk outlives the process: only well-formed entries
+      // (a finite timestamp and a string translation) are served again.
+      if (
+        value &&
+        typeof value === 'object' &&
+        typeof value.v === 'string' &&
+        typeof value.t === 'number' &&
+        Number.isFinite(value.t)
+      ) {
+        this.cache.set(k, value);
       }
     }
   }
@@ -82,12 +85,6 @@ export class LruDiskCache {
       this.cache.delete(key);
       return undefined;
     }
-    // Defense in depth: entries written during this session never passed the
-    // load-time check, so the leak test guards the map itself too.
-    if (isMaskLeak(entry.v)) {
-      this.cache.delete(key);
-      return undefined;
-    }
     // Refresh key in LRU order (re-insert at the end)
     this.cache.delete(key);
     this.cache.set(key, entry);
@@ -95,10 +92,6 @@ export class LruDiskCache {
   }
 
   set(key: string, value: string): void {
-    if (isMaskLeak(value)) {
-      console.warn('[dsh-chat-translate] refusing to cache a translation with a leaked mask placeholder');
-      return;
-    }
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else if (this.cache.size >= this.maxEntries) {

@@ -11,4 +11,4 @@
  * Bump it — and only here — whenever the prompt below `buildSystemPrompt`
  * changes what the model is asked to do. Copy-only edits may ride.
  */
-export const PROMPT_REVISION = 'r1';
+export const PROMPT_REVISION = 'r2';
