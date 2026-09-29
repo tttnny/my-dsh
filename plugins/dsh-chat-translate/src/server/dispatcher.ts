@@ -74,9 +74,14 @@ function recordLedgerFailure(
   }
 }
 
-/** 块败因合成：缺失片段里只要不是清一色的 content，整块按 transport 报。 */
-function blockFailReason(ledger: FailureLedger, block: number, total: number): ReplyFailReason {
-  for (let index = 0; index < total; index++) {
+/**
+ * 块败因合成：只评判**缺失**的片段——成功译出的片段本就不记账，把「没留账」
+ * 当 transport 判据会把「前段批成功、后段历次内容拒收」的多片段块误报成传输
+ * 失败（超长块的切片几乎必然落进不同批，这是常见路径而非防御分支）。缺失片段
+ * 里只要不是清一色的 content，整块按 transport 报；清一色 content 才记 content。
+ */
+function blockFailReason(ledger: FailureLedger, block: number, missing: readonly number[]): ReplyFailReason {
+  for (const index of missing) {
     if (ledger.get(replyPieceKey({ block, index })) !== 'content') return 'transport';
   }
   return 'content';
@@ -182,17 +187,17 @@ export class TranslationDispatcher {
 
     for (const [block, total] of totals) {
       const parts: string[] = [];
-      let complete = true;
+      const missing: number[] = [];
       for (let index = 0; index < total; index++) {
-        const part = translated.get(`${block}:${index}`);
+        const part = translated.get(replyPieceKey({ block, index }));
         if (part === undefined) {
-          complete = false;
-          break;
+          missing.push(index);
+          continue;
         }
         parts.push(part);
       }
-      if (!complete) {
-        results[block].reason = blockFailReason(ledger, block, total);
+      if (missing.length > 0) {
+        results[block].reason = blockFailReason(ledger, block, missing);
         continue;
       }
       const original = blocks[block]!;

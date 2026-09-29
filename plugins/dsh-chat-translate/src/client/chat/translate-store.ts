@@ -1,8 +1,5 @@
-import {
-  requestTranslateReply,
-  type ReplyBlockResult,
-} from '../translate/api.ts';
-import type { ReplyFailReason } from '../../server/types.ts';
+import { requestTranslateReply } from '../translate/api.ts';
+import type { ReplyBlockResult, ReplyFailReason } from '../../server/types.ts';
 import { estimateTokens, REPLY_MAX_INPUT_TOKENS } from '../../server/pipeline/blocks.ts';
 
 /** 一行正文的按块翻译结果，与请求的 texts 数组按下标对齐。 */
@@ -120,26 +117,29 @@ export class ChatTranslateStore {
       seed = current.outcomes.map((outcome) => (outcome !== null && outcome.ok ? { ...outcome } : null));
     }
     const snapshot = [...texts];
+    const seedOutcomes = seed ?? snapshot.map(() => null);
     const next: RowState = {
       status: 'pending',
       texts: snapshot,
-      outcomes: seed ?? snapshot.map(() => null),
+      outcomes: seedOutcomes,
     };
     this.rows.delete(rowKey);
     this.rows.set(rowKey, next);
     this.prune();
     this.bump();
-    if (snapshot.length > 0) void this.run(rowKey, snapshot, seed ?? snapshot.map(() => null));
+    if (snapshot.length > 0) void this.run(rowKey, snapshot, seedOutcomes);
     return true;
   }
 
   private async run(
     rowKey: string,
     texts: readonly string[],
-    outcomes: (BlockOutcome | null)[]
+    initial: readonly (BlockOutcome | null)[]
   ): Promise<void> {
     // 去重靠 ensure 的同代短路；换代后的并发在途允许存在——迟到的旧代结果
-    // 由每批落定处的快照核对丢弃。
+    // 由每批落定处的快照核对丢弃。工作数组取私有副本：登记在池里的那份
+    // 只经 set+notify 整批换代，不存在「就地写入却还没通知」的中间可见态。
+    const outcomes: (BlockOutcome | null)[] = initial.map((o) => o);
     let offset = 0;
     for (const batch of chunkTexts(texts)) {
       let results: ReplyBlockResult[] = [];
@@ -178,7 +178,7 @@ export class ChatTranslateStore {
       this.rows.set(rowKey, {
         status: 'settled',
         texts: state.texts,
-        outcomes,
+        outcomes: [...outcomes],
       });
       this.bump();
     }
@@ -204,7 +204,8 @@ export class ChatTranslateStore {
   }
 }
 
-function sameTexts(a: readonly string[], b: readonly string[]): boolean {
+/** 文本清单是否同代（逐位相等）：池的幂等判据，渲染层拿它核对登记行属于当前文本。 */
+export function sameTexts(a: readonly string[], b: readonly string[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {

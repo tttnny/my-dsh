@@ -47,8 +47,6 @@ interface ClientContext {
  */
 export function apply(ctx: ClientContext): void {
   ensureAssistantStyles();
-  // 行渲染器的私有文案（红线重试提示）绑上本命名空间的活翻译器。
-  bindRowCopy(ctx.locale);
 
   // 1. 接管助手行：keyed slot 的替换语义，priority -1 排在宿主默认注册（0）之前
   //    渲染；本渲染器抛错时按框架退位规则退出 cell，宿主原渲染器回位。
@@ -89,6 +87,10 @@ export function apply(ctx: ClientContext): void {
 
   // 4. 「译」开关：输入框下方那一行，与设置页总开关同一个 enabled
   ctx.effect(() => setupComposerToggle(ctx), 'dsh-chat-translate: composer dock toggle');
+
+  // 行渲染器的私有文案（红线重试提示）绑上本命名空间的活翻译器。放在最后：
+  // 此时 setupSettingsUi 的 locale.register(NS) 已落地，bind 立刻可解析键。
+  bindRowCopy(ctx.locale);
 }
 
 export { AssistantStepView } from './chat/assistant-step.tsx';

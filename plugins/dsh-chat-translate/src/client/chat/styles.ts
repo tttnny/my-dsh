@@ -4,9 +4,9 @@
  * 加上本插件唯一新增的视觉词汇——正文块左缘的线：
  * 蓝粗线（1px 主色）=正在读译文；灰细线（0.5px 中性）=有译文但正在读原文
  * （再点即切回）；红实线（1px error 色）=传输失败，点它整行补跑；红虚线
- * （1px error 色）=内容拒收（占位符被模型改坏），同样可点补跑——重打包后
- * 批次形态与提示词模式都会变，弱模型未必再丢；灰脉动=整行在途、这块尚无
- * 结果；无线=没送过模型（含空白块）或开关关闭。
+ * （1px error 色）=内容拒收（占位符被模型改坏），同样可点补跑——补跑会重掷
+ * 掩码与批次标记的随机 id，同行别的块又已进缓存退出打包，弱模型未必再丢；
+ * 灰脉动=整行在途、这块尚无结果；无线=没送过模型（含空白块）或开关关闭。
  * 虚线必须 1px 起步：0.5px 虚线会被抗锯齿糊成实线，区分走色相+线型+粗细。
  *
  * 全部颜色与尺寸走 `--dsw-alias-*` / `--dsh-*` 主题别名，中性平边按官方规则
@@ -33,7 +33,7 @@ export const ASSISTANT_CSS = [
   '.dsh-ct-prose-translated{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 65%, transparent)}',
   '.dsh-ct-prose-original{border-left:0.5px solid var(--dsw-alias-border-l2)}',
   // ---- 失败标记：红实线=传输失败（重试大概率有意义），红虚线=内容拒收
-  //      （重打包未必再丢）；两者都可点，点=整行手动补跑 ----
+  //      （补跑重掷 id 未必再丢）；两者都可点，点=整行手动补跑 ----
   '.dsh-ct-prose-failed-solid{border-left:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
   '.dsh-ct-prose-failed-dashed{border-left:1px dashed color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
   // ---- 在途：灰 1px 线脉动（与成功态同 padding，转蓝不跳字）；
@@ -79,6 +79,22 @@ export type ProseMark =
   | 'fail-content'
   | 'inflight'
   | null;
+
+/** mark → 点击动作单点：切换、重试、不可点三选一（渲染层照此接线）。 */
+export type ProseAction = 'toggle' | 'retry' | null;
+
+export function proseAction(mark: ProseMark): ProseAction {
+  switch (mark) {
+    case 'translated':
+    case 'original-view':
+      return 'toggle';
+    case 'fail-transport':
+    case 'fail-content':
+      return 'retry';
+    default:
+      return null;
+  }
+}
 
 /** mark → 类名单点：可点态共用 padding 与光标，线型之间切换不跳字。 */
 export function proseClassNames(mark: ProseMark): string | undefined {

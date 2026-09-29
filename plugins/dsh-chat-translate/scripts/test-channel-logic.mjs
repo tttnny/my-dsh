@@ -160,6 +160,24 @@ await testAsync('a channel that mangles placeholders reports reason content', as
   assert.equal(results[0].reason, 'content');
 });
 
+await testAsync('multi-piece block: succeeded pieces never poison the content verdict', async () => {
+  // 超长块切成两片、落进两批：前一片（纯中文，无掩码）正常译出，后一片带
+  // ⟦…⟧ 占位符被丢光。块级 reason 只能评判缺失的片段——成功片段本就不记账，
+  // 把它们当 transport 判据会把红虚线误报成红实线（审查复现的真 bug）。
+  const { dispatcher, source } = await setupDispatcher({
+    translate: async (t) => {
+      if (t.includes('⟦')) return '这一批把占位符丢光了';
+      return '译:' + t.slice(0, 20);
+    },
+  });
+  await source.update({ baseUrl: 'http://x', model: 'm' });
+  const head = '中'.repeat(4200); // 4200 token：独占首批，带代码的后片必然分批
+  const tail = 'Then look at `alpha` and `beta` before shipping this paragraph now.';
+  const results = await dispatcher.translateReplyBlocks([head + '\n\n' + tail]);
+  assert.equal(results[0].ok, false);
+  assert.equal(results[0].reason, 'content', '缺失之外的成功片段不得掺进败因合成');
+});
+
 await testAsync('mixed attempts: any transport wound wins over content rejections', async () => {
   const { dispatcher, source } = await setupDispatcher({
     // 打包批里丢标记（内容拒收），单发重试时通道断了（传输伤）——

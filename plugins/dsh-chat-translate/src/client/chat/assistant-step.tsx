@@ -37,13 +37,13 @@ import type {
   MarkdownPathImages,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import { settingsStore } from '../settings/store.ts';
-import { chatTranslate } from './translate-store.ts';
 import { planAssistantRow } from './row-plan.ts';
 import { isBareBlockClick } from './click-guard.ts';
 import { rowCopy } from '../locales.ts';
 import type { AssistantBlockLike } from './row-plan.ts';
 import type { ProseMark } from './styles.ts';
-import { ensureAssistantStyles, proseClassNames } from './styles.ts';
+import { ensureAssistantStyles, proseAction, proseClassNames } from './styles.ts';
+import { chatTranslate, sameTexts } from './translate-store.ts';
 
 // ---- 宿主 contract 的结构性镜像（source of truth: ui-chat slots.d.ts） ----
 
@@ -320,14 +320,6 @@ function blockClick(event: React.MouseEvent<HTMLDivElement>, action: () => void)
   if (isBareBlockClick(guardEvent, typeof window === 'undefined' ? undefined : window)) action();
 }
 
-const PROSE_CLICKABLE: ReadonlySet<ProseMark> = new Set([
-  'translated',
-  'original-view',
-  'fail-transport',
-  'fail-content',
-]);
-const PROSE_RETRY: ReadonlySet<ProseMark> = new Set(['fail-transport', 'fail-content']);
-
 function ProseBlock({
   text,
   translated,
@@ -339,43 +331,38 @@ function ProseBlock({
   mentions,
   pathImages,
 }: ProseBlockProps): ReactElement {
-  const clickable = mark !== null && PROSE_CLICKABLE.has(mark);
-  const retrying = mark !== null && PROSE_RETRY.has(mark);
-  const action = retrying ? onRetry : onToggle;
+  const action = proseAction(mark);
+  const clickable = action !== null;
+  const retrying = action === 'retry';
+  const handler = retrying ? onRetry : onToggle;
   const source = mark === 'translated' ? (translated as string) : text;
   const copy = rowCopy();
-  return React.createElement(
+  const block = React.createElement(
     'div',
     {
       className: proseClassNames(mark),
       'data-translated': mark === 'translated' ? 'true' : void 0,
       // 容器内含链接等交互内容，不套 role=button（非法嵌套）；可聚焦 + 键盘
-      // Enter/Space 即切换/重试，满足官方「键盘可达」门。
-      tabIndex: clickable ? 0 : void 0,
-      onClick: clickable ? (event: React.MouseEvent<HTMLDivElement>) => blockClick(event, action) : void 0,
+      // Enter/Space 即切换/重试，满足官方「键盘可达」门。在途块也保持可聚焦
+      // （Enter 空操作）——补跑把红线折成脉动时，键盘焦点不致从行上掉回 body。
+      tabIndex: clickable || mark === 'inflight' ? 0 : void 0,
+      onClick: clickable ? (event: React.MouseEvent<HTMLDivElement>) => blockClick(event, handler) : void 0,
       onKeyDown: clickable
         ? (event: React.KeyboardEvent<HTMLDivElement>) => {
             if (event.target !== event.currentTarget) return;
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
-              action();
+              handler();
             }
           }
         : void 0,
     },
     retrying &&
-      React.createElement(Tooltip, {
-        label: () => copy.retryTip,
-        side: 'right',
-        portal: true,
-        // Tooltip 把交互注到手里的锚点元素上；锚点只在悬停/聚焦时露出。
-        // 断言的是「Tooltip 注入 AnchorProps 之后」的形状——运行时由它自己装配。
-        children: React.createElement(
-          'span',
-          { className: 'dsh-ct-retry', 'aria-hidden': true },
-          React.createElement(IconRefreshOutlineRegular, { size: 10 })
-        ) as Parameters<typeof Tooltip>[0]['children'],
-      }),
+      React.createElement(
+        'span',
+        { className: 'dsh-ct-retry', 'aria-hidden': true },
+        React.createElement(IconRefreshOutlineRegular, { size: 10 })
+      ),
     retrying && React.createElement('span', { className: 'dsh-ct-visually-hidden' }, copy.retryAria),
     React.createElement(MarkdownText, {
       text: source,
@@ -385,6 +372,15 @@ function ProseBlock({
       pathImages,
     })
   );
+  if (!retrying) return block;
+  // Tooltip 锚在失败块本身：正文任意处悬停、键盘聚焦都即刻出泡——锚在那条
+  // 10px 装饰图标上则两个通道都够不着（图标 aria-hidden、从不接收焦点）。
+  return React.createElement(Tooltip, {
+    label: () => copy.retryTip,
+    side: 'right',
+    portal: true,
+    children: block as Parameters<typeof Tooltip>[0]['children'],
+  });
 }
 
 // ---- 助手行本体 ----
@@ -446,7 +442,11 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
 
   const [originalKeys, setOriginalKeys] = useState<ReadonlySet<number>>(() => new Set());
 
-  const rowState = chatTranslate.getState(rowKey);
+  // 只认同代登记：rowKey 是会话内锚点，跨会话可能重号——texts 逐位相等才把
+  // 旧 outcomes 挂上来，换代的那一帧（含换会话撞键）按「未登记」渲染，纯原文
+  // 无线无脉动，随后 ensure 重新登记。
+  const registered = chatTranslate.getState(rowKey);
+  const rowState = registered !== undefined && sameTexts(registered.texts, plan.texts) ? registered : undefined;
   const displayed = useMemo(
     () =>
       planAssistantRow({

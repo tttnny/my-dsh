@@ -26,10 +26,11 @@ async function test(name, fn) {
 }
 
 const { planAssistantRow } = await import('../src/client/chat/row-plan.ts');
-const { createTranslateStore, chunkTexts } = await import('../src/client/chat/translate-store.ts');
+const storeModule = await import('../src/client/chat/translate-store.ts');
+const { createTranslateStore, chunkTexts } = storeModule;
 const { isBareBlockClick } = await import('../src/client/chat/click-guard.ts');
 const { createChatPresentation, POLICY_BY_MODE } = await import('../src/client/chat/presentation.ts');
-const { proseClassNames, ASSISTANT_CSS } = await import('../src/client/chat/styles.ts');
+const { proseClassNames, proseAction, ASSISTANT_CSS } = await import('../src/client/chat/styles.ts');
 
 const flush = async () => {
   await new Promise((r) => setTimeout(r, 0));
@@ -571,6 +572,19 @@ await test('在途灰脉动：动画声明存在且尊重 prefers-reduced-motion
     /@media \(prefers-reduced-motion:reduce\)\{\.dsh-ct-prose-inflight\{animation:none\}\}/,
     'reduced-motion 降级为静态灰线'
   );
+});
+
+await test('动作单点：mark 唯一决定 toggle / retry / 不可点', () => {
+  assert.equal(proseAction('translated'), 'toggle');
+  assert.equal(proseAction('original-view'), 'toggle', '读原文态仍可点切回');
+  assert.equal(proseAction('fail-transport'), 'retry', '红实线整块可点=补跑');
+  assert.equal(proseAction('fail-content'), 'retry', '红虚线同样可点');
+  assert.equal(proseAction('inflight'), null, '在途脉动不可点');
+  assert.equal(proseAction(null), null);
+});
+
+await test('防回归：自动重试面不存在——额度常量不得复活', () => {
+  assert.equal('MAX_ROW_ATTEMPTS' in storeModule, false);
 });
 
 console.log('');

@@ -31,8 +31,9 @@ export interface ITranslationAdapter {
  * covers only rejections of the returned text itself (a ⟦…⟧ mask placeholder or
  * a ⟪…⟫ batch marker that did not survive the translation). The client draws
  * the line marker from this: solid red for transport, dashed red for content —
- * and both stay clickable, because a re-packed row can hand the same piece a
- * different batch shape or prompt mode and a weak model may carry it next time.
+ * and both stay clickable: a manual re-run re-rolls the mask and batch marker
+ * ids — and cached sibling pieces drop out of the packing — so a weak model
+ * may carry the fragment next time.
  */
 export type ReplyFailReason = 'transport' | 'content';
 
