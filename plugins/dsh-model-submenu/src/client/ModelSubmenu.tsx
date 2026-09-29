@@ -7,6 +7,7 @@ import {
   IconChevronRightOutlineRegular,
   IconDataOutlineRegular,
   IconWarningOutlineRegular,
+  MenuSurface,
   Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelDirectoryState, ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client'
@@ -286,7 +287,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t }: 
         <IconChevronDownOutlineRegular className={cls(css.chevron, open && css.chevronOpen)} />
       </button>
       {open && createPortal((
-        <div
+        <MenuSurface
           ref={menuRef}
           id={`${id}-menu`}
           className={css.menu}
@@ -408,7 +409,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t }: 
                 ))}
             </Fragment>
           )}
-        </div>
+        </MenuSurface>
       ), document.body)}
       {toast !== null && (
         <Toast

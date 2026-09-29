@@ -8,6 +8,7 @@
  */
 
 import { createRequire } from 'node:module'
+import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
@@ -122,6 +123,13 @@ await import(`${join(root, 'lib/client.js')}?smoke=${Date.now()}`)
 check('bundle registers under its package id', requires[0] === '@lynn123411/dsh-model-submenu')
 check('apply/inject exported', typeof exported?.apply === 'function' && Array.isArray(exported?.inject))
 check('declares exactly the services its halves read', JSON.stringify(exported?.inject) === '["locale","modelDirectories","remote","remote.session","sessions","slots"]')
+
+// The panel's fill, blur, radius and macOS backing live in the primitives'
+// MenuSurface, so the bundle must keep rendering through it and must not paint
+// the surface itself — the regressed build was a bare div with its own fill.
+const clientBundle = await readFile(join(root, 'lib/client.js'), 'utf8')
+check('menu renders through the shared MenuSurface', clientBundle.includes('MenuSurface'))
+check('menu does not paint its own surface', !clientBundle.includes('--dsw-specific-menu'))
 
 // The guard must have teeth, or every case below is vacuous.
 try {

@@ -1,7 +1,8 @@
 /*
  * The composer model seat's shape, values, and tokens follow the seat this
- * plugin takes over; every declaration below is the shipped one so the two
- * render identically.
+ * plugin takes over. The menu surface renders through the primitives'
+ * MenuSurface, which owns the fill, the backdrop blur, the radius, and the
+ * macOS backing — so nothing below paints the panel itself.
  */
 .root {
   min-width: 0;
@@ -84,7 +85,6 @@
 
 .menu {
   z-index: 1100;
-  background: var(--dsw-specific-menu);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   width: max-content;
   min-width: min(240px, 100vw - 32px);
@@ -95,7 +95,6 @@
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   border: 0;
-  border-radius: 20px;
   flex-direction: column;
   padding: 4px;
   display: flex;
