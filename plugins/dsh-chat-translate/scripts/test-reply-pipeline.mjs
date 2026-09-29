@@ -6,7 +6,7 @@ import * as path from 'node:path';
 
 // 隔离文件状态：缓存与配置都写到仓库本地的 ./tmp（系统 /tmp 禁用），
 // 绝不碰真实的 ~/.dsh。
-const TMP_ROOT = path.join(import.meta.dirname, 'tmp');
+const TMP_ROOT = path.join(import.meta.dirname, '..', '..', 'tmp');
 await fs.mkdir(TMP_ROOT, { recursive: true });
 const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'reply-'));
 process.env.DSH_HOME = TMP_HOME;
@@ -24,7 +24,7 @@ import {
   splitBatchTranslation,
   splitOversizedBlock,
 } from '../src/server/pipeline/blocks.ts';
-import { createFakeSettingsEntry, createFakeCredentials } from './test-helpers.mjs';
+import { createFakeSettingsEntry, createFakeCredentials, echoMarkers } from './test-helpers.mjs';
 
 let passed = 0;
 let total = 0;
@@ -39,19 +39,6 @@ async function test(name, fn) {
     console.error('  FAIL ' + name + ':', err.message);
     throw err;
   }
-}
-
-/** 把打包后的负载按标记原样回显，用来模拟一个守规矩的翻译模型。 */
-function echoBlocks(text) {
-  const pattern = new RegExp('⟪([a-z]{4})(\\d+)⟫', 'g');
-  const matches = [...text.matchAll(pattern)];
-  return matches
-    .map((match, index) => {
-      const start = match.index + match[0].length;
-      const end = index + 1 < matches.length ? matches[index + 1].index : text.length;
-      return match[0] + '\n译:' + text.slice(start, end).trim();
-    })
-    .join('\n\n');
 }
 
 function makeDispatcher(initial = {}) {
@@ -123,7 +110,7 @@ await test('打包把相邻片段合到上限以内，且不重排、不丢段',
   assert.equal(packPieces([], 40).length, 0);
 });
 
-await test('块标记负载与切回互为逆运算', () => {
+await test('打包标记负载与切回互为逆运算', () => {
   const format = createBatchFormat();
   const pieces = ['第一段原文。', 'second paragraph', 'third one'];
   const payload = buildBatchPayload(pieces, format);
@@ -135,7 +122,7 @@ await test('块标记负载与切回互为逆运算', () => {
   );
 });
 
-await test('块标记被弄乱时整批作废', () => {
+await test('打包标记被弄乱时整批作废', () => {
   const format = createBatchFormat();
   const good = format.token(0) + '\nA\n\n' + format.token(1) + '\nB';
   assert.deepEqual(splitBatchTranslation(good, format, 2), ['A', 'B']);
@@ -205,7 +192,7 @@ await test('单段请求带 max_tokens 与 plain 模式；多段打包带 blocks
   const seen = [];
   useFakeAdapter(dispatcher, async (text, signal, config, options) => {
     seen.push({ text, options });
-    return options?.mode === 'blocks' ? echoBlocks(text) : '译:' + text;
+    return options?.mode === 'blocks' ? echoMarkers(text) : '译:' + text;
   });
 
   const short = await dispatcher.translateReplyBlocks(['Short paragraph']);
@@ -237,7 +224,7 @@ await test('路径与 URL 原样随文往返，形状核对放行内容级翻译
 await test('多片段块拼回保留段间空行（头尾空白由重装配补回）', async () => {
   const { dispatcher } = makeDispatcher();
   useFakeAdapter(dispatcher, async (text, _s, _c, options) =>
-    options?.mode === 'blocks' ? echoBlocks(text) : '译:' + text
+    options?.mode === 'blocks' ? echoMarkers(text) : '译:' + text
   );
   const para = 'word '.repeat(1200).trim(); // 约 2000 估算 token
   const source = [para, para, para].join('\n\n');
@@ -359,7 +346,7 @@ await test('正文请求串行执行，同时最多一个在途', async () => {
 await test('正文路由按块返回，坏请求体给 400', async () => {
   const { dispatcher } = makeDispatcher();
   useFakeAdapter(dispatcher, async (text, signal, config, options) =>
-    options?.mode === 'blocks' ? echoBlocks(text) : '译:' + text
+    options?.mode === 'blocks' ? echoMarkers(text) : '译:' + text
   );
   const routes = createFetchRoutes(dispatcher);
   const route = routes.find((entry) => entry.path === REPLY_ROUTE_PATH);

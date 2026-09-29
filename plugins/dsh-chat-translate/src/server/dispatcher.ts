@@ -29,8 +29,8 @@ const CHANNEL_ID = 'openai';
 
 /**
  * 形状拒收：通道正常返回了响应，只是这份内容没通过结构核对——逐行签名
- * （行数、缩进、块标记、表格竖线、链接个数）与原文不齐，或译文里还留着
- * `⟪…⟫` 块标记。这类败因记 `content`（红虚线），其余一律
+ * （行数、缩进、块记号、表格竖线、链接个数）与原文不齐，或译文里还留着
+ * `⟪…⟫` 打包标记。这类败因记 `content`（红虚线），其余一律
  * `transport`（红实线）。每行只跑首跑，失败等用户点击救活。
  */
 class ContentRejectedError extends Error {}
@@ -165,7 +165,6 @@ export class TranslationDispatcher {
   ): Promise<ReplyBlockResult[]> {
     const pieces: ReplyPiece[] = [];
     const partsByBlock = new Map<number, BlockPart[]>();
-    const totals = new Map<number, number>();
 
     for (let block = 0; block < blocks.length; block++) {
       const raw = blocks[block] ?? '';
@@ -196,7 +195,6 @@ export class TranslationDispatcher {
         }
       }
       partsByBlock.set(block, parts);
-      totals.set(block, count);
     }
 
     const ledger: FailureLedger = new Map();
@@ -208,7 +206,7 @@ export class TranslationDispatcher {
       for (const [key, value] of outcome) translated.set(key, value);
     }
 
-    for (const [block, total] of totals) {
+    for (const block of partsByBlock.keys()) {
       const parts: string[] = [];
       const missing: number[] = [];
       for (const part of partsByBlock.get(block) ?? []) {
@@ -227,6 +225,8 @@ export class TranslationDispatcher {
         results[block].reason = blockFailReason(ledger, block, missing);
         continue;
       }
+      // 全围栏块（零片段）也走到这里：拼回即原文，按「已是最终形态」记成功
+      // 挂蓝线——与「模型原样返回也算翻过」同一语义，不另造第三种状态。
       const original = blocks[block]!;
       const finalText = parts.join('');
       this.cache.set(original.trim().toLowerCase(), finalText);

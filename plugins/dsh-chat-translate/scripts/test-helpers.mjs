@@ -40,6 +40,18 @@ export function createFakeSettingsEntry(initial = {}) {
  * `remote.credentials` client API. Keys are plain strings; TRANSLATE_API_KEY
  * is the only ref the suites exercise.
  */
+/** 原样回显 ⟪…⟫ 打包标记负载的每个段，模拟守规矩的多段翻译。 */
+export function echoMarkers(text) {
+  const matches = [...text.matchAll(/⟪([a-z]{4})(\d+)⟫/g)];
+  return matches
+    .map((match, index) => {
+      const start = match.index + match[0].length;
+      const end = index + 1 < matches.length ? matches[index + 1].index : text.length;
+      return match[0] + '\n译:' + text.slice(start, end).trim();
+    })
+    .join('\n\n');
+}
+
 export function createFakeCredentials(initialKey = '') {
   let key = initialKey;
   return {

@@ -8,10 +8,10 @@ import { ConfigManager } from '../src/server/config.ts';
 import { LruDiskCache } from '../src/server/cache.ts';
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
-import { createFakeSettingsEntry, createFakeCredentials } from './test-helpers.mjs';
+import { createFakeSettingsEntry, createFakeCredentials, echoMarkers } from './test-helpers.mjs';
 
 // Isolate file-backed state under ./tmp (repo-local; system /tmp is off-limits).
-const TMP_ROOT = path.join(import.meta.dirname, 'tmp');
+const TMP_ROOT = path.join(import.meta.dirname, '..', '..', 'tmp');
 await fs.mkdir(TMP_ROOT, { recursive: true });
 const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'chtest-'));
 process.env.DSH_HOME = TMP_HOME;
@@ -39,18 +39,6 @@ async function testAsync(name, fn) {
     console.error(`  ✗ [FAIL] ${name}:`, err.message);
     throw err;
   }
-}
-
-/** 原样回显 ⟪…⟫ 标记负载的每个段，模拟守规矩的多段翻译。 */
-function echoMarkers(text) {
-  const matches = [...text.matchAll(/⟪([a-z]{4})(\d+)⟫/g)];
-  return matches
-    .map((match, index) => {
-      const start = match.index + match[0].length;
-      const end = index + 1 < matches.length ? matches[index + 1].index : text.length;
-      return match[0] + '\n译:' + text.slice(start, end).trim();
-    })
-    .join('\n\n');
 }
 
 /**

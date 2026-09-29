@@ -14,7 +14,7 @@ import * as path from 'node:path';
 // Isolate all file-backed state (config/cache/credentials) under ./tmp so the
 // suite never reads or overwrites the real ~/.dsh files (system /tmp is
 // off-limits per repo instructions).
-const TMP_ROOT = path.join(import.meta.dirname, 'tmp');
+const TMP_ROOT = path.join(import.meta.dirname, '..', '..', 'tmp');
 await fs.mkdir(TMP_ROOT, { recursive: true });
 const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'suite-'));
 process.env.DSH_HOME = TMP_HOME;
@@ -31,7 +31,7 @@ import {
   REPLY_ROUTE_PATH,
   TEST_CHANNEL_ROUTE_PATH,
 } from '../src/server/router.ts';
-import { createFakeSettingsEntry, createFakeCredentials } from './test-helpers.mjs';
+import { createFakeSettingsEntry, createFakeCredentials, echoMarkers } from './test-helpers.mjs';
 
 let passed = 0;
 let total = 0;
@@ -58,18 +58,6 @@ async function testAsync(name, fn) {
     console.error(`  ✗ [FAIL] ${name}:`, err.message);
     throw err;
   }
-}
-
-/** 原样回显 ⟪…⟫ 标记负载的每个段，模拟守规矩的多段翻译。 */
-function echoMarkers(text) {
-  const matches = [...text.matchAll(/⟪([a-z]{4})(\d+)⟫/g)];
-  return matches
-    .map((match, index) => {
-      const start = match.index + match[0].length;
-      const end = index + 1 < matches.length ? matches[index + 1].index : text.length;
-      return match[0] + '\n译:' + text.slice(start, end).trim();
-    })
-    .join('\n\n');
 }
 
 function makeDispatcher(translate) {
@@ -121,6 +109,15 @@ test('a fence of the other marker does not close an open fence', () => {
   assert.deepEqual(segments.map((s) => s.kind), ['code']);
 });
 
+test('CRLF prose still recognizes closing fences', () => {
+  // 审查实测的坑：闭合围栏不容 \r 时，``` 之后整块被当未闭合逐字保留——
+  // 散文没送模型也无人报警。
+  const text = 'Intro.\r\n\r\n```js\r\nconst a = 1;\r\n```\r\n\r\nOutro.';
+  const segments = splitMarkdownSegments(text);
+  assert.deepEqual(segments.map((s) => s.kind), ['prose', 'code', 'prose']);
+  assert.equal(segments.map((s) => s.text).join(''), text);
+});
+
 test('shapeMismatch accepts a pure content rewrite and flags structural edits', () => {
   const original = '| a | b |\n| --- | --- |\n| `x` | [t](u) |';
   const good = '| 甲 | 乙 |\n| --- | --- |\n| `x 的译文` | [标题](u) |';
@@ -133,6 +130,7 @@ test('shapeMismatch accepts a pure content rewrite and flags structural edits', 
   assert.ok(shapeMismatch('- item', '* item'), '列表记号换了字符');
   assert.ok(shapeMismatch('## Head', 'Head'), '标题记号丢了');
   assert.ok(shapeMismatch('  plain', 'plain'), '缩进丢了');
+  assert.ok(shapeMismatch('> quote', 'quote'), '引用记号丢了');
 });
 
 test('restoreLinkTargets keeps translated text and copies urls back verbatim', () => {
@@ -145,6 +143,15 @@ test('restoreLinkTargets keeps translated text and copies urls back verbatim', (
   assert.equal(restoreLinkTargets('no links here', '没有链接'), '没有链接');
   // URL 自带括号时，回填锚在 `]` 后的开括号，不咬进 URL 内部。
   assert.equal(restoreLinkTargets('[x](url(1))', '[乙](被改的)'), '[乙](url(1))');
+  // 引用式定义行同账：目标被模型改坏也逐字拼回。
+  assert.equal(
+    restoreLinkTargets('[a][1]\n\n[1]: https://x.com', '[甲][1]\n\n[1]: 被改的'),
+    '[甲][1]\n\n[1]: https://x.com'
+  );
+  assert.ok(
+    shapeMismatch('[a][1]\n\n[1]: https://x.com', '[甲][1]\n\n[1]: 被改的 带 空格') !== null,
+    '定义目标被改成带空格 → 不再是定义行，签名拦下'
+  );
 });
 
 // -------------------------------------------------------------
@@ -211,7 +218,7 @@ await testAsync('A hallucinated batch marker rejects the answer as content', asy
 
   const result = (await dispatcher.translateReplyBlocks(['Some English prose.']))[0];
   assert.equal(result.ok, false);
-  assert.equal(result.reason, 'content', '残留的块标记是内容级拒收，不是通道伤');
+  assert.equal(result.reason, 'content', '残留的打包标记是内容级拒收，不是通道伤');
 });
 
 await testAsync('Link targets survive a model rewrite by construction', async () => {

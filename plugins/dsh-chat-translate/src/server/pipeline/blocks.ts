@@ -105,14 +105,6 @@ export function splitOversizedBlock(
   return out;
 }
 
-/** 一个待翻译的片段：属于哪个块、块内第几段、以及该片段的掩码结果。 */
-export interface ReplyPieceShell<TMask> {
-  block: number;
-  index: number;
-  text: string;
-  mask: TMask;
-}
-
 /** 把片段按原顺序打包成尽量少的请求，且每批不超过输入上限。 */
 export function packPieces<T extends { text: string }>(
   pieces: T[],
@@ -136,7 +128,7 @@ export function packPieces<T extends { text: string }>(
 }
 
 /**
- * 块分隔标记：`⟪<4 letters><index>⟫`——打包请求的框架，每段以标记行开头。
+ * 打包标记：`⟪<4 letters><index>⟫`——打包请求的框架，每段以标记行开头。
  * 它只活在一次请求的负载里；译文残留 ⟪…⟫ 即形状拒收。
  */
 export interface BatchFormat {
@@ -194,7 +186,7 @@ export function splitBatchTranslation(
   return parts;
 }
 
-/** 翻译结果里是否还留着块标记（用于判定整批作废）。 */
+/** 翻译结果里是否还留着打包标记（用于判定整批作废）。 */
 export function hasBatchResidue(text: string): boolean {
   return new RegExp(BATCH_TOKEN_PATTERN_SOURCE, 'u').test(text);
 }

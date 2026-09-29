@@ -1,19 +1,20 @@
 /**
  * 结构重装配：正文块的 markdown 按结构切开，代码围栏逐字保留，散文段送模型，
- * 回来后**按原结构拼回**——「翻译后 markdown 语法没问题」由构造与形状核对保证，
- * 不再靠向模型索要 ⟦…⟧ 占位符并核对它是否原样带回。
+ * 回来后**按原结构拼回**——「翻译后 markdown 语法没问题」由构造与形状核对保证：
+ * 模型从来见不到占位符，也就谈不上带不带回。
  *
  * 三件事：
  * 1. `splitMarkdownSegments`：把块切成 code / prose 段的有序清单，拼接恒等于原文。
  *    code 段（``` 或 ~~~ 围栏，含未闭合的到块尾）永不送模型；4 空格缩进代码不
  *    单独识别（聊天正文里几乎不出现，行首缩进由形状签名兜住）。
- * 2. `lineSignatures`：一行 markdown 的结构签名——缩进宽、块标记（标题/引用/
+ * 2. `lineSignatures`：一行 markdown 的结构签名——缩进宽、块记号（标题/引用/
  *    列表符）、表格竖线数、链接个数。段译文与原段逐行对签名，任何一行不齐即
  *    形状不符（content 败因）。反引号的增减**不拦**：行内代码是样式不是骨架，
  *    拦它只会把能看的译文打成红线；真破渲染的是行合并/拆开、表格列错位、
  *    列表变段落、链接丢没。
  * 3. `restoreLinkTargets`：链接按出现序对齐后，把原文的 URL 逐个拼回译文——
  *    模型只译 `[文字]`，`(URL)` 由构造保住。个数不等在签名核对里已经出局。
+ *    引用式定义行 `[id]: URL` 同账：计数进签名、目标由回填保住。
  */
 
 export interface MarkdownSegment {
@@ -22,7 +23,9 @@ export interface MarkdownSegment {
 }
 
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
-const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+// \r 容忍：CRLF 正文的闭合围栏行以 \r\n 结束，不容它会把 ``` 之后整块误判成
+// 「未闭合到块尾」逐字保留——散文没送模型还无人报警（审查实测的坑）。
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*\r?$/;
 
 /** CommonMark 的闭合围栏：同种字符、不短于开头。 */
 function closesFence(open: string, line: string): boolean {
@@ -72,22 +75,25 @@ export function splitMarkdownSegments(text: string): MarkdownSegment[] {
 const BLOCK_MARKER = /^(#{1,6}[ \t]|>+[ \t]?|[-*+][ \t]|\d{1,3}[.)][ \t])/;
 // 链接目标允许一层平衡括号（CommonMark 裸目标规则），捕获组取到完整 URL。
 const LINK_SPAN = /\[[^\]]*\]\(((?:[^()]|\([^()]*\))*)\)/g;
+// 引用式定义行 `[id]: URL`：与内联链接同账——计数进签名、目标由回填保住。
+const LINK_DEF_LINE = /^( {0,3}\[[^\]]+\]:[ \t]*)(\S+)([ \t]*\r?)$/;
 
 /**
  * 一行的结构签名；两行签名相等 ⇔ 结构角色相等。
  * 反引号不在签名里：行内代码是样式不是骨架，增减一对不破渲染（点原文一键
- * 可回），拦它只会把能看的译文打成红线。
+ * 可回），拦它只会把能看的译文打成红线。行尾 \r 同样不进签名——模型把
+ * CRLF 归一成 LF 是渲染无感的改写，不该拦。
  */
-export function lineSignature(line: string): string {
+function lineSignature(line: string): string {
   const indent = (/^[ \t]*/.exec(line) ?? [''])[0].replace(/\t/g, '  ').length;
   const marker = BLOCK_MARKER.exec(line)?.[1]?.trim() ?? '';
   const pipes = (line.match(/\|/g) ?? []).length;
-  const links = (line.match(LINK_SPAN) ?? []).length;
+  const links = (line.match(LINK_SPAN) ?? []).length + (LINK_DEF_LINE.test(line) ? 1 : 0);
   return `${indent}|${marker}|${pipes}|${links}`;
 }
 
 /** 逐行结构签名；行数不同在比较处即判不符。 */
-export function lineSignatures(text: string): string[] {
+function lineSignatures(text: string): string[] {
   return text.split('\n').map(lineSignature);
 }
 
@@ -107,20 +113,39 @@ export function shapeMismatch(original: string, translated: string): string | nu
 }
 
 /**
- * 把原文的链接目标逐个拼回译文：两侧链接已按签名核对确认等数，按出现序对齐，
- * 译文只贡献 `[文字]` 与括号外的排版。
+ * 把原文的链接目标逐个拼回译文：内联 `[文字](URL)` 与引用式定义行 `[id]: URL`
+ * 都算——两侧已按签名核对确认等数，按出现序对齐，译文只贡献 `[文字]` 与排版。
  */
 export function restoreLinkTargets(original: string, translated: string): string {
   const urls: string[] = [];
   for (const match of original.matchAll(LINK_SPAN)) urls.push(match[1] ?? '');
-  if (urls.length === 0) return translated;
-  let cursor = 0;
-  return translated.replace(LINK_SPAN, (span: string) => {
-    // 目标段的开括号锚在 `]` 之后：URL 里带括号时 lastIndexOf('(') 会咬进
-    // URL 内部，把回填变成拼接。
-    const open = span.indexOf('(', span.lastIndexOf(']'));
-    const close = span.lastIndexOf(')');
-    const url = urls[cursor++] ?? '';
-    return `${span.slice(0, open + 1)}${url}${span.slice(close)}`;
-  });
+  let out = translated;
+  if (urls.length > 0) {
+    let cursor = 0;
+    out = out.replace(LINK_SPAN, (span: string) => {
+      // 目标段的开括号锚在 `]` 之后：URL 里带括号时 lastIndexOf('(') 会咬进
+      // URL 内部，把回填变成拼接。
+      const open = span.indexOf('(', span.lastIndexOf(']'));
+      const close = span.lastIndexOf(')');
+      const url = urls[cursor++] ?? '';
+      return `${span.slice(0, open + 1)}${url}${span.slice(close)}`;
+    });
+  }
+  const defs: string[] = [];
+  for (const line of original.split('\n')) {
+    const def = LINK_DEF_LINE.exec(line);
+    if (def) defs.push(def[2] ?? '');
+  }
+  if (defs.length > 0) {
+    let cursor = 0;
+    out = out
+      .split('\n')
+      .map((line: string) => {
+        const def = LINK_DEF_LINE.exec(line);
+        if (!def) return line;
+        return `${def[1] ?? ''}${defs[cursor++] ?? def[2] ?? ''}${def[3] ?? ''}`;
+      })
+      .join('\n');
+  }
+  return out;
 }
