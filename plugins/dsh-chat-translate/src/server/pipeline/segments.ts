@@ -70,7 +70,8 @@ export function splitMarkdownSegments(text: string): MarkdownSegment[] {
 }
 
 const BLOCK_MARKER = /^(#{1,6}[ \t]|>+[ \t]?|[-*+][ \t]|\d{1,3}[.)][ \t])/;
-const LINK_SPAN = /\[[^\]]*\]\(([^)]*)\)/g;
+// 链接目标允许一层平衡括号（CommonMark 裸目标规则），捕获组取到完整 URL。
+const LINK_SPAN = /\[[^\]]*\]\(((?:[^()]|\([^()]*\))*)\)/g;
 
 /**
  * 一行的结构签名；两行签名相等 ⇔ 结构角色相等。
@@ -115,7 +116,9 @@ export function restoreLinkTargets(original: string, translated: string): string
   if (urls.length === 0) return translated;
   let cursor = 0;
   return translated.replace(LINK_SPAN, (span: string) => {
-    const open = span.lastIndexOf('(');
+    // 目标段的开括号锚在 `]` 之后：URL 里带括号时 lastIndexOf('(') 会咬进
+    // URL 内部，把回填变成拼接。
+    const open = span.indexOf('(', span.lastIndexOf(']'));
     const close = span.lastIndexOf(')');
     const url = urls[cursor++] ?? '';
     return `${span.slice(0, open + 1)}${url}${span.slice(close)}`;

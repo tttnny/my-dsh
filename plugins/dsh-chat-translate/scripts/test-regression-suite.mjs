@@ -143,6 +143,8 @@ test('restoreLinkTargets keeps translated text and copies urls back verbatim', (
     '看 [文档](https://example.com/a?b=c) 还有 ![图](/i.png)'
   );
   assert.equal(restoreLinkTargets('no links here', '没有链接'), '没有链接');
+  // URL 自带括号时，回填锚在 `]` 后的开括号，不咬进 URL 内部。
+  assert.equal(restoreLinkTargets('[x](url(1))', '[乙](被改的)'), '[乙](url(1))');
 });
 
 // -------------------------------------------------------------
