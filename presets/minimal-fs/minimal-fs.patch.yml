@@ -1,10 +1,10 @@
-# Agent preset minimal-fs, declared the 0.1.7 way: one
+# Agent preset minimal-fs, declared as a bundle patch: one
 # `@deepseek-ai/dsh-agent-preset` row inserted into the profile tree. The rows
 # this preset composes live verbatim under `config.plugins`; `name` /
 # `description` are the preset's display metadata and `id` stays `minimal-fs`.
 #
 # A preset row is imported with the declaring tree's baseUrl. For a bundle patch
-# that baseUrl is the PROFILE directory — measured on 0.1.7-rc.2, a probe preset
+# that baseUrl is the PROFILE directory — measured on 0.2.0-rc.2, a probe preset
 # row saw `file:///<DSH_HOME>/profiles/web/` — so the old relative
 # `./plugins/tool-filter/index.js` specifier would resolve under the profile and
 # never reach this package. The filter row therefore names this package's

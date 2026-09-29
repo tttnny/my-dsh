@@ -7,9 +7,9 @@
  *    `cannot get property "x" without inject`，插件会整条 entry 变 failed 从页面消失，
  *    而宿主日志无异常——所以守卫必须在这里现身，且自身要有反例断言证明它还会抛；
  * 3. 顺带守住 class 名：`dsg-*` 在 JSX 与 CSS 之间只能一一对应，单边漂移只是样式静默失效；
- * 4. 守住 ui-primitives 的导出名：0.1.7 把 `Icon*Outline16/14/12` 成对改名成
- *    `Icon*OutlineRegular/Medium`，漏改只是页面上少一个图标（React 对 undefined 组件
- *    只 warning），没有任何运行时断言会现形，所以按安装副本的真实导出表点名核对。
+ * 4. 守住 ui-primitives 的导出名：源里引的名字若不在安装副本的导出表里，页面上那一处
+ *    就是 undefined（React 对 undefined 组件只 warning），没有任何运行时断言会现形，
+ *    所以按安装副本的真实导出表点名核对。
  *
  * 运行：node scripts/smoke-client.mjs [plugin-dir]
  */

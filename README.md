@@ -68,7 +68,7 @@
 | [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份（`prefix` 即完整系统提示词、关闭运行时快照）＋ 文件工具 `read` / `write` / `edit`，**整组不含 shell**。工具目录就是这三个——没有 bash / pwsh、没有检索 / `read_image`、没有技能 / 计划 / 目标 / 子代理。随包的 `tool-filter` 行在 `system-prompt/assemble` 处把 `read_image` 移出模型可见目录（`tools.restrict()` 只筛继承工具、兄弟行包注册表又输给 loader 的并发装载，两条路都已实测不成立） | `dsh plugin --profile web add @lynn123411/dsh-preset-minimal-fs` |
 | [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：官方 `standard` 组合（persona 零改动）＋ Matt Pocock 26 个技能（[mattpocock/skills](https://github.com/mattpocock/skills)）＋ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答；达成共识后不自动进入 plan mode。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 11） | `dsh plugin --profile web add @lynn123411/dsh-preset-matt-standard @lynn123411/dsh-ask-user-grilling` |
 | [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式（实验性）**：官方 `ptc` 组合（persona 零改动，`mode: ptc` 下模型只见 `run_code`）＋ 26 个 Matt 技能（`skills/`）＋ grilling 投递插件（轮次经 `run_code` 内的 `tools.ask_user_grilling` 投递）；达成共识后不自动进入 plan mode。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 12） | `dsh plugin --profile web add @lynn123411/dsh-preset-matt-ptc @lynn123411/dsh-ask-user-grilling` |
-| [matt-cordis](./presets/matt-cordis) | **Matt 创造模式**：官方 `cordis` 组合（persona 零改动，含 `tool-cordis` 工具行与官方随附的 3 个 cordis 技能）＋ 26 个 Matt 技能并入 `skills/` ＋ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 13） | `dsh plugin --profile web add @lynn123411/dsh-preset-matt-cordis @lynn123411/dsh-ask-user-grilling` |
+| [matt-cordis](./presets/matt-cordis) | **Matt 创造模式**：官方 `cordis` 组合（persona 零改动，含 `tool-cordis` 工具行与官方随附的 4 个技能）＋ 26 个 Matt 技能并入 `skills/` ＋ grilling 投递插件。grilling 轮次先散文预告、再以表单工具投递作答。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 13） | `dsh plugin --profile web add @lynn123411/dsh-preset-matt-cordis @lynn123411/dsh-ask-user-grilling` |
 
 > 四个 preset 都是可安装的 **bundle 包**（npm 名 `@lynn123411/dsh-preset-<id>`），安装命令与插件同一条：它把包写进 profile 的 `dependencies`、并把包名登记进 `dsh.profile.bundles`。装完**重启 DSH**，再在新建会话界面选择对应模式——preset 的挂载在进程内只装载一次，改 patch 或随包文件都不会热更。开发副本把包名换成仓库内路径：`dsh plugin --profile web add ./presets/<id>`（在仓库根执行，会记成 `link:`）。三个 `matt-*` 的命令里另点名 `@lynn123411/dsh-ask-user-grilling`：它已是各包的 `dependencies`（行总可解析），但 bundle 层只按 profile 的**直接依赖**登记，漏了它工具照常可用、transcript 卡片退回原始 JSON。三个 `matt-*` 的开发副本同理：`dsh plugin --profile web add ./presets/<id> ./plugins/dsh-ask-user-grilling`（`link:` 包的 `dependencies` 不会被物化，只 link preset 会缺行）。
 
@@ -78,7 +78,7 @@
 
 | 目录 | 说明 |
 | --- | --- |
-| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的改动点与重打说明**：相对官方 0.1.7-rc.2 preset patch 的逐处改动清单（包装与身份、技能目录 `customSkillDirs`、工具行 `tool-ask-user` → `tool-ask-user-grilling`、matt-cordis 的 persona 与两份 cordis 随附技能副本的处置）、`skills/grilling/SKILL.md` 五处本地适配的成品块、当前基线、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
+| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的改动点与重打说明**：相对官方 0.2.0-rc.2 preset patch 的逐处改动清单（包装与身份、技能目录 `customSkillDirs`、工具行 `tool-ask-user` → `tool-ask-user-grilling`、matt-cordis 的 persona 与官方 cordis 随附技能的处置）、`skills/grilling/SKILL.md` 五处本地适配的成品块、当前基线、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
 
 ---
 

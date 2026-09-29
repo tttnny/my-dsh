@@ -7,7 +7,7 @@
       config:
         id: matt-cordis
         name: Matt 创造模式
-        description: 官方 cordis 组合（persona 零改动，含 tool-cordis 动态插件工具集与官方随附 3 个 cordis 技能）＋ Matt Pocock 的 26 个技能并入 skills/ ＋ grilling 投递插件。grilling 轮次先以散文预告、再通过表单工具投递作答；达成共识后不自动进入 plan mode。
+        description: 官方 cordis 组合（persona 零改动，含 tool-cordis 动态插件工具集与官方随附 4 个技能）＋ Matt Pocock 的 26 个技能并入 skills/ ＋ grilling 投递插件。grilling 轮次先以散文预告、再通过表单工具投递作答；达成共识后不自动进入 plan mode。
         order: 13
         plugins:
           # Same persona as `standard`: tool descriptions and the skill catalog carry

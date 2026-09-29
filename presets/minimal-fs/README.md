@@ -70,7 +70,7 @@ node "<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js" \
 
 `--dump-config` 只做组合、不装载，也不求值 `!!js`；它证明 patch 能解析，不证明工具目录。
 
-**工具目录（唯一可信的那条）**——开一个本 preset 的真会话发一句话，然后读该会话日志里 `request/header` 记录的 `data.header.tools`（0.1.7-rc.2 的会话日志是 `session.v4.jsonl.zstd`）：
+**工具目录（唯一可信的那条）**——开一个本 preset 的真会话发一句话，然后读该会话日志里 `request/header` 记录的 `data.header.tools`（会话日志是 `session.v4.jsonl.zstd`）：
 
 ```bash
 D=~/.dsh/sessions/--Users-tny-Desktop-work-my-dsh--/session-<id>
@@ -88,7 +88,7 @@ for raw in sys.stdin:
 
 期望输出 `['edit', 'read', 'write']`——`bash` / `pwsh` 不出现，`read_image` 也不出现。UI 的「工具」面板只反映装配期的定义解析，不等于模型实际收到的目录——**以会话日志为准**。
 
-**适配实测记录（0.1.7-rc.2，2026-09-26）**——隔离 `DSH_HOME` 建一个 web profile，用上面的 `dsh plugin add` 装本目录，再叠一条探针宿主行：等 preset 挂载后对它的 scope 调 `systemPrompt.assemble({ scope })`，打印行状态与模型可见目录。实测结果：
+**适配实测记录（0.2.0-rc.2，2026-09-30）**——隔离 `DSH_HOME` 建一个 web profile，用上面的 `dsh plugin add` 装本目录，再叠一条探针宿主行：等 preset 挂载后对它的 scope 调 `systemPrompt.assemble({ scope })`，打印行状态与模型可见目录。实测结果：
 
 ```
 PROBE_ROWS     ["persona=up","tool-fs=up","tool-filter=up"]
