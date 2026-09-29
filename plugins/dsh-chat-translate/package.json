@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-chat-translate",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Assistant reply-body translation for the DeepSeek Harness Web UI (OpenAI-compatible channel)",
   "license": "MIT",
   "author": "lynn123411",
