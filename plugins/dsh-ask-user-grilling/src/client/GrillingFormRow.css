@@ -1,4 +1,4 @@
-/* ask_user_grilling 的 transcript 卡片。
+/* grilling_form 的 transcript 表单行。
  *
  * 与官方 @deepseek-ai/dsh-client-ui-tool 的 ToolRow / AskQuestionCard 同一套 token 与数值：
  * 这里只是把类名换成 dsg- 前缀（跨插件值导入被客户端 bundle 的纯净度门禁挡住，所以行外壳
@@ -36,6 +36,7 @@
   0% {
     left: -300px;
   }
+
   90%,
   100% {
     left: 100%;
@@ -83,7 +84,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-height: 360px;
+  max-height: min(60vh, 520px);
   margin: 4px 0 4px 4px;
   padding: 16px 20px;
   overflow-y: auto;
@@ -96,20 +97,18 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  margin: 0;
 }
 
 .dsg-item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 
 .dsg-question,
 .dsg-answer,
 .dsg-verdict {
-  margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: var(--dsh-content-font-size, 14px);
@@ -117,7 +116,7 @@
 }
 
 .dsg-question {
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-primary);
 }
 
 .dsg-answer,
@@ -152,6 +151,95 @@
   margin: 2px 0 0;
   font-size: var(--dsh-content-font-size-secondary, 13px);
   color: var(--dsw-alias-label-secondary);
+}
+
+.dsg-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.dsg-optionRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dsg-optionMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dsg-option {
+  min-width: 0;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-primary);
+}
+
+.dsg-badge {
+  flex: none;
+}
+
+.dsg-optionDescription {
+  margin: 0 0 0 24px;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 多行自填：ui-primitives 没有多行输入控件，官方那张答题卡也是自己画的 textarea。 */
+.dsg-custom {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  margin-top: 2px;
+  padding: 6px 10px;
+  resize: vertical;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsg-custom::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.dsg-custom:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.dsg-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.dsg-import {
+  flex: none;
+}
+
+.dsg-reminder,
+.dsg-closed {
+  margin: 0;
+  align-self: stretch;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary));
+}
+
+.dsg-closed {
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .dsg-violations {
@@ -206,15 +294,6 @@
 .dsg-inspectButton:hover {
   background: var(--dsw-alias-interactive-bg-hover-solid);
   color: var(--dsw-alias-label-primary);
-}
-
-.dsg-visuallyHidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

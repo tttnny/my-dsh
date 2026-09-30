@@ -28,10 +28,13 @@ Format a round like so:
 ➡️ <你的推荐答案>
 ```
 
-> **每一轮分两步投递**：
+上面那段格式里的东西**直接进表单**：`question` 写标题加一句正文、`detail` 写展开的多段正文、`options` 写选项、`recommended` 标出你推荐的那一项、`number` 写 Q 编号。
+
+> **每一轮只投一次表单，不写散文预告**：
 >
-> - 先在消息文本里**以散文预告这一轮的全部问题**。
-> - 在**同一回合内**紧接着再在 `run_code` 程序内用 `return await tools.ask_user_grilling({ questions: [...] })` 把**同一轮**作为**一次**调用投出，让用户在表单中作答（散文预告与工具投递必须**同一轮、一一对应**）。
+> - 不要用消息正文把问题再说一遍：在 `run_code` 程序内用一次 `return await tools.grilling_form({ questions: [...] })` 把整轮问题投成对话里的表单。
+> - 这是本轮**唯一且最后**的调用——它一发出本轮就结束，同批别的调用会把本轮撑开。
+> - 用户在对话区的表单里勾选、自填，点「导入输入框」写进他自己的输入框，再用原生发送键发出；他的作答会作为**下一条用户消息**到达，不要等它、也不要把表单当成已经有答案。
 
 Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 

@@ -7,7 +7,7 @@
       config:
         id: matt-cordis
         name: Matt 创造模式
-        description: 官方 cordis 组合（persona 零改动，含 tool-cordis 动态插件工具集与官方随附 4 个技能）＋ Matt Pocock 的 26 个技能并入 skills/ ＋ grilling 投递插件。grilling 轮次先以散文预告、再通过表单工具投递作答；达成共识后不自动进入 plan mode。
+        description: 官方 cordis 组合（persona 零改动，含 tool-cordis 动态插件工具集与官方随附 4 个技能）＋ Matt Pocock 的 26 个技能并入 skills/ ＋ grilling 表单工具（grilling_form）。grilling 轮次把整轮问题一次投成对话里的表单、当轮即结束；原生 ask_user_question 保留给简单确认。达成共识后不自动进入 plan mode。
         order: 13
         plugins:
           # Same persona as `standard`: tool descriptions and the skill catalog carry
@@ -129,13 +129,16 @@
                 config:
                   subagentProvider: spawn
                   maxRounds: 64
-          # MATT-DEL: upstream tool-ask-user row removed.
-          # MATT-ADD: replaced in place by tool-ask-user-grilling — the same form with
-          # forced multi-select and an auto-appended round-end supplement question. Skills
-          # ship upstream-verbatim except grilling (local notes: Chinese Q2 example,
-          # business-language framing, delivery, sub-agent settle gate; see
-          # patches/matt-presets-bootstrap/README.md section 2).
-          - id: tool-ask-user-grilling
+          # MATT-ADD: tool-grilling-form sits beside the upstream tool-ask-user row, which
+          # ships unchanged. Division of labour: the native one takes over the composer for
+          # a single confirmation; the variant puts a whole grilling round into the
+          # transcript as a form and ends the turn there, the user answering from the
+          # native composer. Skills ship upstream-verbatim except grilling (local notes:
+          # Chinese Q2 example, business-language framing, delivery, sub-agent settle gate;
+          # see patches/matt-presets-bootstrap/README.md section 2).
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-grilling-form
             name: '@lynn123411/dsh-ask-user-grilling'
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'

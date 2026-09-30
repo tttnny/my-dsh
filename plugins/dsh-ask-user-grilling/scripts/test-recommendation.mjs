@@ -1,14 +1,10 @@
 // 推荐标记归一化的回归测试。
 //
-// 判断「徽标是否渲染」的代码不在本仓库，而在 DSH 安装副本的
-// @deepseek-ai/dsh-client-ui-user-questions/lib/client.js 里（函数
-// parseRecommendedLabel）。它的规则只有一条：label 必须以半角或全角的
-// 括号推荐字样收尾。规则抄在 recommended-label-rule.mjs；scripts/smoke-host.mjs
-// 断言那份抄本与安装副本逐字相同，上游一改就当场失败，而不是测试继续通过、
-// 徽标实际不再渲染。
+// 归一化后的 label 是本插件自己的选项身份：宿主按它查同题内重名，界面按它存勾选、
+// 画「推荐」徽标，导入输入框时用 cleanLabel（后缀不跟着用户的消息发回去）。
+// 规则只此一份，界面不再依赖任何官方判定函数。
 import assert from 'node:assert/strict';
-import { normalizeOption } from '../src/recommendation.js';
-import { CLIENT_ACCEPTS } from './recommended-label-rule.mjs';
+import { RECOMMENDED_LABEL_SUFFIX, normalizeOption } from '../src/recommendation.js';
 
 let passed = 0;
 let total = 0;
@@ -31,6 +27,7 @@ test('真实会话数据：description 末尾的「；推荐」搬到 label 末�
   const out = normalizeOption(REAL);
   assert.equal(out.recommended, true);
   assert.equal(out.label, 'A：从侧边栏移走（推荐）');
+  assert.equal(out.cleanLabel, 'A：从侧边栏移走');
   assert.equal(out.description, '只保留输入框下面这一个');
   assert.equal(out.originalLabel, 'A：从侧边栏移走');
 });
@@ -101,7 +98,7 @@ test('字段与文字同时给：只补一次后缀', () => {
   assert.equal(out.description, '说明文字');
 });
 
-test('凡判定为推荐的，产出的 label 一定被客户端规则接受', () => {
+test('凡判定为推荐的，产出的 label 一定带后缀、cleanLabel 一定不带', () => {
   const options = [
     REAL,
     { label: 'A：xxx（推荐）' },
@@ -113,8 +110,15 @@ test('凡判定为推荐的，产出的 label 一定被客户端规则接受', (
   for (const option of options) {
     const out = normalizeOption(option);
     assert.equal(out.recommended, true, JSON.stringify(option));
-    assert.ok(CLIENT_ACCEPTS.test(out.label), `客户端不认 ${JSON.stringify(out.label)}`);
+    assert.ok(out.label.endsWith(RECOMMENDED_LABEL_SUFFIX), `没有后缀 ${JSON.stringify(out.label)}`);
+    assert.equal(out.label, `${out.cleanLabel}${RECOMMENDED_LABEL_SUFFIX}`, JSON.stringify(option));
   }
+});
+
+test('不推荐的选项：cleanLabel 与 label 相同', () => {
+  const out = normalizeOption({ label: 'B：都留' });
+  assert.equal(out.label, 'B：都留');
+  assert.equal(out.cleanLabel, 'B：都留');
 });
 
 test('label 里标记不在末尾：不动（不猜）', () => {

@@ -139,24 +139,24 @@ test('apply() 在守卫下跑得通', () => {
 test('注册了自有 key 的 tool.call.toolview 行', () => {
   const row = registrations.find((entry) => entry.name === 'tool.call.toolview');
   assert.ok(row !== undefined, '没有注册 tool.call.toolview');
-  assert.equal(row.key, 'ask_user_grilling');
-  assert.equal(row.locale, 'askGrilling');
+  assert.equal(row.key, 'grilling_form');
+  assert.equal(row.locale, 'grillingForm');
   assert.equal(typeof row.component, 'function');
 });
 test('只注册这一行，不接管官方 key', () => {
   assert.equal(registrations.length, 1);
   assert.equal(registrations[0].key === 'ask_user_question', false);
 });
-test('字典注册在本插件名字空间下', () => assert.deepEqual(locales, ['askGrilling']));
+test('字典注册在本插件名字空间下', () => assert.deepEqual(locales, ['grillingForm']));
 test('样式注入一次，标签带包身份', () => {
   assert.equal(styles.length, 1);
-  assert.equal(styles[0].dataset.pluginCss, `${pkgName}/AskGrillingRow.css`);
+  assert.equal(styles[0].dataset.pluginCss, `${pkgName}/GrillingFormRow.css`);
   assert.ok(styles[0].textContent.includes('.dsg-card'));
 });
 
 // class 名在 JSX 与 CSS 之间单边漂移 = 样式静默失效，构建与运行都不报错
-const jsx = readFileSync(join(root, 'src', 'client', 'AskGrillingRow.jsx'), 'utf8');
-const css = readFileSync(join(root, 'src', 'client', 'AskGrillingRow.css'), 'utf8');
+const jsx = readFileSync(join(root, 'src', 'client', 'GrillingFormRow.jsx'), 'utf8');
+const css = readFileSync(join(root, 'src', 'client', 'GrillingFormRow.css'), 'utf8');
 const used = new Set([...jsx.matchAll(/"(dsg-[A-Za-z0-9-]+)"/g)].map((match) => match[1]));
 const defined = new Set([...css.matchAll(/\.(dsg-[A-Za-z0-9-]+)/g)].map((match) => match[1]));
 test('JSX 里用到的 class 名都在 CSS 里', () => {

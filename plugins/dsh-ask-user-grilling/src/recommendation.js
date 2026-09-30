@@ -1,12 +1,15 @@
 // 推荐标记的归一化。
 //
-// 客户端（@deepseek-ai/dsh-client-ui-user-questions 的 parseRecommendedLabel）
-// 只有一个判定依据：option.label 必须以半角或全角的括号推荐字样收尾；option.description
-// 完全不参与。模型经常把推荐写成 description 末尾的「；推荐」，或者写成 label 里不带
-// 括号的形式，于是徽标不渲染、标记原样显示成文字。
+// 模型写推荐的方式五花八门：description 末尾的「；推荐」、label 里不带括号的写法、方括号、
+// 或干脆给一个 recommended: true 字段。界面只认一种形式——label 末尾的「（推荐）」后缀，
+// 于是徽标不渲染、标记原样显示成文字。
 //
-// 这里在题目交给 ctx.userQuestions.ask 之前把标记统一搬到 label 末尾的「（推荐）」，
-// 客户端就能认出并渲染徽标。显式字段 recommended 是另一条更明确的信号，优先于文字。
+// 这里把标记统一搬到 label 末尾的「（推荐）」，界面就能一次认出来。显式字段 recommended
+// 是另一条更明确的信号，优先于文字。
+//
+// 归一化后的 label 同时是**选项的身份**：宿主按它查同题内重名、界面按它存勾选。所以除了
+// 这个带后缀的 label，还给出 cleanLabel（不含后缀的展示文字）——徽标由界面自己画，导入
+// 到输入框的作答也用 cleanLabel，模型写的推荐标记不会跟着用户的消息发回去。
 
 const MARKER = 'recommended|推荐';
 // 半角/全角圆括号与方括号/方头括号
@@ -18,7 +21,7 @@ const TRAILING_PUNCTUATION = '。.！!？?；;，,、~～\\s';
 const BRACKETED_SUFFIX = new RegExp(`[\\s]*[${SEPARATOR}]?\\s*${BRACKETED_MARKER}[${TRAILING_PUNCTUATION}]*$`, 'i');
 const BARE_SUFFIX = new RegExp(`[\\s]*[${SEPARATOR}]\\s*(?:${MARKER})[${TRAILING_PUNCTUATION}]*$`, 'i');
 
-/** 供测试核对客户端规则的推荐标记后缀；客户端只认 label 末尾的这两种括号写法。 */
+/** 界面上推荐选项的标记后缀；也是归一化后 label 的收尾。 */
 export const RECOMMENDED_LABEL_SUFFIX = '（推荐）';
 
 /**
@@ -34,10 +37,11 @@ export function stripRecommendationMarker(text) {
 }
 
 /**
- * 把一个 option 归一化成客户端能渲染的形式。
+ * 把一个 option 归一化成界面能渲染的形式。
  * @param {{ label: string, description?: string, recommended?: boolean }} option - 模型给的选项。
- * @returns {{ originalLabel: string, label: string, description?: string, recommended: boolean }}
- *   交给界面时用 label/description；回传答案时用 originalLabel 还原模型原本写的 label。
+ * @returns {{ originalLabel: string, label: string, cleanLabel: string, description?: string, recommended: boolean }}
+ *   label 是选项身份（带「（推荐）」后缀，宿主按它查重、界面按它存勾选）；cleanLabel 是给
+ *   用户看的文字（recommended 为 true 时由界面另画徽标）；originalLabel 是模型原本写的 label。
  */
 export function normalizeOption(option) {
   const label = stripRecommendationMarker(option.label);
@@ -47,6 +51,7 @@ export function normalizeOption(option) {
   return {
     originalLabel: option.label,
     label: recommended ? `${cleanLabel}${RECOMMENDED_LABEL_SUFFIX}` : cleanLabel,
+    cleanLabel,
     description: description === undefined ? undefined : description.text,
     recommended,
   };

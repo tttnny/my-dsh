@@ -5,7 +5,7 @@
 # mount 说明与 client-modules 的 processOne）。所以它必须什么都不注册——工具仍由 preset 行
 # 注册，否则工具会以 root layer 的身份对每一个 preset 的 agent 可见。
 - insert:
-    - id: lynn-ask-user-grilling-carrier
+    - id: lynn-grilling-form-carrier
       name: '@lynn123411/dsh-ask-user-grilling'
       config:
         carrier: true

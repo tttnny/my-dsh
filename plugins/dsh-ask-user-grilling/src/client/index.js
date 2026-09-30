@@ -1,14 +1,15 @@
-import { AskGrillingRow } from './AskGrillingRow.jsx';
-import css from './AskGrillingRow.css';
+import { GrillingFormRow } from './GrillingFormRow.jsx';
+import css from './GrillingFormRow.css';
 import { NS, en, zh } from './locales.js';
 
 /** 浏览器半边的包身份，也是 bundle 里 <style> 的归属标记。 */
 const PACKAGE_ID = '@lynn123411/dsh-ask-user-grilling';
-const CSS_TAG = `${PACKAGE_ID}/AskGrillingRow.css`;
+const CSS_TAG = `${PACKAGE_ID}/GrillingFormRow.css`;
 
 /**
  * 浏览器半边要的 cordis 服务。`locale` 装字典，`slots` 注册行；
  * 少声明一个不会当场报错，插件会整条 entry 变 failed、从页面上消失（见 docs/rules/client-wiring.md）。
+ * 输入动作、会话记录与输入状态不是服务，而是槽位给 session 作用域组件的标准属性，不用声明。
  */
 export const inject = ['locale', 'slots'];
 
@@ -26,7 +27,7 @@ function injectStyles() {
 }
 
 /**
- * 浏览器半边：装本插件的字典，然后按 wire 工具名注册 `ask_user_grilling` 的行。
+ * 浏览器半边：装本插件的字典，然后按 wire 工具名注册 `grilling_form` 那张表单。
  * 注册的是自有 key，官方 `ask_user_question` 那张卡不受影响。
  * @param {object} ctx - 客户端根上下文。
  */
@@ -35,7 +36,7 @@ export function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-ask-user-grilling: dictionaries');
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
     name: 'tool.call.toolview',
-    key: 'ask_user_grilling',
+    key: 'grilling_form',
     locale: NS,
-  }, AskGrillingRow));
+  }, GrillingFormRow));
 }

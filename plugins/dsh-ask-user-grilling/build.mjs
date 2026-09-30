@@ -30,7 +30,6 @@ const PLATFORM_MODULES = [
 const KERNEL_MODULES = [
   '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-tools',
-  '@deepseek-ai/dsh-user-questions',
 ];
 
 /** 把 .css 读成字符串导出；模块体不在这里执行，注入由插件自己按标签键做。 */
