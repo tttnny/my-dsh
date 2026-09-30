@@ -11,7 +11,7 @@ import {
   Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import {
-  answerParts,
+  answerLines,
   applyImport,
   formStorageKey,
   importBody,
@@ -37,8 +37,9 @@ import {
  *  - 记录里在这条调用之后出现了用户发言（kind `user`/`steering`，seq 更大），这一轮就算
  *    过去了：表单转只读，内容留着给人看，不再进上下文。
  *
- * 槽位给的行数据与标准属性见 docs/rules/client-wiring.md：
- * `{ block, toolName, callId, sessionId, t, inspect, inputActions, useInput, useConversation }`。
+ * 槽位给的行数据：`{ block, toolName, callId, inspect }` 与取词函数 `t`；`sessionId`、
+ * `inputActions`、`useInput`、`useConversation` 是 session 作用域的标准属性，随行数据一起交给
+ * 这个组件（见 `@deepseek-ai/dsh-client-ui-conversation` 的 slots 契约）。
  *
  * @param {object} props - 槽位给的行数据与 session 标准属性。
  * @returns {import('react').JSX.Element} 这一行的表单。
@@ -66,16 +67,16 @@ export function GrillingFormRow({
   const readOnly = isReadOnlyAfter(chat?.legacy?.nodes, callId);
 
   const storageKey = formStorageKey(sessionId);
-  const [answers, setAnswers] = useState(() => readStoredForm(storageOf(), storageKey, callId));
+  /** 本轮作答在会话 storage 里的读写口：storage、键、callId 三个参数只在这里拼一次。 */
+  const readForm = () => readStoredForm(storageOf(), storageKey, callId);
+  const writeForm = (next) => writeStoredForm(storageOf(), storageKey, callId, next);
+  const [answers, setAnswers] = useState(readForm);
 
   const interactive = model.state === 'form' && !readOnly;
   const body = importBody(model.questions, answers);
   const canImport = interactive && body !== '';
   const stale = canImport && importStale(draft, body);
-  const answered = model.questions.filter((question) => {
-    const { selected, custom } = answerParts(question, answers[question.id]);
-    return selected.length > 0 || custom !== '';
-  }).length;
+  const answered = model.questions.filter((question) => answerLines(question, answers[question.id]).length > 0).length;
 
   const expandable = argsRaw !== '' || resultText !== undefined || model.questions.length > 0;
 
@@ -83,7 +84,7 @@ export function GrillingFormRow({
   const setAnswer = (id, next) => {
     const merged = { ...answers, [id]: next };
     setAnswers(merged);
-    writeStoredForm(storageOf(), storageKey, callId, merged);
+    writeForm(merged);
   };
   /** 勾选 / 取消一个选项：界面按归一化后的 label 记，同一个 label 就是同一项。 */
   const toggleOption = (question, label) => {
@@ -368,8 +369,7 @@ function OptionList({ question, answer, t, onToggleOption, onCustom }) {
  * @returns {import('react').JSX.Element} 作答行。
  */
 function AnswerLine({ question, answer, t }) {
-  const { selected, custom } = answerParts(question, answer);
-  const lines = [...selected, ...(custom === '' ? [] : [custom])];
+  const lines = answerLines(question, answer);
   return (
     <div className="dsg-answer">
       {lines.length === 0 ? (

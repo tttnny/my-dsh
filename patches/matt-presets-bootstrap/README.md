@@ -58,7 +58,7 @@
 
 ### 工具行：上游 `tool-ask-user` 原样保留，旁边新增 `tool-grilling-form`（MATT-ADD，三份都有）
 
-在 `remaining model-facing rows` 组的 `- id: tool-ask-user` 块之后追加下面这段（三份内容相同）。上游那两行一字不动，新增的只有注释与 `tool-grilling-form` 两行。`# MATT-ADD:` 标记是升级 diff 审查识别「预期差异」的依据，勿删：
+在 `remaining model-facing rows` 组里，上游 `- id: tool-ask-user` 两行**一字不动**，只在它前面插入 `# MATT-ADD:` 注释、在它后面追加 `- id: tool-grilling-form` 两行。下面整块是**成品形状**（三份内容相同）：其中 `tool-ask-user` 那两行是照抄上游既有内容，**不要真的新增一遍**，本次新增的只有注释与 `tool-grilling-form` 两行。`# MATT-ADD:` 标记是升级 diff 审查识别「预期差异」的依据，勿删：
 
 ```yaml
           # MATT-ADD: tool-grilling-form sits beside the upstream tool-ask-user row, which
@@ -236,7 +236,7 @@ DSH="<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js"
 
 ## 六、何时重打
 
-- **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 取新版官方 `@deepseek-ai/dsh-web-app/presets/<id>.patch.yml` 覆盖 `matt-<id>.patch.yml`，再按 §一 重打「包装」「技能目录」「工具行」三处。「技能目录」的锚点是 `- id: skill-filesystem` 的 `name:` 行；「工具行」的锚点是 `remaining model-facing rows` 里的 `- id: tool-ask-user` 块——上游那两行原样保留、只在其后追加 `tool-grilling-form` 行，官方若改了这两处结构则需手工定位。**必须做全量 diff**：官方会在组合里新增工具行，只 diff 这两个改动块看不出来。
+- **DSH 升级后**：官方 `standard/ptc/cordis` 组合更新 → 取新版官方 `@deepseek-ai/dsh-web-app/presets/<id>.patch.yml` 覆盖 `matt-<id>.patch.yml`，再按 §一 重打「包装」「技能目录」「工具行」三处。「技能目录」的锚点是 `- id: skill-filesystem` 的 `name:` 行；「工具行」的锚点是 `remaining model-facing rows` 里的 `- id: tool-ask-user` 块——上游那两行原样保留，`# MATT-ADD:` 注释插在它之前、`tool-grilling-form` 两行追加在它之后，官方若改了这两处结构则需手工定位。**必须做全量 diff**：官方会在组合里新增工具行，只 diff 这两个改动块看不出来。
 - **重打后的校验**：§五 第 2、3 条必须重跑——归一化 diff 只许出现「技能目录」与「工具行」，深度比对必须全等。`cordis` 的 persona 也随官方逐字覆盖。
 - **官方 cordis 技能更新**：不需要动本仓库——matt-cordis 的 `customSkillDirs` 第二条指向官方 `@deepseek-ai/dsh-agent-preset/skills`，跟着 DSH 升级自动更新（0.2.0-rc.2 起该目录 4 个技能，多出 `agent-experience`）。
 - **同进程与官方 `cordis` 共存**：Host inspect provider 由**宿主组合单点注册**（`dsh-web-app/cordis.patch.yml` 的 `cordis-inspect-providers` 行，`@deepseek-ai/dsh-tool-cordis/host`），per-preset 的 `tool-cordis` 行不再注册任何 provider，重复注册无从产生——**不需要任何幂等补丁**。判据：`--profile web --dump-config | grep -c "id: cordis-inspect-providers"` 期望 `1`；全安装树 `grep -rn "cordisInspect.register"` 应唯一命中 `dsh-tool-cordis/lib/types/host.js`。

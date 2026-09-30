@@ -4,7 +4,7 @@
 // 宣布的 Q 编号要对得上），以及归一化后的 option label 认选项（宿主按它查重、界面按它存勾选、
 // 生成导入文本时再换回模型原本写的 label）。各写一份必然漂。
 //
-// 纯函数：不碰 React、不读时钟、不读会话。localStorage 由调用方传进来（见文件末尾的存储ported 函数）。
+// 纯函数：不碰 React、不读时钟、不读会话。localStorage 由调用方传进来（见文件末尾那组以 storage 为参数的函数）。
 
 import { normalizeOption } from './recommendation.js';
 
@@ -141,7 +141,7 @@ function readQuestions(argsRaw) {
 /**
  * 结果文本 → 这一轮投出去之后发生了什么。
  * @param {unknown} resultText - 工具结果里的文本。
- * @returns {{rejected: boolean, pending: boolean, violations: string[], error: string|undefined}|undefined}
+ * @returns {{rejected: boolean, violations: string[], error: string|undefined}|undefined}
  *   形状不认识时返回 undefined（调用方按调用失败处理）。
  */
 function readResult(resultText) {
@@ -150,12 +150,11 @@ function readResult(resultText) {
   if (parsed.rejected === true) {
     return {
       rejected: true,
-      pending: false,
       violations: stringList(parsed.violations),
       error: typeof parsed.error === 'string' ? parsed.error : undefined,
     };
   }
-  if (parsed.pending === true) return { rejected: false, pending: true, violations: [], error: undefined };
+  if (parsed.pending === true) return { rejected: false, violations: [], error: undefined };
   return undefined;
 }
 
@@ -218,15 +217,15 @@ export function answerParts(question, answer) {
 }
 
 /**
- * 这一轮里一道题的作答文本；没作答返回 undefined。
+ * 一道题的作答逐行展开（选中的项在前、自填的字在后）。导入文本与只读展示共用这一份，
+ * 两处的行序与取舍不会各写一套。
  * @param {object} question - 题目模型。
  * @param {{selected?: string[], custom?: string}|undefined} answer - 该题的作答。
- * @returns {string|undefined} `选的项、自填的字`，只算上真的写了的。
+ * @returns {string[]} 逐行文字；没作答时为空数组。
  */
-function answerTextOf(question, answer) {
+export function answerLines(question, answer) {
   const { selected, custom } = answerParts(question, answer);
-  const parts = [...selected, ...(custom === '' ? [] : [custom])];
-  return parts.length === 0 ? undefined : parts.join('、');
+  return [...selected, ...(custom === '' ? [] : [custom])];
 }
 
 /**
@@ -239,9 +238,9 @@ function answerTextOf(question, answer) {
 export function importBody(questions, answers) {
   const lines = [];
   for (const question of questions) {
-    const text = answerTextOf(question, answers[question.id]);
-    if (text === undefined) continue;
-    lines.push(`${titleOf(question)}：${text}`);
+    const answer = answerLines(question, answers[question.id]);
+    if (answer.length === 0) continue;
+    lines.push(`${titleOf(question)}：${answer.join('、')}`);
   }
   return lines.join('\n');
 }

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {
   IMPORT_BLOCK_END,
   IMPORT_BLOCK_START,
+  answerLines,
   answerParts,
   applyImport,
   formStorageKey,
@@ -325,6 +326,18 @@ test('作答展示：选中的项换回不带后缀的文字', () => {
   const question = { id: 'a', options: [{ label: 'A：xxx（推荐）', displayLabel: 'A：xxx' }] };
   assert.deepEqual(answerParts(question, { selected: ['A：xxx（推荐）'], custom: ' 自填 ' }), { selected: ['A：xxx'], custom: '自填' });
   assert.deepEqual(answerParts(question, undefined), { selected: [], custom: '' });
+});
+
+test('作答逐行展开：选中的项在前、自填的字在后，导入文本与只读展示共用这一份', () => {
+  const question = { id: 'a', options: [{ label: 'A：xxx（推荐）', displayLabel: 'A：xxx' }, { label: 'B：yyy', displayLabel: 'B：yyy' }] };
+  assert.deepEqual(answerLines(question, { selected: ['A：xxx（推荐）', 'B：yyy'], custom: ' 补一句 ' }), ['A：xxx', 'B：yyy', '补一句']);
+  assert.deepEqual(answerLines(question, { selected: [], custom: '   ' }), []);
+  assert.deepEqual(answerLines(question, undefined), []);
+  // 导入文本就是它的逐行拼接：一处改了行序或取舍，两处一起变
+  assert.equal(
+    importBody([{ ...question, header: 'Q1', question: '？' }], { a: { selected: ['B：yyy'], custom: '补一句' } }),
+    'Q1：B：yyy、补一句',
+  );
 });
 
 console.log(`${passed}/${total} passed`);
