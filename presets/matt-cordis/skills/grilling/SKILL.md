@@ -17,35 +17,25 @@ Work the tree in **rounds**. The **frontier** is every decision whose prerequisi
 Format a round like so:
 
 ```
-Q1. **<question title>**: <question body, might be multiple paragraphs>
+❓ **Q1** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
 
-Options:
-- A: <option A>
-- B: <option B>
-- C: <option C>
-
-Recommended: <your recommended answer>
+➡️ <your recommended answer>
 
 ---
 
-Q2. **<问题标题>**: <问题正文，可能包含多个段落>
+❓ **Q2** - **<问题标题>**：<问题正文，可能包含多个段落，包括多个选项>
 
-选项:
-- A: <选项 A>
-- B: <选项 B>
-- C: <选项 C>
-
-推荐: <您的推荐答案>
+➡️ <你的推荐答案>
 ```
 
 > **每一轮分两步投递**：
 >
-> - 先在消息文本里**以散文预告这一轮的全部问题**（标题、正文、选项与推荐）。
+> - 先在消息文本里**以散文预告这一轮的全部问题**。
 > - 在**同一回合内**紧接着把**同一轮**作为**一次** `ask_user_grilling` 调用发出，让用户在表单中作答（散文预告与工具投递必须**同一轮、一一对应**）。
 
 Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
-Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, etc.), dispatch a sub-agent to find it; don't ask the user for anything you could look up yourself. The _decisions_ are the user's: put each to them and wait.
+Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, etc.), dispatch a sub-agent to find it; don't ask the user for anything you could look up yourself. Don't block on it: a running exploration is an unsettled prerequisite, so only the questions downstream of it wait for the sub-agent to report; ask the rest of the frontier now. The _decisions_ are the user's: put each to them and wait.
 
 > **会话结束的判定需要同时满足**：
 >
