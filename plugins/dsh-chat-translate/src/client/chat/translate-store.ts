@@ -103,7 +103,7 @@ export class ChatTranslateStore {
 
   /**
    * 确保该行按当前文本被翻译。
-   * @param manual - 用户点击失败块发起的补跑：已落定的同代行只有这条路会重发。
+   * @param manual - 用户点击失败块的左缘热区发起的补跑：已落定的同代行只有这条路会重发。
    * @returns 是否发出了新的请求。
    */
   ensure(rowKey: string, texts: readonly string[], manual = false): boolean {

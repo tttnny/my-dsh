@@ -33,7 +33,7 @@ export type RowPlanEntry =
   /** 思考块：blockIndex 供「流式尾块」判定，key 是条目在计划里的位置（React 键）。 */
   | { type: 'reasoning'; key: number; blockIndex: number; text: string }
   /**
-   * 正文块：mark 即左缘线状态（可点性、重试指引、脉动全由它决定）；
+   * 正文块：mark 即左缘线状态（线型、脉动、热区动作全由它决定）；
    * translated 仅在成功时非 null，供 mark==='translated' 时换源文本渲染；
    * fail 仅在 mark==='failed' 时非 null——服务端的技术一句，Tooltip 悬停
    * 报因用，缺省时只报「翻译失败」。线型不从这里出：失败一律同一条红实线。
@@ -74,7 +74,8 @@ export interface RowPlanInput {
   outcomes?: readonly (BlockOutcome | null)[];
   /** 池里这行的状态：pending 时未落定的块显灰脉动，未登记什么都不显。 */
   rowStatus?: 'pending' | 'settled';
-  /** 用户点了「读原文」的正文块（按条目 key）：把译文态折成 original-view。 */
+  /** 用户点了「读原文」的正文块（按条目 key）：把译文态折成 original-view。
+   *  触发它的是左缘热区上的切换，不是点正文。 */
   originalKeys?: ReadonlySet<number>;
 }
 

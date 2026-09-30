@@ -7,9 +7,12 @@
  *    markdown 交给宿主公开基线组件 `MarkdownText` 重渲染：格式保真由官方
  *    渲染器负责，本文件不产生任何自拼 markup。
  * 2. 「已翻译/没译成」是渲染状态：落定、开关开启、进入视口后逐行首跑；成功
- *    的块（包括模型认为原样最好的块）挂译文、左缘蓝线、点击在译文与原文间
- *    切换；失败的块保持原文、左缘挂红实线（悬停报出败因），整块可点=手动
- *    整行补跑，无限次、无自动重试；已登记在途而尚无结果的块显灰脉动。
+ *    的块（包括模型认为原样最好的块）挂译文、左缘蓝线；失败的块保持原文、
+ *    左缘挂红实线；已登记在途而尚无结果的块显灰脉动。
+ * 3. 切换与补跑都在**左缘热区**上，不在正文上：正文整块可点会让「选中一段
+ *    文字复制」与「切换译文/原文」抢同一次点击；热区收成贴着那条线的窄带后，
+ *    正文的单击落字、拖选复制都不再误触。失败块的 ↻ 常驻在红线旁，点它整行
+ *    补跑，无限次、无自动重试。
  *
  * 除正文外的行内容与宿主逐分支等价：reasoning 行走折叠（含 Turn-process
  * 隐藏与 beforematch 揭示）、连续 image 组交回 owner 的 renderMessageImages、
@@ -37,11 +40,19 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import { settingsStore } from '../settings/store.ts';
 import { planAssistantRow } from './row-plan.ts';
-import { isBareBlockClick } from './click-guard.ts';
+import { isCleanHotspotClick } from './click-guard.ts';
 import { rowCopy } from '../locales.ts';
 import type { AssistantBlockLike } from './row-plan.ts';
 import type { ProseMark } from './styles.ts';
-import { ensureAssistantStyles, proseAction, proseClassNames } from './styles.ts';
+import {
+  ensureAssistantStyles,
+  HOTSPOT_CLASS,
+  HOTSPOT_IDLE_ATTR,
+  PROSE_BASE_CLASS,
+  proseClassNames,
+  proseIndentClassName,
+  prosePresentation,
+} from './styles.ts';
 import { chatTranslate, sameTexts } from './translate-store.ts';
 
 // ---- 宿主 contract 的结构性镜像（source of truth: ui-chat slots.d.ts） ----
@@ -291,18 +302,20 @@ const ReasoningRow = memo(function ReasoningRow({
   );
 });
 
-// ---- 正文块：译文/原文切换与失败重试共用一个壳 ----
+// ---- 正文块：左缘热区承载切换与补跑，正文本身只做选中/复制 ----
 
 interface ProseBlockProps {
   text: string;
   /** 成功落定的中文源文本（仅 mark='translated' 时作为渲染源）。 */
   translated: string | null;
-  /** 左缘线状态，单点算自 row-plan；可点性、重试指引、脉动全由它决定。 */
+  /** 左缘线状态，单点算自 row-plan；热区的动作、线型、脉动全由它决定。 */
   mark: ProseMark;
   /** 仅 mark='failed' 时非 null：悬停文案的技术细节（通道伤一句）。 */
   fail: string | null;
   onToggle: () => void;
   onRetry: () => void;
+  /** 能翻译（开关开 + 通道齐备）：正文块统一左缩进，译文出现时不跳字。 */
+  canTranslate: boolean;
   streaming: boolean;
   labels: MarkdownLabels;
   mentions: MarkdownFileMentions | undefined;
@@ -310,17 +323,14 @@ interface ProseBlockProps {
 }
 
 /**
- * 点击判定：落在块内交互元素（链接、代码块复制钮等）上的点击归那个元素，
- * 不连带切块/重试；拖选译文松手产生的 click 同样忽略。
+ * 正文块的现状：线挂在正文容器上（左缘那条竖线），可点的却只有贴着线的窄
+ * 热区——正文整块不是点击目标，拖选、单击落字都不会误触切换。
+ *
+ * 热区用原生 `button` 而不是 ui-primitives 的 Button：它没有自己的外形
+ * （完全透明、无 hover 背景），任何可见控件的外观都会破坏「悬停不改变任何
+ * 视觉」这条规则；`button` 只借用它的可聚焦与键盘语义。焦点可见性由样式层
+ * 把左缘线加亮实现（`.dsh-ct-prose-*:has(.dsh-ct-hotspot:focus-visible)`）。
  */
-function blockClick(event: React.MouseEvent<HTMLDivElement>, action: () => void): void {
-  const guardEvent = {
-    target: event.target as { closest?(selector: string): unknown } | null,
-    currentTarget: event.currentTarget,
-  };
-  if (isBareBlockClick(guardEvent, typeof window === 'undefined' ? undefined : window)) action();
-}
-
 function ProseBlock({
   text,
   translated,
@@ -328,44 +338,101 @@ function ProseBlock({
   fail,
   onToggle,
   onRetry,
+  canTranslate,
   streaming,
   labels,
   mentions,
   pathImages,
 }: ProseBlockProps): ReactElement {
-  const action = proseAction(mark);
+  const { action } = prosePresentation(mark);
   const clickable = action !== null;
   const retrying = action === 'retry';
   const handler = retrying ? onRetry : onToggle;
   const source = mark === 'translated' ? (translated as string) : text;
   const copy = rowCopy();
-  const block = React.createElement(
-    'div',
-    {
-      className: proseClassNames(mark),
-      'data-translated': mark === 'translated' ? 'true' : void 0,
-      // 容器内含链接等交互内容，不套 role=button（非法嵌套）；可聚焦 + 键盘
-      // Enter/Space 即切换/重试，满足官方「键盘可达」门。在途块也保持可聚焦
-      // （Enter 空操作）——补跑把红线折成脉动时，键盘焦点不致从行上掉回 body。
-      tabIndex: clickable || mark === 'inflight' ? 0 : void 0,
-      onClick: clickable ? (event: React.MouseEvent<HTMLDivElement>) => blockClick(event, handler) : void 0,
-      onKeyDown: clickable
-        ? (event: React.KeyboardEvent<HTMLDivElement>) => {
-            if (event.target !== event.currentTarget) return;
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              handler();
-            }
-          }
-        : void 0,
-    },
-    retrying &&
-      React.createElement(
+  const className = [proseClassNames(mark) ?? PROSE_BASE_CLASS, proseIndentClassName(canTranslate)]
+    .filter((name): name is string => name !== undefined)
+    .join(' ');
+
+  // 有线的块才有热区：没送过模型的块（开关关闭、通道没配好、空白块）没有
+  // 可切换的东西。在途热区留在原地（键盘焦点不掉），但按下去是空操作。
+  const hotspot =
+    mark === null
+      ? null
+      : React.createElement('button', {
+          type: 'button',
+          className: HOTSPOT_CLASS,
+          // 热区是覆盖层，读屏只应听到它的动作，正文仍由 MarkdownText 读。
+          'aria-label':
+            mark === 'inflight'
+              ? copy.inflightAria
+              : retrying
+                ? copy.retryAria
+                : mark === 'original-view'
+                  ? copy.toggleToTranslatedAria
+                  : copy.toggleToOriginalAria,
+          ...(mark === 'inflight' ? { [HOTSPOT_IDLE_ATTR]: 'true' } : {}),
+          tabIndex: 0,
+          // button 自己会按 Enter/Space 合成 click，若不接管就会与这段键盘处理
+          // 叠加成两次动作：这里两个键都走 keydown 并 preventDefault，合成被掐掉。
+          onKeyDown: clickable
+            ? (event: React.KeyboardEvent<HTMLButtonElement>) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                handler();
+              }
+            : void 0,
+          onClick: clickable
+            ? (event: React.MouseEvent<HTMLButtonElement>) => {
+                if (
+                  isCleanHotspotClick(
+                    { target: event.target as unknown, currentTarget: event.currentTarget as unknown },
+                    typeof window === 'undefined' ? undefined : window
+                  )
+                ) {
+                  handler();
+                }
+              }
+            : void 0,
+        });
+
+  // ↻ 是热区的兄弟而不是子元素：它要按正文块的坐标系定位（红线右侧那 12px
+  // 缩进里），且 pointer-events:none——装饰不吃点击，落在它上面的指针仍归热区。
+  const retryIcon = retrying
+    ? React.createElement(
         'span',
         { className: 'dsh-ct-retry', 'aria-hidden': true },
         React.createElement(IconRefreshOutlineRegular, { size: 10 })
-      ),
-    retrying && React.createElement('span', { className: 'dsh-ct-visually-hidden' }, copy.retryAria),
+      )
+    : null;
+
+  // 失败块的败因泡锚在热区上：鼠标移到左缘那条带、或键盘聚焦它，都出泡——正文
+  // 上方不再有浮层，拖选原文时不被遮。泡里报的是败因（本地化标签 — 服务端技术
+  // 细节），不再是「怎么重试」的指引。
+  //
+  // Tooltip **常挂**、只用 disabled 收放：它的契约写明「disabled 时锚点渲染完全
+  // 一致，切换不会重挂载」。若改成按状态包/拆 Tooltip，失败块被补跑的那一刻树形
+  // 变化会让 React 重挂载 button，键盘焦点掉回 body——正是「在途热区保留、焦点
+  // 不掉」要防的那件事。
+  const anchor =
+    hotspot === null
+      ? null
+      : React.createElement(Tooltip, {
+          label: () => copy.failTitle(fail),
+          side: 'top',
+          portal: true,
+          disabled: !retrying,
+          children: hotspot as Parameters<typeof Tooltip>[0]['children'],
+        });
+
+  return React.createElement(
+    'div',
+    {
+      className,
+      'data-translated': mark === 'translated' ? 'true' : void 0,
+    },
+    retryIcon,
+    anchor,
     React.createElement(MarkdownText, {
       text: source,
       streaming,
@@ -374,16 +441,6 @@ function ProseBlock({
       pathImages,
     })
   );
-  if (!retrying) return block;
-  // Tooltip 锚在失败块本身：正文任意处悬停、键盘聚焦都即刻出泡——锚在那条
-  // 10px 装饰图标上则两个通道都够不着（图标 aria-hidden、从不接收焦点）。泡里
-  // 报的是败因（本地化标签 — 服务端技术细节），不再是「怎么重试」的指引。
-  return React.createElement(Tooltip, {
-    label: () => copy.failTitle(fail),
-    side: 'right',
-    portal: true,
-    children: block as Parameters<typeof Tooltip>[0]['children'],
-  });
 }
 
 // ---- 助手行本体 ----
@@ -484,8 +541,8 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     });
   }, []);
 
-  // 手动补跑：点任一红线块 = 整行重发（无限次、不设额度）；在途再点是空
-  // 操作——store 的 pending 短路让它是安全的，灰脉动本身就是「已在跑」的答复。
+  // 手动补跑：点任一红线块的左缘热区 = 整行重发（无限次、不设额度）；在途再点
+  // 是空操作——store 的 pending 短路让它是安全的，灰脉动本身就是「已在跑」的答复。
   const retryRow = useCallback(() => {
     chatTranslate.ensure(rowKey, plan.texts, true);
   }, [rowKey, plan]);
@@ -507,6 +564,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
             fail: entry.fail,
             onToggle: () => toggleBlock(entry.key),
             onRetry: retryRow,
+            canTranslate,
             streaming,
             labels,
             mentions,

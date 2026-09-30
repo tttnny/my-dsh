@@ -61,7 +61,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node scripts/test-client-wiring.mjs && node scripts/test-chat-translate.mjs && node scripts/test-regression-suite.mjs && node scripts/test-channel-logic.mjs && node scripts/test-store.mjs && node scripts/test-reply-pipeline.mjs",
+    "test": "node scripts/test-client-wiring.mjs && node scripts/test-render.mjs && node scripts/test-chat-translate.mjs && node scripts/test-regression-suite.mjs && node scripts/test-channel-logic.mjs && node scripts/test-store.mjs && node scripts/test-reply-pipeline.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
     "check": "pnpm typecheck && pnpm build && pnpm test && pnpm assert:lib-untracked"
   },
@@ -83,6 +83,8 @@
     "@types/react": "^19.2.18",
     "esbuild": "^0.25.0",
     "jsdom": "^26.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^6.0.0"
   },
   "peerDependencies": {

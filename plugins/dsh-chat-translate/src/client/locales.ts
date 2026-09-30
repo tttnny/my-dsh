@@ -15,7 +15,7 @@ export const zh = {
   masterTitle: '翻译总开关',
   enableTranslation: '启用翻译',
   masterDesc:
-    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送，由模型一并改写成自然中文、顺掉机器腔。Think 卡与工具调用行不翻，代码块原样保留。正文块的左缘一条竖线报出状态：正在读译文是蓝线，备着译文正读原文是灰细线，没译成是红实线（鼠标悬停报出通道细节——超时、断流或空返回；译文的结构漂移由宿主自动修回或重掷，不再因格式问题挂红线），正在请求是灰脉动线，没送过模型或开关关闭没有线。点击已翻译的块在译文与原文间切换——模型认为原样最好、返回一模一样的文字时同样算翻译过、同样可切；点击挂红线的块则整行重新翻译，已成功的块保持显示不打扰。通道失败不自动重试，恢复后由你的点击救活。译文按原 markdown 格式重新渲染，表格、列表、加粗与行内代码保持结构。回答还在流式输出时不翻，落定后按阅读顺序逐段出中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
+    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送，由模型一并改写成自然中文、顺掉机器腔。Think 卡与工具调用行不翻，代码块原样保留。正文块的左缘一条竖线报出状态：正在读译文是蓝线，备着译文正读原文是灰细线，没译成是红实线（鼠标悬停热区报出通道细节——超时、断流或空返回；译文的结构漂移由宿主自动修回或重掷，不再因格式问题挂红线），正在请求是灰脉动线，没送过模型或开关关闭没有线。切换不在正文上：贴着那条线的窄带才是操作区，鼠标移到它上面变手型，点一下在译文与原文间切换——正文整块不再响应点击，选字、拖选复制都不会误触；模型认为原样最好、返回一模一样的文字时同样算翻译过、同样可切。挂红线的块右侧常驻一个小 ↻，点那条窄带即整行重新翻译，已成功的块保持显示不打扰。通道失败不自动重试，恢复后由你点那条窄带救活。译文按原 markdown 格式重新渲染，表格、列表、加粗与行内代码保持结构。回答还在流式输出时不翻，落定后按阅读顺序逐段出中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
 
   aiTitle: 'AI 翻译（OpenAI 兼容协议）',
   aiRule: '只有这一条通道：Key / Base URL / 模型齐备才会翻译，缺任何一项都保持原文。',
@@ -54,7 +54,10 @@ export const zh = {
   dockOff: '正文翻译已关闭，点击开启',
 
   failTitle: '翻译失败',
-  retryAria: '翻译失败，按 Enter 重试',
+  retryAria: '翻译失败，点左缘那条窄带可按 Enter 重试',
+  toggleToOriginalAria: '查看原文',
+  toggleToTranslatedAria: '查看译文',
+  inflightAria: '翻译中，此处暂无动作',
 } as const;
 
 /** Locale keys this plugin renders. */
@@ -68,7 +71,7 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   masterTitle: 'Translation master switch',
   enableTranslation: 'Enable translation',
   masterDesc:
-    'Automatically translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and blocks written entirely in Chinese go through the model too, which rewrites them into natural Chinese and smooths out machine-flavored phrasing. Think cards and tool-call rows are never translated, and code blocks stay untouched. Each prose block reports its state with a left-edge line: blue while its translation reads, thin grey while the original reads with a translation waiting one click away, solid red when translation failed (hover the block to read the channel detail — a timeout, a broken stream or an empty return; the answer\'s Markdown shape drift is repaired or re-rolled by the host, so formatting no longer draws a red line), a grey pulse while a request is in flight, and nothing at all when the block was never sent or the switch is off. Click a translated block to switch between translation and original — even when the model returns the wording unchanged it counts as translated and stays switchable; click a red-lined block to re-run the whole row, with already-successful blocks kept on screen undisturbed. Channel failures are never retried automatically: once the channel recovers, your click revives the row. Translations are re-rendered as Markdown, so tables, lists, bold runs and inline code keep their structure. A reply that is still streaming is left alone until it settles, then prose turns to Chinese paragraph by paragraph in reading order. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
+    'Automatically translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and blocks written entirely in Chinese go through the model too, which rewrites them into natural Chinese and smooths out machine-flavored phrasing. Think cards and tool-call rows are never translated, and code blocks stay untouched. Each prose block reports its state with a left-edge line: blue while its translation reads, thin grey while the original reads with a translation waiting one click away, solid red when translation failed (hover the slim strip beside the line to read the channel detail — a timeout, a broken stream or an empty return; the answer\'s Markdown shape drift is repaired or re-rolled by the host, so formatting no longer draws a red line), a grey pulse while a request is in flight, and nothing at all when the block was never sent or the switch is off. Switching does not live on the prose: a slim strip hugging that line is the control — the pointer turns into a hand over it, and one click swaps translation and original, while the prose itself no longer reacts to clicks, so selecting or drag-copying text never triggers a swap by accident. A reply the model returned unchanged still counts as translated and stays switchable. A red-lined block keeps a small ↻ beside it; clicking the strip re-runs the whole row, with already-successful blocks kept on screen undisturbed. Channel failures are never retried automatically: once the channel recovers, a click on that strip revives the row. Translations are re-rendered as Markdown, so tables, lists, bold runs and inline code keep their structure. A reply that is still streaming is left alone until it settles, then prose turns to Chinese paragraph by paragraph in reading order. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
 
   aiTitle: 'AI translation (OpenAI-compatible)',
   aiRule:
@@ -108,7 +111,10 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   dockOff: 'Translation is off; click to turn it on',
 
   failTitle: 'Translation failed',
-  retryAria: 'Translation failed — press Enter to retry',
+  retryAria: 'Translation failed — focus the slim strip at the left edge and press Enter to retry',
+  toggleToOriginalAria: 'Show the original',
+  toggleToTranslatedAria: 'Show the translation',
+  inflightAria: 'Translating; Enter does nothing yet',
 };
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -137,11 +143,19 @@ export function bindRowCopy(
 
 export function rowCopy(): {
   retryAria: string;
+  /** 热区动作的读屏标签：读译文时提示可切回原文，反之亦然。 */
+  toggleToOriginalAria: string;
+  toggleToTranslatedAria: string;
+  /** 在途热区的读屏标签：说清此刻按下去没有动作。 */
+  inflightAria: string;
   /** 失败块悬停文案：本地化标签 + 服务端原样带来的技术一句（通道伤）。 */
   failTitle: (detail?: string | null) => string;
 } {
   return {
     retryAria: rowT('retryAria'),
+    toggleToOriginalAria: rowT('toggleToOriginalAria'),
+    toggleToTranslatedAria: rowT('toggleToTranslatedAria'),
+    inflightAria: rowT('inflightAria'),
     failTitle: (detail) => {
       const label = rowT('failTitle');
       return detail === undefined || detail === '' || detail === null ? label : `${label} — ${detail}`;

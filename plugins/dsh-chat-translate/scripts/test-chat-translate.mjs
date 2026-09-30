@@ -9,7 +9,8 @@
 //    自动重走、manual ensure 整行补跑且成功块保持挂线、LRU 行数上限；
 // 4. 呈现策略：ui-chat 的 transcriptView 值（含 legacy 值）映射到策略表；
 // 5. 左缘线标：蓝=译文、灰细=读原文备译文、红实=失败（一律一种）、
-//    灰脉动=在途、无线=没送过模型。
+//    灰脉动=在途、无线=没送过模型；切换与补跑归贴着线的窄热区，
+//    正文块类名里不再有任何点击态。
 import assert from 'node:assert/strict';
 
 let passed = 0;
@@ -29,9 +30,16 @@ async function test(name, fn) {
 const { planAssistantRow } = await import('../src/client/chat/row-plan.ts');
 const storeModule = await import('../src/client/chat/translate-store.ts');
 const { createTranslateStore, chunkTexts } = storeModule;
-const { isBareBlockClick } = await import('../src/client/chat/click-guard.ts');
+const { isCleanHotspotClick } = await import('../src/client/chat/click-guard.ts');
 const { createChatPresentation, POLICY_BY_MODE } = await import('../src/client/chat/presentation.ts');
-const { proseClassNames, proseAction, ASSISTANT_CSS } = await import('../src/client/chat/styles.ts');
+const stylesModule = await import('../src/client/chat/styles.ts');
+const {
+  proseClassNames,
+  proseAction,
+  prosePresentation,
+  PROSE_BASE_CLASS,
+  ASSISTANT_CSS,
+} = stylesModule;
 
 const flush = async () => {
   await new Promise((r) => setTimeout(r, 0));
@@ -256,19 +264,38 @@ await test('reasoning 分组不送译：texts 与本组渲染的正文块同域'
 // 3. 翻译池
 // ---------------------------------------------------------------
 
-await test('点击守卫：交互元素与拖选松手不触发切换，裸点击触发', () => {
-  const wrapper = { role: 'wrapper' };
-  const link = { role: 'link', closest: (sel) => (sel.includes('a') ? link : null) };
-  const bareTarget = { closest: () => wrapper }; // closest 命中的就是块容器本身
-  const noHit = { closest: () => null };
+await test('左缘热区点击守卫：落在热区上的干净点击才触发，拖选与正文点击不触发', () => {
+  const hotspot = { role: 'hotspot' };
+  const prose = { role: 'prose' };
+  const link = { role: 'link' };
   const collapsedView = { getSelection: () => ({ isCollapsed: true, toString: () => '' }) };
-  const selectingView = { getSelection: () => ({ isCollapsed: false, toString: () => '选中了一段译文' }) };
+  const selectingView = { getSelection: () => ({ isCollapsed: false, toString: () => '选中了一段原文' }) };
 
-  assert.equal(isBareBlockClick({ target: link, currentTarget: wrapper }, collapsedView), false, '块内链接的点击归链接');
-  assert.equal(isBareBlockClick({ target: bareTarget, currentTarget: wrapper }, collapsedView), true, 'closest 命中块自身照常切');
-  assert.equal(isBareBlockClick({ target: noHit, currentTarget: wrapper }, collapsedView), true, '空白处裸点击切换');
-  assert.equal(isBareBlockClick({ target: noHit, currentTarget: wrapper }, selectingView), false, '拖选松手产生的 click 不切');
-  assert.equal(isBareBlockClick({ target: noHit, currentTarget: wrapper }, undefined), true, '无 window 环境（测试外）不误伤');
+  assert.equal(
+    isCleanHotspotClick({ target: hotspot, currentTarget: hotspot }, collapsedView),
+    true,
+    '按下与松手都在热区上：切换/补跑'
+  );
+  assert.equal(
+    isCleanHotspotClick({ target: prose, currentTarget: hotspot }, collapsedView),
+    false,
+    '在热区按下、拖到正文松手：click 归公共祖先（target 不是热区），算选字'
+  );
+  assert.equal(
+    isCleanHotspotClick({ target: link, currentTarget: hotspot }, collapsedView),
+    false,
+    '落在正文内链接上的点击更不该触发切换'
+  );
+  assert.equal(
+    isCleanHotspotClick({ target: hotspot, currentTarget: hotspot }, selectingView),
+    false,
+    '已有非空选区时松手：仍算选字，不切换'
+  );
+  assert.equal(
+    isCleanHotspotClick({ target: hotspot, currentTarget: hotspot }, undefined),
+    true,
+    '无 window 环境（测试外）不误伤'
+  );
 });
 
 function deferred() {
@@ -523,26 +550,45 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
 });
 
 // ---------------------------------------------------------------
-// 5. 左缘线标：蓝=读译文，灰细=读原文备译文，红实=失败（悬停报因），
-//    灰脉动=在途，无线=没送过模型（失败态整块可点=手动补跑）
+// 5. 左缘线标：蓝=读译文，灰细=读原文备译文，红实=失败，灰脉动=在途，
+//    无线=没送过模型。点击不在这层：切换与补跑都归左缘热区。
 // ---------------------------------------------------------------
 
-await test('标记名单点：线型随状态，失败一条红线，在途不可点', () => {
+await test('标记名单点：线型随状态，正文类名里没有任何点击态', () => {
   assert.equal(proseClassNames(null), undefined, '没送过模型的块没有任何标记类');
   const translated = proseClassNames('translated');
-  assert.match(translated, /dsh-ct-prose-clickable dsh-ct-prose-translated/);
+  assert.match(translated, /dsh-ct-prose dsh-ct-prose-translated/);
   assert.ok(!translated.includes('dsh-ct-prose-original'), '译文态不挂灰线类');
   const showingOriginal = proseClassNames('original-view');
   assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '原文态不挂蓝线');
-  assert.match(showingOriginal, /dsh-ct-prose-clickable dsh-ct-prose-original/, '灰细线仍可点切回');
+  assert.match(showingOriginal, /dsh-ct-prose dsh-ct-prose-original/, '灰细线=读原文备着译文');
   const failed = proseClassNames('failed');
-  assert.match(failed, /dsh-ct-prose-clickable/, '红线整块可点=重试');
   assert.match(failed, /dsh-ct-prose-failed/, '失败挂实线红');
-  assert.match(failed, /dsh-ct-prose-retryable/, '失败块带 ↻ 悬停锚点');
   const inflight = proseClassNames('inflight');
   assert.match(inflight, /dsh-ct-prose-inflight/);
-  assert.ok(!inflight.includes('clickable'), '在途脉动态不可点（点了也是空操作）');
-  assert.ok(!inflight.includes('retryable'), '在途不露重试指引');
+  // 正文整块不再是点击目标：类名里不许出现任何可点态/光标类。
+  for (const value of [translated, showingOriginal, failed, inflight]) {
+    assert.ok(!String(value).includes('clickable'), '正文块类名里不该再出现可点态：' + value);
+    assert.ok(!String(value).includes('retryable'), '正文块类名里不该再出现重试锚点态：' + value);
+  }
+  assert.equal(PROSE_BASE_CLASS, 'dsh-ct-prose', '无线的块也挂定位父级类');
+});
+
+await test('缩进单点：能翻译才缩进——译文出现前后正文不跳字', () => {
+  const { proseIndentClassName } = stylesModule;
+  assert.equal(proseIndentClassName(true), 'dsh-ct-prose-indent', '可翻译时正文块统一缩进');
+  assert.equal(proseIndentClassName(false), undefined, '不能翻译（开关关/通道没配好）时不缩进，回到宿主排版');
+});
+
+await test('呈现单点：类名与动作出自同一张表，不会各改一半', () => {
+  // 表驱动取代两个并列 switch 的意义就在这里：线型与可点性必须同时成立。
+  for (const mark of ['translated', 'original-view', 'failed', 'inflight']) {
+    const { className, action } = prosePresentation(mark);
+    assert.notEqual(className, null, mark + ' 有线，就必须有对应的线型类');
+    assert.equal(proseClassNames(mark).includes(className), true, mark + ' 的类名与表一致');
+    assert.equal(proseAction(mark), action, mark + ' 的动作与表一致');
+  }
+  assert.deepEqual(prosePresentation(null), { className: null, action: null }, '无线的块没有线型也没有动作');
 });
 
 await test('线的色相与粗细：蓝 1px 主色、灰 0.5px 中性、红走 error 色相', () => {
@@ -564,8 +610,52 @@ await test('线的色相与粗细：蓝 1px 主色、灰 0.5px 中性、红走 e
   assert.ok(!ASSISTANT_CSS.includes('dashed'), '失败只有一条实线，样式表里没有虚线');
 });
 
+await test('左缘热区：贴线窄带、只在这层可点，正文层没有光标承诺', () => {
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-hotspot\{position:absolute;left:-5px;top:0;bottom:0;width:17px;margin:0;padding:0;border:0;background:0 0;cursor:pointer;z-index:2/,
+    '热区是贴着左缘线的绝对定位窄带（线左 4px 起，右缘落在正文第一个字），z-index 压过宽表格出血层'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-hotspot\[data-idle\]\{cursor:default\}/,
+    '在途热区仍在但不给手型：光标不承诺按下去有反应'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-prose-translated:has\(\.dsh-ct-hotspot:focus-visible\)\{border-left-color:var\(--dsw-alias-state-business-primary\)\}/,
+    '键盘聚焦（且仅键盘聚焦）把译文线加亮，不改粗细'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-prose-original:has\(\.dsh-ct-hotspot:focus-visible\)\{border-left-color:var\(--dsw-alias-label-caption\)\}/,
+    '读原文时聚焦同样只加亮，灰细线不会变粗成「读译文」'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-prose-inflight:has\(\.dsh-ct-hotspot:focus-visible\)\{animation:none;border-left-color:var\(--dsw-alias-label-caption\)\}/,
+    '在途块聚焦时停掉脉动再加亮：动画会压过普通声明，不停则加亮看不见'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-prose-indent\{padding-left:12px\}/,
+    '缩进是独立一条规则：与是否挂线无关'
+  );
+  assert.ok(
+    !/\.dsh-ct-prose-indent[^{]*\{[^}]*border-left/.test(ASSISTANT_CSS),
+    '缩进规则不夹带线型：线由状态类单独给'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-retry\{position:absolute;[^}]*pointer-events:none/,
+    '失败块的 ↻ 常驻且不吃点击——指针落在它上面仍归热区'
+  );
+  assert.ok(!ASSISTANT_CSS.includes('dsh-ct-prose-clickable'), '正文块不再有可点态类');
+  assert.ok(!ASSISTANT_CSS.includes('dsh-ct-prose-retryable'), '正文块不再有可点锚点类');
+});
+
 await test('在途灰脉动：动画声明存在且尊重 prefers-reduced-motion', () => {
-  assert.match(ASSISTANT_CSS, /\.dsh-ct-prose-inflight\{padding-left:12px;border-left:1px solid var\(--dsw-alias-border-l2\);animation:/);
+  assert.match(ASSISTANT_CSS, /\.dsh-ct-prose-inflight\{border-left:1px solid var\(--dsw-alias-border-l2\);animation:/);
   assert.match(ASSISTANT_CSS, /@keyframes dsh-ct-prose-inflight-pulse/);
   assert.match(
     ASSISTANT_CSS,
@@ -574,11 +664,11 @@ await test('在途灰脉动：动画声明存在且尊重 prefers-reduced-motion
   );
 });
 
-await test('动作单点：mark 唯一决定 toggle / retry / 不可点', () => {
+await test('动作单点：mark 唯一决定 toggle / retry / 没有热区', () => {
   assert.equal(proseAction('translated'), 'toggle');
-  assert.equal(proseAction('original-view'), 'toggle', '读原文态仍可点切回');
-  assert.equal(proseAction('failed'), 'retry', '红线整块可点=补跑');
-  assert.equal(proseAction('inflight'), null, '在途脉动不可点');
+  assert.equal(proseAction('original-view'), 'toggle', '读原文态仍可切回');
+  assert.equal(proseAction('failed'), 'retry', '红线=补跑整行');
+  assert.equal(proseAction('inflight'), null, '在途脉动没有动作（热区仍在，按下去是空操作）');
   assert.equal(proseAction(null), null);
 });
 
