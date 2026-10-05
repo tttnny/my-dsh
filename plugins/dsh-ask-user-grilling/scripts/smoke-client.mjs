@@ -151,7 +151,7 @@ test('字典注册在本插件名字空间下', () => assert.deepEqual(locales, 
 test('样式注入一次，标签带包身份', () => {
   assert.equal(styles.length, 1);
   assert.equal(styles[0].dataset.pluginCss, `${pkgName}/GrillingFormRow.css`);
-  assert.ok(styles[0].textContent.includes('.dsg-card'));
+  assert.ok(styles[0].textContent.includes('.dsg-form'));
 });
 
 // class 名在 JSX 与 CSS 之间单边漂移 = 样式静默失效，构建与运行都不报错

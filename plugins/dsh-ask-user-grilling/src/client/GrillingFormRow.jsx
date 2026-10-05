@@ -2,17 +2,15 @@ import { useMemo, useState } from 'react';
 import {
   Button,
   Checkbox,
-  DisclosureRow,
   IconDownloadOutlineRegular,
   IconInspectOutlineRegular,
-  IconQuestionOutlineRegular,
   MarkdownText,
-  StateDot,
   Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import {
   answerLines,
   applyImport,
+  applyRecommendedDefaults,
   formStorageKey,
   importBody,
   importStale,
@@ -29,6 +27,10 @@ import {
  * 与官方卡的根本差别：那一张是「等答案的服务」的回执，这一张**自己就是答题的地方**。
  * 工具发完就结束了本轮，所以表单得在记录里就地可填：
  *
+ *  - **摊开、不折叠、没有卡片**：不画折叠行，也不套边框/背景/内边距/内部滚动，题目、选项、
+ *    按钮跟上下文同处一层，像正文自己长出来的一段。整轮的进度缩成题目区顶上的一行小灰字；
+ *  - **推荐的选项默认勾上**：模型标了推荐的选项，在用户没动过那题时就是选中态；用户动过
+ *    （包括把默认项取消掉）一律以他的为准；
  *  - 作答是这一行的本地状态，按会话 + callId 存进 localStorage，刷新后恢复；
  *  - 底部那个窄按钮把作答写进**原生草稿**（槽位标准属性 `inputActions.setDraft`），
  *    用户按原生发送键发出——插件不碰输入框、也不代发；
@@ -55,7 +57,6 @@ export function GrillingFormRow({
   useInput,
   useConversation,
 }) {
-  const [expanded, setExpanded] = useState(true);
   const settled = 'kind' in block;
   const argsRaw = (settled ? block.call?.argsRaw : block.argsRaw) ?? '';
   const resultText = settled ? firstText(block.content) : undefined;
@@ -70,7 +71,10 @@ export function GrillingFormRow({
   /** 本轮作答在会话 storage 里的读写口：storage、键、callId 三个参数只在这里拼一次。 */
   const readForm = () => readStoredForm(storageOf(), storageKey, callId);
   const writeForm = (next) => writeStoredForm(storageOf(), storageKey, callId, next);
-  const [answers, setAnswers] = useState(readForm);
+  // 用户自己动过的那一份，连他「清空过这题」也在里面；他没动过的题不出现在这里。
+  const [storedAnswers, setStoredAnswers] = useState(readForm);
+  // 表单上显示、导入、计数的都是这一份：用户没动过的题上，推荐项默认勾着。
+  const answers = applyRecommendedDefaults(model.questions, storedAnswers);
 
   const interactive = model.state === 'form' && !readOnly;
   const body = importBody(model.questions, answers);
@@ -78,12 +82,10 @@ export function GrillingFormRow({
   const stale = canImport && importStale(draft, body);
   const answered = model.questions.filter((question) => answerLines(question, answers[question.id]).length > 0).length;
 
-  const expandable = argsRaw !== '' || resultText !== undefined || model.questions.length > 0;
-
   /** 记一道题的作答：内存与 storage 一起写，刷新后才恢复得回来。 */
   const setAnswer = (id, next) => {
-    const merged = { ...answers, [id]: next };
-    setAnswers(merged);
+    const merged = { ...storedAnswers, [id]: next };
+    setStoredAnswers(merged);
     writeForm(merged);
   };
   /** 勾选 / 取消一个选项：界面按归一化后的 label 记，同一个 label 就是同一项。 */
@@ -107,49 +109,28 @@ export function GrillingFormRow({
 
   return (
     <div className="dsg-root" data-tool={toolName} data-state={model.state} data-readonly={readOnly ? 'true' : undefined}>
-      <DisclosureRow
-        icon={leadingFor(model.state)}
-        title={t('row.title')}
-        open={expanded}
-        expandable={expandable}
-        onToggle={() => setExpanded((value) => !value)}
-        expandOnRowClick
-        keepContentWhenOpen
-        rowClassName="dsg-row"
-        leadingClassName="dsg-leading"
-        chevronClassName="dsg-chevron"
-        titleClassName="dsg-title"
-        collapsedContent={
-          <>
-            <span className="dsg-sep" aria-hidden="true" />
-            <span className="dsg-summary">{summaryFor(model, readOnly, answered, t)}</span>
-          </>
-        }
-      >
-        <div className="dsg-bodyWrap">
-          <CardBody
-            model={model}
-            failure={failure}
-            argsRaw={argsRaw}
-            resultText={resultText}
-            answers={answers}
-            interactive={interactive}
-            readOnly={readOnly}
-            stale={stale}
-            canImport={canImport}
-            t={t}
-            onToggleOption={toggleOption}
-            onCustom={writeCustom}
-            onImport={onImport}
-          />
-          {inspect === undefined ? null : (
-            <button type="button" className="dsg-inspectButton" onClick={inspect}>
-              <IconInspectOutlineRegular />
-              {t('row.inspect')}
-            </button>
-          )}
-        </div>
-      </DisclosureRow>
+      <FormBody
+        model={model}
+        failure={failure}
+        argsRaw={argsRaw}
+        resultText={resultText}
+        answers={answers}
+        answered={answered}
+        interactive={interactive}
+        readOnly={readOnly}
+        stale={stale}
+        canImport={canImport}
+        t={t}
+        onToggleOption={toggleOption}
+        onCustom={writeCustom}
+        onImport={onImport}
+      />
+      {inspect === undefined ? null : (
+        <button type="button" className="dsg-inspectButton" onClick={inspect}>
+          <IconInspectOutlineRegular />
+          {t('row.inspect')}
+        </button>
+      )}
     </div>
   );
 }
@@ -187,47 +168,17 @@ function storageOf() {
 }
 
 /**
- * 行的前导图标：失败与拒绝用状态点，其余用问号图标（与官方行同一套语义）。
- * @param {string} state - 表单状态。
- * @returns {import('react').ReactNode} 前导节点。
- */
-function leadingFor(state) {
-  if (state === 'error' || state === 'rejected') return <StateDot state="error" />;
-  return <IconQuestionOutlineRegular />;
-}
-
-/**
- * 折叠行右侧的摘要。
- * @param {object} model - 表单模型。
- * @param {boolean} readOnly - 是否已转只读。
- * @param {number} answered - 已作答的题数。
- * @param {Function} t - 本插件的取词函数。
- * @returns {string} 摘要文字。
- */
-function summaryFor(model, readOnly, answered, t) {
-  switch (model.state) {
-    case 'rejected':
-      return t('row.rejected');
-    case 'error':
-      return t('row.failed');
-    case 'running':
-      return t('row.running');
-    default:
-      return readOnly ? t('row.closed') : t('row.summary', { answered, total: model.questions.length });
-  }
-}
-
-/**
  * 正文：拒绝给违规清单，失败给失败说明，其余按状态画表单或只读作答。
  * @param {object} props - 表单模型、作答与交互回调。
  * @returns {import('react').ReactNode} 正文。
  */
-function CardBody({
+function FormBody({
   model,
   failure,
   argsRaw,
   resultText,
   answers,
+  answered,
   interactive,
   readOnly,
   stale,
@@ -239,7 +190,7 @@ function CardBody({
 }) {
   if (model.state === 'rejected') {
     return (
-      <div className="dsg-card" role="group" aria-label={t('row.violations')}>
+      <div className="dsg-form" role="group" aria-label={t('row.violations')}>
         <p className="dsg-verdict">{model.error ?? t('row.rejected')}</p>
         <ul className="dsg-violations">
           {model.violations.map((violation, index) => (
@@ -256,14 +207,18 @@ function CardBody({
   }
   if (model.state === 'error') {
     return (
-      <div className="dsg-card">
-        {failure === undefined ? null : <p className="dsg-failure">{failure}</p>}
+      <div className="dsg-form">
+        <p className="dsg-failure">{failure ?? t('row.failed')}</p>
         <QuestionList questions={model.questions} answers={answers} interactive={false} readOnly={false} t={t} onToggleOption={onToggleOption} onCustom={onCustom} />
       </div>
     );
   }
+  // 只有结果落库、确认这一轮投出去了（state 'form'），才有「这一轮」可言：参数还在流式
+  // 传输（'running'）时题目可能已经能解析，但进度、选项与导入键都还不该出现。
+  const live = model.state === 'form';
   return (
-    <div className="dsg-card">
+    <div className="dsg-form">
+      {live ? <p className="dsg-progress">{t('row.progress', { total: model.questions.length, answered })}</p> : null}
       <QuestionList
         questions={model.questions}
         answers={answers}
@@ -273,7 +228,7 @@ function CardBody({
         onToggleOption={onToggleOption}
         onCustom={onCustom}
       />
-      {model.state !== 'form' ? null : (
+      {!live ? null : (
         readOnly ? (
           <p className="dsg-closed">{t('row.closed')}</p>
         ) : (

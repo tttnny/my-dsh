@@ -64,9 +64,60 @@ export function titleOf(question) {
   return question.id;
 }
 
+/** 展开正文里一行的排版符号：列表符号（含「1）」这种全角写法）、小标题、引用块，去掉之后才看得出它是不是从选项名开的头。 */
+const LINE_MARKERS = /^\s*(?:[-*+]\s+|\d+[.)、）]\s*|#{1,6}\s+|>\s*)+/;
+/** 行内强调符号：`**甲**`、`*甲*` 与 `甲` 是同一个选项名。 */
+const INLINE_MARKERS = /[*_`]/g;
+/** 选项标签里第一个分隔符之前的那一段，就是它在展开正文里会以什么样子开头。 */
+const LABEL_ALIAS_END = /[：:·、，,。;；!！?？(（)）\-–—\s]/;
+/** 别名（其后可以有一个空格）跟这些符号才算同一个条目。只认「名：解释」那一类分隔符：
+ * 顿号与逗号不算，否则正文里「甲、乙两种做法各有代价」这种正经的共用背景会被误拒。 */
+const ALIAS_FOLLOW_CHAR = /[：:·）)\-–—>]/;
+
+function shorten(text) {
+  return text.length <= 60 ? text : `${text.slice(0, 60)}…`;
+}
+
 /**
- * 这一轮的入参能不能画成表单。只拦表单根本表示不了的东西；题干与选项的分工仍是引导，
- * 不做校验（子串匹配会误拒合法题干，坏题干好过假拒绝）。
+ * 一个选项标签的别名：到第一个分隔符为止的那一段。「甲：详情页里的配置入口」→「甲」，
+ * 「保留现状」→「保留现状」。模型在展开正文里重述选项时，开头写的通常就是这个别名。
+ * @param {string} label - 归一化后的展示文字（不含「（推荐）」后缀）。
+ * @returns {string} 别名；空标签时为空串（调用方跳过）。
+ */
+function labelAlias(label) {
+  const cut = label.search(LABEL_ALIAS_END);
+  return cut === -1 ? label : label.slice(0, cut);
+}
+
+/**
+ * 展开正文里有没有把某个选项又列了一遍。认的是**行首**：去掉列表符号与强调符号后，
+ * 一行以某个选项的别名开头、后面（可空一格）紧跟分隔符或直接结束，就是同一件事写了第二遍。
+ *
+ * 只认行首、且要求别名后面就是分隔符，是为了把误拒面压到最小：正文里顺口提到某个选项名
+ * （「选甲：…」）不算，只有「一条以选项名开头的条目」才算。代价是漏放与误拒都还可能发生，
+ * 所以技能正文那半边（三份 preset 里 grilling 技能的字段映射段）是第一道闸。
+ * @param {string} detail - 展开正文（markdown）。
+ * @param {string[]} aliases - 该题各选项的别名。
+ * @returns {string|undefined} 命中的那一行；没命中时 undefined。
+ */
+function detailRestatesOption(detail, aliases) {
+  if (isBlank(detail)) return undefined;
+  for (const raw of detail.split('\n')) {
+    const line = raw.replace(LINE_MARKERS, '').replace(INLINE_MARKERS, '').trim();
+    if (line === '') continue;
+    for (const alias of aliases) {
+      if (alias === '' || !line.startsWith(alias)) continue;
+      const rest = line.slice(alias.length).trimStart();
+      if (rest === '' || ALIAS_FOLLOW_CHAR.test(rest[0])) return line;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 这一轮的入参能不能画成表单。题干与选项的分工整体上是引导——子串匹配会误拒合法题干，
+ * 坏题干好过假拒绝——只有一处例外：展开正文里把选项又列一遍，那会让同一批选项在页面上
+ * 出现两遍（一遍带选择器、一遍不带），见 detailRestatesOption。
  * @param {object[]} questions - 模型给的 questions。
  * @returns {string[]} 逐条违规说明；空数组表示这一轮可以投出去。
  */
@@ -85,18 +136,24 @@ export function validateRound(questions) {
       violations.push(`${where} has an empty question text; write the question itself in question and its body in detail`);
     }
     const seenLabels = new Set();
+    const aliases = [];
     (question.options ?? []).forEach((option, optionIndex) => {
-      const label = normalizeOption(option).label;
-      if (isBlank(label)) {
+      const normalized = normalizeOption(option);
+      if (isBlank(normalized.label)) {
         violations.push(`${where}, option ${optionIndex + 1} has an empty label; every option needs a label the user can read and pick`);
         return;
       }
-      if (seenLabels.has(label)) {
-        violations.push(`${where} has two options that render with the same label ${JSON.stringify(label)}; the form identifies a choice by its label, so make them differ`);
+      if (seenLabels.has(normalized.label)) {
+        violations.push(`${where} has two options that render with the same label ${JSON.stringify(normalized.label)}; the form identifies a choice by its label, so make them differ`);
         return;
       }
-      seenLabels.add(label);
+      seenLabels.add(normalized.label);
+      aliases.push(labelAlias(normalized.cleanLabel));
     });
+    const restated = detailRestatesOption(question.detail, aliases);
+    if (restated !== undefined) {
+      violations.push(`${where} restates its options in detail: the line ${JSON.stringify(shorten(restated))} begins like one of the option labels, so the form would show those options twice; options go only in options, and detail is for what all of them share`);
+    }
   });
   return violations;
 }
@@ -185,6 +242,11 @@ export function readFormModel({ argsRaw, resultText, failed = false }) {
 
 /**
  * 归一化 localStorage 里读回来的作答：只认 `{[id]: {selected, custom}}` 这个形状。
+ *
+ * **形状对得上的空作答也留着**：一条「selected 是数组、且与 custom 都空」的记录不是脏数据，
+ * 而是「用户把这题清空了」（最常见的是取消掉推荐项的默认勾选）。它与「用户没动过这题」必须
+ * 分得开，否则默认勾选会在他取消之后又勾回来。不是这个形状的记录（比如 selected 是个字符串）
+ * 一律丢掉：那种记录不是本插件写的，认成「清空过」会白白吃掉默认勾选。
  * @param {unknown} value - 解析出来的值。
  * @returns {object} 干净的作答表。
  */
@@ -193,9 +255,10 @@ function sanitizeAnswers(value) {
   const answers = {};
   for (const [id, answer] of Object.entries(value)) {
     if (!isRecord(answer)) continue;
+    const shaped = Array.isArray(answer.selected) || typeof answer.custom === 'string';
     const selected = stringList(answer.selected);
     const custom = typeof answer.custom === 'string' ? answer.custom : '';
-    if (selected.length === 0 && custom === '') continue;
+    if (!shaped && selected.length === 0 && custom === '') continue;
     answers[id] = { selected, custom };
   }
   return answers;
@@ -226,6 +289,24 @@ export function answerParts(question, answer) {
 export function answerLines(question, answer) {
   const { selected, custom } = answerParts(question, answer);
   return [...selected, ...(custom === '' ? [] : [custom])];
+}
+
+/**
+ * 「推荐的选项默认勾上」落到一份作答表上：用户没动过的题，标了推荐的选项就是选中态。
+ * 用户动过（storage 里有这题的记录）的题一律以他的为准——包括他把默认项取消掉、只留一个空记录，
+ * 所以这里只补**缺席**的题，绝不覆盖已有的作答。
+ * @param {object[]} questions - 题目模型。
+ * @param {object} answers - 用户自己的作答表（readStoredForm 的产物）。
+ * @returns {object} 表单上真正显示、导入、计数的作答表。
+ */
+export function applyRecommendedDefaults(questions, answers) {
+  const merged = { ...(isRecord(answers) ? answers : {}) };
+  for (const question of questions) {
+    if (merged[question.id] !== undefined) continue;
+    const selected = question.options.filter((option) => option.recommended).map((option) => option.label);
+    if (selected.length > 0) merged[question.id] = { selected, custom: '' };
+  }
+  return merged;
 }
 
 /**

@@ -29,17 +29,10 @@ globalThis.document = {
   head: { appendChild: () => {} },
 };
 
-/** 只渲染 props 的 ui-primitives 替身，见文件头。记下 DisclosureRow 与 Button 收到的那份 props：
- * 展开是受控的，`onToggle` 漏传时真组件不会挂 onClick（`expandOnRowClick` 也救不回来），
- * 症状是行永远展不开；导入按钮的受控状态与 onClick 也只能在这里摸到。 */
-let lastDisclosureProps = null;
+/** 只渲染 props 的 ui-primitives 替身，见文件头。记下 Button 收到的那份 props：
+ * 导入按钮的受控状态与 onClick 只能在这里摸到。 */
 let lastButtonProps = null;
 const primitives = {
-  DisclosureRow: (props) => {
-    lastDisclosureProps = props;
-    const { title, collapsedContent, children } = props;
-    return createElement('div', null, title, collapsedContent, children);
-  },
   MarkdownText: ({ text }) => createElement('span', null, text),
   StateDot: () => createElement('span', null),
   IconQuestionOutlineRegular: () => null,
@@ -116,9 +109,13 @@ const argsRaw = JSON.stringify({
   ],
 });
 const pending = JSON.stringify({ pending: true, message: 'form shown' });
+/** 一条推荐都没有的一轮：用来量「什么都没填」时导入键确实是灰的。 */
+const plainArgsRaw = JSON.stringify({
+  questions: [{ id: 'p1', question: '不带推荐的一题', options: [{ label: '甲：这样' }, { label: '乙：那样' }] }],
+});
 const settled = (text, extra = {}) => ({
   kind: 'result',
-  call: { name: 'grilling_form', argsRaw },
+  call: { name: 'grilling_form', argsRaw: extra.argsRaw ?? argsRaw },
   content: [{ type: 'text', text }],
   ...extra,
 });
@@ -167,10 +164,9 @@ function html(block, props = {}) {
   return { markup, drafts, onClick: () => lastButtonProps.onClick() };
 }
 
-test('刚投出（pending）：一屏全展开，题目、题号标题、detail、选项、推荐徽标、自填框与导入键都在', () => {
+test('刚投出（pending）：题目、题号标题、detail、选项、推荐徽标、自填框与导入键都在', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = html(settled(pending));
-  assert.match(markup, /盘问/);
   assert.match(markup, /Q2 · Host 权威层/);
   assert.match(markup, /Host 权威层怎么改？/);
   assert.match(markup, /正文第一段。/);
@@ -181,9 +177,32 @@ test('刚投出（pending）：一屏全展开，题目、题号标题、detail�
   assert.match(markup, /范围呢？/);
   assert.match(markup, /<textarea/);
   assert.match(markup, /导入输入框/);
-  assert.equal(lastDisclosureProps.open, true, '表单行应当默认展开');
-  assert.equal(lastDisclosureProps.expandable, true);
-  assert.equal(typeof lastDisclosureProps.onToggle, 'function');
+  assert.match(markup, /这一轮 2 题 · 已填 1/);
+});
+
+test('摊开、不折叠：页面上没有折叠行，也没有任何展开/收起控件', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html(settled(pending));
+  assert.doesNotMatch(markup, /aria-expanded/);
+  assert.doesNotMatch(markup, /盘问/);
+  assert.doesNotMatch(markup, /dsg-row/);
+  // 整块直接铺在记录里，没有卡片壳
+  assert.doesNotMatch(markup, /dsg-card/);
+});
+
+test('推荐项默认勾上：storage 里什么都没写时，标了推荐的那一项就是选中态', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html(settled(pending));
+  assert.match(markup, /data-checked="true"/);
+});
+
+test('取消掉默认勾选之后不再勾回来（「清空过」与「没作答」分得开）', () => {
+  globalThis.localStorage = fakeStorage({
+    [SESSION_KEY]: JSON.stringify({ 'call-1': { h1: { selected: [], custom: '' } } }),
+  });
+  const { markup } = html(settled(pending));
+  assert.doesNotMatch(markup, /data-checked="true"/);
+  assert.match(markup, /这一轮 2 题 · 已填 0/);
 });
 
 test('表单上没有提交键：提交权只在原生输入框的发送键上', () => {
@@ -208,7 +227,7 @@ test('刷新后恢复：storage 里的勾选与自填回到表单上', () => {
   const { markup } = html(settled(pending));
   assert.match(markup, /data-checked="true"/);
   assert.match(markup, /我自己的补充/);
-  assert.match(markup, /1\/2 已填/);
+  assert.match(markup, /这一轮 2 题 · 已填 1/);
 });
 
 test('未导入提醒：表单里有内容而草稿里没有导入块时常驻显示', () => {
@@ -223,16 +242,16 @@ test('未导入提醒：表单里有内容而草稿里没有导入块时常驻�
 
 test('导入键的受控状态：什么都没填时是灰的，填了才可点', () => {
   globalThis.localStorage = fakeStorage();
-  assert.match(html(settled(pending)).markup, /<button disabled=""/);
+  assert.match(html(settled(pending, { argsRaw: plainArgsRaw })).markup, /<button disabled=""/);
   globalThis.localStorage = fakeStorage({
-    [SESSION_KEY]: JSON.stringify({ 'call-1': { h2: { selected: [], custom: '只自填也算' } } }),
+    [SESSION_KEY]: JSON.stringify({ 'call-1': { p1: { selected: [], custom: '只自填也算' } } }),
   });
-  const filled = html(settled(pending));
+  const filled = html(settled(pending, { argsRaw: plainArgsRaw }));
   assert.doesNotMatch(filled.markup, /<button disabled=""/);
   assert.match(filled.markup, /导入输入框/);
 });
 
-test('点导入：把作答写进原生草稿（块在前，原有文字随后）', () => {
+test('点导入：把作答写进原生草稿（默认勾上的推荐项也算作答，块在前、原有文字随后）', () => {
   globalThis.localStorage = fakeStorage({
     [SESSION_KEY]: JSON.stringify({ 'call-1': { h2: { selected: [], custom: '只改插件' } } }),
   });
@@ -240,7 +259,7 @@ test('点导入：把作答写进原生草稿（块在前，原有文字随后�
   onClick();
   assert.equal(
     drafts[0],
-    '【盘问作答】\n范围呢？：只改插件\n【/盘问作答】\n\n我另外想说一句。',
+    '【盘问作答】\nQ2 · Host 权威层：B：新建一层\n范围呢？：只改插件\n【/盘问作答】\n\n我另外想说一句。',
   );
 });
 
@@ -284,17 +303,37 @@ test('被拒：给违规清单与总说明', () => {
     violations: ['Question 1 (id "dup") repeats an id'],
     error: '1 violation(s) in this round',
   })));
-  assert.match(markup, /入参被拒绝/);
   assert.match(markup, /repeats an id/);
   assert.match(markup, /1 violation\(s\) in this round/);
   assert.doesNotMatch(markup, /导入输入框/);
 });
 
+test('被拒且结果里没有总说明时，至少有一句人话', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html(settled(JSON.stringify({ rejected: true, violations: [] })));
+  assert.match(markup, /入参被拒绝/);
+});
+
 test('调用失败：给失败说明', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = html(settled('boom: tool runtime gone', { isError: true, error: { name: 'Error', code: 'EPIPE' } }));
-  assert.match(markup, /调用失败/);
   assert.match(markup, /boom: tool runtime gone/);
+});
+
+test('结果形状认不出来：至少说清是调用失败，并且把题面留着', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html(settled('boom'));
+  assert.match(markup, /调用失败/);
+  assert.match(markup, /Host 权威层怎么改？/);
+});
+
+test('结果还没落库但参数已能解析：只画题干，不画进度行、选项与导入键', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html(running);
+  assert.match(markup, /Host 权威层怎么改？/);
+  assert.doesNotMatch(markup, /dsg-progress/);
+  assert.doesNotMatch(markup, /导入输入框/);
+  assert.doesNotMatch(markup, /data-checked/);
 });
 
 test('流式半截 JSON：退回原始文本，不假装读懂了', () => {
@@ -311,10 +350,11 @@ test('查看按钮只在槽位给了 inspect 时出现', () => {
   assert.doesNotMatch(html(settled(pending)).markup, /查看/);
 });
 
-test('没有内容的行不可展开', () => {
+test('没有内容的行什么都不画', () => {
   globalThis.localStorage = fakeStorage();
-  html({ kind: 'result', call: { name: 'grilling_form', argsRaw: '' }, content: [] });
-  assert.equal(lastDisclosureProps.expandable, false);
+  const { markup } = html({ kind: 'result', call: { name: 'grilling_form', argsRaw: '' }, content: [] });
+  assert.doesNotMatch(markup, /导入输入框/);
+  assert.doesNotMatch(markup, /dsg-progress/);
 });
 
 console.log(`${passed}/${total} passed`);

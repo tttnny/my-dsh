@@ -179,6 +179,38 @@ await test('保留前缀这条规则已随轮末补充题删除：__grill_ 前�
   assert.deepEqual(concluded, ['concludeTurn']);
 });
 
+await test('展开正文里把选项又列了一遍：被拒（页面上会出现两遍选项）', async () => {
+  const violations = await rejected([{
+    id: 'a',
+    question: '配置入口放哪？',
+    detail: '先交代一个会左右选法的事实。\n\n- **甲**·详情页里的「配置」入口\n- **乙**·列表里直接多一张卡片',
+    options: [{ label: '甲：详情页里的配置入口，进去是一整页' }, { label: '乙：列表里直接一张卡片' }],
+  }]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /restates its options in detail/);
+});
+
+await test('展开正文只写各选项共用的背景：照常投出', async () => {
+  const { tool } = await assemble();
+  const { exec, concluded } = makeExec();
+  const result = await tool.execute({
+    questions: [{
+      id: 'a',
+      question: '配置入口放哪？',
+      detail: '这一版本来就是这么设计的：三个落点都已经预留在插件页。',
+      options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
+    }],
+  }, exec);
+  assert.equal(result.pending, true);
+  assert.deepEqual(concluded, ['concludeTurn']);
+});
+
+await test('字段说明把两条新规则讲给模型：展开正文只写共用的、推荐项默认勾上', async () => {
+  const properties = shape.tool.parameters.properties.questions.items.properties;
+  assert.match(properties.detail.description, /only for what all the options share/);
+  assert.match(properties.options.items.properties.recommended.description, /checked by default/);
+});
+
 await test('缺 label 由 defineTool 的入参校验拦住，不进本插件的 violations', async () => {
   const { tool } = await assemble();
   const { exec } = makeExec();

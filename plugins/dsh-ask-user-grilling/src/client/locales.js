@@ -5,9 +5,7 @@ export const NS = 'grillingForm';
 
 /** 简体中文（键集的事实来源）。 */
 export const zh = {
-  'row.title': '盘问',
-  'row.running': '正在展示表单',
-  'row.summary': '{answered}/{total} 已填',
+  'row.progress': '这一轮 {total} 题 · 已填 {answered}',
   'row.closed': '本轮已过，仅供查看',
   'row.rejected': '入参被拒绝',
   'row.violations': '校验失败',
@@ -26,9 +24,7 @@ export const zh = {
 
 /** 英文，键集与中文逐条对齐。 */
 export const en = {
-  'row.title': 'Grilling',
-  'row.running': 'showing the form',
-  'row.summary': '{answered}/{total} filled',
+  'row.progress': '{total} question(s) this round · {answered} filled',
   'row.closed': 'This round is over; the form is read-only',
   'row.rejected': 'Rejected before showing',
   'row.violations': 'Rejected input',

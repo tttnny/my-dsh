@@ -10,7 +10,8 @@ import { validateRound } from "./form-model.js";
  * 投在对话记录的那条工具行里，自己立刻结束本轮。
  *
  * 一条调用只做三件事：
- *   - 校验入参（见 validateRound）：重复 id、空题干、空 label、同题归一化后重名 label
+ *   - 校验入参（见 validateRound）：重复 id、空题干、空 label、同题归一化后重名 label，
+ *     以及展开正文里把选项又列一遍（那会让页面上出现两遍选项，一遍带选择器一遍不带）
  *     命中即返回可修复的拒绝，且**不标记结束**，让模型改完重调；
  *   - 通过校验就标记本轮结束（exec.concludeTurn()）——本轮到此为止，不再等答案；
  *   - 返回一条 pending 声明：表单已展示、用户会在他自己的输入框里作答、那条发言随后作为
@@ -88,7 +89,7 @@ function apply(ctx, config) {
             },
             detail: {
               type: "string",
-              description: "Optional supporting body for this question. The form renders it as markdown under the question, so put multi-paragraph context here and keep question to the one line that asks.",
+              description: "Optional supporting body for this question, rendered as markdown under the question. Use it only for what all the options share; a line that begins like one of the option labels is rejected, because the options would then be printed twice (once as prose, once as choices).",
             },
             options: {
               type: "array",
@@ -108,7 +109,7 @@ function apply(ctx, config) {
                   },
                   recommended: {
                     type: "boolean",
-                    description: "Set true on the option you recommend (alternative to appending \"（推荐）\" to its label).",
+                    description: "Set true on the option you recommend (alternative to appending \"（推荐）\" to its label). A recommended option is checked by default in the form, so mark only what you would pick yourself.",
                   },
                 },
               },

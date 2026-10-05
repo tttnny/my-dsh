@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-ask-user-grilling",
   "version": "0.6.4",
-  "description": "Grilling-round question tool: puts the whole round of questions into the conversation as an interactive form and ends the turn there — the user answers it in the native composer and their next message carries the answers back. Its browser half renders that form row (forced multi-select, per-question free text, detail markdown, recommendation badge, import-to-composer button, an unsent-content reminder, and read-only once the round is over).",
+  "description": "Grilling-round question tool: puts the whole round of questions into the conversation as an interactive form and ends the turn there — the user answers it in the native composer and their next message carries the answers back. Its browser half lays that form flat in the transcript (no collapse row, no card shell) with forced multi-select, recommended options pre-checked, per-question free text, detail markdown, an import-to-composer button, an unsent-content reminder, and read-only once the round is over.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

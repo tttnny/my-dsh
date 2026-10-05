@@ -9,6 +9,7 @@ import {
   answerLines,
   answerParts,
   applyImport,
+  applyRecommendedDefaults,
   formStorageKey,
   importBody,
   importStale,
@@ -183,6 +184,115 @@ test('入参校验：不再有保留前缀这条规则，__grill_ 前缀的 id �
   assert.deepEqual(validateRound([call({ id: '__grill_whatever__' })]), []);
 });
 
+test('入参校验：展开正文里把选项又列了一遍被拒（截图里「一遍不带选择器、一遍带」的那种）', () => {
+  const violations = validateRound([call({
+    detail: [
+      '先交代一个会左右选法的事实：这一版本来就是这么设计的。',
+      '',
+      '- **甲**·详情页里的「配置」入口：进去是一整页',
+      '- **乙**·列表里直接多一张卡片：点开就是一整页',
+      '- 丙·直接铺在详情页上：不用再点',
+    ].join('\n'),
+    options: [
+      { label: '甲：插件详情页里的「配置」入口，进去是一整页' },
+      { label: '乙：插件页列表里直接一张卡片，点开就是一整页' },
+      { label: '丙：配置直接铺在插件详情页上，不再分页' },
+    ],
+  })]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /restates its options in detail/);
+});
+
+test('入参校验：展开正文只写各选项共用的背景时不算违规', () => {
+  assert.deepEqual(validateRound([call({
+    detail: '这一版本来就是这么设计的：自带配置的插件把配置渲染在插件页。\n\n三个落点都已经预留在插件页。',
+    options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接多一张卡片' }],
+  })]), []);
+});
+
+test('入参校验：单个字母的选项标签不因英文正文的同形开头被误拒', () => {
+  assert.deepEqual(validateRound([call({
+    detail: 'A note about how the panel opens today, and why that matters.',
+    options: [{ label: 'A：扩展 /archive/guardCheck' }, { label: 'B：新建一层' }],
+  })]), []);
+});
+
+test('入参校验：整行就是那个标签（没有后续解释）也算重述', () => {
+  const violations = validateRound([call({
+    detail: '两个方向：\n- 甲\n- 乙',
+    options: [{ label: '甲：搬家' }, { label: '乙：不搬' }],
+  })]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /restates its options in detail/);
+});
+
+test('入参校验：选项名与解释之间空了一格也算重述', () => {
+  const violations = validateRound([call({
+    detail: '- 甲 · 详情页里的「配置」入口\n- 乙 · 列表里直接多一张卡片',
+    options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
+  })]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /restates its options in detail/);
+});
+
+test('入参校验：正文里顺口提到选项名不算重述，只有「以选项名开头的条目」才算', () => {
+  assert.deepEqual(validateRound([call({
+    detail: '甲、乙两种做法各有代价，我倾向甲。\n\n选甲：也不用现在就定。',
+    options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
+  })]), []);
+});
+
+test('入参校验：别名后面跟的是字而不是分隔符时不算重述', () => {
+  assert.deepEqual(validateRound([call({
+    detail: '保留现状的代价是每轮都要多看一眼。',
+    options: [{ label: '保留现状' }, { label: '换个做法' }],
+  })]), []);
+});
+
+test('入参校验：序号列表（全角括号）里的重述也认', () => {
+  const violations = validateRound([call({
+    detail: '1）甲：详情页里的配置入口\n2）乙：列表里直接一张卡片',
+    options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
+  })]);
+  assert.equal(violations.length, 1);
+});
+
+test('入参校验：没有选项的题，正文随便写', () => {
+  assert.deepEqual(validateRound([call({ detail: '- 甲：随便写\n- 乙：也随便' })]), []);
+});
+
+// --- 推荐项默认勾上 ---
+
+const recommended = (id, ...options) => ({
+  id,
+  options: options.map(([label, isRecommended]) => ({ label, displayLabel: label, recommended: isRecommended })),
+});
+
+test('默认勾选：标了推荐的选项，用户没动过这题时就是选中态', () => {
+  const questions = [recommended('a', ['A：移走（推荐）', true], ['B：都留', false])];
+  assert.deepEqual(applyRecommendedDefaults(questions, {}), { a: { selected: ['A：移走（推荐）'], custom: '' } });
+});
+
+test('默认勾选：多个推荐项一起勾上', () => {
+  const questions = [recommended('a', ['A（推荐）', true], ['B（推荐）', true], ['C', false])];
+  assert.deepEqual(applyRecommendedDefaults(questions, {}), { a: { selected: ['A（推荐）', 'B（推荐）'], custom: '' } });
+});
+
+test('默认勾选：用户动过这题就以他的为准，取消掉默认项也不许勾回来', () => {
+  const questions = [recommended('a', ['A（推荐）', true], ['B', false])];
+  assert.deepEqual(applyRecommendedDefaults(questions, { a: { selected: [], custom: '' } }), { a: { selected: [], custom: '' } });
+  assert.deepEqual(applyRecommendedDefaults(questions, { a: { selected: ['B'], custom: '我自己写' } }), { a: { selected: ['B'], custom: '我自己写' } });
+});
+
+test('默认勾选：没有推荐的题不会凭空多出作答', () => {
+  const questions = [recommended('a', ['A', false]), { id: 'b', options: [] }];
+  assert.deepEqual(applyRecommendedDefaults(questions, {}), {});
+});
+
+test('默认勾选：题面还没读出来（或不是本插件的形状）时原样返回用户自己的作答', () => {
+  assert.deepEqual(applyRecommendedDefaults([], { a: { selected: ['A'], custom: '' } }), { a: { selected: ['A'], custom: '' } });
+});
+
 // --- 导入文本 ---
 
 test('导入文本：逐题一行「标题：选的项、自填的字」，只含有作答的题', () => {
@@ -312,9 +422,25 @@ test('持久化：写进去读得回来，同一个会话里别的轮次互不�
 test('持久化：读回来的脏数据被清掉，坏 JSON 与缺存储都只是「什么都没选」', () => {
   const key = formStorageKey('sess-1');
   const storage = fakeStorage({ [key]: JSON.stringify({ 'call-1': { a: { selected: [1, 'A'], custom: 7 }, b: 'x', c: { selected: [], custom: '' } } }) });
-  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { a: { selected: ['A'], custom: '' } });
+  // c 是「用户把这题清空了」，不是脏数据：默认勾选靠它才不会被勾回来
+  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { a: { selected: ['A'], custom: '' }, c: { selected: [], custom: '' } });
   assert.deepEqual(readStoredForm(fakeStorage({ [key]: '{ 坏 JSON' }), key, 'call-1'), {});
   assert.deepEqual(readStoredForm(undefined, key, 'call-1'), {});
+});
+
+test('持久化：形状不对的记录被丢掉——它不该冒充「用户清空过」而吃掉默认勾选', () => {
+  const key = formStorageKey('sess-1');
+  const storage = fakeStorage({
+    [key]: JSON.stringify({ 'call-1': { a: { selected: 'garbage' }, b: { selected: [], custom: '' } } }),
+  });
+  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { b: { selected: [], custom: '' } });
+});
+
+test('持久化：取消掉默认勾选这件事存得住——重新读回来仍是「清空过」而不是「没作答」', () => {
+  const storage = fakeStorage();
+  const key = formStorageKey('sess-1');
+  writeStoredForm(storage, key, 'call-1', { a: { selected: [], custom: '' } });
+  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { a: { selected: [], custom: '' } });
 });
 
 test('持久化：storage 写不进去（配额/隐私模式）时不抛', () => {
