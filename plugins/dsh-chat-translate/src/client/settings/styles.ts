@@ -3,7 +3,7 @@ export const SETTINGS_CSS = String.raw`
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 580px;
+  width: 100%;
   padding-bottom: 32px;
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-s-14);
@@ -28,7 +28,14 @@ export const SETTINGS_CSS = String.raw`
   font: var(--dsw-font-s-strong-14);
 }
 
+/*
+ * Prose keeps a reading measure even though the card spans the host column: the
+ * master description is a 500-character paragraph, and at full width it would
+ * run to ~76 CJK characters per line. 46em tracks the element's own 12px font,
+ * so the measure survives a font-size change.
+ */
 .dsh-tidy-desc {
+  max-width: 46em;
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
 }

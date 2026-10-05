@@ -6,10 +6,8 @@ export const SETTINGS_CSS = `
   flex-direction: column;
   gap: 16px;
   width: 100%;
-  max-width: 820px;
-  margin: 0 auto;
   padding: 4px 0 32px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsw-font-s-14);
   color: var(--dsw-alias-label-primary);
   box-sizing: border-box;
   -webkit-font-smoothing: antialiased;
@@ -28,39 +26,49 @@ export const SETTINGS_CSS = `
   gap: 20px;
 }
 
-.agy-title-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Layout wrapper for the decorative StateDot; the name lives on role="status". */
+/*
+ * The bundle status line: the state dot plus the word it stands for. The dot
+ * alone carried its meaning in aria-label only, which reads as a stray bullet
+ * to anyone looking at the page; the label stays visible beside it.
+ */
 .agy-status {
   display: inline-flex;
   align-items: center;
-  flex: none;
+  gap: 6px;
+  margin: 0;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.agy-status-text {
+  min-width: 0;
 }
 
 .agy-bundle-intro,
 .agy-card-intro {
   margin: 4px 0 0;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
 }
 
+/*
+ * One card recipe for every plugin config page (the chat-translate stylesheet
+ * carries the twin under .dsh-tidy-card): the shipped settings-card surface, so
+ * the four panels read as one page rather than four different designs.
+ */
 .agy-cards {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .agy-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px 20px;
-  border-radius: 16px;
-  background: var(--dsw-alias-bg-layer-2);
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-3);
   border: 0.5px solid var(--dsw-alias-border-l2);
 }
 

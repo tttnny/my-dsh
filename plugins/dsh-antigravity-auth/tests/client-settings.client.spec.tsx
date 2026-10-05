@@ -273,9 +273,10 @@ describe('Antigravity bootstrap settings', () => {
       expect(screen.getByRole('switch', { name: en[key] })).toHaveProperty('disabled', true)
     }
 
-    // A logged-in account still reads paused rather than ready.
-    expect(screen.getByRole('status', { name: en.masterPaused })).toBeTruthy()
-    expect(screen.queryByRole('status', { name: en.ready })).toBeNull()
+    // A logged-in account still reads paused rather than ready. The state is a
+    // visible label beside the dot, so it is reachable by its text.
+    expect(screen.getByRole('status')).toHaveProperty('textContent', en.masterPaused)
+    expect(screen.queryByText(en.ready)).toBeNull()
 
     // Turning the switch on writes the master namespace and re-enables the cards.
     const setSpy = vi.spyOn(master, 'set')
@@ -283,7 +284,7 @@ describe('Antigravity bootstrap settings', () => {
     await waitFor(() => expect(setSpy).toHaveBeenCalledWith('enabled', true))
 
     master.push({ enabled: true })
-    await waitFor(() => expect(screen.getByRole('status', { name: en.ready })).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(en.ready)).toBeTruthy())
     for (const key of ['toggleSearch', 'toggleImage', 'toggleVideo'] as const) {
       expect(screen.getByRole('switch', { name: en[key] })).toHaveProperty('disabled', false)
     }
@@ -372,7 +373,8 @@ describe('Antigravity bootstrap settings', () => {
       <AntigravityAuthSettings view="page" rpc={rpc} t={key => en[key]} subscribe={subscribe} masterScope={master} />,
     )
 
-    expect(await screen.findByRole('status', { name: 'Ready' })).toBeTruthy()
+    // The status word is visible text beside the dot, not an aria-label.
+    expect(await screen.findByText(en.ready)).toBeTruthy()
     expect(screen.getByText(en.intro)).toBeTruthy()
     for (const key of ['authCardIntro', 'searchCardIntro', 'imageCardIntro', 'videoCardIntro', 'masterCardIntro'] as const) {
       expect(screen.getByText(en[key])).toBeTruthy()
@@ -384,8 +386,10 @@ describe('Antigravity bootstrap settings', () => {
 
     rerender(<AntigravityAuthSettings view="page" rpc={rpc} t={key => zh[key]} subscribe={subscribe} masterScope={master} />)
 
-    expect(await screen.findByRole('status', { name: '就绪' })).toBeTruthy()
-    expect(screen.queryByRole('status', { name: 'Ready' })).toBeNull()
+    // The status word is visible text now, so the language switch is asserted on
+    // the rendered string itself rather than on an aria-label.
+    expect(await screen.findByText(zh.ready)).toBeTruthy()
+    expect(screen.queryByText(en.ready)).toBeNull()
     expect(screen.queryByText(en.intro)).toBeNull()
     expect(screen.getByText(zh.intro)).toBeTruthy()
     for (const key of ['authCardIntro', 'searchCardIntro', 'imageCardIntro', 'videoCardIntro', 'masterCardIntro'] as const) {

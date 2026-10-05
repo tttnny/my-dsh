@@ -316,11 +316,10 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, search
       <header className="agy-bundle-header">
         <div>
           {isConfigured ? (
-            <div className="agy-title-line">
-              <span className="agy-status" role="status" aria-label={masterEnabled ? t('ready') : t('masterPaused')}>
-                <StateDot state={masterEnabled ? 'done' : 'idle'} size={8} />
-              </span>
-            </div>
+            <p className="agy-status" role="status">
+              <StateDot state={masterEnabled ? 'done' : 'idle'} size={8} />
+              <span className="agy-status-text">{masterEnabled ? t('ready') : t('masterPaused')}</span>
+            </p>
           ) : null}
           <p className="agy-bundle-intro">{t('intro')}</p>
         </div>
