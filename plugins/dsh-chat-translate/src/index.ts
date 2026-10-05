@@ -81,8 +81,9 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
   const cache = new LruDiskCache(1000);
   const dispatcher = new TranslationDispatcher(configManager, cache, credentials);
 
-  // The 阅读体验 card is this entry's settings surface, so DSH must not also
-  // derive a Plugins-page form for the same fields.
+  // This entry's configuration surface is the card in the DSH **Plugins** page,
+  // not a kernel-derived settings form, so DSH must not also derive one for the
+  // same fields.
   ctx.inject(['settings'], (child) => {
     child.effect(
       () => child.settings.configure({ auto: false }, child.fiber),

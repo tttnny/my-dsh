@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "GUI auth URL",
+    "description": "Hands the current Web instance's token-bearing URL to the model and the shell, without putting the secret into the prompt."
+  }
+}

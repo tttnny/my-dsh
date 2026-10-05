@@ -3,8 +3,9 @@
  *
  * Loads the built `lib/client.js` the same way the Web shell does (through a
  * `window.__ModuleLoader__.load` stub), gives it fake cordis services, and
- * asserts every registration the 「API中转」 page and the composer dock entry
- * depend on, plus one render of that entry. Run with: node scripts/smoke-client.mjs
+ * asserts every registration this plugin's **Plugins** page row and the composer
+ * dock entry depend on, plus one render of that entry and of the row's
+ * `summary` one-liner. Run with: node scripts/smoke-client.mjs
  *
  * The fake context models the kernel's inject guard, so reading a service the
  * bundle did not declare throws here instead of turning the whole loader entry
@@ -19,8 +20,16 @@ import { dirname, join, resolve } from 'node:path'
 const require = createRequire(import.meta.url)
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'))
 
-/** Child slot both participants of the shared page register their card into. */
-const ITEM_SLOT = 'relay.settings.item'
+/**
+ * The Plugins page slot one row's configuration registers into. The key is
+ * `<bundle package name>#<row id>`; the Host draws the row's 配置 control once
+ * that key is registered, and the configured page owns the title, icon and crumb.
+ */
+const ROW_CONFIG_SLOT = 'plugins.row.config'
+/** This plugin's own row key: its bundle package name # its patch's insert id. */
+const ROW_CONFIG_KEY = '@lynn123411/dsh-a6api#dsh-a6api'
+/** Locale namespace this plugin's card and dictionaries are registered under. */
+const NS = 'settings.a6api'
 
 const failures = []
 const check = (label, ok) => {
@@ -97,11 +106,6 @@ const injects = []
 const locales = []
 const errors = []
 
-/** Card registrations collected on the shared page's child slot. */
-const cardEntries = []
-/** Set by the election case: a pre-existing occupant of the shared page. */
-let existingSections = []
-
 /**
  * Service table. `ctx.get(name)` reads from here (cordis' reflect.get never
  * throws for an unknown name); property access only resolves what the plugin
@@ -117,25 +121,21 @@ const services = () => ({
     register: (options, component) => {
       const record = {
         name: options.name,
+        // Keyed registrations carry their key; list registrations their id.
+        key: options.key,
         id: options.id,
         order: options.order,
         label: options.label,
+        locale: options.locale,
         children: options.children === undefined ? undefined : Object.keys(options.children),
         inject: options.inject,
         component,
       }
       registrations.push(record)
-      // StoredEntry shape: the shared page reads `entry.options.*`.
-      if (options.name === ITEM_SLOT) cardEntries.push({ options: record })
       return () => {}
     },
-    entries: (key) => {
-      if (key === 'settings.section') return existingSections
-      if (key === ITEM_SLOT) return cardEntries
-      return []
-    },
-    // The shared page builds its tab roster from the child slot's registry face.
-    getVersion: () => cardEntries.length + existingSections.length,
+    entries: () => [],
+    getVersion: () => registrations.length,
     subscribe: () => () => {},
   },
   locale: {
@@ -225,26 +225,19 @@ try {
   console.log(`       ${error.message}`)
 }
 
-const page = registrations.find(r => r.name === 'settings.section')
-check('shared 「API中转」 page claimed', page?.id === 'relay')
-check('shared page sits at the sidebar order it replaces', page?.order === 120)
-check('shared page declares its card slot', JSON.stringify(page?.children) === `["${ITEM_SLOT}"]`)
-check('page label resolves through the locale namespace', typeof page?.label === 'function' && page.label() === 'pageNav')
+// The configuration page lives on the Host's **Plugins** page: one row of one
+// bundle, addressed by `<bundle package name>#<row id>`. Registering that key is
+// what gives the row its 配置 control; the page itself draws title/icon/crumb.
+const rowConfig = registrations.find(r => r.name === ROW_CONFIG_SLOT)
+check('configuration page registered on the Plugins page row slot', rowConfig !== undefined)
+check('row key is bundle package name # patch row id', rowConfig?.key === ROW_CONFIG_KEY)
+check('configuration page uses this plugin locale namespace', rowConfig?.locale === NS)
+check('configuration page exposes a component', typeof rowConfig?.component === 'function')
+check('configuration page contributed through slots.inject', injects.includes(`slot:${ROW_CONFIG_SLOT}`))
+check('no settings-page section is registered any more',
+  registrations.every(r => r.name !== 'settings.section'))
 
-const card = cardEntries[0]?.options
-check('a6api panel registered on the shared page slot', card !== undefined)
-check('panel keyed by its own settings namespace', card?.id === 'dsh-a6api')
-check('panel is the first tab', card?.order === 10)
-check('panel carries its tab label', typeof card?.label === 'function' && card.label() === 'tabNav')
-
-// The page turns those registrations into tabs.
-const pageFace = typeof page?.inject === 'function' ? page.inject() : undefined
-const tabs = pageFace?.relayTabs?.getSnapshot?.() ?? []
-check('page exposes one tab per registered card', tabs.length === 1 && tabs[0]?.id === 'dsh-a6api')
-check('tab label resolves through the registration label', tabs[0]?.label === 'tabNav')
-check('tab roster is subscribable', typeof pageFace?.relayTabs?.subscribe === 'function')
-
-check('shared page name registered in the locale namespace', locales.includes('settings.a6api'))
+check('locale dictionaries registered in this plugin namespace', locales.includes(NS))
 
 const dock = registrations.find(r => r.name === 'conversation.composer.dock')
 check('composer dock entry registered', dock !== undefined)
@@ -253,6 +246,13 @@ check('composer dock entry sits left of the official stats pills', dock?.order =
 check('the sidebar footer entry is gone', !registrations.some(r => r.name === 'sidebar.footer.action'))
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
+
+// 行摘要自检：`view: 'summary'` 时卡片只吐一行文字（宿主用它兜底没有描述的行），
+// 不挂载任何面板状态。断言返回的正是本插件那句说明文案对应的 key。
+const rowSummary = typeof rowConfig?.component === 'function'
+  ? rowConfig.component({ view: 'summary', t: (key) => key })
+  : undefined
+check('row summary returns the plugin one-liner', rowSummary === 'subtitle')
 
 // 渲染自检:输入框下方那一行的组件渲染出「A6api」按钮,点击后贴按钮上沿展开浮层。
 const React = require('react')
@@ -357,11 +357,11 @@ check(
 )
 unmountQuietly(tree)
 
-// 设置页渲染自检：共享页上注册的卡片组件必须能 headless 渲染，「基础配置」页
-// 渲染出三个输入框（API Key / 系统访问令牌 / 账号 ID）与保存按钮。T1 之前这份
-// 断言不存在，面板只有 typecheck 级别的保护——渲染期抛错（例如 Tooltip 包了
-// 条件渲染的 null）在浏览器里表现为整张卡片空白，只有真跑一次才拦得住。
-const settingsComponent = card?.component
+// 插件页行配置的渲染自检：注册在 `plugins.row.config` 上的卡片组件必须能 headless
+// 渲染，「基础配置」页渲染出三个输入框（API Key / 系统访问令牌 / 账号 ID）与保存
+// 按钮。这份断言的存在理由：渲染期抛错（例如 Tooltip 包了条件渲染的 null）在浏览器
+// 里表现为整张卡片空白，只有真跑一次才拦得住。
+const settingsComponent = rowConfig?.component
 check('settings panel exposes a component', typeof settingsComponent === 'function')
 
 const panelReadsAt = primitiveReads.length
@@ -369,7 +369,7 @@ let panelTree
 let panelRenderFailed
 try {
   act(() => {
-    panelTree = create(React.createElement(settingsComponent, { t: (key) => key }))
+    panelTree = create(React.createElement(settingsComponent, { view: 'page', t: (key) => key }))
   })
 } catch (error) {
   panelRenderFailed = error
@@ -379,7 +379,9 @@ if (panelRenderFailed) console.log(`       ${panelRenderFailed.message}`)
 
 if (panelTree) {
   const panelText = textOf(panelTree.toJSON())
-  check('settings panel renders its heading copy', panelText.includes('heading') && panelText.includes('subtitle'))
+  // 卡片不再重画页面标题（宿主插件页负责）——只保留副标题与右侧三枚胶囊。
+  check('settings panel renders its subtitle copy', panelText.includes('subtitle'))
+  check('settings panel no longer repeats the page title', !panelText.includes('heading'))
 
   // The inner tab strip: the stub primitives do not render their children, so the
   // labels are read off the elements the panel handed them.
@@ -494,20 +496,26 @@ const clientSource = (await import('node:fs')).readFileSync(join(root, 'src/clie
 check('the hand-rolled global tooltip portal is gone', !clientSource.includes('setupGlobalTooltip'))
 check('the bundle never reads data-tooltip', !source.includes('data-tooltip'))
 
-// Election case: another participant (dsh-llm-agentrouter) already holds the page.
+// Independence case: this plugin always registers its own row configuration —
+// it is not a participant in any shared page and contends with nobody. Re-applying
+// (a re-declaration of the slot, the way the loader replays a bundle) must still
+// produce exactly this plugin's own row key, and nothing on the Settings page.
 registrations.length = 0
-cardEntries.length = 0
 errors.length = 0
-existingSections = [{ options: { id: 'relay' } }]
 try {
   exported.apply(makeCtx('second', exported.inject ?? []))
 } catch (error) {
-  check('apply() survives the inject guard (election)', false)
+  check('apply() survives the inject guard (re-registration)', false)
   console.log(`       ${error.message}`)
 }
-check('page is not claimed twice', registrations.every(r => r.name !== 'settings.section'))
-check('panel still registers beside the other participant', registrations.some(r => r.name === ITEM_SLOT))
-check('election path stays error-free', errors.length === 0)
+const rowConfigs = registrations.filter(r => r.name === ROW_CONFIG_SLOT)
+check('the row config registers on every apply, independent of other plugins',
+  rowConfigs.length === 1 && rowConfigs[0]?.key === ROW_CONFIG_KEY)
+check('the composer dock registers independently of the row config',
+  registrations.some(r => r.name === 'conversation.composer.dock'))
+check('no settings-page section is registered on the independent path',
+  registrations.every(r => r.name !== 'settings.section'))
+check('independent path stays error-free', errors.length === 0)
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`)
 process.exit(failures.length === 0 ? 0 : 1)

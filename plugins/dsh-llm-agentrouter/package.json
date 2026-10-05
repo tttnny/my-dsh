@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-llm-agentrouter",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "AgentRouter 中转聚合：一条 pi-ai 路由承载多模型（设置卡片内可从中转站拉取、逐个编辑模型与参数）+ 国内/国际端点一键切换 + 出站请求 User-Agent/402-配额改写围栏。模型列表写入内核「设置 - 模型」页所编辑的同一份 llm-pi-ai 路由数据。",
   "keywords": [
     "deepseek-harness",
@@ -20,11 +20,14 @@
   "author": "lynn123411",
   "type": "module",
   "main": "lib/index.js",
+  "icon": "./assets/icon.svg",
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json",
-    "./cordis.patch.yml": "./cordis.patch.yml"
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json"
   },
   "dsh": {
     "bundle": {
@@ -34,13 +37,16 @@
       "inject": [
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-primitives",
-        "@deepseek-ai/dsh-client-ui-settings"
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ],
       "platform": "web"
     }
   },
   "files": [
     "lib/",
+    "assets",
+    "locale",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -52,7 +58,7 @@
   },
   "engines": {
     "node": ">=22",
-    "dsh": ">=0.1.7-rc.2"
+    "dsh": ">=0.2.0-rc.2"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.4"
@@ -66,6 +72,7 @@
     }
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.0-rc.2",
     "js-yaml": "^5.4.1",
     "react": "18.3.1",
     "react-test-renderer": "18.3.1"

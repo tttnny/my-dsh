@@ -1,5 +1,5 @@
 /**
- * Locale bundles for the dsh-a6api card inside the shared 「API中转」 page.
+ * Locale bundles for the dsh-a6api card on the DSH **Plugins** page.
  *
  * `zh` is the key-set source of truth; `en` carries the same keys. Only
  * product-visible copy lives here — model ids, URLs, `code` payloads, log
@@ -31,7 +31,7 @@ export const dictionaryT = ((key: string, params?: Record<string, unknown>) => {
 /** Locale keys this plugin renders. */
 export type A6apiLocaleKey =
   // Card chrome and the shared page titles
-  | 'pageNav' | 'tabNav' | 'heading' | 'subtitle' | 'balanceBadgeTip' | 'balanceLabel'
+  | 'subtitle' | 'balanceBadgeTip' | 'balanceLabel'
   | 'tabModels' | 'tabCatalog' | 'tabAccount' | 'tabConfig'
   | 'filterAll' | 'filterEnabled' | 'filterProbed'
   | 'searchPlaceholder' | 'clearSearch'
@@ -104,9 +104,6 @@ export type A6apiLocaleKey =
 
 /** English copy. */
 export const en: Record<A6apiLocaleKey, string> = {
-  pageNav: 'API relay',
-  tabNav: 'A6api',
-  heading: 'A6api',
   subtitle: 'Aggregated mainstream and high-value models, with live merchant metrics, price ratios and account balance.',
   balanceBadgeTip: 'Switch to the Account tab',
   balanceLabel: 'Balance:',
@@ -377,9 +374,6 @@ export const en: Record<A6apiLocaleKey, string> = {
 
 /** Chinese copy (the key-set source of truth). */
 export const zh: Record<A6apiLocaleKey, string> = {
-  pageNav: 'API中转',
-  tabNav: 'A6api',
-  heading: 'A6api',
   subtitle: '聚合全球主流与高性价比模型，实时监控商户指标、价格倍率与账户资产。',
   balanceBadgeTip: '点击切换至「账户资产」页面',
   balanceLabel: '账户余额:',

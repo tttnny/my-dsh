@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "GUI 鉴权地址",
+    "description": "把当前 Web 实例带 token 的访问地址交给模型与 shell，而凭据不进提示词。"
+  }
+}

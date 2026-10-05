@@ -12,10 +12,11 @@
  * its section through `useSyncExternalStore`, so it is rendered as a component
  * rather than called as a function.
  *
- * The settings page is SHARED with `dsh-a6api`, so these tests also cover the
- * election: the shell claims `settings.section` only while no participant holds
- * it, the card joins the page's child slot, and the page renders one tab per
- * registered card, filtered by id.
+ * The configuration page moved from the Settings page to the host's **Plugins**
+ * page, so these tests also cover the registration it makes there: the ONE slot
+ * it joins, the `<bundle package name>#<row id>` key naming this bundle's row,
+ * and the absence of any seat on the Settings page — the shared page is gone,
+ * along with the shell and the election that used to pick its host.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -60,12 +61,10 @@ const primitives = {
   ),
 }
 
-/** Child slot both participants register their card into. */
-const ITEM_SLOT = 'relay.settings.item'
-/** Page id the first participant to activate claims. */
-const PAGE_ID = 'relay'
-/** Sidebar position of the shared page. */
-const PAGE_ORDER = 120
+/** The Plugins page slot one row's configuration registers into. */
+const ROW_CONFIG_SLOT = 'plugins.row.config'
+/** This bundle's row key: `<bundle package name>#<the patch row id>`. */
+const ROW_CONFIG_KEY = '@lynn123411/dsh-llm-agentrouter#llm-agentrouter'
 
 /**
  * Execute the bundle the way the client module loader does and return what it
@@ -103,24 +102,13 @@ function loadBundle() {
 
 /**
  * A slot registry stub with the slice of the contract the bundle uses:
- * `inject` (run immediately), `register`, `entries`, `getVersion` and
- * `subscribe`.
+ * `inject` (run immediately) and `register`.
  *
- * @param {object} options - registry options.
- * @param {object[]} options.sectionEntries - pre-existing `settings.section` rows.
  * @returns {object} the registry plus everything it recorded.
  */
-function stubSlots({ sectionEntries = [] } = {}) {
+function stubSlots() {
   const registrations = []
   const injections = []
-  const itemEntries = []
-  let version = 0
-  let listeners = []
-  const commit = (options) => {
-    itemEntries.push({ options })
-    version += 1
-    for (const listener of [...listeners]) listener()
-  }
   const slots = {
     inject: (name, callback) => {
       injections.push(name)
@@ -128,19 +116,10 @@ function stubSlots({ sectionEntries = [] } = {}) {
     },
     register: (options, component) => {
       registrations.push({ options, component })
-      if (options.name === ITEM_SLOT) commit(options)
       return () => {}
     },
-    entries: (name) => (name === ITEM_SLOT ? [...itemEntries] : [...sectionEntries]),
-    getVersion: (name) => (name === ITEM_SLOT ? version : 0),
-    subscribe: (name, listener) => {
-      listeners.push(listener)
-      return () => {
-        listeners = listeners.filter(entry => entry !== listener)
-      }
-    },
   }
-  return { slots, registrations, injections, itemEntries, commit }
+  return { slots, registrations, injections }
 }
 
 /**
@@ -151,13 +130,12 @@ function stubSlots({ sectionEntries = [] } = {}) {
  * @param {object} options - context options.
  * @param {object} options.form - the plugin entry's config form stub the card writes through.
  * @param {object} options.routeForm - the `llm-pi-ai` entry's config form stub the model list reads.
- * @param {object[]} options.sectionEntries - pre-existing `settings.section` rows.
  * @param {object} options.llm - the optional `remote.llm` face, when the runtime has one.
  * @param {object} options.settings - the optional `remote.settings` face.
  * @returns {object} the context plus the slot registry it carries.
  */
-function stubContext({ form, routeForm, sectionEntries = [], llm, settings } = {}) {
-  const { slots, registrations, injections, itemEntries, commit } = stubSlots({ sectionEntries })
+function stubContext({ form, routeForm, llm, settings } = {}) {
+  const { slots, registrations, injections } = stubSlots()
   const declared = new Set(['slots', 'locale', 'configForms'])
   const optional = {}
   if (llm !== undefined) optional['remote.llm'] = llm
@@ -174,7 +152,12 @@ function stubContext({ form, routeForm, sectionEntries = [], llm, settings } = {
     // One shared config form per profile entry, keyed by entry id: this
     // plugin's own entry, and the adapter's `llm-pi-ai` entry whose route the
     // card edits models in.
-    configForms: { get: (entryId) => (entryId === 'llm-pi-ai' ? routeForm : form) },
+    configForms: {
+      get: (entryId) => (entryId === 'llm-pi-ai' ? routeForm : form),
+      // The page contribution is gated on the Host serving this plugin's entry;
+      // the fake answers as served so the registration path runs as in production.
+      whileServed: (namespaces, register) => register(new Set(namespaces)),
+    },
   }
   const base = {
     ...services,
@@ -210,7 +193,7 @@ function stubContext({ form, routeForm, sectionEntries = [], llm, settings } = {
       if (entry.deps.includes(name)) entry.callback(base)
     }
   }
-  return { ctx, registrations, injections, itemEntries, commit, provide }
+  return { ctx, registrations, injections, provide }
 }
 
 /**
@@ -506,53 +489,57 @@ test('the bundle registers under its package id and declares the services it use
   )
 })
 
-test('apply claims the shared page and registers one card into its child slot', () => {
-  const { registrations, injections, itemEntries } = applyBundle({ form: stubForm() })
+test('apply registers this bundle’s row configuration on the Plugins page', () => {
+  const { exports, registrations, injections } = applyBundle({ form: stubForm() })
 
   assert.deepEqual(
     injections,
-    ['settings.section', ITEM_SLOT],
-    'the card joins the shared page instead of the Plugins settings tabs',
+    [ROW_CONFIG_SLOT],
+    'the configuration is contributed through the Plugins page slot, and nothing else',
   )
-  assert.equal(registrations.length, 2, 'one page claim plus one card')
+  assert.equal(registrations.length, 1, 'exactly one registration, so the shell is gone')
 
-  const page = registrations.find((entry) => entry.options.name === 'settings.section')
-  assert.ok(page !== undefined, 'someone must declare the shared page')
-  assert.equal(page.options.id, PAGE_ID)
-  assert.equal(page.options.order, PAGE_ORDER)
-  assert.deepEqual(
-    Object.keys(page.options.children),
-    [ITEM_SLOT],
-    'the page must declare the child slot its participants register into',
-  )
-
-  assert.equal(itemEntries.length, 1)
-  const card = itemEntries[0]
-  assert.equal(card.options.name, ITEM_SLOT)
-  assert.equal(card.options.id, 'llm-agentrouter', 'the card id is the plugin settings namespace')
-  assert.equal(card.options.order, 20, 'the endpoint card is the second tab, after A6api')
-  assert.equal(typeof card.options.label, 'function', 'the tab label localizes')
-  assert.equal(card.options.label(), 'settings.agentrouter:title', 'the tab shows the card title')
-  assert.equal(card.options.locale, 'settings.agentrouter')
-})
-
-test('the card joins the page shell without ever redeclaring it', () => {
-  // The loser's contract: the page row already exists, so the shell must stay
-  // silent and only the card may register.
-  const { registrations } = applyBundle({
-    form: stubForm(),
-    sectionEntries: [{ options: { id: PAGE_ID } }],
-  })
+  const card = registrations[0]
+  assert.equal(card.options.name, ROW_CONFIG_SLOT)
+  assert.equal(card.options.key, ROW_CONFIG_KEY)
   assert.equal(
-    registrations.find((entry) => entry.options.name === 'settings.section'),
-    undefined,
-    'a second declarer would trip the kernel duplicate-id guard',
+    card.options.key,
+    `@lynn123411/dsh-llm-agentrouter#${exports.SETTINGS_NS}`,
+    'the row id half is also this plugin’s settings namespace',
   )
-  assert.equal(registrations.length, 1, 'only the card registers when another participant holds the page')
-  assert.equal(registrations[0].options.name, ITEM_SLOT)
+  assert.equal(card.options.locale, 'settings.agentrouter', 'the page resolves the card’s own dictionary')
+  assert.equal(card.component, exports.EndpointCard, 'the registered page is the endpoint card')
 })
 
-test('the dictionaries cover the shared page name too', () => {
+test('the bundle keeps no Settings-page seat and no page shell on its surface', () => {
+  // The Settings page no longer carries plugin configuration: any registration
+  // outside the Plugins page slot would put this card back on a page meant to
+  // hold only read-only plugin lists, and an exported shell symbol would
+  // advertise the election that was removed. The allowed set is stated exactly,
+  // so a re-added seat fails here whatever it is called.
+  const { exports, registrations, injections } = applyBundle({ form: stubForm() })
+
+  assert.deepEqual(injections, [ROW_CONFIG_SLOT], 'the Plugins page slot is the only slot joined')
+  assert.deepEqual(
+    registrations.map((entry) => entry.options.name),
+    [ROW_CONFIG_SLOT],
+    'and the only thing registered',
+  )
+  assert.deepEqual(
+    Object.keys(exports).filter((key) => key.startsWith('RELAY_') || key.startsWith('claim')),
+    [],
+    'the shared page shell symbols are gone',
+  )
+})
+
+test('the Plugins page asks for a summary or the card, and both are answered', () => {
+  const { exports } = loadBundle()
+  // The row shows the summary only when the package declares no description of
+  // its own; a missing branch would leave it blank.
+  assert.equal(exports.EndpointCard({ view: 'summary', t: stubT }), 'title')
+})
+
+test('the dictionaries are key-for-key identical in both languages', () => {
   // A missing key renders as the key itself in one language only, which no test
   // of the rendered card would notice.
   const source = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
@@ -561,94 +548,6 @@ test('the dictionaries cover the shared page name too', () => {
     return [...body.slice(0, body.indexOf('};')).matchAll(/^\t{3}(\w+):/gm)].map((match) => match[1]).sort()
   }
   assert.deepEqual(keysOf('en'), keysOf('zh'))
-  assert.ok(keysOf('zh').includes('pageNav'), 'the shared page is named in the dictionaries')
-})
-
-test('the shell renders one tab per registered card and filters each panel by id', async () => {
-  const { registrations, commit } = applyBundle({ form: stubForm() })
-  const page = registrations.find((entry) => entry.options.name === 'settings.section')
-
-  // Stand in for the other participant: dsh-a6api's card, registered first.
-  commit({ id: 'dsh-a6api', order: 10, label: () => 'A6api' })
-
-  const rendered = []
-  const renderSlot = (name, owner, filter) => {
-    rendered.push({ name, owner, filter })
-    return createElement('div', { 'data-panel': filter.only })
-  }
-  const PageComponent = page.component
-  let tree
-  await act(async () => {
-    tree = create(createElement(PageComponent, {
-      renderSlot,
-      relayTabs: page.options.inject().relayTabs,
-    }))
-  })
-
-  const tabs = () => tree.root.findAll((node) => node.type === 'button' && node.props.role === 'tab')
-  assert.deepEqual(
-    tabs().map((node) => node.props.children[0]),
-    ['A6api', 'settings.agentrouter:title'],
-    'tabs follow the card order: the other participant first, this card second',
-  )
-  assert.deepEqual(tabs().map((node) => node.props['aria-selected']), [true, false], 'the first tab opens selected')
-  assert.deepEqual(
-    rendered.map((entry) => entry.name),
-    [ITEM_SLOT, ITEM_SLOT],
-    'both panels come from the shared page child slot',
-  )
-  assert.deepEqual(
-    rendered.map((entry) => entry.filter.only),
-    ['dsh-a6api', 'llm-agentrouter'],
-    'each panel renders exactly its own card',
-  )
-  const panels = () => tree.root.findAll((node) => node.props.role === 'tabpanel')
-  assert.equal(panels()[1].props.style.display, 'none', 'the inactive panel is hidden by style, not only by attribute')
-
-  // Switching tabs re-filters and moves the marker.
-  await act(async () => {
-    tabs()[1].props.onClick()
-  })
-  assert.deepEqual(tabs().map((node) => node.props['aria-selected']), [false, true])
-})
-
-test('a card that registers after the page mounted appears as its own tab', async () => {
-  // The participants activate independently, so the roster must stay live: the
-  // page may already be projected when a card lands — or lands before it, which
-  // the roster test above covers.
-  const { registrations, commit } = applyBundle({ form: stubForm() })
-  const page = registrations.find((entry) => entry.options.name === 'settings.section')
-
-  const rendered = []
-  const renderSlot = (name, owner, filter) => {
-    rendered.push(filter.only)
-    return null
-  }
-  const PageComponent = page.component
-  let tree
-  await act(async () => {
-    tree = create(createElement(PageComponent, {
-      renderSlot,
-      relayTabs: page.options.inject().relayTabs,
-    }))
-  })
-
-  const tabs = () => tree.root.findAll((node) => node.type === 'button' && node.props.role === 'tab')
-  assert.deepEqual(
-    tabs().map((node) => node.props.children[0]),
-    ['settings.agentrouter:title'],
-    'this plugin already contributed its card during apply',
-  )
-
-  await act(async () => {
-    commit({ id: 'dsh-a6api', order: 10, label: () => 'A6api' })
-  })
-  assert.deepEqual(
-    tabs().map((node) => node.props.children[0]),
-    ['A6api', 'settings.agentrouter:title'],
-    'a later registration orders itself into the existing tab bar',
-  )
-  assert.deepEqual(rendered, ['llm-agentrouter', 'dsh-a6api', 'llm-agentrouter'])
 })
 
 test('the card renders both endpoints, marks the selected one, and names each host', async () => {
@@ -1053,7 +952,7 @@ test('apply binds the adapter namespace and unwraps the Remote results the card 
   const routeForm = stubRouteForm()
   const { registrations } = applyBundle({ form, routeForm, llm, settings })
 
-  const card = registrations.find((entry) => entry.options.name === ITEM_SLOT)
+  const card = registrations.find((entry) => entry.options.name === ROW_CONFIG_SLOT)
   const injected = card.options.inject()
   assert.equal(injected.form, form, 'the endpoint switch reads its own entry’s form')
   assert.equal(injected.routeForm, routeForm, 'the model list reads the adapter entry’s form')
@@ -1073,7 +972,7 @@ test('a runtime without the optional Remotes still mounts the card', async () =>
   // inject guard and take the whole plugin off the page — and a click in that
   // state answers with a reason instead of throwing.
   const { registrations } = applyBundle({ form: stubForm(), routeForm: stubRouteForm() })
-  const card = registrations.find((entry) => entry.options.name === ITEM_SLOT)
+  const card = registrations.find((entry) => entry.options.name === ROW_CONFIG_SLOT)
   const injected = card.options.inject()
   assert.equal(injected.operations.available(), false)
   assert.deepEqual(
@@ -1093,7 +992,7 @@ test('a Remote face that mounts after activation turns 更新 on without a reloa
   const routeForm = stubRouteForm()
   const context = stubContext({ form: stubForm(), routeForm })
   exports.apply(context.ctx)
-  const card = context.registrations.find((entry) => entry.options.name === ITEM_SLOT)
+  const card = context.registrations.find((entry) => entry.options.name === ROW_CONFIG_SLOT)
   const injected = card.options.inject()
   assert.equal(injected.operations.available(), false, 'nothing is mounted yet')
 

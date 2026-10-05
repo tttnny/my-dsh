@@ -19,23 +19,23 @@
     <tr>
       <td><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
-      <td><b>聊天翻译</b><br>· 接管助手行渲染（keyed slot <code>assistant-step</code>），正文块不论源语言一律送模型改写成自然简体中文——整段中文同样照送、顺机器腔；Think 卡 / 工具调用行 / 用户消息 / 代码块 / 空白块不翻，与宿主渲染逐分支等价，接管器抛错自动退位给宿主<br>· 结构重装配：代码围栏逐字保留、从不送模型，散文段送译后按原结构拼回，经基线组件 <code>MarkdownText</code> 重渲染；形状修复按段落块对齐——结构行（记号类别、表格竖线、链接数）逐一对齐并把行首前缀修回原文、散文行自由重排、空行布局取原文，修不齐的自动重掷一次、仍不齐则照收译文，形状问题不再否决内容<br>· 左缘竖线：读译文蓝粗线、读原文灰细线、失败红实线（悬停报通道细节：超时/断流/空返回）、在途灰脉动、没送过模型无线；模型返回一模一样也算翻过<br>· 开关两个入口：输入框下方那一行的「译」胶囊与「阅读体验」设置页总开关，读写同一个 <code>enabled</code><br>· 落定且进入视口才整行请求（每行唯一的首跑），失败不自动重试——点红线整行手动补跑，已成功块保持挂线；串行单在途；磁盘缓存按提示词修订号（<code>PROMPT_REVISION</code>）整体作废，换提示词不让旧译文串代<br>· OpenAI 兼容 AI 单通道（Key / Base URL / 模型齐备才翻，Key 存 <code>~/.dsh/.credentials.yaml</code>）<br>· 设置项并入共享的「<b>阅读体验</b>」设置页（本插件贡献其中一张卡片）</td>
+      <td><b>聊天翻译</b><br>· 接管助手行渲染（keyed slot <code>assistant-step</code>），正文块不论源语言一律送模型改写成自然简体中文——整段中文同样照送、顺机器腔；Think 卡 / 工具调用行 / 用户消息 / 代码块 / 空白块不翻，与宿主渲染逐分支等价，接管器抛错自动退位给宿主<br>· 结构重装配：代码围栏逐字保留、从不送模型，散文段送译后按原结构拼回，经基线组件 <code>MarkdownText</code> 重渲染；形状修复按段落块对齐——结构行（记号类别、表格竖线、链接数）逐一对齐并把行首前缀修回原文、散文行自由重排、空行布局取原文，修不齐的自动重掷一次、仍不齐则照收译文，形状问题不再否决内容<br>· 左缘竖线：读译文蓝粗线、读原文灰细线、失败红实线（悬停报通道细节：超时/断流/空返回）、在途灰脉动、没送过模型无线；模型返回一模一样也算翻过<br>· 开关两个入口：输入框下方那一行的「译」胶囊与本插件配置页总开关，读写同一个 <code>enabled</code><br>· 落定且进入视口才整行请求（每行唯一的首跑），失败不自动重试——点红线整行手动补跑，已成功块保持挂线；串行单在途；磁盘缓存按提示词修订号（<code>PROMPT_REVISION</code>）整体作废，换提示词不让旧译文串代<br>· OpenAI 兼容 AI 单通道（Key / Base URL / 模型齐备才翻，Key 存 <code>~/.dsh/.credentials.yaml</code>）<br>· 配置页挂在「<b>插件</b>」页：注册进 <code>plugins.row.config</code>（key <code>@lynn123411/dsh-chat-translate#dsh-chat-translate</code>），路径是「插件」→本插件详情页→该行的「配置」<br>· 脸面：中文名「聊天翻译」＋一句话简介＋极简线性图标（<code>locale/</code> 的 <code>meta</code> 与 <code>package.json</code> 的 <code>icon</code>）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>
       <td rowspan="3"><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
       <td><a href="./plugins/dsh-a6api"><code>@lynn123411/dsh-a6api</code></a></td>
-      <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 输入框下方快捷模型卡片 + 账户余额 / 价格波动 / 模型市场胶囊行</td>
+      <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 输入框下方快捷模型卡片 + 账户余额 / 价格波动 / 模型市场胶囊行<br>· 配置页挂在「<b>插件</b>」页：注册进 <code>plugins.row.config</code>（key <code>@lynn123411/dsh-a6api#dsh-a6api</code>）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-a6api</code></td>
     </tr>
     <tr>
       <td><a href="./plugins/dsh-llm-agentrouter"><code>@lynn123411/dsh-llm-agentrouter</code></a></td>
-      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效（要热更的字段以 <code>.volatile()</code> 声明，设置面由 Config schema 派生）<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉：沿用 <code>llm-agentrouter</code> 命名空间；配置落在当前 Profile 的插件条目里，端点卡片与 <code>dsh-a6api</code> 同挂共享设置页「API中转」</td>
+      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效（要热更的字段以 <code>.volatile()</code> 声明，设置面由 Config schema 派生）<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉：沿用 <code>llm-agentrouter</code> 命名空间；配置落在当前 Profile 的插件条目里，端点卡片挂在本插件在「插件」页的配置页（<code>plugins.row.config</code>，key <code>@lynn123411/dsh-llm-agentrouter#llm-agentrouter</code>）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter</code></td>
     </tr>
     <tr>
       <td><a href="./plugins/dsh-antigravity-auth"><code>@lynn123411/dsh-antigravity-auth</code></a></td>
-      <td><b>Antigravity 全套权益接入</b><br>· Google Antigravity 私有能力包：Gemini 2.5/3.1/3.7、Claude 3.5/3.7 与 GPT-OSS 原生模型接入<br>· 突破 127.0.0.1 严格回环限制，支持全网卡监听（0.0.0.0）与远程手动授权回调换票<br>· 搭载 Google Search Grounding 联网搜索、多模态生图与视频分析工具<br>· 设置卡片挂载于共享页「<b>API中转</b>」（order 30，Tab: Antigravity）</td>
+      <td><b>Antigravity 全套权益接入</b><br>· Google Antigravity 私有能力包：Gemini 2.5/3.1/3.7、Claude 3.5/3.7 与 GPT-OSS 原生模型接入<br>· 突破 127.0.0.1 严格回环限制，支持全网卡监听（0.0.0.0）与远程手动授权回调换票<br>· 搭载 Google Search Grounding 联网搜索、多模态生图与视频分析工具<br>· 配置卡片挂在「<b>插件</b>」页本插件的配置页（<code>plugins.row.config</code>，key <code>@lynn123411/dsh-antigravity-auth#antigravity-auth</code>）</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-antigravity-auth</code></td>
     </tr>
     <tr>

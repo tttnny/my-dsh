@@ -5,8 +5,8 @@ import { chatPresentation } from './chat/presentation.ts';
 import { ensureAssistantStyles } from './chat/styles.ts';
 import { bindRowCopy } from './locales.ts';
 // Type-only, erased from the bundle: the renderer augments Context with the
-// `slots` service the shared 「阅读体验」 page shell consumes, and the settings
-// contract declares the `settings.section` slot its page component renders into.
+// `slots` service the keyed seats consume, and the settings contract declares
+// the `configForms` service the card's host form is reached through.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
 
@@ -14,16 +14,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
 export const name = 'dsh-chat-translate';
 
 /**
- * Declared services: slots for the keyed assistant-row takeover, the shared
- * 「阅读体验」 settings page (page claim plus the card registration) and the
- * composer dock pill; configForms for this plugin's own configuration form
- * plus the host `ui-chat` entry whose `transcriptView` field drives the
- * reasoning-row presentation policy; the remote + remote.credentials pair for
- * the credentials Remote namespace; and locale for the card's own dictionary.
- * The runtime withholds any service not declared here; `locale` is declared
- * rather than sampled because `ctx.get('locale')` at apply time can beat the
- * locale plugin's `provide`, which silently left the card's dictionary
- * unregistered.
+ * Declared services: slots for the keyed assistant-row takeover, this plugin's
+ * configuration page on the **Plugins** page, and the composer dock pill;
+ * configForms for this plugin's own configuration form plus the host `ui-chat`
+ * entry whose `transcriptView` field drives the reasoning-row presentation
+ * policy; the remote + remote.credentials pair for the credentials Remote
+ * namespace; and locale for the card's own dictionary. The runtime withholds
+ * any service not declared here; `locale` is declared rather than sampled
+ * because `ctx.get('locale')` at apply time can beat the locale plugin's
+ * `provide`, which silently left the card's dictionary unregistered.
  */
 export const inject = ['slots', 'configForms', 'remote', 'remote.credentials', 'locale'];
 
@@ -41,8 +40,8 @@ interface ClientContext {
 
 /**
  * Mount the assistant-row takeover (keyed `conversation.chat.node` /
- * `assistant-step`), the settings UI card inside the shared reading-settings
- * page, and the translation toggle in the composer dock.
+ * `assistant-step`), this plugin's configuration page on the **Plugins** page,
+ * and the translation toggle in the composer dock.
  * @param ctx - DSH browser client context.
  */
 export function apply(ctx: ClientContext): void {
@@ -82,8 +81,8 @@ export function apply(ctx: ClientContext): void {
     return () => chatPresentation.detach();
   }, 'dsh-chat-translate: chat presentation source');
 
-  // 3. Join the shared 「阅读体验」 settings page (claim it, or register a card into it)
-  ctx.effect(() => setupSettingsUi(ctx), 'dsh-chat-translate: settings section');
+  // 3. This plugin's configuration page on the host's **Plugins** page.
+  ctx.effect(() => setupSettingsUi(ctx), 'dsh-chat-translate: plugins page config');
 
   // 4. 「译」开关：输入框下方那一行，与设置页总开关同一个 enabled
   ctx.effect(() => setupComposerToggle(ctx), 'dsh-chat-translate: composer dock toggle');

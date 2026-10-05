@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-ask-user-grilling",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "description": "Grilling-round question tool: puts the whole round of questions into the conversation as an interactive form and ends the turn there — the user answers it in the native composer and their next message carries the answers back. Its browser half lays that form flat in the transcript (no collapse row, no card shell) with forced multi-select, recommended options pre-checked, per-question free text, detail markdown, an import-to-composer button, an unsent-content reminder, and read-only once the round is over.",
   "type": "module",
   "main": "lib/index.js",
@@ -8,12 +8,16 @@
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "locale",
+    "assets"
   ],
   "license": "MIT",
   "dsh": {
@@ -53,5 +57,6 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "icon": "./assets/icon.svg"
 }

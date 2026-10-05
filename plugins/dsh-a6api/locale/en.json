@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "A6API",
+    "description": "Registers the A6API gateway as a native DSH model provider, with its models, account balance and merchant routes managed on this plugin's own page."
+  }
+}

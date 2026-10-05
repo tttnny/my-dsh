@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "AgentRouter relay",
+    "description": "One model route carries both AgentRouter endpoints, switched with a single setting."
+  }
+}

@@ -41,7 +41,12 @@ function bench(isLoopback = true) {
       },
     },
     slots: {
-      inject(_name: string, register: () => () => void) { disposers.push(register()) },
+      inject(_name: string, register: () => () => void) {
+        const dispose = register()
+        disposers.push(dispose)
+        // The kernel's `slots.inject` returns the declaration's own disposer.
+        return () => { dispose() }
+      },
       register(options: Record<string, unknown>, component: unknown) {
         const record = { options, component }
         slots.push(record)
@@ -65,6 +70,12 @@ function bench(isLoopback = true) {
       get(entryId: string) {
         entries.push(entryId)
         return scope
+      },
+      // The page contribution is gated on the Host serving this bundle's
+      // namespaces; the bench answers as served so the registration path runs
+      // as in production.
+      whileServed(namespaces: readonly string[], register: () => unknown) {
+        return register()
       },
     },
     get(service: string) {
@@ -102,10 +113,13 @@ describe('Antigravity client apply', () => {
     const b = bench()
 
     expect(b.slots.map(record => record.options)).toEqual([
-      expect.objectContaining({ name: 'settings.section', id: 'relay', order: 120 }),
-      expect.objectContaining({ name: 'relay.settings.item', id: 'antigravity-auth', order: 30 }),
+      expect.objectContaining({
+        name: 'plugins.row.config',
+        key: '@lynn123411/dsh-antigravity-auth#antigravity-auth',
+        locale: 'settings.antigravityAuth',
+      }),
     ])
-    const settings = b.slots.find(s => s.options.id === 'antigravity-auth')
+    const settings = b.slots.find(s => s.options.key === '@lynn123411/dsh-antigravity-auth#antigravity-auth')
     const props = (settings?.options.inject as (() => { rpc: { status: () => Promise<unknown> }; t: (key: AntigravityAuthKey) => string; masterScope: unknown }) | undefined)?.()
     await props?.rpc.status()
     expect(b.call).toHaveBeenCalledWith('/api', 'antigravity-auth/status', {}, undefined)
@@ -126,8 +140,10 @@ describe('Antigravity client apply', () => {
     const b = bench(false)
 
     expect(b.slots.map(record => record.options)).toEqual([
-      expect.objectContaining({ name: 'settings.section', id: 'relay', order: 120 }),
-      expect.objectContaining({ name: 'relay.settings.item', id: 'antigravity-auth', order: 30 }),
+      expect.objectContaining({
+        name: 'plugins.row.config',
+        key: '@lynn123411/dsh-antigravity-auth#antigravity-auth',
+      }),
     ])
     expect(b.listeners.size).toBe(1)
     expect(b.dictionaries.size).toBe(1)

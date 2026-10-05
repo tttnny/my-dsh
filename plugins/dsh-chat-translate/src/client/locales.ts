@@ -1,4 +1,4 @@
-/** Locale bundles for the chat-translate card inside the shared 「阅读体验」 page. */
+/** Locale bundles for the chat-translate card on the DSH Plugins page. */
 
 /** Dictionary namespace owned by this plugin's settings card. */
 export const NS = 'settings.chatTranslate';
@@ -9,7 +9,6 @@ export const NS = 'settings.chatTranslate';
  * inline technical samples rendered by `withSamples` at the call site.
  */
 export const zh = {
-  pageNav: '阅读体验',
   title: '正文翻译',
 
   masterTitle: '翻译总开关',
@@ -65,7 +64,6 @@ export type ChatTranslateLocaleKey = keyof typeof zh;
 
 /** English copy; the same key set as {@link zh}. */
 export const en: Record<ChatTranslateLocaleKey, string> = {
-  pageNav: 'Reading',
   title: 'Reply translate',
 
   masterTitle: 'Translation master switch',

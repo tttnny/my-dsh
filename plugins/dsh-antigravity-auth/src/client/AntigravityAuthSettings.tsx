@@ -9,6 +9,7 @@ import {
   StateDot,
   Switch,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { AntigravityAuthRpcClient } from '../rpc-contract.ts'
 import type { QuotaStatusView } from '../quota.ts'
@@ -25,15 +26,35 @@ import type {
 import type { AntigravityAuthKey } from './locales.ts'
 import { ensureSettingsStyles } from './styles.ts'
 
-export interface AntigravityAuthSettingsProps {
+/**
+ * This registration's inject face: the business dependencies the card needs,
+ * declared at the register site. The runtime `view` share is NOT part of it —
+ * the page supplies that, so `inject` must not claim to provide it.
+ */
+export interface AntigravityAuthSettingsFace {
+  /** Loopback RPC face the card's status, login and quota actions call. */
   rpc: AntigravityAuthRpcClient
+  /** Localized copy bound to this plugin's locale namespace. */
   t: (key: AntigravityAuthKey) => string
+  /** Connection-reset subscription shared with the client half. */
   subscribe: (listener: () => void) => () => void
+  /** Master-switch configuration form (Host entry `antigravity-auth`). */
   masterScope?: ConfigForm<AntigravityMasterSettings>
+  /** Web Search configuration form (Host entry `antigravity-search`). */
   searchScope?: ConfigForm<AntigravitySearchSettings>
+  /** Image configuration form (Host entry `antigravity-image`). */
   imageScope?: ConfigForm<AntigravityImageSettings>
+  /** Video configuration form (Host entry `antigravity-video`). */
   videoScope?: ConfigForm<AntigravityVideoSettings>
 }
+
+/**
+ * Props of the card's `plugins.row.config` seat: the renderer-bound runtime
+ * share (`view: 'summary' | 'page'`, plus the page's own `form` when it has
+ * one) intersected with this registration's inject face.
+ */
+export type AntigravityAuthSettingsProps =
+  PropsRuntime<'plugins.row.config'> & InjectFace<AntigravityAuthSettingsFace>
 
 type LoadState = 'loading' | 'ready' | 'error'
 type BooleanSettings = { readonly enabled: boolean }
@@ -56,8 +77,23 @@ function useUnmountSignal(): () => AbortSignal {
   return useCallback(() => controller.current.signal, [])
 }
 
-/** One navigable settings section; credentials remain Host-only and actions use typed RPC. */
-export function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, searchScope, imageScope, videoScope }: AntigravityAuthSettingsProps): ReactNode {
+/**
+ * This bundle's own configuration page inside the DSH **Plugins** page.
+ *
+ * The host's Plugins page owns the chrome — icon, title and crumb — and asks a
+ * `plugins.row.config` entry for `page` (this card) or `summary` (the one-liner
+ * a row shows when its package declares no description). The card keeps its own
+ * sections, controls and order, so the move off the Settings page changed where
+ * it is reached from, not what it does.
+ *
+ * @param props - renderer-bound seat of the `plugins.row.config` slot: the view
+ * asked for plus this plugin's RPC and configuration faces.
+ * @returns The card element, or the row's one-liner.
+ */
+export function AntigravityAuthSettings({ view, rpc, t, subscribe, masterScope, searchScope, imageScope, videoScope }: AntigravityAuthSettingsProps): ReactNode {
+  // The row shows this when its package declares no description of its own; the
+  // page title is the Plugins page's, so it is not repeated here.
+  if (view === 'summary') return t('title')
   const [status, setStatus] = useState<AntigravityStatusView | null>(null)
   const masterSettings = useCapabilitySettings(masterScope)
   const searchSettings = useCapabilitySettings(searchScope)
@@ -278,17 +314,16 @@ export function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, search
   const isConfigured = status?.login.configured === true
 
   return (
-    <section className="agy-settings" data-plugin="dsh-antigravity-auth" aria-labelledby="antigravity-auth-title">
+    <section className="agy-settings" data-plugin="dsh-antigravity-auth">
       <header className="agy-bundle-header">
         <div>
-          <div className="agy-title-line">
-            <h1 id="antigravity-auth-title" className="agy-bundle-title">{t('title')}</h1>
-            {isConfigured ? (
+          {isConfigured ? (
+            <div className="agy-title-line">
               <span className="agy-status" role="status" aria-label={masterEnabled ? t('ready') : t('masterPaused')}>
                 <StateDot state={masterEnabled ? 'done' : 'idle'} size={8} />
               </span>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           <p className="agy-bundle-intro">{t('intro')}</p>
         </div>
       </header>

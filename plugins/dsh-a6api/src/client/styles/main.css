@@ -26,12 +26,6 @@
   gap: 4px;
 }
 
-.dsh-a6-main-title {
-  font: var(--dsw-font-l-20);
-  color: var(--dsw-alias-label-primary);
-  margin: 0;
-}
-
 .dsh-a6-main-subtitle {
   font: var(--dsw-font-xs-13);
   color: var(--dsw-alias-label-secondary);

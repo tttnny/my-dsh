@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import {
   Button,
   IconCloseOutlineRegular,
@@ -20,7 +20,25 @@ import { ModelCatalogPanel } from './ModelCatalogPanel.js';
 
 type TabKey = 'models' | 'catalog' | 'account' | 'config';
 
-export const A6ApiSettingsPanel: React.FC<PropsLocale<typeof NS>> = ({ t }) => {
+/**
+ * This plugin's own configuration page inside the host's **Plugins** page.
+ *
+ * The Plugins page owns the chrome — icon, title, crumb — and asks a
+ * `plugins.row.config` entry for `page` (this card) or `summary` (the row's
+ * one-liner). The card keeps its own tabs, badges and section order, so moving
+ * the entry off the Settings page changed where it is reached from, not what it
+ * does.
+ *
+ * @param props - renderer-bound seat of the `plugins.row.config` slot: the view
+ * asked for plus the `t` seat its `locale: NS` registration injects.
+ * @returns The card element, or the row's one-liner.
+ */
+export const A6ApiSettingsPanel: React.FC<
+  PropsRuntime<'plugins.row.config'> & PropsLocale<typeof NS>
+> = (props) => {
+  const { t } = props;
+  // 行摘要：宿主在一行没有自己的描述时用这段文本兜底；页面标题由宿主插件页负责，不在这里重画。
+  if (props.view === 'summary') return t('subtitle');
   const [state, setState] = useState<StoreState>(store.getState());
   const [activeTab, setActiveTab] = useState<TabKey>('models');
   const [filterMode, setFilterMode] = useState<'all' | 'enabled' | 'probed'>('all');
@@ -84,10 +102,9 @@ export const A6ApiSettingsPanel: React.FC<PropsLocale<typeof NS>> = ({ t }) => {
 
   return (
     <div className="dsh-a6-container">
-      {/* 1. Header Title & Description */}
+      {/* 1. Subtitle & live badges（页面标题/图标/面包屑由宿主插件页负责，这里不重画） */}
       <div className="dsh-a6-main-header">
         <div className="dsh-a6-header-text">
-          <h2 className="dsh-a6-main-title">{t('heading')}</h2>
           <p className="dsh-a6-main-subtitle">{t('subtitle')}</p>
         </div>
 

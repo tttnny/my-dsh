@@ -8,7 +8,7 @@
  * `@deepseek-ai/cordis` (src/reflect.ts). `ctx.get(name)` stays non-throwing.
  *
  * 1.3.0 read `ctx.locale` without declaring `inject: ['locale']`, so the client
- * apply threw and the plugin never reached the shared settings page. A fake
+ * apply threw and the plugin never reached its configuration page. A fake
  * context that carries every service as a plain property cannot see that bug,
  * which is why the guard is modelled here instead of stubbed away.
  *
@@ -93,9 +93,6 @@ const formLookups = []
 const servedWatches = []
 const errors = []
 
-/** Set by the election case: another participant already holds the shared page. */
-let existingSections = []
-
 /** Client shape of `ConfigForm<T>`: the per-entry read/write face of the config. */
 let formSubscribes = 0
 const form = {
@@ -135,7 +132,7 @@ const services = {
       registrations.push(rec)
       return rec.dispose
     },
-    entries: key => (key === 'settings.section' ? existingSections : []),
+    entries: () => [],
   },
   locale: { register: ns => { locales.push(ns); return () => {} }, bind: ns => key => `${ns}:${key}` },
   // `whileServed` runs its registration once one of the namespaces is in the
@@ -207,19 +204,21 @@ try {
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 
-const page = registrations.find(r => r.name === 'settings.section')
-check('shared reading page claimed', page?.id === 'reading')
-check('shared page sits at the reading order', page?.order === 110)
-check('shared page declares its card slot', JSON.stringify(page?.children) === '["reading.settings.item"]')
-
-const card = registrations.find(r => r.name === 'reading.settings.item')
-check('card registered on the shared page slot', card !== undefined)
-check('card keyed by the Host settings namespace', card?.id === 'dsh-chat-translate')
-check('card ordered after the other participants', card?.order === 30)
-check('card uses this plugin locale namespace', card?.locale === 'settings.chatTranslate')
+// The configuration page lives on the host's Plugins page: one row of one
+// bundle, addressed by `<bundle package name>#<row id>`.
+const rowConfig = registrations.find(r => r.name === 'plugins.row.config')
+check('configuration page registered on the Plugins page row slot', rowConfig !== undefined)
+check('row key is bundle name # row id',
+  rowConfig?.key === '@lynn123411/dsh-chat-translate#dsh-chat-translate')
+check('row id equals the Host settings namespace the form is bound to', formLookups.includes('dsh-chat-translate'))
+check('configuration page uses this plugin locale namespace', rowConfig?.locale === 'settings.chatTranslate')
+check('configuration page exposes a component', typeof rowConfig?.component === 'function')
+check('configuration page contributed through slots.inject',
+  injects.includes('slot:plugins.row.config'))
+check('no settings-page section is registered any more',
+  registrations.every(r => r.name !== 'settings.section'))
 
 check('locale dictionaries registered', locales.includes('settings.chatTranslate'))
-check('configuration form read for this plugin entry', formLookups.includes('dsh-chat-translate'))
 check('page gated on the Host serving this plugin entry', JSON.stringify(servedWatches[0]) === '["dsh-chat-translate"]')
 check('store bound to the shared configuration form', formSubscribes > 0)
 
@@ -253,17 +252,17 @@ check('presentation defaults to standard policy', injected?.hooks?.presentation?
 // 「工作细节」模式跟随宿主：apply 读 ui-chat 的配置面。
 check('chat presentation reads the ui-chat config form', formLookups.includes('ui-chat'))
 
-// Election case: another participant already holds the page.
+// The configuration page is the plugin's own: it registers whether or not any
+// other plugin contributes one, and its registration is independent of the
+// assistant-row takeover and the composer dock.
 registrations.length = 0
 errors.length = 0
 formLookups.length = 0
-existingSections = [{ options: { id: 'reading' } }]
 exported.apply(makeCtx(exported.inject ?? []))
-check('page is not claimed twice', registrations.every(r => r.name !== 'settings.section'))
-check('card still registers beside the other participant', registrations.some(r => r.name === 'reading.settings.item'))
-check('dock registers independently of the page election', registrations.some(r => r.name === 'conversation.composer.dock'))
-check('takeover registers independently of the page election', registrations.some(r => r.name === 'conversation.chat.node'))
-check('election path stays error-free', errors.length === 0)
+check('row config registers', registrations.some(r => r.name === 'plugins.row.config'))
+check('dock registers independently of the row config', registrations.some(r => r.name === 'conversation.composer.dock'))
+check('takeover registers independently of the row config', registrations.some(r => r.name === 'conversation.chat.node'))
+check('independent path stays error-free', errors.length === 0)
 
 // Disposal: the dock contribution carries a disposer that tears its registration down.
 registrations.length = 0

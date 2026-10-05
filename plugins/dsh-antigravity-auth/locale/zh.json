@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Antigravity 接入",
+    "description": "接入 Google Antigravity 的私有能力：Gemini、Claude 与 GPT-OSS 模型，外加联网搜索、生图与视频分析。"
+  }
+}

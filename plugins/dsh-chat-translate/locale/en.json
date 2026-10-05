@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Chat translate",
+    "description": "Rewrites assistant reply prose into natural Simplified Chinese, leaving code blocks and thinking chains untouched."
+  }
+}

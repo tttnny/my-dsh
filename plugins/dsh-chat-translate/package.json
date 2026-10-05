@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-chat-translate",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "Assistant reply-body translation for the DeepSeek Harness Web UI (OpenAI-compatible channel)",
   "license": "MIT",
   "author": "lynn123411",
@@ -38,6 +38,8 @@
       "default": "./lib/client.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -48,13 +50,16 @@
       "platform": "web",
       "immediately": true,
       "inject": [
-        "@deepseek-ai/dsh-client-ui-primitives"
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ]
     }
   },
   "files": [
     "lib",
     "docs",
+    "assets",
+    "locale",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -67,16 +72,16 @@
   },
   "engines": {
     "node": "^22.19 || >=24",
-    "dsh": ">=0.1.7-rc.2"
+    "dsh": ">=0.2.0-rc.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-client-connection": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-home-paths": ">=0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.2",
     "@deepseek-ai/schemastery": "^3.18.4",
     "@eslint/js": "^9.30.0",
     "@types/node": "^22.19.0",
@@ -85,15 +90,17 @@
     "jsdom": "^26.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.0-rc.2"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-home-paths": ">=0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-client-ui-primitives": {
       "optional": true
     }
-  }
+  },
+  "icon": "./assets/icon.svg"
 }

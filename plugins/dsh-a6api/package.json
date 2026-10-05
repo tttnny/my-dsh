@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-a6api",
-  "version": "1.5.16",
+  "version": "1.6.0",
   "description": "A6API 多模型聚合站接入插件：原生 LLM 提供商注册、账户实时余额与价格波动监控、Token 白名单同步、商户线路探测与全景指标卡片",
   "license": "MIT",
   "author": "lynn123411",
@@ -28,6 +28,7 @@
   },
   "type": "module",
   "main": "lib/index.js",
+  "icon": "./assets/icon.svg",
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
@@ -38,6 +39,8 @@
       "default": "./lib/client.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -49,12 +52,15 @@
       "immediately": true,
       "inject": [
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-primitives"
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ]
     }
   },
   "files": [
     "lib",
+    "assets",
+    "locale",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -69,13 +75,14 @@
   },
   "engines": {
     "node": "^22.19 || >=24",
-    "dsh": ">=0.1.7-rc.2"
+    "dsh": ">=0.2.0-rc.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-home-paths": ">=0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.2",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.18",
     "esbuild": "^0.25.0",
@@ -85,8 +92,8 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-home-paths": ">=0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

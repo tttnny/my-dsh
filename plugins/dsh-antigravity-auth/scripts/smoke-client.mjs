@@ -52,7 +52,6 @@ const injects = []
 const locales = []
 const errors = []
 
-let existingSections = []
 const cards = []
 
 const services = () => ({
@@ -76,24 +75,26 @@ const services = () => ({
         component,
       }
       registrations.push(record)
-      if (options.name === 'relay.settings.item') cards.push({ options: record })
+      if (options.name === 'plugins.row.config') cards.push({ options: record })
       return () => {}
     },
-    entries: (key) => {
-      if (key === 'settings.section') return existingSections
-      if (key === 'relay.settings.item') return cards
-      return []
-    },
-    getVersion: () => cards.length + existingSections.length,
+    entries: () => [],
+    getVersion: () => cards.length,
     subscribe: () => () => {},
   },
   locale: {
     register: (ns) => { locales.push(ns); return () => {} },
-    bind: () => (key) => key === 'tabNav' ? 'Antigravity' : key,
+    bind: () => (key) => key,
     getSnapshot: () => ({ revision: 0 }),
     subscribe: () => () => {},
   },
-  configForms: { get: (entryId) => { injects.push(`get:${entryId}`); return scope } },
+  configForms: {
+    get: (entryId) => { injects.push(`get:${entryId}`); return scope },
+    // The page contribution is gated on the Host serving this bundle's
+    // namespaces; the fake answers as served so the registration path runs as
+    // in production.
+    whileServed: (namespaces, register) => register(new Set(namespaces)),
+  },
   connection: { isLoopback: false, rpc: { call: async () => ({ ok: true, value: {} }) } },
 })
 
@@ -149,21 +150,21 @@ try {
   console.log(`       ${error.message}`)
 }
 
-const page = registrations.find(r => r.name === 'settings.section')
-check('shared relay page claimed', page?.id === 'relay')
-check('shared page sits at order 120', page?.order === 120)
-check('shared page declares its child slot', JSON.stringify(page?.children) === '["relay.settings.item"]')
+// The configuration page lives on the host's Plugins page: one row of one
+// bundle, addressed by `<bundle package name>#<row id>`.
+const card = registrations.find(r => r.name === 'plugins.row.config')
+check('configuration page registered on the Plugins page row slot', card !== undefined)
+check('row key is bundle name # row id',
+  card?.key === '@lynn123411/dsh-antigravity-auth#antigravity-auth')
+check('configuration page uses this bundle locale namespace', card?.locale === 'settings.antigravityAuth')
+check('configuration page exposes a component', typeof card?.component === 'function')
+check('no settings-page section is registered any more',
+  registrations.every(r => r.name !== 'settings.section'))
 
-const card = registrations.find(r => r.name === 'relay.settings.item')
-check('antigravity card registered on relay.settings.item', card !== undefined)
-check('card id is antigravity-auth', card?.id === 'antigravity-auth')
-check('card order is 30', card?.order === 30)
-check('card carries tab label thunk', typeof card?.label === 'function' && card.label() === 'Antigravity')
-
-const pageFace = typeof page?.inject === 'function' ? page.inject() : undefined
-const tabs = pageFace?.relayTabs?.getSnapshot?.() ?? []
-check('page exposes one tab per registered card', tabs.length === 1 && tabs[0]?.id === 'antigravity-auth')
-check('tab label resolves to Antigravity', tabs[0]?.label === 'Antigravity')
+const face = typeof card?.inject === 'function' ? card.inject() : undefined
+check('card inject face carries the RPC client', face?.rpc !== undefined)
+check('card inject face carries all four config scopes',
+  ['masterScope', 'searchScope', 'imageScope', 'videoScope'].every(name => face?.[name] !== undefined))
 
 check('locale dictionaries registered', locales.includes('settings.antigravityAuth'))
 check('reads the master switch form', injects.includes('get:antigravity-auth'))
@@ -172,20 +173,20 @@ check('reads every capability form', ['antigravity-search', 'antigravity-image',
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 
-// Election case: another participant (e.g. a6api) already claimed the page
+// The page is this bundle's own: it registers whether or not any other bundle
+// contributes one, and re-applying registers it exactly once more.
 registrations.length = 0
 cards.length = 0
 errors.length = 0
-existingSections = [{ options: { id: 'relay' } }]
 try {
   exported.apply(makeCtx('second', exported.inject ?? []))
 } catch (error) {
-  check('apply() survives the inject guard (election)', false)
+  check('apply() survives the inject guard (second mount)', false)
   console.log(`       ${error.message}`)
 }
-check('page is not claimed twice', registrations.every(r => r.name !== 'settings.section'))
-check('card still registers into relay.settings.item', registrations.some(r => r.name === 'relay.settings.item' && r.id === 'antigravity-auth'))
-check('election path stays error-free', errors.length === 0)
+check('row config registers on every mount',
+  registrations.filter(r => r.name === 'plugins.row.config').length === 1)
+check('second mount stays error-free', errors.length === 0)
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`)
 process.exit(failures.length === 0 ? 0 : 1)

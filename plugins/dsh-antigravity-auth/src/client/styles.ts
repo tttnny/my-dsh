@@ -34,12 +34,6 @@ export const SETTINGS_CSS = `
   gap: 8px;
 }
 
-.agy-bundle-title {
-  margin: 0;
-  font: var(--dsw-font-l-20);
-  color: var(--dsw-alias-label-primary);
-}
-
 /* Layout wrapper for the decorative StateDot; the name lives on role="status". */
 .agy-status {
   display: inline-flex;

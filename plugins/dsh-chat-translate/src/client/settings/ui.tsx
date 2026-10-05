@@ -9,8 +9,8 @@ import {
   type ClientSettingsState,
 } from './store.ts';
 import { SETTINGS_CSS } from './styles.ts';
-import { claimReadingSettingsPage, READING_ITEM_SLOT } from '../reading-settings-page.tsx';
-import { NS, en, zh, type ChatTranslateLocaleKey } from '../locales.ts';
+import { NS, en, zh } from '../locales.ts';
+import { ROW_CONFIG_KEY, ROW_CONFIG_SLOT, setupPluginPage } from './plugin-page.ts';
 let stylesInjected = false;
 function ensureSettingsStyles(): void {
   if (stylesInjected || typeof document === 'undefined') return;
@@ -41,18 +41,25 @@ function withSamples(text: string, samples: Record<string, string>): React.React
 }
 
 /**
- * Chat-translate's card inside the shared 「阅读体验」 settings page. The card
- * keeps its own chrome (title rows, switches, credential form); the shared page
- * only stacks the participants' cards.
- * @param props - renderer-bound seat of the `reading.settings.item` slot plus
- * the `t` seat its `locale: NS` registration injects.
- * @returns The card element.
+ * Chat-translate's own configuration page inside the DSH **Plugins** page.
+ *
+ * The host's Plugins page owns per-plugin configuration: it draws the icon, the
+ * title and the crumb, and asks the entry for `page` (the form) or `summary`
+ * (the one-liner a row shows when its package declares no description). The card
+ * keeps its own chrome — the switches, the credential form, the section order —
+ * so the move from the Settings page changed where it is reached from, not what
+ * it does.
+ * @param props - renderer-bound seat of the `plugins.row.config` slot: the view
+ * asked for plus the `t` seat its `locale: NS` registration injects.
+ * @returns The card element, or the one-liner.
  */
 export function TidySettingsPanel(
-  props: PropsRuntime<'reading.settings.item'> & PropsLocale<typeof NS>
-): React.ReactElement {
-  ensureSettingsStyles();
+  props: PropsRuntime<'plugins.row.config'> & PropsLocale<typeof NS>
+): React.ReactElement | string {
   const { t } = props;
+  // The row shows this when its package declares no description of its own.
+  if (props.view === 'summary') return t('title');
+  ensureSettingsStyles();
 
   const [state, setState] = useState<ClientSettingsState>(() => settingsStore.getState());
   const [testing, setTesting] = useState<{ channel: string; running: boolean; ok?: boolean; message?: string } | null>(null);
@@ -252,9 +259,8 @@ export function TidySettingsPanel(
 
 /**
  * Bind the settings store to this plugin's own configuration form and the
- * credentials Remote API, then join the shared 「阅读体验」 settings page:
- * whichever participant activates first claims the page, everyone registers a
- * card into its child slot.
+ * credentials Remote API, then contribute this plugin's configuration page to
+ * the DSH **Plugins** page.
  * @param ctx - DSH browser client context.
  */
 export function setupSettingsUi(ctx: any): void {
@@ -285,54 +291,28 @@ export function setupSettingsUi(ctx: any): void {
       'dsh-chat-translate: locale dictionaries'
     );
   }
-  const t = locale && typeof locale.bind === 'function'
-    ? locale.bind(NS)
-    // Key-aware fallback: one fixed label for every key would dress the shared
-    // page's tab in the wrong text whenever the locale service is not yet
-    // there, so the fallback answers each key with its own zh value.
-    : (key: ChatTranslateLocaleKey): string => zh[key] ?? key;
-
-  try {
-    const slots = ctx.slots;
-    if (!slots || typeof slots.inject !== 'function') return;
-
-    // 共享「阅读体验」设置页：本插件与 dsh-smooth-stream
-    // 共用一页，内核不允许 settings.section 的同一 id 被注册两次、也不允许子 slot
-    // 被声明两次，因此各参与者携带同一份页壳、先到先得当选：当选者注册页面并声明
-    // reading.settings.item 子 slot，未当选者只把卡片注册进该子 slot 等页面出现。
-    // 共享页壳需要真 ctx：它用 ctx.slots 读注册表，并用 ctx.get('locale') 在语言
-    // 切换时重读 tab 标签（可选服务，必须走 ctx.get，不能用 ctx.locale）。
-    //
-    // 整页（含本插件那张卡片）只在宿主真的服务本插件的配置条目时存在：
-    // `whileServed` 是 0.1.7 的正式契约，没装/没加载宿主半边的部署不会留下页的痕迹。
-    ctx.effect(
-      () => configForms.whileServed([SETTINGS_NAMESPACE], () => {
-        const offPage = slots.inject('settings.section', () =>
-          claimReadingSettingsPage(ctx, () => t('pageNav'), NS)
-        );
-        const offCard = slots.inject(READING_ITEM_SLOT, () =>
-          slots.register(
-            {
-              name: READING_ITEM_SLOT,
-              // id = 本插件的配置条目 id（= profile entry id = 设置命名空间）
-              id: SETTINGS_NAMESPACE,
-              // 卡片在共享页里的顺序：丝滑流式 10、吸顶提示 20、聊天翻译 30
-              order: 30,
-              // 共享页按此标签渲染 tab
-              label: () => t('title'),
-              locale: NS,
-            },
-            TidySettingsPanel
-          )
-        );
-        return () => {
-          offCard();
-          offPage();
-        };
-      }),
-      'dsh-chat-translate: shared reading page'
-    );
-  } catch (err) {
-    console.warn('[dsh-chat-translate] Failed to inject settings section:', err);
-  }
+  // This plugin's configuration lives on the host's **Plugins** page, which
+  // declares `plugins.row.config` only while its own entry is mounted; a
+  // deployment without that page leaves no trace. `whileServed` additionally
+  // ties the contribution to the Host actually serving our configuration entry,
+  // so a profile missing this plugin's Host half shows no 配置 control either.
+  ctx.effect(
+    () => configForms.whileServed([SETTINGS_NAMESPACE], () => setupPluginPage(
+      ctx.slots,
+      () => ctx.slots.register(
+        {
+          name: ROW_CONFIG_SLOT,
+          // `<bundle package name>#<row id>`: the key the Plugins page
+          // dispatches this entry by, and the one whose presence gives the row
+          // its 配置 control.
+          key: ROW_CONFIG_KEY,
+          // The page draws the title, icon and crumb itself; the card keeps its
+          // own chrome, controls and section order.
+          locale: NS,
+        },
+        TidySettingsPanel
+      )
+    )),
+    'dsh-chat-translate: plugins page config'
+  );
 }

@@ -1,11 +1,13 @@
 {
   "name": "@lynn123411/dsh-web-auth-url",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "把当前 Web 实例的带 token 访问地址交给模型与 shell：托管 DSH_WEB_AUTH_URL（每次 shell 调用即时解析，跟随重启后的 token 轮换），并贡献一段紧随 web-surface 的提示词说明 cookie jar 用法，secret 不进提示词与 transcript。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
@@ -13,7 +15,9 @@
     "lib",
     "scripts",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "locale",
+    "assets"
   ],
   "license": "MIT",
   "keywords": [
@@ -46,11 +50,11 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-shell-env": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-system-prompt": ">=0.1.7-rc.2"
+    "@deepseek-ai/dsh-shell-env": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.0-rc.2"
   },
   "engines": {
-    "dsh": ">=0.1.7-rc.2",
+    "dsh": ">=0.2.0-rc.2",
     "node": "^22.19 || >=24"
   },
   "publishConfig": {
@@ -60,5 +64,6 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
-  }
+  },
+  "icon": "./assets/icon.svg"
 }

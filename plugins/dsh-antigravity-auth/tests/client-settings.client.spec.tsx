@@ -122,7 +122,7 @@ function renderWithMaster(enabled: boolean, copy: typeof en = en) {
   const image = new ReceiverBoundConfigForm<AntigravityImageSettings>({ enabled: true, model: 'antigravity-gemini-3.1-flash-image', n: 1 })
   const video = new ReceiverBoundConfigForm<AntigravityVideoSettings>({ enabled: true, model: 'antigravity-gemini-3.7-flash', maxBytes: 1024 })
   const view = render(
-    <AntigravityAuthSettings
+    <AntigravityAuthSettings view="page"
       rpc={rpc}
       t={key => copy[key]}
       subscribe={() => () => {}}
@@ -140,10 +140,10 @@ describe('Antigravity bootstrap settings', () => {
     const rpc = rpcFixture()
     const unsubscribe = vi.fn()
     const { unmount } = render(
-      <AntigravityAuthSettings rpc={rpc} t={key => en[key]} subscribe={() => unsubscribe} />,
+      <AntigravityAuthSettings view="page" rpc={rpc} t={key => en[key]} subscribe={() => unsubscribe} />,
     )
 
-    expect(await screen.findByRole('heading', { name: en.title })).toBeTruthy()
+    expect(await screen.findByText(en.intro)).toBeTruthy()
     expect(screen.queryByLabelText(/token|client secret|endpoint/i)).toBeNull()
     expect(screen.queryByRole('button', { name: /add|switch|rotate/i })).toBeNull()
     expect(screen.getByRole('button', { name: en.login })).toHaveProperty('disabled', false)
@@ -165,7 +165,7 @@ describe('Antigravity bootstrap settings', () => {
     })
 
     render(
-      <AntigravityAuthSettings
+      <AntigravityAuthSettings view="page"
         rpc={rpcFixture()}
         t={key => en[key]}
         subscribe={() => () => {}}
@@ -173,7 +173,7 @@ describe('Antigravity bootstrap settings', () => {
       />,
     )
 
-    expect(await screen.findByRole('heading', { name: en.title })).toBeTruthy()
+    expect(await screen.findByText(en.intro)).toBeTruthy()
   })
 
   it('renders Host-only logout controls', async () => {
@@ -183,7 +183,7 @@ describe('Antigravity bootstrap settings', () => {
       { state: 'logged-in', configured: true },
       { state: 'idle' },
     )
-    render(<AntigravityAuthSettings rpc={rpc} t={key => en[key]} subscribe={() => () => {}} />)
+    render(<AntigravityAuthSettings view="page" rpc={rpc} t={key => en[key]} subscribe={() => () => {}} />)
 
     expect(await screen.findByRole('button', { name: en.logout })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.logout }))
@@ -197,7 +197,7 @@ describe('Antigravity bootstrap settings', () => {
       projectAvailable: false,
       authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?state=abcdef',
     }, true)
-    render(<AntigravityAuthSettings rpc={rpc} t={key => en[key]} subscribe={() => () => {}} />)
+    render(<AntigravityAuthSettings view="page" rpc={rpc} t={key => en[key]} subscribe={() => () => {}} />)
 
     expect(await screen.findByPlaceholderText(en.manualCallbackPlaceholder)).toBeTruthy()
     const input = screen.getByPlaceholderText(en.manualCallbackPlaceholder)
@@ -241,7 +241,7 @@ describe('Antigravity bootstrap settings', () => {
     })
 
     render(
-      <AntigravityAuthSettings
+      <AntigravityAuthSettings view="page"
         rpc={rpc}
         t={key => en[key]}
         subscribe={() => () => {}}
@@ -341,7 +341,7 @@ describe('Antigravity bootstrap settings', () => {
       })
 
       render(
-        <AntigravityAuthSettings
+        <AntigravityAuthSettings view="page"
           rpc={rpc}
           t={key => copy[key]}
           subscribe={() => () => {}}
@@ -355,9 +355,9 @@ describe('Antigravity bootstrap settings', () => {
 
   it('renders the same status shell with Chinese copy', async () => {
     const rpc = rpcFixture()
-    render(<AntigravityAuthSettings rpc={rpc} t={key => zh[key]} subscribe={() => () => {}} />)
+    render(<AntigravityAuthSettings view="page" rpc={rpc} t={key => zh[key]} subscribe={() => () => {}} />)
 
-    expect(await screen.findByRole('heading', { name: zh.title })).toBeTruthy()
+    expect(await screen.findByText(zh.intro)).toBeTruthy()
   })
 
   it('translates descriptions, status, and capability controls when the language changes', async () => {
@@ -369,7 +369,7 @@ describe('Antigravity bootstrap settings', () => {
     const subscribe = () => () => {}
     const master = masterScope(true)
     const { container, rerender } = render(
-      <AntigravityAuthSettings rpc={rpc} t={key => en[key]} subscribe={subscribe} masterScope={master} />,
+      <AntigravityAuthSettings view="page" rpc={rpc} t={key => en[key]} subscribe={subscribe} masterScope={master} />,
     )
 
     expect(await screen.findByRole('status', { name: 'Ready' })).toBeTruthy()
@@ -382,7 +382,7 @@ describe('Antigravity bootstrap settings', () => {
     }
     expect(container.textContent).not.toMatch(/\p{Script=Han}/u)
 
-    rerender(<AntigravityAuthSettings rpc={rpc} t={key => zh[key]} subscribe={subscribe} masterScope={master} />)
+    rerender(<AntigravityAuthSettings view="page" rpc={rpc} t={key => zh[key]} subscribe={subscribe} masterScope={master} />)
 
     expect(await screen.findByRole('status', { name: '就绪' })).toBeTruthy()
     expect(screen.queryByRole('status', { name: 'Ready' })).toBeNull()
@@ -412,7 +412,7 @@ describe('Antigravity bootstrap settings', () => {
       ['failed', { phase: 'failed', configured: false, projectAvailable: false, errorCode: 'project-unavailable' }, en.loginFailed],
     ] as const
     for (const [_name, login, copy] of cases) {
-      const { unmount } = render(<AntigravityAuthSettings rpc={rpcFixture(login, true)} t={key => en[key]} subscribe={() => () => {}} />)
+      const { unmount } = render(<AntigravityAuthSettings view="page" rpc={rpcFixture(login, true)} t={key => en[key]} subscribe={() => () => {}} />)
       expect((await screen.findAllByText(copy)).length).toBeGreaterThan(0)
       unmount()
       document.body.innerHTML = ''
@@ -428,7 +428,7 @@ describe('Antigravity bootstrap settings', () => {
     ['project-protocol-drift', en.projectProtocolDrift],
   ] as const)('renders a safe project discovery state for %s', async (errorCode, copy) => {
     const { unmount } = render(
-      <AntigravityAuthSettings
+      <AntigravityAuthSettings view="page"
         rpc={rpcFixture({ phase: 'failed', configured: false, projectAvailable: false, errorCode }, true)}
         t={key => en[key]}
         subscribe={() => () => {}}
@@ -454,7 +454,7 @@ describe('Antigravity bootstrap settings', () => {
       .mockResolvedValueOnce({ ok: true, value: { status: createStatusView(true, pending) } })
       .mockResolvedValueOnce({ ok: true, value: { status: createStatusView(true, completed) } })
     const rpc = { ...base, status: status as typeof base.status }
-    const { unmount } = render(<AntigravityAuthSettings rpc={rpc} t={key => en[key]} subscribe={() => () => {}} />)
+    const { unmount } = render(<AntigravityAuthSettings view="page" rpc={rpc} t={key => en[key]} subscribe={() => () => {}} />)
 
     await vi.waitFor(() => expect(status).toHaveBeenCalledOnce())
     await vi.advanceTimersByTimeAsync(1_000)
@@ -472,7 +472,7 @@ describe('Antigravity bootstrap settings', () => {
     })
     const unsubscribe = vi.fn()
     const { unmount } = render(
-      <AntigravityAuthSettings
+      <AntigravityAuthSettings view="page"
         rpc={{ status, acknowledgeRisk: vi.fn(), login: vi.fn() } as unknown as AntigravityAuthRpcClient}
         t={key => en[key]}
         subscribe={() => unsubscribe}
@@ -493,10 +493,10 @@ describe('Antigravity bootstrap settings', () => {
       return new Promise<never>(() => {})
     })
     const { unmount } = render(
-      <AntigravityAuthSettings rpc={rpc} t={key => en[key]} subscribe={() => () => {}} />,
+      <AntigravityAuthSettings view="page" rpc={rpc} t={key => en[key]} subscribe={() => () => {}} />,
     )
 
-    await screen.findByRole('heading', { name: en.title })
+    await screen.findByText(en.intro)
     fireEvent.click(screen.getByRole('button', { name: en.login }))
     await waitFor(() => expect(actionSignal).toBeDefined())
 

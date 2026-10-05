@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Model submenu",
+    "description": "Adds a provider level to the composer's model picker: choose a provider first, then one of its models."
+  }
+}

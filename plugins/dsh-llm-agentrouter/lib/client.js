@@ -64,7 +64,6 @@ window.__ModuleLoader__.load({
 		//#region locales
 		/** Simplified Chinese dictionary and key source of truth. */
 		const zh = {
-			pageNav: "API中转",
 			title: "AgentRouter 中转站",
 			description: "选择请求发往的端点。切换后立即生效，无需重启；模型列表不受影响。",
 			cn: "国内端点",
@@ -121,7 +120,6 @@ window.__ModuleLoader__.load({
 		};
 		/** English dictionary checked against the Chinese key set. */
 		const en = {
-			pageNav: "API relay",
 			title: "AgentRouter relay",
 			description: "Which endpoint requests are sent to. A switch applies to the next request; the model list is unaffected.",
 			cn: "Domestic endpoint",
@@ -217,10 +215,18 @@ window.__ModuleLoader__.load({
 		 * The two halves are independent: each reads and writes its own entry's form,
 		 * so a deployment that exposes only one of them still renders the other.
 		 *
-		 * @param {object} props - the injected config forms plus the bound translator.
-		 * @returns {JSX.Element} the card.
+		 * The card is this plugin's page on the host's **Plugins** page, which draws
+		 * the icon, the title and the crumb itself; the card keeps its own chrome,
+		 * controls and section order. It renders no title of its own — a second one
+		 * would simply repeat the page's.
+		 *
+		 * @param {object} props - the injected config forms plus the bound translator,
+		 * and the view the Plugins page asks for (`'summary'` or `'page'`).
+		 * @returns {JSX.Element|string} the card, or the one-liner a summary row shows.
 		 */
-		function EndpointCard({ form, t, routeForm, operations }) {
+		function EndpointCard({ view, form, t, routeForm, operations }) {
+			// The row shows this when its package declares no description of its own.
+			if (view === "summary") return t("title");
 			const snapshot = react.useSyncExternalStore(
 				react.useCallback((listener) => form.subscribe(listener), [form]),
 				() => form.getSnapshot(),
@@ -269,7 +275,6 @@ window.__ModuleLoader__.load({
 				"data-plugin-card": "llm-agentrouter",
 				"aria-busy": snapshot.status === "loading" || pending !== null,
 				children: [
-					jsx.jsx("h3", { children: t("title") }),
 					jsx.jsx("p", { className: "dshAr_lead", children: t("description") }),
 					jsx.jsxs("fieldset", {
 						className: "dshAr_choices",
@@ -928,215 +933,6 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 
-		//#region shared relay settings page shell
-		/**
-		 * The shared 「API中转」 settings page.
-		 *
-		 * Several plugins contribute their configuration to ONE settings page, but the
-		 * kernel cannot declare that page jointly: `settings.section` is a list slot
-		 * that rejects a duplicate `id` at the same priority ("already has an entry
-		 * with id"), and a child slot may be declared exactly once ("slot … is already
-		 * declared"). Composing several cards into one page therefore takes one
-		 * declarer, so every participating plugin carries this same shell and the
-		 * FIRST one to activate claims the page; the others register their card into
-		 * RELAY_ITEM_SLOT and wait for the winner's declaration through
-		 * `slots.inject`. Uninstalling the winner promotes another participant on the
-		 * next boot, so no participant is a fixed owner.
-		 *
-		 * The page renders ONE TAB PER REGISTERED CARD: the tab roster comes from the
-		 * child slot's own registrations (id + `label` + `order`, the same shape the
-		 * kernel's own Plugins page uses for its tabs), and each panel dispatches
-		 * through `renderSlot(RELAY_ITEM_SLOT, {}, { only: id })`. Every panel stays
-		 * mounted but hidden, so a card's local state survives a tab switch.
-		 *
-		 * Keep the runtime body of this region identical to the one in
-		 * `dsh-a6api`'s `src/client/relay-settings-page.js`. Participants own their own
-		 * card component, locale dictionaries, settings namespace and Host half — only
-		 * the page shell is shared, because cross-plugin value imports are forbidden by
-		 * the client bundle purity gate. It needs nothing but `react` on purpose, so
-		 * every participant's build configuration compiles it unchanged.
-		 */
-		/** Page id claimed by the first participating plugin to activate. */
-		const RELAY_PAGE_ID = "relay";
-		/** Sidebar position of the shared page; own plugins start at 110. */
-		const RELAY_PAGE_ORDER = 120;
-		/** The page's one child slot: every participant's card registers here. */
-		const RELAY_ITEM_SLOT = "relay.settings.item";
-		/**
-		 * Tab chrome mirrors the kernel's own settings tabs (`.tabs` / `.tab` in
-		 * `ui-settings-plugins`): tertiary label, 13px, 22px gutter. The marker is the
-		 * ACTIVE TAB'S OWN bottom border and the bar draws no rail of its own — a
-		 * shared underline reads as "every tab is selected".
-		 */
-		const TABLIST_STYLE = {
-			display: "flex",
-			alignItems: "flex-end",
-			gap: "22px",
-			marginTop: "2px",
-			marginBottom: "16px",
-		};
-		const TAB_STYLE = {
-			appearance: "none",
-			background: "transparent",
-			// No border on ANY tab: the marker below is the active tab's own element, so
-			// an inactive tab has nothing that could render a line.
-			border: "none",
-			position: "relative",
-			padding: "7px 1px 11px",
-			cursor: "pointer",
-			font: "var(--dsw-font-xs-13)",
-			color: "var(--dsw-alias-label-tertiary)",
-		};
-		const TAB_ACTIVE_STYLE = Object.assign({}, TAB_STYLE, {
-			color: "var(--dsw-alias-label-primary)",
-		});
-		/** The kernel's own tab marker: a 2px rounded bar under the active label. */
-		const TAB_MARKER_STYLE = {
-			position: "absolute",
-			left: 0,
-			right: 0,
-			bottom: 0,
-			height: "2px",
-			borderRadius: "2px 2px 0 0",
-			background: "var(--dsw-alias-label-primary)",
-		};
-		/**
-		 * Panels stay mounted (hidden) so each card keeps its local state. `display:
-		 * none` is written explicitly because a card's own styles commonly set
-		 * `display: flex` while the section's stylesheet loads after this one.
-		 */
-		const PANEL_STYLE = { margin: 0 };
-		const PANEL_HIDDEN_STYLE = { margin: 0, display: "none" };
-		/** A registration label is a plain string or a thunk re-read per projection. */
-		function readLabel(label) {
-			if (typeof label === "function") return label();
-			return typeof label === "string" ? label : "";
-		}
-		/**
-		 * Build the live tab roster over the child slot's registrations. `locale` is
-		 * read through `ctx.get`: a participant needs it only to re-read localized
-		 * labels on a language switch, and reaching an undeclared service as
-		 * `ctx.locale` would trip the kernel's inject guard. Every participant passes a
-		 * bound translator as its `label` thunk, so the label re-reads the active
-		 * language on each projection.
-		 *
-		 * @param {object} ctx - browser context carrying the slot registry.
-		 * @returns {object} the tab store consumed by the page component.
-		 */
-		function createRelayTabs(ctx) {
-			const locale = ctx.get("locale");
-			let version = -1;
-			let revision = -1;
-			let tabs = [];
-			return {
-				getSnapshot: () => {
-					const nextVersion = ctx.slots.getVersion(RELAY_ITEM_SLOT);
-					const nextRevision = locale === undefined ? 0 : locale.getSnapshot().revision;
-					if (nextVersion === version && nextRevision === revision) return tabs;
-					version = nextVersion;
-					revision = nextRevision;
-					tabs = ctx.slots.entries(RELAY_ITEM_SLOT)
-						.map((entry) => ({
-							id: entry.options.id ?? "",
-							order: entry.options.order ?? 0,
-							label: readLabel(entry.options.label),
-						}))
-						.sort((left, right) => left.order - right.order);
-					return tabs;
-				},
-				subscribe: (listener) => {
-					const offSlots = ctx.slots.subscribe(RELAY_ITEM_SLOT, listener);
-					const offLocale = locale === undefined ? undefined : locale.subscribe(listener);
-					return () => {
-						offSlots();
-						if (offLocale !== undefined) offLocale();
-					};
-				},
-			};
-		}
-		/**
-		 * Page body: one tab per registered card, plus the selected card's panel.
-		 * The shell supplies the section's own seats and `renderSlot` bound to the
-		 * child slot declared at registration time.
-		 *
-		 * @param {object} props - the injected render seat plus the tab roster.
-		 * @returns {JSX.Element|null} the page body.
-		 */
-		function RelaySettingsSection({ renderSlot, relayTabs }) {
-			const tabs = react.useSyncExternalStore(
-				relayTabs.subscribe,
-				relayTabs.getSnapshot,
-				relayTabs.getSnapshot,
-			);
-			const [requested, setRequested] = react.useState(null);
-			const selected = requested !== null && tabs.some((tab) => tab.id === requested)
-				? requested
-				: (tabs.length > 0 ? tabs[0].id : null);
-			if (selected === null) return null;
-			return react.createElement(
-				"div",
-				null,
-				react.createElement(
-					"div",
-					{ role: "tablist", style: TABLIST_STYLE },
-					tabs.map((tab) => react.createElement(
-						"button",
-						{
-							key: tab.id,
-							type: "button",
-							role: "tab",
-							"aria-selected": tab.id === selected,
-							style: tab.id === selected ? TAB_ACTIVE_STYLE : TAB_STYLE,
-							onClick: () => { setRequested(tab.id); },
-						},
-						tab.label,
-						tab.id === selected ? react.createElement("span", { style: TAB_MARKER_STYLE, "aria-hidden": true }) : null,
-					)),
-				),
-				tabs.map((tab) => react.createElement(
-					"div",
-					{
-						key: tab.id,
-						role: "tabpanel",
-						hidden: tab.id !== selected,
-						style: tab.id === selected ? PANEL_STYLE : PANEL_HIDDEN_STYLE,
-					},
-					renderSlot(RELAY_ITEM_SLOT, {}, { only: tab.id }),
-				)),
-			);
-		}
-		/** Whether a participant already holds the shared page. */
-		function relayPageClaimed(ctx) {
-			return ctx.slots.entries("settings.section").some((entry) => entry.options.id === RELAY_PAGE_ID);
-		}
-		/**
-		 * Claim the shared page when no participant holds it yet. Call inside
-		 * `ctx.slots.inject('settings.section', …)`: injection order decides the
-		 * winner, and the losers stay silent instead of colliding with the kernel's
-		 * duplicate-id and duplicate-declaration guards.
-		 *
-		 * @param {object} ctx - browser context carrying the slot registry.
-		 * @param {Function} label - page label of the claiming participant, re-read by
-		 * the shell on every projection so a language switch reaches the sidebar too.
-		 * @returns {Function} the page registration's disposer, or a no-op when
-		 * another participant already holds the page.
-		 */
-		function claimRelaySettingsPage(ctx, label) {
-			if (relayPageClaimed(ctx)) return () => {};
-			const relayTabs = createRelayTabs(ctx);
-			const children = {};
-			children[RELAY_ITEM_SLOT] = { kind: "list", scope: "root" };
-			return ctx.slots.register({
-				name: "settings.section",
-				id: RELAY_PAGE_ID,
-				order: RELAY_PAGE_ORDER,
-				label,
-				inject: () => ({ relayTabs }),
-				children,
-			}, RelaySettingsSection);
-		}
-		//#endregion
-
 		//#region plugin
 		/** Dictionary namespace owned by this plugin. */
 		const NS = "settings.agentrouter";
@@ -1147,14 +943,52 @@ window.__ModuleLoader__.load({
 		 * (the Host's is `AGENTROUTER_SETTINGS_NAMESPACE`).
 		 */
 		const SETTINGS_NS = "llm-agentrouter";
+		/**
+		 * npm package name of this plugin's bundle — the first half of the row key
+		 * the host's Plugins page dispatches this plugin's configuration by.
+		 */
+		const BUNDLE_NAME = "@lynn123411/dsh-llm-agentrouter";
+		/**
+		 * The row id this plugin's bundle patch declares (`cordis.patch.yml`'s final
+		 * `insert`) — the second half of the row key. It is also this plugin's
+		 * settings namespace, and that equality is what lets the Plugins page hand
+		 * the entry the owner form this card renders.
+		 */
+		const ROW_ID = "llm-agentrouter";
+		/** The Plugins page slot one row's configuration registers into. */
+		const ROW_CONFIG_SLOT = "plugins.row.config";
+		/** `<bundle package name>#<row id>`: this plugin's own row key. */
+		const ROW_CONFIG_KEY = BUNDLE_NAME + "#" + ROW_ID;
 		/** Services this plugin needs from the browser runtime. */
 		const inject = ["slots", "locale", "configForms"];
 
 		/**
-		 * Register the endpoint card inside the shared 「API中转」 page, which this
-		 * plugin carries the shell for and claims when it activates first, and bind
-		 * the two config forms it reads (this plugin's own entry, and the adapter's
-		 * route) out of the shared configuration forms service.
+		 * Contribute this plugin's configuration page to the host's Plugins page.
+		 * The slot only exists while that page's own entry is mounted, so the
+		 * registration runs when (and only when) it is there: a deployment without
+		 * the Plugins page leaves no trace, and this plugin's other seats stay
+		 * mounted either way.
+		 *
+		 * @param {object} slots - the client slot registry.
+		 * @param {Function} register - registers the page component; returns its disposer.
+		 * @returns {Function} a disposer releasing the contribution, or a no-op when
+		 * the slot registry is unusable.
+		 */
+		function setupPluginPage(slots, register) {
+			if (!slots || typeof slots.inject !== "function") return () => {};
+			try {
+				return slots.inject(ROW_CONFIG_SLOT, register);
+			} catch (err) {
+				console.warn("[" + ROW_ID + "] Failed to inject " + ROW_CONFIG_SLOT + ":", err);
+				return () => {};
+			}
+		}
+
+		/**
+		 * Register the endpoint card as this plugin's configuration page on the
+		 * host's Plugins page, and bind the two config forms it reads (this plugin's
+		 * own entry, and the adapter's route) out of the shared configuration forms
+		 * service.
 		 * @param {object} ctx - the browser plugin context.
 		 */
 		function apply(ctx) {
@@ -1221,26 +1055,31 @@ window.__ModuleLoader__.load({
 			ctx.inject(["remote.settings"], () => {
 				announce();
 			});
-			// The page is shared with dsh-a6api and the kernel cannot declare one page
-			// twice, so whichever participant activates first claims it and the other
-			// only contributes a card (see the shell region above).
-			ctx.slots.inject("settings.section", () =>
-				claimRelaySettingsPage(ctx, () => t("pageNav")));
-			ctx.slots.inject(RELAY_ITEM_SLOT, () =>
-				ctx.slots.register(
-					{
-						name: RELAY_ITEM_SLOT,
-						// id = this plugin's profile entry id; the shared page filters its
-						// panels by this id, so it must be the plugin's own key.
-						id: SETTINGS_NS,
-						order: 20,
-						// Rendered as the card's tab title inside the shared page.
-						label: () => t("title"),
-						locale: NS,
-						inject: () => ({ form, t, routeForm, operations }),
-					},
-					EndpointCard,
-				),
+			// This plugin's configuration lives on the host's **Plugins** page, which
+			// declares `plugins.row.config` only while its own entry is mounted; a
+			// deployment without that page leaves no trace. The Settings page keeps
+			// only read-only plugin lists, so this plugin registers there no more.
+			//
+			// `whileServed` additionally ties the contribution to the Host actually
+			// serving this plugin's configuration entry: without it a profile that
+			// lacks the Host half would still show a 配置 control over a form the
+			// page cannot supply.
+			ctx.effect(
+				() => ctx.configForms.whileServed([SETTINGS_NS], () => setupPluginPage(ctx.slots, () =>
+					ctx.slots.register(
+						{
+							name: ROW_CONFIG_SLOT,
+							// `<bundle package name>#<row id>`: the key the Plugins page
+							// dispatches this entry by, and the one whose presence gives the
+							// row its 配置 control.
+							key: ROW_CONFIG_KEY,
+							locale: NS,
+							inject: () => ({ form, t, routeForm, operations }),
+						},
+						EndpointCard,
+					),
+				)),
+				"llm-agentrouter: plugins page config",
 			);
 		}
 		//#endregion
