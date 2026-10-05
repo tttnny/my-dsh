@@ -3,46 +3,36 @@
  * not the Settings page.
  *
  * The Plugins page is the host's own home for per-plugin configuration. It
- * declares `plugins.row.config` (keyed `<bundle package name>#<row id>`); a row
- * whose key is registered gains a 配置 control, and opening it renders the entry
- * as a page of its own with the page drawing the icon, the title and the crumb.
- * The Settings page keeps only read-only plugin lists.
+ * declares `plugins.bundle.config`, keyed by a bundle's package name, and
+ * renders that entry as a `view: 'page'` form ON the bundle's own page — under
+ * its description, above its rows. Registering the key is what puts the form
+ * there: the reader reaches it without opening a row first, and the page draws
+ * the icon, the title and the crumb itself. The Settings page keeps only
+ * read-only plugin lists.
  *
- * The row id this plugin's bundle patch declares (`cordis.patch.yml`, `insert`
- * id) is also its Host settings namespace: `<bundle>#<row id>` is both the slot
- * key the Plugins page dispatches by and the identity the Host half registers
- * under.
+ * The key is the BUNDLE's package name. That name is also the Loader row this
+ * plugin's patch inserts — one package carries one browser half, so the row
+ * names the bundle — which is why the bundle page lists a row of its own under
+ * the form. It is NOT the Host settings namespace the form is addressed by:
+ * that is the row id, spelled where the form is bound.
  *
  * Registration is deliberately dynamic: the slot only exists while the host's
  * plugin-manager entry is mounted, so `slots.inject` runs the registration when
  * (and only when) that page is there — a deployment without it leaves no trace.
  */
-// Type-only: brings the owner's `plugins.row.config` SlotMap contract into this
-// program. Erased from the bundle, so the browser half never depends on the
-// plugin manager at runtime.
+// Type-only: brings the owner's `plugins.bundle.config` SlotMap contract into
+// this program. Erased from the bundle, so the browser half never depends on
+// the plugin manager at runtime.
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 
-/** npm package name of this plugin's bundle — the first half of the row key. */
+/** npm package name of this plugin's bundle — the whole `plugins.bundle.config` key. */
 const BUNDLE_NAME = '@lynn123411/dsh-a6api'
 
-/** The row id this plugin's bundle patch declares; also its settings namespace. */
-const ROW_ID = 'dsh-a6api'
+/** The Plugins page slot a bundle's own configuration registers into. */
+export const BUNDLE_CONFIG_SLOT = 'plugins.bundle.config'
 
-/** The Plugins page slot one row's configuration registers into. */
-export const ROW_CONFIG_SLOT = 'plugins.row.config'
-
-/**
- * The slot key naming one row of one bundle.
- * @param bundle - the bundle's npm package name.
- * @param rowId - the row id the bundle's patch declares.
- * @returns the `plugins.row.config` key.
- */
-function rowConfigKey(bundle: string, rowId: string): string {
-  return `${bundle}#${rowId}`
-}
-
-/** This plugin's own row key. */
-export const ROW_CONFIG_KEY = rowConfigKey(BUNDLE_NAME, ROW_ID)
+/** This plugin's own config key: the bundle's package name. */
+export const BUNDLE_CONFIG_KEY = BUNDLE_NAME
 
 /** Services this registration needs from the browser runtime. */
 interface PluginPageSlots {
@@ -62,6 +52,5 @@ export function setupPluginPage(
   register: () => () => void
 ): () => void {
   if (!slots || typeof slots.inject !== 'function') return () => {}
-  return slots.inject(ROW_CONFIG_SLOT, register)
+  return slots.inject(BUNDLE_CONFIG_SLOT, register)
 }
-

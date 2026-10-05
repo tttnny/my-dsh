@@ -4,7 +4,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { apply, inject } from '../src/client/index.ts'
 import { ANTIGRAVITY_AUTH_ENTRY_ID } from '../src/capability-master.ts'
-import type { AntigravityAuthKey } from '../src/client/locales.ts'
+import { en, type AntigravityAuthKey } from '../src/client/locales.ts'
 import { createStatusView } from '../src/status.ts'
 
 interface SlotRecord {
@@ -114,16 +114,18 @@ describe('Antigravity client apply', () => {
 
     expect(b.slots.map(record => record.options)).toEqual([
       expect.objectContaining({
-        name: 'plugins.row.config',
-        key: '@lynn123411/dsh-antigravity-auth#antigravity-auth',
+        name: 'plugins.bundle.config',
+        key: '@lynn123411/dsh-antigravity-auth',
         locale: 'settings.antigravityAuth',
       }),
     ])
-    const settings = b.slots.find(s => s.options.key === '@lynn123411/dsh-antigravity-auth#antigravity-auth')
+    const settings = b.slots.find(s => s.options.key === '@lynn123411/dsh-antigravity-auth')
     const props = (settings?.options.inject as (() => { rpc: { status: () => Promise<unknown> }; t: (key: AntigravityAuthKey) => string; masterScope: unknown }) | undefined)?.()
     await props?.rpc.status()
     expect(b.call).toHaveBeenCalledWith('/api', 'antigravity-auth/status', {}, undefined)
-    expect(props?.t('title')).toBe('Antigravity Auth')
+    // The bundle's own title comes from `locale/<lang>.json` meta now; the
+    // registration's dictionary is proven live through a key the card renders.
+    expect(props?.t('intro')).toBe(en.intro)
     // The bundle reads one settings form per Host plugin entry, keyed by the
     // profile entry id; the client literal must match the Host row's id.
     expect(b.entries).toEqual(['antigravity-auth', 'antigravity-search', 'antigravity-image', 'antigravity-video'])
@@ -141,8 +143,8 @@ describe('Antigravity client apply', () => {
 
     expect(b.slots.map(record => record.options)).toEqual([
       expect.objectContaining({
-        name: 'plugins.row.config',
-        key: '@lynn123411/dsh-antigravity-auth#antigravity-auth',
+        name: 'plugins.bundle.config',
+        key: '@lynn123411/dsh-antigravity-auth',
       }),
     ])
     expect(b.listeners.size).toBe(1)

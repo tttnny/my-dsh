@@ -75,7 +75,7 @@ const services = () => ({
         component,
       }
       registrations.push(record)
-      if (options.name === 'plugins.row.config') cards.push({ options: record })
+      if (options.name === 'plugins.bundle.config') cards.push({ options: record })
       return () => {}
     },
     entries: () => [],
@@ -150,12 +150,12 @@ try {
   console.log(`       ${error.message}`)
 }
 
-// The configuration page lives on the host's Plugins page: one row of one
-// bundle, addressed by `<bundle package name>#<row id>`.
-const card = registrations.find(r => r.name === 'plugins.row.config')
-check('configuration page registered on the Plugins page row slot', card !== undefined)
-check('row key is bundle name # row id',
-  card?.key === '@lynn123411/dsh-antigravity-auth#antigravity-auth')
+// The configuration form lives on the host's Plugins page, keyed by the bundle's
+// package name: the page renders it on this bundle's own page, above its rows.
+const card = registrations.find(r => r.name === 'plugins.bundle.config')
+check('configuration page registered on the Plugins page bundle slot', card !== undefined)
+check('config key is the bundle package name',
+  card?.key === '@lynn123411/dsh-antigravity-auth')
 check('configuration page uses this bundle locale namespace', card?.locale === 'settings.antigravityAuth')
 check('configuration page exposes a component', typeof card?.component === 'function')
 check('no settings-page section is registered any more',
@@ -184,8 +184,8 @@ try {
   check('apply() survives the inject guard (second mount)', false)
   console.log(`       ${error.message}`)
 }
-check('row config registers on every mount',
-  registrations.filter(r => r.name === 'plugins.row.config').length === 1)
+check('bundle config registers on every mount',
+  registrations.filter(r => r.name === 'plugins.bundle.config').length === 1)
 check('second mount stays error-free', errors.length === 0)
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`)

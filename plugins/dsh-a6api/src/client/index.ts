@@ -1,7 +1,7 @@
 import React from 'react';
 import { A6ApiSettingsPanel } from './components/A6ApiSettings.js';
 import { A6ApiComposerCard } from './components/A6ApiComposerCard.js';
-import { ROW_CONFIG_KEY, ROW_CONFIG_SLOT, setupPluginPage } from './settings/plugin-page.js';
+import { BUNDLE_CONFIG_KEY, BUNDLE_CONFIG_SLOT, setupPluginPage } from './settings/plugin-page.js';
 import { en, NS, zh } from './locales.js';
 import mainCss from './styles/main.css';
 import { store } from './store.js';
@@ -65,9 +65,9 @@ export function apply(ctx: any): void {
     const slots = ctx?.slots || (ctx?.get ? ctx.get('slots') : null);
     if (!slots || typeof slots.inject !== 'function') return;
 
-    // 配置入口：配置页住在宿主的「插件」页，而不是设置页。宿主在插件页声明 `plugins.row.config`
-    // (key = `<bundle 包名>#<该 bundle patch 里的行 id>`)；本插件注册自己那一行的 key，
-    // 该行就会出现「配置」按钮，点开是一整页——页面标题、图标、面包屑由宿主插件页负责。
+    // 配置入口：配置页住在宿主的「插件」页，而不是设置页。宿主在插件页声明 `plugins.bundle.config`
+    // (key = bundle 包名)，把条目渲染在**该 bundle 自己的一级页面上**——描述之下、行列表之上，
+    // 不用先点开某一行。页面标题、图标、面包屑由宿主插件页负责。
     // 本面板自带「可用模型 / 模型目录 / 账户资产 / 基础配置」四个内层 tab。
     // 动态注册：该 slot 只在宿主 plugin-manager 入口挂载期间存在，部署里没有这一页就什么都不留。
     ctx.effect(
@@ -75,9 +75,9 @@ export function apply(ctx: any): void {
         slots,
         () => slots.register(
           {
-            name: ROW_CONFIG_SLOT,
-            // `<bundle 包名>#<行 id>`：插件页据此派发本项，也是让该行出现「配置」按钮的 key。
-            key: ROW_CONFIG_KEY,
+            name: BUNDLE_CONFIG_SLOT,
+            // bundle 包名：插件页据此把本项渲染到本 bundle 的一级页面上。
+            key: BUNDLE_CONFIG_KEY,
             // 页面负责标题/图标/面包屑；卡片保留自己的内层 tab 与顺序。
             locale: NS,
           },

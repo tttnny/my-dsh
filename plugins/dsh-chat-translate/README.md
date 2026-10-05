@@ -16,7 +16,7 @@ DeepSeek Harness Web 界面的**助手回答正文翻译**插件。它接管助�
 - **串行与超时**：同时最多一个在途请求，单次超时 `aiTimeoutMs`（默认 600000 毫秒，范围 500–900000）——每行首跑与每次手点都等到真实结果，嫌等就把超时调小。磁盘缓存池 `~/.dsh/dsh-chat-translate/cache.json`（7 天 TTL、1000 条 LRU）**按提示词修订号整体作废**：文档里登记 `rev`，换提示词语义后旧译文不会串代。
 - **跟随宿主显示设置**：Think 行的折叠摘要预览跟随「工作细节」模式（读 `ui-chat` 配置的 `transcriptView`，含 legacy 取值映射）；设置缺席时按 standard。
 - **DSH 原生配置接入**：配置就是本插件在 profile 里的插件配置——配置页经 `ctx.configForms` 读写条目 `dsh-chat-translate` 的 `config`，用户层落在当前 profile 的 patch；无任何自研配置文件，译文从不写回会话上下文。
-- **配置页挂在宿主「插件」页**：配置卡片注册进 `plugins.row.config`（key 为 `@lynn123411/dsh-chat-translate#dsh-chat-translate`），路径是「插件」→本插件详情页→该行的「配置」。页面由宿主画标题、图标与面包屑，卡片提供总开关、API Key、Base URL、模型、单次请求超时与「测试 AI 通道」；设置页里不再有任何本插件的入口。做法与约束见仓库 `docs/rules/plugin-config-page.md`。
+- **配置页挂在宿主「插件」页**：配置卡片注册进 `plugins.bundle.config`（key 为包名 `@lynn123411/dsh-chat-translate`），路径是「插件」→本插件详情页 —— 配置直接铺在描述之下、行列表之上。页面由宿主画标题、图标与面包屑，卡片提供总开关、API Key、Base URL、模型、单次请求超时与「测试 AI 通道」；设置页里不再有任何本插件的入口。做法与约束见仓库 `docs/rules/plugin-config-page.md`。
 
 ## 安装
 

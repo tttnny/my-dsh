@@ -204,17 +204,17 @@ try {
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 
-// The configuration page lives on the host's Plugins page: one row of one
-// bundle, addressed by `<bundle package name>#<row id>`.
-const rowConfig = registrations.find(r => r.name === 'plugins.row.config')
-check('configuration page registered on the Plugins page row slot', rowConfig !== undefined)
-check('row key is bundle name # row id',
-  rowConfig?.key === '@lynn123411/dsh-chat-translate#dsh-chat-translate')
-check('row id equals the Host settings namespace the form is bound to', formLookups.includes('dsh-chat-translate'))
+// The configuration form lives on the host's Plugins page, keyed by the bundle's
+// package name: the page renders it on the bundle's own page, above its rows.
+const rowConfig = registrations.find(r => r.name === 'plugins.bundle.config')
+check('configuration page registered on the Plugins page bundle slot', rowConfig !== undefined)
+check('config key is the bundle package name',
+  rowConfig?.key === '@lynn123411/dsh-chat-translate')
+check('bundle config still binds the Host settings namespace form', formLookups.includes('dsh-chat-translate'))
 check('configuration page uses this plugin locale namespace', rowConfig?.locale === 'settings.chatTranslate')
 check('configuration page exposes a component', typeof rowConfig?.component === 'function')
 check('configuration page contributed through slots.inject',
-  injects.includes('slot:plugins.row.config'))
+  injects.includes('slot:plugins.bundle.config'))
 check('no settings-page section is registered any more',
   registrations.every(r => r.name !== 'settings.section'))
 
@@ -259,9 +259,9 @@ registrations.length = 0
 errors.length = 0
 formLookups.length = 0
 exported.apply(makeCtx(exported.inject ?? []))
-check('row config registers', registrations.some(r => r.name === 'plugins.row.config'))
-check('dock registers independently of the row config', registrations.some(r => r.name === 'conversation.composer.dock'))
-check('takeover registers independently of the row config', registrations.some(r => r.name === 'conversation.chat.node'))
+check('bundle config registers', registrations.some(r => r.name === 'plugins.bundle.config'))
+check('dock registers independently of the bundle config', registrations.some(r => r.name === 'conversation.composer.dock'))
+check('takeover registers independently of the bundle config', registrations.some(r => r.name === 'conversation.chat.node'))
 check('independent path stays error-free', errors.length === 0)
 
 // Disposal: the dock contribution carries a disposer that tears its registration down.

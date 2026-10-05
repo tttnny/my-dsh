@@ -31,7 +31,7 @@
 #
 # MODEL CATALOG
 # This list is the COMPOSITION layer: what the route serves until the user layer
-# overrides it. The plugin's configuration page (插件 → 本插件 → 配置)
+# overrides it. The plugin's configuration page (插件 → 本插件)
 # edits the route's own `models` — the same document the kernel's Models page
 # writes — and its 重置 action removes that override, which is when the list
 # below serves again. Treat these entries as the reset baseline and the probe
@@ -56,7 +56,7 @@
 # name and an adapter-supplied description a hand-declared pi-ai route has no
 # field for. The group title is therefore the only reachable surface — and it is
 # a name, not a notice, so it stays a name. The endpoint is explained where it is
-# changed: 插件 → 本插件 → 配置.
+# changed: 插件 → 本插件.
 #
 # WHOLE-OBJECT OVERWRITE, NOT A DEEP MERGE — RE-CHECK ON EVERY dsh-base BUMP
 # The loader applies a patch entry as `target[key] = value`

@@ -10,7 +10,7 @@ import {
 } from './store.ts';
 import { SETTINGS_CSS } from './styles.ts';
 import { NS, en, zh } from '../locales.ts';
-import { ROW_CONFIG_KEY, ROW_CONFIG_SLOT, setupPluginPage } from './plugin-page.ts';
+import { BUNDLE_CONFIG_KEY, BUNDLE_CONFIG_SLOT, setupPluginPage } from './plugin-page.ts';
 let stylesInjected = false;
 function ensureSettingsStyles(): void {
   if (stylesInjected || typeof document === 'undefined') return;
@@ -44,21 +44,18 @@ function withSamples(text: string, samples: Record<string, string>): React.React
  * Chat-translate's own configuration page inside the DSH **Plugins** page.
  *
  * The host's Plugins page owns per-plugin configuration: it draws the icon, the
- * title and the crumb, and asks the entry for `page` (the form) or `summary`
- * (the one-liner a row shows when its package declares no description). The card
- * keeps its own chrome — the switches, the credential form, the section order —
- * so the move from the Settings page changed where it is reached from, not what
- * it does.
- * @param props - renderer-bound seat of the `plugins.row.config` slot: the view
- * asked for plus the `t` seat its `locale: NS` registration injects.
- * @returns The card element, or the one-liner.
+ * title and the crumb, and renders a `plugins.bundle.config` entry ON the
+ * bundle's own page, under its description and above its rows. The card keeps
+ * its own chrome — the switches, the credential form, the section order — so the
+ * move from the Settings page changed where it is reached from, not what it does.
+ * @param props - renderer-bound seat of the `plugins.bundle.config` slot: the
+ * `view` asked for plus the `t` seat its `locale: NS` registration injects.
+ * @returns The card element.
  */
 export function TidySettingsPanel(
-  props: PropsRuntime<'plugins.row.config'> & PropsLocale<typeof NS>
-): React.ReactElement | string {
+  props: PropsRuntime<'plugins.bundle.config'> & PropsLocale<typeof NS>
+): React.ReactElement {
   const { t } = props;
-  // The row shows this when its package declares no description of its own.
-  if (props.view === 'summary') return t('title');
   ensureSettingsStyles();
 
   const [state, setState] = useState<ClientSettingsState>(() => settingsStore.getState());
@@ -292,20 +289,19 @@ export function setupSettingsUi(ctx: any): void {
     );
   }
   // This plugin's configuration lives on the host's **Plugins** page, which
-  // declares `plugins.row.config` only while its own entry is mounted; a
+  // declares `plugins.bundle.config` only while its own entry is mounted; a
   // deployment without that page leaves no trace. `whileServed` additionally
   // ties the contribution to the Host actually serving our configuration entry,
-  // so a profile missing this plugin's Host half shows no 配置 control either.
+  // so a profile missing this plugin's Host half shows no form either.
   ctx.effect(
     () => configForms.whileServed([SETTINGS_NAMESPACE], () => setupPluginPage(
       ctx.slots,
       () => ctx.slots.register(
         {
-          name: ROW_CONFIG_SLOT,
-          // `<bundle package name>#<row id>`: the key the Plugins page
-          // dispatches this entry by, and the one whose presence gives the row
-          // its 配置 control.
-          key: ROW_CONFIG_KEY,
+          name: BUNDLE_CONFIG_SLOT,
+          // The bundle's package name: the key that puts this entry on this
+          // bundle's own page, above its rows.
+          key: BUNDLE_CONFIG_KEY,
           // The page draws the title, icon and crumb itself; the card keeps its
           // own chrome, controls and section order.
           locale: NS,

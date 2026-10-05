@@ -9,8 +9,6 @@ export const NS = 'settings.chatTranslate';
  * inline technical samples rendered by `withSamples` at the call site.
  */
 export const zh = {
-  title: '正文翻译',
-
   masterTitle: '翻译总开关',
   enableTranslation: '启用翻译',
   masterDesc:
@@ -64,8 +62,6 @@ export type ChatTranslateLocaleKey = keyof typeof zh;
 
 /** English copy; the same key set as {@link zh}. */
 export const en: Record<ChatTranslateLocaleKey, string> = {
-  title: 'Reply translate',
-
   masterTitle: 'Translation master switch',
   enableTranslation: 'Enable translation',
   masterDesc:

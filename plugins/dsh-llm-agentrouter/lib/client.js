@@ -220,13 +220,10 @@ window.__ModuleLoader__.load({
 		 * controls and section order. It renders no title of its own — a second one
 		 * would simply repeat the page's.
 		 *
-		 * @param {object} props - the injected config forms plus the bound translator,
-		 * and the view the Plugins page asks for (`'summary'` or `'page'`).
-		 * @returns {JSX.Element|string} the card, or the one-liner a summary row shows.
+		 * @param {object} props - the injected config forms plus the bound translator.
+		 * @returns {JSX.Element} the card.
 		 */
-		function EndpointCard({ view, form, t, routeForm, operations }) {
-			// The row shows this when its package declares no description of its own.
-			if (view === "summary") return t("title");
+		function EndpointCard({ form, t, routeForm, operations }) {
 			const snapshot = react.useSyncExternalStore(
 				react.useCallback((listener) => form.subscribe(listener), [form]),
 				() => form.getSnapshot(),
@@ -944,21 +941,12 @@ window.__ModuleLoader__.load({
 		 */
 		const SETTINGS_NS = "llm-agentrouter";
 		/**
-		 * npm package name of this plugin's bundle — the first half of the row key
-		 * the host's Plugins page dispatches this plugin's configuration by.
+		 * npm package name of this plugin's bundle, and the whole key the host's
+		 * Plugins page dispatches this plugin's configuration by.
 		 */
 		const BUNDLE_NAME = "@lynn123411/dsh-llm-agentrouter";
-		/**
-		 * The row id this plugin's bundle patch declares (`cordis.patch.yml`'s final
-		 * `insert`) — the second half of the row key. It is also this plugin's
-		 * settings namespace, and that equality is what lets the Plugins page hand
-		 * the entry the owner form this card renders.
-		 */
-		const ROW_ID = "llm-agentrouter";
-		/** The Plugins page slot one row's configuration registers into. */
-		const ROW_CONFIG_SLOT = "plugins.row.config";
-		/** `<bundle package name>#<row id>`: this plugin's own row key. */
-		const ROW_CONFIG_KEY = BUNDLE_NAME + "#" + ROW_ID;
+		/** The Plugins page slot a bundle's own configuration registers into. */
+		const BUNDLE_CONFIG_SLOT = "plugins.bundle.config";
 		/** Services this plugin needs from the browser runtime. */
 		const inject = ["slots", "locale", "configForms"];
 
@@ -969,6 +957,9 @@ window.__ModuleLoader__.load({
 		 * the Plugins page leaves no trace, and this plugin's other seats stay
 		 * mounted either way.
 		 *
+		 * A throwing `inject` is a real contract violation and propagates: swallowing
+		 * it here would hide the one symptom this wiring is hardest to diagnose from.
+		 *
 		 * @param {object} slots - the client slot registry.
 		 * @param {Function} register - registers the page component; returns its disposer.
 		 * @returns {Function} a disposer releasing the contribution, or a no-op when
@@ -976,12 +967,7 @@ window.__ModuleLoader__.load({
 		 */
 		function setupPluginPage(slots, register) {
 			if (!slots || typeof slots.inject !== "function") return () => {};
-			try {
-				return slots.inject(ROW_CONFIG_SLOT, register);
-			} catch (err) {
-				console.warn("[" + ROW_ID + "] Failed to inject " + ROW_CONFIG_SLOT + ":", err);
-				return () => {};
-			}
+			return slots.inject(BUNDLE_CONFIG_SLOT, register);
 		}
 
 		/**
@@ -1056,23 +1042,26 @@ window.__ModuleLoader__.load({
 				announce();
 			});
 			// This plugin's configuration lives on the host's **Plugins** page, which
-			// declares `plugins.row.config` only while its own entry is mounted; a
+			// declares `plugins.bundle.config` only while its own entry is mounted; a
 			// deployment without that page leaves no trace. The Settings page keeps
 			// only read-only plugin lists, so this plugin registers there no more.
 			//
+			// The entry renders ON this bundle's own page — under its description,
+			// above its rows — so the reader reaches the form without opening a row
+			// first.
+			//
 			// `whileServed` additionally ties the contribution to the Host actually
 			// serving this plugin's configuration entry: without it a profile that
-			// lacks the Host half would still show a 配置 control over a form the
-			// page cannot supply.
+			// lacks the Host half would render the form over a namespace the page
+			// cannot supply.
 			ctx.effect(
 				() => ctx.configForms.whileServed([SETTINGS_NS], () => setupPluginPage(ctx.slots, () =>
 					ctx.slots.register(
 						{
-							name: ROW_CONFIG_SLOT,
-							// `<bundle package name>#<row id>`: the key the Plugins page
-							// dispatches this entry by, and the one whose presence gives the
-							// row its 配置 control.
-							key: ROW_CONFIG_KEY,
+							name: BUNDLE_CONFIG_SLOT,
+							// The bundle's package name: the key that puts this entry on
+							// this bundle's own page, above its rows.
+							key: BUNDLE_NAME,
 							locale: NS,
 							inject: () => ({ form, t, routeForm, operations }),
 						},

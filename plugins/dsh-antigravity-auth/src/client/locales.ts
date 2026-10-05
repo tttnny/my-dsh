@@ -2,7 +2,6 @@
 
 export const en = {
   nav: 'Antigravity',
-  title: 'Antigravity Auth',
   intro: 'Sign in with Antigravity Auth to access language models, image generation, web search, and video understanding.',
   riskTitle: 'Before you continue',
   risk: 'Google does not support third-party Antigravity login tools. Your account may be suspended or terminated.',
@@ -136,7 +135,6 @@ export type AntigravityAuthKey = keyof typeof en
 
 export const zh: Record<AntigravityAuthKey, string> = {
   nav: 'Antigravity',
-  title: 'Antigravity Auth',
   intro: '通过 Antigravity Auth 登录，使用语言模型、图片生成、网页搜索和视频理解能力。',
   riskTitle: '继续前请确认',
   risk: 'Google 不支持第三方 Antigravity 登录工具，账号可能被暂停或终止。',

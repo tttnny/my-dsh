@@ -23,22 +23,20 @@ type TabKey = 'models' | 'catalog' | 'account' | 'config';
 /**
  * This plugin's own configuration page inside the host's **Plugins** page.
  *
- * The Plugins page owns the chrome — icon, title, crumb — and asks a
- * `plugins.row.config` entry for `page` (this card) or `summary` (the row's
- * one-liner). The card keeps its own tabs, badges and section order, so moving
- * the entry off the Settings page changed where it is reached from, not what it
- * does.
+ * The Plugins page owns the chrome — icon, title, crumb — and renders a
+ * `plugins.bundle.config` entry ON the bundle's own page, under its description
+ * and above its rows. The card keeps its own tabs, badges and section order, so
+ * moving the entry off the Settings page changed where it is reached from, not
+ * what it does.
  *
- * @param props - renderer-bound seat of the `plugins.row.config` slot: the view
- * asked for plus the `t` seat its `locale: NS` registration injects.
- * @returns The card element, or the row's one-liner.
+ * @param props - renderer-bound seat of the `plugins.bundle.config` slot: the
+ * `view` asked for plus the `t` seat its `locale: NS` registration injects.
+ * @returns The card element.
  */
 export const A6ApiSettingsPanel: React.FC<
-  PropsRuntime<'plugins.row.config'> & PropsLocale<typeof NS>
+  PropsRuntime<'plugins.bundle.config'> & PropsLocale<typeof NS>
 > = (props) => {
   const { t } = props;
-  // 行摘要：宿主在一行没有自己的描述时用这段文本兜底；页面标题由宿主插件页负责，不在这里重画。
-  if (props.view === 'summary') return t('subtitle');
   const [state, setState] = useState<StoreState>(store.getState());
   const [activeTab, setActiveTab] = useState<TabKey>('models');
   const [filterMode, setFilterMode] = useState<'all' | 'enabled' | 'probed'>('all');

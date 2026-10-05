@@ -3,9 +3,9 @@
  *
  * Loads the built `lib/client.js` the same way the Web shell does (through a
  * `window.__ModuleLoader__.load` stub), gives it fake cordis services, and
- * asserts every registration this plugin's **Plugins** page row and the composer
- * dock entry depend on, plus one render of that entry and of the row's
- * `summary` one-liner. Run with: node scripts/smoke-client.mjs
+ * asserts every registration this plugin's **Plugins** page form and the
+ * composer dock entry depend on, plus one render of each. Run with:
+ * node scripts/smoke-client.mjs
  *
  * The fake context models the kernel's inject guard, so reading a service the
  * bundle did not declare throws here instead of turning the whole loader entry
@@ -21,13 +21,14 @@ const require = createRequire(import.meta.url)
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'))
 
 /**
- * The Plugins page slot one row's configuration registers into. The key is
- * `<bundle package name>#<row id>`; the Host draws the row's 配置 control once
- * that key is registered, and the configured page owns the title, icon and crumb.
+ * The Plugins page slot a bundle's own configuration registers into. The key is
+ * the bundle's package name; the Host renders the entry ON the bundle's own
+ * page, under its description and above its rows, and that page owns the title,
+ * icon and crumb.
  */
-const ROW_CONFIG_SLOT = 'plugins.row.config'
-/** This plugin's own row key: its bundle package name # its patch's insert id. */
-const ROW_CONFIG_KEY = '@lynn123411/dsh-a6api#dsh-a6api'
+const BUNDLE_CONFIG_SLOT = 'plugins.bundle.config'
+/** This plugin's own config key: its bundle package name. */
+const BUNDLE_CONFIG_KEY = '@lynn123411/dsh-a6api'
 /** Locale namespace this plugin's card and dictionaries are registered under. */
 const NS = 'settings.a6api'
 
@@ -225,15 +226,15 @@ try {
   console.log(`       ${error.message}`)
 }
 
-// The configuration page lives on the Host's **Plugins** page: one row of one
-// bundle, addressed by `<bundle package name>#<row id>`. Registering that key is
-// what gives the row its 配置 control; the page itself draws title/icon/crumb.
-const rowConfig = registrations.find(r => r.name === ROW_CONFIG_SLOT)
-check('configuration page registered on the Plugins page row slot', rowConfig !== undefined)
-check('row key is bundle package name # patch row id', rowConfig?.key === ROW_CONFIG_KEY)
+// The configuration form lives on the Host's **Plugins** page, keyed by the
+// bundle's package name; registering that key is what renders it on the bundle's
+// own page. The page itself draws title/icon/crumb.
+const rowConfig = registrations.find(r => r.name === BUNDLE_CONFIG_SLOT)
+check('configuration page registered on the Plugins page bundle slot', rowConfig !== undefined)
+check('config key is the bundle package name', rowConfig?.key === BUNDLE_CONFIG_KEY)
 check('configuration page uses this plugin locale namespace', rowConfig?.locale === NS)
 check('configuration page exposes a component', typeof rowConfig?.component === 'function')
-check('configuration page contributed through slots.inject', injects.includes(`slot:${ROW_CONFIG_SLOT}`))
+check('configuration page contributed through slots.inject', injects.includes(`slot:${BUNDLE_CONFIG_SLOT}`))
 check('no settings-page section is registered any more',
   registrations.every(r => r.name !== 'settings.section'))
 
@@ -246,13 +247,6 @@ check('composer dock entry sits left of the official stats pills', dock?.order =
 check('the sidebar footer entry is gone', !registrations.some(r => r.name === 'sidebar.footer.action'))
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
-
-// 行摘要自检：`view: 'summary'` 时卡片只吐一行文字（宿主用它兜底没有描述的行），
-// 不挂载任何面板状态。断言返回的正是本插件那句说明文案对应的 key。
-const rowSummary = typeof rowConfig?.component === 'function'
-  ? rowConfig.component({ view: 'summary', t: (key) => key })
-  : undefined
-check('row summary returns the plugin one-liner', rowSummary === 'subtitle')
 
 // 渲染自检:输入框下方那一行的组件渲染出「A6api」按钮,点击后贴按钮上沿展开浮层。
 const React = require('react')
@@ -357,7 +351,7 @@ check(
 )
 unmountQuietly(tree)
 
-// 插件页行配置的渲染自检：注册在 `plugins.row.config` 上的卡片组件必须能 headless
+// 插件页 bundle 配置的渲染自检：注册在 `plugins.bundle.config` 上的卡片组件必须能 headless
 // 渲染，「基础配置」页渲染出三个输入框（API Key / 系统访问令牌 / 账号 ID）与保存
 // 按钮。这份断言的存在理由：渲染期抛错（例如 Tooltip 包了条件渲染的 null）在浏览器
 // 里表现为整张卡片空白，只有真跑一次才拦得住。
@@ -380,8 +374,34 @@ if (panelRenderFailed) console.log(`       ${panelRenderFailed.message}`)
 if (panelTree) {
   const panelText = textOf(panelTree.toJSON())
   // 卡片不再重画页面标题（宿主插件页负责）——只保留副标题与右侧三枚胶囊。
+  // 断言一：副标题在。断言二：整棵渲染树里没有任何 h1/h2/h3 标题节点——
+  // 「卡片自己又画一遍标题」正是这条要拦的回归，而按文案 key 比对会漏掉
+  // 用别的 key 画的标题。宿主页面负责画标题这件事因此才由本自检守住。
+  const panel = panelTree.toJSON()
+  const headingNodes = []
+  const collectHeadings = (n) => {
+    if (n === null || n === undefined || typeof n !== 'object') return
+    if (Array.isArray(n)) { n.forEach(collectHeadings); return }
+    if (typeof n.type === 'string' && /^h[1-6]$/.test(n.type)) headingNodes.push(n.type)
+    if (n.children) n.children.forEach(collectHeadings)
+  }
+  collectHeadings(panel)
+  // 反例先跑：把一个人造标题喂给同一个采集器，断言它抓得到。没有这条，
+  // 采集器写坏（例如只认 children 里的字符串）时上面那条断言会永远为真。
+  const probe = { type: 'div', children: [{ type: 'h2', children: ['x'] }] }
+  const probeHits = []
+  const collectProbe = (n) => {
+    if (n === null || n === undefined || typeof n !== 'object') return
+    if (Array.isArray(n)) { n.forEach(collectProbe); return }
+    if (typeof n.type === 'string' && /^h[1-6]$/.test(n.type)) probeHits.push(n.type)
+    if (n.children) n.children.forEach(collectProbe)
+  }
+  collectProbe(probe)
+  check('the heading collector really detects a heading (negative control)',
+    probeHits.length === 1)
   check('settings panel renders its subtitle copy', panelText.includes('subtitle'))
-  check('settings panel no longer repeats the page title', !panelText.includes('heading'))
+  check('settings panel draws no heading of its own (the page owns the title)',
+    headingNodes.length === 0)
 
   // The inner tab strip: the stub primitives do not render their children, so the
   // labels are read off the elements the panel handed them.
@@ -496,10 +516,10 @@ const clientSource = (await import('node:fs')).readFileSync(join(root, 'src/clie
 check('the hand-rolled global tooltip portal is gone', !clientSource.includes('setupGlobalTooltip'))
 check('the bundle never reads data-tooltip', !source.includes('data-tooltip'))
 
-// Independence case: this plugin always registers its own row configuration —
+// Independence case: this plugin always registers its own bundle configuration —
 // it is not a participant in any shared page and contends with nobody. Re-applying
 // (a re-declaration of the slot, the way the loader replays a bundle) must still
-// produce exactly this plugin's own row key, and nothing on the Settings page.
+// produce exactly this plugin's own config key, and nothing on the Settings page.
 registrations.length = 0
 errors.length = 0
 try {
@@ -508,10 +528,10 @@ try {
   check('apply() survives the inject guard (re-registration)', false)
   console.log(`       ${error.message}`)
 }
-const rowConfigs = registrations.filter(r => r.name === ROW_CONFIG_SLOT)
-check('the row config registers on every apply, independent of other plugins',
-  rowConfigs.length === 1 && rowConfigs[0]?.key === ROW_CONFIG_KEY)
-check('the composer dock registers independently of the row config',
+const rowConfigs = registrations.filter(r => r.name === BUNDLE_CONFIG_SLOT)
+check('the bundle config registers on every apply, independent of other plugins',
+  rowConfigs.length === 1 && rowConfigs[0]?.key === BUNDLE_CONFIG_KEY)
+check('the composer dock registers independently of the bundle config',
   registrations.some(r => r.name === 'conversation.composer.dock'))
 check('no settings-page section is registered on the independent path',
   registrations.every(r => r.name !== 'settings.section'))

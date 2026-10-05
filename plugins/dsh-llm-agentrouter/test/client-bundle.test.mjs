@@ -61,10 +61,10 @@ const primitives = {
   ),
 }
 
-/** The Plugins page slot one row's configuration registers into. */
-const ROW_CONFIG_SLOT = 'plugins.row.config'
-/** This bundle's row key: `<bundle package name>#<the patch row id>`. */
-const ROW_CONFIG_KEY = '@lynn123411/dsh-llm-agentrouter#llm-agentrouter'
+/** The Plugins page slot a bundle's own configuration registers into. */
+const BUNDLE_CONFIG_SLOT = 'plugins.bundle.config'
+/** This bundle's config key: its package name, which is also its Loader row. */
+const BUNDLE_CONFIG_KEY = '@lynn123411/dsh-llm-agentrouter'
 
 /**
  * Execute the bundle the way the client module loader does and return what it
@@ -489,23 +489,23 @@ test('the bundle registers under its package id and declares the services it use
   )
 })
 
-test('apply registers this bundle’s row configuration on the Plugins page', () => {
+test('apply registers this bundle’s configuration on the Plugins page', () => {
   const { exports, registrations, injections } = applyBundle({ form: stubForm() })
 
   assert.deepEqual(
     injections,
-    [ROW_CONFIG_SLOT],
+    [BUNDLE_CONFIG_SLOT],
     'the configuration is contributed through the Plugins page slot, and nothing else',
   )
   assert.equal(registrations.length, 1, 'exactly one registration, so the shell is gone')
 
   const card = registrations[0]
-  assert.equal(card.options.name, ROW_CONFIG_SLOT)
-  assert.equal(card.options.key, ROW_CONFIG_KEY)
+  assert.equal(card.options.name, BUNDLE_CONFIG_SLOT)
+  assert.equal(card.options.key, BUNDLE_CONFIG_KEY)
   assert.equal(
     card.options.key,
-    `@lynn123411/dsh-llm-agentrouter#${exports.SETTINGS_NS}`,
-    'the row id half is also this plugin’s settings namespace',
+    '@lynn123411/dsh-llm-agentrouter',
+    'the key is the bundle’s package name, which is the page the form renders on',
   )
   assert.equal(card.options.locale, 'settings.agentrouter', 'the page resolves the card’s own dictionary')
   assert.equal(card.component, exports.EndpointCard, 'the registered page is the endpoint card')
@@ -519,10 +519,10 @@ test('the bundle keeps no Settings-page seat and no page shell on its surface', 
   // so a re-added seat fails here whatever it is called.
   const { exports, registrations, injections } = applyBundle({ form: stubForm() })
 
-  assert.deepEqual(injections, [ROW_CONFIG_SLOT], 'the Plugins page slot is the only slot joined')
+  assert.deepEqual(injections, [BUNDLE_CONFIG_SLOT], 'the Plugins page slot is the only slot joined')
   assert.deepEqual(
     registrations.map((entry) => entry.options.name),
-    [ROW_CONFIG_SLOT],
+    [BUNDLE_CONFIG_SLOT],
     'and the only thing registered',
   )
   assert.deepEqual(
@@ -530,13 +530,6 @@ test('the bundle keeps no Settings-page seat and no page shell on its surface', 
     [],
     'the shared page shell symbols are gone',
   )
-})
-
-test('the Plugins page asks for a summary or the card, and both are answered', () => {
-  const { exports } = loadBundle()
-  // The row shows the summary only when the package declares no description of
-  // its own; a missing branch would leave it blank.
-  assert.equal(exports.EndpointCard({ view: 'summary', t: stubT }), 'title')
 })
 
 test('the dictionaries are key-for-key identical in both languages', () => {
@@ -952,7 +945,7 @@ test('apply binds the adapter namespace and unwraps the Remote results the card 
   const routeForm = stubRouteForm()
   const { registrations } = applyBundle({ form, routeForm, llm, settings })
 
-  const card = registrations.find((entry) => entry.options.name === ROW_CONFIG_SLOT)
+  const card = registrations.find((entry) => entry.options.name === BUNDLE_CONFIG_SLOT)
   const injected = card.options.inject()
   assert.equal(injected.form, form, 'the endpoint switch reads its own entry’s form')
   assert.equal(injected.routeForm, routeForm, 'the model list reads the adapter entry’s form')
@@ -972,7 +965,7 @@ test('a runtime without the optional Remotes still mounts the card', async () =>
   // inject guard and take the whole plugin off the page — and a click in that
   // state answers with a reason instead of throwing.
   const { registrations } = applyBundle({ form: stubForm(), routeForm: stubRouteForm() })
-  const card = registrations.find((entry) => entry.options.name === ROW_CONFIG_SLOT)
+  const card = registrations.find((entry) => entry.options.name === BUNDLE_CONFIG_SLOT)
   const injected = card.options.inject()
   assert.equal(injected.operations.available(), false)
   assert.deepEqual(
@@ -992,7 +985,7 @@ test('a Remote face that mounts after activation turns 更新 on without a reloa
   const routeForm = stubRouteForm()
   const context = stubContext({ form: stubForm(), routeForm })
   exports.apply(context.ctx)
-  const card = context.registrations.find((entry) => entry.options.name === ROW_CONFIG_SLOT)
+  const card = context.registrations.find((entry) => entry.options.name === BUNDLE_CONFIG_SLOT)
   const injected = card.options.inject()
   assert.equal(injected.operations.available(), false, 'nothing is mounted yet')
 

@@ -49,12 +49,13 @@ export interface AntigravityAuthSettingsFace {
 }
 
 /**
- * Props of the card's `plugins.row.config` seat: the renderer-bound runtime
- * share (`view: 'summary' | 'page'`, plus the page's own `form` when it has
- * one) intersected with this registration's inject face.
+ * Props of the card's `plugins.bundle.config` seat: the renderer-bound runtime
+ * share (the `view` the page asks for) intersected with this registration's
+ * inject face. The bundle slot carries no owner `form` — the card reaches its
+ * configuration through the `configForms` scopes its inject face supplies.
  */
 export type AntigravityAuthSettingsProps =
-  PropsRuntime<'plugins.row.config'> & InjectFace<AntigravityAuthSettingsFace>
+  PropsRuntime<'plugins.bundle.config'> & InjectFace<AntigravityAuthSettingsFace>
 
 type LoadState = 'loading' | 'ready' | 'error'
 type BooleanSettings = { readonly enabled: boolean }
@@ -80,20 +81,17 @@ function useUnmountSignal(): () => AbortSignal {
 /**
  * This bundle's own configuration page inside the DSH **Plugins** page.
  *
- * The host's Plugins page owns the chrome — icon, title and crumb — and asks a
- * `plugins.row.config` entry for `page` (this card) or `summary` (the one-liner
- * a row shows when its package declares no description). The card keeps its own
- * sections, controls and order, so the move off the Settings page changed where
- * it is reached from, not what it does.
+ * The host's Plugins page owns the chrome — icon, title and crumb — and renders
+ * a `plugins.bundle.config` entry ON the bundle's own page, under its
+ * description and above its rows. The card keeps its own sections, controls and
+ * order, so the move off the Settings page changed where it is reached from, not
+ * what it does.
  *
- * @param props - renderer-bound seat of the `plugins.row.config` slot: the view
- * asked for plus this plugin's RPC and configuration faces.
- * @returns The card element, or the row's one-liner.
+ * @param props - renderer-bound seat of the `plugins.bundle.config` slot: the
+ * `view` asked for plus this plugin's RPC and configuration faces.
+ * @returns The card element.
  */
-export function AntigravityAuthSettings({ view, rpc, t, subscribe, masterScope, searchScope, imageScope, videoScope }: AntigravityAuthSettingsProps): ReactNode {
-  // The row shows this when its package declares no description of its own; the
-  // page title is the Plugins page's, so it is not repeated here.
-  if (view === 'summary') return t('title')
+export function AntigravityAuthSettings({ rpc, t, subscribe, masterScope, searchScope, imageScope, videoScope }: AntigravityAuthSettingsProps): ReactNode {
   const [status, setStatus] = useState<AntigravityStatusView | null>(null)
   const masterSettings = useCapabilitySettings(masterScope)
   const searchSettings = useCapabilitySettings(searchScope)

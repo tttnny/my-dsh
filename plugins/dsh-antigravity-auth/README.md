@@ -12,7 +12,7 @@ Google Antigravity OAuth 权益接入能力包：单账号集成 Gemini、Claude
 - **可读的引用来源**：grounding 只返回 `vertexaisearch.cloud.google.com` 的跳转令牌，直接引用既不可读也无法抓取。插件对每条令牌发一次免鉴权 `HEAD`（`redirect: 'manual'`），**只读 `Location` 头、不访问发布者站点**，把来源还原为真实地址（如 `https://www.sge.com.cn/`）；单次搜索最多解析 10 条、并发执行、2.5 秒预算，任何失败都保留原令牌——解析不到只损失一条引用的可读性，绝不会让搜索失败。
 - **用量与配额监控**：实时展示当前 Antigravity 账号的项目 ID、各模型用量配额占比与重置倒计时。
 - **总开关（默认关闭）**：页面顶部「总开关」一处控制整套能力——关闭时注销 LLM 供应商并停用网页搜索、图片生成、视频理解（登录状态保留，无需重新授权），三条子开关各自的选择原样保留、仅置灰，重新打开即恢复；关闭期间不会自动查询额度（不向 Google 发送任何请求），额度区显示上次数据并提示可用「刷新状态」手动查询一次。默认关闭，需在本插件的配置页手动开启。
-- **配置页挂在宿主「插件」页**：本插件的配置卡片注册进 `plugins.row.config`（key 为 `@lynn123411/dsh-antigravity-auth#antigravity-auth`），路径是「插件」→本插件详情页→该行的「配置」。页面由宿主画标题、图标与面包屑；设置页里不再有任何本插件的入口。做法与约束见仓库 `docs/rules/plugin-config-page.md`。
+- **配置页挂在宿主「插件」页**：本插件的配置卡片注册进 `plugins.bundle.config`（key 为包名 `@lynn123411/dsh-antigravity-auth`），路径是「插件」→本插件详情页 —— 配置直接铺在描述之下、行列表之上。页面由宿主画标题、图标与面包屑；设置页里不再有任何本插件的入口。做法与约束见仓库 `docs/rules/plugin-config-page.md`。
 
 ## 安装
 

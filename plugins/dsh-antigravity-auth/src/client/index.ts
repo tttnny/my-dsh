@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { createAntigravityAuthRpcClient } from '../rpc-contract.ts'
 import { AntigravityAuthSettings } from './AntigravityAuthSettings.tsx'
-import { ROW_CONFIG_KEY, ROW_CONFIG_SLOT, setupPluginPage } from './plugin-page.ts'
+import { BUNDLE_CONFIG_KEY, BUNDLE_CONFIG_SLOT, setupPluginPage } from './plugin-page.ts'
 import { en, zh, type AntigravityAuthKey } from './locales.ts'
 import type { AntigravityAuthSettingsFace, AntigravityAuthSettingsProps } from './AntigravityAuthSettings.tsx'
 import type { AntigravityMasterSettings } from '../capability-master.ts'
@@ -63,30 +63,29 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.on('connection/reset', reset), 'antigravity-auth: connection invalidation')
 
   // This bundle's configuration lives on the host's **Plugins** page, which
-  // declares `plugins.row.config` only while its own entry is mounted; a
+  // declares `plugins.bundle.config` only while its own entry is mounted; a
   // deployment without that page leaves no trace. The Settings page keeps only
   // read-only plugin lists, so this bundle registers there no more.
   //
   // `whileServed` additionally ties the contribution to the Host actually
-  // serving this bundle's configuration entry: without it a profile that lacks
-  // the Host half would still show a 配置 control over a form the page cannot
+  // serving this bundle's master configuration entry: without it a profile that
+  // lacks the Host half would render the form over a namespace the page cannot
   // supply.
   //
-  // The gate names THIS row's namespace only — the row our key points at.
-  // `whileServed` fires on the FIRST served namespace (`namespaces.some`), so
-  // listing the three capability rows as well would widen the gate rather than
-  // tighten it; those three are optional reads the card already degrades to
-  // read-only without, which is what a profile disabling them individually
-  // should see.
+  // The gate names the master entry only. `whileServed` fires on the FIRST
+  // served namespace (`namespaces.some`), so listing the three capability rows
+  // as well would widen the gate rather than tighten it; those three are
+  // optional reads the card already degrades to read-only without, which is
+  // what a profile disabling them individually should see.
   ctx.effect(
     () => ctx.configForms.whileServed(
       ['antigravity-auth'],
       () => setupPluginPage(ctx.slots, () => ctx.slots.register({
-        name: ROW_CONFIG_SLOT,
-        // `<bundle package name>#<row id>`: the key the Plugins page dispatches
-        // this entry by, and the one whose presence gives the row its 配置
-        // control. The three capability rows register no page of their own.
-        key: ROW_CONFIG_KEY,
+        name: BUNDLE_CONFIG_SLOT,
+        // The bundle's package name: the key that puts this entry on this
+        // bundle's own page, above its rows. The three capability rows register
+        // no page of their own.
+        key: BUNDLE_CONFIG_KEY,
         locale: NS,
         inject: (): AntigravityAuthSettingsFace => ({ rpc, t, subscribe, masterScope, searchScope, imageScope, videoScope }),
       }, AntigravityAuthSettings)),
