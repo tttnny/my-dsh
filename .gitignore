@@ -8,8 +8,8 @@ tmp/
 # 本机开发工具；锚定根目录，避免误伤 plugins/*/scripts/
 /scripts/
 
-# 仓库根不放依赖安装，也不放 link: 插件的内核包软链接——内核包由 DSH 自身路由供给
-# （见 docs/rules/dev-copy.md「内核包路由与 --preserve-symlinks」）；node_modules 一律不入库
+# 仓库根不放依赖安装，也不放 link: 插件的内核包软链接——内核包由 DSH 运行时的 profile 解析供给
+# （见 docs/rules/dev-copy.md「内核包解析」）；node_modules 一律不入库
 node_modules/
 
 # secrets & local credentials

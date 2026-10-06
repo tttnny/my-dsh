@@ -6,10 +6,10 @@
 
 ## 当场减掉缓存
 
-provider 把缓存折进一个 prompt 总数时（`prompt_tokens`、`usageMetadata.promptTokenCount`）**必须在适配器里当场减掉**、负数夹到 0。**漏减**不报错，只静默夸大未命中量、稀释命中率。参照实现：`@deepseek-ai/dsh-llm-deepseek` 的 `mapUsage`。
+provider 把缓存折进一个 prompt 总数时（`prompt_tokens`、`usageMetadata.promptTokenCount`）**必须在适配器里当场减掉**、负数夹到 0——漏减不报错，只静默夸大未命中量、稀释命中率。参照实现：`@deepseek-ai/dsh-llm-deepseek` 的 `mapUsage`。
 
 `totalTokens` 只照抄 provider 给的权威总数，给不出就省略；provider 不单独计缓存写入费时，不填 `cacheWriteTokens` 即正确状态。
 
 ## 断言判据
 
-usage 断言样例的判别力来自缓存字段：只给 prompt/candidates 的样例解不出漏减，跑绿也测不到东西。范例：`plugins/dsh-antigravity-auth/tests/llm-adapter.spec.ts` 的 disjoint 与 clamp 两条。
+usage 断言样例的判别力来自缓存字段：只给 prompt / candidates 的样例解不出漏减，跑绿也测不到东西。范例：`plugins/dsh-antigravity-auth/tests/llm-adapter.spec.ts` 的 disjoint 与 clamp 两条。
