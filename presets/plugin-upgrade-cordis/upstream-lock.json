@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "source": {
+    "repo": "oh-my-dsh/dsh-plugin-upgrade-skill",
+    "type": "github"
+  },
+  "ref": "main",
+  "commit": "ef075767b476e8000c716a18f848028eebcd5aef",
+  "vendored": "skills",
+  "license": "MIT",
+  "hash": "sha256-27140ad94c77e716dbd6061d70c9efbe5297bc6551fb05ff4745fa37db2a3c79",
+  "skills": {
+    "dsh-benchmark-case": "sha256-3f65bf3a253146bbdc5eb9dde6295715d629249764e4a8702ce6ead9a4db185a",
+    "dsh-upgrade-audit": "sha256-0d58ae9d240a8e43e71ba1340076877c834435b6eb1ae69d76beaa8f9c7e7f08",
+    "generic-migration": "sha256-7c7b1deda9f13ed53493806ed161c140a0ac411cef61402becef741170d612e3",
+    "plugin-fleet-sweep": "sha256-b7b7f55f830279d675a034258c6949d283403ef129557b77a21c06d86935a11b",
+    "plugin-heavy-dep": "sha256-117197f4374cfe23c11cbea607915c3c50479722ed4ec80f2f500f7daf2ce8d5",
+    "plugin-release": "sha256-4571b2a56e9696a6e2b8cabcda71d8f37017cf340a3a40b8abd9c5ca6478c354",
+    "plugin-runtime-debug": "sha256-8202c7f15b96dc94e29b100c1173b33d308adfb6c4fb237c4d797bee58bb6e7e",
+    "plugin-test": "sha256-b9434f8f49f9a3f1263d770ab34275b0a24fde9c80aed3b4f9ecf8c0a3aa116c",
+    "plugin-upgrade": "sha256-cd2a0953d1f9bd7a027341fb702302e8a4644717dc04e6fa4fce19bae8e990b1",
+    "plugin-workflow": "sha256-8b47acf108f2ccf752e26823f278a7146178324f008221bff9487d4ed5c07c82",
+    "plugin-write": "sha256-c6e0f9d32a074e02a0f84022dc3ad8a4d48f6322130efa6929b1ff90161f3bc5"
+  }
+}

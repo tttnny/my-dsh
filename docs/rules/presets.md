@@ -39,6 +39,8 @@ preset 包没有 `check`，形态验证是两条命令：
 - **组合解析**：`node "<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js" --profile web --patch presets/<id>/<id>.patch.yml --dump-config` —— exit 0，且组合树里出现 `preset-<id>` 行与它的 `config.plugins`。`--dump-config` 只组合、不装载、不求值 `!!js`。
 - **真装载与工具目录**：在隔离 `DSH_HOME` 的 profile 里装本目录后 boot（`--port 0 --no-open`）；工具目录以会话日志里真正发给模型的数组为准——日志是 `session.v4.jsonl.zstd`，读 `request/header` 事件的 `data.header.tools`。UI 的「工具」面板只反映装配期的定义解析，不等于该数组。
 
+随包带**第三方内容**（vendored `skills/` 等）的 preset 另配一份 `upstream-lock.json`（钉住的 commit ＋ 逐目录树哈希）与检查脚本：离线查形态与完整性、在线查上游漂移，同步后 `--write` 重钉。范例与哈希配方见 `presets/plugin-upgrade-cordis/`。
+
 ## order 台账
 
 `config.order` 决定 preset 在会话选择器里的次序。取值只登记在这里：
@@ -50,6 +52,7 @@ preset 包没有 `check`，形态验证是两条命令：
 | （官方）minimal | 3 |
 | （官方）cordis | 4 |
 | minimal-fs | 5 |
+| plugin-upgrade-cordis | 6 |
 
 官方四条随 `@deepseek-ai/dsh-web-app` 的 `presets/*.patch.yml` 发布；自有 preset 排在它们之后，新取值取本表已占用最大值 +1。取值以各 preset 的 `<id>.patch.yml` 为准，增删 preset 或改 `config.order` 后同步本表。
 
