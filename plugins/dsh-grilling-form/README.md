@@ -20,7 +20,7 @@ grilling 轮的逐题盘问工具：把整轮问题作为一张**摊开在对话
 - **只读**：这条调用之后记录里出现过用户发言（`kind` 为 `user` / `steering`、`seq` 更大）就算本轮过去，表单转只读——内容留着给人看，不再可填、也不再进上下文。
 - **按会话持久化**：勾选与自填按会话 + `callId` 存进 `localStorage`（键 `dsh-grilling-form.<sessionId>`），刷新后恢复；一条「什么都没选」的记录也是记录（用户把这题清空了），不会被当成脏数据丢掉；storage 不可用或写不进去只让这一份活在内存里。
 - **流式与失败不假装读懂**：参数还在流式传输（`argsRaw` 解析不出来）时退回原始文本；结果形状不认识画调用失败；被拒画违规清单。
-- **与原生 `ask_user_question` 的分工**：原生那条管一次简单确认，本插件管 grilling 轮的逐题盘问。一轮只投一次表单、不写散文预告的纪律写在 grilling 技能正文里，不在本插件里；本机跑的那份技能正文是 DSH 适配版 grilling，从 https://github.com/tttnny/matt-skills/blob/main/skills/productivity/grilling/SKILL.md 拿（技能不随 npm 包发布）：`grilling_form` 是该轮唯一且最后的调用，技能正文里那段字段映射写死了「选项只写进 `options`」——`detail` 只承载各选项共用的背景，每个选项自己的取舍写进它自己的 `description`。
+- **与原生 `ask_user_question` 的分工**：原生那条管一次简单确认，本插件管 grilling 轮的逐题盘问。本工具是和 https://github.com/tttnny/matt-skills 的 grilling 配合的：一轮只投一次表单、当轮即结束的纪律写在那份技能正文里，不在本插件里（技能不随 npm 包发布）。`grilling_form` 是该轮唯一且最后的调用，技能正文里那段字段映射写死了「选项只写进 `options`」——`detail` 只承载各选项共用的背景，每个选项自己的取舍写进它自己的 `description`。
 
 ## 自检
 
