@@ -12,7 +12,7 @@ preset 由**插件组合包（bundle）**声明，不靠目录复制：
 
 - `package.json` 的 `dsh.bundle.patch`（string 或有序数组）指向本目录的 `<id>.patch.yml`；
 - 该 patch 往 profile 树里 `- insert` 一条 `@deepseek-ai/dsh-agent-preset` 行，`config` 字段：`id`（preset id）、`name` / `description`（会话选择器上的显示名与说明）、`order`（排序，台账见下）、`plugins`（必需——preset 的全部组合行，原 `agent.cordis.yml` 的内容整体放这里）。
-- `config.plugins` 里引用的**仓库外插件**必须在本包 `dependencies` 里声明：preset 行按 `name` 从声明它的那棵树解析，包不在 profile 里那一行就 `never started`、整份 preset 带上诊断且不可选（三份 `matt-*` 对 `@lynn123411/dsh-ask-user-grilling` 就是这一条）。
+- `config.plugins` 里引用的**仓库外插件**必须在本包 `dependencies` 里声明：preset 行按 `name` 从声明它的那棵树解析，包不在 profile 里那一行就 `never started`、整份 preset 带上诊断且不可选。
 
 `~/.dsh/.agent-presets/` 目录机制与 `agent.cordis.yml` / `preset.yml` 两个载体在当前 DSH 版本里都不存在、也没有对应物：不写「复制到 preset 目录」的安装法。
 
@@ -31,7 +31,7 @@ preset 由**插件组合包（bundle）**声明，不靠目录复制：
 ## 安装与启用
 
 - `dsh plugin --profile <name> add <包名 | 本仓库目录路径>`：写进该 profile 的 `dependencies`（本地目录记 `link:`），识别到 `dsh.bundle` 就把包名追加进 `dsh.profile.bundles`。目录路径按**调用目录**解析，所以从仓库根写 `./presets/<id>` 即装本目录；自有 preset 在 npm 上的名字是 `@lynn123411/dsh-preset-<id>`。
-- 行消费的仓库外插件要在同一条命令里**一并点名**（`dsh plugin --profile web add @lynn123411/dsh-preset-matt-standard @lynn123411/dsh-ask-user-grilling`）：`dsh.profile.bundles` 只按 profile 的**直接依赖**登记（`dsh-app-boot` 的 `readProfilePlugins` 读 profile 自己的 `package.json`），preset 的传递依赖装得下、行也解析得到（`dependencies` 声明的用处），但进不了 bundle 层——插件自带客户端半边时，缺了它卡片退回原始 JSON。`link:` 开发副本连 `dependencies` 也不物化，所以开发副本命令同样要点名（`./presets/<id> ./plugins/dsh-ask-user-grilling`）。
+- 行消费的仓库外插件要在同一条命令里**一并点名**（`dsh plugin --profile web add @lynn123411/dsh-preset-<id> <它消费的仓库外插件>`）：`dsh.profile.bundles` 只按 profile 的**直接依赖**登记（`dsh-app-boot` 的 `readProfilePlugins` 读 profile 自己的 `package.json`），preset 的传递依赖装得下、行也解析得到（`dependencies` 声明的用处），但进不了 bundle 层——插件自带客户端半边时，缺了它卡片退回原始 JSON。`link:` 开发副本连 `dependencies` 也不物化，所以开发副本命令同样要点名（`./presets/<id> <它消费的仓库内插件目录>`）。
 - preset 的挂载在进程内只装载一次：改 patch 或随包文件后**重启 DSH**，不会热更已挂载的那一份。
 - 给人敲的逐步指令由根 `README.md` 的 preset 表与各 preset 的 `README.md` 给。
 
@@ -53,9 +53,6 @@ preset 包没有 `check`：形态验证是下面两条命令，机制细节见�
 | （官方）minimal | 3 |
 | （官方）cordis | 4 |
 | minimal-fs | 5 |
-| matt-standard | 11 |
-| matt-ptc | 12 |
-| matt-cordis | 13 |
 
 官方四条随 `@deepseek-ai/dsh-web-app` 的 `presets/*.patch.yml` 发布；自有 preset 排在它们之后，新取值取本表已占用最大值 +1。取值以各 preset 的 `<id>.patch.yml` 为准，增删 preset 或改 `config.order` 后同步本表。
 
@@ -64,6 +61,6 @@ preset 包没有 `check`：形态验证是下面两条命令，机制细节见�
 | 这一步在做什么 | 细则 |
 | --- | --- |
 | 建 / 校验开发副本、问「改完多久生效」、撞 `Cannot find package` | [dev-copy.md](./dev-copy.md) |
-| 工具由 preset 行注册、组件要进浏览器 | [client-wiring.md](./client-wiring.md)「preset 行消费的插件」 |
+| 工具行不是 loader entry（挂在 preset 子树里）、组件要进浏览器 | [client-wiring.md](./client-wiring.md)「工具行没落成 root entry」 |
 | 用户反馈「刚发的包装不上」 | [release.md](./release.md)「用户反馈『刚发的包装不上』」 |
 | `npm publish`、产物与 `files` 门禁 | [release.md](./release.md) |

@@ -40,6 +40,6 @@
 | 查已发布版本、`npm view` 像卡住 | [release.md](./release.md)「查已发布版本」 |
 | 插件从页面消失、宿主日志无异常 | [client-wiring.md](./client-wiring.md) |
 | 插件配置页放哪、key 怎么拼、卡片没有入口 / 标题退回包名 | [plugin-config-page.md](./plugin-config-page.md) |
-| 工具由 preset 行注册、组件要进浏览器 | [client-wiring.md](./client-wiring.md)「preset 行消费的插件」 |
+| 工具行不是 loader entry（挂在 preset 子树里）、组件要进浏览器 | [client-wiring.md](./client-wiring.md)「工具行没落成 root entry」 |
 | 用户反馈「刚发的包装不上」 | [release.md](./release.md)「用户反馈『刚发的包装不上』」 |
 | 自建 LLM 适配器的 usage 映射 | [llm-adapter.md](./llm-adapter.md) |

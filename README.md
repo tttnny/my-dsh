@@ -1,6 +1,6 @@
 # my-dsh
 
-> [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) 插件 / 补丁 / preset 合集 · Collection of DSH plugins, patches & presets
+> [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) 插件 / preset 合集 · Collection of DSH plugins & presets
 
 ---
 
@@ -45,10 +45,10 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-model-submenu</code></td>
     </tr>
     <tr>
-      <td><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 preset 生效</i></td>
-      <td><a href="./plugins/dsh-ask-user-grilling"><code>@lynn123411/dsh-ask-user-grilling</code></a></td>
-      <td><b>盘问表单</b><br>· <code>grilling_form</code>：grilling 轮的逐题盘问工具——校验入参后调用 <code>exec.concludeTurn()</code> 立即结束本轮，并把整轮问题作为一张<b>摊开在对话记录里的可交互表单</b>投出去（不阻塞等答案、不接管输入框）；入参表示不了的（重复 id、空题干、空 label、同题重名 label、展开正文里把选项又列一遍）就地返回 <code>rejected</code> + <code>violations</code> 且不结束本轮<br>· 表单没有折叠行也没有卡片壳，题目跟上下文同处一层，进度是顶上的一行小灰字；支持多选、<b>推荐项默认勾上</b>、每题自填、<code>detail</code> markdown 正文（只写各选项共用的背景）、<code>number</code> 并进 <code>header</code>、「推荐」徽标；底部只有一个「导入输入框」键，把作答写进<b>原生输入框草稿</b>，用户按原生发送键发出，作答作为下一条用户消息到达；填了未导入时常驻提醒，这条调用之后有过用户发言就转只读；勾选与自填按会话存 <code>localStorage</code>、刷新后恢复<br>· 配合 <code>matt-*</code> 预设：一轮只投一次表单、当轮即结束，原生 <code>ask_user_question</code> 保留给简单确认<br>· ⚠️ 形态：bundle + 客户端半边——工具由 preset 工具行（<code>- id: tool-grilling-form</code>）注册，profile <code>dsh.profile.bundles</code> 里的本包载体行（<code>id: lynn-grilling-form-carrier</code>、<code>config.carrier: true</code>，什么都不注册）只为让 Web shell 服务表单 bundle</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-ask-user-grilling</code></td>
+      <td><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 profile 生效</i></td>
+      <td><a href="./plugins/dsh-grilling-form"><code>@lynn123411/dsh-grilling-form</code></a></td>
+      <td><b>盘问表单</b><br>· <code>grilling_form</code>：grilling 轮的逐题盘问工具——校验入参后调用 <code>exec.concludeTurn()</code> 立即结束本轮，并把整轮问题作为一张<b>摊开在对话记录里的可交互表单</b>投出去（不阻塞等答案、不接管输入框）；入参表示不了的（重复 id、空题干、空 label、同题重名 label、展开正文里把选项又列一遍）就地返回 <code>rejected</code> + <code>violations</code> 且不结束本轮<br>· 表单没有折叠行也没有卡片壳，题目跟上下文同处一层，进度是顶上的一行小灰字；支持多选、<b>推荐项默认勾上</b>、每题自填、<code>detail</code> markdown 正文（只写各选项共用的背景）、<code>number</code> 并进 <code>header</code>、「推荐」徽标；底部只有一个「导入输入框」键，把作答写进<b>原生输入框草稿</b>，用户按原生发送键发出，作答作为下一条用户消息到达；填了未导入时常驻提醒，这条调用之后有过用户发言就转只读；勾选与自填按会话存 <code>localStorage</code>、刷新后恢复<br>· 纪律写在 grilling 技能正文里（本仓库的技能适配清单见 <a href="./plugins/dsh-grilling-form/SKILL-ADAPTATION.md">SKILL-ADAPTATION.md</a>）：一轮只投一次表单、当轮即结束，原生 <code>ask_user_question</code> 保留给简单确认<br>· ⚠️ 形态：bundle + 客户端半边——工具由 profile 自己 patch 的<b>根层行</b>（<code>cordis.patch.yml</code> 里 <code>- id: tool-grilling-form</code>）注册，profile 里每个 preset 的 agent 都看得见它（<code>minimal-fs</code> 靠自带的 <code>tool-filter</code> 把它移出模型可见目录）；<code>dsh.profile.bundles</code> 里的本包载体行（<code>id: lynn-grilling-form-carrier</code>、<code>config.carrier: true</code>，什么都不注册）只为让 Web shell 服务表单 bundle</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-grilling-form</code><br>＋ profile 补丁层的根层 <code>- id: tool-grilling-form</code> 行（工具由它注册，见插件 README）</td>
     </tr>
     <tr>
       <td><b>📱 设备访问</b><br><i>跨设备与本机外部应用接入</i></td>
@@ -65,20 +65,9 @@
 
 | preset | 说明 | 安装 |
 | --- | --- | --- |
-| [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份（`prefix` 即完整系统提示词、关闭运行时快照）＋ 文件工具 `read` / `write` / `edit`，**整组不含 shell**。工具目录就是这三个——没有 bash / pwsh、没有检索 / `read_image`、没有技能 / 计划 / 目标 / 子代理。随包的 `tool-filter` 行在 `system-prompt/assemble` 处把 `read_image` 移出模型可见目录（`tools.restrict()` 只筛继承工具、兄弟行包注册表又输给 loader 的并发装载，两条路都已实测不成立） | `dsh plugin --profile web add @lynn123411/dsh-preset-minimal-fs` |
-| [matt-standard](./presets/matt-standard) | **Matt 标准工程模式**：官方 `standard` 组合（persona 零改动）＋ Matt Pocock 26 个技能（[mattpocock/skills](https://github.com/mattpocock/skills)）＋ grilling 表单工具。grilling 轮次把整轮问题一次投成对话里的表单、当轮即结束（不再写散文预告）；原生 `ask_user_question` 保留给简单确认。达成共识后不自动进入 plan mode。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 11） | `dsh plugin --profile web add @lynn123411/dsh-preset-matt-standard @lynn123411/dsh-ask-user-grilling` |
-| [matt-ptc](./presets/matt-ptc) | **Matt PTC 模式（实验性）**：官方 `ptc` 组合（persona 零改动，`mode: ptc` 下模型只见 `run_code`）＋ 26 个 Matt 技能（`skills/`）＋ grilling 表单工具（轮次经 `run_code` 内的 `tools.grilling_form` 一次投出对话里的表单、当轮即结束）；原生 `ask_user_question` 保留给简单确认。达成共识后不自动进入 plan mode。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 12） | `dsh plugin --profile web add @lynn123411/dsh-preset-matt-ptc @lynn123411/dsh-ask-user-grilling` |
-| [matt-cordis](./presets/matt-cordis) | **Matt 创造模式**：官方 `cordis` 组合（persona 零改动，含 `tool-cordis` 工具行与官方随附的 4 个技能）＋ 26 个 Matt 技能并入 `skills/` ＋ grilling 表单工具。grilling 轮次把整轮问题一次投成对话里的表单、当轮即结束（不再写散文预告）；原生 `ask_user_question` 保留给简单确认。形态：可安装的 bundle 包，patch 插一条 `@deepseek-ai/dsh-agent-preset` 行（order 13） | `dsh plugin --profile web add @lynn123411/dsh-preset-matt-cordis @lynn123411/dsh-ask-user-grilling` |
+| [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份（`prefix` 即完整系统提示词、关闭运行时快照）＋ 文件工具 `read` / `write` / `edit`，**整组不含 shell**。工具目录就是这三个——没有 bash / pwsh、没有检索 / `read_image`、没有技能 / 计划 / 目标 / 子代理。随包的 `tool-filter` 行在 `system-prompt/assemble` 处把 `read_image` 与 profile 根层的 `grilling_form` 移出模型可见目录（`tools.restrict()` 只筛继承工具、兄弟行包注册表又输给 loader 的并发装载，两条路都已实测不成立） | `dsh plugin --profile web add @lynn123411/dsh-preset-minimal-fs` |
 
-> 四个 preset 都是可安装的 **bundle 包**（npm 名 `@lynn123411/dsh-preset-<id>`），安装命令与插件同一条：它把包写进 profile 的 `dependencies`、并把包名登记进 `dsh.profile.bundles`。装完**重启 DSH**，再在新建会话界面选择对应模式——preset 的挂载在进程内只装载一次，改 patch 或随包文件都不会热更。开发副本把包名换成仓库内路径：`dsh plugin --profile web add ./presets/<id>`（在仓库根执行，会记成 `link:`）。三个 `matt-*` 的命令里另点名 `@lynn123411/dsh-ask-user-grilling`：它已是各包的 `dependencies`（行总可解析），但 bundle 层只按 profile 的**直接依赖**登记，漏了它工具照常可用、表单行退回原始 JSON。三个 `matt-*` 的开发副本同理：`dsh plugin --profile web add ./presets/<id> ./plugins/dsh-ask-user-grilling`（`link:` 包的 `dependencies` 不会被物化，只 link preset 会缺行）。
-
----
-
-## 🛠️ 本地补丁（patches/）
-
-| 目录 | 说明 |
-| --- | --- |
-| [matt-presets-bootstrap](./patches/matt-presets-bootstrap/) | **三个 matt preset 的改动点与重打说明**：相对官方 0.2.0-rc.2 preset patch 的逐处改动清单（包装与身份、技能目录 `customSkillDirs`、工具行 `tool-grilling-form`（上游 `tool-ask-user` 保留）、matt-cordis 的 persona 与官方 cordis 随附技能的处置）、`skills/grilling/SKILL.md` 四处本地适配的成品块、当前基线、外部材料与「何时重打」。**纯文档，无脚本**。详见 [README](./patches/matt-presets-bootstrap/README.md) |
+> `presets/` 下的 preset 都是可安装的 **bundle 包**（npm 名 `@lynn123411/dsh-preset-<id>`），安装命令与插件同一条：它把包写进 profile 的 `dependencies`、并把包名登记进 `dsh.profile.bundles`。装完**重启 DSH**，再在新建会话界面选择对应模式——preset 的挂载在进程内只装载一次，改 patch 或随包文件都不会热更。开发副本把包名换成仓库内路径：`dsh plugin --profile web add ./presets/<id>`（在仓库根执行，会记成 `link:`）。
 
 ---
 

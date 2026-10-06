@@ -30,7 +30,7 @@
 | `dsh-a6api` / `dsh-antigravity-auth` / `dsh-chat-translate` | 插件页 `plugins.bundle.config`，key = 包名，见各包 `src/client/**/plugin-page.ts` 的 `BUNDLE_CONFIG_KEY` |
 | `dsh-llm-agentrouter` | 同上；本包无 `src/`，key 在包内 `lib/client.js` 的 `BUNDLE_NAME` |
 | `dsh-model-submenu` | 无配置界面（接管输入框模型座次） |
-| `dsh-ask-user-grilling` | 无配置界面（`tool.call.toolview` 表单行） |
+| `dsh-grilling-form` | 无配置界面（`tool.call.toolview` 表单行） |
 | `dsh-web-auth-url` | 无配置界面，且无客户端半边 |
 
 归档插件不占位，也不再登记：退役见 [release.md](./release.md)「退役（归档）」。

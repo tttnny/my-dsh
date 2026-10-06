@@ -48,7 +48,7 @@ ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
 
 ## 每个插件各持一份接线模块
 
-`plugin-page.ts`（包名常量 + `BUNDLE_CONFIG_SLOT` + `BUNDLE_CONFIG_KEY` + `setupPluginPage`）在被迁移的插件包里各有一份：三个包的 `src/` 版本剔除注释并归一化包名后逐字节相同，只差 `BUNDLE_NAME`；`dsh-llm-agentrouter` 没有 `src/`，同一套逻辑内联在它的 `lib/client.js` 里，且直接用 `BUNDLE_NAME` 当 key、没有另立 `BUNDLE_CONFIG_KEY` 常量。**这份重复是现状，不是设计**：客户端 bundle 是各自独立构建、各由裸包名那一行注册进浏览器侧模块表（见上「不要用 `row.config`」的判定方式），包与包之间没有可共享的运行时模块位置；此前的共享页壳也正是因此只能靠复制同步。注意当前**没有**构建门禁拦住跨插件值导入（`dsh-client-bundle-purity` 只存在于 `dsh-model-submenu` 与 `dsh-ask-user-grilling`），所以这条约束靠约定，不靠工具。
+`plugin-page.ts`（包名常量 + `BUNDLE_CONFIG_SLOT` + `BUNDLE_CONFIG_KEY` + `setupPluginPage`）在被迁移的插件包里各有一份：三个包的 `src/` 版本剔除注释并归一化包名后逐字节相同，只差 `BUNDLE_NAME`；`dsh-llm-agentrouter` 没有 `src/`，同一套逻辑内联在它的 `lib/client.js` 里，且直接用 `BUNDLE_NAME` 当 key、没有另立 `BUNDLE_CONFIG_KEY` 常量。**这份重复是现状，不是设计**：客户端 bundle 是各自独立构建、各由裸包名那一行注册进浏览器侧模块表（见上「不要用 `row.config`」的判定方式），包与包之间没有可共享的运行时模块位置；此前的共享页壳也正是因此只能靠复制同步。注意当前**没有**构建门禁拦住跨插件值导入（`dsh-client-bundle-purity` 只存在于 `dsh-model-submenu` 与 `dsh-grilling-form`），所以这条约束靠约定，不靠工具。
 
 约定：`setupPluginPage` 的**逻辑**必须在这四份里保持同源，改一处就改全部；只有 `BUNDLE_NAME` 与注释可以不同。`dsh-llm-agentrouter` 没有 `src/`，同样的常量与辅助函数内联在它的 `lib/client.js` 里，也要一起改。
 

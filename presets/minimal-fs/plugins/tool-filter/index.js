@@ -29,6 +29,12 @@
  * itself already uses — it withholds `read_image` from a route whose model
  * declares no image input — so this is an intended seam, not a workaround.
  *
+ * `grilling_form` is the second name in the list for the opposite reason:
+ * `@lynn123411/dsh-grilling-form` is registered by a root-layer row in the
+ * profile patch, so the GLOBAL layer hands it to every scope and this preset
+ * cannot decline it by omission. Withholding it here is what keeps the catalog
+ * at the three file tools.
+ *
  * The row is mounted as this package's `./tool-filter` export, not as a path
  * relative to the preset composition: a preset row's baseUrl is the profile
  * directory the preset was declared from, so `./plugins/…` would resolve under
@@ -38,7 +44,7 @@
  */
 
 /** The tool names removed from every catalog assembled in this preset's scope. */
-const HIDDEN = ['read_image']
+const HIDDEN = ['read_image', 'grilling_form']
 
 /** The prompt registry is where the exclusion is enforced. */
 export const inject = ['systemPrompt']

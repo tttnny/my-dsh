@@ -1,0 +1,10 @@
+# 本包出现在 profile 的 dsh.profile.bundles 里时应用。
+#
+# 这一行只为让 Web shell 服务本包的浏览器半边：客户端 bundle 只对 root loader 的 enabled
+# entry 服务（见 client-modules 的 processOne）。所以它必须什么都不注册——工具由 profile
+# patch 里的一条根层插入行（- id: tool-grilling-form）注册，载体行只负责把浏览器半边挂上 entry。
+- insert:
+    - id: lynn-grilling-form-carrier
+      name: '@lynn123411/dsh-grilling-form'
+      config:
+        carrier: true
