@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-preset-matt-ptc",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "官方 ptc 组合（persona 零改动，模型只见 run_code）＋ Matt Pocock 的 26 个技能（skills/）＋ grilling 表单工具（grilling_form）。grilling 轮次经 run_code 内的 tools.grilling_form 把整轮问题一次投成对话里的表单、当轮即结束；原生 ask_user_question 保留给简单确认。达成共识后不自动进入 plan mode。",
   "type": "module",
   "exports": {
@@ -12,7 +12,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@lynn123411/dsh-ask-user-grilling": "^0.6.2"
+    "@lynn123411/dsh-ask-user-grilling": "^0.7.0"
   },
   "license": "MIT",
   "keywords": [
