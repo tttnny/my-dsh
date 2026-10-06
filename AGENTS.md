@@ -23,6 +23,18 @@
 | 插件配置界面放哪、key 怎么来、静默失败 | `docs/rules/plugin-config-page.md` |
 | `presets/` | `docs/rules/presets.md` |
 | 根 `README.md` 的骨架与插件表 | `docs/rules/to-readme.md` |
-| issue 与 wayfinder 票务 | `docs/agents/issue-tracker.md` |
-| triage 角色对应的 label 字符串 | `docs/agents/triage-labels.md` |
-| 探索代码库前读哪些领域文档、给概念命名 | `docs/agents/domain.md` |
+| issue 与 wayfinder 票务、triage label、领域文档消费规则 | 见下方 `## Agent skills` |
+
+## Agent skills
+
+### Issue tracker
+
+issue 与 spec 都在本仓库的 GitHub Issues 里，用 `gh` CLI 读写。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+五个 triage 角色使用同名 label 字符串（`needs-triage` 等），与仓库已建 label 一致。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单上下文（single-context）：领域文档落在根 `GLOSSARY.md` 与 `docs/adr/`，按需惰性创建。见 `docs/agents/domain.md`。
