@@ -95,7 +95,8 @@ function labelAlias(label) {
  *
  * 只认行首、且要求别名后面就是分隔符，是为了把误拒面压到最小：正文里顺口提到某个选项名
  * （「选甲：…」）不算，只有「一条以选项名开头的条目」才算。代价是漏放与误拒都还可能发生，
- * 所以技能正文那半边（grilling 技能的字段映射段，见 SKILL-ADAPTATION.md）是第一道闸。
+ * 所以技能正文那半边（grilling 技能的字段映射段，见 tttnny/matt-skills 的
+ * skills/productivity/grilling/SKILL.md）是第一道闸。
  * @param {string} detail - 展开正文（markdown）。
  * @param {string[]} aliases - 该题各选项的别名。
  * @returns {string|undefined} 命中的那一行；没命中时 undefined。
