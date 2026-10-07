@@ -12,6 +12,9 @@ import { normalizeOption } from './recommendation.js';
 export const IMPORT_BLOCK_START = '【盘问作答】';
 export const IMPORT_BLOCK_END = '【/盘问作答】';
 
+/** 本插件的 wire 工具名：浏览器半边靠它在本轮里认出那次调用。 */
+export const TOOL_NAME = 'grilling_form';
+
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -241,6 +244,54 @@ export function readFormModel({ argsRaw, resultText, failed = false }) {
 }
 
 /**
+ * 一个工具调用块 → 这个块自己的表单模型。取数规则全在这里，两个注册项（轮次尾部的表与
+ * 工具行）都不许自己去猜块形状：
+ *
+ *  - 结果节点（有 `kind`）的调用头挂在 `call` 上（窗口截断时是 null），结果文本在 `content` 里；
+ *  - 还没落结果的那次调用把 `name` / `argsRaw` 直接摊在自己身上。
+ *
+ * `failure` 是失败行要显示的文字，只有真的以失败收场时才有。
+ * @param {unknown} block - 工具调用块：结果节点，或还在跑/正在准备的那次调用。
+ * @returns {{
+ *   state: 'running'|'form'|'rejected'|'error',
+ *   questions: object[], violations: string[], error: string|undefined, failure: string|undefined,
+ * }} 表单模型与失败说明。
+ */
+export function readCallModel(block) {
+  const settled = isRecord(block) && 'kind' in block;
+  const argsRaw = (settled ? block.call?.argsRaw : block?.argsRaw) ?? '';
+  const resultText = settled ? firstText(block.content) : undefined;
+  const failed = settled && block.isError === true;
+  return {
+    ...readFormModel({ argsRaw, resultText, failed }),
+    failure: failed ? failureText(resultText, block.error) : undefined,
+  };
+}
+
+/**
+ * 结果里的第一段文本。本工具只渲染一段，形状不对就当没有结果。
+ * @param {unknown} content - 结果 content 数组。
+ * @returns {string|undefined} 文本。
+ */
+function firstText(content) {
+  if (!Array.isArray(content)) return undefined;
+  const text = content.find((block) => isRecord(block) && block.type === 'text');
+  return typeof text?.text === 'string' ? text.text : undefined;
+}
+
+/**
+ * 失败行要显示的文字：结果里那段文本优先，没有就用错误的 name/code 拼一行。
+ * @param {string|undefined} resultText - 结果文本。
+ * @param {{name?: string, code?: string}|undefined} error - 结果节点上的错误。
+ * @returns {string|undefined} 失败说明。
+ */
+function failureText(resultText, error) {
+  if (resultText !== undefined && resultText !== '') return resultText;
+  const parts = [error?.name, error?.code].filter((part) => typeof part === 'string' && part !== '');
+  return parts.length === 0 ? undefined : parts.join(': ');
+}
+
+/**
  * 归一化 localStorage 里读回来的作答：只认 `{[id]: {selected, custom}}` 这个形状。
  *
  * **形状对得上的空作答也留着**：一条「selected 是数组、且与 custom 都空」的记录不是脏数据，
@@ -311,7 +362,7 @@ export function applyRecommendedDefaults(questions, answers) {
 
 /**
  * 生成导入文本的正文：逐题一行「标题：你选的项／你自填的字」，只含有作答的题。
- * 一行都没有时返回空串（调用方据此禁用导入、也不显示未导入提醒）。
+ * 一行都没有时返回空串（调用方据此禁用导入键）。
  * @param {object[]} questions - 题目模型。
  * @param {object} answers - 作答表。
  * @returns {string} 正文（不含导入块的起止行）。
@@ -361,38 +412,149 @@ export function applyImport(draft, body) {
 }
 
 /**
- * 草稿里那段导入块现在是不是就是这份作答。表单填了东西却没导进去（或导入后又改了）
- * 就为 true——界面据此显示未导入提醒。平台没有发送前的提交钩子，提醒只能是提醒。
- * @param {unknown} draft - 当前草稿。
- * @param {string} body - importBody 的产物；空串（表单里什么都没有）时恒为 false。
- * @returns {boolean} 是否需要提醒。
+ * 这一轮是否已经过去：记录里出现了这条调用之后（seq 更大）的用户发言——把本轮带过去的就是它。
+ * 认不出这条调用、或界面还拿不到记录时一律返回 undefined——把表单当只读卡住比多显示一次可编辑
+ * 更糟（答案没地方写）。
+ *
+ * 交回的是**紧接着这条调用的那一条**：更晚的发言属于后面的轮次，拿它重画这一轮必然串味
+ * （旧轮次的表会去解析新一轮的作答）。只有一条时就是它。
+ * @param {unknown} nodes - chat 视图的 legacy.nodes。
+ * @param {unknown} callId - 本次工具调用的 callId。
+ * @returns {object|undefined} 那条用户发言节点；本轮还没过去时为 undefined。
  */
-export function importStale(draft, body) {
-  if (body === '') return false;
-  const current = findImportBlock(draft);
-  if (current === undefined) return true;
-  const inner = draft.slice(current.start + IMPORT_BLOCK_START.length, current.end - IMPORT_BLOCK_END.length);
-  return inner.replace(/^\n/, '').replace(/\n$/, '') !== body;
+export function userReplyAfter(nodes, callId) {
+  if (!Array.isArray(nodes)) return undefined;
+  const mine = nodes.find((node) => isRecord(node) && node.callId === callId);
+  if (mine === undefined || typeof mine.seq !== 'number') return undefined;
+  let reply;
+  for (const node of nodes) {
+    if (!isRecord(node)) continue;
+    if (node.kind !== 'user' && node.kind !== 'steering') continue;
+    if (typeof node.seq !== 'number' || node.seq <= mine.seq) continue;
+    if (reply === undefined || node.seq < reply.seq) reply = node;
+  }
+  return reply;
 }
 
 /**
- * 这一轮是否已经过去：记录里出现了这条调用之后（seq 更大）的用户发言。
- * 认不出这条调用、或界面还拿不到记录时一律返回 false——把表单当只读卡住比多显示一次可编辑
- * 更糟（答案没地方写）。
- * @param {unknown} nodes - chat 视图的 legacy.nodes。
- * @param {unknown} callId - 本次工具调用的 callId。
- * @returns {boolean} 是否转只读。
+ * 一条发言的文字：内容块里的文本段接起来（附件、图片这些段没有文字可反解）。
+ * @param {unknown} node - 用户发言节点。
+ * @returns {string} 发言文字；没有文字时为空串。
  */
-export function isReadOnlyAfter(nodes, callId) {
-  if (!Array.isArray(nodes)) return false;
-  const mine = nodes.find((node) => isRecord(node) && node.callId === callId);
-  if (mine === undefined || typeof mine.seq !== 'number') return false;
-  return nodes.some((node) => (
-    isRecord(node)
-    && (node.kind === 'user' || node.kind === 'steering')
-    && typeof node.seq === 'number'
-    && node.seq > mine.seq
-  ));
+export function messageText(node) {
+  const content = isRecord(node) && Array.isArray(node.content) ? node.content : [];
+  return content
+    .filter((block) => isRecord(block) && block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n');
+}
+
+/**
+ * 本轮里那次 `grilling_form` 调用。位置由 chat 的位置索引给出（按轮次取本轮的节点键），
+ * 所以不靠 seq 猜边界；投出即结束本轮，取**最后一次**——被拒之后又投的那一次才算数。
+ * @param {unknown} chat - chat 视图快照（ChatSnapshot）。
+ * @param {unknown} turn - 轮次号。
+ * @returns {{ block: object, toolName: string, callId: string }|undefined} 本轮的表单调用；没有就不画。
+ */
+export function roundCall(chat, turn) {
+  const keys = chat?.locations?.getTurn?.(turn);
+  if (!Array.isArray(keys)) return undefined;
+  let found;
+  for (const key of keys) {
+    const node = chat.nodes.get(key);
+    if (!isRecord(node) || node.kind !== 'tool-call') continue;
+    const block = node.data?.root;
+    if (!isRecord(block)) continue;
+    const toolName = typeof block.call?.name === 'string' ? block.call.name : block.name;
+    if (toolName !== TOOL_NAME) continue;
+    found = { block, toolName, callId: block.callId };
+  }
+  return found;
+}
+
+/**
+ * 反解一段用户发言里的作答块，回到作答表。
+ *
+ * 匹配规则（都是**给人看**的格式，没有隐藏协议）：标题按「题号并入的标题 → 题干 → id」认题；
+ * 每一项先按该题选项的展示文字精确匹配，匹配不上的并进自填。块里没出现的题就是**没作答**
+ * （显式记一条空作答，推荐默认因此不会被勾回来）。
+ *
+ * 已知代价（刻意接受）：选项名或自填内容本身含「、」时可能多算/少算一项。
+ * @param {unknown} text - 用户发言的文字。
+ * @param {object[]} questions - 题目模型。
+ * @returns {object|undefined} 作答表；块缺失、起止行不配对、或一条都还原不出来时 undefined（调用方退回本地那份）。
+ */
+export function parseImportedAnswers(text, questions) {
+  const current = findImportBlock(text);
+  if (current === undefined) return undefined;
+  const inner = text.slice(current.start + IMPORT_BLOCK_START.length, current.end - IMPORT_BLOCK_END.length);
+  const body = inner.replace(/^\n/, '').replace(/\n$/, '');
+  if (isBlank(body)) return undefined;
+  const answers = {};
+  for (const question of questions) answers[question.id] = { selected: [], custom: '' };
+  let matched = 0;
+  for (const line of body.split('\n')) {
+    const entry = splitImportedLine(questions, line);
+    if (entry === undefined) continue;
+    matched++;
+    const { question, items } = entry;
+    const selected = [];
+    const rest = [];
+    for (const raw of items.split('、')) {
+      const item = raw.trim();
+      if (item === '') continue;
+      const option = (question.options ?? []).find((candidate) => candidate.displayLabel === item);
+      if (option === undefined) rest.push(item);
+      else selected.push(option.label);
+    }
+    answers[question.id] = { selected, custom: rest.join('、') };
+  }
+  return matched === 0 ? undefined : answers;
+}
+
+/**
+ * 反解出的一行拆成「哪道题」与「它的项」。标题本身可能含「：」（「落点：插件页」这种），
+ * 所以逐个分隔符试着认题，认得出的那一个才算分隔符。
+ * @param {object[]} questions - 题目模型。
+ * @param {string} line - 导入块里的一行。
+ * @returns {{ question: object, items: string }|undefined} 认不出题时 undefined。
+ */
+function splitImportedLine(questions, line) {
+  let cut = line.indexOf('：');
+  while (cut !== -1) {
+    const question = questionByTitle(questions, line.slice(0, cut).trim());
+    if (question !== undefined) return { question, items: line.slice(cut + 1) };
+    cut = line.indexOf('：', cut + 1);
+  }
+  return undefined;
+}
+
+/**
+ * 题面里的一道题按标题认回来：题号并入的标题优先，其次题干，最后 id。
+ * @param {object[]} questions - 题目模型。
+ * @param {string} title - 反解出来的标题。
+ * @returns {object|undefined} 命中的题。
+ */
+function questionByTitle(questions, title) {
+  if (title === '') return undefined;
+  const readers = [(question) => question.header, (question) => question.question, (question) => question.id];
+  for (const read of readers) {
+    const hit = questions.find((question) => typeof read(question) === 'string' && read(question) === title);
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
+}
+
+/**
+ * 冻结那一刻表单上显示的作答：以实发消息里的作答块为准（用户在原生输入框里改过、增删过的
+ * 都以那条消息为准）；块拿不到时退回本地那份（含推荐默认），内容不会凭空消失。
+ * @param {object[]} questions - 题目模型。
+ * @param {object} storedAnswers - 用户自己的作答表（readStoredForm 的产物）。
+ * @param {unknown} text - 实发消息的文字。
+ * @returns {object} 冻结渲染要用的作答表。
+ */
+export function frozenAnswers(questions, storedAnswers, text) {
+  return parseImportedAnswers(text, questions) ?? applyRecommendedDefaults(questions, storedAnswers);
 }
 
 // --- 持久化：storage 由调用方传进来（浏览器是 localStorage，测试是假件），本模块不自己取全局 ---

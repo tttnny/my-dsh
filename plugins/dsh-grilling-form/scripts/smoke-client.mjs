@@ -28,6 +28,8 @@ const styles = [];
 const errors = [];
 const registrations = [];
 const locales = [];
+const forkCalls = [];
+const opened = [];
 
 /** 假 <style>：只记 data-plugin-css 与内容。 */
 function makeStyleTag() {
@@ -89,11 +91,13 @@ function makeCtx(declared = []) {
         return () => {};
       },
       register: (options, component) => {
-        registrations.push({ name: options.name, key: options.key, locale: options.locale, component });
+        registrations.push({ name: options.name, key: options.key, id: options.id, locale: options.locale, inject: options.inject, component });
         return () => {};
       },
     },
     locale: { register: (ns) => { locales.push(ns); return () => {}; } },
+    sessions: { fork: (opts) => { forkCalls.push(opts); return Promise.resolve('child-1'); } },
+    uiWorkspace: { openSession: (sessionId) => { opened.push(sessionId); } },
   };
   const base = {
     on: () => () => {},
@@ -120,11 +124,23 @@ function test(name, fn) {
   }
 }
 
+/** 要等一个 promise 才算完的那几条。 */
+async function testAsync(name, fn) {
+  try {
+    await fn();
+    console.log(`  ✓ [PASS] ${name}`);
+  } catch (err) {
+    console.error(`  ✗ [FAIL] ${name}: ${err.message}`);
+    throw err;
+  }
+}
+
 console.log(`${pkgName} 浏览器半边`);
 test('bundle 按包名自注册', () => assert.equal(loadedId, pkgName));
 test('导出 apply 与 inject', () => {
   assert.equal(typeof exported.apply, 'function');
-  assert.deepEqual(exported.inject, ['locale', 'slots']);
+  // 服务注入是硬契约：少声明一个，插件整条 entry 变 failed、从页面上消失
+  assert.deepEqual(exported.inject, ['locale', 'slots', 'sessions', 'uiWorkspace']);
 });
 
 test('守卫会拒绝未声明的服务读取（反例，否则下面的断言都是空转）', () => {
@@ -136,27 +152,46 @@ test('apply() 在守卫下跑得通', () => {
   exported.apply(makeCtx(exported.inject));
   assert.deepEqual(errors, []);
 });
-test('注册了自有 key 的 tool.call.toolview 行', () => {
+test('表单注册进轮次尾部槽位（自有 id），工具行按 wire 工具名照旧注册', () => {
+  const tail = registrations.find((entry) => entry.name === 'conversation.chat.turnTail');
+  assert.ok(tail !== undefined, '没有注册 conversation.chat.turnTail');
+  assert.equal(tail.id, pkgName);
+  assert.equal(tail.locale, 'grillingForm');
+  assert.equal(typeof tail.component, 'function');
+  assert.equal(typeof tail.inject, 'function', '分叉动作要以注入形式交给组件');
   const row = registrations.find((entry) => entry.name === 'tool.call.toolview');
   assert.ok(row !== undefined, '没有注册 tool.call.toolview');
   assert.equal(row.key, 'grilling_form');
   assert.equal(row.locale, 'grillingForm');
   assert.equal(typeof row.component, 'function');
 });
-test('只注册这一行，不接管官方 key', () => {
-  assert.equal(registrations.length, 1);
-  assert.equal(registrations[0].key === 'ask_user_question', false);
+test('只注册这两项，不接管官方 key', () => {
+  assert.equal(registrations.length, 2);
+  assert.equal(registrations.some((entry) => entry.key === 'ask_user_question'), false);
+});
+test('槽位条目声明的注入在守卫下拿得到会话与工作台服务', () => {
+  const tail = registrations.find((entry) => entry.name === 'conversation.chat.turnTail');
+  const face = tail.inject('sess-1');
+  assert.equal(typeof face.forkAt, 'function');
+});
+await testAsync('注入的分叉动作：按本轮结束点分叉，然后把子会话打开', async () => {
+  const tail = registrations.find((entry) => entry.name === 'conversation.chat.turnTail');
+  tail.inject('sess-1').forkAt(8);
+  assert.deepEqual(forkCalls, [{ sessionId: 'sess-1', atSeq: 8, increaseTitle: true }]);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(opened, ['child-1']);
 });
 test('字典注册在本插件名字空间下', () => assert.deepEqual(locales, ['grillingForm']));
 test('样式注入一次，标签带包身份', () => {
   assert.equal(styles.length, 1);
-  assert.equal(styles[0].dataset.pluginCss, `${pkgName}/GrillingFormRow.css`);
+  assert.equal(styles[0].dataset.pluginCss, `${pkgName}/GrillingForm.css`);
   assert.ok(styles[0].textContent.includes('.dsg-form'));
 });
 
 // class 名在 JSX 与 CSS 之间单边漂移 = 样式静默失效，构建与运行都不报错
-const jsx = readFileSync(join(root, 'src', 'client', 'GrillingFormRow.jsx'), 'utf8');
-const css = readFileSync(join(root, 'src', 'client', 'GrillingFormRow.css'), 'utf8');
+const jsx = readFileSync(join(root, 'src', 'client', 'GrillingForm.jsx'), 'utf8');
+const css = readFileSync(join(root, 'src', 'client', 'GrillingForm.css'), 'utf8');
 const used = new Set([...jsx.matchAll(/"(dsg-[A-Za-z0-9-]+)"/g)].map((match) => match[1]));
 const defined = new Set([...css.matchAll(/\.(dsg-[A-Za-z0-9-]+)/g)].map((match) => match[1]));
 test('JSX 里用到的 class 名都在 CSS 里', () => {

@@ -1,9 +1,12 @@
-/* grilling_form 的 transcript 表单。
+/* grilling_form 的表单：住在对话流的轮次尾部（conversation.chat.turnTail）。
  *
  * 故意**没有卡片**：不画折叠行，也不套边框、背景、内边距与内部滚动——题目、选项、按钮跟
  * 上下文同处一层，整轮的进度缩成顶上的一行小灰字。所以这里除了那条小灰字与自填框的输入框，
  * 没有任何容器级的线或底色；字号、行高、颜色照抄官方 @deepseek-ai/dsh-client-ui-tool 的
- * ToolRow / AskQuestionCard，避免同一页出现两套视觉。 */
+ * ToolRow / AskQuestionCard，避免同一页出现两套视觉。
+ *
+ * 冻结（只读）不换一套样式：控件还是那些控件、位置还是那些位置，只是锁住——「长得和可填时
+ * 一模一样」是这一版明确要的样子。 */
 
 .dsg-root {
   display: flex;
@@ -39,7 +42,6 @@
 }
 
 .dsg-question,
-.dsg-answer,
 .dsg-verdict {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -51,7 +53,6 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.dsg-answer,
 .dsg-verdict {
   color: var(--dsw-alias-label-primary);
 }
@@ -63,14 +64,6 @@
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-state-error-primary);
-}
-
-.dsg-answerLine {
-  display: block;
-}
-
-.dsg-skipped {
-  color: var(--dsw-alias-label-tertiary);
 }
 
 .dsg-header {
@@ -152,25 +145,30 @@
 
 .dsg-footer {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
+.dsg-fork,
 .dsg-import {
   flex: none;
 }
 
-.dsg-reminder,
+/* 冻结不换长相：勾选框 disabled 时 ui-primitives 会给它压到 0.5 透明、光标也从 pointer 变了，
+   这里按回原样——控件锁住了，但长相与可填时一致（要选中复制的正是这些文字）。 */
+.dsg-root[data-readonly='true'] .dsg-option:has(input:disabled) {
+  opacity: 1;
+  cursor: default;
+}
+
 .dsg-closed {
   margin: 0;
   align-self: stretch;
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta, 0px));
-  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary));
-}
-
-.dsg-closed {
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -183,20 +181,6 @@
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-state-error-primary);
-}
-
-.dsg-raw {
-  max-height: 360px;
-  margin: 0;
-  padding: 12px 16px;
-  overflow: auto;
-  border: 0.5px solid var(--dsw-alias-border-l1);
-  border-radius: 12px;
-  background: var(--dsw-alias-markdown-code-block);
-  font: var(--dsw-font-markdown-code-block-small);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  color: var(--dsw-alias-label-secondary);
 }
 
 .dsg-inspectButton {
