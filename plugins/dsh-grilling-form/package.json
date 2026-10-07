@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-grilling-form",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Grilling-round question tool: puts the whole round of questions into the conversation as an interactive form and ends the turn there — the user answers it in the native composer and their next message carries the answers back. Its browser half puts that form at the round's turn tail in the conversation flow (no collapse row, no card shell) with forced multi-select, recommended options pre-checked, per-question free text, detail markdown, an import-to-composer button, and a branch-from-here action; once the round is over the form freezes in place — the same checkboxes and text boxes, inert and selectable — redrawn from the message the user actually sent.",
   "type": "module",
   "main": "lib/index.js",
