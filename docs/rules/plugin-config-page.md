@@ -46,7 +46,6 @@ ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
 - `plugins/dsh-a6api/src/client/settings/plugin-page.ts`
 - `plugins/dsh-antigravity-auth/src/client/plugin-page.ts`
 - `plugins/dsh-chat-translate/src/client/settings/plugin-page.ts`
-- `plugins/dsh-llm-agentrouter/lib/client.js`（无 `src/`，同一套逻辑内联，且直接用 `BUNDLE_NAME` 当 key、没有另立 `BUNDLE_CONFIG_KEY`）
 
 没有构建门禁拦跨插件值导入（`dsh-client-bundle-purity` 只存在于 `dsh-model-submenu` 与 `dsh-grilling-form`），这条靠约定。
 

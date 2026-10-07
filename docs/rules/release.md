@@ -42,3 +42,11 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'Accept: application/vnd.npm.install
 不再维护的插件移到仓库根 `archive/plugins/dsh-<name>/`，目录名与包名不变、历史链接不失效。归档内容只作历史参考：不再发布、不再适配新内核；目录与插件自带 `README.md` 原样保留。
 
 移走之后登记当场同步：根 `README.md` 插件表——删该行并修正该功能域的 `rowspan` 合并数（版式见 [to-readme.md](./to-readme.md)）。
+
+已发布过的包，用户下令后在同一轮把 registry 上**全部版本**标弃用——不传版本范围就是全量，消息指回归档路径与最后可用版本：
+
+```bash
+npm deprecate @lynn123411/dsh-<name> "已归档，不再维护：本包已移入仓库 archive/plugins/dsh-<name>，不再发布新版本，也不再随 DSH 内核适配。最后一个可用版本为 <ver>。"
+```
+
+弃用只影响新安装（`npm install` / `dsh plugin add` 打警告），已装副本不受影响，也不下架任何版本；与 `npm publish`、`git push` 同属 registry 写入，一样只听令。

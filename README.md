@@ -23,15 +23,10 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>
-      <td rowspan="3"><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
+      <td rowspan="2"><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
       <td><a href="./plugins/dsh-a6api"><code>@lynn123411/dsh-a6api</code></a></td>
       <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 输入框下方快捷模型卡片 + 账户余额 / 价格波动 / 模型市场胶囊行<br>· 配置页挂在「<b>插件</b>」页：注册进 <code>plugins.bundle.config</code>（key <code>@lynn123411/dsh-a6api</code>），进本插件详情页即可直接改</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-a6api</code></td>
-    </tr>
-    <tr>
-      <td><a href="./plugins/dsh-llm-agentrouter"><code>@lynn123411/dsh-llm-agentrouter</code></a></td>
-      <td><b>AgentRouter 中转聚合</b><br>· 单 pi-ai 路由承载多模型，模型选择器只出现一个分组<br>· 国内 / 国际端点设置卡一键切换，下一请求即生效（要热更的字段以 <code>.volatile()</code> 声明，设置面由 Config schema 派生）<br>· 出站 User-Agent 改写 + 402 配额围栏<br>· 上游分叉：沿用 <code>llm-agentrouter</code> 命名空间；配置落在当前 Profile 的插件条目里，端点卡片挂在本插件在「插件」页的配置页（<code>plugins.bundle.config</code>，key <code>@lynn123411/dsh-llm-agentrouter</code>）</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-llm-agentrouter</code></td>
     </tr>
     <tr>
       <td><a href="./plugins/dsh-antigravity-auth"><code>@lynn123411/dsh-antigravity-auth</code></a></td>
