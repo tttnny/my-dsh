@@ -35,12 +35,12 @@ const inject = ["tools"];
 const PENDING_MESSAGE = "The form with this round's questions is now shown in the conversation and this turn has ended. The user has not answered yet: they answer in their own composer, and their answers arrive later as their next user message, one line per answered question (\"<title>: <chosen options / typed text>\"). Do not wait for it, do not treat this as an answer, and do not write the questions in prose as well.";
 
 /**
- * 这一行不接受 config：唯一的装配形态就是注册工具（同时承载浏览器半边）。
+ * 校验这一行的 config：唯一的装配形态就是注册工具（同时承载浏览器半边），所以它不收任何键。
  * 拼错的键当场抛，免得静默写出一个什么都不注册的行。
  * @param {unknown} config - loader 交给插件行的 config。
  * @returns {void}
  */
-function readConfig(config) {
+function assertNoConfig(config) {
   if (config === undefined || config === null) return;
   if (typeof config !== "object" || Array.isArray(config)) {
     throw new TypeError(`${name}: config must be an object`);
@@ -52,7 +52,7 @@ function readConfig(config) {
 }
 
 function apply(ctx, config) {
-  readConfig(config);
+  assertNoConfig(config);
   ctx.tools.register(defineTool({
     name: "grilling_form",
     description: "Put this round's grilling questions to the user as a form in the conversation, then end your turn. The user answers it in their own composer and their answers arrive as their next user message. Use it only for a round of per-question grilling, and make it the only and final tool call of the round: it ends the turn, so anything else in the same batch keeps the turn open.",

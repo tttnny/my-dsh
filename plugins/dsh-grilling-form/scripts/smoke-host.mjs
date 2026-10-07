@@ -22,6 +22,8 @@ import ToolRuntime from '@deepseek-ai/dsh-tools';
 import * as plugin from '../lib/index.js';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
+/** 包名：与包内 cordis.patch.yml 那条装配行的 name 比对，两边各自独立，不共用字面量。 */
+const pkgName = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name;
 
 let passed = 0;
 let total = 0;
@@ -241,12 +243,24 @@ await test('这一行不接受 config：写任何键当场抛，不静默接受�
 });
 
 await test('包内 cordis.patch.yml 就是那条装配行：id 与宿主导出名同名、且不带 config', async () => {
-  const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8');
-  // 不带 config：这一行既注册工具，又是浏览器半边的 root loader entry。
-  assert.doesNotMatch(patch, /carrier|config:/);
-  assert.match(patch, /- id: tool-grilling-form\n\s+name: '@lynn123411\/dsh-grilling-form'/);
+  // 先剥掉注释：整行注释与行尾注释都算。注释里出现 `config` 字样是合法文档（本文件开头就写了它
+  // 不写 config），不该让这条断言误报红；断言只该盯配置本身。
+  const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
+    .split('\n')
+    .map((line) => line.replace(/(^|\s)#.*$/, ''))
+    .filter((line) => line.trim() !== '')
+    .join('\n');
+
+  // 抽出那条 insert 行，而不是把期望值写成字面量：这样 id 与宿主导出名是**两个独立来源**的比对。
+  const rows = [...patch.matchAll(/-\s*id:\s*(\S+)\s*\n\s*name:\s*'([^']+)'/g)];
+  assert.equal(rows.length, 1, '包内 cordis.patch.yml 应当只有一条装配行');
+  const [, rowId, packageName] = rows[0];
+
   // 行 id 与宿主导出名一致：旧装配留下的同名手写行会被 loader 按 id 合成一条，不会把包挂两遍。
-  assert.equal(plugin.name, 'tool-grilling-form');
+  assert.equal(rowId, plugin.name);
+  assert.equal(packageName, pkgName);
+  // 不带 config：这一行既注册工具，又是浏览器半边的 root loader entry。
+  assert.equal(/\bconfig\b/.test(patch), false, '装配行不该带 config');
 });
 
 console.log(`${passed}/${total} passed`);

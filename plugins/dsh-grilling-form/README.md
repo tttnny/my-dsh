@@ -57,9 +57,13 @@ dsh plugin --profile web add @lynn123411/dsh-grilling-form
 ```
 
 - **工具**：宿主半边在这条行下注册 `grilling_form`。它在**根层**：注册进全局层后，profile 里每一个 preset 的 agent 都看得见它（子 scope 继承全局层；preset 自己同名的行会盖过全局那条，所以不需要幂等补丁）。**代价（明知并接受）**：全局层意味着「所有 preset 都看得见」，`minimal-fs` 那种「模型可见工具只有三件套」的 preset 也会多拿到 `grilling_form`；它由 `minimal-fs` 自己的 `tool-filter` 行移出模型可见目录，工具本身照旧注册。
-- **浏览器半边**：这条行本身是 root loader **entry**，而客户端 bundle 只对 root loader 的 enabled entry 服务，Web shell 据此服务 `lib/client.js`。所以不需要额外的载体行——行本身既是工具行又是载体行。这一行**不写 `config`**：写了当场抛（`src/index.js` 的 `readConfig`），免得拼错的行静默什么都不注册。
+- **浏览器半边**：这条行本身是 root loader **entry**，而客户端 bundle 只对 root loader 的 enabled entry 服务，Web shell 据此服务 `lib/client.js`。所以不需要额外的载体行——行本身既是工具行又是载体行。这一行**不写 `config`**：写了当场抛（`src/index.js` 的 `assertNoConfig`），免得拼错的行静默什么都不注册。
 
-升级过来的 profile 若还留着旧装配那条手写的 `- id: tool-grilling-form` 行，**不必手工删**：同一 id 的两行会被 loader 按 id 合成一条（`EntryGroup.update` 以 id 为键建 map），包不会被挂两遍。想清理的话删掉 profile patch 里那行即可，装完本包后它是多余的。
+升级过来的 profile 若还留着旧装配那条手写的 `- id: tool-grilling-form` 行，**先删掉它，再 `dsh plugin remove`**：
+
+- **留着不影响启动**：同一 id 的两行会被 loader 按 id 合成一条（`EntryGroup.update` 以 id 为键建 map），包不会被挂两遍，也不会报「already registered」。
+- **但它会在卸载后变成悬空行**：`dsh plugin remove` 只摘包与 `dsh.profile.bundles` 条目，**不动 profile patch**，于是那行指向一个已不在的包，下次启动报 `failed to import` / `1 entry did not activate`（实例照常起，只是告警）。服务端/管理器的 `removeBundle` 还会因那行仍活着而直接拒删（`bundle-in-use`）。
+- 所以：装完本包后那行就是多余的，删掉即可；要卸载这个插件时，**必须先删那行**。
 
 验证（只组合、不装载）：
 
