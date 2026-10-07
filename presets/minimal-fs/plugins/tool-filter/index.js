@@ -30,10 +30,11 @@
  * declares no image input — so this is an intended seam, not a workaround.
  *
  * `grilling_form` is the second name in the list for the opposite reason:
- * `@lynn123411/dsh-grilling-form` is registered by a root-layer row in the
- * profile patch, so the GLOBAL layer hands it to every scope and this preset
- * cannot decline it by omission. Withholding it here is what keeps the catalog
- * at the three file tools.
+ * `@lynn123411/dsh-grilling-form` registers it from its own bundle-layer row (the
+ * root `- id: tool-grilling-form` insert in the package's `cordis.patch.yml`, live
+ * once the package is in `dsh.profile.bundles`), so the GLOBAL layer hands it to
+ * every scope and this preset cannot decline it by omission. Withholding it here is
+ * what keeps the catalog at the three file tools.
  *
  * The row is mounted as this package's `./tool-filter` export, not as a path
  * relative to the preset composition: a preset row's baseUrl is the profile

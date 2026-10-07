@@ -1,10 +1,16 @@
-# 本包出现在 profile 的 dsh.profile.bundles 里时应用。
+# @lynn123411/dsh-grilling-form bundle patch
+# 声明在 package.json 的 dsh.bundle.patch，`dsh plugin --profile web add` 后自动并入 profile 层栈。
 #
-# 这一行只为让 Web shell 服务本包的浏览器半边：客户端 bundle 只对 root loader 的 enabled
-# entry 服务（见 client-modules 的 processOne）。所以它必须什么都不注册——工具由 profile
-# patch 里的一条根层插入行（- id: tool-grilling-form）注册，载体行只负责把浏览器半边挂上 entry。
+# 这一条 insert 行同时承载两个半边，`dsh plugin add` 一条命令即装即用：
+#   - 宿主半边：宿主模块在这条行下注册 `grilling_form` 工具。行在 root 层，所以落进全局层、
+#     profile 里每个 preset 的 agent 都看得见它（minimal-fs 靠自带的 tool-filter 把它移出模型
+#     可见目录）；preset 自己同名的行会盖过它，不需要幂等补丁。
+#   - 浏览器半边：这条行是 root loader entry（不是 preset 子树），而 client-modules 只对
+#     root loader 的 enabled entry 依据 dsh.client 声明服务浏览器半边（lib/client.js）。
+# 所以不需要额外的载体行，也不需要 profile 自己 patch 里再写一条工具行。
+#
+# 行 id 与旧的手写工具行同名：同一 id 的两行会被 loader 按 id 合成一条（EntryGroup.update 的
+# newMap 以 id 为键），所以从旧装配升级过来的 profile 即使还留着那条手写行也不会把包挂两遍。
 - insert:
-    - id: lynn-grilling-form-carrier
+    - id: tool-grilling-form
       name: '@lynn123411/dsh-grilling-form'
-      config:
-        carrier: true

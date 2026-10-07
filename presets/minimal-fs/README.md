@@ -1,6 +1,6 @@
 # minimal-fs — 极简文件测试模式
 
-> 官方 `minimal`（极简模式）的**身份**，并入文件工具三件套（`read` / `write` / `edit`）——**没有 shell**。工具目录就是这三行：没有 `bash` / `pwsh`、没有 `glob` / `grep`、没有 `read_image`、没有 skill / 计划 / 目标 / 子代理 / 网页，也没有 profile 根层那条 `grilling_form`（由本 preset 的 `tool-filter` 行一并移出模型可见目录）。专门用来做**模型能力对照测试**——排除一切命令执行与工具编排的便利，只看模型靠「读文件 + 写文件」能走多远。
+> 官方 `minimal`（极简模式）的**身份**，并入文件工具三件套（`read` / `write` / `edit`）——**没有 shell**。工具目录就是这三行：没有 `bash` / `pwsh`、没有 `glob` / `grep`、没有 `read_image`、没有 skill / 计划 / 目标 / 子代理 / 网页，也没有 `grilling_form`（由 `@lynn123411/dsh-grilling-form` 包内根层行注册，本 preset 的 `tool-filter` 行把它一并移出模型可见目录）。专门用来做**模型能力对照测试**——排除一切命令执行与工具编排的便利，只看模型靠「读文件 + 写文件」能走多远。
 
 ## 与官方极简模式的异同
 
@@ -46,7 +46,7 @@ minimal-fs/
 
 过滤后 `read_image` 仍然注册在工具表里，只是**不出现在模型目录中**；直接点名调用它不会被过滤拦下，而这个 preset 的场景里没有别的调用方。
 
-名单里的第二个名字是 `grilling_form`：它由 profile 自己的 patch 以**根层行**注册（`@lynn123411/dsh-grilling-form`，见该插件 README「profile 侧两处登记」），落进**全局层**、被每个 scope 继承，所以本 preset 靠「不声明就没有」是拿不到的——在名单里写下它，模型可见目录才回到这三件套。同样的道理：过滤只改模型目录，工具本身照旧注册，直接点名仍可调用。
+名单里的第二个名字是 `grilling_form`：它由 `@lynn123411/dsh-grilling-form` 包内 `cordis.patch.yml` 的**根层行**注册（随该包进 `dsh.profile.bundles` 生效，见该插件 README「安装」），落进**全局层**、被每个 scope 继承，所以本 preset 靠「不声明就没有」是拿不到的——在名单里写下它，模型可见目录才回到这三件套。同样的道理：过滤只改模型目录，工具本身照旧注册，直接点名仍可调用。
 
 ## 安装与启用
 

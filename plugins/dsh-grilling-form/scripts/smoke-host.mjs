@@ -11,12 +11,17 @@
  * 跑法：pnpm test / node scripts/smoke-host.mjs
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { Context } from '@deepseek-ai/cordis';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 
 import * as plugin from '../lib/index.js';
+
+const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 
 let passed = 0;
 let total = 0;
@@ -42,7 +47,7 @@ function host() {
 
 /**
  * 装配一次插件并从真工具表取回工具。
- * @param {object} [config] - loader 交给插件行的 config（载体行用 { carrier: true }）。
+ * @param {object} [config] - loader 交给插件行的 config（正常装配不写 config）。
  * @returns {Promise<{ctx: Context, tool: object|undefined}>} 上下文与取回的工具。
  */
 async function assemble(config) {
@@ -220,7 +225,7 @@ await test('缺 label 由 defineTool 的入参校验拦住，不进本插件的 
   );
 });
 
-// --- 两条行形状：工具行注册工具，bundle 载体行什么都不注册 ---
+// --- 一条行的形状：bundle 行既注册工具，又承载浏览器半边 ---
 
 await test('缺省 config：工具行照常注册工具', async () => {
   const omitted = await assemble(undefined);
@@ -229,15 +234,19 @@ await test('缺省 config：工具行照常注册工具', async () => {
   assert.equal(empty.tool.name, 'grilling_form');
 });
 
-await test('载体行：config.carrier 为 true 时什么都不注册（浏览器 bundle 的 servable entry）', async () => {
-  const { tool } = await assemble({ carrier: true });
-  assert.equal(tool, undefined);
+await test('这一行不接受 config：写任何键当场抛，不静默接受一个拼错的行', async () => {
+  await assert.rejects(() => assemble({ carrrier: true }), /unknown config key\(s\) "carrrier"/);
+  await assert.rejects(() => assemble({ carrier: true }), /unknown config key\(s\) "carrier"/);
+  await assert.rejects(() => assemble('carrier'), /config must be an object/);
 });
 
-await test('config 校验：拼错的载体行当场抛，不静默多注册一个全局工具', async () => {
-  await assert.rejects(() => assemble({ carrrier: true }), /unknown config key\(s\) "carrrier"/);
-  await assert.rejects(() => assemble({ carrier: 'yes' }), /config\.carrier must be a boolean/);
-  await assert.rejects(() => assemble('carrier'), /config must be an object/);
+await test('包内 cordis.patch.yml 就是那条装配行：id 与宿主导出名同名、且不带 config', async () => {
+  const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8');
+  // 不带 config：这一行既注册工具，又是浏览器半边的 root loader entry。
+  assert.doesNotMatch(patch, /carrier|config:/);
+  assert.match(patch, /- id: tool-grilling-form\n\s+name: '@lynn123411\/dsh-grilling-form'/);
+  // 行 id 与宿主导出名一致：旧装配留下的同名手写行会被 loader 按 id 合成一条，不会把包挂两遍。
+  assert.equal(plugin.name, 'tool-grilling-form');
 });
 
 console.log(`${passed}/${total} passed`);

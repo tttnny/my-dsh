@@ -12,7 +12,7 @@
 
 客户端 bundle 只对 **root loader 的 enabled entry** 服务：`dsh-client-modules` 的 `processOne` 遍历 `ctx.loader.entries()`，跳过 `disabled` 与无 fiber 的行。preset 工具行挂在 scope fiber 的独立 EntryTree 里，不在 root loader 的 entry 列表，所以它的 `dsh.client` 永远不会被服务。症状与上面那条一样安静：宿主正常、工具可用，浏览器里没有这个插件画的界面。
 
-要让它有：包**同时**列进 profile `package.json` 的 `dsh.profile.bundles`，并在包内 `cordis.patch.yml` 插一条**载体行**——它本身就是一条 root entry，浏览器半边靠它被服务；给该行一个 config 让宿主半边在那条行下**不注册**任何东西（否则工具会以 root layer 的身份对每一个 preset 的 agent 可见；同名工具跨 layer 是 shadow，不报错）。工具由别处的行注册（preset 行，或 profile patch 顶层的 `- insert:` 行）。样本：`plugins/dsh-grilling-form`（`cordis.patch.yml` 的 `config.carrier` + 宿主半边 config 门禁 + `scripts/smoke-host.mjs` 里那条「载体行什么都不注册」的断言）。
+要让它有：包**同时**列进 profile `package.json` 的 `dsh.profile.bundles`，并在包内 `cordis.patch.yml` 有一条**根层 insert 行**——它本身就是一条 root entry，浏览器半边靠它被服务。这一行可以顺带在宿主半边注册插件本体（`plugins/dsh-chat-translate` 就是单行两用的样本：客户端 bundle 与工具注册同挂一行）；宿主半边确实不能在那条行下注册东西时（例如工具要落进更窄的 scope、或本体只在 preset 子树里），才需要给它一个 config 让宿主半边什么都不注册，工具另由别处的行注册（preset 行，或 profile patch 顶层的 `- insert:` 行）。
 
 ## 裸包名那一行才带浏览器半边
 

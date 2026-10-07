@@ -22,44 +22,37 @@ import { validateRound } from "./form-model.js";
  * 作答由用户点表单底部的「导入输入框」写进原生草稿、再用原生发送键发出；表单旁边的
  * 「从这里分叉」按本轮结束点开一条新会话。插件不碰输入框。
  *
- * 两条行挂同一个模块。工具行挂在 profile 自己的 patch 里——根层的一条
- * `- id: tool-grilling-form` 插入行，工具因此落进全局层，每一个 preset 的 agent 都看得见它。
- * 载体行由本包的 `cordis.patch.yml` 插进 profile 的 bundle 层，只为让 Web client 服务
- * `lib/client.js`——浏览器 bundle 只对 enabled Loader entry 服务；那条行传
- * `config.carrier: true`，什么都不注册，只负责把浏览器半边挂上 entry。
+ * 半边只有一条行：本包 `cordis.patch.yml` 里那条根层 `- id: tool-grilling-form` 插入行，
+ * 由 `dsh plugin --profile web add` 随 dsh.profile.bundles 一起并进 profile 层栈。宿主半边在
+ * 那条行下注册工具——行在 root 层，工具因此落进全局层，每一个 preset 的 agent 都看得见它；
+ * 同一行又正好是 root loader entry，client-modules 据此服务本包的浏览器半边（`lib/client.js`）。
+ * 这条行不需要 config：它既注册工具，又承载浏览器半边。
  */
 const name = "tool-grilling-form";
 const inject = ["tools"];
-
-/** 载体行认这一个键，认到就整行什么都不注册（浏览器半边的 servable entry，见文件头）。 */
-const CONFIG_KEY = "carrier";
 
 /** 表单落库之后给模型的那段话：它必须知道本轮已经结束、答案会晚到、别当成已回答。 */
 const PENDING_MESSAGE = "The form with this round's questions is now shown in the conversation and this turn has ended. The user has not answered yet: they answer in their own composer, and their answers arrive later as their next user message, one line per answered question (\"<title>: <chosen options / typed text>\"). Do not wait for it, do not treat this as an answer, and do not write the questions in prose as well.";
 
 /**
- * 读这一行的 config。未知键与错类型当场抛：拼错的载体行会静默多注册一个全局工具，
- * 那比启动失败难查得多。
+ * 这一行不接受 config：唯一的装配形态就是注册工具（同时承载浏览器半边）。
+ * 拼错的键当场抛，免得静默写出一个什么都不注册的行。
  * @param {unknown} config - loader 交给插件行的 config。
- * @returns {{ carrier: boolean }} 归一化后的配置。
+ * @returns {void}
  */
 function readConfig(config) {
-  if (config === undefined || config === null) return { carrier: false };
+  if (config === undefined || config === null) return;
   if (typeof config !== "object" || Array.isArray(config)) {
-    throw new TypeError(`${name}: config must be an object with an optional boolean "${CONFIG_KEY}"`);
+    throw new TypeError(`${name}: config must be an object`);
   }
-  const unknown = Object.keys(config).filter((key) => key !== CONFIG_KEY);
+  const unknown = Object.keys(config);
   if (unknown.length > 0) {
-    throw new TypeError(`${name}: unknown config key(s) ${unknown.map((key) => JSON.stringify(key)).join(", ")}; the only accepted key is "${CONFIG_KEY}"`);
+    throw new TypeError(`${name}: unknown config key(s) ${unknown.map((key) => JSON.stringify(key)).join(", ")}; this row takes no config`);
   }
-  if (config[CONFIG_KEY] !== undefined && typeof config[CONFIG_KEY] !== "boolean") {
-    throw new TypeError(`${name}: config.${CONFIG_KEY} must be a boolean`);
-  }
-  return { carrier: config[CONFIG_KEY] === true };
 }
 
 function apply(ctx, config) {
-  if (readConfig(config).carrier) return;
+  readConfig(config);
   ctx.tools.register(defineTool({
     name: "grilling_form",
     description: "Put this round's grilling questions to the user as a form in the conversation, then end your turn. The user answers it in their own composer and their answers arrive as their next user message. Use it only for a round of per-question grilling, and make it the only and final tool call of the round: it ends the turn, so anything else in the same batch keeps the turn open.",
