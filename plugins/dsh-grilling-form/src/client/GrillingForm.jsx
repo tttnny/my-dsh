@@ -9,19 +9,12 @@ import {
   Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import {
-  answerLines,
-  applyImport,
-  applyRecommendedDefaults,
-  formStorageKey,
-  frozenAnswers,
-  importBody,
   messageText,
   readCallModel,
-  readStoredForm,
   roundCall,
   userReplyAfter,
-  writeStoredForm,
 } from '../form-model.js';
+import { createFormSession, initialFormAnswers } from '../form-session.js';
 
 /**
  * `grilling_form` 的浏览器半边：两个注册项共用这一个模块。
@@ -35,6 +28,9 @@ import {
  * 表单本身：推荐的选项在用户没动过那题时默认勾上；作答按会话 + callId 存进 localStorage；
  * 底部那个窄按钮把作答写进**原生草稿**（槽位标准属性 `inputActions.setDraft`），发送权只在原生
  * 输入框的发送键上；旁边那个「从这里分叉」按**本轮结束点**开一条新会话，新会话里表单是全新的。
+ *
+ * 这些组合规则（推荐默认与实发那份怎么叠、写操作落到哪把表上、冻结怎么判、导入键何时灰）
+ * 全归 `src/form-session.js` 的**表单会话**内壳；组件只持 state、渲染，并拿内壳算好的显示那份。
  *
  * **只读即冻结**：记录里在这条调用之后出现了用户发言（kind `user`/`steering`、seq 更大），
  * 这一轮就算过去了——表单不再换成一行行答案，而是**停住**：勾选框与自填框按提交时的样子原样
@@ -116,44 +112,29 @@ export function GrillingFormRow({ block, toolName, t, inspect }) {
  */
 function GrillingForm({ model, toolName, callId, sessionId, t, useInput, inputActions, replyText, forkSeq, forkAt }) {
   const draft = useInput((state) => state.draft);
-  const readOnly = replyText !== undefined;
-  const storageKey = formStorageKey(sessionId);
   // 用户自己动过的那一份，连他「清空过这题」也在里面；他没动过的题不出现在这里。
-  const [storedAnswers, setStoredAnswers] = useState(() => readStoredForm(storageOf(), storageKey, callId));
-  // 冻结那一刻按实发消息重画（块为准），反解拿不到才退回本地那份；可填时推荐项默认勾上。
-  const answers = readOnly
-    ? frozenAnswers(model.questions, storedAnswers, replyText)
-    : applyRecommendedDefaults(model.questions, storedAnswers);
-  const body = importBody(model.questions, answers);
-  const canImport = !readOnly && body !== '';
-  const answered = model.questions.filter((question) => answerLines(question, answers[question.id]).length > 0).length;
+  const [storedAnswers, setStoredAnswers] = useState(
+    () => initialFormAnswers({ sessionId, callId, storage: storageOf() }),
+  );
+  // 两表不变量、冻结判定、写穿顺序、导入门禁都归内壳管（见 src/form-session.js）；
+  // 组件只拿它算好的显示那份、进度与三个动作，state 仍在这里。
+  const session = createFormSession({
+    questions: model.questions,
+    sessionId,
+    callId,
+    replyText,
+    storedAnswers,
+    storage: storageOf(),
+  });
+  const { readOnly, answers, answered, canImport } = session;
   const onFork = typeof forkAt === 'function' && forkSeq !== undefined ? () => forkAt(forkSeq) : undefined;
 
-  /** 记一道题的作答：内存与 storage 一起写，刷新后才恢复得回来。冻结之后一律不记（改不了了）。 */
-  const setAnswer = (id, next) => {
-    if (readOnly) return;
-    const merged = { ...storedAnswers, [id]: next };
-    setStoredAnswers(merged);
-    writeStoredForm(storageOf(), storageKey, callId, merged);
-  };
-  /** 勾选 / 取消一个选项：界面按归一化后的 label 记，同一个 label 就是同一项。 */
-  const toggleOption = (question, label) => {
-    const answer = answers[question.id] ?? { selected: [], custom: '' };
-    const selected = answer.selected.includes(label)
-      ? answer.selected.filter((item) => item !== label)
-      : [...answer.selected, label];
-    setAnswer(question.id, { ...answer, selected });
-  };
+  /** 勾选 / 取消一个选项：写操作交回用户自己那份的新表，显示那份由内壳重算。 */
+  const toggleOption = (question, label) => setStoredAnswers(session.toggle(question.id, label));
   /** 每题的自填空：选项覆盖不到的情况写在这里。 */
-  const writeCustom = (question, custom) => {
-    const answer = answers[question.id] ?? { selected: [], custom: '' };
-    setAnswer(question.id, { ...answer, custom });
-  };
+  const writeCustom = (question, custom) => setStoredAnswers(session.setCustom(question.id, custom));
   /** 导入：把草稿里那段导入块换成当前作答（没有块就放在最前面），草稿里别的字一个不动。 */
-  const onImport = () => {
-    if (!canImport) return;
-    inputActions.setDraft(applyImport(draft, body));
-  };
+  const onImport = () => inputActions.setDraft(session.importInto(draft));
 
   return (
     <div className="dsg-root" data-tool={toolName} data-state={model.state} data-readonly={readOnly ? 'true' : undefined}>
