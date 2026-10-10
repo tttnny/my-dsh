@@ -31,6 +31,14 @@
 
 改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。仓库根没有 `package.json`，也没有仓库级脚本；漏了 `check` 的包以它自己 `scripts` 里的那几条为准。
 
+### 提交闸门（`.githooks/pre-commit`）
+
+「改完跑 check」有闸门兜着，不靠自觉：仓库根的 `.githooks/pre-commit` **只看本次改动的包**，逐个在包目录跑它自己的 `check`。装法与跳法写在该文件头部（`git config core.hooksPath .githooks`；`SKIP_CHECK=1 git commit` 跳过一次）。没有 `check` 脚本、或没装 `node_modules` 的包会明说并跳过——不让提交在静默里少跑一道闸门。
+
+### 类型检查
+
+包带不带 `typecheck` 由它自己决定，带上就进 `check`。**新包默认带上**：仓库里多数包是 `tsc -p tsconfig.json --noEmit`（`tsc` 在包的 `devDependencies` 里）。没带的那几个是现状、不是可照抄的模板：纯 JS 不等于不需要类型闸门，拼错字段、漏 import 这类错否则只会在运行期现身。
+
 ## 按分支取细则
 
 | 这一步在做什么 | 细则 |

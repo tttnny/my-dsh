@@ -10,7 +10,7 @@
 4. **状态只登记一处**：版本号归各包 `package.json`，功能域清单归根 `README.md`，preset order 归 `docs/rules/presets.md`；其他文件只写规则 + 指针。
 5. **文档只写现状**：旧路径、旧命令、旧结论在改动当场删掉。
 6. **读者是 agent**：给人看的只有根 `README.md` 与各包 `README.md`；本文件、`docs/rules/`、`presets/`、技能都写给 agent。
-7. **验证按本仓库的脚本跑**：改哪个包就在哪个包目录按它 `scripts` 跑验证（多数包是 `pnpm check`）；仓库根没有 `package.json`，也没有仓库级脚本。`dsh-plugin-authoring` 的仓库级门禁只对 DSH 官方 checkout 成立。
+7. **验证按本仓库的脚本跑**：改哪个包就在哪个包目录按它 `scripts` 跑验证（多数包是 `pnpm check`）；仓库根没有 `package.json`，也没有仓库级脚本。`.githooks/pre-commit` 是同一件事的闸门（只跑本次改动的包），装法与跳法见 `docs/rules/plugins.md`「验证」。`dsh-plugin-authoring` 的仓库级门禁只对 DSH 官方 checkout 成立。
 
 ## 文档地图
 

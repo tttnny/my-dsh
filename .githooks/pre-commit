@@ -1,0 +1,67 @@
+#!/bin/sh
+# my-dsh pre-commit：**改了哪个包就在哪个包里跑它自己的 check**。
+#
+# 为什么在提交这一侧：仓库根没有 package.json、没有 CI，`docs/rules/plugins.md`「验证」
+# 只写了「改完在所在包目录跑 pnpm check」——纯靠自觉。本钩子把它变成闸门：只跑本次
+# 改动触及的包，没动的包不跑，所以代价与改动规模成正比。
+#
+# 装法（仓库根执行一次）：
+#   git config core.hooksPath .githooks
+# 装完钩子随仓库走，克隆出来配上这一行即可；不想装就 `git config --unset core.hooksPath`。
+#
+# 跳过一次（确定只是文档/无法本地跑的场合）：`SKIP_CHECK=1 git commit ...`
+
+set -u
+
+if [ "${SKIP_CHECK:-0}" = "1" ]; then
+  echo "pre-commit: SKIP_CHECK=1，跳过包检查"
+  exit 0
+fi
+
+root=$(git rev-parse --show-toplevel) || exit 0
+cd "$root" || exit 0
+
+# 暂存区里改动的路径（新增/修改/删除都算）。
+changed=$(git diff --cached --name-only --diff-filter=ACMR) || exit 0
+[ -n "$changed" ] || exit 0
+
+# 只认 plugins/<dir> 与 presets/<dir> 这两层的包目录，去重。
+pkgs=$(printf '%s\n' "$changed" \
+  | grep -E '^(plugins|presets)/[^/]+/' \
+  | cut -d/ -f1,2 \
+  | sort -u)
+
+[ -n "$pkgs" ] || exit 0
+
+failed=""
+
+for pkg in $pkgs; do
+  [ -f "$pkg/package.json" ] || continue
+
+  # 这个包有没有 check：没有就跳过，让它自己的 README/约定说了算。
+  if ! grep -q '"check"' "$pkg/package.json" 2>/dev/null; then
+    echo "pre-commit: $pkg 没有 check 脚本，跳过"
+    continue
+  fi
+
+  # 依赖没装：跑不了就跳过，但明说，别让提交悄悄过掉一道本该跑的闸门。
+  if [ ! -d "$pkg/node_modules" ]; then
+    echo "pre-commit: $pkg 没有 node_modules（先 cd $pkg && pnpm install），跳过"
+    continue
+  fi
+
+  echo "pre-commit: $pkg -> pnpm check"
+  if ! (cd "$pkg" && pnpm check); then
+    failed="$failed $pkg"
+  fi
+done
+
+if [ -n "$failed" ]; then
+  echo ""
+  echo "pre-commit: 检查没过的包：$failed"
+  echo "修好再提交；确定要跳过这一次就 SKIP_CHECK=1 git commit ..."
+  exit 1
+fi
+
+echo "pre-commit: 通过（$pkgs）"
+exit 0
