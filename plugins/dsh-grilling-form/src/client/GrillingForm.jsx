@@ -13,6 +13,7 @@ import {
   Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import {
+  answerItems,
   messageText,
   readCallModel,
   roundCall,
@@ -238,13 +239,9 @@ function importLabelKey(draftState) {
   return 'row.import';
 }
 
-/** 这一轮答了几题（按显示那份算），冻结摘要用。 */
+/** 这一轮答了几题（按显示那份算），冻结摘要用；判据只有 answerItems 一处。 */
 function questionsAnswered(questions, answers) {
-  return questions.filter((question) => {
-    const answer = answers[question.id];
-    if (answer === undefined) return false;
-    return answer.selected.length > 0 || answer.custom.trim() !== '';
-  }).length;
+  return questions.filter((question) => answerItems(question, answers[question.id]).length > 0).length;
 }
 
 /** 浏览器里读 localStorage；隐私模式下取这个属性本身就会抛，取不到就当没有存储。 */

@@ -14,7 +14,6 @@ import {
   applyRecommendedDefaults,
   draftHasBody,
   formStorageKey,
-  frozenAnswers,
   frozenFormAnswers,
   importBody,
   isBlank,
@@ -318,6 +317,15 @@ test('默认勾选：单选题上推荐项也只默认一项（多标了推荐�
   assert.deepEqual(applyRecommendedDefaults(questions, {}), { a: { selected: ['A（推荐）'], custom: '' } });
 });
 
+test('默认勾选：单选题把哪来的作答都收敛到一项——用户勾了两项也只剩第一项', () => {
+  const questions = [{ id: 'a', multiSelect: false, options: [{ label: 'A', displayLabel: 'A' }, { label: 'B', displayLabel: 'B' }] }];
+  const stored = { a: { selected: ['A', 'B'], custom: '自填留着' } };
+  assert.deepEqual(applyRecommendedDefaults(questions, stored), { a: { selected: ['A'], custom: '自填留着' } });
+  // 多选题照旧不收敛
+  const multi = [{ id: 'a', multiSelect: true, options: [] }];
+  assert.deepEqual(applyRecommendedDefaults(multi, stored), stored);
+});
+
 test('默认勾选：题面还没读出来（或不是本插件的形状）时原样返回用户自己的作答', () => {
   assert.deepEqual(applyRecommendedDefaults([], { a: { selected: ['A'], custom: '' } }), { a: { selected: ['A'], custom: '' } });
 });
@@ -616,8 +624,12 @@ test('冻结：块在就以块为准，块坏了退回本地那份，根本没�
   assert.deepEqual(silent.answers.h1, { selected: [], custom: '' });
   assert.deepEqual(silent.answers.h2, { selected: [], custom: '' });
   assert.equal(silent.fallback, false);
-  // 兼容入口照旧：给的是同一份作答表
-  assert.deepEqual(frozenAnswers(reverseQuestions, stored, '我另外想说一句，没导入。'), silent.answers);
+});
+
+test('冻结：实发块里单选题写了两行选项，重画时也只留一项', () => {
+  const questions = [{ id: 's', header: 'Q9', question: '继续吗？', multiSelect: false, options: [{ label: '继续', displayLabel: '继续' }, { label: '停一下', displayLabel: '停一下' }] }];
+  const parsed = frozenFormAnswers(questions, {}, replyText('Q9：\n- 继续\n- 停一下'));
+  assert.deepEqual(parsed.answers.s, { selected: ['继续'], custom: '' });
 });
 
 // --- 持久化 ---

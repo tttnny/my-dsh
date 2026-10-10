@@ -404,27 +404,30 @@ export function importSegmentLines(question, answer) {
 /**
  * 「推荐的选项默认勾上」落到一份作答表上：用户没动过的题，标了推荐的选项就是选中态。
  * 用户动过（storage 里有这题的记录）的题一律以他的为准——包括他把默认项取消掉、只留一个空记录，
- * 所以这里只补**缺席**的题，绝不覆盖已有的作答。
+ * 所以这里只补**缺席**的题，绝不覆盖已有的作答。单选（`multi_select: false`）的题另把已有的作答
+ * 收敛到至多一项——不分它是推荐默认、用户勾的、还是从实发消息里反解出来的。
  * @param {object[]} questions - 题目模型。
- * @param {object} answers - 用户自己的作答表（readStoredForm 的产物）。
+ * @param {object} answers - 用户自己的作答表（readStoredForm 的产物），或反解出来的那份。
  * @returns {object} 表单上真正显示、导入、计数的作答表。
  */
-/** 单选：一题的作答至多留一项（替换，不是追加）。没选中时自填照旧。 */
-function selectOne(existing, answer) {
-  const [kept] = answer.selected;
-  return { selected: kept === undefined ? [] : [kept], custom: existing.custom };
-}
-
 export function applyRecommendedDefaults(questions, answers) {
   const merged = { ...(isRecord(answers) ? answers : {}) };
   for (const question of questions) {
-    if (merged[question.id] !== undefined) continue;
-    const selected = question.options.filter((option) => option.recommended).map((option) => option.label);
-    if (selected.length === 0) continue;
-    const recommended = { selected, custom: '' };
-    merged[question.id] = question.multiSelect === false ? selectOne({ custom: '' }, recommended) : recommended;
+    if (merged[question.id] === undefined) {
+      const selected = question.options.filter((option) => option.recommended).map((option) => option.label);
+      if (selected.length > 0) merged[question.id] = { selected, custom: '' };
+    }
+    if (question.multiSelect === false && merged[question.id] !== undefined) {
+      merged[question.id] = selectOne(merged[question.id]);
+    }
   }
   return merged;
+}
+
+/** 单选：一题的作答至多留一项（保留第一项，不是追加）。没选中时自填照旧。 */
+function selectOne(existing) {
+  const [kept] = existing.selected;
+  return { selected: kept === undefined ? [] : [kept], custom: existing.custom };
 }
 
 /**
@@ -655,15 +658,6 @@ const LEGACY_ITEM_PREFIX = /^-\s+/;
 const ANSWER_ITEM_LINE = /^[ \t]*- /;
 
 /**
- * 一把作答表里有没有任何一项（选中或自填）。全空表示这一行一个字都没读出来。
- * @param {object} answer - 一题的作答。
- * @returns {boolean} 有没有内容。
- */
-function hasAnyAnswer(answer) {
-  return answer.selected.length > 0 || answer.custom.trim() !== '';
-}
-
-/**
  * 把导入块里的各行拆成逐题的作答。
  *
  * 格式按块的形状自己认，不靠全局开关：出现带项记号的行就是本次格式，标题行只当标题；
@@ -807,22 +801,14 @@ function questionByTitle(questions, title) {
  */
 export function frozenFormAnswers(questions, storedAnswers, text) {
   const parsed = parseImportedAnswersResult(text, questions);
-  if (parsed.kind === 'parsed') return { answers: parsed.answers, unanswered: false, fallback: false };
+  if (parsed.kind === 'parsed') {
+    // 反解出来的那份照样过一遍收敛：块的形状是用户手写的，单选那题写了两行选项也只会留一项。
+    return { answers: applyRecommendedDefaults(questions, parsed.answers), unanswered: false, fallback: false };
+  }
   if (parsed.kind === 'malformed') {
     return { answers: applyRecommendedDefaults(questions, storedAnswers), unanswered: false, fallback: true };
   }
   return { answers: blankAnswers(questions), unanswered: true, fallback: false };
-}
-
-/**
- * 冻结那一刻表单上显示的作答表（frozenFormAnswers 的那一份）。
- * @param {object[]} questions - 题目模型。
- * @param {object} storedAnswers - 用户自己的作答表。
- * @param {unknown} text - 实发消息的文字。
- * @returns {object} 作答表。
- */
-export function frozenAnswers(questions, storedAnswers, text) {
-  return frozenFormAnswers(questions, storedAnswers, text).answers;
 }
 
 // --- 持久化：storage 由调用方传进来（浏览器是 localStorage，测试是假件），本模块不自己取全局 ---
