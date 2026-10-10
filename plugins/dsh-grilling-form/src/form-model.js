@@ -8,7 +8,15 @@
 
 import { normalizeOption } from './recommendation.js';
 
-/** 导入块的起止行：重复导入时靠它认出上一次导入的那一段，原地替换。 */
+/** 导入块的起止行：重复导入时靠它认出上一次导入的那一段，原地替换。
+ *
+ * **改这里的格式（或工具名、字段语义）时必须联动的四处**——机械细节只归本包，技能正文那边
+ * 只讲方法论与问题措辞，所以那里不再有需要跟着改的协议字面量，但仍要核对它有没有引用旧格式：
+ *   1. `src/index.js`：工具的 description / 各字段说明 / PENDING_MESSAGE（模型的运行时自述）；
+ *   2. `scripts/test-render.mjs` 与 `scripts/smoke-host.mjs` 里的字面量钉（起止行、作答格式）；
+ *   3. 本包 `README.md` 与仓库根 `README.md` 的插件表；
+ *   4. matt-skills 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）——它不随
+ *      本包发布、也没有任何测试看得见它，漂移只会以模型行为静默表现出来。 */
 export const IMPORT_BLOCK_START = '【盘问作答】';
 export const IMPORT_BLOCK_END = '【/盘问作答】';
 
