@@ -27,7 +27,7 @@ grilling 轮的逐题盘问工具：把整轮问题作为一张**可交互表单
 
 ## 自检
 
-`pnpm check`（= `pnpm build && pnpm test && pnpm assert:lib-untracked`）：
+`pnpm check`（= `pnpm test && pnpm assert:lib-untracked`）；`pnpm test` 自己先构建一次，所以改了 `src/` 忘了构建也不会静默测到旧产物（一半脚本打 `src/`、另一半打构建产物 `lib/`）：
 
 - `scripts/test-recommendation.mjs`：推荐标记的归一化——各种写法统一成 label 末尾的「（推荐）」、干净 label 与原始 label 各自保留，正常以「推荐」收尾的文字不误判；
 - `scripts/test-form-model.mjs`：共用纯模型（题号并入标题、入参校验含「展开正文重述选项」的认法与不误伤、选项名带顿号、`questions` 不是数组时交回违规而不是抛、推荐项默认勾选与「取消过 ≠ 没作答」、导入文本与导入块的新增与原地替换、按轮次定位本轮那次调用、只读判定顺带交回那条用户发言、从发言文字反解作答表与「块里没有的题算没作答」、反解失败时退回本地那份、按会话持久化与脏数据清理）；

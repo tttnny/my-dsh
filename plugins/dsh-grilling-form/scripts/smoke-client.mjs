@@ -28,6 +28,7 @@ const styles = [];
 const errors = [];
 const registrations = [];
 const locales = [];
+const dictionaries = [];
 const forkCalls = [];
 const opened = [];
 
@@ -95,7 +96,7 @@ function makeCtx(declared = []) {
         return () => {};
       },
     },
-    locale: { register: (ns) => { locales.push(ns); return () => {}; } },
+    locale: { register: (ns, dictionary) => { locales.push(ns); dictionaries.push(dictionary); return () => {}; } },
     sessions: { fork: (opts) => { forkCalls.push(opts); return Promise.resolve('child-1'); } },
     uiWorkspace: { openSession: (sessionId) => { opened.push(sessionId); } },
   };
@@ -183,6 +184,12 @@ await testAsync('注入的分叉动作：按本轮结束点分叉，然后把子
   assert.deepEqual(opened, ['child-1']);
 });
 test('字典注册在本插件名字空间下', () => assert.deepEqual(locales, ['grillingForm']));
+test('中英文字典键集逐条对齐（丢一条就是页面上某一处空白，而渲染自检只跑中文）', () => {
+  assert.equal(dictionaries.length, 1, '没有拿到注册进来的字典');
+  const { zh, en } = dictionaries[0];
+  assert.ok(Object.keys(zh).length > 0, '字典是空的，下面的断言是空转');
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort());
+});
 test('样式注入一次，标签带包身份', () => {
   assert.equal(styles.length, 1);
   assert.equal(styles[0].dataset.pluginCss, `${pkgName}/GrillingForm.css`);

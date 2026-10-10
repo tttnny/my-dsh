@@ -29,7 +29,7 @@ export const RECOMMENDED_LABEL_SUFFIX = '（推荐）';
  * @param {string} text - label 或 description 原文。
  * @returns {{ text: string, found: boolean }} 去掉标记后的文本，以及是否找到标记。
  */
-export function stripRecommendationMarker(text) {
+function stripRecommendationMarker(text) {
   if (typeof text !== 'string') return { text, found: false };
   const match = BRACKETED_SUFFIX.exec(text) ?? BARE_SUFFIX.exec(text);
   if (match === null) return { text, found: false };
