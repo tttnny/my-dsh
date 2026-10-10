@@ -76,6 +76,9 @@ const LABEL_ALIAS_END = /[：:·、，,。;；!！?？(（)）\-–—\s]/;
 /** 别名（其后可以有一个空格）跟这些符号才算同一个条目。只认「名：解释」那一类分隔符：
  * 顿号与逗号不算，否则正文里「甲、乙两种做法各有代价」这种正经的共用背景会被误拒。 */
 const ALIAS_FOLLOW_CHAR = /[：:·）)\-–—>]/;
+/** 作答回填的项分隔符：导入文本用它连接（importBody）、反解按它拆分（parseImportedAnswers），
+ * 所以选项的展示文字里带它就没法原样回填，见 validateRound 的这条规则。 */
+const IDEOGRAPHIC_COMMA = '、';
 
 function shorten(text) {
   return text.length <= 60 ? text : `${text.slice(0, 60)}…`;
@@ -119,12 +122,19 @@ function detailRestatesOption(detail, aliases) {
 
 /**
  * 这一轮的入参能不能画成表单。题干与选项的分工整体上是引导——子串匹配会误拒合法题干，
- * 坏题干好过假拒绝——只有一处例外：展开正文里把选项又列一遍，那会让同一批选项在页面上
- * 出现两遍（一遍带选择器、一遍不带），见 detailRestatesOption。
+ * 坏题干好过假拒绝——只有两处例外：展开正文里把选项又列一遍（那会让同一批选项在页面上
+ * 出现两遍，一遍带选择器、一遍不带，见 detailRestatesOption），以及选项的展示文字里带顿号
+ * （作答回填按顿号分项，带它的名字读不回来）。命中即返回可修复的拒绝，模型改完重投。
+ *
+ * 前置：questions 应当来自调用参数（schema 保证是数组）。真给了别的形状也不抛，而是当成一条
+ * 违规交回去——抛异常会让这一轮以「工具坏了」收场，而不是「改一改重投」。
  * @param {object[]} questions - 模型给的 questions。
  * @returns {string[]} 逐条违规说明；空数组表示这一轮可以投出去。
  */
 export function validateRound(questions) {
+  if (!Array.isArray(questions)) {
+    return ['questions must be an array of question objects; this call carried no round to validate'];
+  }
   const violations = [];
   const seenIds = new Set();
   questions.forEach((question, questionIndex) => {
@@ -151,6 +161,10 @@ export function validateRound(questions) {
         return;
       }
       seenLabels.add(normalized.label);
+      if (normalized.cleanLabel.includes(IDEOGRAPHIC_COMMA)) {
+        violations.push(`${where}, option ${optionIndex + 1} has an ideographic comma in its label ${JSON.stringify(normalized.cleanLabel)}; the form joins a question's answers with "${IDEOGRAPHIC_COMMA}" and reads them back by splitting on it, so this label cannot survive the round trip — reword the label without it`);
+        return;
+      }
       aliases.push(labelAlias(normalized.cleanLabel));
     });
     const restated = detailRestatesOption(question.detail, aliases);

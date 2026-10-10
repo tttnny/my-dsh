@@ -178,6 +178,43 @@ await test('同题两个选项归一化后同名：被拒（界面按 label 认�
   assert.match(violations[0], /same label "A：移走（推荐）"/);
 });
 
+await test('选项名里带顿号：被拒（作答回填按它分项，带它的名字读不回来）', async () => {
+  const violations = await rejected([
+    { id: 'a', question: '？', options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] },
+  ]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /option 1/);
+  assert.match(violations[0], /ideographic comma/);
+});
+
+await test('questions 不是数组：由 defineTool 的入参校验拦住，不进本插件的 violations', async () => {
+  const { tool } = await assemble();
+  const { exec } = makeExec();
+  await assert.rejects(
+    () => tool.execute({ questions: 'not an array' }, exec),
+    /"questions" must be an array/,
+  );
+});
+
+await test('总说明不再手写规则清单：只报数量，规则由逐条违规自己说', async () => {
+  const { tool } = await assemble();
+  const { exec } = makeExec();
+  const result = await tool.execute({
+    questions: [{ id: 'a', question: '   ' }, { id: 'b', question: '？', options: [{ label: ' ' }] }],
+  }, exec);
+  assert.equal(result.rejected, true);
+  assert.equal(result.violations.length, 2);
+  assert.match(result.error, /^2 violation\(s\) in this round/);
+  assert.doesNotMatch(result.error, /ids must be unique|must not share a label/, '摘要里再抄一份清单，就会在加规则时漂');
+});
+
+await test('投出表单后那句话里的作答格式与真实格式一致（题目与作答之间是全角冒号）', async () => {
+  const { tool } = await assemble();
+  const { exec } = makeExec();
+  const result = await tool.execute({ questions: [{ id: 'a', question: '？' }] }, exec);
+  assert.match(result.message, /<title>：<chosen options \/ typed text>/);
+});
+
 await test('保留前缀这条规则已随轮末补充题删除：__grill_ 前缀的 id 可以正常投出', async () => {
   const { tool } = await assemble();
   const { exec, concluded } = makeExec();
@@ -212,10 +249,11 @@ await test('展开正文只写各选项共用的背景：照常投出', async ()
   assert.deepEqual(concluded, ['concludeTurn']);
 });
 
-await test('字段说明把两条新规则讲给模型：展开正文只写共用的、推荐项默认勾上', async () => {
+await test('字段说明把三条规则讲给模型：展开正文只写共用的、推荐项默认勾上、标签里禁用顿号', async () => {
   const properties = shape.tool.parameters.properties.questions.items.properties;
   assert.match(properties.detail.description, /only for what all the options share/);
   assert.match(properties.options.items.properties.recommended.description, /checked by default/);
+  assert.match(properties.options.items.properties.label.description, /ideographic comma/);
 });
 
 await test('缺 label 由 defineTool 的入参校验拦住，不进本插件的 violations', async () => {

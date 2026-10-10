@@ -189,6 +189,28 @@ test('入参校验：不再有保留前缀这条规则，__grill_ 前缀的 id �
   assert.deepEqual(validateRound([call({ id: '__grill_whatever__' })]), []);
 });
 
+test('入参校验：选项名里带顿号被拒（作答靠它分项，带它的名字读不回来）', () => {
+  const violations = validateRound([call({ options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] })]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /option 1/);
+  assert.match(violations[0], /ideographic comma/);
+  assert.match(violations[0], /cannot survive the round trip/);
+});
+
+test('入参校验：顿号只查会回填的那个名字——推荐后缀剥掉后没顿号就通过', () => {
+  assert.deepEqual(validateRound([call({ options: [{ label: '甲：两种都行（推荐）' }, { label: '乙' }] })]), []);
+  const violations = validateRound([call({ options: [{ label: '甲、乙：两种都行（推荐）' }] })]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /甲、乙/);
+});
+
+test('入参校验：questions 不是数组时给出可读的违规，而不是抛异常', () => {
+  const missing = validateRound(undefined);
+  assert.equal(missing.length, 1);
+  assert.match(missing[0], /questions must be an array/);
+  assert.equal(validateRound('x').length, 1);
+});
+
 test('入参校验：展开正文里把选项又列了一遍被拒（截图里「一遍不带选择器、一遍带」的那种）', () => {
   const violations = validateRound([call({
     detail: [
