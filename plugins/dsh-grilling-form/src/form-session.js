@@ -69,19 +69,21 @@ export function createFormSession({ questions, sessionId, callId, replyText, sto
     writeStoredForm(storage, storageKey, callId, merged);
     return merged;
   };
+  /** 这一题此刻显示的那份作答；没有就是空的一份。 */
+  const shownAnswer = (id) => answers[id] ?? { selected: [], custom: '' };
+  /** 改一题：以显示那份为底改一个字段，再整条写进用户自己那份（两表不变量就靠这一条）。 */
+  const editAnswer = (id, change) => commit(id, { ...shownAnswer(id), ...change });
   /** 勾选 / 取消一个选项：界面按归一化后的 label 记，同一个 label 就是同一项。 */
   const toggle = (id, label) => {
-    const answer = answers[id] ?? { selected: [], custom: '' };
-    const selected = answer.selected.includes(label)
-      ? answer.selected.filter((item) => item !== label)
-      : [...answer.selected, label];
-    return commit(id, { ...answer, selected });
+    const { selected } = shownAnswer(id);
+    return editAnswer(id, {
+      selected: selected.includes(label)
+        ? selected.filter((item) => item !== label)
+        : [...selected, label],
+    });
   };
   /** 每题的自填空：选项覆盖不到的情况写在这里。 */
-  const setCustom = (id, custom) => {
-    const answer = answers[id] ?? { selected: [], custom: '' };
-    return commit(id, { ...answer, custom });
-  };
+  const setCustom = (id, custom) => editAnswer(id, { custom });
   /** 导入：草稿里那段导入块换成当前作答（没有块就放在最前面），草稿里别的字一个不动。 */
   const importInto = (draft) => (canImport ? applyImport(draft, body) : draft);
 

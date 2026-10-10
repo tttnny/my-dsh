@@ -10,13 +10,16 @@ import { normalizeOption } from './recommendation.js';
 
 /** 导入块的起止行：重复导入时靠它认出上一次导入的那一段，原地替换。
  *
- * **改这里的格式（或工具名、字段语义）时必须联动的四处**——机械细节只归本包，技能正文那边
- * 只讲方法论与问题措辞，所以那里不再有需要跟着改的协议字面量，但仍要核对它有没有引用旧格式：
+ * **改协议（这两个常量、工具名、字段语义、作答行格式）时的联动点**——机械细节只归本包，
+ * 技能正文那边不写这些，只需要核对它有没有引用旧格式：
  *   1. `src/index.js`：工具的 description / 各字段说明 / PENDING_MESSAGE（模型的运行时自述）；
- *   2. `scripts/test-render.mjs` 与 `scripts/smoke-host.mjs` 里的字面量钉（起止行、作答格式）；
+ *   2. `scripts/test-render.mjs`、`scripts/smoke-host.mjs`、`scripts/test-form-session.mjs`
+ *      里的字面量钉（起止行、作答格式、会话键）；
  *   3. 本包 `README.md` 与仓库根 `README.md` 的插件表；
- *   4. matt-skills 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）——它不随
- *      本包发布、也没有任何测试看得见它，漂移只会以模型行为静默表现出来。 */
+ *   4. matt-skills 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）：工具改名时
+ *      正文里那句工具名要跟着改。它不随本包发布、也没有任何测试看得见它，漂移只会以模型行为
+ *      静默表现出来。
+ * 新增任何写死这些字面量的测试或文档，都要补进这份清单。 */
 export const IMPORT_BLOCK_START = '【盘问作答】';
 export const IMPORT_BLOCK_END = '【/盘问作答】';
 
@@ -85,8 +88,9 @@ const LABEL_ALIAS_END = /[：:·、，,。;；!！?？(（)）\-–—\s]/;
  * 顿号与逗号不算，否则正文里「甲、乙两种做法各有代价」这种正经的共用背景会被误拒。 */
 const ALIAS_FOLLOW_CHAR = /[：:·）)\-–—>]/;
 /** 作答回填的项分隔符：导入文本用它连接（importBody）、反解按它拆分（parseImportedAnswers），
- * 所以选项的展示文字里带它就没法原样回填，见 validateRound 的这条规则。 */
-const IDEOGRAPHIC_COMMA = '、';
+ * 所以选项的展示文字里带它就没法原样回填，见 validateRound 的这条规则。工具自述与拒收说明里
+ * 对它一律说「顿号」（ideographic comma），模型据此知道要避的是哪个字符。 */
+const ANSWER_ITEM_SEPARATOR = '、';
 
 function shorten(text) {
   return text.length <= 60 ? text : `${text.slice(0, 60)}…`;
@@ -169,8 +173,8 @@ export function validateRound(questions) {
         return;
       }
       seenLabels.add(normalized.label);
-      if (normalized.cleanLabel.includes(IDEOGRAPHIC_COMMA)) {
-        violations.push(`${where}, option ${optionIndex + 1} has an ideographic comma in its label ${JSON.stringify(normalized.cleanLabel)}; the form joins a question's answers with "${IDEOGRAPHIC_COMMA}" and reads them back by splitting on it, so this label cannot survive the round trip — reword the label without it`);
+      if (normalized.cleanLabel.includes(ANSWER_ITEM_SEPARATOR)) {
+        violations.push(`${where}, option ${optionIndex + 1} has an ideographic comma in its label ${JSON.stringify(normalized.cleanLabel)}; the form joins a question's answers with "${ANSWER_ITEM_SEPARATOR}" and reads them back by splitting on it, so this label cannot survive the round trip — reword the label without it`);
         return;
       }
       aliases.push(labelAlias(normalized.cleanLabel));
