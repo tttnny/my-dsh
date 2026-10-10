@@ -6,17 +6,17 @@
 import assert from 'node:assert/strict';
 import { createFormSession, initialFormAnswers } from '../src/form-session.js';
 
+// 逐条跑、末尾汇总：一条失败不打断后面的，一次把所有红的都报出来（退出码在末尾给）。
 let passed = 0;
-let total = 0;
+const failures = [];
 function test(name, fn) {
-  total++;
   try {
     fn();
     console.log(`  ✓ [PASS] ${name}`);
     passed++;
   } catch (err) {
     console.error(`  ✗ [FAIL] ${name}: ${err.message}`);
-    throw err;
+    failures.push(name);
   }
 }
 
@@ -192,4 +192,5 @@ test('initialFormAnswers：按会话 + 轮次读回用户自己那份，读不�
   assert.deepEqual(initialFormAnswers({ sessionId: SESSION, callId: CALL, storage: undefined }), {});
 });
 
-console.log(`${passed}/${total} passed`);
+console.log(`${passed}/${passed + failures.length} passed`);
+if (failures.length > 0) process.exitCode = 1;

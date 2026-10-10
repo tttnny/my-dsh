@@ -31,17 +31,23 @@ import {
   writeStoredForm,
 } from '../src/form-model.js';
 
+/**
+ * 逐条跑、末尾汇总：**一条失败不打断后面的**。
+ *
+ * 之前这里 catch 里直接 throw，一条红了后面的就都不跑——改完一处只能看见一条错，
+ * 于是「改一次 → 跑一次」被逼成串行，一轮里跑十几遍测试成了常态。一次把所有红的
+ * 都报出来，一轮修完。退出码在文件末尾按失败数给。
+ */
 let passed = 0;
-let total = 0;
+const failures = [];
 function test(name, fn) {
-  total++;
   try {
     fn();
     console.log(`  ✓ [PASS] ${name}`);
     passed++;
   } catch (err) {
     console.error(`  ✗ [FAIL] ${name}: ${err.message}`);
-    throw err;
+    failures.push(name);
   }
 }
 
@@ -696,4 +702,5 @@ test('作答逐行展开：选中的项在前、自填的字在后，只读展�
   );
 });
 
-console.log(`${passed}/${total} passed`);
+console.log(`${passed}/${passed + failures.length} passed`);
+if (failures.length > 0) process.exitCode = 1;
