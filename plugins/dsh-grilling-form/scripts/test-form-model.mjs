@@ -12,13 +12,17 @@ import {
   answerParts,
   applyImport,
   applyRecommendedDefaults,
+  draftHasBody,
   formStorageKey,
   frozenAnswers,
+  frozenFormAnswers,
   importBody,
   isBlank,
   mergeNumberIntoHeader,
   messageText,
   parseImportedAnswers,
+  parseImportedAnswersResult,
+  parseImportedDraft,
   readFormModel,
   readStoredForm,
   roundCall,
@@ -189,26 +193,17 @@ test('入参校验：不再有保留前缀这条规则，__grill_ 前缀的 id �
   assert.deepEqual(validateRound([call({ id: '__grill_whatever__' })]), []);
 });
 
-test('入参校验：选项名里带顿号被拒（作答靠它分项，带它的名字读不回来）', () => {
-  const violations = validateRound([call({ options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] })]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /option 1/);
-  assert.match(violations[0], /ideographic comma/);
-  assert.match(violations[0], /cannot survive the round trip/);
-});
-
-test('入参校验：顿号只查会回填的那个名字——推荐后缀剥掉后没顿号就通过', () => {
-  assert.deepEqual(validateRound([call({ options: [{ label: '甲：两种都行（推荐）' }, { label: '乙' }] })]), []);
-  const violations = validateRound([call({ options: [{ label: '甲、乙：两种都行（推荐）' }] })]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /甲、乙/);
-});
-
 test('入参校验：questions 不是数组时给出可读的违规，而不是抛异常', () => {
   const missing = validateRound(undefined);
   assert.equal(missing.length, 1);
   assert.match(missing[0], /questions must be an array/);
   assert.equal(validateRound('x').length, 1);
+});
+
+test('入参校验：选项名里的标点不再是问题——顿号、冒号、换行都照常投出', () => {
+  assert.deepEqual(validateRound([call({ options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] })]), []);
+  assert.deepEqual(validateRound([call({ options: [{ label: '选项里带：冒号，和、顿号' }] })]), []);
+  assert.deepEqual(validateRound([call({ options: [{ label: '两行\n的选项名' }] })]), []);
 });
 
 test('入参校验：展开正文里把选项又列了一遍被拒（截图里「一遍不带选择器、一遍带」的那种）', () => {
@@ -316,13 +311,31 @@ test('默认勾选：没有推荐的题不会凭空多出作答', () => {
   assert.deepEqual(applyRecommendedDefaults(questions, {}), {});
 });
 
+test('默认勾选：单选题上推荐项也只默认一项（多标了推荐仍留第一项）', () => {
+  const questions = [
+    { id: 'a', multiSelect: false, options: [{ label: 'A（推荐）', displayLabel: 'A', recommended: true }, { label: 'B（推荐）', displayLabel: 'B', recommended: true }] },
+  ];
+  assert.deepEqual(applyRecommendedDefaults(questions, {}), { a: { selected: ['A（推荐）'], custom: '' } });
+});
+
 test('默认勾选：题面还没读出来（或不是本插件的形状）时原样返回用户自己的作答', () => {
   assert.deepEqual(applyRecommendedDefaults([], { a: { selected: ['A'], custom: '' } }), { a: { selected: ['A'], custom: '' } });
 });
 
+test('题面取数：题号并入标题之外，还把题型读出来（缺省多选、写 false 才是单选）', () => {
+  const model = readFormModel({
+    argsRaw: args([
+      call({ id: 'a', multi_select: false }),
+      call({ id: 'b', multiSelect: false }),
+      call({ id: 'c' }),
+    ]),
+  });
+  assert.deepEqual(model.questions.map((question) => question.multiSelect), [false, false, true]);
+});
+
 // --- 导入文本 ---
 
-test('导入文本：逐题一行「标题：选的项、自填的字」，只含有作答的题', () => {
+test('导入文本：有作答的题各占一段——标题一行、每项一行且行首带记号', () => {
   const questions = [
     { id: 'a', header: 'Q2 · Deadline', question: '选哪个？', options: [{ label: 'A：移走（推荐）', displayLabel: 'A：移走' }, { label: 'B：都留', displayLabel: 'B：都留' }] },
     { id: 'b', header: '', question: '范围？', options: [] },
@@ -335,19 +348,25 @@ test('导入文本：逐题一行「标题：选的项、自填的字」，只�
   };
   assert.equal(
     importBody(questions, answers),
-    'Q2 · Deadline：A：移走\n范围？：两句都不够，我自己说：只改插件',
+    'Q2 · Deadline：\n- A：移走\n范围？：\n- 两句都不够，我自己说：只改插件',
   );
 });
 
-test('导入文本：推荐后缀不进答案', () => {
-  const questions = [{ id: 'a', header: '', question: '？', options: [{ label: 'A：xxx（推荐）', displayLabel: 'A：xxx' }] }];
-  assert.equal(importBody(questions, { a: { selected: ['A：xxx（推荐）'], custom: '' } }), '？：A：xxx');
+test('导入文本：选项名里带顿号、冒号都照原样写出去（不再有分项的限制）', () => {
+  const questions = [{
+    id: 'a',
+    header: 'Q1',
+    question: '？',
+    options: [{ label: '甲、乙都行（推荐）', displayLabel: '甲、乙都行' }, { label: '丙：另起一行', displayLabel: '丙：另起一行' }],
+  }];
+  const answers = { a: { selected: ['甲、乙都行（推荐）', '丙：另起一行'], custom: '' } };
+  assert.equal(importBody(questions, answers), 'Q1：\n- 甲、乙都行\n- 丙：另起一行');
 });
 
-test('导入文本：一项都没作答时是空串', () => {
+test('导入文本：一行都没有时是空串；只有空白的自填也不算一项', () => {
   const questions = [{ id: 'a', header: '', question: '？', options: [] }];
   assert.equal(importBody(questions, {}), '');
-  assert.equal(importBody(questions, { a: { selected: [], custom: '' } }), '');
+  assert.equal(importBody(questions, { a: { selected: [], custom: '   ' } }), '');
 });
 
 // --- 导入块 ---
@@ -355,16 +374,16 @@ test('导入文本：一项都没作答时是空串', () => {
 const questions = [{ id: 'a', header: 'Q2 · Deadline', question: '选哪个？', options: [] }];
 const bodyOf = (custom) => importBody(questions, { a: { selected: [], custom } });
 
-test('首次导入：块放在最前面，用户原有的文字整段接在后面', () => {
+test('首次导入：块放在最前面（标题一行、项各一行），用户原有的文字整段接在后面', () => {
   const draft = applyImport('我另外想说一句。', bodyOf('选 A'));
   assert.equal(
     draft,
-    `${IMPORT_BLOCK_START}\nQ2 · Deadline：选 A\n${IMPORT_BLOCK_END}\n\n我另外想说一句。`,
+    `${IMPORT_BLOCK_START}\nQ2 · Deadline：\n- 选 A\n${IMPORT_BLOCK_END}\n\n我另外想说一句。`,
   );
 });
 
 test('空草稿：只有一个块，没有多余空行', () => {
-  assert.equal(applyImport('', bodyOf('选 A')), `${IMPORT_BLOCK_START}\nQ2 · Deadline：选 A\n${IMPORT_BLOCK_END}`);
+  assert.equal(applyImport('', bodyOf('选 A')), `${IMPORT_BLOCK_START}\nQ2 · Deadline：\n- 选 A\n${IMPORT_BLOCK_END}`);
 });
 
 test('重复导入：原地替换块本身，块外手打的内容一个不动', () => {
@@ -372,7 +391,7 @@ test('重复导入：原地替换块本身，块外手打的内容一个不动',
   const second = applyImport(first, bodyOf('改选 B'));
   assert.equal(second, applyImport('前面的话。', bodyOf('改选 B')));
   assert.match(second, /^【盘问作答】/);
-  assert.match(second, /Q2 · Deadline：改选 B/);
+  assert.match(second, /Q2 · Deadline：\n- 改选 B/);
   assert.doesNotMatch(second, /选 A/);
   assert.equal(second.slice(-'前面的话。'.length), '前面的话。');
 });
@@ -385,6 +404,26 @@ test('用户手改过块内的字：以表单为准覆盖', () => {
 
 test('导入：作答题为空时原样返回草稿', () => {
   assert.equal(applyImport('原样', ''), '原样');
+});
+
+test('草稿一致性：草稿里那段正是当前作答时为真，旧了、手改过、没块都为假', () => {
+  const body = bodyOf('选 A');
+  const draft = applyImport('我另外想说一句。', body);
+  assert.equal(draftHasBody(draft, body), true);
+  assert.equal(draftHasBody(applyImport('', bodyOf('改选 B')), body), false, '草稿里是旧那份');
+  assert.equal(draftHasBody(draft.replace('选 A', '我自己乱改的'), body), false, '手改过的块算不一致');
+  assert.equal(draftHasBody('只有我自己的话。', body), false, '没有块');
+  assert.equal(draftHasBody(undefined, body), false);
+  assert.equal(draftHasBody(draft, ''), false, '没有作答可导时谈不上一致');
+});
+
+test('草稿反解：草稿里那段导入块逐题回到作答表；没块、块里认不出题时为 undefined', () => {
+  const questions = [call({ options: [{ label: 'A：这样', displayLabel: 'A：这样' }] })];
+  const draft = applyImport('', importBody(questions, { a: { selected: ['A：这样'], custom: '补一句' } }));
+  assert.deepEqual(parseImportedDraft(draft, questions), [{ question: questions[0], selected: ['A：这样'], custom: '补一句' }]);
+  assert.equal(parseImportedDraft('我自己的话。', questions), undefined);
+  assert.equal(parseImportedDraft(`${IMPORT_BLOCK_START}\n跟哪道题都对不上：随便\n${IMPORT_BLOCK_END}`, questions), undefined);
+  assert.equal(parseImportedDraft(undefined, questions), undefined);
 });
 
 // --- 只读判定：交回把本轮带过去的那条用户发言 ---
@@ -464,9 +503,9 @@ const reverseQuestions = [
 ];
 const replyText = (body) => `${IMPORT_BLOCK_START}\n${body}\n${IMPORT_BLOCK_END}`;
 
-test('反解：块里的每一行按「标题：项、项」回到作答表，选中的项记回归一化后的 label', () => {
+test('反解（新格式）：标题一行、每项一行，选中的项记回归一化后的 label，自填并进自填', () => {
   const answers = parseImportedAnswers(
-    replyText('Q2 · Host 权威层：A：扩展、自填的一句\n范围呢？：甲：只改插件'),
+    replyText('Q2 · Host 权威层：\n- A：扩展\n- 自填的一句\n范围呢？：\n- 甲：只改插件'),
     reverseQuestions,
   );
   assert.deepEqual(answers, {
@@ -476,19 +515,48 @@ test('反解：块里的每一行按「标题：项、项」回到作答表，�
   });
 });
 
-test('反解：块里没出现的题就是没作答——连推荐默认也不会被勾回来', () => {
-  const answers = parseImportedAnswers(replyText('范围呢？：甲：只改插件'), reverseQuestions);
+test('反解（新格式）：块里没出现的题就是没作答——连推荐默认也不会被勾回来', () => {
+  const answers = parseImportedAnswers(replyText('范围呢？：\n- 甲：只改插件'), reverseQuestions);
   assert.deepEqual(answers.h1, { selected: [], custom: '' });
   assert.deepEqual(answers.h3, { selected: [], custom: '' });
 });
 
-test('反解：标题认不出时退回题干、再退回 id；三样都对不上的行不算数', () => {
-  assert.deepEqual(parseImportedAnswers(replyText('Host 权威层怎么改？：A：扩展'), reverseQuestions).h1.selected, ['A：扩展（推荐）']);
-  assert.deepEqual(parseImportedAnswers(replyText('h2：甲：只改插件'), reverseQuestions).h2.selected, ['甲：只改插件']);
-  assert.equal(parseImportedAnswers(replyText('跟哪道题都对不上：随便'), reverseQuestions), undefined, '一条都还原不出来时退回本地那份');
+test('反解（新格式）：选项名里带顿号、冒号、换行都读得回来——顿号不再被当分隔符', () => {
+  const questions = [{
+    id: 'a',
+    header: 'Q1',
+    question: '？',
+    options: [
+      { label: '甲、乙都行', displayLabel: '甲、乙都行' },
+      { label: '丙：另起一行', displayLabel: '丙：另起一行' },
+    ],
+  }];
+  assert.deepEqual(
+    parseImportedAnswers(replyText('Q1：\n- 甲、乙都行\n- 丙：另起一行\n- 两行\n  的自填'), questions),
+    { a: { selected: ['甲、乙都行', '丙：另起一行'], custom: '两行\n  的自填' } },
+  );
 });
 
-test('反解：选项名对不上的项并进自填（包括含「、」的自填被拆开又拼回去）', () => {
+test('反解（新格式）：标题行带不带冒号都认；块里一题都没出现时不算数', () => {
+  const questions = [{ id: 'a', header: 'Q1', question: '？', options: [{ label: '甲', displayLabel: '甲' }] }];
+  assert.deepEqual(parseImportedAnswers(replyText('Q1：\n- 甲'), questions).a.selected, ['甲']);
+  assert.deepEqual(parseImportedAnswers(replyText('Q1\n- 甲'), questions).a.selected, ['甲'], '手打时漏了冒号也认');
+});
+
+test('反解（旧格式）：老会话里那条「标题：项、项」照样认，标题认不出时退回题干、再退回 id', () => {
+  assert.deepEqual(
+    parseImportedAnswers(replyText('Q2 · Host 权威层：A：扩展、自填的一句\n范围呢？：甲：只改插件'), reverseQuestions),
+    {
+      h1: { selected: ['A：扩展（推荐）'], custom: '自填的一句' },
+      h2: { selected: ['甲：只改插件'], custom: '' },
+      h3: { selected: [], custom: '' },
+    },
+  );
+  assert.deepEqual(parseImportedAnswers(replyText('Host 权威层怎么改？：A：扩展'), reverseQuestions).h1.selected, ['A：扩展（推荐）']);
+  assert.deepEqual(parseImportedAnswers(replyText('h2：甲：只改插件'), reverseQuestions).h2.selected, ['甲：只改插件']);
+});
+
+test('反解（旧格式）：选项名对不上的项并进自填（含「、」的自填被拆开又拼回去）', () => {
   const questions = [{ id: 'a', header: 'Q1', question: '？', options: [{ label: 'A：这样', displayLabel: 'A：这样' }] }];
   assert.deepEqual(
     parseImportedAnswers(replyText('Q1：A：这样、两句都不够、我自己说：只改插件'), questions),
@@ -496,14 +564,7 @@ test('反解：选项名对不上的项并进自填（包括含「、」的自�
   );
 });
 
-test('反解：没有块、起止行不配对、块里没东西时都退回本地那份', () => {
-  assert.equal(parseImportedAnswers('我另外想说一句。', reverseQuestions), undefined);
-  assert.equal(parseImportedAnswers(`${IMPORT_BLOCK_START}\nQ2 · Host 权威层：A：扩展`, reverseQuestions), undefined);
-  assert.equal(parseImportedAnswers(replyText('   '), reverseQuestions), undefined);
-  assert.equal(parseImportedAnswers(undefined, reverseQuestions), undefined);
-});
-
-test('反解：标题本身含「：」时，按认得出的那个分隔符切', () => {
+test('反解（旧格式）：标题本身含「：」时，按认得出的那个分隔符切', () => {
   const questions = [{ id: 'a', header: '落点：插件页', question: '？', options: [{ label: '甲：铺在详情页', displayLabel: '甲：铺在详情页' }] }];
   assert.deepEqual(
     parseImportedAnswers(replyText('落点：插件页：甲：铺在详情页'), questions),
@@ -511,17 +572,52 @@ test('反解：标题本身含「：」时，按认得出的那个分隔符切',
   );
 });
 
-test('反解：块前后的用户原话不影响反解', () => {
-  const text = `我另外想说一句。\n\n${replyText('Q2 · Host 权威层：A：扩展')}\n\n还有一句。`;
-  assert.deepEqual(parseImportedAnswers(text, reverseQuestions).h1.selected, ['A：扩展（推荐）']);
+test('反解：两种格式混在一个块里时，每一项记号行各归它上面那个标题，旧格式的行不再另起一题', () => {
+  const text = replyText(['Q2 · Host 权威层：', '- A：扩展', '范围呢？：甲：只改插件'].join('\n'));
+  const answers = parseImportedAnswers(text, reverseQuestions);
+  assert.deepEqual(answers.h1, { selected: ['A：扩展（推荐）'], custom: '范围呢？：甲：只改插件' });
+  assert.deepEqual(answers.h2, { selected: [], custom: '' }, '块里一旦有项记号行，旧格式那行就只是上一题的续行');
 });
 
-test('冻结要用的那份作答：块在就以块为准，块拿不到就退回本地那份（含推荐默认）', () => {
-  const parsed = frozenAnswers(reverseQuestions, { h1: { selected: ['B：新建一层'], custom: '本地改过' } }, replyText('范围呢？：甲：只改插件'));
-  assert.deepEqual(parsed.h1, { selected: [], custom: '' }, '实发消息里没有这题就是没作答，本地那份不许插嘴');
-  const fallback = frozenAnswers(reverseQuestions, { h2: { selected: [], custom: '本地自填' } }, '没有块');
-  assert.deepEqual(fallback.h1.selected, ['A：扩展（推荐）'], '退回本地那份时推荐默认照旧生效');
-  assert.deepEqual(fallback.h2, { selected: [], custom: '本地自填' });
+test('反解：块里的项记号行都归最近那个认得出的标题（题与题之间不串台）', () => {
+  const answers = parseImportedAnswers(replyText('范围呢？：\n- 甲：只改插件\nQ2 · Host 权威层：\n- A：扩展'), reverseQuestions);
+  assert.deepEqual(answers.h1, { selected: ['A：扩展（推荐）'], custom: '' });
+  assert.deepEqual(answers.h2, { selected: ['甲：只改插件'], custom: '' });
+});
+
+test('反解：块前后的用户原话不影响反解；CRLF 换行也认（行尾的 \\r 不算内容）', () => {
+  const text = `我另外想说一句。\n\n${replyText('Q2 · Host 权威层：\n- A：扩展')}\n\n还有一句。`;
+  assert.deepEqual(parseImportedAnswers(text, reverseQuestions).h1.selected, ['A：扩展（推荐）']);
+  const crlf = replyText('Q2 · Host 权威层：\r\n- A：扩展').replace(/\n/g, '\r\n');
+  assert.deepEqual(parseImportedAnswers(crlf, reverseQuestions).h1.selected, ['A：扩展（推荐）'], '手打草稿可能是 CRLF');
+});
+
+test('反解结果分三种：没有块是没作答、块坏了是 malformed、有块才是 parsed', () => {
+  assert.deepEqual(parseImportedAnswersResult('我另外想说一句。', reverseQuestions), { kind: 'none', answers: undefined });
+  assert.equal(parseImportedAnswersResult(undefined, reverseQuestions).kind, 'none');
+  assert.equal(parseImportedAnswersResult(`${IMPORT_BLOCK_START}\nQ2 · Host 权威层：\n- A：扩展`, reverseQuestions).kind, 'none', '起止行不配对：当没有块');
+  assert.equal(parseImportedAnswersResult(replyText('跟哪道题都对不上：随便'), reverseQuestions).kind, 'malformed', '一条都认不出来');
+  const parsed = parseImportedAnswersResult(replyText('范围呢？：\n- 甲：只改插件'), reverseQuestions);
+  assert.equal(parsed.kind, 'parsed');
+  assert.deepEqual(parsed.answers.h1, { selected: [], custom: '' }, '块里没有的题显式记成没作答');
+  assert.equal(parseImportedAnswersResult(replyText('   '), reverseQuestions).kind, 'parsed', '空块只是没有作答');
+});
+
+test('冻结：块在就以块为准，块坏了退回本地那份，根本没有块就是没作答（推荐默认不许冒充）', () => {
+  const stored = { h1: { selected: ['B：新建一层'], custom: '本地改过' }, h2: { selected: [], custom: '本地自填' } };
+  const parsed = frozenFormAnswers(reverseQuestions, stored, replyText('范围呢？：\n- 甲：只改插件'));
+  assert.deepEqual(parsed.answers.h1, { selected: [], custom: '' }, '实发消息里没有这题就是没作答，本地那份不许插嘴');
+  assert.equal(parsed.unanswered, false);
+  const broken = frozenFormAnswers(reverseQuestions, stored, replyText('跟哪道题都对不上：随便'));
+  assert.deepEqual(broken.answers.h2, { selected: [], custom: '本地自填' }, '块坏了才退回本地那份');
+  assert.equal(broken.fallback, true);
+  const silent = frozenFormAnswers(reverseQuestions, stored, '我另外想说一句，没导入。');
+  assert.equal(silent.unanswered, true, '用户没走表单：这就是没作答，不是「本地那份」');
+  assert.deepEqual(silent.answers.h1, { selected: [], custom: '' });
+  assert.deepEqual(silent.answers.h2, { selected: [], custom: '' });
+  assert.equal(silent.fallback, false);
+  // 兼容入口照旧：给的是同一份作答表
+  assert.deepEqual(frozenAnswers(reverseQuestions, stored, '我另外想说一句，没导入。'), silent.answers);
 });
 
 // --- 持久化 ---
@@ -576,15 +672,15 @@ test('作答展示：选中的项换回不带后缀的文字', () => {
   assert.deepEqual(answerParts(question, undefined), { selected: [], custom: '' });
 });
 
-test('作答逐行展开：选中的项在前、自填的字在后，导入文本与只读展示共用这一份', () => {
+test('作答逐行展开：选中的项在前、自填的字在后，只读展示按行看的就是这一份', () => {
   const question = { id: 'a', options: [{ label: 'A：xxx（推荐）', displayLabel: 'A：xxx' }, { label: 'B：yyy', displayLabel: 'B：yyy' }] };
   assert.deepEqual(answerLines(question, { selected: ['A：xxx（推荐）', 'B：yyy'], custom: ' 补一句 ' }), ['A：xxx', 'B：yyy', '补一句']);
   assert.deepEqual(answerLines(question, { selected: [], custom: '   ' }), []);
   assert.deepEqual(answerLines(question, undefined), []);
-  // 导入文本就是它的逐行拼接：一处改了行序或取舍，两处一起变
+  // 导入文本按项写：一样的取舍，一项一行
   assert.equal(
     importBody([{ ...question, header: 'Q1', question: '？' }], { a: { selected: ['B：yyy'], custom: '补一句' } }),
-    'Q1：B：yyy、补一句',
+    'Q1：\n- B：yyy\n- 补一句',
   );
 });
 

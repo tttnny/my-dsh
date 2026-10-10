@@ -10,11 +10,11 @@ import { normalizeOption } from './recommendation.js';
 
 /** 导入块的起止行：重复导入时靠它认出上一次导入的那一段，原地替换。
  *
- * **改协议（这两个常量、工具名、字段语义、作答行格式）时的联动点**——机械细节只归本包，
+ * **改协议（这两个常量、工具名、字段语义、作答段的行形）时的联动点**——机械细节只归本包，
  * 技能正文那边不写这些，只需要核对它有没有引用旧格式：
  *   1. `src/index.js`：工具的 description / 各字段说明 / PENDING_MESSAGE（模型的运行时自述）；
- *   2. `scripts/test-render.mjs`、`scripts/smoke-host.mjs`、`scripts/test-form-session.mjs`
- *      里的字面量钉（起止行、作答格式、会话键）；
+ *   2. `scripts/test-form-model.mjs`、`scripts/smoke-host.mjs`、`scripts/test-form-session.mjs`、
+ *      `scripts/test-render.mjs` 里的字面量钉（起止行、作答段的逐行形状、会话键）；
  *   3. 本包 `README.md` 与仓库根 `README.md` 的插件表；
  *   4. matt-skills 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）：工具改名时
  *      正文里那句工具名要跟着改。它不随本包发布、也没有任何测试看得见它，漂移只会以模型行为
@@ -87,10 +87,13 @@ const LABEL_ALIAS_END = /[：:·、，,。;；!！?？(（)）\-–—\s]/;
 /** 别名（其后可以有一个空格）跟这些符号才算同一个条目。只认「名：解释」那一类分隔符：
  * 顿号与逗号不算，否则正文里「甲、乙两种做法各有代价」这种正经的共用背景会被误拒。 */
 const ALIAS_FOLLOW_CHAR = /[：:·）)\-–—>]/;
-/** 作答回填的项分隔符：导入文本用它连接（importBody）、反解按它拆分（parseImportedAnswers），
- * 所以选项的展示文字里带它就没法原样回填，见 validateRound 的这条规则。工具自述与拒收说明里
- * 对它一律说「顿号」（ideographic comma），模型据此知道要避的是哪个字符。 */
-const ANSWER_ITEM_SEPARATOR = '、';
+/** 作答回填里一项的开头：每项独占一行、行首带这个记号，所以项与项之间不靠任何字符分拆，
+ * 选项名里出现什么标点都读得回来（旧格式的顿号分隔限制已随之删除）。 */
+const ANSWER_ITEM_PREFIX = '- ';
+
+/** 旧格式（0.10.0 及更早）的项分隔符：老会话里已发出去的消息带着它，反解要照样认。
+ * 新格式不再用它分项，所以选项名里带顿号不再是问题——这条只服务读回旧消息。 */
+const LEGACY_ITEM_SEPARATOR = '、';
 
 function shorten(text) {
   return text.length <= 60 ? text : `${text.slice(0, 60)}…`;
@@ -134,9 +137,12 @@ function detailRestatesOption(detail, aliases) {
 
 /**
  * 这一轮的入参能不能画成表单。题干与选项的分工整体上是引导——子串匹配会误拒合法题干，
- * 坏题干好过假拒绝——只有两处例外：展开正文里把选项又列一遍（那会让同一批选项在页面上
- * 出现两遍，一遍带选择器、一遍不带，见 detailRestatesOption），以及选项的展示文字里带顿号
- * （作答回填按顿号分项，带它的名字读不回来）。命中即返回可修复的拒绝，模型改完重投。
+ * 坏题干好过假拒绝——只有一处例外：展开正文里把选项又列一遍（那会让同一批选项在页面上
+ * 出现两遍，一遍带选择器、一遍不带，见 detailRestatesOption）。命中即返回可修复的拒绝，
+ * 模型改完重投。
+ *
+ * 选项名里的标点早先也是拒收项（作答靠顿号分项）；作答格式改成「一项一行」之后，任何标点
+ * 都读得回来，这条规则连同它的联动点一并删除。
  *
  * 前置：questions 应当来自调用参数（schema 保证是数组）。真给了别的形状也不抛，而是当成一条
  * 违规交回去——抛异常会让这一轮以「工具坏了」收场，而不是「改一改重投」。
@@ -173,10 +179,6 @@ export function validateRound(questions) {
         return;
       }
       seenLabels.add(normalized.label);
-      if (normalized.cleanLabel.includes(ANSWER_ITEM_SEPARATOR)) {
-        violations.push(`${where}, option ${optionIndex + 1} has an ideographic comma in its label ${JSON.stringify(normalized.cleanLabel)}; the form joins a question's answers with "${ANSWER_ITEM_SEPARATOR}" and reads them back by splitting on it, so this label cannot survive the round trip — reword the label without it`);
-        return;
-      }
       aliases.push(labelAlias(normalized.cleanLabel));
     });
     const restated = detailRestatesOption(question.detail, aliases);
@@ -218,6 +220,8 @@ function readQuestions(argsRaw) {
       header: mergeNumberIntoHeader(question.number, question.header),
       question: typeof question.question === 'string' ? question.question : '',
       detail: isBlank(question.detail) ? undefined : question.detail,
+      // 多选题是缺省；只有显式写 multi_select: false 才是单选（原生那套叫 multiSelect，两种写法都认）。
+      multiSelect: question.multi_select !== false && question.multiSelect !== false,
       options,
     });
   }
@@ -369,6 +373,35 @@ export function answerLines(question, answer) {
 }
 
 /**
+ * 一道题的**项**：选中的选项各一项、自填整段算一项。导入块按这个逐项写行，反解也按项回填；
+ * 与 answerLines 的分工是——那里逐行展开是给人看的（只读展示按行），这里逐项是给协议用的
+ * （自填里的回车属于同一项，不拆）。
+ * @param {object} question - 题目模型。
+ * @param {{selected?: string[], custom?: string}|undefined} answer - 该题的作答。
+ * @returns {{kind: 'option'|'custom', text: string}[]} 逐项；没作答时为空数组。
+ */
+export function answerItems(question, answer) {
+  const { selected, custom } = answerParts(question, answer);
+  return [
+    ...selected.map((label) => ({ kind: 'option', text: label })),
+    ...(custom === '' ? [] : [{ kind: 'custom', text: custom }]),
+  ];
+}
+
+/**
+ * 一道题的导入段：标题行 + 每一项一行（行首记号见 ANSWER_ITEM_PREFIX）。没作答时是空数组。
+ * 导入文本与草稿里的「这段是不是当前作答」共用这一份，两处不会各写一套。
+ * @param {object} question - 题目模型。
+ * @param {{selected?: string[], custom?: string}|undefined} answer - 该题的作答。
+ * @returns {string[]} 段内各行。
+ */
+export function importSegmentLines(question, answer) {
+  const items = answerItems(question, answer);
+  if (items.length === 0) return [];
+  return [`${titleOf(question)}：`, ...items.map((item) => `${ANSWER_ITEM_PREFIX}${item.text}`)];
+}
+
+/**
  * 「推荐的选项默认勾上」落到一份作答表上：用户没动过的题，标了推荐的选项就是选中态。
  * 用户动过（storage 里有这题的记录）的题一律以他的为准——包括他把默认项取消掉、只留一个空记录，
  * 所以这里只补**缺席**的题，绝不覆盖已有的作答。
@@ -376,31 +409,76 @@ export function answerLines(question, answer) {
  * @param {object} answers - 用户自己的作答表（readStoredForm 的产物）。
  * @returns {object} 表单上真正显示、导入、计数的作答表。
  */
+/** 单选：一题的作答至多留一项（替换，不是追加）。没选中时自填照旧。 */
+function selectOne(existing, answer) {
+  const [kept] = answer.selected;
+  return { selected: kept === undefined ? [] : [kept], custom: existing.custom };
+}
+
 export function applyRecommendedDefaults(questions, answers) {
   const merged = { ...(isRecord(answers) ? answers : {}) };
   for (const question of questions) {
     if (merged[question.id] !== undefined) continue;
     const selected = question.options.filter((option) => option.recommended).map((option) => option.label);
-    if (selected.length > 0) merged[question.id] = { selected, custom: '' };
+    if (selected.length === 0) continue;
+    const recommended = { selected, custom: '' };
+    merged[question.id] = question.multiSelect === false ? selectOne({ custom: '' }, recommended) : recommended;
   }
   return merged;
 }
 
 /**
- * 生成导入文本的正文：逐题一行「标题：你选的项／你自填的字」，只含有作答的题。
- * 一行都没有时返回空串（调用方据此禁用导入键）。
+ * 生成导入文本的正文：有作答的题各占一段——标题一行，每个选中的项与自填各占一行、行首带
+ * 记号（见 ANSWER_ITEM_PREFIX）。一项作答都没有时返回空串（调用方据此禁用导入键）。
+ *
+ * 新格式的项与项之间不靠任何字符分拆，所以选项名或自填里出现顿号、冒号、换行都读得回来。
  * @param {object[]} questions - 题目模型。
  * @param {object} answers - 作答表。
  * @returns {string} 正文（不含导入块的起止行）。
  */
 export function importBody(questions, answers) {
-  const lines = [];
+  const blocks = [];
   for (const question of questions) {
-    const answer = answerLines(question, answers[question.id]);
-    if (answer.length === 0) continue;
-    lines.push(`${titleOf(question)}：${answer.join('、')}`);
+    const lines = importSegmentLines(question, answers[question.id]);
+    if (lines.length > 0) blocks.push(lines.join('\n'));
   }
-  return lines.join('\n');
+  return blocks.join('\n');
+}
+
+/** 草稿里那一段导入块现在长什么样；没有块、或起止行不配对时 undefined。 */
+function importBlockBodyOf(draft) {
+  const block = findImportBlock(draft);
+  if (block === undefined) return undefined;
+  const text = draft.slice(block.start + IMPORT_BLOCK_START.length, block.end - IMPORT_BLOCK_END.length);
+  return text.replace(/^\n/, '').replace(/\n$/, '');
+}
+
+/**
+ * 草稿里那段导入块是不是**当前这份作答**。用户点了导入之后又改表单，两边就不一致了——
+ * 页面上据此把按键提示成「更新输入框」，而不是让他把旧答案发出去。
+ *
+ * 比的是逐行文本：手改过的块（多一个空行、改了一个字）算不一致，与导入键的语义一致
+ * （再点一次就是覆盖）。
+ * @param {unknown} draft - 当前草稿。
+ * @param {string} body - 当前作答的正文（importBody 的产物）。
+ * @returns {boolean} 草稿里正是这一份时为 true。
+ */
+export function draftHasBody(draft, body) {
+  if (body === '') return false;
+  return importBlockBodyOf(draft) === body;
+}
+
+/**
+ * 草稿里那段导入块逐题回到作答表；没有块、或一题都认不出时 undefined（调用方照旧重建）。
+ * @param {unknown} draft - 当前草稿。
+ * @param {object[]} questions - 题目模型。
+ * @returns {object|undefined} 作答表。
+ */
+export function parseImportedDraft(draft, questions) {
+  const body = importBlockBodyOf(draft);
+  if (body === undefined || isBlank(body)) return undefined;
+  const answers = splitImportedBody(questions, body);
+  return answers.length === 0 ? undefined : answers;
 }
 
 /**
@@ -499,60 +577,201 @@ export function roundCall(chat, turn) {
 }
 
 /**
- * 反解一段用户发言里的作答块，回到作答表。
- *
- * 匹配规则（都是**给人看**的格式，没有隐藏协议）：标题按「题号并入的标题 → 题干 → id」认题；
- * 每一项先按该题选项的展示文字精确匹配，匹配不上的并进自填。块里没出现的题就是**没作答**
- * （显式记一条空作答，推荐默认因此不会被勾回来）。
- *
- * 已知代价（刻意接受）：选项名或自填内容本身含「、」时可能多算/少算一项。
+ * 反解一段用户发言里的作答块，回到作答表。解析失败时退回调用方给的 `fallback`——
+ * 这条链上的三种来历（旧格式的块、单行旧格式、认不出题的块）分不出来，也不能编一个
+ * 「用户没作答」的结论出来；显式区分那三种的判据在 parseImportedAnswersResult。
  * @param {unknown} text - 用户发言的文字。
  * @param {object[]} questions - 题目模型。
- * @returns {object|undefined} 作答表；块缺失、起止行不配对、或一条都还原不出来时 undefined（调用方退回本地那份）。
+ * @param {object} [fallback={}] - 反解不出来时交回的作答表；缺省是空表。
+ * @returns {object} 作答表；块缺失、起止行不配对、或一条都还原不出来时就是 fallback。
  */
-export function parseImportedAnswers(text, questions) {
-  const current = findImportBlock(text);
-  if (current === undefined) return undefined;
-  const inner = text.slice(current.start + IMPORT_BLOCK_START.length, current.end - IMPORT_BLOCK_END.length);
-  const body = inner.replace(/^\n/, '').replace(/\n$/, '');
-  if (isBlank(body)) return undefined;
-  const answers = {};
-  for (const question of questions) answers[question.id] = { selected: [], custom: '' };
-  let matched = 0;
-  for (const line of body.split('\n')) {
-    const entry = splitImportedLine(questions, line);
-    if (entry === undefined) continue;
-    matched++;
-    const { question, items } = entry;
-    const selected = [];
-    const rest = [];
-    for (const raw of items.split('、')) {
-      const item = raw.trim();
-      if (item === '') continue;
-      const option = (question.options ?? []).find((candidate) => candidate.displayLabel === item);
-      if (option === undefined) rest.push(item);
-      else selected.push(option.label);
-    }
-    answers[question.id] = { selected, custom: rest.join('、') };
-  }
-  return matched === 0 ? undefined : answers;
+export function parseImportedAnswers(text, questions, fallback = {}) {
+  return parseImportedAnswersResult(text, questions).answers ?? fallback;
 }
 
 /**
- * 反解出的一行拆成「哪道题」与「它的项」。标题本身可能含「：」（「落点：插件页」这种），
- * 所以逐个分隔符试着认题，认得出的那一个才算分隔符。
+ * 反解一段用户发言里的作答块，并把「为什么没有」也交回来。
+ *
+ * 三种结果分得开（冻结算的画法与记录是否失真全看它）：
+ *  - `none`：根本没有块——用户没走表单（自己打字、贴图、或说别的事），**没有作答**；
+ *  - `malformed`：有起止行，但块里认不出一道题（或起止行不配对）——形态坏了，退回本地那份；
+ *  - `parsed`：块里的题按标题认回来，`answers` 把块里没出现的题也显式记成**没作答**。
+ *
+ * 认法都是**给人看**的格式，没有隐藏协议。块的形状由块自己说，不靠全局：
+ *  - 起止行那一行以 `：` 结尾（本轮导入的形态）⇒ 本次格式：该行只是题目标题，其后的行凡是
+ *    以项记号开头的，按「行首第一个记号」切开、其余整行归一项（且不 trim，多行自填连换行
+ *    一起读回来）；不以记号开头的行是标题行不带项的写法，按旧格式读那一行；
+ *  - 块里出现任何带项记号的行 ⇒ 本次格式：**所有**标题行都只当标题（没带项就是这题没作答）；
+ *  - 否则整块按旧格式（「标题：项、项」一行一题）读。
+ *
+ * 标题认题都是「题号并入的标题 → 题干 → id」，标题本身可能含「：」，所以逐个分隔符试着认。
+ * @param {unknown} text - 用户发言的文字。
  * @param {object[]} questions - 题目模型。
- * @param {string} line - 导入块里的一行。
- * @returns {{ question: object, items: string }|undefined} 认不出题时 undefined。
+ * @returns {{ kind: 'none'|'malformed'|'parsed', answers: object|undefined }} 反解结果。
  */
-function splitImportedLine(questions, line) {
+export function parseImportedAnswersResult(text, questions) {
+  const current = findImportBlock(text);
+  if (current === undefined) return { kind: 'none', answers: undefined };
+  const inner = text.slice(current.start + IMPORT_BLOCK_START.length, current.end - IMPORT_BLOCK_END.length);
+  // 块内的行一律按 \n 分，行尾的 \r 四处都去掉：手打的草稿、别处粘进来的文本都可能带 CRLF，
+  // 不处理的话「- 甲\r」与选项名「甲」就对不上，会整题落进自填。
+  const body = inner.replace(/^\n/, '').replace(/\n$/, '');
+  if (isBlank(body)) return { kind: 'parsed', answers: blankAnswers(questions) };
+  const entries = splitImportedBody(questions, body);
+  return entries.length === 0
+    ? { kind: 'malformed', answers: undefined }
+    : { kind: 'parsed', answers: asAnswerTable(questions, entries) };
+}
+
+/**
+ * 逐条条目回到按 id 取用的作答表：块里没出现的题显式记成**没作答**（推荐默认因此不会被勾回来）。
+ * @param {object[]} questions - 题目模型。
+ * @param {object[]} entries - splitImportedBody 的产物。
+ * @returns {object} 作答表。
+ */
+function asAnswerTable(questions, entries) {
+  const answers = blankAnswers(questions);
+  for (const entry of entries) {
+    answers[entry.question.id] = { selected: entry.selected, custom: entry.custom };
+  }
+  return answers;
+}
+
+/** 一题的**没作答**：显式记一条空作答，推荐默认因此不会被勾回来。
+ * @param {object[]} questions - 题目模型。
+ * @returns {object} 每题都是空作答的作答表。 */
+function blankAnswers(questions) {
+  const answers = {};
+  for (const question of questions) answers[question.id] = { selected: [], custom: '' };
+  return answers;
+}
+
+/** 现在（新格式）的标题行以这个收尾：行尾那个全角冒号只是它自己写的分隔符，不是内容。 */
+const NEW_FORMAT_HEADER_END = '：';
+/** 旧格式（0.10.0 及更早）的行首列表符号：`- 选 A` 与 `-选 A` 都算一项。 */
+const LEGACY_ITEM_PREFIX = /^-\s+/;
+/** 一行的项记号：新格式写成「- 项」，行首的空格不改变它是哪一项（手打时容易缩进）；
+ * 切开后后半段不 trim——多行自填的回车就靠它读回来。 */
+const ANSWER_ITEM_LINE = /^[ \t]*- /;
+
+/**
+ * 一把作答表里有没有任何一项（选中或自填）。全空表示这一行一个字都没读出来。
+ * @param {object} answer - 一题的作答。
+ * @returns {boolean} 有没有内容。
+ */
+function hasAnyAnswer(answer) {
+  return answer.selected.length > 0 || answer.custom.trim() !== '';
+}
+
+/**
+ * 把导入块里的各行拆成逐题的作答。
+ *
+ * 格式按块的形状自己认，不靠全局开关：出现带项记号的行就是本次格式，标题行只当标题；
+ * 一行都没有记号（含旧格式的「标题：项、项」）就整块按旧格式读。两种格式混在一块的块，
+ * 旧格式的那些行按旧格式读、新格式的那些行按新格式读，谁也不吃掉谁。
+ * @param {object[]} questions - 题目模型。
+ * @param {string} body - 块内文本（起止行已剥掉）。
+ * @returns {object[]} 每条是 `{ question, selected, custom }`；认不出题的行不产出条目。
+ */
+function splitImportedBody(questions, body) {
+  const lines = body.split('\n').map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
+  const newFormat = lines.some((line) => ANSWER_ITEM_LINE.test(line) || LEGACY_ITEM_PREFIX.test(line));
+  const found = new Map();
+  let current;
+  const flush = () => {
+    if (current === undefined) return;
+    found.set(current.question.id, current);
+  };
+  for (const line of lines) {
+    if (newFormat && !ANSWER_ITEM_LINE.test(line)) {
+      const title = line.trim();
+      const question = questionByTitle(questions, title)
+        // 新格式的标题行以「：」收尾（那是它自己写的分隔符），剥掉之后照样认一次，
+        // 于是「标题里本来就有冒号」也不必特判。
+        ?? (title.endsWith(NEW_FORMAT_HEADER_END) ? questionByTitle(questions, title.slice(0, -1).trim()) : undefined);
+      if (question !== undefined) {
+        flush();
+        current = { question, selected: [], custom: '' };
+        continue;
+      }
+      // 认不出题的行：当前题的**续行**（自填按了回车）照旧算它的，其余忽略。
+      if (current !== undefined && line.trim() !== '') current.custom += `\n${line}`;
+      continue;
+    }
+    if (newFormat) {
+      if (current === undefined) continue;
+      const item = line.slice(line.match(ANSWER_ITEM_LINE)[0].length);
+      const option = optionByDisplayLabel(current.question, item);
+      if (option === undefined) current.custom = current.custom === '' ? item : `${current.custom}\n${item}`;
+      else current.selected.push(option.label);
+      continue;
+    }
+    if (LEGACY_ITEM_PREFIX.test(line)) continue; // 旧格式混了一块：这里的项记号行没有题目接着，忽略
+    for (const entry of legacyEntriesOfLine(questions, line)) {
+      flush();
+      const existing = found.get(entry.question.id);
+      current = existing === undefined
+        ? entry
+        : { question: entry.question, selected: [...existing.selected, ...entry.selected], custom: entry.custom };
+    }
+  }
+  flush();
+  return [...found.values()].map((entry) => ({
+    question: entry.question,
+    selected: entry.selected,
+    custom: entry.custom.trim(),
+  }));
+}
+
+/**
+ * 新格式的项：去掉项记号之后整行就是展示文字。先按该题的选项精确匹配，匹配不上就是自填。
+ * @param {object} question - 题目模型。
+ * @param {string} item - 去掉记号之后的整行。
+ * @returns {object|undefined} 命中的选项；不是选项时 undefined。
+ */
+function optionByDisplayLabel(question, item) {
+  return (question.options ?? []).find((candidate) => candidate.displayLabel === item);
+}
+
+/**
+ * 旧格式（一行一题）的一行回到作答。顺序是先认题、再按顿号分项——与旧版的读法逐字一致，
+ * 所以老会话里已发出去的消息照样重画得出。
+ * @param {object[]} questions - 题目模型。
+ * @param {string} line - 块里的一行。
+ * @returns {object[]} 认出的条目；这一行认不出题时为空数组。
+ */
+function legacyEntriesOfLine(questions, line) {
+  for (const cut of separatorCuts(line)) {
+    const question = questionByTitle(questions, line.slice(0, cut).trim());
+    if (question === undefined) continue;
+    const selected = [];
+    const rest = [];
+    for (const raw of line.slice(cut + 1).split(LEGACY_ITEM_SEPARATOR)) {
+      const item = raw.trim();
+      if (item === '') continue;
+      const option = optionByDisplayLabel(question, item);
+      if (option === undefined) rest.push(item);
+      else selected.push(option.label);
+    }
+    return [{ question, selected, custom: rest.join(LEGACY_ITEM_SEPARATOR) }];
+  }
+  return [];
+}
+
+/**
+ * 一行里每个全角冒号的位置。标题本身可能含「：」（「落点：插件页」这种），所以逐个分隔符
+ * 试着认题，认得出的那一个才算分隔符。
+ * @param {string} line - 块里的一行。
+ * @returns {number[]} 分隔符位置，从左到右。
+ */
+function separatorCuts(line) {
+  const cuts = [];
   let cut = line.indexOf('：');
   while (cut !== -1) {
-    const question = questionByTitle(questions, line.slice(0, cut).trim());
-    if (question !== undefined) return { question, items: line.slice(cut + 1) };
+    cuts.push(cut);
     cut = line.indexOf('：', cut + 1);
   }
-  return undefined;
+  return cuts;
 }
 
 /**
@@ -572,15 +791,38 @@ function questionByTitle(questions, title) {
 }
 
 /**
- * 冻结那一刻表单上显示的作答：以实发消息里的作答块为准（用户在原生输入框里改过、增删过的
- * 都以那条消息为准）；块拿不到时退回本地那份（含推荐默认），内容不会凭空消失。
+ * 冻结那一刻表单上显示的作答。以实发消息里的作答块为准（用户在原生输入框里改过、增删过的
+ * 都以那条消息为准），块的来历分三种（见 parseImportedAnswersResult）：
+ *
+ *  - 块在 ⇒ 就以块为准，块里没出现的题就是**没作答**；
+ *  - 块在但形态坏了 ⇒ 退回本地那份（含推荐默认）：内容不凭空消失，但那只是本地记录；
+ *  - 根本没有块 ⇒ **没作答**：用户没走表单，把推荐默认当他的作答显示出来就是编答案，
+ *    记录会失真（冻结态正是给人回看的）。
  * @param {object[]} questions - 题目模型。
  * @param {object} storedAnswers - 用户自己的作答表（readStoredForm 的产物）。
  * @param {unknown} text - 实发消息的文字。
- * @returns {object} 冻结渲染要用的作答表。
+ * @returns {{
+ *   answers: object, unanswered: boolean, fallback: boolean,
+ * }} 冻结渲染要用的作答表、它是不是「没作答」、以及它是不是退回的本地那份。
+ */
+export function frozenFormAnswers(questions, storedAnswers, text) {
+  const parsed = parseImportedAnswersResult(text, questions);
+  if (parsed.kind === 'parsed') return { answers: parsed.answers, unanswered: false, fallback: false };
+  if (parsed.kind === 'malformed') {
+    return { answers: applyRecommendedDefaults(questions, storedAnswers), unanswered: false, fallback: true };
+  }
+  return { answers: blankAnswers(questions), unanswered: true, fallback: false };
+}
+
+/**
+ * 冻结那一刻表单上显示的作答表（frozenFormAnswers 的那一份）。
+ * @param {object[]} questions - 题目模型。
+ * @param {object} storedAnswers - 用户自己的作答表。
+ * @param {unknown} text - 实发消息的文字。
+ * @returns {object} 作答表。
  */
 export function frozenAnswers(questions, storedAnswers, text) {
-  return parseImportedAnswers(text, questions) ?? applyRecommendedDefaults(questions, storedAnswers);
+  return frozenFormAnswers(questions, storedAnswers, text).answers;
 }
 
 // --- 持久化：storage 由调用方传进来（浏览器是 localStorage，测试是假件），本模块不自己取全局 ---

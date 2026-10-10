@@ -91,13 +91,12 @@ await test('自我介绍按新行为重写：本轮唯一且最后的调用、�
   assert.match(description, /their own composer/);
 });
 
-await test('强制多选刻意不写进描述：schema 里没有开关，文字里也不提', async () => {
+await test('题型开关：schema 里有 multi_select，描述里讲清缺省是多选、写 false 才是单选', async () => {
   const properties = shape.tool.parameters.properties.questions.items.properties;
-  assert.equal('multi_select' in properties, false);
-  assert.equal('multiSelect' in properties, false);
-  for (const text of [shape.tool.description, properties.options.description]) {
-    assert.doesNotMatch(text, /multi-?select|more than one/i);
-  }
+  assert.deepEqual(Object.keys(properties.multi_select), ['type', 'description']);
+  assert.equal(properties.multi_select.type, 'boolean');
+  assert.match(properties.multi_select.description, /Default true/);
+  assert.match(properties.multi_select.description, /Set false/);
 });
 
 await test('输出 schema 是 pending 声明，不再有等答案那套 answers/callId', async () => {
@@ -178,13 +177,18 @@ await test('同题两个选项归一化后同名：被拒（界面按 label 认�
   assert.match(violations[0], /same label "A：移走（推荐）"/);
 });
 
-await test('选项名里带顿号：被拒（作答回填按它分项，带它的名字读不回来）', async () => {
-  const violations = await rejected([
-    { id: 'a', question: '？', options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] },
-  ]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /option 1/);
-  assert.match(violations[0], /ideographic comma/);
+await test('选项名里的标点不再是拒收项：顿号、冒号、换行都照常投出', async () => {
+  const { tool } = await assemble();
+  const { exec, concluded } = makeExec();
+  const result = await tool.execute({
+    questions: [{
+      id: 'a',
+      question: '？',
+      options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }, { label: '两行\n的选项名' }],
+    }],
+  }, exec);
+  assert.equal(result.pending, true);
+  assert.deepEqual(concluded, ['concludeTurn']);
 });
 
 await test('questions 不是数组：由 defineTool 的入参校验拦住，不进本插件的 violations', async () => {
@@ -208,11 +212,12 @@ await test('总说明不再手写规则清单：只报数量，规则由逐条�
   assert.doesNotMatch(result.error, /ids must be unique|must not share a label/, '摘要里再抄一份清单，就会在加规则时漂');
 });
 
-await test('投出表单后那句话里的作答格式与真实格式一致（题目与作答之间是全角冒号）', async () => {
+await test('投出表单后那句话里的作答格式与真实格式一致（标题以全角冒号收尾、每项一行带记号）', async () => {
   const { tool } = await assemble();
   const { exec } = makeExec();
   const result = await tool.execute({ questions: [{ id: 'a', question: '？' }] }, exec);
-  assert.match(result.message, /<title>：<chosen options \/ typed text>/);
+  assert.match(result.message, /"<title>："/);
+  assert.match(result.message, /"- " line per chosen option or typed text/);
 });
 
 await test('保留前缀这条规则已随轮末补充题删除：__grill_ 前缀的 id 可以正常投出', async () => {
@@ -249,11 +254,11 @@ await test('展开正文只写各选项共用的背景：照常投出', async ()
   assert.deepEqual(concluded, ['concludeTurn']);
 });
 
-await test('字段说明把三条规则讲给模型：展开正文只写共用的、推荐项默认勾上、标签里禁用顿号', async () => {
+await test('字段说明把三条规则讲给模型：展开正文只写共用的、推荐项默认勾上、标记里禁用顿号', async () => {
   const properties = shape.tool.parameters.properties.questions.items.properties;
   assert.match(properties.detail.description, /only for what all the options share/);
   assert.match(properties.options.items.properties.recommended.description, /checked by default/);
-  assert.match(properties.options.items.properties.label.description, /ideographic comma/);
+  assert.match(properties.options.items.properties.label.description, /Any punctuation is fine/);
 });
 
 await test('缺 label 由 defineTool 的入参校验拦住，不进本插件的 violations', async () => {

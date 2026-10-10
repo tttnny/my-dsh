@@ -21,7 +21,14 @@
   gap: 16px;
 }
 
-.dsg-progress {
+/* 冻结之后整块收成一行摘要（DisclosureRow 自带那行与箭头），点开才是停住的表。
+   行内的字号、颜色沿用官方过程行的三级文字，不再另调。 */
+.dsg-frozen {
+  min-width: 0;
+}
+
+/* 本轮没有通过表单作答：冻结态顶上那行说明，与「本轮已过」同一档小灰字。 */
+.dsg-unanswered {
   margin: 0;
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta, 0px));

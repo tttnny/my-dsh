@@ -11,8 +11,7 @@ import { validateRound } from "./form-model.js";
  *
  * 一条调用只做三件事：
  *   - 校验入参（见 validateRound）：重复 id、空题干、空 label、同题归一化后重名 label、
- *     展开正文里把选项又列一遍（那会让页面上出现两遍选项，一遍带选择器一遍不带），
- *     以及选项名里带顿号（作答回填按顿号分项，带它的名字读不回来）
+ *     展开正文里把选项又列一遍（那会让页面上出现两遍选项，一遍带选择器一遍不带）
  *     命中即返回可修复的拒绝，且**不标记结束**，让模型改完重调；
  *   - 通过校验就标记本轮结束（exec.concludeTurn()）——本轮到此为止，不再等答案；
  *   - 返回一条 pending 声明：表单已展示、用户会在他自己的输入框里作答、那条发言随后作为
@@ -33,9 +32,9 @@ const name = "tool-grilling-form";
 const inject = ["tools"];
 
 /** 表单落库之后给模型的那段话：它必须知道本轮已经结束、答案会晚到、别当成已回答。
- * 那句作答格式里的冒号是全角——导入文本与反解都用全角（importBody / splitImportedLine），
- * 这里写成半角就会把模型引到一条实际不存在的格式上。 */
-const PENDING_MESSAGE = "The form with this round's questions is now shown in the conversation and this turn has ended. The user has not answered yet: they answer in their own composer, and their answers arrive later as their next user message, one line per answered question (\"<title>：<chosen options / typed text>\"). Do not wait for it, do not treat this as an answer, and do not write the questions in prose as well.";
+ * 那句作答格式里的冒号是全角、每项前有「- 」，导入文本就是那么写的（importBody）；
+ * 这里写成别的形状就会把模型引到一条实际不存在的格式上。 */
+const PENDING_MESSAGE = "The form with this round's questions is now shown in the conversation and this turn has ended. The user has not answered yet: they answer in their own composer, and their answers arrive later as their next user message, one block per answered question (\"<title>：\") with one \"- \" line per chosen option or typed text. Do not wait for it, do not treat this as an answer, and do not write the questions in prose as well.";
 
 /**
  * 校验这一行的 config：唯一的装配形态就是注册工具（同时承载浏览器半边），所以它不收任何键。
@@ -78,6 +77,10 @@ function apply(ctx, config) {
               required: true,
               description: "The specific question to ask the user. Keep it to the one line that asks; put any longer body in detail.",
             },
+            multi_select: {
+              type: "boolean",
+              description: "Default true: the user may check several options. Set false for a question that has exactly one right answer (a yes/no, or pick-one): the form then shows one-choice rows and keeps at most one of them.",
+            },
             header: {
               type: "string",
               description: "Optional short heading for the question, such as \"Confirm\" or \"Choose Mode\".",
@@ -100,7 +103,7 @@ function apply(ctx, config) {
                   label: {
                     type: "string",
                     required: true,
-                    description: "Short user-facing option label. Do not put the ideographic comma \"、\" in it: the form joins a question's answers with \"、\" and reads them back by splitting on it, so a label containing one cannot survive the round trip, and such a round is rejected.",
+                    description: "Short user-facing option label. Any punctuation is fine in it (though a label that itself begins with \"- \" is best reworded, since that is how each answer item is written in the composer).",
                   },
                   description: {
                     type: "string",

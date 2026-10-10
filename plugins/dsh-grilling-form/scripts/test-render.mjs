@@ -49,9 +49,11 @@ const primitives = {
   ),
   Button: (props) => {
     buttons.push(props);
-    return createElement('button', { disabled: props.disabled === true, type: 'button' }, props.children);
+    return createElement('button', { disabled: props.disabled === true, type: 'button', title: props.title }, props.children);
   },
   Tag: ({ children }) => createElement('span', null, children),
+  // DisclosureRow 也是替身：把 title 与 children 一起摊出来，折叠态由 aria-expanded 表达。
+  DisclosureRow: ({ title, open, children }) => createElement('div', { 'aria-expanded': String(open === true) }, title, children),
 };
 
 const registrations = [];
@@ -99,6 +101,17 @@ function translate(key, params) {
     assert.ok(name in params, `${key} 少了参数 ${name}`);
     return String(params[name]);
   });
+}
+
+/** 把替身渲染进 HTML 里被转义的实体还原回来（摘要行断言按它比原文）。 */
+function decodeEntities(text) {
+  return text
+    .replace(/&middot;/g, '·')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'");
 }
 
 const argsRaw = JSON.stringify({
@@ -183,7 +196,8 @@ function html(props = {}) {
     inputActions: { setDraft: (text) => drafts.push(text) },
     useInput: (selector) => selector({ draft: props.draft ?? '' }),
     useConversation: (selector) => selector({ views: { get: () => chat } }),
-    forkAt: (seq) => forked.push(seq),
+    // 注入进来的分叉动作是 async（失败要能被按键接住），假件照这个形状给：推一个记号再 resolve。
+    forkAt: (seq) => { forked.push(seq); return Promise.resolve(); },
     ...props,
   }));
   return { markup, drafts, forked, buttons: [...buttons] };
@@ -211,7 +225,7 @@ test('表单注册在轮次尾部槽位（自有 id 与字典），工具行按 
   assert.equal(row.options.key, 'grilling_form');
 });
 
-test('刚投出：题目、题号标题、detail、选项、推荐徽标、自填框、导入键与进度都在同一层', () => {
+test('刚投出：题目、题号标题、detail、选项、推荐徽标、自填框、导入键都在同一层；进度行已经删掉', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = html();
   assert.match(markup, /Q2 · Host 权威层/);
@@ -224,10 +238,11 @@ test('刚投出：题目、题号标题、detail、选项、推荐徽标、自�
   assert.match(markup, /范围呢？/);
   assert.match(markup, /<textarea/);
   assert.match(markup, /导入输入框/);
-  assert.match(markup, /这一轮 2 题 · 已填 1/);
+  assert.doesNotMatch(markup, /已填/);
+  assert.doesNotMatch(markup, /这一轮 2 题/);
 });
 
-test('摊开、不折叠：页面上没有折叠行，也没有任何展开/收起控件或卡片壳', () => {
+test('摊开、不折叠：可填时页面上没有折叠行，也没有任何展开/收起控件或卡片壳', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = html();
   assert.doesNotMatch(markup, /aria-expanded/);
@@ -254,7 +269,6 @@ test('推荐项默认勾上；取消掉之后不再勾回来（「清空过」�
   });
   const { markup } = html();
   assert.doesNotMatch(markup, /data-checked="true"/);
-  assert.match(markup, /这一轮 2 题 · 已填 0/);
 });
 
 test('刷新后恢复：storage 里的勾选与自填回到表单上', () => {
@@ -264,7 +278,6 @@ test('刷新后恢复：storage 里的勾选与自填回到表单上', () => {
   const { markup } = html();
   assert.match(markup, /data-checked="true"/);
   assert.match(markup, /我自己的补充/);
-  assert.match(markup, /这一轮 2 题 · 已填 1/);
 });
 
 test('表单上没有提交键：提交权只在原生输入框的发送键上', () => {
@@ -282,24 +295,32 @@ test('推荐徽标与 label 分工：label 里不带「（推荐）」后缀，�
   assert.match(markup, />推荐</);
 });
 
-test('没有未导入提醒，也没有任何导入相关的提示', () => {
+test('导入键：还没导入时是「导入输入框」，草稿里已经是当前那份时变「已导入」', () => {
   globalThis.localStorage = fakeStorage({
     [SESSION_KEY]: JSON.stringify({ 'call-1': { h1: { selected: ['B：新建一层（推荐）'], custom: '' } } }),
   });
-  const { markup } = html(); // 草稿是空的，也就是「填了还没导入」
-  assert.doesNotMatch(markup, /还没导入/);
-  assert.doesNotMatch(markup, /提醒/);
+  const fresh = html();
+  assert.match(fresh.markup, /导入输入框/);
+  assert.doesNotMatch(fresh.markup, /已导入/);
+  const imported = html({ draft: '【盘问作答】\nQ2 · Host 权威层：\n- B：新建一层\n【/盘问作答】' });
+  assert.match(imported.markup, /已导入/);
+  assert.doesNotMatch(imported.markup, />导入输入框</);
 });
 
-test('导入键的受控状态：什么都没填时是灰的，填了才可点', () => {
-  globalThis.localStorage = fakeStorage();
-  assert.equal(html({ call: settled(pending, { argsRaw: plainArgsRaw }) }).buttons.find((b) => b.className === 'dsg-import').disabled, true);
+test('导入键：表单改过之后草稿里那份就旧了——按键变「更新输入框」，草稿再点一次才追上', () => {
   globalThis.localStorage = fakeStorage({
-    [SESSION_KEY]: JSON.stringify({ 'call-1': { p1: { selected: [], custom: '只自填也算' } } }),
+    [SESSION_KEY]: JSON.stringify({ 'call-1': { h1: { selected: ['B：新建一层（推荐）'], custom: '' } } }),
   });
-  const filled = html({ call: settled(pending, { argsRaw: plainArgsRaw }) });
-  assert.equal(filled.buttons.find((b) => b.className === 'dsg-import').disabled, false);
-  assert.match(filled.markup, /导入输入框/);
+  const stale = html({ draft: '【盘问作答】\nQ2 · Host 权威层：\n- A：扩展 /archive/guardCheck\n【/盘问作答】' });
+  assert.match(stale.markup, /更新输入框/);
+});
+
+test('导入键：还没填任何作答时是灰的，并说明要先在上面作答', () => {
+  globalThis.localStorage = fakeStorage();
+  const empty = html({ call: settled(pending, { argsRaw: plainArgsRaw }) });
+  const button = empty.buttons.find((candidate) => candidate.className === 'dsg-import');
+  assert.equal(button.disabled, true);
+  assert.equal(button.title, '先在上面勾选或自填');
 });
 
 test('点导入：把作答写进原生草稿（默认勾上的推荐项也算作答，块在前、原有文字随后）', () => {
@@ -310,7 +331,7 @@ test('点导入：把作答写进原生草稿（默认勾上的推荐项也算�
   buttons.find((button) => button.className === 'dsg-import').onClick();
   assert.equal(
     drafts[0],
-    '【盘问作答】\nQ2 · Host 权威层：B：新建一层\n范围呢？：只改插件\n【/盘问作答】\n\n我另外想说一句。',
+    '【盘问作答】\nQ2 · Host 权威层：\n- B：新建一层\n范围呢？：\n- 只改插件\n【/盘问作答】\n\n我另外想说一句。',
   );
 });
 
@@ -342,25 +363,35 @@ test('槽位没给分叉动作时也不画那个键（不画一个点了没用�
 
 const replyNode = (text, seq = 9) => ({ kind: 'user', seq, content: [{ type: 'text', text }] });
 const replyText = (body) => `【盘问作答】\n${body}\n【/盘问作答】`;
+/** 冻结态的摘要行（DisclosureRow 是替身，只渲染 title 与 children）：默认收着，展开才是那张表。 */
+const summaryText = (markup) => decodeEntities(/<div[^>]*>([^<]*已过[^<]*)/.exec(markup)?.[1] ?? '');
 
-test('冻结：本轮过去之后表单停住——勾选框与自填框原样留着、不可交互、没有导入键', () => {
+test('冻结：整块默认收成一行摘要，点开才是那张停住的表（勾选框与自填框原样留着、不可交互）', () => {
   globalThis.localStorage = fakeStorage({
     [SESSION_KEY]: JSON.stringify({ 'call-1': { h1: { selected: ['B：新建一层（推荐）'], custom: '自填的补充' }, h2: { selected: [], custom: '' } } }),
   });
-  const { markup } = html({ nodes: [settled(pending), replyNode(replyText('Q2 · Host 权威层：B：新建一层\n范围呢？：自填的补充'))] });
+  const { markup } = html({ nodes: [settled(pending), replyNode(replyText('Q2 · Host 权威层：\n- B：新建一层\n范围呢？：\n- 自填的补充'))] });
   assert.match(markup, /data-readonly="true"/);
-  assert.match(markup, /本轮已过，仅供查看/);
+  assert.match(markup, /aria-expanded="false"/, '冻结之后默认收着');
+  assert.match(summaryText(markup), /^本轮已过 · 2 题 · 已填 2$/);
   // 停住的样子就是可填时的样子：勾选框还在、还是那个勾选态，自填框还在、还写着那行字
   assert.match(markup, /data-checked="true"/);
   assert.match(markup, /data-disabled="true"/);
   assert.match(markup, /自填的补充/);
   assert.match(markup, /readonly/);
-  // 不是「一行行答案」
+  assert.match(markup, /本轮已过，仅供查看/);
+  // 不是「一行行答案」，也不再有导入键
   assert.doesNotMatch(markup, /dsg-answer/);
-  assert.doesNotMatch(markup, /未作答/);
   assert.doesNotMatch(markup, /导入输入框/);
   // 分叉键还在（回看时也能从这一轮开新会话）
   assert.match(markup, /从这里分叉/);
+});
+
+test('冻结：摘要只说这轮的题数与答了几题，不再有进度行那套「已填」文案', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html({ nodes: [settled(pending), replyNode(replyText('范围呢？：\n- 只改插件'))] });
+  assert.match(summaryText(markup), /^本轮已过 · 2 题 · 已填 1$/);
+  assert.equal([...markup.matchAll(/data-checked="true"/g)].length, 0, '块里没有的题就是没作答，推荐默认不勾回来');
 });
 
 test('冻结：还没过去时表单照常可填（更晚的用户发言才是冻结的判据）', () => {
@@ -377,20 +408,11 @@ test('冻结：按实发消息重画——输入框里改过的以那条消息�
   const { markup } = html({
     nodes: [
       settled(pending),
-      replyNode(replyText('Q2 · Host 权威层：B：新建一层、消息里补的一句\n范围呢？：甲：只改插件')),
+      replyNode(replyText('Q2 · Host 权威层：\n- B：新建一层\n- 消息里补的一句\n范围呢？：\n- 甲：只改插件')),
     ],
   });
   assert.match(markup, /消息里补的一句/);
   assert.doesNotMatch(markup, /表单里那份/, '实发消息里没有的，不许从本地那份补上');
-  assert.match(markup, /这一轮 2 题 · 已填 2/);
-});
-
-test('冻结：块里没出现的题就是没作答——推荐默认不会被勾回来', () => {
-  globalThis.localStorage = fakeStorage();
-  const { markup } = html({ nodes: [settled(pending), replyNode(replyText('范围呢？：只改插件'))] });
-  assert.match(markup, /data-readonly="true"/);
-  assert.equal([...markup.matchAll(/data-checked="true"/g)].length, 0);
-  assert.match(markup, /这一轮 2 题 · 已填 1/);
 });
 
 test('冻结：只认紧接这一轮的那条发言——回看旧轮次时不拿后面轮次的作答重画', () => {
@@ -398,30 +420,52 @@ test('冻结：只认紧接这一轮的那条发言——回看旧轮次时不�
   const { markup } = html({
     nodes: [
       settled(pending),
-      replyNode(replyText('范围呢？：只改插件'), 9),
+      replyNode(replyText('范围呢？：\n- 只改插件'), 9),
       // 后面某一轮的作答：题面标题一样，但那是另一轮的事
-      replyNode(replyText('Q2 · Host 权威层：B：新建一层'), 20),
+      replyNode(replyText('Q2 · Host 权威层：\n- B：新建一层'), 20),
     ],
   });
-  assert.match(markup, /这一轮 2 题 · 已填 1/);
   assert.equal([...markup.matchAll(/data-checked="true"/g)].length, 0, '后面那轮的勾选不许出现在这一轮的表上');
 });
 
-test('冻结：反解拿不到（没有块）时退回本地那份，内容不凭空消失', () => {
+test('冻结：实发消息里根本没有块＝没作答——本地勾选与推荐默认都不冒充，只挂一行说明', () => {
   globalThis.localStorage = fakeStorage({
     [SESSION_KEY]: JSON.stringify({ 'call-1': { h2: { selected: [], custom: '本地那份自填' } } }),
   });
   const { markup } = html({ nodes: [settled(pending), replyNode('我另外想说一句，没导入。')] });
   assert.match(markup, /data-readonly="true"/);
+  assert.match(markup, /本轮没有通过表单作答/);
+  assert.doesNotMatch(markup, /本地那份自填/, '用户没走表单，本地那份不是他的答案');
+  assert.doesNotMatch(markup, /data-checked="true"/, '推荐默认也不许冒充他的答案');
+});
+
+test('冻结：块在但坏了才退回本地那份（内容不凭空消失）', () => {
+  globalThis.localStorage = fakeStorage({
+    [SESSION_KEY]: JSON.stringify({ 'call-1': { h2: { selected: [], custom: '本地那份自填' } } }),
+  });
+  const { markup } = html({ nodes: [settled(pending), replyNode(replyText('跟哪道题都对不上：随便'))] });
   assert.match(markup, /本地那份自填/);
-  assert.match(markup, /data-checked="true"/, '退回本地那份时推荐默认照旧生效');
+  assert.doesNotMatch(markup, /本轮没有通过表单作答/);
 });
 
 test('冻结时不再有任何导入入口：只剩分叉键', () => {
   globalThis.localStorage = fakeStorage();
-  const { markup, buttons } = html({ nodes: [settled(pending), replyNode(replyText('范围呢？：只改插件'))] });
+  const { markup, buttons } = html({ nodes: [settled(pending), replyNode(replyText('范围呢？：\n- 只改插件'))] });
   assert.doesNotMatch(markup, /导入输入框/);
   assert.equal(buttons.length, 1, '冻结时只剩一个分叉键');
+});
+
+test('单选题：勾选框上再点别的项就换掉上一个（一题至多一项），题面照旧把两项都画出来', () => {
+  globalThis.localStorage = fakeStorage();
+  const single = JSON.stringify({
+    questions: [{ id: 'q', question: '继续吗？', multi_select: false, options: [{ label: '继续', recommended: true }, { label: '停一下' }] }],
+  });
+  const { markup, buttons } = html({ call: settled(pending, { argsRaw: single }) });
+  assert.match(markup, /继续/);
+  assert.match(markup, /停一下/);
+  assert.equal([...markup.matchAll(/data-checked="true"/g)].length, 1, '推荐项默认勾上一项');
+  const importButton = buttons.find((button) => button.className === 'dsg-import');
+  assert.notEqual(importButton, undefined);
 });
 
 // --- 工具行：表搬走之后只剩被拒与失败 ---

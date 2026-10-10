@@ -5,7 +5,8 @@ export const NS = 'grillingForm';
 
 /** 简体中文（键集的事实来源）。 */
 export const zh = {
-  'row.progress': '这一轮 {total} 题 · 已填 {answered}',
+  'row.frozenSummary': '本轮已过 · {total} 题 · 已填 {answered}',
+  'row.unanswered': '本轮没有通过表单作答',
   'row.closed': '本轮已过，仅供查看',
   'row.rejected': '入参被拒绝',
   'row.violations': '校验失败',
@@ -14,7 +15,11 @@ export const zh = {
   'row.customLabel': '自填',
   'row.customPlaceholder': '选项不够用的话，在这里自己写一段',
   'row.import': '导入输入框',
+  'row.imported': '已导入',
+  'row.updateImport': '更新输入框',
+  'row.importDisabled': '先在上面勾选或自填',
   'row.fork': '从这里分叉',
+  'row.forkFailed': '分叉失败，请重试',
   'row.inspect': '查看',
   'copy': '复制',
   'copied': '已复制',
@@ -23,7 +28,8 @@ export const zh = {
 
 /** 英文，键集与中文逐条对齐。 */
 export const en = {
-  'row.progress': '{total} question(s) this round · {answered} filled',
+  'row.frozenSummary': 'Round over · {total} question(s) · {answered} answered',
+  'row.unanswered': 'This round was answered without the form',
   'row.closed': 'This round is over; the form is read-only',
   'row.rejected': 'Rejected before showing',
   'row.violations': 'Rejected input',
@@ -32,7 +38,11 @@ export const en = {
   'row.customLabel': 'Your own answer',
   'row.customPlaceholder': 'Write your own answer here if the options do not cover it',
   'row.import': 'Import to composer',
+  'row.imported': 'Imported',
+  'row.updateImport': 'Update composer',
+  'row.importDisabled': 'Pick or write an answer above first',
   'row.fork': 'Branch from here',
+  'row.forkFailed': 'Branch failed; try again',
   'row.inspect': 'Inspect',
   'copy': 'Copy',
   'copied': 'Copied',
