@@ -87,8 +87,8 @@ export function apply(ctx: ClientContext): void {
   // 4. 「译」开关：输入框下方那一行，与设置页总开关同一个 enabled
   ctx.effect(() => setupComposerToggle(ctx), 'dsh-chat-translate: composer dock toggle');
 
-  // 行渲染器的私有文案（红线重试提示）绑上本命名空间的活翻译器。放在最后：
-  // 此时 setupSettingsUi 的 locale.register(NS) 已落地，bind 立刻可解析键。
+  // 行渲染器的私有文案（失败块的 ↻ 标签与败因泡泡）绑上本命名空间的活翻译器。
+  // 放在最后：此时 setupSettingsUi 的 locale.register(NS) 已落地，bind 立刻可解析键。
   bindRowCopy(ctx.locale);
 }
 

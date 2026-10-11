@@ -1,16 +1,15 @@
 // 客户端重写的核心回归（无浏览器）：
 // 1. 行渲染计划与宿主 AssistantMarkdown 的分支等价（空行守卫、groupPart 过滤、
 //    tool-call 跳过、image 连组、未知块、停止标记、React 键唯一）；
-// 2. 翻译呈现判断：成功挂载（「原样回」同样挂载），失败一律同一条红实线、
-//    悬停载荷（fail: 一句通道细节），在途只给已登记行的未落定块
-//    （灰脉动），空白块不送译、不占位、永不挂线；reasoning 分组不送译，
-//    texts 与 outcomes 同域对齐；
+// 2. 翻译呈现判断：成功即挂载（「原样回」同样挂载），失败只留下一个可补跑的
+//    标记与悬停载荷（fail: 一句通道细节），未落定与在途一律不给任何标记；
+//    空白块不送译、不占位、永不标记；reasoning 分组不送译，texts 与 outcomes
+//    同域对齐；
 // 3. 翻译池：同键同文本幂等、文本换代重请求、逐批落定逐批可见、落定后无任何
-//    自动重走、manual ensure 整行补跑且成功块保持挂线、LRU 行数上限；
+//    自动重走、manual ensure 整行补跑且成功块结果保持、LRU 行数上限；
 // 4. 呈现策略：ui-chat 的 transcriptView 值（含 legacy 值）映射到策略表；
-// 5. 左缘线标：蓝=译文、灰细=读原文备译文、红实=失败（一律一种）、
-//    灰脉动=在途、无线=没送过模型；切换与补跑归贴着线的窄热区，
-//    正文块类名里不再有任何点击态。
+// 5. 正文左缘没有任何线标：成功块的切换归一条 6px 透明窄带，失败块归一个真
+//    ↻ 按钮（补跑在途原位转圈）；样式表里不存在任何 border-left 与缩进。
 import assert from 'node:assert/strict';
 
 let passed = 0;
@@ -36,8 +35,11 @@ const stylesModule = await import('../src/client/chat/styles.ts');
 const {
   proseClassNames,
   proseAction,
-  prosePresentation,
   PROSE_BASE_CLASS,
+  HOTSPOT_CLASS,
+  RETRY_CLASS,
+  RETRY_BUSY_ATTR,
+  RETRY_SPIN_CLASS,
   ASSISTANT_CSS,
 } = stylesModule;
 
@@ -132,37 +134,46 @@ await test('停止标记：interrupted 行尾追加，纯思考行在 response �
   assert.ok(onlyReasoning.entries.some((e) => e.type === 'stopped'));
 });
 
-await test('译文呈现：成功挂载并带标记；原样回同样挂载；失败一律同一条线', () => {
+await test('译文呈现：成功即挂载；原样回同样挂载；失败只留补跑标记与悬停载荷', () => {
   const blocks = [{ kind: 'text', text: '这是一段已经很自然的中文。' }, { kind: 'text', text: 'tail' }];
   const outcomes = [
     { translated: '这是一段已经很自然的中文。', ok: true }, // 原样回
     { translated: '尾巴译文', ok: false, detail: 'channel timed out after 600000ms' }, // 通道伤
   ];
-  const plan = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled' });
+  const plan = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true, outcomes });
   assert.equal(plan.entries[0].translated, '这是一段已经很自然的中文。');
-  assert.equal(plan.entries[0].mark, 'translated', '原样回同样挂线');
+  assert.equal(plan.entries[0].mark, 'translated', '原样回同样算翻成');
+  assert.equal(plan.entries[0].showingOriginal, false, '默认读译文');
   assert.equal(plan.entries[1].translated, null, '失败的块不得显示译文');
-  assert.equal(plan.entries[1].mark, 'failed', '失败块挂同一条红实线标记');
+  assert.equal(plan.entries[1].mark, 'failed');
   assert.equal(
     plan.entries[1].fail,
     'channel timed out after 600000ms',
-    'fail 一句技术细节直达计划层，供 Tooltip 悬停报因'
+    'fail 一句技术细节直达计划层，供悬停报因'
   );
+  assert.equal(plan.entries[1].retryBusy, false, '落定的失败块：↻ 静止可点');
   const viewing = planAssistantRow({
-    blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled',
+    blocks, streaming: false, interrupted: false, canTranslate: true, outcomes,
     originalKeys: new Set([0]),
   });
-  assert.equal(viewing.entries[0].mark, 'original-view', '点了读原文：蓝线折成灰细线');
+  assert.equal(viewing.entries[0].mark, 'translated', '读原文不改标记：这一段仍然翻成过');
+  assert.equal(viewing.entries[0].showingOriginal, true, '读原文由显示源单点承载，不再是另一种标记');
   assert.equal(viewing.entries[0].translated, '这是一段已经很自然的中文。', '读原文不抹掉已成功的结果');
-  const streaming = planAssistantRow({ blocks, streaming: true, interrupted: false, canTranslate: true, outcomes, rowStatus: 'settled' });
+  assert.equal(viewing.entries[1].showingOriginal, false, '没有译文的块没有原文态可切');
+  const busy = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowRetrying: true });
+  assert.equal(busy.entries[1].mark, 'failed', '补跑在途仍标失败：↻ 留在原地');
+  assert.equal(busy.entries[1].retryBusy, true, '补跑在途：↻ 原位转圈、暂时不能重复点');
+  const firstRun = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true, outcomes, rowRetrying: false });
+  assert.equal(firstRun.entries[1].retryBusy, false, '首跑在途（还有批没回）不得让 ↻ 转圈——用户没点过它');
+  const streaming = planAssistantRow({ blocks, streaming: true, interrupted: false, canTranslate: true, outcomes });
   assert.equal(streaming.entries[0].translated, null, '流式中不得换译文');
-  assert.equal(streaming.entries[1].mark, null, '流式中连红线都不挂');
-  const disabled = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: false, outcomes, rowStatus: 'settled' });
+  assert.equal(streaming.entries[1].mark, null, '流式中连失败标记都不挂');
+  const disabled = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: false, outcomes });
   assert.equal(disabled.entries[0].translated, null, '开关关闭时一切按原文');
-  assert.equal(disabled.entries[1].mark, null, '开关关闭时红线也一并撤下');
+  assert.equal(disabled.entries[1].mark, null, '开关关闭时失败标记也一并撤下');
 });
 
-await test('空白块不送译、不占位、永不挂线', () => {
+await test('空白块不送译、不占位、永不标记', () => {
   const blocks = [
     { kind: 'text', text: '  \n ' },
     { kind: 'text', text: 'hi' },
@@ -174,16 +185,15 @@ await test('空白块不送译、不占位、永不挂线', () => {
     interrupted: false,
     canTranslate: true,
     outcomes: [{ translated: '嗨', ok: true }],
-    rowStatus: 'pending',
   });
   assert.deepEqual(plan.texts, ['hi'], '空白块不进送译清单');
-  assert.equal(plan.entries[0].mark, null, '空白块连在途脉动都不显');
+  assert.equal(plan.entries[0].mark, null, '空白块什么都不显');
   assert.equal(plan.entries[1].translated, '嗨', '非空白块按压缩后的下标对齐 outcomes');
   assert.equal(plan.entries[1].mark, 'translated');
   assert.equal(plan.entries[2].mark, null);
 });
 
-await test('在途脉动只给「已登记、未落定」的块；行未登记什么都不显', () => {
+await test('未落定的块不给任何标记；行未登记同样什么都不显', () => {
   const blocks = [{ kind: 'text', text: 'one' }, { kind: 'text', text: 'two' }];
   const registered = planAssistantRow({
     blocks,
@@ -191,12 +201,11 @@ await test('在途脉动只给「已登记、未落定」的块；行未登记�
     interrupted: false,
     canTranslate: true,
     outcomes: [{ translated: '一', ok: true }, null],
-    rowStatus: 'pending',
   });
   assert.equal(registered.entries[0].mark, 'translated');
-  assert.equal(registered.entries[1].mark, 'inflight', '待决批的块显灰脉动');
+  assert.equal(registered.entries[1].mark, null, '还没结果的块什么都不显——没有脉动、没有占位');
   const unregistered = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true });
-  assert.equal(unregistered.entries[0].mark, null, '没进池就没有脉动');
+  assert.equal(unregistered.entries[0].mark, null, '没进池就没有任何标记');
   assert.equal(unregistered.entries[0].translated, null);
   const settled = planAssistantRow({
     blocks,
@@ -204,10 +213,10 @@ await test('在途脉动只给「已登记、未落定」的块；行未登记�
     interrupted: false,
     canTranslate: true,
     outcomes: [{ translated: '一', ok: true }, { translated: 'two', ok: false, detail: 'channel timed out after 600000ms' }],
-    rowStatus: 'settled',
   });
-  assert.equal(settled.entries[1].mark, 'failed', '落定的失败块红实线，不再脉动');
-  assert.equal(settled.entries[1].fail, 'channel timed out after 600000ms', '细节只进悬停载荷，不碰线型');
+  assert.equal(settled.entries[1].mark, 'failed', '落定的失败块留下补跑标记');
+  assert.equal(settled.entries[1].fail, 'channel timed out after 600000ms', '细节只进悬停载荷');
+  assert.equal(settled.entries[1].retryBusy, false, '落定后 ↻ 不再转圈');
 });
 
 await test('React 键唯一：groupPart 过滤 + interrupted 追加项不撞键', () => {
@@ -412,11 +421,17 @@ await test('落定行 ensure 短路；manual 补跑整行重发且成功块不�
   assert.equal(store.ensure('a1', ['x', 'y'], true), true, 'manual=true 是唯一的补跑入口');
   const mid = store.getState('a1');
   assert.equal(mid.status, 'pending');
+  assert.equal(mid.retrying, true, '这一轮在途是手点发起的：↻ 该转圈');
   assert.equal(mid.outcomes[0].translated, '译:x', '补跑瞬间已成功块当场种回，译文不闪');
-  assert.equal(mid.outcomes[1], null, '失败块清空结果位进在途');
+  assert.equal(
+    mid.outcomes[1].ok,
+    false,
+    '失败块的结果位留着原样——那一块的 ↻ 因此不消失，等回来的结果覆盖它'
+  );
   await flush();
   const done = store.getState('a1');
   assert.equal(done.status, 'settled');
+  assert.equal(done.retrying, false, '落定后不再转圈');
   assert.equal(done.outcomes[1].translated, '译:y');
 });
 
@@ -436,7 +451,7 @@ await test('手动补跑无限次：落定→补跑→再落定→再补跑，�
   assert.equal(store.getState('a1').status, 'settled');
 });
 
-await test('在途时再点（含 manual）是空操作：脉动就是「已在跑」的答复', async () => {
+await test('在途时再点（含 manual）是空操作：↻ 转着圈就是「已在跑」的答复', async () => {
   const gate = deferred();
   let calls = 0;
   const store = createTranslateStore(async (texts) => {
@@ -468,7 +483,7 @@ await test('逐批落定：先回的段先可见，不等最后一批', async ()
   let state = store.getState('a1');
   assert.equal(state.status, 'pending', '还有批在途');
   assert.equal(state.outcomes[0].translated, '译:first', '第一批落定即可渲染');
-  assert.equal(state.outcomes[1], null, '第二批未回仍是空位（该块显灰脉动）');
+  assert.equal(state.outcomes[1], null, '第二批未回仍是空位（该块暂无标记）');
   gates[1].resolve();
   await new Promise((r) => setTimeout(r, 0));
   state = store.getState('a1');
@@ -550,126 +565,66 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
 });
 
 // ---------------------------------------------------------------
-// 5. 左缘线标：蓝=读译文，灰细=读原文备译文，红实=失败，灰脉动=在途，
-//    无线=没送过模型。点击不在这层：切换与补跑都归左缘热区。
+// 5. 正文左缘：没有任何线标。成功块的切换归一条 6px 透明窄带（正文位置不动），
+//    失败块归一个真 ↻ 按钮（补跑在途原位转圈）。
 // ---------------------------------------------------------------
 
-await test('标记名单点：线型随状态，正文类名里没有任何点击态', () => {
-  assert.equal(proseClassNames(null), undefined, '没送过模型的块没有任何标记类');
-  const translated = proseClassNames('translated');
-  assert.match(translated, /dsh-ct-prose dsh-ct-prose-translated/);
-  assert.ok(!translated.includes('dsh-ct-prose-original'), '译文态不挂灰线类');
-  const showingOriginal = proseClassNames('original-view');
-  assert.ok(!showingOriginal.includes('dsh-ct-prose-translated'), '原文态不挂蓝线');
-  assert.match(showingOriginal, /dsh-ct-prose dsh-ct-prose-original/, '灰细线=读原文备着译文');
-  const failed = proseClassNames('failed');
-  assert.match(failed, /dsh-ct-prose-failed/, '失败挂实线红');
-  const inflight = proseClassNames('inflight');
-  assert.match(inflight, /dsh-ct-prose-inflight/);
-  // 正文整块不再是点击目标：类名里不许出现任何可点态/光标类。
-  for (const value of [translated, showingOriginal, failed, inflight]) {
-    assert.ok(!String(value).includes('clickable'), '正文块类名里不该再出现可点态：' + value);
-    assert.ok(!String(value).includes('retryable'), '正文块类名里不该再出现重试锚点态：' + value);
-  }
-  assert.equal(PROSE_BASE_CLASS, 'dsh-ct-prose', '无线的块也挂定位父级类');
-});
-
-await test('缩进单点：能翻译才缩进——译文出现前后正文不跳字', () => {
-  const { proseIndentClassName } = stylesModule;
-  assert.equal(proseIndentClassName(true), 'dsh-ct-prose-indent', '可翻译时正文块统一缩进');
-  assert.equal(proseIndentClassName(false), undefined, '不能翻译（开关关/通道没配好）时不缩进，回到宿主排版');
-});
-
-await test('呈现单点：类名与动作出自同一张表，不会各改一半', () => {
-  // 表驱动取代两个并列 switch 的意义就在这里：线型与可点性必须同时成立。
-  for (const mark of ['translated', 'original-view', 'failed', 'inflight']) {
-    const { className, action } = prosePresentation(mark);
-    assert.notEqual(className, null, mark + ' 有线，就必须有对应的线型类');
-    assert.equal(proseClassNames(mark).includes(className), true, mark + ' 的类名与表一致');
-    assert.equal(proseAction(mark), action, mark + ' 的动作与表一致');
-  }
-  assert.deepEqual(prosePresentation(null), { className: null, action: null }, '无线的块没有线型也没有动作');
-});
-
-await test('线的色相与粗细：蓝 1px 主色、灰 0.5px 中性、红走 error 色相', () => {
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-prose-translated\{border-left:1px solid color-mix\(in srgb, var\(--dsw-alias-state-business-primary\) 65%, transparent\)\}/,
-    '译文线是 1px 主色（粗一点的蓝）'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-prose-original\{border-left:0\.5px solid var\(--dsw-alias-border-l2\)\}/,
-    '原文态线是 0.5px 中性 hairline（细灰）'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-prose-failed\{border-left:1px solid color-mix\(in srgb, var\(--dsw-alias-state-error-primary\) 65%, transparent\)\}/,
-    '失败是 1px error 色实线——不分败因，一律实线'
-  );
-  assert.ok(!ASSISTANT_CSS.includes('dashed'), '失败只有一条实线，样式表里没有虚线');
-});
-
-await test('左缘热区：贴线窄带、只在这层可点，正文层没有光标承诺', () => {
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-hotspot\{position:absolute;left:-5px;top:0;bottom:0;width:17px;margin:0;padding:0;border:0;background:0 0;cursor:pointer;z-index:2/,
-    '热区是贴着左缘线的绝对定位窄带（线左 4px 起，右缘落在正文第一个字），z-index 压过宽表格出血层'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-hotspot\[data-idle\]\{cursor:default\}/,
-    '在途热区仍在但不给手型：光标不承诺按下去有反应'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-prose-translated:has\(\.dsh-ct-hotspot:focus-visible\)\{border-left-color:var\(--dsw-alias-state-business-primary\)\}/,
-    '键盘聚焦（且仅键盘聚焦）把译文线加亮，不改粗细'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-prose-original:has\(\.dsh-ct-hotspot:focus-visible\)\{border-left-color:var\(--dsw-alias-label-caption\)\}/,
-    '读原文时聚焦同样只加亮，灰细线不会变粗成「读译文」'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-prose-inflight:has\(\.dsh-ct-hotspot:focus-visible\)\{animation:none;border-left-color:var\(--dsw-alias-label-caption\)\}/,
-    '在途块聚焦时停掉脉动再加亮：动画会压过普通声明，不停则加亮看不见'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-prose-indent\{padding-left:12px\}/,
-    '缩进是独立一条规则：与是否挂线无关'
-  );
-  assert.ok(
-    !/\.dsh-ct-prose-indent[^{]*\{[^}]*border-left/.test(ASSISTANT_CSS),
-    '缩进规则不夹带线型：线由状态类单独给'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-retry\{position:absolute;[^}]*pointer-events:none/,
-    '失败块的 ↻ 常驻且不吃点击——指针落在它上面仍归热区'
-  );
-  assert.ok(!ASSISTANT_CSS.includes('dsh-ct-prose-clickable'), '正文块不再有可点态类');
-  assert.ok(!ASSISTANT_CSS.includes('dsh-ct-prose-retryable'), '正文块不再有可点锚点类');
-});
-
-await test('在途灰脉动：动画声明存在且尊重 prefers-reduced-motion', () => {
-  assert.match(ASSISTANT_CSS, /\.dsh-ct-prose-inflight\{border-left:1px solid var\(--dsw-alias-border-l2\);animation:/);
-  assert.match(ASSISTANT_CSS, /@keyframes dsh-ct-prose-inflight-pulse/);
-  assert.match(
-    ASSISTANT_CSS,
-    /@media \(prefers-reduced-motion:reduce\)\{\.dsh-ct-prose-inflight\{animation:none\}\}/,
-    'reduced-motion 降级为静态灰线'
-  );
+await test('标记名单点：只有成功/失败两种，正文里不存在任何线型与缩进规则', () => {
+  assert.equal(proseClassNames(null), undefined, '没翻成的块没有任何标记类');
+  assert.match(proseClassNames('translated'), /dsh-ct-prose dsh-ct-prose-translated/);
+  assert.match(proseClassNames('failed'), /dsh-ct-prose dsh-ct-prose-failed/);
+  assert.equal(PROSE_BASE_CLASS, 'dsh-ct-prose', '每块都挂定位父级类');
+  assert.ok(!ASSISTANT_CSS.includes('border-left'), '样式表里一根竖线都不留');
+  assert.ok(!ASSISTANT_CSS.includes('prose-indent'), '缩进规则整体退场');
+  assert.ok(!ASSISTANT_CSS.includes('padding-left:12px'), '不再给正文补 12px');
+  assert.ok(!ASSISTANT_CSS.includes('prose-inflight'), '在途脉动退场');
+  assert.ok(!ASSISTANT_CSS.includes('dsh-ct-prose-original'), '「备着译文的原文」不再是独立标记');
 });
 
 await test('动作单点：mark 唯一决定 toggle / retry / 没有热区', () => {
-  assert.equal(proseAction('translated'), 'toggle');
-  assert.equal(proseAction('original-view'), 'toggle', '读原文态仍可切回');
-  assert.equal(proseAction('failed'), 'retry', '红线=补跑整行');
-  assert.equal(proseAction('inflight'), null, '在途脉动没有动作（热区仍在，按下去是空操作）');
-  assert.equal(proseAction(null), null);
+  assert.equal(proseAction('translated'), 'toggle', '有译文：窄带在译文与原文间切换');
+  assert.equal(proseAction('failed'), 'retry', '失败：只有 ↻ 能点，整行补跑');
+  assert.equal(proseAction(null), null, '没有结果：左缘没有任何可点物');
+});
+
+await test('窄带几何：只有 6px，整条落在正文左缘之外（不再借 12px 缩进）', () => {
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-hotspot\{position:absolute;left:-6px;top:0;bottom:0;width:6px;margin:0;padding:0;border:0;background:0 0;cursor:pointer;z-index:2/,
+    '窄带从 -6px 起、宽 6px：正好贴住正文左缘外侧，一个字都不压'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-hotspot:focus-visible\{outline:none\}/,
+    '键盘聚焦不给任何可见标记'
+  );
+  assert.ok(!ASSISTANT_CSS.includes('data-idle'), '旧的在途空操作态退场');
+});
+
+await test('↻ 是真按钮：常驻、可点、在途转圈且按下去无事可做', () => {
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-retry\{position:absolute;[^}]*cursor:pointer/,
+    '↻ 自己是点击目标（失败段没有窄带）'
+  );
+  assert.equal(RETRY_CLASS, 'dsh-ct-retry');
+  assert.equal(RETRY_BUSY_ATTR, 'data-busy', '在途态挂在同一个节点上，不重挂载');
+  assert.match(
+    ASSISTANT_CSS,
+    new RegExp(`\\.dsh-ct-retry\\[data-busy\\] \\.[a-z-]*spin\\{animation:`),
+    '在途：↻ 原地转圈'
+  );
+  assert.match(ASSISTANT_CSS, /@keyframes dsh-ct-retry-spin/, '转圈动画有名字，便于 reduced-motion 关掉');
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-retry:focus-visible\{outline:none\}/,
+    '键盘聚焦 ↻ 同样不给可见标记（与窄带一致）'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /@media \(prefers-reduced-motion:reduce\)\{\.dsh-ct-retry-spin\{animation:none\}\}/,
+    'reduced-motion 降级为静止的 ↻'
+  );
 });
 
 await test('防回归：自动重试面不存在——额度常量不得复活', () => {

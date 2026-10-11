@@ -1,13 +1,11 @@
 /**
  * 渲染自检：用真 react 把助手行画进 jsdom，锁住这次改动的核心承诺。
  *
- * 「点正文不切换、点左缘才切换」过去只被类名字符串间接锁着——onClick 挂在
- * 正文容器上还是挂在别处，字符串断言看不出来，重构时能被悄悄改回去。这里走
- * 真渲染 + 真事件派发，断言四条：
- *   1. 点正文（单击落字）不切换译文/原文；
- *   2. 点左缘那条窄热区才切换；
- *   3. 在热区按下、往右拖进正文再松手（选字手势）不切换；
- *   4. 点失败块的热区 = 整行补跑（真的又发了一次请求）。
+ * 正文左缘不再有任何线，可点的只有左缘之外的两样东西，它们各自是唯一的入口：
+ *   1. 成功块：一条 6px 透明窄带（`.dsh-ct-hotspot`）承载译文/原文切换；
+ *      点正文（单击落字）不切换，拖选择字也不切换；
+ *   2. 失败块：一个真 ↻ 按钮（`.dsh-ct-retry`）承载整行补跑，没有窄带；
+ *      补跑在途时它原地转圈、不重挂载（键盘焦点不掉），再点是空操作。
  *
  * `@deepseek-ai/dsh-client-ui-primitives` 是替身：真组件是浏览器里的 ESM、带
  * .css 导入，Node 里跑不起来。替身只做「把 text / children 原样渲染出来」与
@@ -247,16 +245,16 @@ const containerA = document.createElement('div');
 document.body.appendChild(containerA);
 const rootA = renderRow('ax1', 'Hello world', containerA);
 
-await test('读译文：正文块与左缘热区同时在场，正文不再是点击目标', () => {
+await test('成功块：正文无标记线、无缩进，左缘只有一条 6px 窄带', () => {
   const blockEl = containerA.querySelector('.dsh-ct-prose');
   assert.ok(blockEl !== null, '正文块没有渲染');
-  assert.match(blockEl.className, /dsh-ct-prose-translated/, '成功块应挂蓝线类');
-  assert.match(blockEl.className, /dsh-ct-prose-indent/, '可翻译时正文块应统一缩进');
-  assert.ok(!/clickable/.test(blockEl.className), '正文块类名里不该有可点态');
+  assert.match(blockEl.className, /dsh-ct-prose-translated/, '成功块挂语义状态类');
+  assert.ok(!/indent/.test(blockEl.className), '正文不再有缩进类，排版回到原生');
+  assert.ok(!/clickable|retryable/.test(blockEl.className), '正文块类名里没有可点态');
   const hotspot = containerA.querySelector('.dsh-ct-hotspot');
-  assert.ok(hotspot !== null, '有线就该有左缘热区');
-  assert.equal(hotspot.tagName, 'BUTTON', '热区应是可聚焦的 button');
-  assert.match(blockEl.className, /dsh-ct-prose-translated/, '热区状态应与线型一致：读译文');
+  assert.ok(hotspot !== null, '成功块就该有左缘窄带');
+  assert.equal(hotspot.tagName, 'BUTTON', '窄带应是可聚焦的 button');
+  assert.equal(containerA.querySelector('.dsh-ct-retry'), null, '成功块没有 ↻');
   assert.equal(containerA.textContent.includes('【译】Hello world'), true, '应显示译文');
 });
 
@@ -269,7 +267,7 @@ await test('点正文（单击落字）不切换译文/原文', () => {
   assert.match(containerA.querySelector('.dsh-ct-prose').className, /dsh-ct-prose-translated/);
 });
 
-await test('从热区按下、往右拖进正文选字松手：不切换', () => {
+await test('从窄带按下、往右拖进正文选字松手：不切换', () => {
   const hotspot = containerA.querySelector('.dsh-ct-hotspot');
   const blockEl = containerA.querySelector('.dsh-ct-prose');
   dragFromTo(hotspot, blockEl);
@@ -277,39 +275,43 @@ await test('从热区按下、往右拖进正文选字松手：不切换', () =>
   dom.window.getSelection().removeAllRanges();
 });
 
-await test('已有非空选区时点热区：仍算选字，不切换', () => {
+await test('已有非空选区时点窄带：仍算选字，不切换', () => {
   // 上一条只覆盖了「click 落在公共祖先」这条路（靠 target 判定）。
-  // 这一条让 click 真的落在热区上、但页面上存在非空选区——守卫的第二个条件。
+  // 这一条让 click 真的落在窄带上、但页面上存在非空选区——守卫的第二个条件。
   const hotspot = containerA.querySelector('.dsh-ct-hotspot');
   const range = dom.window.document.createRange();
   range.selectNodeContents(containerA.querySelector('.md'));
   dom.window.getSelection().removeAllRanges();
   dom.window.getSelection().addRange(range);
   clickAt(hotspot);
-  assert.equal(containerA.textContent.includes('【译】Hello world'), true, '有选区时点热区不该切换');
+  assert.equal(containerA.textContent.includes('【译】Hello world'), true, '有选区时点窄带不该切换');
   dom.window.getSelection().removeAllRanges();
 });
 
-await test('点左缘热区才切换到原文，再点切回译文', () => {
+await test('点窄带切回原文，再点切回译文；状态类始终不变', () => {
   const hotspot = containerA.querySelector('.dsh-ct-hotspot');
   clickAt(hotspot);
-  assert.equal(containerA.textContent.includes('【译】Hello world'), false, '点热区应切回原文');
-  assert.match(containerA.querySelector('.dsh-ct-prose').className, /dsh-ct-prose-original/, '读原文应挂灰细线类');
+  assert.equal(containerA.textContent.includes('【译】Hello world'), false, '点窄带应切回原文');
+  assert.match(
+    containerA.querySelector('.dsh-ct-prose').className,
+    /dsh-ct-prose-translated/,
+    '「读原文」不是另一种标记：这一段仍然翻成过'
+  );
+  assert.ok(containerA.querySelector('.dsh-ct-hotspot') !== null, '读原文时窄带仍在，还能切回来');
   clickAt(containerA.querySelector('.dsh-ct-hotspot'));
   assert.equal(containerA.textContent.includes('【译】Hello world'), true, '再点应切回译文');
 });
 
-await test('键盘 Enter 在热区上等效于点击（且只动作一次）', () => {
+await test('键盘 Enter 在窄带上等效于点击（且只动作一次）', () => {
   const hotspot = containerA.querySelector('.dsh-ct-hotspot');
   hotspot.focus();
-  assert.equal(document.activeElement, hotspot, '热区应可聚焦——键盘焦点落在它上面');
+  assert.equal(document.activeElement, hotspot, '窄带应可聚焦——键盘焦点落在它上面');
   act(() => {
     hotspot.dispatchEvent(
       new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
     );
   });
   assert.equal(containerA.textContent.includes('【译】Hello world'), false, 'Enter 应切到原文');
-  assert.match(containerA.querySelector('.dsh-ct-prose').className, /dsh-ct-prose-original/, '切后线型应同步为读原文');
   // 再按一次切回，确认不是「按一次动作两次」抵消掉的假象。
   act(() => {
     hotspot.dispatchEvent(
@@ -325,49 +327,54 @@ const containerB = document.createElement('div');
 document.body.appendChild(containerB);
 const rootB = renderRow('ax2', 'Broken block', containerB);
 
-await test('失败块：红线 + 常驻 ↻，正文同样不响应点击', () => {
+await test('失败块：一个真 ↻ 按钮、没有窄带，正文不响应点击', () => {
   const blockEl = containerB.querySelector('.dsh-ct-prose');
-  assert.match(blockEl.className, /dsh-ct-prose-failed/, '失败块应挂红实线类');
-  assert.ok(containerB.querySelector('.dsh-ct-retry') !== null, '失败块的 ↻ 应常驻，不靠悬停显形');
-  const hotspot = containerB.querySelector('.dsh-ct-hotspot');
-  assert.match(blockEl.className, /dsh-ct-prose-failed/);
+  assert.match(blockEl.className, /dsh-ct-prose-failed/, '失败块挂语义状态类');
+  assert.equal(containerB.querySelector('.dsh-ct-hotspot'), null, '失败段不放窄带：一段只有一个动作');
+  const retry = containerB.querySelector('.dsh-ct-retry');
+  assert.ok(retry !== null, '失败块的 ↻ 应常驻，不靠悬停显形');
+  assert.equal(retry.tagName, 'BUTTON', '↻ 应是真按钮（自己的点击目标）');
+  assert.equal(retry.getAttribute('data-busy'), null, '落定的失败块：↻ 静止可点');
   const before = replyCalls;
   clickAt(containerB.querySelector('.md'));
   assert.equal(replyCalls, before, '点正文不该触发补跑');
 });
 
-await test('点失败块的热区 = 整行补跑（真的又发了一次请求）', () => {
+await test('点 ↻ = 整行补跑（真的又发了一次请求）', () => {
   const before = replyCalls;
-  holdNextReply = true; // 让补跑悬在「在途」，下一步才在脉动态上断言
-  clickAt(containerB.querySelector('.dsh-ct-hotspot'));
-  assert.equal(replyCalls, before + 1, '点热区应发起一次补跑请求');
+  holdNextReply = true; // 让补跑悬在「在途」，下一步才在转圈态上断言
+  clickAt(containerB.querySelector('.dsh-ct-retry'));
+  assert.equal(replyCalls, before + 1, '点 ↻ 应发起一次补跑请求');
 });
 
-await test('在途热区仍在（键盘焦点不掉），但按下去是空操作', () => {
-  const hotspot = containerB.querySelector('.dsh-ct-hotspot');
-  assert.ok(hotspot !== null, '补跑期间热区不该消失');
-  assert.equal(hotspot.getAttribute('data-idle'), 'true', '在途应标记 data-idle（光标不给手型）');
+await test('补跑在途：↻ 原地转圈、同一个节点、再点是空操作', () => {
+  const retry = containerB.querySelector('.dsh-ct-retry');
+  assert.ok(retry !== null, '补跑期间 ↻ 不该消失');
+  assert.equal(retry.getAttribute('data-busy'), 'true', '在途应标记 data-busy（转圈且不给手型）');
+  assert.ok(containerB.querySelector('.dsh-ct-retry-spin') !== null, '转的是图标本身，按钮位置不动');
   const before = replyCalls;
-  clickAt(hotspot);
+  clickAt(retry);
   assert.equal(replyCalls, before, '在途再点是空操作');
 });
 
-await test('补跑落定后回到译文的可切换态', async () => {
+await test('补跑落定后回到可切换的成功态', async () => {
   assert.ok(typeof releaseHeldReply === 'function', '补跑请求应还悬着');
   await act(async () => {
     releaseHeldReply();
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
-  const hotspot = containerB.querySelector('.dsh-ct-hotspot');
-  assert.match(containerB.querySelector('.dsh-ct-prose').className, /dsh-ct-prose-translated/, '补跑成功后应回到译文态');
-  assert.equal(hotspot.getAttribute('data-idle'), null, '落定后不再是空操作态');
+  const retry = containerB.querySelector('.dsh-ct-retry');
+  assert.equal(retry, null, '成功后 ↻ 退场');
+  assert.match(containerB.querySelector('.dsh-ct-prose').className, /dsh-ct-prose-translated/, '补跑成功后回到成功态');
+  assert.ok(containerB.querySelector('.dsh-ct-hotspot') !== null, '成功后左缘换成窄带');
   assert.equal(containerB.textContent.includes('【译】Broken block'), true, '应显示重跑得到的译文');
 });
 
-await test('失败→在途的迁移不重挂载热区：键盘焦点不掉回 body', async () => {
+await test('失败→在途的迁移不重挂载 ↻：键盘焦点不掉回 body', async () => {
   // 这条锁住一个真实踩过的坑：Tooltip 曾经按状态包/拆，失败块被补跑时树形变化
-  // 让 React 重挂载 button，焦点落回 body——「在途热区保留、焦点不掉」当场失效。
-  // 修法是 Tooltip 常挂、只用 disabled 收放（其契约保证 disabled 时锚点渲染一致）。
+  // 让 React 重挂载 button，焦点落回 body——「在途 ↻ 保留、焦点不掉」当场失效。
+  // 修法是 Tooltip 常挂、只用 disabled 收放（其契约保证 disabled 时锚点渲染一致），
+  // 且 ↻ 的在途态只换属性、不换元素。
   const containerD = document.createElement('div');
   document.body.appendChild(containerD);
   const rootD = renderRow('ax4', 'Broken block', containerD);
@@ -375,9 +382,9 @@ await test('失败→在途的迁移不重挂载热区：键盘焦点不掉回 b
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-  const before = containerD.querySelector('.dsh-ct-hotspot');
+  const before = containerD.querySelector('.dsh-ct-retry');
   before.focus();
-  assert.ok(document.activeElement === before, '前置：热区应已获得焦点');
+  assert.ok(document.activeElement === before, '前置：↻ 应已获得焦点');
 
   holdNextReply = true;
   act(() => {
@@ -386,21 +393,17 @@ await test('失败→在途的迁移不重挂载热区：键盘焦点不掉回 b
     );
   });
 
-  const after = containerD.querySelector('.dsh-ct-hotspot');
+  const after = containerD.querySelector('.dsh-ct-retry');
   // 断言布尔而不是直接比 DOM 节点：assert 失败时要格式化两个 jsdom 元素（巨大的
   // 循环图），进程会当场被 OOM 杀掉，失败就变成「被 KILL」而不是一条断言消息。
-  assert.ok(after === before, '补跑期间不得重挂载热区（同一个 DOM 节点）');
-  assert.ok(document.activeElement === after, '补跑期间键盘焦点必须还留在热区上');
-  assert.equal(after.getAttribute('data-idle'), 'true', '此时应是在途态');
+  assert.ok(after === before, '补跑期间不得重挂载 ↻（同一个 DOM 节点）');
+  assert.ok(document.activeElement === after, '补跑期间键盘焦点必须还留在 ↻ 上');
+  assert.equal(after.getAttribute('data-busy'), 'true', '此时应是转圈态');
 
   await act(async () => {
     releaseHeldReply();
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
-  assert.ok(
-    document.activeElement === containerD.querySelector('.dsh-ct-hotspot'),
-    '落定后焦点仍在热区上'
-  );
   act(() => rootD.unmount());
 });
 
@@ -415,13 +418,13 @@ await act(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
-await test('失败块：键盘 Enter 在热区上补跑整行，且只发一次请求', () => {
-  const hotspot = containerC.querySelector('.dsh-ct-hotspot');
+await test('失败块：键盘 Enter 在 ↻ 上补跑整行，且只发一次请求', () => {
+  const retry = containerC.querySelector('.dsh-ct-retry');
   assert.match(containerC.querySelector('.dsh-ct-prose').className, /dsh-ct-prose-failed/, '前置：首跑应已落定为失败');
   const before = replyCalls;
   holdNextReply = true;
   act(() => {
-    hotspot.dispatchEvent(
+    retry.dispatchEvent(
       new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
     );
   });

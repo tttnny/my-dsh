@@ -6,13 +6,13 @@
  * 1. 正文块从数据层拿**原始 markdown**（`AssistantBlock.text`），译文同样按
  *    markdown 交给宿主公开基线组件 `MarkdownText` 重渲染：格式保真由官方
  *    渲染器负责，本文件不产生任何自拼 markup。
- * 2. 「已翻译/没译成」是渲染状态：落定、开关开启、进入视口后逐行首跑；成功
- *    的块（包括模型认为原样最好的块）挂译文、左缘蓝线；失败的块保持原文、
- *    左缘挂红实线；已登记在途而尚无结果的块显灰脉动。
- * 3. 切换与补跑都在**左缘热区**上，不在正文上：正文整块可点会让「选中一段
- *    文字复制」与「切换译文/原文」抢同一次点击；热区收成贴着那条线的窄带后，
- *    正文的单击落字、拖选复制都不再误触。失败块的 ↻ 常驻在红线旁，点它整行
- *    补跑，无限次、无自动重试。
+ * 2. 「翻成了没有」是渲染状态：落定、开关开启、进入视口后逐行首跑；成功的块
+ *    （包括模型认为原样最好的块）换成中文渲染，失败的块保持原文。
+ *
+ * 正文左缘不画任何东西，正文排版与宿主默认逐字一致。可点的只有左缘之外的两样：
+ * 成功块的译文/原文切换归一条 6px 透明窄带（正文一个像素都不占），失败块的补跑
+ * 归一个真的 ↻ 按钮（浮在正文左侧的空隙里）。正文整块不是点击目标，所以单击
+ * 落字、拖选复制都不会误触。补跑在途时 ↻ 原位转圈、暂不可重复点。
  *
  * 除正文外的行内容与宿主逐分支等价：reasoning 行走折叠（含 Turn-process
  * 隐藏与 beforematch 揭示）、连续 image 组交回 owner 的 renderMessageImages、
@@ -47,11 +47,12 @@ import type { ProseMark } from './styles.ts';
 import {
   ensureAssistantStyles,
   HOTSPOT_CLASS,
-  HOTSPOT_IDLE_ATTR,
   PROSE_BASE_CLASS,
+  RETRY_BUSY_ATTR,
+  RETRY_CLASS,
+  RETRY_SPIN_CLASS,
+  proseAction,
   proseClassNames,
-  proseIndentClassName,
-  prosePresentation,
 } from './styles.ts';
 import { chatTranslate, sameTexts } from './translate-store.ts';
 
@@ -302,20 +303,22 @@ const ReasoningRow = memo(function ReasoningRow({
   );
 });
 
-// ---- 正文块：左缘热区承载切换与补跑，正文本身只做选中/复制 ----
+// ---- 正文块：左缘之外的两样东西承载交互，正文本身只做选中/复制 ----
 
 interface ProseBlockProps {
   text: string;
   /** 成功落定的中文源文本（仅 mark='translated' 时作为渲染源）。 */
   translated: string | null;
-  /** 左缘线状态，单点算自 row-plan；热区的动作、线型、脉动全由它决定。 */
+  /** 左缘标记状态，单点算自 row-plan；类名与左缘动作全由它决定。 */
   mark: ProseMark;
+  /** 成功块当前是否读原文：只是同一份结果上的显示源选择，切换标记不变。 */
+  showingOriginal: boolean;
   /** 仅 mark='failed' 时非 null：悬停文案的技术细节（通道伤一句）。 */
   fail: string | null;
+  /** 仅 mark='failed' 且补跑在途时为 true：↻ 原地转圈、暂不可重复点。 */
+  retryBusy: boolean;
   onToggle: () => void;
   onRetry: () => void;
-  /** 能翻译（开关开 + 通道齐备）：正文块统一左缩进，译文出现时不跳字。 */
-  canTranslate: boolean;
   streaming: boolean;
   labels: MarkdownLabels;
   mentions: MarkdownFileMentions | undefined;
@@ -323,116 +326,116 @@ interface ProseBlockProps {
 }
 
 /**
- * 正文块的现状：线挂在正文容器上（左缘那条竖线），可点的却只有贴着线的窄
- * 热区——正文整块不是点击目标，拖选、单击落字都不会误触切换。
+ * 正文块的现状：正文排版与宿主默认逐字一致（无缩进、无线），左缘之外各有一段
+ * 可点区域——
  *
- * 热区用原生 `button` 而不是 ui-primitives 的 Button：它没有自己的外形
- * （完全透明、无 hover 背景），任何可见控件的外观都会破坏「悬停不改变任何
- * 视觉」这条规则；`button` 只借用它的可聚焦与键盘语义。焦点可见性由样式层
- * 把左缘线加亮实现（`.dsh-ct-prose-*:has(.dsh-ct-hotspot:focus-visible)`）。
+ * - 成功块：一条 6px 透明窄带（`.dsh-ct-hotspot`），完全落在正文左侧，用来在
+ *   译文与原文之间切换。用原生 `button` 而不是 ui-primitives 的 Button：它没有
+ *   自己的外形（完全透明、无 hover 背景、无 focus 框），任何可见控件的外观都会
+ *   破坏「正文排版原生、悬停不改视觉」这两条规则；`button` 只借用它的可聚焦与
+ *   键盘语义。
+ * - 失败块：一个真 ↻ 按钮（`.dsh-ct-retry`），浮在正文左侧的空隙里，点它整行
+ *   补跑。失败段不放窄带——一段落只对应一个动作，避免两种点击目标叠在同一小片
+ *   地方。补跑在途时它原位转圈、光标不再承诺可点。
+ *
+ * 正文整块不是点击目标：单击落字、拖选复制都不会误触切换。
  */
 function ProseBlock({
   text,
   translated,
   mark,
+  showingOriginal,
   fail,
+  retryBusy,
   onToggle,
   onRetry,
-  canTranslate,
   streaming,
   labels,
   mentions,
   pathImages,
 }: ProseBlockProps): ReactElement {
-  const { action } = prosePresentation(mark);
-  const clickable = action !== null;
-  const retrying = action === 'retry';
-  const handler = retrying ? onRetry : onToggle;
-  const source = mark === 'translated' ? (translated as string) : text;
+  const action = proseAction(mark);
+  const source = mark === 'translated' && !showingOriginal ? (translated as string) : text;
   const copy = rowCopy();
-  const className = [proseClassNames(mark) ?? PROSE_BASE_CLASS, proseIndentClassName(canTranslate)]
-    .filter((name): name is string => name !== undefined)
-    .join(' ');
+  const className = proseClassNames(mark) ?? PROSE_BASE_CLASS;
 
-  // 有线的块才有热区：没送过模型的块（开关关闭、通道没配好、空白块）没有
-  // 可切换的东西。在途热区留在原地（键盘焦点不掉），但按下去是空操作。
+  // 成功块才放窄带：没有结果的块（没送过模型、开关关闭、通道没配好、空白块、
+  // 还在等结果的块）没有可切换的东西；失败块由 ↻ 承担唯一动作。
   const hotspot =
-    mark === null
+    action !== 'toggle'
       ? null
       : React.createElement('button', {
           type: 'button',
           className: HOTSPOT_CLASS,
-          // 热区是覆盖层，读屏只应听到它的动作，正文仍由 MarkdownText 读。
-          'aria-label':
-            mark === 'inflight'
-              ? copy.inflightAria
-              : retrying
-                ? copy.retryAria
-                : mark === 'original-view'
-                  ? copy.toggleToTranslatedAria
-                  : copy.toggleToOriginalAria,
-          ...(mark === 'inflight' ? { [HOTSPOT_IDLE_ATTR]: 'true' } : {}),
+          // 窄带是覆盖层，读屏只应听到它的动作，正文仍由 MarkdownText 读。
+          'aria-label': showingOriginal ? copy.toggleToTranslatedAria : copy.toggleToOriginalAria,
           tabIndex: 0,
           // button 自己会按 Enter/Space 合成 click，若不接管就会与这段键盘处理
           // 叠加成两次动作：这里两个键都走 keydown 并 preventDefault，合成被掐掉。
-          onKeyDown: clickable
-            ? (event: React.KeyboardEvent<HTMLButtonElement>) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                handler();
-              }
-            : void 0,
-          onClick: clickable
-            ? (event: React.MouseEvent<HTMLButtonElement>) => {
-                if (
-                  isCleanHotspotClick(
-                    { target: event.target as unknown, currentTarget: event.currentTarget as unknown },
-                    typeof window === 'undefined' ? undefined : window
-                  )
-                ) {
-                  handler();
-                }
-              }
-            : void 0,
+          onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            onToggle();
+          },
+          onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
+            if (
+              isCleanHotspotClick(
+                { target: event.target as unknown, currentTarget: event.currentTarget as unknown },
+                typeof window === 'undefined' ? undefined : window
+              )
+            ) {
+              onToggle();
+            }
+          },
         });
 
-  // ↻ 是热区的兄弟而不是子元素：它要按正文块的坐标系定位（红线右侧那 12px
-  // 缩进里），且 pointer-events:none——装饰不吃点击，落在它上面的指针仍归热区。
-  const retryIcon = retrying
-    ? React.createElement(
-        'span',
-        { className: 'dsh-ct-retry', 'aria-hidden': true },
-        React.createElement(IconRefreshOutlineRegular, { size: 10 })
-      )
-    : null;
+  // ↻ 是真按钮：失败段唯一的点击目标，也可能被键盘聚焦。在途时它原位转圈并
+  // 停止响应（data-busy 由样式层翻成「不转手型」+ 图标旋转），但**元素不换**——
+  // 键盘焦点因此不会掉回 body。Tooltip 挂在它上面报败因：这个按钮只在失败段存在，
+  // 补跑期间也一直挂着（元素不换 = 气泡锚点不重挂载）。
+  const retryButton = React.createElement(
+    'button',
+    {
+      type: 'button',
+      className: RETRY_CLASS,
+      'aria-label': retryBusy ? copy.retryBusyAria : copy.retryAria,
+      ...(retryBusy ? { [RETRY_BUSY_ATTR]: 'true' } : {}),
+      tabIndex: 0,
+      onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        if (!retryBusy) onRetry();
+      },
+      onClick: retryBusy
+        ? void 0
+        : () => {
+            onRetry();
+          },
+    },
+    React.createElement(
+      'span',
+      { className: RETRY_SPIN_CLASS, 'aria-hidden': true },
+      React.createElement(IconRefreshOutlineRegular, { size: 12 })
+    )
+  );
 
-  // 失败块的败因泡锚在热区上：鼠标移到左缘那条带、或键盘聚焦它，都出泡——正文
-  // 上方不再有浮层，拖选原文时不被遮。泡里报的是败因（本地化标签 — 服务端技术
-  // 细节），不再是「怎么重试」的指引。
-  //
-  // Tooltip **常挂**、只用 disabled 收放：它的契约写明「disabled 时锚点渲染完全
-  // 一致，切换不会重挂载」。若改成按状态包/拆 Tooltip，失败块被补跑的那一刻树形
-  // 变化会让 React 重挂载 button，键盘焦点掉回 body——正是「在途热区保留、焦点
-  // 不掉」要防的那件事。
-  const anchor =
-    hotspot === null
+  // ↻ 只在失败段存在，且它是那一段**唯一**的可点物；补跑在途时它原位转圈、暂不
+  // 响应。Tooltip 挂在按钮自己身上报败因：只要这一段还是失败态，气泡锚点就不换。
+  const retry =
+    action !== 'retry'
       ? null
       : React.createElement(Tooltip, {
           label: () => copy.failTitle(fail),
           side: 'top',
           portal: true,
-          disabled: !retrying,
-          children: hotspot as Parameters<typeof Tooltip>[0]['children'],
+          children: retryButton as Parameters<typeof Tooltip>[0]['children'],
         });
 
   return React.createElement(
     'div',
-    {
-      className,
-      'data-translated': mark === 'translated' ? 'true' : void 0,
-    },
-    retryIcon,
-    anchor,
+    { className },
+    retry,
+    hotspot,
     React.createElement(MarkdownText, {
       text: source,
       streaming,
@@ -503,8 +506,8 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
   const [originalKeys, setOriginalKeys] = useState<ReadonlySet<number>>(() => new Set());
 
   // 只认同代登记：rowKey 是会话内锚点，跨会话可能重号——texts 逐位相等才把
-  // 旧 outcomes 挂上来，换代的那一帧（含换会话撞键）按「未登记」渲染，纯原文
-  // 无线无脉动，随后 ensure 重新登记。
+  // 旧 outcomes 挂上来，换代的那一帧（含换会话撞键）按「未登记」渲染——纯原文、
+  // 左缘不出现任何东西，随后 ensure 重新登记。
   const registered = chatTranslate.getState(rowKey);
   const rowState = registered !== undefined && sameTexts(registered.texts, plan.texts) ? registered : undefined;
   const displayed = useMemo(
@@ -516,7 +519,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
         groupPart,
         canTranslate,
         outcomes: rowState?.outcomes,
-        rowStatus: rowState?.status,
+        rowRetrying: rowState?.retrying,
         originalKeys,
       }),
     [blocks, streaming, interrupted, groupPart, canTranslate, rowState, originalKeys]
@@ -541,8 +544,8 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     });
   }, []);
 
-  // 手动补跑：点任一红线块的左缘热区 = 整行重发（无限次、不设额度）；在途再点
-  // 是空操作——store 的 pending 短路让它是安全的，灰脉动本身就是「已在跑」的答复。
+  // 手动补跑：点失败块的 ↻ = 整行重发（无限次、不设额度）；在途再点是空操作——
+  // store 的 pending 短路让它是安全的，↻ 自己转着圈就是「已在跑」的答复。
   const retryRow = useCallback(() => {
     chatTranslate.ensure(rowKey, plan.texts, true);
   }, [rowKey, plan]);
@@ -561,10 +564,11 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
             text: entry.text,
             translated: entry.translated,
             mark: entry.mark,
+            showingOriginal: entry.showingOriginal,
             fail: entry.fail,
+            retryBusy: entry.retryBusy,
             onToggle: () => toggleBlock(entry.key),
             onRetry: retryRow,
-            canTranslate,
             streaming,
             labels,
             mentions,

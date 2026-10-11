@@ -238,7 +238,7 @@ await testAsync('Markdown shape drift is accepted, never discarded', async () =>
 await testAsync('A genuine block merge still keeps the original', async () => {
   // 骨架真破了（两段并一段、非空行数对不上）且重掷仍破——照收策略下模型译文
   // 结构会漂，但通道正常时块不再回退原文；这里锁定的仍是「非空行数对不上」
-  // 这一类 repairShape 修不了的路径最终也照收，红线只留给通道伤。
+  // 这一类 repairShape 修不了的路径最终也照收，失败标记只留给通道伤。
   const { entry, dispatcher } = makeDispatcher(async () => '甲乙丙全挤成一行');
   await entry.update({ baseUrl: 'http://x', model: 'm' });
   const source = 'one\n\ntwo\n\nthree';

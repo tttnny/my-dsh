@@ -16,12 +16,15 @@ export interface BlockOutcome {
  * 一行正文的翻译状态。outcomes 与 texts 同下标，null = 该块所在批尚未落定：
  * 每批返回就地填入并通知，长回答按阅读顺序逐段出中文，不憋到最后一批。
  * 全部批落定后 status 转 settled——落定即终态：这里没有任何自动补跑，
- * 失败块的救活只由用户的点击发起（ensure 的 manual 参数）。
+ * 失败块的救活只由用户点击 ↻ 发起（ensure 的 manual 参数）。
+ * retrying = 这一轮在途是用户手点的补跑：失败块的 ↻ 因此原位转圈；首次自动
+ * 首跑即使已有批失败也不转圈（用户没点过它）。
  */
 export interface RowState {
   status: 'pending' | 'settled';
   texts: readonly string[];
   outcomes: readonly (BlockOutcome | null)[];
+  retrying: boolean;
 }
 
 /** 送译一行正文的取数面：默认走宿主路由，测试注入假实现。 */
@@ -62,10 +65,10 @@ export function chunkTexts(texts: readonly string[]): string[][] {
  * 行键由渲染层给出（会话内锚点序号），文本数组参与一致性判断：同键不同文本
  * 视为行换了一代内容，整行重新请求——这保证重渲染或会话切换后不会把旧译文
  * 配到新文本上。请求幂等：同键同文本且仍在途的 ensure 不发第二个请求；已落定
- * 的行同样短路——**除非** manual=true，那是用户点了某个红线块发起的手动补跑，
- * 无限次、不设额度。手动补跑时上一代已成功的块保持挂线（结果从上一代种下，
- * 服务端磁盘缓存让它们秒回），只有尚无译文的块显示在途脉动。在途期间换代，
- * 迟到的旧代结果直接丢弃。
+ * 的行同样短路——**除非** manual=true，那是用户点了失败块的 ↻ 发起的手动补跑，
+ * 无限次、不设额度。手动补跑时上一代结果整体保留（服务端磁盘缓存让已成功的块
+ * 秒回），所以译文不闪、失败块的 ↻ 也不消失（它原位转圈，靠 RowState.retrying
+ * 单点判定）。在途期间换代，迟到的旧代结果直接丢弃。
  *
  * 本模块不依赖 React：渲染层用 useSyncExternalStore 订阅版本，再读 getState。
  */
@@ -103,18 +106,19 @@ export class ChatTranslateStore {
 
   /**
    * 确保该行按当前文本被翻译。
-   * @param manual - 用户点击失败块的左缘热区发起的补跑：已落定的同代行只有这条路会重发。
+   * @param manual - 用户点击失败块的 ↻ 发起的补跑：已落定的同代行只有这条路会重发。
    * @returns 是否发出了新的请求。
    */
   ensure(rowKey: string, texts: readonly string[], manual = false): boolean {
     const current = this.rows.get(rowKey);
     let seed: (BlockOutcome | null)[] | null = null;
     if (current !== undefined && sameTexts(current.texts, texts)) {
-      // 在途：再点是空操作，脉动本身就是「已在跑」的答复。
+      // 在途：再点是空操作——↻ 此刻正转着圈，本身就是「已在跑」的答复。
       if (current.status === 'pending') return false;
       if (!manual) return false;
-      // 手动补跑：上一代已成功的块当场种回，重发期间译文不闪。
-      seed = current.outcomes.map((outcome) => (outcome !== null && outcome.ok ? { ...outcome } : null));
+      // 手动补跑：上一代结果整体种回——成功的继续显示（译文不闪），失败的也留着
+      // 原样（那一块的 ↻ 因此不必消失，原位转圈即可）。回来的结果逐批覆盖它们。
+      seed = current.outcomes.map((outcome) => (outcome === null ? null : { ...outcome }));
     }
     const snapshot = [...texts];
     const seedOutcomes = seed ?? snapshot.map(() => null);
@@ -122,19 +126,21 @@ export class ChatTranslateStore {
       status: 'pending',
       texts: snapshot,
       outcomes: seedOutcomes,
+      retrying: manual,
     };
     this.rows.delete(rowKey);
     this.rows.set(rowKey, next);
     this.prune();
     this.bump();
-    if (snapshot.length > 0) void this.run(rowKey, snapshot, seedOutcomes);
+    if (snapshot.length > 0) void this.run(rowKey, snapshot, seedOutcomes, manual);
     return true;
   }
 
   private async run(
     rowKey: string,
     texts: readonly string[],
-    initial: readonly (BlockOutcome | null)[]
+    initial: readonly (BlockOutcome | null)[],
+    retrying: boolean
   ): Promise<void> {
     // 去重靠 ensure 的同代短路；换代后的并发在途允许存在——迟到的旧代结果
     // 由每批落定处的快照核对丢弃。工作数组取私有副本：登记在池里的那份
@@ -171,6 +177,7 @@ export class ChatTranslateStore {
         status: 'pending',
         texts: live.texts,
         outcomes: [...outcomes],
+        retrying,
       });
       this.bump();
     }
@@ -180,6 +187,7 @@ export class ChatTranslateStore {
         status: 'settled',
         texts: state.texts,
         outcomes: [...outcomes],
+        retrying: false,
       });
       this.bump();
     }
