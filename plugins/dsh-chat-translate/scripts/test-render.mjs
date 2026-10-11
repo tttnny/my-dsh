@@ -335,6 +335,13 @@ await test('失败块：一个真 ↻ 按钮、没有窄带，正文不响应点
   assert.ok(retry !== null, '失败块的 ↻ 应常驻，不靠悬停显形');
   assert.equal(retry.tagName, 'BUTTON', '↻ 应是真按钮（自己的点击目标）');
   assert.equal(retry.getAttribute('data-busy'), null, '落定的失败块：↻ 静止可点');
+  // 读屏用户不悬停：Tooltip 的气泡只在 openOnClick 时才挂 aria-describedby，
+  // 所以败因必须进按钮自己的标签，否则他们永远听不到「超时 / 断流 / 空返回」。
+  assert.match(
+    retry.getAttribute('aria-label'),
+    /channel timed out after 20000ms/,
+    '↻ 的读屏标签必须带上服务端给的失败原因'
+  );
   const before = replyCalls;
   clickAt(containerB.querySelector('.md'));
   assert.equal(replyCalls, before, '点正文不该触发补跑');
@@ -352,6 +359,7 @@ await test('补跑在途：↻ 原地转圈、同一个节点、再点是空操�
   assert.ok(retry !== null, '补跑期间 ↻ 不该消失');
   assert.equal(retry.getAttribute('data-busy'), 'true', '在途应标记 data-busy（转圈且不给手型）');
   assert.ok(containerB.querySelector('.dsh-ct-retry-spin') !== null, '转的是图标本身，按钮位置不动');
+  assert.match(retry.getAttribute('aria-label'), /channel timed out after 20000ms/, '在途标签同样报败因');
   const before = replyCalls;
   clickAt(retry);
   assert.equal(replyCalls, before, '在途再点是空操作');

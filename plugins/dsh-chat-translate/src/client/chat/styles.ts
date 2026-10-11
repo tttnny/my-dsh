@@ -49,7 +49,9 @@ export const ASSISTANT_CSS = [
   '.dsh-ct-retry[data-busy]{cursor:default}',
   '.dsh-ct-retry[data-busy] .dsh-ct-retry-spin{animation:0.9s linear infinite dsh-ct-retry-spin}',
   '@keyframes dsh-ct-retry-spin{to{transform:rotate(360deg)}}',
-  '@media (prefers-reduced-motion:reduce){.dsh-ct-retry-spin{animation:none}}',
+  // 尊重 reduced-motion：不转圈，但「按下去没用」这件事必须仍然看得见——否则
+  // 关掉动画后按钮就只剩「点不动又没提示」。用静态的变淡替代旋转。
+  '@media (prefers-reduced-motion:reduce){.dsh-ct-retry-spin{animation:none}.dsh-ct-retry[data-busy]{opacity:.45}}',
   // 键盘同样可以聚焦 ↻，但界面不给任何可见标记（与窄带一致）。
   '.dsh-ct-retry:focus-visible{outline:none}',
   // ---- ReasoningRow（宿主 lcKema_* 等价，前缀换成 dsh-ct-think） ----

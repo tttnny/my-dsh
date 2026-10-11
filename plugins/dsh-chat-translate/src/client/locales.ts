@@ -44,7 +44,7 @@ export const zh = {
 
   behaviorTitle: '翻译范围',
   behaviorRule:
-    '助手回答正文一律翻译，包括最终汇总与整段中文的块：中文块同样交给模型改写成自然中文，意义、术语与数字不变；空白块不送译、不挂线。思考链正文、工具调用标题与折叠摘要不翻译，代码块及其内部原样保留。',
+    '助手回答正文一律翻译，包括最终汇总与整段中文的块：中文块同样交给模型改写成自然中文，意义、术语与数字不变；空白块不送译、左缘不出现任何标记。思考链正文、工具调用标题与折叠摘要不翻译，代码块及其内部原样保留。',
 
   dockLabel: '译',
   dockOn: '正文翻译已开启，点击关闭',
@@ -136,23 +136,27 @@ export function bindRowCopy(
 }
 
 export function rowCopy(): {
-  retryAria: string;
-  /** 补跑在途时 ↻ 的读屏标签：说清此刻按下去没有动作。 */
-  retryBusyAria: string;
+  /**
+   * 失败块 ↻ 的读屏标签。Tooltip 的气泡只在 `openOnClick` 时才挂
+   * `aria-describedby`，所以败因必须进标签本身——读屏用户不悬停，这是他们
+   * 唯一能听到「超时 / 断流 / 空返回」的通道。
+   */
+  retryAria: (detail?: string | null) => string;
+  /** 补跑在途时 ↻ 的读屏标签：说清此刻按下去没有动作，同样带上败因。 */
+  retryBusyAria: (detail?: string | null) => string;
   /** 窄带的读屏标签：读译文时提示可切回原文，反之亦然。 */
   toggleToOriginalAria: string;
   toggleToTranslatedAria: string;
   /** 失败块悬停文案：本地化标签 + 服务端原样带来的技术一句（通道伤）。 */
   failTitle: (detail?: string | null) => string;
 } {
+  const withDetail = (label: string, detail?: string | null): string =>
+    detail === undefined || detail === '' || detail === null ? label : `${label} — ${detail}`;
   return {
-    retryAria: rowT('retryAria'),
-    retryBusyAria: rowT('retryBusyAria'),
+    retryAria: (detail) => withDetail(rowT('retryAria'), detail),
+    retryBusyAria: (detail) => withDetail(rowT('retryBusyAria'), detail),
     toggleToOriginalAria: rowT('toggleToOriginalAria'),
     toggleToTranslatedAria: rowT('toggleToTranslatedAria'),
-    failTitle: (detail) => {
-      const label = rowT('failTitle');
-      return detail === undefined || detail === '' || detail === null ? label : `${label} — ${detail}`;
-    },
+    failTitle: (detail) => withDetail(rowT('failTitle'), detail),
   };
 }

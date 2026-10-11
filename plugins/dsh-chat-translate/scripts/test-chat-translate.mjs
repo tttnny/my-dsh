@@ -203,7 +203,7 @@ await test('未落定的块不给任何标记；行未登记同样什么都不�
     outcomes: [{ translated: '一', ok: true }, null],
   });
   assert.equal(registered.entries[0].mark, 'translated');
-  assert.equal(registered.entries[1].mark, null, '还没结果的块什么都不显——没有脉动、没有占位');
+  assert.equal(registered.entries[1].mark, null, '还没结果的块什么都不显——没有标记、没有占位');
   const unregistered = planAssistantRow({ blocks, streaming: false, interrupted: false, canTranslate: true });
   assert.equal(unregistered.entries[0].mark, null, '没进池就没有任何标记');
   assert.equal(unregistered.entries[0].translated, null);
@@ -273,7 +273,7 @@ await test('reasoning 分组不送译：texts 与本组渲染的正文块同域'
 // 3. 翻译池
 // ---------------------------------------------------------------
 
-await test('左缘热区点击守卫：落在热区上的干净点击才触发，拖选与正文点击不触发', () => {
+await test('左缘窄带点击守卫：落在窄带上的干净点击才触发，拖选与正文点击不触发', () => {
   const hotspot = { role: 'hotspot' };
   const prose = { role: 'prose' };
   const link = { role: 'link' };
@@ -283,12 +283,12 @@ await test('左缘热区点击守卫：落在热区上的干净点击才触发�
   assert.equal(
     isCleanHotspotClick({ target: hotspot, currentTarget: hotspot }, collapsedView),
     true,
-    '按下与松手都在热区上：切换/补跑'
+    '按下与松手都在窄带上：切换' 
   );
   assert.equal(
     isCleanHotspotClick({ target: prose, currentTarget: hotspot }, collapsedView),
     false,
-    '在热区按下、拖到正文松手：click 归公共祖先（target 不是热区），算选字'
+    '在窄带上按下、拖到正文松手：click 归公共祖先（target 不是窄带），算选字'
   );
   assert.equal(
     isCleanHotspotClick({ target: link, currentTarget: hotspot }, collapsedView),
@@ -386,7 +386,7 @@ await test('在途期间行换代：旧代结果不得覆盖新代 pending', asy
   assert.equal(state.outcomes[0].translated, '新代:one', '旧代结果不得回写');
 });
 
-await test('请求异常按失败处理：行落 settled、块挂线但说不出细节', async () => {
+await test('请求异常按失败处理：行落 settled、块标失败但说不出细节', async () => {
   const store = createTranslateStore(async () => {
     throw new Error('boom');
   });
@@ -577,17 +577,17 @@ await test('标记名单点：只有成功/失败两种，正文里不存在任�
   assert.ok(!ASSISTANT_CSS.includes('border-left'), '样式表里一根竖线都不留');
   assert.ok(!ASSISTANT_CSS.includes('prose-indent'), '缩进规则整体退场');
   assert.ok(!ASSISTANT_CSS.includes('padding-left:12px'), '不再给正文补 12px');
-  assert.ok(!ASSISTANT_CSS.includes('prose-inflight'), '在途脉动退场');
+  assert.ok(!ASSISTANT_CSS.includes('prose-inflight'), '在途视觉标记退场');
   assert.ok(!ASSISTANT_CSS.includes('dsh-ct-prose-original'), '「备着译文的原文」不再是独立标记');
 });
 
-await test('动作单点：mark 唯一决定 toggle / retry / 没有热区', () => {
+await test('动作单点：mark 唯一决定 toggle / retry / 没有可点物', () => {
   assert.equal(proseAction('translated'), 'toggle', '有译文：窄带在译文与原文间切换');
   assert.equal(proseAction('failed'), 'retry', '失败：只有 ↻ 能点，整行补跑');
   assert.equal(proseAction(null), null, '没有结果：左缘没有任何可点物');
 });
 
-await test('窄带几何：只有 6px，整条落在正文左缘之外（不再借 12px 缩进）', () => {
+await test('窄带几何：只有 6px，整条落在正文左缘之外', () => {
   assert.match(
     ASSISTANT_CSS,
     /\.dsh-ct-hotspot\{position:absolute;left:-6px;top:0;bottom:0;width:6px;margin:0;padding:0;border:0;background:0 0;cursor:pointer;z-index:2/,
@@ -622,8 +622,8 @@ await test('↻ 是真按钮：常驻、可点、在途转圈且按下去无事�
   );
   assert.match(
     ASSISTANT_CSS,
-    /@media \(prefers-reduced-motion:reduce\)\{\.dsh-ct-retry-spin\{animation:none\}\}/,
-    'reduced-motion 降级为静止的 ↻'
+    /@media \(prefers-reduced-motion:reduce\)\{\.dsh-ct-retry-spin\{animation:none\}\.dsh-ct-retry\[data-busy\]\{opacity:\.45\}\}/,
+    'reduced-motion 降级：不转圈，但「按下去没用」仍看得见（静态变淡）'
   );
 });
 

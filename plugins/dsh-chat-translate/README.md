@@ -19,6 +19,14 @@ DeepSeek Harness Web 界面的**助手回答正文翻译**插件。它接管助�
 - **DSH 原生配置接入**：配置就是本插件在 profile 里的插件配置——配置页经 `ctx.configForms` 读写条目 `dsh-chat-translate` 的 `config`，用户层落在当前 profile 的 patch；无任何自研配置文件，译文从不写回会话上下文。
 - **配置页挂在宿主「插件」页**：配置卡片注册进 `plugins.bundle.config`（key 为包名 `@lynn123411/dsh-chat-translate`），路径是「插件」→本插件详情页 —— 配置直接铺在描述之下、行列表之上。页面由宿主画标题、图标与面包屑，卡片提供总开关、API Key、Base URL、模型、单次请求超时与「测试 AI 通道」；设置页里不再有任何本插件的入口。做法与约束见仓库 `docs/rules/plugin-config-page.md`。
 
+## 校验
+
+```bash
+cd plugins/dsh-chat-translate && pnpm check
+```
+
+`check` 串起类型检查、构建、七份测试与产物门禁（`lib/` 不被索引跟踪）。测试覆盖：行渲染计划与宿主 `AssistantMarkdown` 的分支等价、翻译呈现单点（成功/失败两种标记、失败原因与补跑在途）、翻译池（同代幂等、换代重发、逐批落定、手动补跑、LRU）、配置面策略跟随，以及真 react + jsdom 的渲染自检——窄带切换、拖选与点正文不误触、失败段 ↻ 是唯一可点物、补跑在途原地转圈且不重挂载（键盘焦点不掉）、服务端败因进 ↻ 自己的读屏标签。服务端半边另有结构重装配、缓存与通道契约的回归。
+
 ## 安装
 
 ```bash

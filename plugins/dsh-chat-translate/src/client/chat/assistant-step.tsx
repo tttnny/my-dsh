@@ -398,7 +398,9 @@ function ProseBlock({
     {
       type: 'button',
       className: RETRY_CLASS,
-      'aria-label': retryBusy ? copy.retryBusyAria : copy.retryAria,
+      // 败因进按钮自己的读屏标签：气泡只在 openOnClick 时才挂 aria-describedby，
+      // 读屏用户不悬停，标签是他们唯一能听到「超时 / 断流 / 空返回」的地方。
+      'aria-label': retryBusy ? copy.retryBusyAria(fail) : copy.retryAria(fail),
       ...(retryBusy ? { [RETRY_BUSY_ATTR]: 'true' } : {}),
       tabIndex: 0,
       onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -415,7 +417,7 @@ function ProseBlock({
     React.createElement(
       'span',
       { className: RETRY_SPIN_CLASS, 'aria-hidden': true },
-      React.createElement(IconRefreshOutlineRegular, { size: 12 })
+      React.createElement(IconRefreshOutlineRegular, { size: 10 })
     )
   );
 
