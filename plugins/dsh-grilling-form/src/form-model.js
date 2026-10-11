@@ -96,7 +96,7 @@ import { normalizeOption } from './recommendation.js';
  *   2. `scripts/test-form-model.mjs`、`scripts/smoke-host.mjs`、`scripts/test-form-session.mjs`、
  *      `scripts/test-render.mjs` 里的字面量钉（起止行、作答段的逐行形状、会话键）；
  *   3. 本包 `README.md` 与仓库根 `README.md` 的插件表；
- *   4. matt-skills 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）：工具改名时
+ *   4. matt-skills-dsh 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）：工具改名时
  *      正文里那句工具名要跟着改。它不随本包发布、也没有任何测试看得见它，漂移只会以模型行为
  *      静默表现出来。
  * 新增任何写死这些字面量的测试或文档，都要补进这份清单。 */
@@ -217,7 +217,7 @@ function labelAlias(label) {
  *
  * 只认行首、且要求别名后面就是分隔符，是为了把误拒面压到最小：正文里顺口提到某个选项名
  * （「选甲：…」）不算，只有「一条以选项名开头的条目」才算。代价是漏放与误拒都还可能发生，
- * 所以技能正文那半边（tttnny/matt-skills 的 grilling 技能，字段映射段）是第一道闸。
+ * 所以技能正文那半边（tttnny/matt-skills-dsh 的 grilling 技能，字段映射段）是第一道闸。
  * @param {unknown} detail - 展开正文（markdown）。
  * @param {string[]} aliases - 该题各选项的别名。
  * @returns {string|undefined} 命中的那一行；没命中时 undefined。
