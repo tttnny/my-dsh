@@ -19,7 +19,7 @@ export {
   fetchMarketplacePins,
   deriveUserIdFromToken,
 } from './server/a6api-client.js';
-export { probeSingleModel, getKnownMerchantsFromLogs } from './server/probe.js';
+export { probeSingleModel, buildProbeRequest, getKnownMerchantsFromLogs } from './server/probe.js';
 export {
   resolveModelMeta,
   inferBrand,
@@ -651,7 +651,9 @@ export function apply(ctx: any): void {
               const modelName = body.modelName;
 
               if (modelName && modelName !== 'all') {
-                const result = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, modelName);
+                // 协议现读现用：readConfig 每次都以线路块里的 api 为准（零模型时才回落到插件记住的
+                // 那个），所以换协议后下一次探测立刻走新协议，不需要重启。
+                const result = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, modelName, config.protocol);
                 if (result.merchant) {
                   merchantCardCache.set(modelName.toLowerCase(), { card: result.merchant, at: Date.now() });
                 }
@@ -684,7 +686,7 @@ export function apply(ctx: any): void {
                   if (i >= modelIds.length) return;
                   const m = modelIds[i];
                   try {
-                    const r = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, m);
+                    const r = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, m, config.protocol);
                     if (r.merchant) {
                       merchantCardCache.set(m.toLowerCase(), { card: r.merchant, at: Date.now() });
                     }
@@ -768,7 +770,7 @@ export function apply(ctx: any): void {
               if ((!card || !tokenId) && config.apiKey) {
                 let probedOk = false;
                 try {
-                  const probe = await probeSingleModel(config.baseURL, config.apiKey, userId, token, modelName);
+                  const probe = await probeSingleModel(config.baseURL, config.apiKey, userId, token, modelName, config.protocol);
                   probedOk = Boolean(probe && probe.success);
                   if (!tokenId && probe.tokenId && Number(probe.tokenId) > 0) tokenId = Number(probe.tokenId);
                   if (!card && probe.merchant) {
@@ -861,7 +863,7 @@ export function apply(ctx: any): void {
               if (!card && config.apiKey) {
                 let probedOk = false;
                 try {
-                  const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName);
+                  const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName, config.protocol);
                   probedOk = Boolean(probe && probe.success);
                   if (probe.merchant) {
                     card = probe.merchant;
@@ -900,7 +902,7 @@ export function apply(ctx: any): void {
               if (!card && config.apiKey) {
                 let probedOk = false;
                 try {
-                  const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName);
+                  const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName, config.protocol);
                   probedOk = Boolean(probe && probe.success);
                   if (probe.merchant) {
                     card = probe.merchant;

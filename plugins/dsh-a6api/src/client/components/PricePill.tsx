@@ -4,9 +4,9 @@ import { dictionaryT, type A6apiT } from '../locales.js';
 import type { PriceFluctuationState } from '../../types.js';
 
 /**
- * 价格波动胶囊（设置页头部与输入框下方浮层共用）：
+ * 价格波动胶囊（设置页头部与侧边栏入口浮层共用）：
  * 未配置令牌显示 `--`（禁用），无变动置灰（禁用），有待处理时点击跳官网处理。
- * compact 为浮层内的紧凑缩窄版。浮层侧注册未带 locale，故 `t` 缺省回落到本插件字典。
+ * compact 为浮层内的紧凑缩窄版。`t` 由浮层透传，缺省回落到本插件字典。
  * 悬停文案走原生 Tooltip；胶囊禁用时仍要能解释“为什么点不了”，标签因此挂在 Tooltip 上
  * （而非 `disabled`），`disabled` 只控制气泡显隐，保持锚点不重挂载。
  */
