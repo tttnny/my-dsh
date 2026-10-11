@@ -1,6 +1,6 @@
 import React from 'react';
 import { A6ApiSettingsPanel } from './components/A6ApiSettings.js';
-import { A6ApiComposerCard } from './components/A6ApiComposerCard.js';
+import { SidebarCard } from './components/SidebarCard.js';
 import { BUNDLE_CONFIG_KEY, BUNDLE_CONFIG_SLOT, setupPluginPage } from './settings/plugin-page.js';
 import { en, NS, zh } from './locales.js';
 import mainCss from './styles/main.css';
@@ -42,7 +42,7 @@ export function apply(ctx: any): void {
   registerNavDicts(ctx);
   if (typeof window === 'undefined') return;
   // 启动预热 + 后台轮询：插件随 DSH 启动即后台拉取一次完整状态（服务端 /state 已并行化），
-  // 之后每 60s 整体刷新 —— 用户打开输入框下方的浮层/插件配置页时数据已就绪，秒开无 spinner。
+  // 之后每 60s 整体刷新 —— 用户打开侧边栏入口的浮层/插件配置页时数据已就绪，秒开无 spinner。
   // 必须挂在 ctx.effect 内：卸载 / 热重载（HMR）时清掉启动定时器并停掉 store 的 60s 轮询，
   // 否则每次重新 apply 都会再挂一份无 disposer 的定时器（旧实现 setTimeout 在 effect 之外）。
   // 清理复用 store.stopAutoRefresh()（clear interval 并置空 autoRefreshTimer）；
@@ -87,22 +87,43 @@ export function apply(ctx: any): void {
       'dsh-a6api: plugins page config',
     );
 
-    // 输入框下方那一行的「A6api」按钮:点击贴按钮上沿向上弹出当前会话 A6api 模型的 MerchantCard 浮层。
-    // order -1 让按钮排在官方 StatsPills(order 0)左侧;会话身份由该 slot 的会话级标准属性 sessionId 提供。
-    // getter 在 apply 闭包创建一次,引用稳定,避免 entry 重渲染触发组件 effect 反复重订阅
+    // 侧边栏最下方、「设置」上方的「A6api」入口:点击从按钮右侧弹出当前会话 A6api
+    // 模型的 MerchantCard 浮层。宿主把 sidebar.footer.action 渲染在 sidebar.settings
+    // 之前(即「设置」上方),两种侧边栏宽度都如此。
+    // 该 slot 是 root 作用域:屋主只给 wide(没有会话身份),当前会话由组件经全局会话
+    // 来源 useSessions 求出(取主视图保有的那个会话),模型选择仍走 modelDirectories。
+    // order -1 让本条目排在可选的 Cordis 面板(order 0)之前。
+    // getter 在 apply 闭包创建一次,引用稳定,避免 entry 重渲染触发组件 effect 反复重订阅。
     const getModelDirectories = () =>
       ctx && typeof ctx.get === 'function' ? ctx.get('modelDirectories') : undefined;
-    slots.inject('conversation.composer.dock', () => {
+    // pluginNavigation 由宿主插件管理页在挂载期间 provide、卸载时回收,所以读法必须是
+    // 可选的 ctx.get(拿不到就隐藏「配置」胶囊),并用 internal/service 订阅它的显隐。
+    const getPluginNavigation = () =>
+      ctx && typeof ctx.get === 'function' ? ctx.get('pluginNavigation') : undefined;
+    const subscribePluginNavigation = (listener: () => void) => {
+      try {
+        return ctx.on('internal/service', (name: string) => {
+          if (name === 'pluginNavigation') listener();
+        });
+      } catch {
+        return () => {};
+      }
+    };
+    slots.inject('sidebar.footer.action', () => {
       return slots.register(
         {
-          name: 'conversation.composer.dock',
-          id: 'dsh-a6api-current-model',
+          name: 'sidebar.footer.action',
+          id: 'dsh-a6-sidebar-entry',
           order: -1,
+          label: 'A6api',
+          locale: NS,
         },
         (props: any) =>
-          React.createElement(A6ApiComposerCard, {
+          React.createElement(SidebarCard, {
             ...(props || {}),
             getModelDirectories,
+            getPluginNavigation,
+            subscribePluginNavigation,
           }),
       );
     });

@@ -16,9 +16,9 @@ export type A6apiT = TranslateNS<typeof NS>;
 /**
  * Translator over the Chinese source dictionary. The settings card always
  * receives the seat-bound `t`; this default exists only for the components the
- * composer dock popup shares (`MerchantCard`, `PricePill`, `MarketPill`) —
- * that registration declares no locale namespace and is outside this change.
- * `{name}` placeholders follow the locale runtime's template contract.
+ * sidebar entry's popup shares (`MerchantCard`, `PricePill`, `MarketPill`) when
+ * called without that prop. `{name}` placeholders follow the locale runtime's
+ * template contract.
  */
 export const dictionaryT = ((key: string, params?: Record<string, unknown>) => {
   const template = zh[key as A6apiLocaleKey];
@@ -102,7 +102,11 @@ export type A6apiLocaleKey =
   | 'tagStable' | 'tagCheap' | 'tagFast' | 'tagQuality'
   // Price / market pills
   | 'priceLabel' | 'priceTipNoToken' | 'priceTipAuthError' | 'priceTipZero' | 'priceTipPending'
-  | 'marketLabel' | 'marketTip';
+  | 'marketLabel' | 'marketTip'
+  // Sidebar entry + its popup
+  | 'sidebarTip' | 'sidebarTipOpen' | 'sidebarTipNoModel' | 'sidebarDialogLabel'
+  | 'sidebarBalanceTip' | 'configPill'
+  | 'sidebarNoModel' | 'sidebarNoMerchant' | 'sidebarNoMerchantHint' | 'sidebarOtherModel' | 'sidebarSwitchHint';
 
 /** English copy. */
 export const en: Record<A6apiLocaleKey, string> = {
@@ -375,6 +379,17 @@ export const en: Record<A6apiLocaleKey, string> = {
   priceTipPending: '{count} price changes need attention; click to handle them on the website',
   marketLabel: 'Model market',
   marketTip: 'Open the A6api model market',
+  sidebarTip: 'Current session’s A6api model card',
+  sidebarTipOpen: 'Collapse the A6api model card',
+  sidebarTipNoModel: 'This session uses no A6api model; the card is dimmed',
+  sidebarDialogLabel: 'Current session A6api model card',
+  sidebarBalanceTip: 'Account balance (synced every 60 seconds)',
+  configPill: 'Configure',
+  sidebarNoModel: 'This session uses no A6api model',
+  sidebarNoMerchant: 'No merchant data for “{name}”',
+  sidebarNoMerchantHint: 'Probe this model on the plugin’s configuration page',
+  sidebarOtherModel: '“{name}” has no merchant data yet',
+  sidebarSwitchHint: 'Switch to an A6api model to see its merchant card',
 };
 
 /** Chinese copy (the key-set source of truth). */
@@ -648,6 +663,17 @@ export const zh: Record<A6apiLocaleKey, string> = {
   priceTipPending: '有 {count} 条价格变动待处理，点击前往官网处理',
   marketLabel: '模型市场',
   marketTip: '前往 A6api 模型市场',
+  sidebarTip: '当前会话的 A6api 模型卡片',
+  sidebarTipOpen: '收起 A6api 模型卡片',
+  sidebarTipNoModel: '当前会话未使用 A6api 模型，卡片已置灰',
+  sidebarDialogLabel: '当前会话 A6api 模型卡片',
+  sidebarBalanceTip: '账户余额（每 60 秒自动同步）',
+  configPill: '配置',
+  sidebarNoModel: '当前会话未使用 A6api 模型',
+  sidebarNoMerchant: '未找到「{name}」的商户数据',
+  sidebarNoMerchantHint: '可在本插件配置页中探测该模型',
+  sidebarOtherModel: '「{name}」暂无商户数据',
+  sidebarSwitchHint: '切换到 A6api 模型后自动展示商户卡片',
 };
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
