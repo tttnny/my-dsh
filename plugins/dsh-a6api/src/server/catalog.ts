@@ -228,8 +228,24 @@ export async function clearCatalog(): Promise<void> {
   });
 }
 
+/** 档位字典/非推理标记是否等价（键序无关）：只有真改了档位才记 manual，改名称/上下文长度不算手改档位 */
+function sameReasoningEfforts(
+  a: CatalogModelEntry['reasoningEfforts'],
+  b: CatalogModelEntry['reasoningEfforts'],
+): boolean {
+  if (a === false || b === false) return a === b;
+  if (a === undefined || a === null || b === undefined || b === null) {
+    return (a ?? null) === (b ?? null);
+  }
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => k in b && a[k] === b[k]);
+}
+
 /** 全量替换式更新单个条目（模型目录页保存修改用）；patch 中值为 null 的字段 = 删除该字段。返回更新后的条目。
- *  用户手改档位（含改为非推理模型）时来源一并记为 manual：标记消失，后续查询也不再改动它。 */
+ *  用户手改档位（含改为非推理模型）时来源一并记为 manual：标记消失，后续查询也不再改动它。
+ *  只改名称/上下文长度这类与档位无关的字段不算手改档位（否则一次改名就把该模型的档位永久冻结）。 */
 export async function updateCatalogEntry(
   id: string,
   patch: Partial<Omit<CatalogModelEntry, 'id'>>,
@@ -244,7 +260,7 @@ export async function updateCatalogEntry(
       if ((patch as any)[k] === null) delete (next as any)[k];
     }
     // 用户手改了档位：来源记 manual（已确认），并清掉与本次无关的「本次变更」记录
-    if ('reasoningEfforts' in patch) {
+    if ('reasoningEfforts' in patch && !sameReasoningEfforts(cur[idx].reasoningEfforts, next.reasoningEfforts)) {
       next.reasoningSource = 'manual';
       delete next.reasoningChange;
     }
@@ -523,7 +539,7 @@ function countReasoningLevels(value: CatalogModelEntry['reasoningEfforts']): num
  * - 其余档位名与 DSH 档位同名，直接用档位名本身作线上拼写；
  * - 上游（或今后新增）无法映射的 token 直接丢弃，不写死白名单；
  * - DSH 要求除 off 外至少一个思考档位，因此只映射出 off（或一个都没有）时返回 null
- *   ——调用方保持「有标记无明细」的处理，不伪造一个非法字典。
+ *   ——调用方按「上游有没有明确说没有档位」决定下一步（见 declaresNoReasoning）。
  * 键序按 DSH 档位顺序输出，保证目录里的展示与写盘结果稳定。
  */
 function mapEffortsToDsh(supported: unknown): Record<string, string | null> | null {
@@ -541,6 +557,18 @@ function mapEffortsToDsh(supported: unknown): Record<string, string | null> | nu
   // 与服务端 /catalog/update、客户端编辑保存共用同一套 DSH 语义校验，映射结果必须过
   const checked = validateReasoningEfforts(out);
   return checked.ok && checked.value !== false ? checked.value : null;
+}
+
+/**
+ * 上游是否**明确**声明该模型没有推理档位：给了档位白名单，而白名单里只有
+ * 「关闭」（`none` / `off`）。这是「上游明确无推理能力」，与「有推理标记但没给明细」
+ * 不同——前者应写成非推理模型，后者才保持默认档位并标未确认。
+ * 空数组或只有无法识别的 token 不算明确声明（那是「没给明细」，不是「说没有」）。
+ */
+function declaresNoReasoning(supported: unknown): boolean {
+  if (!Array.isArray(supported) || supported.length === 0) return false;
+  const tokens = supported.map((t) => String(t ?? '').trim().toLowerCase()).filter(Boolean);
+  return tokens.length > 0 && tokens.every((t) => t === 'none' || t === 'off');
 }
 
 /**
@@ -566,9 +594,10 @@ export interface OrQueryResult {
 
 /**
  * 对一批模型 ID 查询 OpenRouter 并填充目录（能查到的填充，查不到的保持空参数字段）。
- * 档位按上游返回分三种处理：
+ * 档位按上游返回分四种处理：
  * - 带档位白名单 → 收窄为 DSH 档位字典，来源记 queried（已确认）；数量与上一次不同时
  *   记下「本次变更」（from/to/at），供目录行渲染「本次从 N 档变 M 档」；
+ * - 白名单里只有「关闭」→ 上游明确没有推理档位 → 非推理模型（false），来源记 queried；
  * - 有推理标记但无档位明细 → 保持默认 7 档，来源仍为未确认；
  * - 完全没有推理相关标记 → 写入非推理模型（false），来源记 queried。
  * 覆盖规则：来源为 manual 的条目一律跳过（不靠合并语义兜底，在这里显式跳过）。
@@ -614,6 +643,12 @@ export async function queryOpenRouter(ids: string[]): Promise<OrQueryResult> {
       patch.reasoningSource = 'queried';
       // 数量没变就不留旧记录（避免展示一条与本次无关的「本次变更」）
       patch.reasoningChange = from !== to ? { from, to, at: now } : null;
+    } else if (declaresNoReasoning(hit.reasoning?.supported_efforts)) {
+      // 上游给了白名单、里面只有「关闭」：明确没有可用的推理档位 → 非推理模型，已确认。
+      // 不能退回默认 7 档：那等于替上游声明它不接受的档位，用户选中就会直接被上游报错。
+      patch.reasoningEfforts = false;
+      patch.reasoningSource = 'queried';
+      patch.reasoningChange = null;
     } else if (hasReasoningMarker(hit)) {
       // 有推理标记但没有档位明细：保持默认 7 档，来源仍为未确认（missing/非法值都读作 default）
       patch.reasoningEfforts = { ...DEFAULT_REASONING_EFFORTS };

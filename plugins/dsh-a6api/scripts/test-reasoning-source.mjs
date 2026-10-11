@@ -7,7 +7,7 @@
  * `supported_reasoning_efforts` field, and "off" is the literal string `"none"`.
  * Levels are declarative: DSH only filters the options it is told about and never
  * trims them to what upstream accepts, so a wrong declaration surfaces as an
- * upstream parameter error at request time. This check pins the six shapes the
+ * upstream parameter error at request time. This check pins the shapes the
  * catalog can end up in, driven through the real write channel and fake upstream
  * responses (no network):
  *   1. an old entry with no source field reads as unconfirmed;
@@ -17,7 +17,11 @@
  *      the entry confirmed;
  *   4. a reasoning flag with no allowlist keeps 7 levels and stays unconfirmed;
  *   5. no reasoning marker at all becomes a non-reasoning model, confirmed;
- *   6. a hand-edited entry is not overwritten by a later query and stays confirmed.
+ *   6. a hand-edited entry is not overwritten by a later query and stays confirmed;
+ *   7. an allowlist that only offers "none" becomes a non-reasoning model (upstream
+ *      has said there is no level to pick, so the default 7 must not be written);
+ *   8. a save that leaves the levels alone (a rename) is not a hand edit and stays
+ *      queryable, while a real level change is.
  * It also pins the boundary: the internal source / change fields never reach the
  * DSH route configuration, and a failing upstream query only fails that action.
  *
@@ -49,6 +53,10 @@ const OR_MODELS = [
   { id: 'plain/chat-only', supported_parameters: ['temperature', 'max_tokens'] },
   // (6) a different allowlist that a hand-edited entry must not pick up
   { id: 'hand/edited-model', reasoning: { mandatory: false, supported_efforts: ['max', 'minimal'] } },
+  // (7) an allowlist that only ever offers "none" → upstream declares no level
+  { id: 'none-only-model', reasoning: { mandatory: false, supported_efforts: ['none'] } },
+  // (8) an entry whose name is edited without touching the levels
+  { id: 'name-only-model', reasoning: { mandatory: false, supported_efforts: ['high', 'low', 'none'] } },
 ]
 
 const MARKET_ITEMS = [
@@ -84,6 +92,8 @@ writeFileSync(catalogJson, JSON.stringify({
     { id: 'inclusionai/ling-3.1-flash', brand: 'Other', reasoningEfforts: { ...DEFAULT_7 } },
     { id: 'plain/chat-only', brand: 'Other', reasoningEfforts: { ...DEFAULT_7 } },
     { id: 'hand/edited-model', brand: 'Other', reasoningEfforts: { ...DEFAULT_7 } },
+    { id: 'none-only-model', brand: 'Other', reasoningEfforts: { ...DEFAULT_7 } },
+    { id: 'name-only-model', brand: 'Other', reasoningEfforts: { ...DEFAULT_7 } },
   ],
 }))
 
@@ -171,7 +181,7 @@ const levelsOf = (entry) =>
   orFails = false
   const still = await callRead('catalog')
   check('the failure leaves the rest of the feature working (catalog still readable)',
-    still.ok === true && still.catalog.length === 6)
+    still.ok === true && still.catalog.length === 8)
 }
 
 // 1. An entry without a source field reads as unconfirmed.
@@ -232,6 +242,60 @@ const levelsOf = (entry) =>
   const entry = getCatalogEntry('plain/chat-only')
   check('a model with no reasoning marker becomes a non-reasoning model', entry?.reasoningEfforts === false)
   check('a non-reasoning model is confirmed (source queried)', entry?.reasoningSource === 'queried')
+}
+
+// 5b. An allowlist that only lists "none" is upstream declaring there is no
+// level to choose. It must become a non-reasoning model — falling back to the
+// default 7 would declare levels upstream has already said it does not take,
+// which is exactly the error this ticket exists to prevent.
+{
+  const queried = await callWrite('catalog/query-openrouter', { modelIds: ['none-only-model'] })
+  check('a none-only allowlist is queried successfully', queried.status === 200 && queried.body?.ok === true)
+  const entry = getCatalogEntry('none-only-model')
+  check('an allowlist that only offers "none" becomes a non-reasoning model', entry?.reasoningEfforts === false)
+  check('a none-only allowlist is confirmed (source queried)', entry?.reasoningSource === 'queried')
+}
+
+// 5c. Editing only the model's name must not count as hand-editing its levels.
+// The catalog page always posts the whole draft — name AND the level text —
+// so a rename arrives with `reasoningEfforts` present and value-identical to
+// what the entry already holds. Treating that as a hand edit would freeze the
+// entry out of every later query (source manual skips it forever).
+{
+  await callWrite('catalog/query-openrouter', { modelIds: ['name-only-model'] })
+  const queried = getCatalogEntry('name-only-model')
+  check('precondition: the name-only model was narrowed by the query', levelsOf(queried) === 3)
+  check('precondition: the name-only model is confirmed by the query', queried?.reasoningSource === 'queried')
+  // The page round-trips the entry's own levels back into the draft text; rebuild
+  // exactly that payload so the check exercises the real client shape.
+  const draftLevels = Object.fromEntries(Object.entries(queried.reasoningEfforts))
+
+  const saved = await callWrite('catalog/update', {
+    id: 'name-only-model',
+    name: 'Renamed only',
+    reasoningEfforts: draftLevels,
+  })
+  check('a name-only save is accepted', saved.status === 200 && saved.body?.ok === true)
+  const renamed = getCatalogEntry('name-only-model')
+  check('a name-only save keeps the queried levels', levelsOf(renamed) === 3)
+  check('a name-only save does not mark the entry hand-edited', renamed?.reasoningSource === 'queried')
+
+  // And the proof that it is still queryable: the forged allowlist is ["high",
+  // "low", "none"], so a query that still applies re-narrows it to 3 levels.
+  const requery = await callWrite('catalog/query-openrouter', { modelIds: ['name-only-model'] })
+  check('a name-only save stays queryable (not skipped)',
+    Array.isArray(requery.body?.skipped) && !requery.body.skipped.includes('name-only-model'))
+
+  // Negative control: a real level change on the same model does mark it manual.
+  const edited = await callWrite('catalog/update', {
+    id: 'name-only-model',
+    reasoningEfforts: { off: null, high: 'high' },
+  })
+  check('a real level change on the same model is accepted', edited.status === 200 && edited.body?.ok === true)
+  const manual = getCatalogEntry('name-only-model')
+  check('a real level change is marked hand-edited', manual?.reasoningSource === 'manual')
+  check('a real level change is skipped by a later query',
+    (await callWrite('catalog/query-openrouter', { modelIds: ['name-only-model'] })).body?.skipped?.includes('name-only-model') === true)
 }
 
 // 6. Hand-edited entries are confirmed and survive later queries.

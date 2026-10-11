@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button, Tag, Tooltip, type TagTone } from '@deepseek-ai/dsh-client-ui-primitives';
 import { dictionaryT, type A6apiT } from '../locales.js';
 import { store } from '../store.js';
-import type { ModelCardData } from '../../types.js';
+import { isReasoningConfirmed, type ModelCardData } from '../../types.js';
 
 // 秒级时间戳 → 绝对时间文案 (MM-DD HH:mm:ss，跨年时带年)
 const formatAbsolute = (tsSec: number) => {
@@ -240,11 +240,11 @@ export const MerchantCard: React.FC<{
         { key: 'quality', tone: 'neutral' as TagTone, label: t('tagQuality') },
       ];
 
-  // 「档位未确认」：服务端下发来源，非 queried/manual 即未确认。
+  // 「档位未确认」：服务端下发来源，非 queried/manual 即未确认（判据与目录页共用 types.ts 那一份）。
   // 兼容旧版 /state（不下发 reasoningSource）：只要有推理档位就按未确认显示，宁可多标不可漏标。
   const reasoningUnconfirmed =
     model.reasoningSource !== undefined
-      ? model.reasoningSource !== 'queried' && model.reasoningSource !== 'manual'
+      ? !isReasoningConfirmed(model.reasoningSource)
       : model.hasReasoning;
 
   return (

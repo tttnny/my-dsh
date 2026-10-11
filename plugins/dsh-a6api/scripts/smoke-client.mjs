@@ -497,6 +497,22 @@ check('popup width shrinks to the space right of the button in a narrow window',
 check('popup keeps its left edge anchored to the button in a narrow window',
   narrowPopup?.props.style?.left === 44 + 8)
 act(() => { narrowTree.unmount() })
+
+// A window narrower than the button's own right edge plus a usable card leaves
+// the plain formula with a negative width. The popup must clamp to its width
+// floor instead of handing CSS an impossible value, and must pull its left edge
+// back so the card still starts on screen.
+globalThis.window.innerWidth = 100
+let tinyTree
+act(() => { tinyTree = renderEntry({ wide: true }) })
+act(() => { tinyTree.root.findByType('button').props.onClick() })
+const tinyPopup = tinyTree.root.findAll(node => node.props.role === 'dialog')[0]
+check('popup width never goes negative in a tiny window',
+  typeof tinyPopup?.props.style?.width === 'number' && tinyPopup.props.style.width > 0)
+check('popup keeps its width floor in a tiny window', tinyPopup?.props.style?.width === 240)
+check('popup pulls its left edge back into the viewport in a tiny window',
+  tinyPopup?.props.style?.left === 8)
+act(() => { tinyTree.unmount() })
 globalThis.window.innerWidth = realInnerWidth
 
 act(() => tree.unmount())

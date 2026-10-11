@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { IconApiOutlineMedium, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
 import { dictionaryT, type A6apiT } from '../locales.js';
+import { BUNDLE_CONFIG_KEY } from '../settings/plugin-page.js';
 import { store } from '../store.js';
 import { MerchantCard } from './MerchantCard.js';
 import { PricePill } from './PricePill.js';
@@ -8,13 +9,12 @@ import { MarketPill } from './MarketPill.js';
 
 /** 浮层宽度上限；实际宽度取它与「视口宽 - 左边缘 - 间距」中的较小值 */
 const POPUP_MAX_WIDTH = 500;
+/** 浮层宽度下限：窗口窄到算不出正宽度时也不能给 CSS 一个负数宽度 */
+const POPUP_MIN_WIDTH = 240;
 /** 浮层与按钮之间、浮层与视口边缘之间的间距 */
 const POPUP_GAP = 8;
 /** 按钮上方空间不足时的浮层高度下限，再小就只剩一条滚动缝 */
 const POPUP_MIN_HEIGHT = 120;
-
-/** 本插件的 bundle 包名：`pluginNavigation.openBundle` 用它打开自己的配置页 */
-export const BUNDLE_NAME = '@lynn123411/dsh-a6api';
 
 /** 把 DSH 模型 ID 归一化为 A6api 模型名（剥离 provider 前缀，如 a6api/gpt-4o → gpt-4o） */
 const normalizeModelId = (id: string): string => id.replace(/^[^/]+\//, '');
@@ -197,9 +197,11 @@ export const SidebarCard: React.FC<SidebarCardProps> = ({
       if (!btn) return;
       const r = btn.getBoundingClientRect();
       const vw = window.innerWidth;
-      // 按钮在屏幕左侧,浮层只能往右长:左边缘贴按钮右缘加间距,宽度取上限与剩余视野的较小值
-      const left = r.right + POPUP_GAP;
-      const width = Math.min(POPUP_MAX_WIDTH, vw - left - POPUP_GAP);
+      // 按钮在屏幕左侧,浮层只能往右长:左边缘贴按钮右缘加间距,宽度取上限与剩余视野的较小值。
+      // 窗口窄到剩余视野不足下限时,宽度保底到下限并把左边缘往左收,免得算出负宽度、浮层消失。
+      const anchorLeft = r.right + POPUP_GAP;
+      const width = Math.max(POPUP_MIN_WIDTH, Math.min(POPUP_MAX_WIDTH, vw - anchorLeft - POPUP_GAP));
+      const left = Math.max(POPUP_GAP, Math.min(anchorLeft, vw - width - POPUP_GAP));
       // 浮层下边缘停在按钮上边缘之上;高度上限取按钮上方可用空间,内容超出时浮层内部滚动
       const bottom = window.innerHeight - r.top + POPUP_GAP;
       const maxHeight = Math.max(POPUP_MIN_HEIGHT, r.top - 2 * POPUP_GAP);
@@ -313,7 +315,7 @@ export const SidebarCard: React.FC<SidebarCardProps> = ({
                 className="dsh-a6-config-pill"
                 onClick={() => {
                   try {
-                    pluginNavigation.openBundle(BUNDLE_NAME);
+                    pluginNavigation.openBundle(BUNDLE_CONFIG_KEY);
                   } catch {}
                 }}
               >

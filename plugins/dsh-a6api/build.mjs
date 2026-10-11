@@ -1,8 +1,13 @@
 import { build } from 'esbuild';
-import { mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync, execSync } from 'node:child_process';
 
 mkdirSync('lib', { recursive: true });
+
+// 声明产物是 src/ 的镜像：tsc 从不清理 outDir，删掉或改名的模块会把它旧的 .d.ts
+// 一直留在发布包里（`files` 含 lib）——产物门禁只断言 lib/ 未被 git 跟踪，拦不住
+// 这种陈旧镜像。emit 前先清掉，保证 lib/types 与 src/ 一一对应。
+rmSync('lib/types', { recursive: true, force: true });
 
 const pkgName = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).name;
 
