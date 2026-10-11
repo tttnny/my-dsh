@@ -31,12 +31,12 @@ DSH 源码已拉取到本地 `/Users/tny/Desktop/work/other/deepseek-harness`；
 
 ### Issue tracker
 
-issue 与 spec 都在本仓库的 GitHub Issues 里，用 `gh` CLI 读写。见 `docs/agents/issue-tracker.md`。
+Issues and specs live in this repo's GitHub Issues (`tttnny/my-dsh`), read and written with the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-五个 triage 角色使用同名 label 字符串（`needs-triage` 等），与仓库已建 label 一致。见 `docs/agents/triage-labels.md`。
+The five triage state roles map to Chinese label strings. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-单上下文（single-context）：领域文档落在根 `GLOSSARY.md` 与 `docs/adr/`，按需惰性创建。见 `docs/agents/domain.md`。
+Single-context: one `GLOSSARY.md` and one `docs/adr/` at the repo root. See `docs/agents/domain.md`.
