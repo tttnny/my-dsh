@@ -28,9 +28,11 @@ const check = (label, ok) => {
   else { console.log(`  FAIL ${label}`); failures.push(label) }
 }
 
-const descriptor = (models) => ({
+const OFFICIAL_BASE_URL = 'https://api.a6api.com'
+
+const descriptor = (models, baseURL = `${OFFICIAL_BASE_URL}/v1`) => ({
   ns: 'llm-pi-ai',
-  value: { providers: { a6api: { baseURL: 'https://api.a6api.com/v1', models: models.map((id) => ({ id })) } } },
+  value: { providers: { a6api: { baseURL, models: models.map((id) => ({ id })) } } },
 })
 
 /** A fake ctx whose settings service implements only what 0.1.7 exposes. */
@@ -41,8 +43,19 @@ const ctxWith = (settings) => ({ get: (name) => (name === 'settings' ? settings 
   const access = createConfigAccess(ctxWith({ describe: () => [descriptor(['m-a', 'm-b'])] }))
   const cfg = await access.readConfig()
   check('describe() value is read back', cfg.activeModels.join(',') === 'm-a,m-b')
-  check('baseURL is stripped of /v1', cfg.baseURL === 'https://api.a6api.com')
+  check('readConfig always reports the official address', cfg.baseURL === OFFICIAL_BASE_URL)
   check('getDshConfiguredModels goes through describe()', (await access.getDshConfiguredModels()).join(',') === 'm-a,m-b')
+}
+
+// 1b. The address is plugin-owned: whatever a route config still carries, the
+// read-back is the official one (an old custom/CDN node silently becomes official
+// the next time the plugin writes the route block).
+{
+  for (const stored of ['https://a6.a6api.com/v1', 'https://my-gateway.example.com/v1', 'https://my-gateway.example.com']) {
+    const access = createConfigAccess(ctxWith({ describe: () => [descriptor(['m-a'], stored)] }))
+    const cfg = await access.readConfig()
+    check(`non-official stored address ${stored} reads back as the official one`, cfg.baseURL === OFFICIAL_BASE_URL)
+  }
 }
 
 // 2. Negative control: a throwing update() must escape and must not write a file.
@@ -54,7 +67,7 @@ const ctxWith = (settings) => ({ get: (name) => (name === 'settings' ? settings 
     mutate: async () => {},
   }))
   let caught
-  try { await access.syncModels('https://api.a6api.com', ['m-a']) } catch (error) { caught = error }
+  try { await access.syncModels(['m-a']) } catch (error) { caught = error }
   check('update() failure propagates to the caller', caught === boom)
   check('update() failure writes no settings.yaml', !existsSync(settingsYaml))
 }
@@ -68,16 +81,30 @@ const ctxWith = (settings) => ({ get: (name) => (name === 'settings' ? settings 
     mutate: async () => { throw boom },
   }))
   let caught
-  try { await access.syncModels('https://api.a6api.com', []) } catch (error) { caught = error }
+  try { await access.syncModels([]) } catch (error) { caught = error }
   check('mutate() failure propagates to the caller', caught === boom)
   check('mutate() failure writes no settings.yaml', !existsSync(settingsYaml))
+}
+
+// 3b. The write path pins the official address: an old non-official address in
+// the stored block cannot survive a model sync (it is silently rewritten).
+{
+  let written
+  const access = createConfigAccess(ctxWith({
+    describe: () => [descriptor(['m-a'], 'https://my-gateway.example.com/v1')],
+    update: async (_ns, value) => { written = value },
+    mutate: async () => {},
+  }))
+  await access.syncModels(['m-a'])
+  check('the written route block uses the official address',
+    written?.providers?.a6api?.baseURL === `${OFFICIAL_BASE_URL}/v1`)
 }
 
 // 4. Negative control: without ctx.settings the write refuses instead of faking one.
 {
   const access = createConfigAccess({ get: () => undefined })
   let caught
-  try { await access.syncModels('https://api.a6api.com', ['m-a']) } catch (error) { caught = error }
+  try { await access.syncModels(['m-a']) } catch (error) { caught = error }
   check('missing ctx.settings refuses the write', caught instanceof Error && /SettingsForms/.test(caught.message))
   check('missing ctx.settings writes no settings.yaml', !existsSync(settingsYaml))
 }

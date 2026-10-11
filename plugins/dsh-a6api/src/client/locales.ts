@@ -40,7 +40,6 @@ export type A6apiLocaleKey =
   | 'cancel' | 'cancelProbeTip'
   | 'emptyLoading' | 'emptyNoMatch' | 'emptyEnabled' | 'emptyProbed' | 'emptyNoKey' | 'emptyNone'
   // Config tab
-  | 'nodeTitle' | 'nodeDesc' | 'nodeCdn' | 'nodeDirect' | 'nodeCustom' | 'customNodePlaceholder'
   | 'authTitle' | 'authDesc'
   | 'apiKeyLabel' | 'clear' | 'hide' | 'show'
   | 'apiKeyPlaceholderSet' | 'apiKeyPlaceholder' | 'apiKeyHintSet' | 'apiKeyHint'
@@ -134,12 +133,6 @@ export const en: Record<A6apiLocaleKey, string> = {
   emptyProbed: 'No merchant route has been probed yet. Use “Probe merchant” on a model card or “Probe all” above to start.',
   emptyNoKey: 'Open the Configuration tab, enter your A6API API key and save it to load the available model list automatically.',
   emptyNone: 'This token has no available models. Check the token restrictions in the A6API console.',
-  nodeTitle: 'API gateway node (Base URL)',
-  nodeDesc: 'Pick the A6API gateway closest to you; both CDN and direct fallback nodes are available.',
-  nodeCdn: 'CDN recommended',
-  nodeDirect: 'direct fallback',
-  nodeCustom: 'Custom node',
-  customNodePlaceholder: 'https://your-custom-gateway.com',
   authTitle: 'Authentication and token credentials',
   authDesc: 'Configure the API key used for model calls and the system access token used to sync account balance and merchant quotes.',
   apiKeyLabel: 'A6API key',
@@ -404,12 +397,6 @@ export const zh: Record<A6apiLocaleKey, string> = {
   emptyProbed: '尚未探测任何模型商户线路，点击模型卡片上的「探测商家」或上方「一键全量探测」即可开始。',
   emptyNoKey: '请前往「基础配置」页面填入您的 A6API 令牌 (API Key) 并保存，即可自动加载可用模型列表。',
   emptyNone: '当前令牌暂无可用模型，请检查 A6API 控制台中的令牌限制设置。',
-  nodeTitle: 'API 接入节点 (Base URL)',
-  nodeDesc: '选择离您最近的 A6API 聚合网关接入点，支持 CDN 节点与直连备用节点。',
-  nodeCdn: 'CDN 推荐',
-  nodeDirect: '直连备用',
-  nodeCustom: '自定义节点',
-  customNodePlaceholder: 'https://your-custom-gateway.com',
   authTitle: '访问鉴权与令牌凭据',
   authDesc: '配置模型调用 API Key 以及用于同步账户余额与商户行情的系统访问令牌。',
   apiKeyLabel: 'A6API 令牌 (API Key)',
