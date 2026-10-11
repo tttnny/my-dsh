@@ -471,6 +471,78 @@ if (panelTree) {
       .some(key => configPageText.includes(key)),
   )
 
+  // The model-protocol section: one choice for the whole route, three options,
+  // OpenAI Chat first (the default that keeps existing setups unchanged). The
+  // stub primitives render nothing of their own, so the segments are read off
+  // the props the page handed SegmentedControl.
+  const protocolControl = configPage === undefined ? undefined : configPage.findAll(
+    (node) => node.props?.id === 'dsh-a6-protocol',
+  )[0]
+  check('config page renders the model-protocol choice', protocolControl !== undefined)
+  const protocolValues = (protocolControl?.props.options ?? []).map(option => option.value)
+  check(
+    'config page offers exactly the three host protocols',
+    protocolValues.join(',') === 'openai-completions,openai-responses,anthropic-messages',
+  )
+  check(
+    'config page defaults the protocol choice to OpenAI Chat',
+    protocolControl?.props.value === 'openai-completions',
+  )
+  // Position is asserted by tree order, not by text: the credentials fields sit
+  // above the protocol choice, which sits above the integration overview. The
+  // integration title is an h3, so it is a host node even with stub primitives;
+  // `t` is an identity stub, so its text is the locale key.
+  const orderedNodes = configPage === undefined ? [] : configPage.findAll(() => true)
+  const indexOfFirst = (predicate) => orderedNodes.findIndex(predicate)
+  const credentialIndex = indexOfFirst(
+    (node) => node.props?.type === 'password',
+  )
+  const protocolIndex = indexOfFirst((node) => node.props?.id === 'dsh-a6-protocol')
+  const integrationIndex = indexOfFirst(
+    (node) => elementText(node.props?.children) === 'integrationTitle',
+  )
+  check(
+    'the protocol section sits after the credentials and before the integration overview',
+    credentialIndex >= 0 && protocolIndex > credentialIndex && integrationIndex > protocolIndex,
+  )
+
+  // The integration overview describes the route the plugin actually writes, so
+  // its provider-value row must name the selected protocol instead of a fixed
+  // "OpenAI-compatible" claim that a Messages route would contradict.
+  check(
+    'the integration overview names the protocol actually in use',
+    elementText(configPage.findAll(
+      (node) => node.props?.className === 'dsh-a6-field-value',
+    )[0]?.props?.children).includes('protocolChat'),
+  )
+
+  // Switching must say which protocol is now in effect, and the switch must be
+  // the one-way channel it claims to be: no hidden second state.
+  check(
+    'the protocol section states which protocol is in effect',
+    configPageText.includes('protocolCurrent'),
+  )
+  act(() => protocolControl?.props.onChange('anthropic-messages'))
+  const switchedPage = panelTree.root.findAll(
+    (node) => node.props?.className === 'dsh-a6-config-page',
+  )[0]
+  const switchedControl = switchedPage?.findAll(
+    (node) => node.props?.id === 'dsh-a6-protocol',
+  )[0]
+  const switchedText = switchedPage === undefined ? '' : textOf(switchedPage)
+  check('switching selects the clicked protocol', switchedControl?.props.value === 'anthropic-messages')
+  check(
+    'switching replaces the description with the new protocol’s',
+    switchedText.includes('protocolMessagesHint') && !switchedText.includes('protocolChatHint'),
+  )
+  check('the in-effect line follows the switch', switchedText.includes('protocolCurrent'))
+  check(
+    'the integration overview follows the switch',
+    elementText(switchedPage?.findAll(
+      (node) => node.props?.className === 'dsh-a6-field-value',
+    )[0]?.props?.children).includes('protocolMessages'),
+  )
+
   // Migration guard: the custom `[data-tooltip]` attribute must be gone from the
   // rendered tree, and the bundle must have asked ui-primitives for `Tooltip`.
   const allProps = hostPropNames(panelTree)

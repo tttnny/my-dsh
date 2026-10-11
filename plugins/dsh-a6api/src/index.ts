@@ -6,7 +6,7 @@ import { resolveModelMeta, getCatalog, upsertCatalogEntries, clearCatalog, query
 import { createConfigAccess } from './server/sync.js';
 import type { ConfigAccess } from './server/sync.js';
 import type { A6ApiConfig, A6ApiStateResponse, MarketplacePin, MerchantChannelInfo, ModelCardData } from './types.js';
-import { validateReasoningEfforts } from './types.js';
+import { MODEL_PROTOCOLS, isModelProtocol, validateReasoningEfforts } from './types.js';
 
 export const name = '@lynn123411/dsh-a6api';
 export const inject = ['webServer', 'connection'];
@@ -543,6 +543,14 @@ export function apply(ctx: any): void {
             if (pathname === '/config' && req.method === 'POST') {
               const body = await parseJsonBody(req);
               const current = await configAccess.readConfig();
+              // 协议是整条线路共用的选择：先校验再动任何东西。非法值直接 400，
+              // 不写凭据、不写协议、不重建线路配置（否则会出现「界面显示 A、实际跑 B」）。
+              if (body.protocol !== undefined && !isModelProtocol(body.protocol)) {
+                return sendJson(res, 400, {
+                  ok: false,
+                  error: `非法模型协议：${String(body.protocol)}（仅支持 ${MODEL_PROTOCOLS.join(' / ')}）`,
+                });
+              }
               // 兼容旧客户端 bundle 仍会发送 sessionCookie：同一凭据，取任一非占位值
               const rawToken =
                 body.accessToken !== undefined && body.accessToken !== MASK
@@ -565,6 +573,8 @@ export function apply(ctx: any): void {
               const updated: A6ApiConfig = {
                 // 接入地址固定为官方地址：请求体里即使带着旧客户端发的 baseURL 也一律忽略
                 baseURL: current.baseURL,
+                // 未发送 = 沿用当前生效的协议（读自线路块，其次插件数据文件）
+                protocol: body.protocol !== undefined ? body.protocol : current.protocol,
                 apiKey: newApiKey,
                 accessToken: rawToken,
                 userId: body.userId !== undefined && body.userId !== MASK ? body.userId : current.userId,
@@ -593,12 +603,18 @@ export function apply(ctx: any): void {
                 await configAccess.writeConfig(credWrites);
               }
 
+              // 协议落插件自己的数据文件：一个模型都没启用时选它也要记得住（线路块那时不存在）。
+              // 一个模型都没启用时也照写，这正是「离开页面再回来仍然保留」的落点。
+              if (updated.protocol !== current.protocol) {
+                await configAccess.setProtocol(updated.protocol);
+              }
+
               // 同步 DSH settings（与旧行为一致：仅当有活动模型时）。
               // 注：零模型时 llm-pi-ai 对手写路由无合法的零模型表示（models: [] 会被
               // assertServiceable 拒绝并毒化下次启动），a6api 块此时不存在，
               // 待用户启用模型时随块一并落盘（接入地址固定为官方地址）。
               if (updated.activeModels.length > 0) {
-                await configAccess.syncModels(updated.activeModels);
+                await configAccess.syncModels(updated.activeModels, updated.protocol);
               }
               // 配置（含凭据/模型列表）已变更：作废 /state 短缓存，下次拉取立即重建；
               // 价格波动缓存同样按凭据键控，一并作废（避免旧计数/旧鉴权失败态残留）
@@ -715,9 +731,11 @@ export function apply(ctx: any): void {
               await configAccess.ensureMigrated();
               const modelIds = Array.isArray(body.modelIds) ? body.modelIds : [];
               // 请求体里的 baseURL 不再被接受：接入地址由插件定死为官方地址
+              // 协议同样不接受请求体指定：以当前生效的那个为准（读自线路块，其次插件数据文件）
 
               // 模型列表唯一真相源 = DSH llm-pi-ai 条目的 providers.a6api.models
-              await configAccess.syncModels(modelIds);
+              const current = await configAccess.readConfig();
+              await configAccess.syncModels(modelIds, current.protocol);
 
               const dshConfiguredModels = await configAccess.getDshConfiguredModels();
               // DSH 已启用模型列表已变更（响应含 dshConfiguredModels/回退模型列表）
@@ -1009,7 +1027,7 @@ export function apply(ctx: any): void {
                   const dshModels = await configAccess.getDshConfiguredModels();
                   const dshSet = new Set(dshModels.map((m) => m.toLowerCase()));
                   if (config.activeModels.length > 0 && result.updated.some((u) => dshSet.has(u.id.toLowerCase()))) {
-                    await configAccess.syncModels(config.activeModels);
+                    await configAccess.syncModels(config.activeModels, config.protocol);
                   }
                 } catch (err: any) {
                   console.warn('[dsh-a6api] query-openrouter: resync settings failed:', err?.message || err);
@@ -1082,7 +1100,7 @@ export function apply(ctx: any): void {
                 const config = await configAccess.readConfig();
                 const dshModels = await configAccess.getDshConfiguredModels();
                 if (dshModels.some((m) => m.toLowerCase() === entry.id.toLowerCase()) && config.activeModels.length > 0) {
-                  await configAccess.syncModels(config.activeModels);
+                  await configAccess.syncModels(config.activeModels, config.protocol);
                 }
               } catch (err: any) {
                 console.warn('[dsh-a6api] catalog update: resync settings failed:', err?.message || err);

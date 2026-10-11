@@ -3,16 +3,19 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
 import { fetchWithNetRetry } from './net.js';
-import type { A6ApiModelMeta, CatalogModelEntry } from '../types.js';
+import { DEFAULT_MODEL_PROTOCOL, isModelProtocol } from '../types.js';
+import type { A6ApiModelMeta, CatalogModelEntry, ModelProtocol } from '../types.js';
 
 /**
  * 模型目录（运行时数据，取代旧的静态 A6API_CATALOG）。
  *
- * - 持久化：`$DSH_HOME/dsh-a6api/catalog.json`（结构 `{ version: 1, entries: [...] }`），
+ * - 持久化：`$DSH_HOME/dsh-a6api/catalog.json`（结构 `{ version: 2, protocol, entries: [...] }`），
  *   初始为空；「模型目录」页从 A6API 市场拉取模型 ID、从 OpenRouter 查询参数后建立。
  *   v1.4 起位于插件子目录（与 DSH「组件自建 home 子目录」惯例一致），不再占用
  *   `$DSH_HOME` 根目录；旧版根目录文件（<=1.3 `dsh-a6api-catalog.json`）首次读取时
  *   自动搬迁（保持数据无损），搬迁后旧文件即删除。
+ * - 顶层 `protocol` = 用户选的模型协议（整条线路共用）。落在这里是因为 DSH 线路配置
+ *   在一个模型都没启用时整块不存在，协议无处可存；v1 旧文件缺该字段即默认协议。
  * - 条目字段 = DSH llm-pi-ai 条目的原生模型字段（id/name/contextWindow/
  *   maxTokens/input/reasoningEfforts），外加内部附带的 brand（来自 A6API 市场渠道，
  *   仅用于可用模型卡片展示，不写入 llm-pi-ai 条目配置）。
@@ -20,7 +23,7 @@ import type { A6ApiModelMeta, CatalogModelEntry } from '../types.js';
  *   （由 llm-pi-ai 默认值兜底），不再有任何内置手写默认参数。
  */
 
-const CATALOG_VERSION = 1;
+const CATALOG_VERSION = 2;
 
 /** 当前 catalog 文件路径（v1.4+：插件子目录，不再占用 DSH home 根目录）。
  *  dshHomePath 与 DSH 的 resolveDshHome 完全一致：显式配置 home → $DSH_HOME（~ 展开）→ ~/.dsh。 */
@@ -62,6 +65,8 @@ function ensureRelocated(): void {
 
 /** 进程内缓存：resolveModelMeta 等同步路径直接读内存 */
 let catalogCache: CatalogModelEntry[] | null = null;
+/** 顶层协议（缺字段/非法值 = 默认协议）：与 entries 同一次读取加载，写盘时一并落回。 */
+let protocolCache: ModelProtocol | null = null;
 
 function ensureLoaded(): CatalogModelEntry[] {
   if (catalogCache) return catalogCache;
@@ -75,6 +80,8 @@ function ensureLoaded(): CatalogModelEntry[] {
       catalogCache = Array.isArray(j?.entries)
         ? j.entries.filter((e: any) => e && typeof e.id === 'string')
         : [];
+      // 协议：v1 旧文件没有这个字段，任何缺失/非法值都读作默认协议（不抛错）
+      protocolCache = isModelProtocol(j?.protocol) ? j.protocol : DEFAULT_MODEL_PROTOCOL;
       if (file !== catalogFile()) {
         // 搬迁失败的回退读取：数据已进内存，清理旧文件
         try {
@@ -87,11 +94,26 @@ function ensureLoaded(): CatalogModelEntry[] {
     }
   }
   catalogCache = [];
+  protocolCache = DEFAULT_MODEL_PROTOCOL;
   return catalogCache as CatalogModelEntry[];
 }
 
 export function getCatalog(): CatalogModelEntry[] {
   return ensureLoaded();
+}
+
+/** 读取目录顶层记住的模型协议（缺失 = 默认协议）。 */
+export function getCatalogProtocol(): ModelProtocol {
+  ensureLoaded();
+  return protocolCache ?? DEFAULT_MODEL_PROTOCOL;
+}
+
+/** 记录模型协议（整条线路共用）。与条目写操作共用同一写链；写盘后才更新内存缓存。 */
+export async function setCatalogProtocol(protocol: ModelProtocol): Promise<void> {
+  await enqueueWrite(async () => {
+    // 不预先改 protocolCache：写盘失败时缓存必须仍与磁盘一致，下次读才不会报假协议
+    await writeCatalog(ensureLoaded(), protocol);
+  });
 }
 
 export function getCatalogEntry(id: string): CatalogModelEntry | undefined {
@@ -115,16 +137,23 @@ function enqueueWrite(fn: () => Promise<void>): Promise<void> {
 }
 
 /** 原子写盘（tmp+rename）成功后才更新内存缓存；写失败时缓存保持与磁盘一致的旧值 */
-async function writeCatalog(entries: CatalogModelEntry[]): Promise<void> {
+async function writeCatalog(entries: CatalogModelEntry[], protocol?: ModelProtocol): Promise<void> {
   const file = catalogFile();
+  // 协议与条目同写：调用方未指定时沿用内存里记住的那个，避免任何一次写盘把用户选的协议冲掉
+  const nextProtocol = protocol ?? protocolCache ?? DEFAULT_MODEL_PROTOCOL;
   await fsp.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify({ version: CATALOG_VERSION, entries }, null, 2), {
-    encoding: 'utf8',
-    mode: 0o644,
-  });
+  await fsp.writeFile(
+    tmp,
+    JSON.stringify({ version: CATALOG_VERSION, protocol: nextProtocol, entries }, null, 2),
+    {
+      encoding: 'utf8',
+      mode: 0o644,
+    },
+  );
   await fsp.rename(tmp, file);
   catalogCache = entries;
+  protocolCache = nextProtocol;
 }
 
 /** 合并新增条目（不覆盖已有条目的既有字段；仅补缺失字段，参数以用户已保存/查询到的为准）。
