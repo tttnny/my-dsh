@@ -995,15 +995,6 @@
   overflow-wrap: anywhere;
 }
 
-/* 节点选择：分段控件 + 它在下面回显的 URL */
-.dsh-a6-node-url {
-  overflow-wrap: anywhere;
-}
-
-.dsh-a6-node-custom {
-  width: 100%;
-}
-
 .dsh-a6-field-value code,
 .dsh-a6-heading-desc code {
   background: var(--dsw-alias-markdown-inline-code);

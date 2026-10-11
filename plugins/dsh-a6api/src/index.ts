@@ -563,7 +563,8 @@ export function apply(ctx: any): void {
               }
 
               const updated: A6ApiConfig = {
-                baseURL: body.baseURL !== undefined ? body.baseURL : current.baseURL,
+                // 接入地址固定为官方地址：请求体里即使带着旧客户端发的 baseURL 也一律忽略
+                baseURL: current.baseURL,
                 apiKey: newApiKey,
                 accessToken: rawToken,
                 userId: body.userId !== undefined && body.userId !== MASK ? body.userId : current.userId,
@@ -593,13 +594,13 @@ export function apply(ctx: any): void {
               }
 
               // 同步 DSH settings（与旧行为一致：仅当有活动模型时）。
-              // 注：零模型时无法持久化 baseURL——llm-pi-ai 对手写路由无合法的零模型表示
-              // （models: [] 会被 assertServiceable 拒绝并毒化下次启动），a6api 块此时不存在，
-              // 节点设置属惰性状态，待用户启用模型时随块一并落盘。
+              // 注：零模型时 llm-pi-ai 对手写路由无合法的零模型表示（models: [] 会被
+              // assertServiceable 拒绝并毒化下次启动），a6api 块此时不存在，
+              // 待用户启用模型时随块一并落盘（接入地址固定为官方地址）。
               if (updated.activeModels.length > 0) {
-                await configAccess.syncModels(updated.baseURL, updated.activeModels);
+                await configAccess.syncModels(updated.activeModels);
               }
-              // 配置（含凭据/节点/模型列表）已变更：作废 /state 短缓存，下次拉取立即重建；
+              // 配置（含凭据/模型列表）已变更：作废 /state 短缓存，下次拉取立即重建；
               // 价格波动缓存同样按凭据键控，一并作废（避免旧计数/旧鉴权失败态残留）
               stateMemo.invalidate();
               priceCountsMemo.invalidate();
@@ -712,12 +713,11 @@ export function apply(ctx: any): void {
             if (pathname === '/sync-models' && req.method === 'POST') {
               const body = await parseJsonBody(req);
               await configAccess.ensureMigrated();
-              const config = await configAccess.readConfig();
               const modelIds = Array.isArray(body.modelIds) ? body.modelIds : [];
-              const baseURL = body.baseURL || config.baseURL;
+              // 请求体里的 baseURL 不再被接受：接入地址由插件定死为官方地址
 
               // 模型列表唯一真相源 = DSH llm-pi-ai 条目的 providers.a6api.models
-              await configAccess.syncModels(baseURL, modelIds);
+              await configAccess.syncModels(modelIds);
 
               const dshConfiguredModels = await configAccess.getDshConfiguredModels();
               // DSH 已启用模型列表已变更（响应含 dshConfiguredModels/回退模型列表）
@@ -1009,7 +1009,7 @@ export function apply(ctx: any): void {
                   const dshModels = await configAccess.getDshConfiguredModels();
                   const dshSet = new Set(dshModels.map((m) => m.toLowerCase()));
                   if (config.activeModels.length > 0 && result.updated.some((u) => dshSet.has(u.id.toLowerCase()))) {
-                    await configAccess.syncModels(config.baseURL, config.activeModels);
+                    await configAccess.syncModels(config.activeModels);
                   }
                 } catch (err: any) {
                   console.warn('[dsh-a6api] query-openrouter: resync settings failed:', err?.message || err);
@@ -1082,7 +1082,7 @@ export function apply(ctx: any): void {
                 const config = await configAccess.readConfig();
                 const dshModels = await configAccess.getDshConfiguredModels();
                 if (dshModels.some((m) => m.toLowerCase() === entry.id.toLowerCase()) && config.activeModels.length > 0) {
-                  await configAccess.syncModels(config.baseURL, config.activeModels);
+                  await configAccess.syncModels(config.activeModels);
                 }
               } catch (err: any) {
                 console.warn('[dsh-a6api] catalog update: resync settings failed:', err?.message || err);

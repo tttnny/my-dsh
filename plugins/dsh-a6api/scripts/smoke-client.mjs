@@ -453,6 +453,24 @@ if (panelTree) {
   )[0]
   check('config page renders its save button', saveButton !== undefined)
 
+  // The gateway-node section is gone for good: the config page owns no node
+  // control, and none of its copy survives in the rendered output. The address
+  // is plugin-owned from here on, so a re-appearing control is a regression.
+  // Text must come from the config page subtree: `t` is an identity stub, so a
+  // surviving node string would show up verbatim as its locale key.
+  const configPageText = configPage === undefined ? '' : textOf(configPage)
+  const nodeControls = configPage === undefined ? [] : configPage.findAll(
+    (node) => node.props?.id === 'dsh-a6-node' ||
+      node.props?.className === 'dsh-a6-node-url' ||
+      node.props?.className === 'dsh-a6-node-custom',
+  )
+  check('config page renders no gateway-node control', nodeControls.length === 0)
+  check(
+    'config page renders no gateway-node copy',
+    !['nodeTitle', 'nodeDesc', 'nodeCdn', 'nodeDirect', 'nodeCustom', 'customNodePlaceholder']
+      .some(key => configPageText.includes(key)),
+  )
+
   // Migration guard: the custom `[data-tooltip]` attribute must be gone from the
   // rendered tree, and the bundle must have asked ui-primitives for `Tooltip`.
   const allProps = hostPropNames(panelTree)
