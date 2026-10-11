@@ -418,6 +418,9 @@ async function buildStateResponse(config: A6ApiConfig, configAccess: ConfigAcces
       maxTokens: meta.maxTokens,
       modalities: meta.modalities,
       hasReasoning: Boolean(meta.reasoningEfforts || meta.thinkingFormat),
+      // 「档位未确认」标记：档位来源不是 queried/manual（含旧条目缺字段）即未确认；
+      // 非推理模型（reasoningEfforts === false）永不标——它本来就不带档位
+      reasoningSource: meta.reasoningEfforts ? (meta.reasoningSource ?? 'default') : undefined,
       inDsh: dshSet.has(mId),
       merchant: cachedCard,
       probeStatus: cachedCard ? 'success' : 'idle',
@@ -992,9 +995,16 @@ export function apply(ctx: any): void {
               for (const m of models) {
                 if (!before.has(m.id.toLowerCase())) added++;
               }
-              // reasoningEfforts 默认 = DSH 全部思考档位（upsert 只补缺失字段，已有自定义不受影响）
+              // reasoningEfforts 默认 = DSH 全部思考档位，来源 = default（未确认）：
+              // 手写线路上的新模型不退化成非推理模型，但界面上如实标「档位未确认」；
+              // upsert 为「只补缺失」，已有条目（含用户手改的档位与来源）不受影响
               await upsertCatalogEntries(
-                models.map((m) => ({ id: m.id, brand: m.brand, reasoningEfforts: m.reasoningEfforts })),
+                models.map((m) => ({
+                  id: m.id,
+                  brand: m.brand,
+                  reasoningEfforts: m.reasoningEfforts,
+                  reasoningSource: m.reasoningSource,
+                })),
               );
               // 目录品牌参与 /state 卡片元数据：作废短缓存
               stateMemo.invalidate();
@@ -1039,6 +1049,8 @@ export function apply(ctx: any): void {
                 ok: true,
                 updated: result.updated.length,
                 notFound: result.notFound,
+                // 用户手改过档位的条目：按覆盖规则跳过，前端据此提示「N 个未改动」
+                skipped: result.skipped,
               });
             }
 

@@ -10,7 +10,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { A6apiT } from '../locales.js';
 import { store } from '../store.js';
-import { validateReasoningEfforts } from '../../types.js';
+import { isReasoningConfirmed, validateReasoningEfforts } from '../../types.js';
 import type { CatalogModelEntry } from '../../types.js';
 
 /**
@@ -81,11 +81,12 @@ export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
     const r = await store.queryOpenRouter();
     if (r.ok) {
       const nf = r.notFound?.length || 0;
+      const sk = r.skipped?.length || 0;
       flash(
         'ok',
-        nf > 0
+        (nf > 0
           ? t('msgQueriedAll', { updated: r.updated }) + t('msgQueriedAllNotFound', { notFound: nf })
-          : t('msgQueriedAll', { updated: r.updated }),
+          : t('msgQueriedAll', { updated: r.updated })) + (sk > 0 ? t('msgQueriedAllSkipped', { skipped: sk }) : ''),
       );
     } else flash('err', r.error || t('errQuery'));
   };
@@ -390,6 +391,17 @@ export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
                   </Tag>
                   {re && Object.keys(re).length > 0 && (
                     <Tag tone="success">{t('paramReasoning', { count: Object.keys(re).length })}</Tag>
+                  )}
+                  {re && Object.keys(re).length > 0 && !isReasoningConfirmed(entry.reasoningSource) && (
+                    <Tag tone="outline">{t('reasoningUnconfirmed')}</Tag>
+                  )}
+                  {re && entry.reasoningChange && (
+                    <Tag tone="warning">
+                      {t('reasoningChanged', {
+                        from: entry.reasoningChange.from,
+                        to: entry.reasoningChange.to,
+                      })}
+                    </Tag>
                   )}
                   {entry.reasoningEfforts === false && (
                     <Tag tone="neutral">{t('paramNonReasoning')}</Tag>

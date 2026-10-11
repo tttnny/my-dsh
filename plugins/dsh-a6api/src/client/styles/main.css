@@ -1099,6 +1099,13 @@
   vertical-align: middle;
 }
 
+/* 「档位未确认」标记：与相邻徽标同排，横向间距交给 .dsh-a6-title-line 的 gap */
+.dsh-a6-reasoning-unconfirmed {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
 .dsh-a6-action-error {
   /* footer 内独立整行展示（footer 为 flex-wrap），不与按钮并排撑宽 */
   flex-basis: 100%;
