@@ -31,6 +31,15 @@
 
 改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。仓库根没有 `package.json`，也没有仓库级脚本；漏了 `check` 的包以它自己 `scripts` 里的那几条为准。
 
+### 证明断言有牙齿（变异测试）
+
+新增或翻转断言后，把被测行为**改回旧写法**再跑一次，确认那条断言真的 FAIL。默认写的断言很容易恒为真，绿灯不等于守着东西。
+
+两条会让变异测试骗到自己的坑，都是本仓库实测过的：
+
+- **先确认断言脚本打的是 `src/` 还是构建产物**：`dsh-a6api` 的 `scripts/test-*.mjs` 一律 `import('../lib/index.js')`（`smoke-client.mjs` 读 `lib/client.js`），改完 `src/` 必须先 `pnpm build` 再跑，否则测的还是旧产物——变异后忘了重建，会得到一条假的「断言没抓住」。`dsh-grilling-form` 用 `pnpm test` 自己先构建一次来消除这个前提；`dsh-chat-translate` 有一半脚本直接打 `src/`。照抄邻居前先看它 `import` 的是哪一边。
+- **还原用 `git checkout -- <file>`，别手工备份**：`cp src/x.ts /tmp/x.bak` 这类备份失败是静默的（`||` 兜底只在前一条命令失败时才生效，而它常常成功了），变异会留在源码里而你以为已经还原。要么在改动前 `git stash`，要么直接 `git checkout -- <file>`——后者失败会报错，不会静默。
+
 ### 提交闸门（`.githooks/pre-commit`）
 
 「改完跑 check」有闸门兜着，不靠自觉：仓库根的 `.githooks/pre-commit` **只看本次改动的包**，逐个在包目录跑它自己的 `check`。装法与跳法写在该文件头部（`git config core.hooksPath .githooks`；`SKIP_CHECK=1 git commit` 跳过一次）。没有 `check` 脚本、或没装 `node_modules` 的包会明说并跳过——不让提交在静默里少跑一道闸门。

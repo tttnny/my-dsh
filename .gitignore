@@ -9,8 +9,10 @@ tmp/
 /scripts/
 
 # 仓库根不放依赖安装，也不放 link: 插件的内核包软链接——内核包由 DSH 运行时的 profile 解析供给
-# （见 docs/rules/dev-copy.md「内核包解析」）；node_modules 一律不入库
-node_modules/
+# （见 docs/rules/dev-copy.md「内核包解析」）；node_modules 一律不入库。
+# 不带尾斜杠：尾斜杠只匹配目录，而 worktree 里的 node_modules 是指向主仓库的软链
+# （软链不算目录，尾斜杠放行 → git add -A 会把这条绝对路径软链收进索引）。
+node_modules
 
 # secrets & local credentials
 .env

@@ -13,8 +13,9 @@
 ## 产物与清单
 
 - **产物不入库**：`build` 生成的镜像目录（`lib/` 这类与 `src/` 对应的副本）由包的 `.gitignore` 挡住、留在 `files` 里、并由 `check` 的产物门禁断言未被 git 跟踪——`files` 不含产物目录时 npm 会漏打运行入口。手写源码形式的 `lib/` 属源码，不受这条约束。
+- **镜像与 `src/` 一一对应**：`build` 必须在 emit 前清掉上一轮的声明产物（`rmSync('lib/types')`，见 `dsh-a6api`/`dsh-chat-translate` 的 `build.mjs`），因为 `tsc` 从不清理 `outDir`：删掉或改名的模块会把它旧的 `.d.ts` 一直留在 `lib/types` 里。这条只能由「清镜像」保证，`.gitignore` 与「产物未被跟踪」都看不见陈旧文件（`lib` 是 gitignore 的，`git status` 不显示）。带声明产物的包用 `assert:lib-mirror` 这类闸门把这份一致性钉住：它同时查陈旧（`lib/types` 有 `src/` 已不存在的声明，会随 `files` 进发布包）与缺失（`src/` 的模块没发出声明，即 `build` 没跑完）。构建脚本里的声明 emit 失败必须是**非零退出**，只 `warn` 会让整个声明镜像静默消失。
 - 发布产物由包自己的 `build` 出：`dsh-antigravity-auth`、`dsh-grilling-form` 另有 `prepack`，发布时现打一次；其余包靠发布前已跑过的 `check`。
-- 删掉任何文件时当场同步 `files` 与 `scripts`，清单只写还存在的条目。许可声明见 [plugins.md](./plugins.md)「许可」。
+- 删掉任何文件时当场同步 `files`、`scripts` 与镜像断言，清单只写还存在的条目。许可声明见 [plugins.md](./plugins.md)「许可」。
 
 ## 查已发布版本
 

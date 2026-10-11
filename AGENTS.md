@@ -2,6 +2,8 @@
 
 `my-dsh` 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(DSH)的插件/preset合集。
 
+DSH 源码已拉取到本地 `/Users/tny/Desktop/work/other/deepseek-harness`；查宿主实现、契约类型与官方门禁时直接读它。
+
 ## 硬约束
 
 1. **发布听令，发完即止**：`npm publish` / `git push` 只在用户下令后执行；发完不装、不查、不追问。
@@ -17,7 +19,7 @@
 | 这一步在做什么 | 文档 |
 | --- | --- |
 | 改 / 发 / 排障 `plugins/` 下的插件 | `docs/rules/plugins.md`（前门） |
-| `npm publish`、产物与 `files` 门禁、退役归档 | `docs/rules/release.md` |
+| `npm publish`、产物与 `files` 门禁、镜像陈旧、退役归档 | `docs/rules/release.md` |
 | 建 / 校验开发副本，或撞 `Cannot find package` | `docs/rules/dev-copy.md` |
 | 插件从页面消失、宿主日志无异常 | `docs/rules/client-wiring.md` |
 | 插件配置界面放哪、key 怎么来、静默失败 | `docs/rules/plugin-config-page.md` |

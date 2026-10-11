@@ -47,6 +47,8 @@ await build({
 });
 
 // 3. Types build
+// 声明产物是发布包的一部分：上面先清了 lib/types，这里若只 warn 就会让整个声明镜像
+// 静默消失（包照发、lib/types 空）。失败必须让 build 非零退出。
 try {
   if (existsSync('node_modules/.bin/tsc')) {
     execFileSync('node_modules/.bin/tsc', ['-p', 'tsconfig.json'], { stdio: 'inherit' });
@@ -54,5 +56,6 @@ try {
     execSync('pnpm exec tsc -p tsconfig.json', { stdio: 'inherit' });
   }
 } catch (err) {
-  console.warn('[dsh-a6api] tsc emit skipped or failed:', err?.message || err);
+  console.error('[dsh-a6api] tsc declaration emit failed:', err?.message || err);
+  process.exitCode = 1;
 }

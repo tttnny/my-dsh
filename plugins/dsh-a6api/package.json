@@ -73,7 +73,8 @@
     "test:auth-bootstrap": "node scripts/test-auth-bootstrap.mjs",
     "test:reasoning-source": "node scripts/test-reasoning-source.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
-    "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm test:sync && pnpm test:probe-protocol && pnpm test:auth-bootstrap && pnpm test:reasoning-source && pnpm assert:lib-untracked"
+    "assert:lib-mirror": "node scripts/assert-lib-mirror.mjs",
+    "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm test:sync && pnpm test:probe-protocol && pnpm test:auth-bootstrap && pnpm test:reasoning-source && pnpm assert:lib-untracked && pnpm assert:lib-mirror"
   },
   "engines": {
     "node": "^22.19 || >=24",

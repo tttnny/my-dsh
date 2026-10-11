@@ -1,4 +1,5 @@
-node_modules/
+# 不带尾斜杠：尾斜杠只匹配目录，worktree 里的 node_modules 是指向主仓库的软链，尾斜杠放行
+node_modules
 # lib/ 是构建产物镜像：由 .gitignore 挡住、留在 files 里，并由 check 的 assert:lib-untracked 断言未被索引跟踪
 lib/
 .DS_Store
