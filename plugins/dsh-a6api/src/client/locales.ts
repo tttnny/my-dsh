@@ -47,6 +47,9 @@ export type A6apiLocaleKey =
   | 'userIdLabel' | 'userIdPlaceholderSet' | 'userIdPlaceholder' | 'userIdHintSet' | 'userIdHint'
   | 'helpOpen' | 'helpClose' | 'helpTitle' | 'helpStep1Prefix' | 'helpStep1Suffix'
   | 'helpStep2Prefix' | 'helpStep2Suffix' | 'helpStep3'
+  | 'protocolTitle' | 'protocolDesc' | 'protocolCurrent'
+  | 'protocolChat' | 'protocolChatHint' | 'protocolResponses' | 'protocolResponsesHint'
+  | 'protocolMessages' | 'protocolMessagesHint'
   | 'integrationTitle' | 'integrationDescPrefix' | 'integrationDescSuffix'
   | 'providerKey' | 'providerCompatible' | 'enabledModelsKey' | 'noEnabledModels'
   | 'save' | 'saving' | 'saveSuccess'
@@ -165,6 +168,15 @@ export const en: Record<A6apiLocaleKey, string> = {
   helpStep2Prefix: 'In the “System access token” section click to copy the token string (for example ',
   helpStep2Suffix: ')',
   helpStep3: 'Paste it into the system access token field above and click “Save configuration” to sync the balance automatically.',
+  protocolTitle: 'Model protocol',
+  protocolDesc: 'One protocol for the whole route: every model enabled under “Available models” uses it. The endpoint address and the request switches are written to match.',
+  protocolCurrent: 'In effect: {name}',
+  protocolChat: 'OpenAI Chat',
+  protocolChatHint: 'OpenAI-compatible chat completions at /v1/chat/completions. Keeps existing setups unchanged.',
+  protocolResponses: 'OpenAI Response',
+  protocolResponsesHint: 'The newer Responses API at /v1/responses, with the same address shape as Chat.',
+  protocolMessages: 'Messages',
+  protocolMessagesHint: 'Anthropic Messages at /v1/messages: keep the address without /v1, or it becomes /v1/v1/messages.',
   integrationTitle: 'DSH native LLM provider integration',
   integrationDescPrefix: 'The plugin registered A6API as the native DSH model provider (',
   integrationDescSuffix: '). Models enabled under “Available models” are written to the DSH configuration automatically.',
@@ -440,6 +452,15 @@ export const zh: Record<A6apiLocaleKey, string> = {
   helpStep2Prefix: '在「系统访问令牌」栏目直接点击复制令牌字符串（例如 ',
   helpStep2Suffix: '）',
   helpStep3: '粘贴到上方的「系统访问令牌」输入框中并点击下方「保存配置」即可自动同步余额！',
+  protocolTitle: '模型协议',
+  protocolDesc: '整条线路共用这一个选择：所有已启用模型一起走。接入地址结尾与请求开关会按所选协议一并写对。',
+  protocolCurrent: '当前生效：{name}',
+  protocolChat: 'OpenAI Chat',
+  protocolChatHint: 'OpenAI 兼容的 chat completions，端点 /v1/chat/completions。升级后保持现有行为不变。',
+  protocolResponses: 'OpenAI Response',
+  protocolResponsesHint: '较新的 Responses 接口，端点 /v1/responses；接入地址写法与 Chat 相同。',
+  protocolMessages: 'Messages',
+  protocolMessagesHint: 'Anthropic Messages，端点 /v1/messages：接入地址必须不带 /v1，否则会拼成 /v1/v1/messages。',
   integrationTitle: 'DSH 原生 LLM 提供商集成状态',
   integrationDescPrefix: '插件已将 A6API 注册为 DSH 原生模型提供商 (',
   integrationDescSuffix: ')。在「可用模型」中启用的模型将自动写入 DSH 配置文件。',

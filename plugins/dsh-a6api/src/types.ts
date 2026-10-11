@@ -1,5 +1,30 @@
+/**
+ * DSH llm-pi-ai 线路可用的三个协议标识（宿主只接受这三个，写别的值直接拒收）。
+ * 顺序 = 宿主的可选用顺序，第一个是默认（与现有行为一致）。
+ */
+export const MODEL_PROTOCOLS = [
+  'openai-completions',
+  'openai-responses',
+  'anthropic-messages',
+] as const;
+
+export type ModelProtocol = (typeof MODEL_PROTOCOLS)[number];
+
+/** 未选择过协议时的默认：OpenAI Chat，与升级前行为完全一致。 */
+export const DEFAULT_MODEL_PROTOCOL: ModelProtocol = 'openai-completions';
+
+/** 校验协议标识（配置界面与服务端共用）：只认三个精确字符串。 */
+export function isModelProtocol(value: unknown): value is ModelProtocol {
+  return typeof value === 'string' && (MODEL_PROTOCOLS as readonly string[]).includes(value);
+}
+
 export interface A6ApiConfig {
   baseURL: string;
+  /**
+   * 当前生效的模型协议（整条线路共用）。读取优先级：DSH 线路配置里的 `api` 为准，
+   * 没有线路块时用插件数据文件里记住的那个；非法/缺失一律读作默认协议。
+   */
+  protocol: ModelProtocol;
   apiKey: string;
   accessToken?: string;
   userId?: string;

@@ -1,6 +1,7 @@
 import { cleanBaseUrl, fetchChannelDetails, fetchRecentLogs } from './a6api-client.js';
 import { fetchWithNetRetry, isFlakyNetworkError } from './net.js';
-import type { ApiRoutingLogItem, MerchantChannelInfo } from '../types.js';
+import { DEFAULT_MODEL_PROTOCOL, isModelProtocol } from '../types.js';
+import type { ApiRoutingLogItem, MerchantChannelInfo, ModelProtocol } from '../types.js';
 
 export interface ProbeResult {
   modelName: string;
@@ -17,6 +18,87 @@ export interface ProbeResult {
 /** Delay helper */
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Anthropic Messages 的 api 版本头。取 Anthropic SDK 的默认值（2023-06-01）：
+ * pi-ai 走 Messages 协议时由 SDK 自带同一个值，探测要与真实流量发的一样。
+ */
+const ANTHROPIC_API_VERSION = '2023-06-01';
+
+export interface ProbeRequestSpec {
+  url: string;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+}
+
+/**
+ * 按当前协议构造那一次极小探测请求：端点、鉴权头与请求体是同一个决定，三者在
+ * 一处定完（否则会出现"探测走一条线、流量走另一条线"，固定的商户就白探了）。
+ *
+ * 地址语义：`baseURL` 是插件自己定的官方裸地址（不带 `/v1`）。
+ * - OpenAI Chat / Response：请求打在 `{裸地址}/v1/...`（与写入线路配置的带 `/v1`
+ *   前缀一致）。
+ * - Messages：请求打在 `{裸地址}/v1/messages`。宿主对 Messages 收裸地址、自己再补
+ *   `/v1/messages`，插件侧写线路配置时给的就是裸地址；这里若在带 `/v1` 的地址上拼，
+ *   就会变成 `/v1/v1/messages`，所以只在这一支上直接补 `/v1/messages`。
+ */
+export function buildProbeRequest(
+  protocol: ModelProtocol | undefined,
+  baseURL: string,
+  apiKey: string,
+  modelName: string,
+): ProbeRequestSpec {
+  const chosen: ModelProtocol = isModelProtocol(protocol) ? protocol : DEFAULT_MODEL_PROTOCOL;
+  const root = cleanBaseUrl(baseURL);
+  const key = apiKey.trim();
+
+  if (chosen === 'anthropic-messages') {
+    return {
+      url: `${root}/v1/messages`,
+      headers: {
+        'Content-Type': 'application/json',
+        // Messages 协议不用 Bearer：鉴权走 x-api-key，并且必须带 api 版本头
+        'x-api-key': key,
+        'anthropic-version': ANTHROPIC_API_VERSION,
+      },
+      body: {
+        model: modelName,
+        max_tokens: 1,
+        messages: [{ role: 'user', content: '1' }],
+      },
+    };
+  }
+
+  if (chosen === 'openai-responses') {
+    return {
+      url: `${root}/v1/responses`,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      // Responses 用 input 而不是 messages，输出上限字段名也不同（max_output_tokens）
+      body: {
+        model: modelName,
+        input: [{ role: 'user', content: [{ type: 'input_text', text: '1' }] }],
+        max_output_tokens: 16,
+        store: false,
+      },
+    };
+  }
+
+  return {
+    url: `${root}/v1/chat/completions`,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+    },
+    body: {
+      model: modelName,
+      messages: [{ role: 'user', content: '1' }],
+      max_tokens: 1,
+    },
+  };
+}
+
 /** Probe a single model by sending a 1-token prompt and querying logs */
 export async function probeSingleModel(
   baseURL: string,
@@ -24,9 +106,9 @@ export async function probeSingleModel(
   userId?: string,
   accessToken?: string,
   modelName?: string,
+  protocol?: ModelProtocol,
 ): Promise<ProbeResult> {
   const targetModel = modelName || '';
-  const cleanUrl = cleanBaseUrl(baseURL);
   if (!apiKey) {
     return { modelName: targetModel, success: false, error: '未配置 API Key' };
   }
@@ -36,17 +118,11 @@ export async function probeSingleModel(
   let requestError = '';
 
   try {
-    const res = await fetchWithNetRetry(`${cleanUrl}/v1/chat/completions`, {
+    const spec = buildProbeRequest(protocol, baseURL, apiKey, targetModel);
+    const res = await fetchWithNetRetry(spec.url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey.trim()}`,
-      },
-      body: JSON.stringify({
-        model: targetModel,
-        messages: [{ role: 'user', content: '1' }],
-        max_tokens: 1,
-      }),
+      headers: spec.headers,
+      body: JSON.stringify(spec.body),
       // 推理模型(如 grok-4.6)实测单次响应可达 40-90s+,阈值过短会被频繁掐断导致探测失败；
       // 走 fetchWithNetRetry：每次尝试独立 180s 窗口，传输层瞬断(ECONNRESET)自动重试一次
       timeoutMs: 180000,

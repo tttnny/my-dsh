@@ -75,6 +75,7 @@ class A6ApiStore {
     loading: true,
     config: {
       baseURL: 'https://api.a6api.com',
+      protocol: 'openai-completions',
       apiKey: '',
       userId: '',
       activeModels: [],
