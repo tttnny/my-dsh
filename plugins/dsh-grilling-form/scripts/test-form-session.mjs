@@ -38,20 +38,20 @@ const questions = [
     id: 'a',
     header: 'Q1 · 落点',
     question: '落点放哪？',
-    multiSelect: true,
+    type: 'multi',
     options: [
       { label: 'A：详情页（推荐）', displayLabel: 'A：详情页', recommended: true },
       { label: 'B：列表里', displayLabel: 'B：列表里', recommended: false },
     ],
   },
-  { id: 'b', header: '', question: '范围呢？', multiSelect: true, options: [] },
+  { id: 'b', header: '', question: '范围呢？', type: 'free', options: [] },
 ];
 /** 一道单选：一题至多留一项。 */
 const singleQuestion = {
   id: 's',
   header: 'Q9 · 是否继续',
   question: '继续吗？',
-  multiSelect: false,
+  type: 'single',
   options: [
     { label: '继续（推荐）', displayLabel: '继续', recommended: true },
     { label: '停一下', displayLabel: '停一下', recommended: false },

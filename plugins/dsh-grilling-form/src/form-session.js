@@ -104,7 +104,7 @@ export function createFormSession({ questions, sessionId, callId, replyText, sto
   const shownAnswer = (id) => answers[id] ?? { selected: [], custom: '' };
   /**
    * 改一题：以显示那份为底改一个字段，再整条写进用户自己那份（两表不变量就靠这一条）。
-   * 单选（题面上 multi_select: false）的勾选是**替换**：至多留一项，再勾一个就换掉上一个。
+   * 单选（题面 type 为 single）的勾选是**替换**：至多留一项，再勾一个就换掉上一个。
    * @param {string} id - 题目 id。
    * @param {Partial<import('./form-model.js').Answer> & {selected?: string[]}} change - 这一题要改的字段。
    * @returns {import('./form-model.js').AnswerTable} 用户自己那份的新表。
@@ -112,7 +112,7 @@ export function createFormSession({ questions, sessionId, callId, replyText, sto
   const editAnswer = (id, change) => {
     const question = questions.find((candidate) => candidate.id === id);
     const current = shownAnswer(id);
-    const next = question?.multiSelect === false && change.selected !== undefined
+    const next = question?.type === 'single' && change.selected !== undefined
       ? overwriteOne(current, { selected: change.selected })
       : { ...current, ...change };
     return commit(id, next);

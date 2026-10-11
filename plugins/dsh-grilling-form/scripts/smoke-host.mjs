@@ -91,12 +91,62 @@ await test('自我介绍按新行为重写：本轮唯一且最后的调用、�
   assert.match(description, /their own composer/);
 });
 
-await test('题型开关：schema 里有 multi_select，描述里讲清缺省是多选、写 false 才是单选', async () => {
+await test('题型：schema 里是必填的 type，取值只有三种，描述里讲清各自长什么样、与选项怎么搭', async () => {
   const properties = shape.tool.parameters.properties.questions.items.properties;
-  assert.deepEqual(Object.keys(properties.multi_select), ['type', 'description']);
-  assert.equal(properties.multi_select.type, 'boolean');
-  assert.match(properties.multi_select.description, /Default true/);
-  assert.match(properties.multi_select.description, /Set false/);
+  assert.equal('multi_select' in properties, false, '老开关已经从 schema 里删掉');
+  assert.equal(properties.type.type, 'string');
+  assert.deepEqual(shape.tool.parameters.properties.questions.items.required, ['id', 'question', 'type'], '题型是必填的（required 收进上级对象的 required 数组）');
+  assert.deepEqual(properties.type.enum, ['single', 'multi', 'free']);
+  assert.match(properties.type.description, /single = one-choice rows/);
+  assert.match(properties.type.description, /free = no options at all/);
+  // 「与选项怎么搭」这条规则只写在 options 的参数说明里，题型的说明不重复它（同一件事只说一次）
+  assert.doesNotMatch(properties.type.description, /at least one option/);
+  assert.match(properties.options.description, /Required for type single and multi/);
+  assert.match(properties.options.description, /forbidden for type free/);
+});
+
+await test('题型必填：缺 type 由 defineTool 的入参校验拦住，不进本插件的 violations', async () => {
+  const { tool } = await assemble();
+  const { exec, concluded } = makeExec();
+  await assert.rejects(
+    () => tool.execute({ questions: [{ id: 'a', question: '？' }] }, exec),
+    /missing required property "questions\[0\]\.type"/,
+  );
+  assert.deepEqual(concluded, [], '被 schema 拦下的调用绝不能结束本轮');
+});
+
+await test('题型越界：写了 enum 之外的值由 defineTool 拦住', async () => {
+  const { tool } = await assemble();
+  const { exec } = makeExec();
+  await assert.rejects(
+    () => tool.execute({ questions: [{ id: 'a', type: 'checkbox', question: '？' }] }, exec),
+    /must be one of \["single","multi","free"\]/,
+  );
+});
+
+await test('题型与选项的搭配：单选、多选没给选项、自由题给了选项，都被拒且不结束本轮', async () => {
+  const { tool } = await assemble();
+  const missing = makeExec();
+  const withoutOptions = await tool.execute({ questions: [{ id: 'a', type: 'single', question: '？' }] }, missing.exec);
+  assert.equal(withoutOptions.rejected, true);
+  assert.match(withoutOptions.violations[0], /gives no options/);
+  assert.deepEqual(missing.concluded, [], '被拒的轮次没有表单可展示，不能就此结束');
+  const extra = makeExec();
+  const withOptions = await tool.execute({ questions: [{ id: 'a', type: 'free', question: '？', options: [{ label: '甲' }] }] }, extra.exec);
+  assert.equal(withOptions.rejected, true);
+  assert.match(withOptions.violations[0], /free question/);
+  assert.deepEqual(extra.concluded, []);
+});
+
+await test('老开关 multi_select 出现在入参里就被拒（schema 收得下它，但这一轮得退回让它删掉）', async () => {
+  const { tool } = await assemble();
+  const { exec, concluded } = makeExec();
+  const result = await tool.execute({
+    questions: [{ id: 'a', type: 'multi', multi_select: false, question: '？', options: [{ label: '甲' }] }],
+  }, exec);
+  assert.equal(result.rejected, true);
+  assert.match(result.violations[0], /multi_select/);
+  assert.deepEqual(concluded, []);
 });
 
 await test('输出 schema 是 pending 声明，不再有等答案那套 answers/callId', async () => {
@@ -114,7 +164,7 @@ await test('输出 schema 是 pending 声明，不再有等答案那套 answers/
 await test('执行立即返回 pending 声明：不携带 callId，message 讲清「表单已展示、答案会晚到」', async () => {
   const { tool } = await assemble();
   const { exec, concluded } = makeExec();
-  const result = await tool.execute({ questions: [{ id: 'a', question: '选哪个？' }] }, exec);
+  const result = await tool.execute({ questions: [{ id: 'a', type: 'free', question: '选哪个？' }] }, exec);
   assert.equal(result.pending, true);
   assert.equal(typeof result.message, 'string');
   assert.ok(result.message.length > 0);
@@ -127,9 +177,9 @@ await test('同一个执行上下文只标记一次；两次调用各自标记�
   const { tool } = await assemble();
   const first = makeExec();
   const second = makeExec();
-  await tool.execute({ questions: [{ id: 'a', question: '？' }] }, first.exec);
-  await tool.execute({ questions: [{ id: 'b', question: '？' }] }, first.exec);
-  await tool.execute({ questions: [{ id: 'c', question: '？' }] }, second.exec);
+  await tool.execute({ questions: [{ id: 'a', type: 'free', question: '？' }] }, first.exec);
+  await tool.execute({ questions: [{ id: 'b', type: 'free', question: '？' }] }, first.exec);
+  await tool.execute({ questions: [{ id: 'c', type: 'free', question: '？' }] }, second.exec);
   assert.equal(first.concluded.length, 2);
   assert.equal(second.concluded.length, 1);
 });
@@ -137,7 +187,7 @@ await test('同一个执行上下文只标记一次；两次调用各自标记�
 await test('render 给出模型读到的那段 JSON（message 就在里面）', async () => {
   const { tool } = await assemble();
   const { exec } = makeExec();
-  const result = await tool.execute({ questions: [{ id: 'a', question: '？' }] }, exec);
+  const result = await tool.execute({ questions: [{ id: 'a', type: 'free', question: '？' }] }, exec);
   const blocks = tool.output.render({ questions: [] }, result);
   assert.deepEqual(blocks, [{ type: 'text', text: JSON.stringify(result) }]);
 });
@@ -155,24 +205,24 @@ const rejected = async (questions) => {
 };
 
 await test('重复的 id 被拒', async () => {
-  const violations = await rejected([{ id: 'dup', question: '甲？' }, { id: 'dup', question: '乙？' }]);
+  const violations = await rejected([{ id: 'dup', type: 'free', question: '甲？' }, { id: 'dup', type: 'free', question: '乙？' }]);
   assert.equal(violations.length, 1);
   assert.match(violations[0], /repeats an id/);
 });
 
 await test('空题干被拒（schema 只保证字段存在，不保证有内容）', async () => {
-  const violations = await rejected([{ id: 'a', question: '   ' }]);
+  const violations = await rejected([{ id: 'a', type: 'free', question: '   ' }]);
   assert.match(violations[0], /empty question text/);
 });
 
 await test('空 label 被拒', async () => {
-  const violations = await rejected([{ id: 'a', question: '？', options: [{ label: ' ' }] }]);
+  const violations = await rejected([{ id: 'a', type: 'multi', question: '？', options: [{ label: ' ' }] }]);
   assert.match(violations[0], /option 1 has an empty label/);
 });
 
 await test('同题两个选项归一化后同名：被拒（界面按 label 认选项）', async () => {
   const violations = await rejected([
-    { id: 'a', question: '？', options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] },
+    { id: 'a', type: 'multi', question: '？', options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] },
   ]);
   assert.match(violations[0], /same label "A：移走（推荐）"/);
 });
@@ -183,6 +233,7 @@ await test('选项名里的标点不再是拒收项：顿号、冒号、换行�
   const result = await tool.execute({
     questions: [{
       id: 'a',
+      type: 'multi',
       question: '？',
       options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }, { label: '两行\n的选项名' }],
     }],
@@ -204,7 +255,7 @@ await test('总说明不再手写规则清单：只报数量，规则由逐条�
   const { tool } = await assemble();
   const { exec } = makeExec();
   const result = await tool.execute({
-    questions: [{ id: 'a', question: '   ' }, { id: 'b', question: '？', options: [{ label: ' ' }] }],
+    questions: [{ id: 'a', type: 'free', question: '   ' }, { id: 'b', type: 'multi', question: '？', options: [{ label: ' ' }] }],
   }, exec);
   assert.equal(result.rejected, true);
   assert.equal(result.violations.length, 2);
@@ -215,7 +266,7 @@ await test('总说明不再手写规则清单：只报数量，规则由逐条�
 await test('投出表单后那句话里的作答格式与真实格式一致（标题以全角冒号收尾、每项一行带记号）', async () => {
   const { tool } = await assemble();
   const { exec } = makeExec();
-  const result = await tool.execute({ questions: [{ id: 'a', question: '？' }] }, exec);
+  const result = await tool.execute({ questions: [{ id: 'a', type: 'free', question: '？' }] }, exec);
   assert.match(result.message, /"<title>："/);
   assert.match(result.message, /"- " line per chosen option or typed text/);
 });
@@ -223,7 +274,7 @@ await test('投出表单后那句话里的作答格式与真实格式一致（�
 await test('保留前缀这条规则已随轮末补充题删除：__grill_ 前缀的 id 可以正常投出', async () => {
   const { tool } = await assemble();
   const { exec, concluded } = makeExec();
-  const result = await tool.execute({ questions: [{ id: '__grill_round_supplement__', question: '？' }] }, exec);
+  const result = await tool.execute({ questions: [{ id: '__grill_round_supplement__', type: 'free', question: '？' }] }, exec);
   assert.equal(result.pending, true);
   assert.deepEqual(concluded, ['concludeTurn']);
 });
@@ -231,6 +282,7 @@ await test('保留前缀这条规则已随轮末补充题删除：__grill_ 前�
 await test('展开正文里把选项又列了一遍：被拒（页面上会出现两遍选项）', async () => {
   const violations = await rejected([{
     id: 'a',
+    type: 'multi',
     question: '配置入口放哪？',
     detail: '先交代一个会左右选法的事实。\n\n- **甲**·详情页里的「配置」入口\n- **乙**·列表里直接多一张卡片',
     options: [{ label: '甲：详情页里的配置入口，进去是一整页' }, { label: '乙：列表里直接一张卡片' }],
@@ -245,6 +297,7 @@ await test('展开正文只写各选项共用的背景：照常投出', async ()
   const result = await tool.execute({
     questions: [{
       id: 'a',
+      type: 'multi',
       question: '配置入口放哪？',
       detail: '这一版本来就是这么设计的：三个落点都已经预留在插件页。',
       options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
@@ -265,7 +318,7 @@ await test('缺 label 由 defineTool 的入参校验拦住，不进本插件的 
   const { tool } = await assemble();
   const { exec } = makeExec();
   await assert.rejects(
-    () => tool.execute({ questions: [{ id: 'a', question: '？', options: [{ description: 'x' }] }] }, exec),
+    () => tool.execute({ questions: [{ id: 'a', type: 'multi', question: '？', options: [{ description: 'x' }] }] }, exec),
     /missing required property "questions\[0\]\.options\[0\]\.label"/,
   );
 });

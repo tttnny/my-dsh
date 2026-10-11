@@ -125,6 +125,7 @@ const argsRaw = JSON.stringify({
   questions: [
     {
       id: 'h1',
+      type: 'multi',
       number: 'Q2',
       header: 'Host 权威层',
       question: 'Host 权威层怎么改？',
@@ -134,13 +135,13 @@ const argsRaw = JSON.stringify({
         { label: 'B：新建一层', recommended: true },
       ],
     },
-    { id: 'h2', question: '范围呢？' },
+    { id: 'h2', type: 'free', question: '范围呢？', detail: '自由题也能带一段共用背景。' },
   ],
 });
 const pending = JSON.stringify({ pending: true, message: 'form shown' });
 /** 一条推荐都没有的一轮：用来量「什么都没填」时导入键确实是灰的。 */
 const plainArgsRaw = JSON.stringify({
-  questions: [{ id: 'p1', question: '不带推荐的一题', options: [{ label: '甲：这样' }, { label: '乙：那样' }] }],
+  questions: [{ id: 'p1', type: 'multi', question: '不带推荐的一题', options: [{ label: '甲：这样' }, { label: '乙：那样' }] }],
 });
 /** 本轮那次调用：默认是投出去的那一次（结果 pending）。 */
 const settled = (text, extra = {}) => ({
@@ -266,6 +267,14 @@ test('本轮的表被拒：尾部什么都不画（违规清单归工具行）',
   globalThis.localStorage = fakeStorage();
   const rejected = settled(JSON.stringify({ rejected: true, violations: ['x'], error: 'y' }));
   assert.equal(html({ call: rejected }).markup, '');
+});
+
+test('老轮次的表不画：升级前的调用没写题型，题面读不出来就什么都不画', () => {
+  globalThis.localStorage = fakeStorage();
+  const legacy = settled(pending, {
+    argsRaw: JSON.stringify({ questions: [{ id: 'a', question: '选哪个？', multi_select: false, options: [{ label: '甲' }] }] }),
+  });
+  assert.equal(html({ call: legacy }).markup, '');
 });
 
 test('推荐项默认勾上；取消掉之后不再勾回来（「清空过」与「没作答」分得开）', () => {
@@ -482,7 +491,7 @@ test('冻结时不再有任何导入入口：只剩分叉键', () => {
 test('单选题：勾选框上再点别的项就换掉上一个（一题至多一项），题面照旧把两项都画出来', () => {
   globalThis.localStorage = fakeStorage();
   const single = JSON.stringify({
-    questions: [{ id: 'q', question: '继续吗？', multi_select: false, options: [{ label: '继续', recommended: true }, { label: '停一下' }] }],
+    questions: [{ id: 'q', type: 'single', question: '继续吗？', options: [{ label: '继续', recommended: true }, { label: '停一下' }] }],
   });
   const { markup, buttons } = html({ call: settled(pending, { argsRaw: single }) });
   assert.match(markup, /继续/);
@@ -495,14 +504,32 @@ test('单选题：勾选框上再点别的项就换掉上一个（一题至多�
 test('单选题的元素上标了「这一题是单选」，多选不标——圆圈外观靠这个标记挂钩', () => {
   globalThis.localStorage = fakeStorage();
   const single = JSON.stringify({
-    questions: [{ id: 'q', question: '继续吗？', multi_select: false, options: [{ label: '继续' }] }],
+    questions: [{ id: 'q', type: 'single', question: '继续吗？', options: [{ label: '继续' }] }],
   });
   const singleMarkup = html({ call: settled(pending, { argsRaw: single }) }).markup;
   assert.match(singleMarkup, /data-class="[^"]*\bdsg-optionSingle\b/, '单选那题的元素带单选标记');
-  // 多选题（缺省）不标，方框保持系统默认外观
+  // 多选题不标，方框保持系统默认外观
   const multiMarkup = html().markup;
   assert.match(multiMarkup, /data-class="dsg-option"/);
   assert.doesNotMatch(multiMarkup, /dsg-optionSingle/);
+});
+
+test('自由题：只有一个打字框——没有选择器、没有提示语，框比别的题高', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html();
+  // 这一轮里 h1 是多选、h2 是自由题：两题各画一个打字框，但只有 h1 那两个选项是选择器
+  assert.match(markup, /范围呢？/);
+  const boxes = [...markup.matchAll(/<textarea[^>]*>/g)].map((match) => match[0]);
+  assert.equal(boxes.length, 2, '每题一个打字框');
+  assert.equal([...markup.matchAll(/<label data-checked=/g)].length, 2, '自由题没有选择器');
+  // 多选那题：矮一点，框里有提示语
+  assert.match(boxes[0], /rows="2"/);
+  assert.match(boxes[0], /placeholder="选项不够用的话，在这里自己写一段"/);
+  // 自由题：高一点，空着不写提示语（它只有这一个框，没什么可指的）
+  assert.match(boxes[1], /rows="4"/);
+  assert.doesNotMatch(boxes[1], /placeholder/);
+  // 自由题也带得了 detail（三种题型都能写共用背景）
+  assert.match(markup, /自由题也能带一段共用背景。/);
 });
 
 // --- 工具行：表搬走之后只剩被拒与失败 ---

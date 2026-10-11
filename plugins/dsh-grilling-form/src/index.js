@@ -1,5 +1,5 @@
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { validateRound } from "./form-model.js";
+import { QUESTION_TYPES, validateRound } from "./form-model.js";
 
 /**
  * @lynn123411/dsh-grilling-form — grilling 轮的逐题盘问工具。
@@ -10,9 +10,9 @@ import { validateRound } from "./form-model.js";
  * 投在对话流的轮次尾部，自己立刻结束本轮。
  *
  * 一条调用只做三件事：
- *   - 校验入参（见 validateRound）：重复 id、空题干、空 label、同题归一化后重名 label、
- *     展开正文里把选项又列一遍（那会让页面上出现两遍选项，一遍带选择器一遍不带）
- *     命中即返回可修复的拒绝，且**不标记结束**，让模型改完重调；
+ *   - 校验入参（见 validateRound）：重复 id、空题干、缺题型、题型与选项数不搭（单选多选没选项、
+ *     自由题给了选项）、同题归一化后重名 label、展开正文里把选项又列一遍（那会让页面上出现两遍
+ *     选项，一遍带选择器一遍不带）命中即返回可修复的拒绝，且**不标记结束**，让模型改完重调；
  *   - 通过校验就标记本轮结束（exec.concludeTurn()）——本轮到此为止，不再等答案；
  *   - 返回一条 pending 声明：表单已展示、用户会在他自己的输入框里作答、那条发言随后作为
  *     下一条用户消息到达，别把它当成已回答、也别再写一遍题目。
@@ -84,9 +84,11 @@ function apply(ctx, config) {
               required: true,
               description: "The specific question to ask the user. Keep it to the one line that asks; put any longer body in detail.",
             },
-            multi_select: {
-              type: "boolean",
-              description: "Default true: the user may check several options. Set false for a question that has exactly one right answer (a yes/no, or pick-one): the form then shows one-choice rows and keeps at most one of them.",
+            type: {
+              type: "string",
+              required: true,
+              enum: [...QUESTION_TYPES],
+              description: "What kind of question this is. single = one-choice rows, at most one kept; multi = checkboxes, any number kept; free = no options at all, just one box the user types into.",
             },
             header: {
               type: "string",
@@ -102,7 +104,7 @@ function apply(ctx, config) {
             },
             options: {
               type: "array",
-              description: "Optional choices the form shows for this question. If you recommend one, put it first and either append \"（推荐）\" to its label or set its recommended flag.",
+              description: "The choices this question shows. Required for type single and multi (at least one); forbidden for type free. If you recommend one, put it first and either append \"（推荐）\" to its label or set its recommended flag.",
               items: {
                 type: "object",
                 additionalProperties: true,

@@ -371,8 +371,9 @@ function QuestionList({ questions, answers, locked, t, onToggleOption, onCustom 
 }
 
 /**
- * 一道题的作答区：可多选（默认）或单选（题面上标了单选）的选项行加一个自填框。冻结时整块
- * 锁住，但长相与可填时一模一样（勾选态、自填的字、推荐徽标、说明都原样留着，只是改不了）。
+ * 一道题的作答区：按题型分三种。单选画成一题至多一项的选项行、多选是若干勾选框、自由题只有
+ * 一个自己打字的框；单选与多选底下另有一个自填框，用来补选项覆盖不到的话。冻结时整块锁住，
+ * 但长相与可填时一模一样（勾选态、自填的字、推荐徽标、说明都原样留着，只是改不了）。
  *
  * 单选靠勾选框自己的开关语义表达（ui-primitives 里没有单选控件）：选中那一项上再点一下就
  * 取消，勾别的项时上一个自动让位——内壳保证一题至多留一项。只是**外观**上把单选那题的选择器
@@ -382,17 +383,19 @@ function QuestionList({ questions, answers, locked, t, onToggleOption, onCustom 
  * 自填框用原生 textarea——ui-primitives 没有多行输入控件，官方那张答题卡也是自己画的
  * textarea；除它之外的控件都用 ui-primitives。
  * @param {OptionListProps} props - 题目、当前作答、锁定状态与回调。
- * @returns {import('react').ReactNode} 选项与自填。
+ * @returns {import('react').ReactNode} 该题的作答区。
  */
 function OptionList({ question, answer, locked, t, onToggleOption, onCustom }) {
   const selected = answer?.selected ?? [];
+  // 自由题与另外两种的差别只在那个框上（高一点、不写提示语）；选项列表由题型自己决定有没有。
+  const free = question.type === 'free';
   return (
     <div className="dsg-options">
       {question.options.map((option) => (
         <div className="dsg-optionRow" key={option.label}>
           <div className="dsg-optionMain">
             <Checkbox
-              className={question.multiSelect === false ? 'dsg-option dsg-optionSingle' : 'dsg-option'}
+              className={question.type === 'single' ? 'dsg-option dsg-optionSingle' : 'dsg-option'}
               checked={selected.includes(option.label)}
               disabled={locked}
               label={option.displayLabel}
@@ -405,10 +408,10 @@ function OptionList({ question, answer, locked, t, onToggleOption, onCustom }) {
       ))}
       <textarea
         className="dsg-custom"
-        rows={2}
+        rows={free ? 4 : 2}
         readOnly={locked}
         value={answer?.custom ?? ''}
-        placeholder={t('row.customPlaceholder')}
+        placeholder={free ? undefined : t('row.customPlaceholder')}
         aria-label={`${t('row.customLabel')}：${question.question}`}
         onChange={locked ? () => {} : (event) => onCustom(question, event.target.value)}
       />

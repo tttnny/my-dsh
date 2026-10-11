@@ -53,7 +53,9 @@ function test(name, fn) {
 
 const args = (questions) => JSON.stringify({ questions });
 const pending = JSON.stringify({ pending: true, message: 'form shown' });
-const call = (overrides = {}) => ({ id: 'a', question: '选哪个？', ...overrides });
+/** 一题的入参。**缺省是自由题**（题干 + 没有选项，也就是最小的一轮有效入参）：题型是必填的，
+ * 这个默认值只是让不关心题型的用例少写一个字段；要选项的题在用例里写明 type: 'single' / 'multi'。 */
+const call = (overrides = {}) => ({ id: 'a', question: '选哪个？', type: 'free', ...overrides });
 
 /** 只有 getItem/setItem 的假存储。 */
 function fakeStorage(initial = {}) {
@@ -135,6 +137,7 @@ test('结果形状不认识：状态是调用失败，题面还在', () => {
 test('detail 与选项：detail 空白即省略，选项归一化成展示文字与推荐标记', () => {
   const model = readFormModel({
     argsRaw: args([call({
+      type: 'multi',
       detail: '第一段。\n\n第二段。',
       options: [
         { label: 'A：移走', description: '只留一个；推荐' },
@@ -166,8 +169,56 @@ test('同一轮里 id 重复：题面整体作废（界面按 id 配对，重复
 // --- 入参校验 ---
 
 test('入参校验：干净的一轮没有违规', () => {
-  assert.deepEqual(validateRound([call({ options: [{ label: 'A' }, { label: 'B' }] })]), []);
+  assert.deepEqual(validateRound([call({ type: 'multi', options: [{ label: 'A' }, { label: 'B' }] })]), []);
   assert.deepEqual(validateRound([call()]), []);
+});
+
+test('入参校验：没写题型被拒——题型是必填的', () => {
+  const violations = validateRound([{ id: 'a', question: '选哪个？' }]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /must declare type/);
+});
+
+test('入参校验：题型写了别的值被拒，且说明里带上那三个取值', () => {
+  for (const type of ['checkbox', 'SINGLE', 42, '', null]) {
+    const violations = validateRound([call({ type, options: [{ label: 'A' }] })]);
+    assert.equal(violations.length, 1, JSON.stringify(type));
+    assert.match(violations[0], /one of single, multi, free/, JSON.stringify(type));
+  }
+});
+
+test('入参校验：老开关 multi_select 被拒——题型是必填的 type，一个字段说一件事', () => {
+  const violations = validateRound([{ id: 'a', question: '选哪个？', multi_select: false }]);
+  assert.equal(violations.length, 1, '两处说的是同一件事，只报一条');
+  assert.match(violations[0], /multi_select/);
+  assert.match(violations[0], /type: single, multi or free/);
+});
+
+test('入参校验：题型写对了也带着老开关——照样被拒（并存时两处随时会自相矛盾）', () => {
+  // 老开关说单选、新题型说多选：绝不能按多选画却不吭声
+  const violations = validateRound([call({ type: 'multi', multi_select: false, options: [{ label: '甲' }] })]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /multi_select/);
+  // 原生那套 camelCase 写法也不认
+  assert.equal(validateRound([call({ type: 'multi', multiSelect: false, options: [{ label: '甲' }] })]).length, 1);
+});
+
+test('入参校验：单选、多选至少要有一个选项（没有选项就没得选）', () => {
+  for (const type of ['single', 'multi']) {
+    const violations = validateRound([call({ type })]);
+    assert.equal(violations.length, 1, type);
+    assert.match(violations[0], /gives no options/);
+  }
+});
+
+test('入参校验：自由题不许给选项——它只有一个自己打字的框', () => {
+  const violations = validateRound([call({ type: 'free', options: [{ label: 'A' }] })]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /free question/);
+});
+
+test('入参校验：自由题给一个空数组不算给选项', () => {
+  assert.deepEqual(validateRound([call({ type: 'free', options: [] })]), []);
 });
 
 test('入参校验：重复 id 被拒', () => {
@@ -183,13 +234,13 @@ test('入参校验：空题干被拒', () => {
 });
 
 test('入参校验：空 label 被拒', () => {
-  const violations = validateRound([call({ options: [{ label: ' ' }] })]);
+  const violations = validateRound([call({ type: 'multi', options: [{ label: ' ' }] })]);
   assert.equal(violations.length, 1);
   assert.match(violations[0], /option 1 has an empty label/);
 });
 
 test('入参校验：同题两个选项归一化后同名被拒（界面按 label 认选项）', () => {
-  const violations = validateRound([call({ options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] })]);
+  const violations = validateRound([call({ type: 'multi', options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] })]);
   assert.equal(violations.length, 1);
   assert.match(violations[0], /same label "A：移走（推荐）"/);
 });
@@ -218,13 +269,14 @@ test('入参校验：题不是对象时交回一条违规，而不是读字段�
 });
 
 test('入参校验：选项名里的标点不再是问题——顿号、冒号、换行都照常投出', () => {
-  assert.deepEqual(validateRound([call({ options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] })]), []);
-  assert.deepEqual(validateRound([call({ options: [{ label: '选项里带：冒号，和、顿号' }] })]), []);
-  assert.deepEqual(validateRound([call({ options: [{ label: '两行\n的选项名' }] })]), []);
+  assert.deepEqual(validateRound([call({ type: 'multi', options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] })]), []);
+  assert.deepEqual(validateRound([call({ type: 'multi', options: [{ label: '选项里带：冒号，和、顿号' }] })]), []);
+  assert.deepEqual(validateRound([call({ type: 'multi', options: [{ label: '两行\n的选项名' }] })]), []);
 });
 
 test('入参校验：展开正文里把选项又列了一遍被拒（截图里「一遍不带选择器、一遍带」的那种）', () => {
   const violations = validateRound([call({
+    type: 'multi',
     detail: [
       '先交代一个会左右选法的事实：这一版本来就是这么设计的。',
       '',
@@ -244,6 +296,7 @@ test('入参校验：展开正文里把选项又列了一遍被拒（截图里�
 
 test('入参校验：展开正文只写各选项共用的背景时不算违规', () => {
   assert.deepEqual(validateRound([call({
+    type: 'multi',
     detail: '这一版本来就是这么设计的：自带配置的插件把配置渲染在插件页。\n\n三个落点都已经预留在插件页。',
     options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接多一张卡片' }],
   })]), []);
@@ -251,6 +304,7 @@ test('入参校验：展开正文只写各选项共用的背景时不算违规',
 
 test('入参校验：单个字母的选项标签不因英文正文的同形开头被误拒', () => {
   assert.deepEqual(validateRound([call({
+    type: 'multi',
     detail: 'A note about how the panel opens today, and why that matters.',
     options: [{ label: 'A：扩展 /archive/guardCheck' }, { label: 'B：新建一层' }],
   })]), []);
@@ -258,6 +312,7 @@ test('入参校验：单个字母的选项标签不因英文正文的同形开�
 
 test('入参校验：整行就是那个标签（没有后续解释）也算重述', () => {
   const violations = validateRound([call({
+    type: 'multi',
     detail: '两个方向：\n- 甲\n- 乙',
     options: [{ label: '甲：搬家' }, { label: '乙：不搬' }],
   })]);
@@ -267,6 +322,7 @@ test('入参校验：整行就是那个标签（没有后续解释）也算重�
 
 test('入参校验：选项名与解释之间空了一格也算重述', () => {
   const violations = validateRound([call({
+    type: 'multi',
     detail: '- 甲 · 详情页里的「配置」入口\n- 乙 · 列表里直接多一张卡片',
     options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
   })]);
@@ -276,6 +332,7 @@ test('入参校验：选项名与解释之间空了一格也算重述', () => {
 
 test('入参校验：正文里顺口提到选项名不算重述，只有「以选项名开头的条目」才算', () => {
   assert.deepEqual(validateRound([call({
+    type: 'multi',
     detail: '甲、乙两种做法各有代价，我倾向甲。\n\n选甲：也不用现在就定。',
     options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
   })]), []);
@@ -283,6 +340,7 @@ test('入参校验：正文里顺口提到选项名不算重述，只有「以�
 
 test('入参校验：别名后面跟的是字而不是分隔符时不算重述', () => {
   assert.deepEqual(validateRound([call({
+    type: 'multi',
     detail: '保留现状的代价是每轮都要多看一眼。',
     options: [{ label: '保留现状' }, { label: '换个做法' }],
   })]), []);
@@ -290,6 +348,7 @@ test('入参校验：别名后面跟的是字而不是分隔符时不算重述',
 
 test('入参校验：序号列表（全角括号）里的重述也认', () => {
   const violations = validateRound([call({
+    type: 'multi',
     detail: '1）甲：详情页里的配置入口\n2）乙：列表里直接一张卡片',
     options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
   })]);
@@ -330,17 +389,17 @@ test('默认勾选：没有推荐的题不会凭空多出作答', () => {
 
 test('默认勾选：单选题上推荐项也只默认一项（多标了推荐仍留第一项）', () => {
   const questions = [
-    { id: 'a', multiSelect: false, options: [{ label: 'A（推荐）', displayLabel: 'A', recommended: true }, { label: 'B（推荐）', displayLabel: 'B', recommended: true }] },
+    { id: 'a', type: 'single', options: [{ label: 'A（推荐）', displayLabel: 'A', recommended: true }, { label: 'B（推荐）', displayLabel: 'B', recommended: true }] },
   ];
   assert.deepEqual(applyRecommendedDefaults(questions, {}), { a: { selected: ['A（推荐）'], custom: '' } });
 });
 
 test('默认勾选：单选题把哪来的作答都收敛到一项——用户勾了两项也只剩第一项', () => {
-  const questions = [{ id: 'a', multiSelect: false, options: [{ label: 'A', displayLabel: 'A' }, { label: 'B', displayLabel: 'B' }] }];
+  const questions = [{ id: 'a', type: 'single', options: [{ label: 'A', displayLabel: 'A' }, { label: 'B', displayLabel: 'B' }] }];
   const stored = { a: { selected: ['A', 'B'], custom: '自填留着' } };
   assert.deepEqual(applyRecommendedDefaults(questions, stored), { a: { selected: ['A'], custom: '自填留着' } });
   // 多选题照旧不收敛
-  const multi = [{ id: 'a', multiSelect: true, options: [] }];
+  const multi = [{ id: 'a', type: 'multi', options: [] }];
   assert.deepEqual(applyRecommendedDefaults(multi, stored), stored);
 });
 
@@ -348,15 +407,22 @@ test('默认勾选：题面还没读出来（或不是本插件的形状）时�
   assert.deepEqual(applyRecommendedDefaults([], { a: { selected: ['A'], custom: '' } }), { a: { selected: ['A'], custom: '' } });
 });
 
-test('题面取数：题号并入标题之外，还把题型读出来（缺省多选、写 false 才是单选）', () => {
+test('题面取数：题号并入标题之外，还照原样把题型读出来（三种都读得出）', () => {
   const model = readFormModel({
     argsRaw: args([
-      call({ id: 'a', multi_select: false }),
-      call({ id: 'b', multiSelect: false }),
-      call({ id: 'c' }),
+      call({ id: 'a', type: 'single', options: [{ label: 'A' }] }),
+      call({ id: 'b', type: 'multi', options: [{ label: 'A' }] }),
+      call({ id: 'c', type: 'free' }),
     ]),
   });
-  assert.deepEqual(model.questions.map((question) => question.multiSelect), [false, false, true]);
+  assert.deepEqual(model.questions.map((question) => question.type), ['single', 'multi', 'free']);
+});
+
+test('题面取数：没写题型的轮次没有题面——老轮次（升级前写的是 multi_select）的表因此不再画出来', () => {
+  assert.deepEqual(readFormModel({ argsRaw: args([{ id: 'a', question: '？', multi_select: false }]) }).questions, []);
+  assert.deepEqual(readFormModel({ argsRaw: args([{ id: 'a', question: '？' }]) }).questions, []);
+  // 同一轮里只要有一题缺题型，整轮作废（不是只丢那一题）
+  assert.deepEqual(readFormModel({ argsRaw: args([call(), { id: 'b', question: '？' }]) }).questions, []);
 });
 
 // --- 导入文本 ---
@@ -444,7 +510,7 @@ test('草稿一致性：草稿里那段正是当前作答时为真，旧了、�
 });
 
 test('草稿反解：草稿里那段导入块逐题回到作答表；没块、块里认不出题时为 undefined', () => {
-  const questions = [call({ options: [{ label: 'A：这样', displayLabel: 'A：这样' }] })];
+  const questions = [call({ type: 'multi', options: [{ label: 'A：这样', displayLabel: 'A：这样' }] })];
   const draft = applyImport('', importBody(questions, { a: { selected: ['A：这样'], custom: '补一句' } }));
   assert.deepEqual(parseImportedDraft(draft, questions), [{ question: questions[0], selected: ['A：这样'], custom: '补一句' }]);
   assert.equal(parseImportedDraft('我自己的话。', questions), undefined);
@@ -453,7 +519,7 @@ test('草稿反解：草稿里那段导入块逐题回到作答表；没块、�
 });
 
 test('只认新标记：升级前那段【盘问作答】的块不算作答块，导入时也不替换它', () => {
-  const questions = [call({ options: [{ label: 'A：这样', displayLabel: 'A：这样' }] })];
+  const questions = [call({ type: 'multi', options: [{ label: 'A：这样', displayLabel: 'A：这样' }] })];
   const legacy = '【盘问作答】\nQ2 · Deadline：\n- 选 A\n【/盘问作答】';
   assert.equal(parseImportedAnswersResult(legacy, questions).kind, 'none', '老轮次的那段不再当作答块');
   assert.equal(parseImportedDraft(legacy, questions), undefined);
@@ -534,9 +600,9 @@ test('轮次定位：本轮里别的工具不是这张表；被拒之后又投�
 // --- 反解：按实发消息重画表单 ---
 
 const reverseQuestions = [
-  { id: 'h1', header: 'Q2 · Host 权威层', question: 'Host 权威层怎么改？', options: [{ label: 'A：扩展（推荐）', displayLabel: 'A：扩展', recommended: true }, { label: 'B：新建一层', displayLabel: 'B：新建一层', recommended: false }] },
-  { id: 'h2', header: '', question: '范围呢？', options: [{ label: '甲：只改插件', displayLabel: '甲：只改插件' }] },
-  { id: 'h3', header: '', question: '没答的题', options: [] },
+  { id: 'h1', type: 'multi', header: 'Q2 · Host 权威层', question: 'Host 权威层怎么改？', options: [{ label: 'A：扩展（推荐）', displayLabel: 'A：扩展', recommended: true }, { label: 'B：新建一层', displayLabel: 'B：新建一层', recommended: false }] },
+  { id: 'h2', type: 'multi', header: '', question: '范围呢？', options: [{ label: '甲：只改插件', displayLabel: '甲：只改插件' }] },
+  { id: 'h3', type: 'free', header: '', question: '没答的题', options: [] },
 ];
 const replyText = (body) => `${IMPORT_BLOCK_START}\n${body}\n${IMPORT_BLOCK_END}`;
 
@@ -656,7 +722,7 @@ test('冻结：块在就以块为准，块坏了退回本地那份，根本没�
 });
 
 test('冻结：实发块里单选题写了两行选项，重画时也只留一项', () => {
-  const questions = [{ id: 's', header: 'Q9', question: '继续吗？', multiSelect: false, options: [{ label: '继续', displayLabel: '继续' }, { label: '停一下', displayLabel: '停一下' }] }];
+  const questions = [{ id: 's', type: 'single', header: 'Q9', question: '继续吗？', options: [{ label: '继续', displayLabel: '继续' }, { label: '停一下', displayLabel: '停一下' }] }];
   const parsed = frozenFormAnswers(questions, {}, replyText('Q9：\n- 继续\n- 停一下'));
   assert.deepEqual(parsed.answers.s, { selected: ['继续'], custom: '' });
 });

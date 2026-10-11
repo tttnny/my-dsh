@@ -26,14 +26,19 @@ import { normalizeOption } from './recommendation.js';
  */
 
 /**
+ * 一道题的题型：单选、多选、自由（只有一个自己打字的框）。
+ * @typedef {'single'|'multi'|'free'} QuestionType
+ */
+
+/**
  * 一道题的模型（readQuestions 的产物）。
  * @typedef {object} Question
  * @property {string} id 题目身份：作答表按它取用。
  * @property {string} header 题号并入后的标题；没给标题时为空串。
  * @property {string} question 题干。
  * @property {string|undefined} detail 展开正文（markdown）。
- * @property {boolean} multiSelect 是否多选；只有显式写 multi_select: false 才是单选。
- * @property {QuestionOption[]} options 选项。
+ * @property {QuestionType} type 题型：必填，决定页面长什么样。
+ * @property {QuestionOption[]} options 选项；单选、多选至少一个，自由题没有。
  */
 
 /**
@@ -101,7 +106,8 @@ import { normalizeOption } from './recommendation.js';
  *      钉子）、`scripts/test-form-session.mjs`、`scripts/test-render.mjs`；
  *   3. `scripts/smoke-host.mjs` 钉的是作答段的行形（起止行不在其内）；
  *   4. 本包 `README.md` 与仓库根 `README.md`；
- *   5. matt-skills-dsh 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）：工具改名时
+ *   5. 根 `GLOSSARY.md`：题型三种取值与起止行都在词条里（本次就是这样补上去的）；
+ *   6. matt-skills-dsh 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）：工具改名时
  *      正文里那句工具名要跟着改。它不随本包发布、也没有任何测试看得见它，漂移只会以模型行为
  *      静默表现出来。
  * 新增任何写死这些字面量的测试或文档，都要补进这份清单。 */
@@ -243,9 +249,14 @@ function detailRestatesOption(detail, aliases) {
 
 /**
  * 这一轮的入参能不能画成表单。题干与选项的分工整体上是引导——子串匹配会误拒合法题干，
- * 坏题干好过假拒绝——只有一处例外：展开正文里把选项又列一遍（那会让同一批选项在页面上
- * 出现两遍，一遍带选择器、一遍不带，见 detailRestatesOption）。命中即返回可修复的拒绝，
- * 模型改完重投。
+ * 坏题干好过假拒绝——只有两处例外：题型与选项的搭配（见下），以及展开正文里把选项又列一遍
+ * （那会让同一批选项在页面上出现两遍，一遍带选择器、一遍不带，见 detailRestatesOption）。
+ * 命中即返回可修复的拒绝，模型改完重投。
+ *
+ * 题型是**必填**的三种之一（single / multi / free）：页面上画成什么样全看它，缺一个就无从画起。
+ * 与之配套的是选项数——single / multi 至少一个选项（没有可选的东西），free 一个都不许有
+ * （它只有一个自己打字的框）。升级前那版的可选开关 multi_select 不再认：入参里带着它就被退回
+ * （理由见下面那条违规的说明）。
  *
  * 选项名里的标点早先也是拒收项（作答靠顿号分项）；作答格式改成「一项一行」之后，任何标点
  * 都读得回来，这条规则连同它的联动点一并删除。
@@ -265,7 +276,7 @@ export function validateRound(questions) {
   const seenIds = new Set();
   questions.forEach((question, questionIndex) => {
     if (!isRecord(question)) {
-      violations.push(`Question ${questionIndex + 1} is not an object; every question needs at least an id and a question text`);
+      violations.push(`Question ${questionIndex + 1} is not an object; every question needs at least an id, a question text and a type`);
       return;
     }
     const where = `Question ${questionIndex + 1} (id ${JSON.stringify(question.id)})`;
@@ -278,10 +289,27 @@ export function validateRound(questions) {
     if (isBlank(question.question)) {
       violations.push(`${where} has an empty question text; write the question itself in question and its body in detail`);
     }
+    const type = readQuestionType(question);
+    // 题型与老开关是同一件事的两种写法，所以只说一条：带着老开关就以它为准报（那条说明同时讲了
+    // 该怎么改），没有老开关才报「没写题型」。两者都给也照样报——那两处随时可能自相矛盾
+    // （写 multi_select: false 却按 multi 画），静默丢掉旧的比退回去让它删掉更糟。
+    const carriesOldSwitch = 'multi_select' in question || 'multiSelect' in question;
+    if (carriesOldSwitch) {
+      violations.push(`${where} still carries multi_select; that switch is gone — the question type is the required "type" field now, so drop multi_select and say it once, as type: single, multi or free`);
+    } else if (type === undefined) {
+      violations.push(`${where} must declare type, one of single, multi, free: it decides what the question looks like (single-choice rows, several checkboxes, or one free-text box)`);
+    }
+    const optionList = Array.isArray(question.options) ? question.options : [];
+    if (type === 'free') {
+      if (optionList.length > 0) {
+        violations.push(`${where} is a free question but gives options; a free question is one box the user types into, so drop options or change type`);
+      }
+    } else if (type !== undefined && optionList.length === 0) {
+      violations.push(`${where} is type ${type} but gives no options; a question with a choice needs at least one option (use type free for one the user answers in their own words)`);
+    }
     const seenLabels = new Set();
     /** @type {string[]} */
     const aliases = [];
-    const optionList = Array.isArray(question.options) ? question.options : [];
     optionList.forEach((option, optionIndex) => {
       const normalized = normalizeOption(option);
       if (isBlank(normalized.label)) {
@@ -303,8 +331,25 @@ export function validateRound(questions) {
   return violations;
 }
 
+/** 三种题型的取值：错误说明里点名的、工具 schema 的 enum、以及页面分派的判据都用这一份
+ * （schema 里写第二份字面量必然在加题型时漂）。顺序与页面上的顺序一致。
+ * @type {readonly QuestionType[]} */
+export const QUESTION_TYPES = ['single', 'multi', 'free'];
+
 /**
- * argsRaw → 模型出的题。解析失败、没有 questions、或 id 重复（界面按 id 配对，重复即无从配对）时返回空数组。
+ * 一题的题型。只认那三个字符串之一：升级前那版的可选开关 `multi_select` 不在这里读，
+ * 所以只写老开关的轮次在 validateRound 眼里就是「没写题型」。
+ * @param {Record<string, unknown>} question - 模型给的一题。
+ * @returns {QuestionType|undefined} 题型；不是那三个之一时 undefined。
+ */
+function readQuestionType(question) {
+  return QUESTION_TYPES.find((candidate) => question.type === candidate);
+}
+
+/**
+ * argsRaw → 模型出的题。解析失败、没有 questions、id 重复（界面按 id 配对，重复即无从配对）、
+ * 或某题没写题型（升级前那版写的是可选开关，没有 type）时返回空数组——空数组即「这一轮没有
+ * 可画的表」：题型是页面的形状本身，缺了就无从画起，老轮次因此不再显示。
  * @param {unknown} argsRaw - 调用的原始参数文本。
  * @returns {Question[]} 题目模型。
  */
@@ -316,6 +361,8 @@ function readQuestions(argsRaw) {
   const ids = new Set();
   for (const question of parsed.questions) {
     if (!isRecord(question) || typeof question.id !== 'string' || ids.has(question.id)) return [];
+    const type = readQuestionType(question);
+    if (type === undefined) return [];
     ids.add(question.id);
     const options = (Array.isArray(question.options) ? question.options : [])
       .filter((option) => isRecord(option))
@@ -335,8 +382,7 @@ function readQuestions(argsRaw) {
       header: mergeNumberIntoHeader(question.number, question.header),
       question: typeof question.question === 'string' ? question.question : '',
       detail: isBlank(question.detail) || typeof question.detail !== 'string' ? undefined : question.detail,
-      // 多选题是缺省；只有显式写 multi_select: false 才是单选（原生那套叫 multiSelect，两种写法都认）。
-      multiSelect: question.multi_select !== false && question.multiSelect !== false,
+      type,
       options,
     });
   }
@@ -526,7 +572,7 @@ export function importSegmentLines(question, answer) {
 /**
  * 「推荐的选项默认勾上」落到一份作答表上：用户没动过的题，标了推荐的选项就是选中态。
  * 用户动过（storage 里有这题的记录）的题一律以他的为准——包括他把默认项取消掉、只留一个空记录，
- * 所以这里只补**缺席**的题，绝不覆盖已有的作答。单选（`multi_select: false`）的题另把已有的作答
+ * 所以这里只补**缺席**的题，绝不覆盖已有的作答。单选（`type: 'single'`）的题另把已有的作答
  * 收敛到至多一项——不分它是推荐默认、用户勾的、还是从实发消息里反解出来的。
  * @param {Question[]} questions - 题目模型。
  * @param {AnswerTable} answers - 用户自己的作答表（readStoredForm 的产物），或反解出来的那份。
@@ -540,7 +586,7 @@ export function applyRecommendedDefaults(questions, answers) {
       const selected = question.options.filter((option) => option.recommended).map((option) => option.label);
       if (selected.length > 0) merged[question.id] = { selected, custom: '' };
     }
-    if (question.multiSelect === false && merged[question.id] !== undefined) {
+    if (question.type === 'single' && merged[question.id] !== undefined) {
       merged[question.id] = selectOne(merged[question.id]);
     }
   }
