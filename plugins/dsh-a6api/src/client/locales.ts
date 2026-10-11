@@ -69,12 +69,13 @@ export type A6apiLocaleKey =
   | 'emptyCatalog' | 'emptyCatalogHint' | 'emptyFiltered' | 'badgeAvailable'
   | 'queryOne' | 'queryOneTip' | 'edit'
   | 'paramContext' | 'paramOutput' | 'paramInput' | 'paramReasoning' | 'paramNonReasoning'
+  | 'reasoningUnconfirmed' | 'reasoningUnconfirmedTip' | 'reasoningChanged'
   | 'fieldName' | 'fieldNamePlaceholder' | 'fieldContext' | 'fieldContextPlaceholder'
   | 'fieldMaxTokens' | 'fieldMaxTokensPlaceholder' | 'fieldInput'
   | 'fieldReasoning' | 'fieldReasoningFormat' | 'fieldReasoningPlaceholder'
   | 'fieldReasoningCapability' | 'fieldNonReasoning'
   | 'msgFetchedWithFailures' | 'msgFetched' | 'errFetch'
-  | 'msgQueriedAll' | 'msgQueriedAllNotFound' | 'errQuery' | 'msgQueriedOne' | 'msgQueriedOneNotFound'
+  | 'msgQueriedAll' | 'msgQueriedAllNotFound' | 'msgQueriedAllSkipped' | 'errQuery' | 'msgQueriedOne' | 'msgQueriedOneNotFound' | 'msgQueriedOneSkipped'
   | 'msgCleared' | 'errClear' | 'errContextWindow' | 'errMaxTokens' | 'errReasoningFormat'
   | 'msgSaved' | 'msgSavedSynced' | 'errSave'
   // Merchant card
@@ -251,6 +252,9 @@ export const en: Record<A6apiLocaleKey, string> = {
   paramInput: 'Input {value}',
   paramReasoning: '{count} reasoning levels',
   paramNonReasoning: 'Non-reasoning',
+  reasoningUnconfirmed: 'Levels unverified',
+  reasoningUnconfirmedTip: 'These reasoning levels are a placeholder: they come from the plugin default or from before this version, not from an upstream query. Query this model or edit its levels to confirm them.',
+  reasoningChanged: 'Levels changed from {from} to {to} this time',
   fieldName: 'Name (name)',
   fieldNamePlaceholder: 'User-supplied only; leave empty to omit it from the DSH configuration',
   fieldContext: 'Context window (contextWindow)',
@@ -268,9 +272,11 @@ export const en: Record<A6apiLocaleKey, string> = {
   errFetch: 'Fetch failed',
   msgQueriedAll: 'Updated parameters for {updated} models',
   msgQueriedAllNotFound: ', {notFound} were not found on OpenRouter (leave them empty to fill in manually)',
+  msgQueriedAllSkipped: ', {skipped} have hand-edited levels and were left untouched',
   errQuery: 'Query failed',
   msgQueriedOne: 'Filled parameters for “{id}” from OpenRouter',
   msgQueriedOneNotFound: '“{id}” was not found on OpenRouter; fill its parameters manually',
+  msgQueriedOneSkipped: '“{id}” has hand-edited levels; the query left it untouched',
   msgCleared: 'Catalog cleared; you can fetch models from A6API again',
   errClear: 'Clear failed',
   errContextWindow: 'contextWindow must be a positive integer',
@@ -535,6 +541,9 @@ export const zh: Record<A6apiLocaleKey, string> = {
   paramInput: '输入 {value}',
   paramReasoning: '推理 {count} 档',
   paramNonReasoning: '非推理',
+  reasoningUnconfirmed: '档位未确认',
+  reasoningUnconfirmedTip: '这些档位是插件默认值或升级前的旧数据，不是向上游查到的。查询该模型或手动修改档位后，此标记会消失。',
+  reasoningChanged: '本次从 {from} 档变 {to} 档',
   fieldName: '名称 (name)',
   fieldNamePlaceholder: '仅用户填写，留空则不写入 DSH 配置',
   fieldContext: '上下文窗口 (contextWindow)',
@@ -552,9 +561,11 @@ export const zh: Record<A6apiLocaleKey, string> = {
   errFetch: '获取失败',
   msgQueriedAll: '已更新 {updated} 个模型参数',
   msgQueriedAllNotFound: '，{notFound} 个未在 OpenRouter 查到（参数留空可手动填写）',
+  msgQueriedAllSkipped: '，{skipped} 个档位是手动修改过的，已跳过不动',
   errQuery: '查询失败',
   msgQueriedOne: '「{id}」已从 OpenRouter 填充参数',
   msgQueriedOneNotFound: '「{id}」在 OpenRouter 未查到，可手动填写参数',
+  msgQueriedOneSkipped: '「{id}」的档位是手动修改过的，本次查询未改动它',
   msgCleared: '模型目录已清空，可重新「从 A6API 获取市场模型」',
   errClear: '清空失败',
   errContextWindow: 'contextWindow 必须是正整数',

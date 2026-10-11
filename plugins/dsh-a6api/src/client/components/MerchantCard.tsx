@@ -240,6 +240,13 @@ export const MerchantCard: React.FC<{
         { key: 'quality', tone: 'neutral' as TagTone, label: t('tagQuality') },
       ];
 
+  // 「档位未确认」：服务端下发来源，非 queried/manual 即未确认。
+  // 兼容旧版 /state（不下发 reasoningSource）：只要有推理档位就按未确认显示，宁可多标不可漏标。
+  const reasoningUnconfirmed =
+    model.reasoningSource !== undefined
+      ? model.reasoningSource !== 'queried' && model.reasoningSource !== 'manual'
+      : model.hasReasoning;
+
   return (
     <div
       className={`dsh-a6-official-card${model.inDsh ? ' in-dsh' : ''}${
@@ -322,6 +329,15 @@ export const MerchantCard: React.FC<{
                 >
                   <span className="dsh-a6-pin-badge">
                     <Tag tone="neutral">{t('pinBadgeDisabled')}</Tag>
+                  </span>
+                </Tooltip>
+              )}
+              {/* 「档位未确认」标记：来源不是 queried/manual（含升级后的旧条目）即显示。
+                  非推理模型（reasoningSource 缺省）不显示——它本来就不带档位 */}
+              {reasoningUnconfirmed && (
+                <Tooltip label={t('reasoningUnconfirmedTip')} side="bottom" align="center" gap={6} maxWidth={320} portal>
+                  <span className="dsh-a6-reasoning-unconfirmed">
+                    <Tag tone="outline">{t('reasoningUnconfirmed')}</Tag>
                   </span>
                 </Tooltip>
               )}

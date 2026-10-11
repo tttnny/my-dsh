@@ -285,8 +285,8 @@ class A6ApiStore {
     }
   }
 
-  /** 对全部（或指定）目录模型查 OpenRouter 并填充参数 */
-  public async queryOpenRouter(modelIds?: string[]): Promise<{ ok: boolean; updated?: number; notFound?: string[]; error?: string }> {
+  /** 对全部（或指定）目录模型查 OpenRouter 并填充参数；手改过档位（manual）的条目会被服务端跳过 */
+  public async queryOpenRouter(modelIds?: string[]): Promise<{ ok: boolean; updated?: number; notFound?: string[]; skipped?: string[]; error?: string }> {
     if (this.state.catalogBusy) return { ok: false, error: '目录操作进行中' };
     this.state.catalogBusy = 'query';
     this.notify();
@@ -295,7 +295,7 @@ class A6ApiStore {
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
         await this.fetchCatalog();
-        return { ok: true, updated: json.updated, notFound: json.notFound || [] };
+        return { ok: true, updated: json.updated, notFound: json.notFound || [], skipped: json.skipped || [] };
       }
       const errText = json?.error || `HTTP ${res.status}`;
       this.state.error = errText;
