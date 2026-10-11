@@ -270,7 +270,26 @@ const levelsOf = (entry) =>
     Array.isArray(controlQuery.body?.skipped) && controlQuery.body.skipped.length === 0)
 }
 
-// 7. The internal fields never reach the DSH route configuration. "Fetch market
+// 7. A later "fetch market models" must not reset what an earlier query or a hand
+// edit established. The market refresh runs on a plain model list, so a naive
+// merge would write the default 7 levels back over a narrowed model — the exact
+// regression this ticket exists to prevent. Brand, however, is market-owned and
+// should follow the latest list.
+{
+  const before = getCatalogEntry('stepfun/step-5-preview')
+  check('precondition: the narrowed model still has its queried levels', levelsOf(before) === 3)
+
+  const refetch = await callWrite('catalog/fetch-models')
+  check('fetch-models succeeds again', refetch.body?.ok === true)
+  const after = getCatalogEntry('stepfun/step-5-preview')
+  check('fetch-models preserves a queried model\'s narrowed levels', levelsOf(after) === 3)
+  check('fetch-models preserves a queried model\'s confirmed source', after?.reasoningSource === 'queried')
+  const edited = getCatalogEntry('hand/edited-model')
+  check('fetch-models preserves hand-edited levels', levelsOf(edited) === 3 && edited?.reasoningSource === 'manual')
+  check('fetch-models still refreshes the market-owned brand', getCatalogEntry('stepfun/step-5-preview')?.brand === 'stepfun')
+}
+
+// 8. The internal fields never reach the DSH route configuration. "Fetch market
 // models" syncs no route (only the query/update paths do), so this asks for the
 // write the query path issues for an enabled model.
 {
@@ -283,7 +302,7 @@ const levelsOf = (entry) =>
     model !== undefined && !('reasoningSource' in model) && !('reasoningChange' in model) && !('brand' in model))
 }
 
-// 8. Persistence: the source and the change record survive a reread of the file.
+// 9. Persistence: the source and the change record survive a reread of the file.
 // gpt-5.2 was narrowed 7 -> 5 and queried only once, so its record is intact;
 // stepfun was queried a second time with an unchanged count, which must drop the
 // now-irrelevant record rather than keep showing a change that is not this one.

@@ -192,11 +192,14 @@ async function mergeIntoCatalog(entries: CatalogModelEntry[], mode: 'fill' | 'ov
         continue;
       }
       if (mode === 'fill') {
-        // 只补缺失字段：已有条目的既有字段（含用户手改的档位与来源）一律保留
+        // 只补缺失字段：已有条目的既有字段（含用户手改/已查询的档位与来源）一律保留
         const merged: CatalogModelEntry = { ...prev };
         for (const [k, v] of Object.entries(clean)) {
           if ((prev as any)[k] === undefined || (prev as any)[k] === null) (merged as any)[k] = v;
         }
+        // brand 是市场渠道给的展示元数据（唯一写入方就是市场拉取），随最新名单刷新；
+        // 档位与来源则严格只在缺失时才补，避免把查到的真实档位打回默认 7 档
+        if (clean.brand !== undefined) merged.brand = clean.brand;
         merged.id = prev.id;
         map.set(key, merged);
       } else {
