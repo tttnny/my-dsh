@@ -26,8 +26,8 @@ export const RECOMMENDED_LABEL_SUFFIX = '（推荐）';
 
 /**
  * 去掉文本末尾的推荐标记。
- * @param {string} text - label 或 description 原文。
- * @returns {{ text: string, found: boolean }} 去掉标记后的文本，以及是否找到标记。
+ * @param {unknown} text - label 或 description 原文。
+ * @returns {{ text: unknown, found: boolean }} 去掉标记后的文本，以及是否找到标记。
  */
 function stripRecommendationMarker(text) {
   if (typeof text !== 'string') return { text, found: false };
@@ -38,21 +38,30 @@ function stripRecommendationMarker(text) {
 
 /**
  * 把一个 option 归一化成界面能渲染的形式。
- * @param {{ label: string, description?: string, recommended?: boolean }} option - 模型给的选项。
- * @returns {{ originalLabel: string, label: string, cleanLabel: string, description?: string, recommended: boolean }}
+ *
+ * 入参是 `unknown`：这是模型输出的入口（宿主从调用参数读、界面从 argsRaw 读），
+ * 没验过形状就得逐字段判，而不是先声明成验过的样子。
+ * @param {unknown} option - 模型给的选项。
+ * @returns {{ originalLabel: unknown, label: string, cleanLabel: string, description: string|undefined, recommended: boolean }}
  *   label 是选项身份（带「（推荐）」后缀，宿主按它查重、界面按它存勾选）；cleanLabel 是给
  *   用户看的文字（recommended 为 true 时由界面另画徽标）；originalLabel 是模型原本写的 label。
  */
 export function normalizeOption(option) {
-  const label = stripRecommendationMarker(option.label);
-  const description = option.description === undefined ? undefined : stripRecommendationMarker(option.description);
-  const recommended = option.recommended === true || label.found || (description !== undefined && description.found);
-  const cleanLabel = label.text;
+  const record = typeof option === 'object' && option !== null && !Array.isArray(option)
+    ? /** @type {Record<string, unknown>} */ (option)
+    : {};
+  const label = stripRecommendationMarker(record.label);
+  const description = record.description === undefined ? undefined : stripRecommendationMarker(record.description);
+  const recommended = record.recommended === true || label.found
+    || (description !== undefined && description.found);
+  // cleanLabel 只可能是字符串或「拿不到」：非字符串的 label 走到这里就是空串，
+  // 于是它在本包的唯一后果是「空 label」，由入参校验拒掉（不会变成 undefined 混进 Map 键）。
+  const cleanLabel = typeof label.text === 'string' ? label.text : '';
   return {
-    originalLabel: option.label,
+    originalLabel: record.label,
     label: recommended ? `${cleanLabel}${RECOMMENDED_LABEL_SUFFIX}` : cleanLabel,
     cleanLabel,
-    description: description === undefined ? undefined : description.text,
+    description: description === undefined || typeof description.text !== 'string' ? undefined : description.text,
     recommended,
   };
 }

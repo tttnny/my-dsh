@@ -53,6 +53,13 @@ function assertNoConfig(config) {
   }
 }
 
+/**
+ * 插件本体：宿主半边只做一件事——注册 grilling_form 工具。浏览器半边与它同挂一条 root
+ * loader 行（见上面的说明），所以这里没有 config、也不注册别的东西。
+ * @param {import('@deepseek-ai/cordis').Context} ctx - 宿主插件上下文（`tools` 由本行的 inject 声明）。
+ * @param {unknown} config - loader 交给插件行的 config；这一行不收任何键。
+ * @returns {void}
+ */
 function apply(ctx, config) {
   assertNoConfig(config);
   ctx.tools.register(defineTool({

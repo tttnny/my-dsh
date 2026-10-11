@@ -28,8 +28,9 @@ grilling 轮的逐题盘问工具：把整轮问题作为一张**可交互表单
 
 ## 自检
 
-`pnpm check`（= `pnpm test && pnpm assert:lib-untracked`）；`pnpm test` 自己先构建一次，所以改了 `src/` 忘了构建也不会静默测到旧产物（一半脚本打 `src/`、另一半打构建产物 `lib/`）：
+`pnpm check`（= `pnpm typecheck && pnpm test && pnpm assert:lib-untracked`）；`pnpm test` 自己先构建一次，所以改了 `src/` 忘了构建也不会静默测到旧产物（一半脚本打 `src/`、另一半打构建产物 `lib/`）：
 
+- `tsc -p tsconfig.json --noEmit`（`allowJs` + `checkJs`，配置见包内 `tsconfig.json`）：源码是纯 JS，类型信息只有 JSDoc 一处。`src/form-model.js` 顶部那组 typedef（`Question` / `QuestionOption` / `Answer` / `AnswerTable` / `StorageLike` 等）是题目模型与作答表在宿主半边、内壳、浏览器半边之间的共用契约；平台没发布类型的那些形状（chat 视图快照、槽位 props、客户端 cordis 上下文）就地少量声明，不复制平台的影子类型。`scripts/*.mjs` 不在范围内；
 - `scripts/test-recommendation.mjs`：推荐标记的归一化——各种写法统一成 label 末尾的「（推荐）」、干净 label 与原始 label 各自保留，正常以「推荐」收尾的文字不误判；
 - `scripts/test-form-model.mjs`：共用纯模型（题号并入标题、题型取数、入参校验含「展开正文重述选项」的认法与不误伤、选项名带顿号/冒号照常放行、`questions` 不是数组时交回违规而不是抛、推荐项默认勾选与「取消过 ≠ 没作答」、单选只留一项、导入文本的「标题一行 + 每项一行」与顿号不再分项、导入块的新增与原地替换、草稿与当前作答一致不一致、按轮次定位本轮那次调用、只读判定顺带交回那条用户发言、反解新格式与旧格式（老会话那条仍认）与「块里没有的题算没作答」、没有块 = 没作答 / 块坏了 = 退回本地那份、按会话持久化与脏数据清理）；
 - `scripts/test-form-session.mjs`：表单会话内壳（`src/form-session.js`）的组合规则——推荐默认只叠在显示层、不落进 storage；勾选写穿并把用户自己那份交回调用方；单选覆盖上一个；取消默认后重建会话也不勾回来；自填与勾选独立；导入门禁与导入块的新增/原地替换；草稿状态四种（没作答可导 / 还没导入 / 已是当前 / 已经旧了）；冻结按实发消息重画、写操作一律原样返回；冻结的三种来历（有块 / 块坏 / 没块）；按会话 + 轮次读回；

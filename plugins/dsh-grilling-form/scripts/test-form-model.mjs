@@ -205,6 +205,18 @@ test('入参校验：questions 不是数组时给出可读的违规，而不是�
   assert.equal(validateRound('x').length, 1);
 });
 
+test('入参校验：题不是对象时交回一条违规，而不是读字段抛异常', () => {
+  for (const bad of [null, undefined, 'x', 42, []]) {
+    const violations = validateRound([bad]);
+    assert.equal(violations.length, 1, JSON.stringify(bad));
+    assert.match(violations[0], /Question 1 is not an object/, JSON.stringify(bad));
+  }
+  // 同一轮里后面还有合法题时，坏的照报、好的照旧，不因一题坏了就整轮静默通过
+  const mixed = validateRound([null, call()]);
+  assert.equal(mixed.length, 1);
+  assert.match(mixed[0], /Question 1 is not an object/);
+});
+
 test('入参校验：选项名里的标点不再是问题——顿号、冒号、换行都照常投出', () => {
   assert.deepEqual(validateRound([call({ options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] })]), []);
   assert.deepEqual(validateRound([call({ options: [{ label: '选项里带：冒号，和、顿号' }] })]), []);

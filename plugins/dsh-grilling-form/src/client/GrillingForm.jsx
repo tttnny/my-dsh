@@ -22,6 +22,83 @@ import {
 import { createFormSession, initialFormAnswers } from '../form-session.js';
 
 /**
+ * 取词函数：`t(key)` 取一句，`t(key, params)` 把字典里的 `{name}` 占位符换成实参。
+ * 字典本身在 `locales.js`（键集由 `scripts/smoke-client.mjs` 逐条对齐中英文）。
+ * @typedef {(key: string, params?: Record<string, unknown>) => string} Translate
+ */
+
+/**
+ * 会话记录快照里本插件读到的那一件：按名字取视图。取出来的 `chat` 视图就是 form-model 的
+ * ChatSnapshotLike（`roundCall` 按那份读位置索引与节点表，本文件另读它的 `legacy.nodes`）。
+ * @typedef {{ views: { get: (name: string) => unknown } }} ConversationSnapshot
+ */
+
+/**
+ * 槽位的标准属性与注入进来的动作（见下面各组件自己的 `@param` 说明）。
+ * 平台没有发布这些槽位 props 的类型，所以按**本插件实际读到的成员**就地声明。
+ * 刻意不声明成一个全域 interface 再合并到平台模块上：只服务这一个文件。
+ * @typedef {object} FormSessionProps
+ * @property {unknown} sessionId 当前会话 id（storage 按它分份）。
+ * @property {Translate} t 本插件的取词函数。
+ * @property {(selector: (state: { draft: string }) => unknown) => unknown} useInput 订阅原生输入状态。
+ * @property {{ setDraft: (text: string) => void }} inputActions 输入动作；写草稿走这里。
+ */
+
+/**
+ * 轮次尾部那个注册项的槽位数据。
+ * @typedef {FormSessionProps & {
+ *   turn: { turn: unknown, end?: { seq?: unknown } },
+ *   useConversation: (selector: (snapshot: ConversationSnapshot) => unknown) => unknown,
+ *   forkAt?: (seq: number) => Promise<unknown>,
+ * }} TailProps
+ */
+
+/**
+ * 工具行那个注册项的槽位数据。
+ * @typedef {FormSessionProps & {
+ *   block: unknown,
+ *   toolName: string,
+ *   inspect?: () => void,
+ * }} RowProps
+ */
+
+/**
+ * `GrillingForm`（表单本体）的 props。
+ * @typedef {FormSessionProps & {
+ *   model: { state: import('../form-model.js').FormState, questions: import('../form-model.js').Question[], violations: string[], error: string|undefined, failure: string|undefined },
+ *   toolName: unknown,
+ *   callId: unknown,
+ *   replyText: string|undefined,
+ *   forkSeq: number|undefined,
+ *   forkAt?: (seq: number) => Promise<unknown>,
+ * }} GrillingFormProps
+ */
+
+/**
+ * `QuestionList` 的 props。
+ * @typedef {{
+ *   questions: import('../form-model.js').Question[],
+ *   answers: import('../form-model.js').AnswerTable,
+ *   locked: boolean,
+ *   t: Translate,
+ *   onToggleOption: (question: import('../form-model.js').Question, label: string) => void,
+ *   onCustom: (question: import('../form-model.js').Question, custom: string) => void,
+ * }} QuestionListProps
+ */
+
+/**
+ * `OptionList` 的 props。
+ * @typedef {{
+ *   question: import('../form-model.js').Question,
+ *   answer: import('../form-model.js').Answer|undefined,
+ *   locked: boolean,
+ *   t: Translate,
+ *   onToggleOption: (question: import('../form-model.js').Question, label: string) => void,
+ *   onCustom: (question: import('../form-model.js').Question, custom: string) => void,
+ * }} OptionListProps
+ */
+
+/**
  * `grilling_form` 的浏览器半边：两个注册项共用这一个模块。
  *
  *  - **轮次尾部**（`conversation.chat.turnTail`，`GrillingFormTail`）：表单住在这里。轮次尾部与
@@ -50,11 +127,16 @@ import { createFormSession, initialFormAnswers } from '../form-session.js';
  * `useInput`、`useConversation` 是 session 作用域的标准属性；分叉动作以注入形式进来（`forkAt`），
  * 组件自己不去取服务。
  *
- * @param {object} props - 轮次尾部的槽位数据、标准属性与注入的分叉动作。
+ * @param {TailProps} props - 轮次尾部的槽位数据、标准属性与注入的分叉动作。
  * @returns {import('react').ReactNode} 本轮的表单；本轮没有表就什么都不画。
  */
 export function GrillingFormTail({ turn, sessionId, t, useInput, useConversation, inputActions, forkAt }) {
-  const chat = useConversation((snapshot) => snapshot.views.get('chat'));
+  // 平台发布的会话快照没有可导入的类型，这里把 `chat` 视图按**本插件真正读到的成员**
+  // （轮次位置索引、节点表、legacy 发言节点）命个名——形状就是 form-model 的
+  // ChatSnapshotLike，与 roundCall 读的是同一份。断言在这里只起命名作用，不再放宽别的。
+  const chat = /** @type {import('../form-model.js').ChatSnapshotLike|undefined} */ (
+    useConversation((snapshot) => snapshot.views.get('chat'))
+  );
   const round = roundCall(chat, turn?.turn);
   if (round === undefined) return null;
   const model = readCallModel(round.block);
@@ -82,7 +164,7 @@ export function GrillingFormTail({ turn, sessionId, t, useInput, useConversation
 
 /**
  * `grilling_form` 的工具行：表搬到轮次尾部之后，这里只剩被拒的违规清单与失败说明。
- * @param {object} props - 槽位给的行数据与取词函数。
+ * @param {RowProps} props - 槽位给的行数据与取词函数。
  * @returns {import('react').ReactNode} 违规清单或失败说明；投出去的轮次什么都不画。
  */
 export function GrillingFormRow({ block, toolName, t, inspect }) {
@@ -114,11 +196,12 @@ export function GrillingFormRow({ block, toolName, t, inspect }) {
 
 /**
  * 表单本体的两态：可填，与冻结（只读即冻结）。冻结那份按实发消息反解重画。
- * @param {object} props - 表单模型、作答来源、分叉切点与交互回调。
+ * @param {GrillingFormProps} props - 表单模型、作答来源、分叉切点与交互回调。
  * @returns {import('react').ReactNode} 这一轮的表单（冻结后收成一行摘要，点开才是表）。
  */
 function GrillingForm({ model, toolName, callId, sessionId, t, useInput, inputActions, replyText, forkSeq, forkAt }) {
   const draft = useInput((state) => state.draft);
+
   // 用户自己动过的那一份，连他「清空过这题」也在里面；他没动过的题不出现在这里。
   const [storedAnswers, setStoredAnswers] = useState(
     () => initialFormAnswers({ sessionId, callId, storage: storageOf() }),
@@ -146,9 +229,11 @@ function GrillingForm({ model, toolName, callId, sessionId, t, useInput, inputAc
     }
     : undefined;
 
-  /** 勾选 / 取消一个选项：写操作交回用户自己那份的新表，显示那份由内壳重算。 */
+  /** 勾选 / 取消一个选项：写操作交回用户自己那份的新表，显示那份由内壳重算。
+   * @type {(question: import('../form-model.js').Question, label: string) => void} */
   const toggleOption = (question, label) => setStoredAnswers(session.toggle(question.id, label));
-  /** 每题的自填空：选项覆盖不到的情况写在这里。 */
+  /** 每题的自填空：选项覆盖不到的情况写在这里。
+   * @type {(question: import('../form-model.js').Question, custom: string) => void} */
   const writeCustom = (question, custom) => setStoredAnswers(session.setCustom(question.id, custom));
   /** 导入：把草稿里那段导入块换成当前作答（没有块就放在最前面），草稿里别的字一个不动。 */
   const onImport = () => inputActions.setDraft(session.importInto(draft));
@@ -232,14 +317,19 @@ function GrillingForm({ model, toolName, callId, sessionId, t, useInput, inputAc
   );
 }
 
-/** 导入键的文案键：还没导入与已经旧了都叫他点「更新输入框」，已经是当前那份就只是「已导入」。 */
+/** 导入键的文案键：还没导入与已经旧了都叫他点「更新输入框」，已经是当前那份就只是「已导入」。
+ * @param {string} draftState - 内壳算出来的草稿状态。
+ * @returns {string} 字典键。 */
 function importLabelKey(draftState) {
   if (draftState === 'current') return 'row.imported';
   if (draftState === 'stale') return 'row.updateImport';
   return 'row.import';
 }
 
-/** 这一轮答了几题（按显示那份算），冻结摘要用；判据只有 answerItems 一处。 */
+/** 这一轮答了几题（按显示那份算），冻结摘要用；判据只有 answerItems 一处。
+ * @param {import('../form-model.js').Question[]} questions - 题目模型。
+ * @param {import('../form-model.js').AnswerTable} answers - 显示中的作答表。
+ * @returns {number} 有作答的题数。 */
 function questionsAnswered(questions, answers) {
   return questions.filter((question) => answerItems(question, answers[question.id]).length > 0).length;
 }
@@ -255,7 +345,7 @@ function storageOf() {
 
 /**
  * 题目列表：可填与冻结画的是同一样东西——冻结时只是每个控件都被锁住。
- * @param {object} props - 题目、作答与交互回调。
+ * @param {QuestionListProps} props - 题目、作答与交互回调。
  * @returns {import('react').ReactNode} 列表。
  */
 function QuestionList({ questions, answers, locked, t, onToggleOption, onCustom }) {
@@ -296,7 +386,7 @@ function QuestionList({ questions, answers, locked, t, onToggleOption, onCustom 
  *
  * 自填框用原生 textarea——ui-primitives 没有多行输入控件，官方那张答题卡也是自己画的
  * textarea；除它之外的控件都用 ui-primitives。
- * @param {object} props - 题目、当前作答、锁定状态与回调。
+ * @param {OptionListProps} props - 题目、当前作答、锁定状态与回调。
  * @returns {import('react').ReactNode} 选项与自填。
  */
 function OptionList({ question, answer, locked, t, onToggleOption, onCustom }) {
@@ -332,9 +422,10 @@ function OptionList({ question, answer, locked, t, onToggleOption, onCustom }) {
 }
 
 /**
- * `MarkdownText` 要的那份 chrome 标签，取自本插件的字典。
- * @param {Function} t - 本插件的取词函数。
- * @returns {{ code: { copyLabel: string, copiedLabel: string }, footnotes: string }} 标签。
+ * `MarkdownText` 要的那份 chrome 标签，取自本插件的字典（形状就用 ui-primitives 自己导出的
+ * `MarkdownLabels`，不另抄一份）。
+ * @param {Translate} t - 本插件的取词函数。
+ * @returns {import('@deepseek-ai/dsh-client-ui-primitives').MarkdownLabels} 标签。
  */
 function markdownLabels(t) {
   return {

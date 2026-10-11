@@ -8,6 +8,86 @@
 
 import { normalizeOption } from './recommendation.js';
 
+// 本包的类型词汇表。纯 JS 包的类型信息只有 JSDoc 这一处，所以这几个 typedef 是整个包的
+// 契约：宿主半边（src/index.js）、内壳（src/form-session.js）与浏览器半边
+// （src/client/*）都 `import('./form-model.js')` 取这里的名字，不各写一份形状。
+//
+// 门槛低是故意的：只声明本包真的读写的成员。平台那半边（chat 视图快照、槽位 props、
+// cordis 服务）没有可导入的类型，给它们复制一份影子类型只会把 JSDoc 变成平台的镜像，
+// 所以那些结构在本包就地少量声明（见 ChatSnapshotLike）。
+
+/**
+ * 一个选项归一化之后的形状（normalizeOption 的产物）。
+ * @typedef {object} QuestionOption
+ * @property {string} label 选项身份：带「（推荐）」后缀，宿主按它查重、界面按它存勾选。
+ * @property {string} displayLabel 给人看的文字（不含后缀），徽标另画。
+ * @property {string|undefined} description 选项说明。
+ * @property {boolean} recommended 是否推荐。
+ */
+
+/**
+ * 一道题的模型（readQuestions 的产物）。
+ * @typedef {object} Question
+ * @property {string} id 题目身份：作答表按它取用。
+ * @property {string} header 题号并入后的标题；没给标题时为空串。
+ * @property {string} question 题干。
+ * @property {string|undefined} detail 展开正文（markdown）。
+ * @property {boolean} multiSelect 是否多选；只有显式写 multi_select: false 才是单选。
+ * @property {QuestionOption[]} options 选项。
+ */
+
+/**
+ * 一道题的作答。
+ * @typedef {object} Answer
+ * @property {string[]} selected 选中的选项身份（label，不是 displayLabel）。
+ * @property {string} custom 自填文字。
+ */
+
+/**
+ * 作答表：按题目 id 取用。
+ * @typedef {Record<string, Answer>} AnswerTable
+ */
+
+/**
+ * 导入块里一条认出来的作答条目（splitImportedBody 的产物）。
+ * @typedef {object} AnswerEntry
+ * @property {Question} question 命中这一条的题。
+ * @property {string[]} selected 命中的选项身份。
+ * @property {string} custom 自填文字。
+ */
+
+/**
+ * 反解一段发言的结果。两个成员是**相关**的：`parsed` 必有作答表，另两种必没有。
+ * 拆成两个形状而不是 `answers?:`，是为了让调用方在 `kind === 'parsed'` 之后不必再兜一次空。
+ * @typedef {{ kind: 'parsed', answers: AnswerTable }} ParseHit
+ * @typedef {{ kind: 'none'|'malformed', answers: undefined }} ParseMiss
+ */
+
+/**
+ * storage 的最小形状：浏览器里是 localStorage，测试里是假件。
+ * 只声明本包用到的两个方法，所以 DOM 的 Storage 与测试假件都直接对得上。
+ * @typedef {object} StorageLike
+ * @property {(key: string) => (string | null)} getItem 读一项。
+ * @property {(key: string, value: string) => void} setItem 写一项。
+ */
+
+/**
+ * chat 视图快照里本模块用到的那几件：轮次位置索引、节点表，以及 compat 视图里的发言节点。
+ * 平台没有可导入的类型，这里按**实际读到的成员**就地声明（见文件顶部的说明）。
+ *
+ * `nodes` 写成「只要有 get」而不是 `Map`：真实快照给的是 Map，测试假件给的是同样形状的普通
+ * 对象，声明用法而不是声明实现，两边都对得上。
+ * @typedef {object} ChatSnapshotLike
+ * @property {{ getTurn: (turn: unknown) => unknown }} locations 轮次 → 本轮节点键的索引。
+ * @property {{ get: (key: string) => unknown }} nodes 节点键 → 节点。
+ * @property {{ nodes?: unknown }} [legacy] 兼容视图：发言节点摊在这里。
+ */
+
+/**
+ * 表单模型的状态：题面读不出来 / 投出去了 / 入参被拒 / 调用失败。
+ * @typedef {'running'|'form'|'rejected'|'error'} FormState
+ */
+
 /** 导入块的起止行：重复导入时靠它认出上一次导入的那一段，原地替换。
  *
  * **改协议（这两个常量、工具名、字段语义、作答段的行形）时的联动点**——机械细节只归本包，
@@ -26,10 +106,23 @@ export const IMPORT_BLOCK_END = '【/盘问作答】';
 /** 本插件的 wire 工具名：浏览器半边靠它在本轮里认出那次调用。 */
 export const TOOL_NAME = 'grilling_form';
 
+/**
+ * 是不是一个普通记录（不是数组、不是 null）。
+ *
+ * 写成**类型谓词**而不是返回 boolean：本模块到处从 JSON 里读「未知」形状，判定与收窄
+ * 合成一步，调用方在 `if (isRecord(x))` 之后就能直接读字段，不必到处重复断言。
+ * @param {unknown} value - 待判定的值。
+ * @returns {value is Record<string, unknown>} 是普通记录时为 true。
+ */
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * 解析 JSON 文本；不是字符串、空串、解析失败都返回 undefined（调用方按「没有」处理）。
+ * @param {unknown} text - 待解析的文本。
+ * @returns {unknown} 解析结果；解析不出来时 undefined。
+ */
 function parseJson(text) {
   if (typeof text !== 'string' || text === '') return undefined;
   try {
@@ -39,6 +132,11 @@ function parseJson(text) {
   }
 }
 
+/**
+ * 只留下数组里的字符串项。
+ * @param {unknown} value - 待过滤的值。
+ * @returns {string[]} 字符串项。
+ */
 function stringList(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : [];
 }
@@ -55,13 +153,13 @@ export function isBlank(value) {
 /**
  * 把题号并进标题：两者都给写作 `<number> · <header>`，只给一个就是那一个；
  * 标题已经以该题号开头时原样用它（模型常自己写成 "Q2 · Deadline"）。
- * @param {string} [number] - 题号。
- * @param {string} [header] - 标题。
+ * @param {unknown} [number] - 题号。
+ * @param {unknown} [header] - 标题。
  * @returns {string} 界面标题；两者都缺时为空串（调用方据此退回题干）。
  */
 export function mergeNumberIntoHeader(number, header) {
-  const num = isBlank(number) ? undefined : number;
-  const head = isBlank(header) ? undefined : header;
+  const num = typeof number === 'string' && !isBlank(number) ? number : undefined;
+  const head = typeof header === 'string' && !isBlank(header) ? header : undefined;
   if (num === undefined) return head ?? '';
   if (head === undefined) return num;
   return head.startsWith(num) ? head : `${num} · ${head}`;
@@ -69,7 +167,7 @@ export function mergeNumberIntoHeader(number, header) {
 
 /**
  * 一道题在界面与导入文本里的标题：题号并入后的标题优先，没有就用题干，再没有就用 id。
- * @param {{ id: string, header: string, question: string }} question - 题目模型。
+ * @param {Question} question - 题目模型。
  * @returns {string} 标题。
  */
 export function titleOf(question) {
@@ -95,6 +193,9 @@ const ANSWER_ITEM_PREFIX = '- ';
  * 新格式不再用它分项，所以选项名里带顿号不再是问题——这条只服务读回旧消息。 */
 const LEGACY_ITEM_SEPARATOR = '、';
 
+/** 把一行文字截短到 60 字，用于违规说明里的引用。
+ * @param {string} text - 原文。
+ * @returns {string} 截短后的文字。 */
 function shorten(text) {
   return text.length <= 60 ? text : `${text.slice(0, 60)}…`;
 }
@@ -117,12 +218,12 @@ function labelAlias(label) {
  * 只认行首、且要求别名后面就是分隔符，是为了把误拒面压到最小：正文里顺口提到某个选项名
  * （「选甲：…」）不算，只有「一条以选项名开头的条目」才算。代价是漏放与误拒都还可能发生，
  * 所以技能正文那半边（tttnny/matt-skills 的 grilling 技能，字段映射段）是第一道闸。
- * @param {string} detail - 展开正文（markdown）。
+ * @param {unknown} detail - 展开正文（markdown）。
  * @param {string[]} aliases - 该题各选项的别名。
  * @returns {string|undefined} 命中的那一行；没命中时 undefined。
  */
 function detailRestatesOption(detail, aliases) {
-  if (isBlank(detail)) return undefined;
+  if (typeof detail !== 'string' || isBlank(detail)) return undefined;
   for (const raw of detail.split('\n')) {
     const line = raw.replace(LINE_MARKERS, '').replace(INLINE_MARKERS, '').trim();
     if (line === '') continue;
@@ -145,17 +246,23 @@ function detailRestatesOption(detail, aliases) {
  * 都读得回来，这条规则连同它的联动点一并删除。
  *
  * 前置：questions 应当来自调用参数（schema 保证是数组）。真给了别的形状也不抛，而是当成一条
- * 违规交回去——抛异常会让这一轮以「工具坏了」收场，而不是「改一改重投」。
- * @param {object[]} questions - 模型给的 questions。
+ * 违规交回去——抛异常会让这一轮以「工具坏了」收场，而不是「改一改重投」。所以入参类型是
+ * `unknown`：它确实是没验过的模型输出，逐字段判过再用才是这里的正经写法。
+ * @param {unknown} questions - 模型给的 questions。
  * @returns {string[]} 逐条违规说明；空数组表示这一轮可以投出去。
  */
 export function validateRound(questions) {
   if (!Array.isArray(questions)) {
     return ['questions must be an array of question objects; this call carried no round to validate'];
   }
+  /** @type {string[]} */
   const violations = [];
   const seenIds = new Set();
   questions.forEach((question, questionIndex) => {
+    if (!isRecord(question)) {
+      violations.push(`Question ${questionIndex + 1} is not an object; every question needs at least an id and a question text`);
+      return;
+    }
     const where = `Question ${questionIndex + 1} (id ${JSON.stringify(question.id)})`;
     if (typeof question.id === 'string') {
       if (seenIds.has(question.id)) {
@@ -167,8 +274,10 @@ export function validateRound(questions) {
       violations.push(`${where} has an empty question text; write the question itself in question and its body in detail`);
     }
     const seenLabels = new Set();
+    /** @type {string[]} */
     const aliases = [];
-    (question.options ?? []).forEach((option, optionIndex) => {
+    const optionList = Array.isArray(question.options) ? question.options : [];
+    optionList.forEach((option, optionIndex) => {
       const normalized = normalizeOption(option);
       if (isBlank(normalized.label)) {
         violations.push(`${where}, option ${optionIndex + 1} has an empty label; every option needs a label the user can read and pick`);
@@ -192,11 +301,12 @@ export function validateRound(questions) {
 /**
  * argsRaw → 模型出的题。解析失败、没有 questions、或 id 重复（界面按 id 配对，重复即无从配对）时返回空数组。
  * @param {unknown} argsRaw - 调用的原始参数文本。
- * @returns {object[]} 题目模型。
+ * @returns {Question[]} 题目模型。
  */
 function readQuestions(argsRaw) {
   const parsed = parseJson(argsRaw);
   if (!isRecord(parsed) || !Array.isArray(parsed.questions)) return [];
+  /** @type {Question[]} */
   const questions = [];
   const ids = new Set();
   for (const question of parsed.questions) {
@@ -219,7 +329,7 @@ function readQuestions(argsRaw) {
       id: question.id,
       header: mergeNumberIntoHeader(question.number, question.header),
       question: typeof question.question === 'string' ? question.question : '',
-      detail: isBlank(question.detail) ? undefined : question.detail,
+      detail: isBlank(question.detail) || typeof question.detail !== 'string' ? undefined : question.detail,
       // 多选题是缺省；只有显式写 multi_select: false 才是单选（原生那套叫 multiSelect，两种写法都认）。
       multiSelect: question.multi_select !== false && question.multiSelect !== false,
       options,
@@ -253,13 +363,14 @@ function readResult(resultText) {
  * @param {{ argsRaw?: unknown, resultText?: unknown, failed?: boolean }} input - argsRaw：调用的原始参数；
  *   resultText：结果文本（还没落库时为空）；failed：这次调用是否以失败收场。
  * @returns {{
- *   state: 'running'|'form'|'rejected'|'error',
- *   questions: object[], violations: string[], error: string|undefined,
+ *   state: FormState,
+ *   questions: Question[], violations: string[], error: string|undefined,
  * }} 表单模型；questions 为空表示参数还解析不出来（运行中或不是本插件的形状）。
  */
 export function readFormModel({ argsRaw, resultText, failed = false }) {
   const questions = readQuestions(argsRaw);
   const result = readResult(resultText);
+  /** @type {FormState} */
   let state;
   if (result !== undefined) state = result.rejected ? 'rejected' : 'form';
   else if (failed) state = 'error';
@@ -283,18 +394,23 @@ export function readFormModel({ argsRaw, resultText, failed = false }) {
  * `failure` 是失败行要显示的文字，只有真的以失败收场时才有。
  * @param {unknown} block - 工具调用块：结果节点，或还在跑/正在准备的那次调用。
  * @returns {{
- *   state: 'running'|'form'|'rejected'|'error',
- *   questions: object[], violations: string[], error: string|undefined, failure: string|undefined,
+ *   state: FormState,
+ *   questions: Question[], violations: string[], error: string|undefined, failure: string|undefined,
  * }} 表单模型与失败说明。
  */
 export function readCallModel(block) {
-  const settled = isRecord(block) && 'kind' in block;
-  const argsRaw = (settled ? block.call?.argsRaw : block?.argsRaw) ?? '';
+  if (!isRecord(block)) {
+    return { ...readFormModel({ argsRaw: '', resultText: undefined, failed: false }), failure: undefined };
+  }
+  const settled = 'kind' in block;
+  const call = isRecord(block.call) ? block.call : undefined;
+  const argsRaw = (settled ? call?.argsRaw : block.argsRaw) ?? '';
   const resultText = settled ? firstText(block.content) : undefined;
   const failed = settled && block.isError === true;
+  const error = isRecord(block.error) ? block.error : undefined;
   return {
     ...readFormModel({ argsRaw, resultText, failed }),
-    failure: failed ? failureText(resultText, block.error) : undefined,
+    failure: failed ? failureText(resultText, error) : undefined,
   };
 }
 
@@ -306,13 +422,13 @@ export function readCallModel(block) {
 function firstText(content) {
   if (!Array.isArray(content)) return undefined;
   const text = content.find((block) => isRecord(block) && block.type === 'text');
-  return typeof text?.text === 'string' ? text.text : undefined;
+  return isRecord(text) && typeof text.text === 'string' ? text.text : undefined;
 }
 
 /**
  * 失败行要显示的文字：结果里那段文本优先，没有就用错误的 name/code 拼一行。
  * @param {string|undefined} resultText - 结果文本。
- * @param {{name?: string, code?: string}|undefined} error - 结果节点上的错误。
+ * @param {Record<string, unknown>|undefined} error - 结果节点上的错误。
  * @returns {string|undefined} 失败说明。
  */
 function failureText(resultText, error) {
@@ -329,10 +445,11 @@ function failureText(resultText, error) {
  * 分得开，否则默认勾选会在他取消之后又勾回来。不是这个形状的记录（比如 selected 是个字符串）
  * 一律丢掉：那种记录不是本插件写的，认成「清空过」会白白吃掉默认勾选。
  * @param {unknown} value - 解析出来的值。
- * @returns {object} 干净的作答表。
+ * @returns {AnswerTable} 干净的作答表。
  */
 function sanitizeAnswers(value) {
   if (!isRecord(value)) return {};
+  /** @type {AnswerTable} */
   const answers = {};
   for (const [id, answer] of Object.entries(value)) {
     if (!isRecord(answer)) continue;
@@ -347,8 +464,8 @@ function sanitizeAnswers(value) {
 
 /**
  * 这一轮里一道题的作答，选中的项换回给人看的文字（不带「（推荐）」后缀）。
- * @param {object} question - 题目模型。
- * @param {{selected?: string[], custom?: string}|undefined} answer - 该题的作答。
+ * @param {Question} question - 题目模型。
+ * @param {unknown} answer - 该题的作答。
  * @returns {{selected: string[], custom: string}} 展示用的作答；没作答时两样都空。
  */
 export function answerParts(question, answer) {
@@ -363,8 +480,8 @@ export function answerParts(question, answer) {
 /**
  * 一道题的作答逐行展开（选中的项在前、自填的字在后）。导入文本与只读展示共用这一份，
  * 两处的行序与取舍不会各写一套。
- * @param {object} question - 题目模型。
- * @param {{selected?: string[], custom?: string}|undefined} answer - 该题的作答。
+ * @param {Question} question - 题目模型。
+ * @param {unknown} answer - 该题的作答。
  * @returns {string[]} 逐行文字；没作答时为空数组。
  */
 export function answerLines(question, answer) {
@@ -376,23 +493,23 @@ export function answerLines(question, answer) {
  * 一道题的**项**：选中的选项各一项、自填整段算一项。导入块按这个逐项写行，反解也按项回填；
  * 与 answerLines 的分工是——那里逐行展开是给人看的（只读展示按行），这里逐项是给协议用的
  * （自填里的回车属于同一项，不拆）。
- * @param {object} question - 题目模型。
- * @param {{selected?: string[], custom?: string}|undefined} answer - 该题的作答。
+ * @param {Question} question - 题目模型。
+ * @param {unknown} answer - 该题的作答。
  * @returns {{kind: 'option'|'custom', text: string}[]} 逐项；没作答时为空数组。
  */
 export function answerItems(question, answer) {
   const { selected, custom } = answerParts(question, answer);
   return [
-    ...selected.map((label) => ({ kind: 'option', text: label })),
-    ...(custom === '' ? [] : [{ kind: 'custom', text: custom }]),
+    ...selected.map((label) => /** @type {{kind: 'option'|'custom', text: string}} */ ({ kind: 'option', text: label })),
+    ...(custom === '' ? [] : [/** @type {{kind: 'option'|'custom', text: string}} */ ({ kind: 'custom', text: custom })]),
   ];
 }
 
 /**
  * 一道题的导入段：标题行 + 每一项一行（行首记号见 ANSWER_ITEM_PREFIX）。没作答时是空数组。
  * 导入文本与草稿里的「这段是不是当前作答」共用这一份，两处不会各写一套。
- * @param {object} question - 题目模型。
- * @param {{selected?: string[], custom?: string}|undefined} answer - 该题的作答。
+ * @param {Question} question - 题目模型。
+ * @param {unknown} answer - 该题的作答。
  * @returns {string[]} 段内各行。
  */
 export function importSegmentLines(question, answer) {
@@ -406,12 +523,13 @@ export function importSegmentLines(question, answer) {
  * 用户动过（storage 里有这题的记录）的题一律以他的为准——包括他把默认项取消掉、只留一个空记录，
  * 所以这里只补**缺席**的题，绝不覆盖已有的作答。单选（`multi_select: false`）的题另把已有的作答
  * 收敛到至多一项——不分它是推荐默认、用户勾的、还是从实发消息里反解出来的。
- * @param {object[]} questions - 题目模型。
- * @param {object} answers - 用户自己的作答表（readStoredForm 的产物），或反解出来的那份。
- * @returns {object} 表单上真正显示、导入、计数的作答表。
+ * @param {Question[]} questions - 题目模型。
+ * @param {AnswerTable} answers - 用户自己的作答表（readStoredForm 的产物），或反解出来的那份。
+ * @returns {AnswerTable} 表单上真正显示、导入、计数的作答表。
  */
 export function applyRecommendedDefaults(questions, answers) {
-  const merged = { ...(isRecord(answers) ? answers : {}) };
+  /** @type {AnswerTable} */
+  const merged = isRecord(answers) ? { ...answers } : {};
   for (const question of questions) {
     if (merged[question.id] === undefined) {
       const selected = question.options.filter((option) => option.recommended).map((option) => option.label);
@@ -424,7 +542,9 @@ export function applyRecommendedDefaults(questions, answers) {
   return merged;
 }
 
-/** 单选：一题的作答至多留一项（保留第一项，不是追加）。没选中时自填照旧。 */
+/** 单选：一题的作答至多留一项（保留第一项，不是追加）。没选中时自填照旧。
+ * @param {Answer} existing - 该题当前的作答。
+ * @returns {Answer} 至多一项的作答。 */
 function selectOne(existing) {
   const [kept] = existing.selected;
   return { selected: kept === undefined ? [] : [kept], custom: existing.custom };
@@ -435,11 +555,12 @@ function selectOne(existing) {
  * 记号（见 ANSWER_ITEM_PREFIX）。一项作答都没有时返回空串（调用方据此禁用导入键）。
  *
  * 新格式的项与项之间不靠任何字符分拆，所以选项名或自填里出现顿号、冒号、换行都读得回来。
- * @param {object[]} questions - 题目模型。
- * @param {object} answers - 作答表。
+ * @param {Question[]} questions - 题目模型。
+ * @param {AnswerTable} answers - 作答表。
  * @returns {string} 正文（不含导入块的起止行）。
  */
 export function importBody(questions, answers) {
+  /** @type {string[]} */
   const blocks = [];
   for (const question of questions) {
     const lines = importSegmentLines(question, answers[question.id]);
@@ -448,8 +569,11 @@ export function importBody(questions, answers) {
   return blocks.join('\n');
 }
 
-/** 草稿里那一段导入块现在长什么样；没有块、或起止行不配对时 undefined。 */
+/** 草稿里那一段导入块现在长什么样；没有块、或起止行不配对时 undefined。
+ * @param {unknown} draft - 当前草稿。
+ * @returns {string|undefined} 块内正文。 */
 function importBlockBodyOf(draft) {
+  if (typeof draft !== 'string') return undefined;
   const block = findImportBlock(draft);
   if (block === undefined) return undefined;
   const text = draft.slice(block.start + IMPORT_BLOCK_START.length, block.end - IMPORT_BLOCK_END.length);
@@ -473,9 +597,12 @@ export function draftHasBody(draft, body) {
 
 /**
  * 草稿里那段导入块逐题回到作答表；没有块、或一题都认不出时 undefined（调用方照旧重建）。
+ *
+ * 交回的是**条目数组**（`{question, selected, custom}`），不是按 id 取用的作答表：调用方拿它
+ * 按题配对。要按 id 取用的那份请走 parseImportedAnswers。
  * @param {unknown} draft - 当前草稿。
- * @param {object[]} questions - 题目模型。
- * @returns {object|undefined} 作答表。
+ * @param {Question[]} questions - 题目模型。
+ * @returns {AnswerEntry[]|undefined} 逐题条目；认不出时 undefined。
  */
 export function parseImportedDraft(draft, questions) {
   const body = importBlockBodyOf(draft);
@@ -498,6 +625,11 @@ function findImportBlock(draft) {
   return { start, end: stop + IMPORT_BLOCK_END.length };
 }
 
+/**
+ * 一整个导入块（起止行都带上）。
+ * @param {string} body - 块内正文。
+ * @returns {string} 含起止行的块文本。
+ */
 function blockTextOf(body) {
   return `${IMPORT_BLOCK_START}\n${body}\n${IMPORT_BLOCK_END}`;
 }
@@ -527,18 +659,20 @@ export function applyImport(draft, body) {
  * （旧轮次的表会去解析新一轮的作答）。只有一条时就是它。
  * @param {unknown} nodes - chat 视图的 legacy.nodes。
  * @param {unknown} callId - 本次工具调用的 callId。
- * @returns {object|undefined} 那条用户发言节点；本轮还没过去时为 undefined。
+ * @returns {unknown} 那条用户发言节点；本轮还没过去时为 undefined。
  */
 export function userReplyAfter(nodes, callId) {
   if (!Array.isArray(nodes)) return undefined;
   const mine = nodes.find((node) => isRecord(node) && node.callId === callId);
-  if (mine === undefined || typeof mine.seq !== 'number') return undefined;
+  if (!isRecord(mine) || typeof mine.seq !== 'number') return undefined;
+  const mineSeq = mine.seq;
+  /** @type {Record<string, unknown>|undefined} */
   let reply;
   for (const node of nodes) {
     if (!isRecord(node)) continue;
     if (node.kind !== 'user' && node.kind !== 'steering') continue;
-    if (typeof node.seq !== 'number' || node.seq <= mine.seq) continue;
-    if (reply === undefined || node.seq < reply.seq) reply = node;
+    if (typeof node.seq !== 'number' || node.seq <= mineSeq) continue;
+    if (reply === undefined || node.seq < /** @type {number} */ (reply.seq)) reply = node;
   }
   return reply;
 }
@@ -552,27 +686,35 @@ export function messageText(node) {
   const content = isRecord(node) && Array.isArray(node.content) ? node.content : [];
   return content
     .filter((block) => isRecord(block) && block.type === 'text' && typeof block.text === 'string')
-    .map((block) => block.text)
+    .map((block) => /** @type {string} */ (isRecord(block) ? block.text : ''))
     .join('\n');
 }
 
 /**
  * 本轮里那次 `grilling_form` 调用。位置由 chat 的位置索引给出（按轮次取本轮的节点键），
  * 所以不靠 seq 猜边界；投出即结束本轮，取**最后一次**——被拒之后又投的那一次才算数。
- * @param {unknown} chat - chat 视图快照（ChatSnapshot）。
+ * @param {unknown} chat - chat 视图快照（ChatSnapshotLike）。
  * @param {unknown} turn - 轮次号。
- * @returns {{ block: object, toolName: string, callId: string }|undefined} 本轮的表单调用；没有就不画。
+ * @returns {{ block: unknown, toolName: unknown, callId: unknown }|undefined} 本轮的表单调用；没有就不画。
  */
 export function roundCall(chat, turn) {
-  const keys = chat?.locations?.getTurn?.(turn);
+  if (!isRecord(chat)) return undefined;
+  const snapshot = /** @type {ChatSnapshotLike} */ (chat);
+  const keys = snapshot.locations?.getTurn?.(turn);
   if (!Array.isArray(keys)) return undefined;
+  const getNode = snapshot.nodes?.get;
+  if (typeof getNode !== 'function') return undefined;
+  /** @type {{ block: unknown, toolName: unknown, callId: unknown }|undefined} */
   let found;
   for (const key of keys) {
-    const node = chat.nodes.get(key);
+    if (typeof key !== 'string') continue;
+    const node = getNode.call(snapshot.nodes, key);
     if (!isRecord(node) || node.kind !== 'tool-call') continue;
-    const block = node.data?.root;
+    const data = isRecord(node.data) ? node.data : undefined;
+    const block = data?.root;
     if (!isRecord(block)) continue;
-    const toolName = typeof block.call?.name === 'string' ? block.call.name : block.name;
+    const call = isRecord(block.call) ? block.call : undefined;
+    const toolName = typeof call?.name === 'string' ? call.name : block.name;
     if (toolName !== TOOL_NAME) continue;
     found = { block, toolName, callId: block.callId };
   }
@@ -584,9 +726,9 @@ export function roundCall(chat, turn) {
  * 这条链上的三种来历（旧格式的块、单行旧格式、认不出题的块）分不出来，也不能编一个
  * 「用户没作答」的结论出来；显式区分那三种的判据在 parseImportedAnswersResult。
  * @param {unknown} text - 用户发言的文字。
- * @param {object[]} questions - 题目模型。
- * @param {object} [fallback={}] - 反解不出来时交回的作答表；缺省是空表。
- * @returns {object} 作答表；块缺失、起止行不配对、或一条都还原不出来时就是 fallback。
+ * @param {Question[]} questions - 题目模型。
+ * @param {AnswerTable} [fallback] - 反解不出来时交回的作答表；缺省是空表。
+ * @returns {AnswerTable} 作答表；块缺失、起止行不配对、或一条都还原不出来时就是 fallback。
  */
 export function parseImportedAnswers(text, questions, fallback = {}) {
   return parseImportedAnswersResult(text, questions).answers ?? fallback;
@@ -609,10 +751,11 @@ export function parseImportedAnswers(text, questions, fallback = {}) {
  *
  * 标题认题都是「题号并入的标题 → 题干 → id」，标题本身可能含「：」，所以逐个分隔符试着认。
  * @param {unknown} text - 用户发言的文字。
- * @param {object[]} questions - 题目模型。
- * @returns {{ kind: 'none'|'malformed'|'parsed', answers: object|undefined }} 反解结果。
+ * @param {Question[]} questions - 题目模型。
+ * @returns {ParseHit|ParseMiss} 反解结果。
  */
 export function parseImportedAnswersResult(text, questions) {
+  if (typeof text !== 'string') return { kind: 'none', answers: undefined };
   const current = findImportBlock(text);
   if (current === undefined) return { kind: 'none', answers: undefined };
   const inner = text.slice(current.start + IMPORT_BLOCK_START.length, current.end - IMPORT_BLOCK_END.length);
@@ -628,9 +771,9 @@ export function parseImportedAnswersResult(text, questions) {
 
 /**
  * 逐条条目回到按 id 取用的作答表：块里没出现的题显式记成**没作答**（推荐默认因此不会被勾回来）。
- * @param {object[]} questions - 题目模型。
- * @param {object[]} entries - splitImportedBody 的产物。
- * @returns {object} 作答表。
+ * @param {Question[]} questions - 题目模型。
+ * @param {AnswerEntry[]} entries - splitImportedBody 的产物。
+ * @returns {AnswerTable} 作答表。
  */
 function asAnswerTable(questions, entries) {
   const answers = blankAnswers(questions);
@@ -641,9 +784,10 @@ function asAnswerTable(questions, entries) {
 }
 
 /** 一题的**没作答**：显式记一条空作答，推荐默认因此不会被勾回来。
- * @param {object[]} questions - 题目模型。
- * @returns {object} 每题都是空作答的作答表。 */
+ * @param {Question[]} questions - 题目模型。
+ * @returns {AnswerTable} 每题都是空作答的作答表。 */
 function blankAnswers(questions) {
+  /** @type {AnswerTable} */
   const answers = {};
   for (const question of questions) answers[question.id] = { selected: [], custom: '' };
   return answers;
@@ -663,14 +807,16 @@ const ANSWER_ITEM_LINE = /^[ \t]*- /;
  * 格式按块的形状自己认，不靠全局开关：出现带项记号的行就是本次格式，标题行只当标题；
  * 一行都没有记号（含旧格式的「标题：项、项」）就整块按旧格式读。两种格式混在一块的块，
  * 旧格式的那些行按旧格式读、新格式的那些行按新格式读，谁也不吃掉谁。
- * @param {object[]} questions - 题目模型。
+ * @param {Question[]} questions - 题目模型。
  * @param {string} body - 块内文本（起止行已剥掉）。
- * @returns {object[]} 每条是 `{ question, selected, custom }`；认不出题的行不产出条目。
+ * @returns {AnswerEntry[]} 每条是 `{ question, selected, custom }`；认不出题的行不产出条目。
  */
 function splitImportedBody(questions, body) {
   const lines = body.split('\n').map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
   const newFormat = lines.some((line) => ANSWER_ITEM_LINE.test(line) || LEGACY_ITEM_PREFIX.test(line));
+  /** @type {Map<string, AnswerEntry>} */
   const found = new Map();
+  /** @type {AnswerEntry|undefined} */
   let current;
   const flush = () => {
     if (current === undefined) return;
@@ -694,7 +840,9 @@ function splitImportedBody(questions, body) {
     }
     if (newFormat) {
       if (current === undefined) continue;
-      const item = line.slice(line.match(ANSWER_ITEM_LINE)[0].length);
+      const marker = line.match(ANSWER_ITEM_LINE);
+      if (marker === null) continue;
+      const item = line.slice(marker[0].length);
       const option = optionByDisplayLabel(current.question, item);
       if (option === undefined) current.custom = current.custom === '' ? item : `${current.custom}\n${item}`;
       else current.selected.push(option.label);
@@ -719,26 +867,28 @@ function splitImportedBody(questions, body) {
 
 /**
  * 新格式的项：去掉项记号之后整行就是展示文字。先按该题的选项精确匹配，匹配不上就是自填。
- * @param {object} question - 题目模型。
+ * @param {Question} question - 题目模型。
  * @param {string} item - 去掉记号之后的整行。
- * @returns {object|undefined} 命中的选项；不是选项时 undefined。
+ * @returns {QuestionOption|undefined} 命中的选项；不是选项时 undefined。
  */
 function optionByDisplayLabel(question, item) {
-  return (question.options ?? []).find((candidate) => candidate.displayLabel === item);
+  return question.options.find((candidate) => candidate.displayLabel === item);
 }
 
 /**
  * 旧格式（一行一题）的一行回到作答。顺序是先认题、再按顿号分项——与旧版的读法逐字一致，
  * 所以老会话里已发出去的消息照样重画得出。
- * @param {object[]} questions - 题目模型。
+ * @param {Question[]} questions - 题目模型。
  * @param {string} line - 块里的一行。
- * @returns {object[]} 认出的条目；这一行认不出题时为空数组。
+ * @returns {AnswerEntry[]} 认出的条目；这一行认不出题时为空数组。
  */
 function legacyEntriesOfLine(questions, line) {
   for (const cut of separatorCuts(line)) {
     const question = questionByTitle(questions, line.slice(0, cut).trim());
     if (question === undefined) continue;
+    /** @type {string[]} */
     const selected = [];
+    /** @type {string[]} */
     const rest = [];
     for (const raw of line.slice(cut + 1).split(LEGACY_ITEM_SEPARATOR)) {
       const item = raw.trim();
@@ -759,6 +909,7 @@ function legacyEntriesOfLine(questions, line) {
  * @returns {number[]} 分隔符位置，从左到右。
  */
 function separatorCuts(line) {
+  /** @type {number[]} */
   const cuts = [];
   let cut = line.indexOf('：');
   while (cut !== -1) {
@@ -770,12 +921,13 @@ function separatorCuts(line) {
 
 /**
  * 题面里的一道题按标题认回来：题号并入的标题优先，其次题干，最后 id。
- * @param {object[]} questions - 题目模型。
+ * @param {Question[]} questions - 题目模型。
  * @param {string} title - 反解出来的标题。
- * @returns {object|undefined} 命中的题。
+ * @returns {Question|undefined} 命中的题。
  */
 function questionByTitle(questions, title) {
   if (title === '') return undefined;
+  /** @type {((question: Question) => unknown)[]} */
   const readers = [(question) => question.header, (question) => question.question, (question) => question.id];
   for (const read of readers) {
     const hit = questions.find((question) => typeof read(question) === 'string' && read(question) === title);
@@ -792,11 +944,11 @@ function questionByTitle(questions, title) {
  *  - 块在但形态坏了 ⇒ 退回本地那份（含推荐默认）：内容不凭空消失，但那只是本地记录；
  *  - 根本没有块 ⇒ **没作答**：用户没走表单，把推荐默认当他的作答显示出来就是编答案，
  *    记录会失真（冻结态正是给人回看的）。
- * @param {object[]} questions - 题目模型。
- * @param {object} storedAnswers - 用户自己的作答表（readStoredForm 的产物）。
+ * @param {Question[]} questions - 题目模型。
+ * @param {AnswerTable} storedAnswers - 用户自己的作答表（readStoredForm 的产物）。
  * @param {unknown} text - 实发消息的文字。
  * @returns {{
- *   answers: object, unanswered: boolean, fallback: boolean,
+ *   answers: AnswerTable, unanswered: boolean, fallback: boolean,
  * }} 冻结渲染要用的作答表、它是不是「没作答」、以及它是不是退回的本地那份。
  */
 export function frozenFormAnswers(questions, storedAnswers, text) {
@@ -823,8 +975,14 @@ export function formStorageKey(sessionId) {
   return `dsh-grilling-form.${scope}`;
 }
 
+/**
+ * 读回整份存储并解析成记录；storage 不可用、键不存在、值形状不对都只是空表。
+ * @param {unknown} storage - 带 getItem 的存储。
+ * @param {string} key - formStorageKey 的产物。
+ * @returns {Record<string, unknown>} 记录形状的那份存储；读不出来时为空表。
+ */
 function readStorage(storage, key) {
-  if (storage === undefined || storage === null || typeof storage.getItem !== 'function') return {};
+  if (!isRecord(storage) || typeof storage.getItem !== 'function') return {};
   try {
     const parsed = parseJson(storage.getItem(key));
     return isRecord(parsed) ? parsed : {};
@@ -835,29 +993,39 @@ function readStorage(storage, key) {
 
 /**
  * 读回本轮的作答。storage 不可用、键不存在、值形状不对都只是「什么都没选」。
- * @param {object|undefined} storage - 带 getItem/setItem 的存储（可为 undefined）。
+ * @param {StorageLike|undefined} storage - 带 getItem/setItem 的存储（可为 undefined）。
  * @param {string} key - formStorageKey 的产物。
- * @param {string} callId - 本次调用的 callId。
- * @returns {object} 作答表。
+ * @param {unknown} callId - 本次调用的 callId。
+ * @returns {AnswerTable} 作答表。
  */
 export function readStoredForm(storage, key, callId) {
   const all = readStorage(storage, key);
-  return sanitizeAnswers(all[callId]);
+  return sanitizeAnswers(all[storageCallId(callId)]);
+}
+
+/**
+ * storage 里那层的键。对象取值本来就会把键强制成字符串，`String()` 与原来的写法逐字等价
+ * （`undefined` → `"undefined"`、`7` → `"7"`），只是把一个 `unknown` 收成可索引的类型。
+ * @param {unknown} callId - 本次调用的 callId。
+ * @returns {string} storage 里用的键。
+ */
+function storageCallId(callId) {
+  return String(callId);
 }
 
 /**
  * 存下本轮的作答，不动同一个会话里别的轮次。存不进去（配额、隐私模式）只让这一份活在内存里。
- * @param {object|undefined} storage - 带 getItem/setItem 的存储（可为 undefined）。
+ * @param {StorageLike|undefined} storage - 带 getItem/setItem 的存储（可为 undefined）。
  * @param {string} key - formStorageKey 的产物。
- * @param {string} callId - 本次调用的 callId。
- * @param {object} answers - 作答表。
+ * @param {unknown} callId - 本次调用的 callId。
+ * @param {AnswerTable} answers - 作答表。
  * @returns {void}
  */
 export function writeStoredForm(storage, key, callId, answers) {
-  if (storage === undefined || storage === null || typeof storage.setItem !== 'function') return;
+  if (!isRecord(storage) || typeof storage.setItem !== 'function') return;
   const all = readStorage(storage, key);
   try {
-    storage.setItem(key, JSON.stringify({ ...all, [callId]: sanitizeAnswers(answers) }));
+    storage.setItem(key, JSON.stringify({ ...all, [storageCallId(callId)]: sanitizeAnswers(answers) }));
   } catch {
     // 配额满 / 隐私模式：表单照常在内存里能填，只是刷新后不恢复
   }

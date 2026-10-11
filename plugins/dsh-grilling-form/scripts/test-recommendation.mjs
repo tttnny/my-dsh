@@ -127,5 +127,20 @@ test('label 里标记不在末尾：不动（不猜）', () => {
   assert.equal(out.label, 'A：xxx；推荐 只保留一个');
 });
 
+test('label 不是字符串：不抛，收成空 label（由入参校验拒掉，不是让整轮以「工具坏了」收场）', () => {
+  for (const label of [5, {}, null, undefined, ['A']]) {
+    const out = normalizeOption({ label, recommended: true });
+    assert.equal(out.label, '（推荐）', JSON.stringify(label));
+    assert.equal(out.cleanLabel, '', JSON.stringify(label));
+    assert.equal(out.originalLabel, label, JSON.stringify(label));
+  }
+  // 非对象的 option 也一样：当成一个空 label 的选项，而不是当场抛
+  for (const option of [null, undefined, 'x', 42]) {
+    const out = normalizeOption(option);
+    assert.equal(out.label, '', JSON.stringify(option));
+    assert.equal(out.recommended, false, JSON.stringify(option));
+  }
+});
+
 console.log(`${passed}/${passed + failures.length} passed`);
 if (failures.length > 0) process.exitCode = 1;
