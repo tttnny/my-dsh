@@ -75,7 +75,7 @@ export type A6apiLocaleKey =
   | 'fieldReasoning' | 'fieldReasoningFormat' | 'fieldReasoningPlaceholder'
   | 'fieldReasoningCapability' | 'fieldNonReasoning'
   | 'msgFetchedWithFailures' | 'msgFetched' | 'errFetch'
-  | 'msgQueriedAll' | 'msgQueriedAllNotFound' | 'msgQueriedAllSkipped' | 'errQuery' | 'msgQueriedOne' | 'msgQueriedOneNotFound'
+  | 'msgQueriedAll' | 'msgQueriedAllNotFound' | 'msgQueriedAllSkipped' | 'errQuery' | 'msgQueriedOne' | 'msgQueriedOneNotFound' | 'msgQueriedOneSkipped'
   | 'msgCleared' | 'errClear' | 'errContextWindow' | 'errMaxTokens' | 'errReasoningFormat'
   | 'msgSaved' | 'msgSavedSynced' | 'errSave'
   // Merchant card
@@ -276,6 +276,7 @@ export const en: Record<A6apiLocaleKey, string> = {
   errQuery: 'Query failed',
   msgQueriedOne: 'Filled parameters for “{id}” from OpenRouter',
   msgQueriedOneNotFound: '“{id}” was not found on OpenRouter; fill its parameters manually',
+  msgQueriedOneSkipped: '“{id}” has hand-edited levels; the query left it untouched',
   msgCleared: 'Catalog cleared; you can fetch models from A6API again',
   errClear: 'Clear failed',
   errContextWindow: 'contextWindow must be a positive integer',
@@ -564,6 +565,7 @@ export const zh: Record<A6apiLocaleKey, string> = {
   errQuery: '查询失败',
   msgQueriedOne: '「{id}」已从 OpenRouter 填充参数',
   msgQueriedOneNotFound: '「{id}」在 OpenRouter 未查到，可手动填写参数',
+  msgQueriedOneSkipped: '「{id}」的档位是手动修改过的，本次查询未改动它',
   msgCleared: '模型目录已清空，可重新「从 A6API 获取市场模型」',
   errClear: '清空失败',
   errContextWindow: 'contextWindow 必须是正整数',

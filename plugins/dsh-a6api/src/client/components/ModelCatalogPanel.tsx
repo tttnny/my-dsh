@@ -96,7 +96,8 @@ export const ModelCatalogPanel: React.FC<{ t: A6apiT }> = ({ t }) => {
     const r = await store.queryOpenRouter([id]);
     setQueryingId(null);
     if (r.ok) {
-      if ((r.updated || 0) > 0) flash('ok', t('msgQueriedOne', { id }));
+      if (r.skipped?.includes(id)) flash('ok', t('msgQueriedOneSkipped', { id }));
+      else if ((r.updated || 0) > 0) flash('ok', t('msgQueriedOne', { id }));
       else flash('ok', t('msgQueriedOneNotFound', { id }));
     } else flash('err', r.error || t('errQuery'));
   };

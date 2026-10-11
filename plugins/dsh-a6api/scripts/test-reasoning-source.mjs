@@ -254,6 +254,20 @@ const levelsOf = (entry) =>
   check('a later query does not overwrite hand-edited levels', levelsOf(after) === 3 && after?.reasoningEfforts?.high === 'high')
   check('a hand-edited entry stays confirmed after a query', after?.reasoningSource === 'manual')
   check('a hand-edited entry records no fresh count change', after?.reasoningChange === undefined)
+
+  // The same rule applies to the single-row query button: one id, and the reply
+  // must report it as skipped rather than not-found, so the page can say why
+  // nothing changed.
+  const single = await callWrite('catalog/query-openrouter', { modelIds: ['hand/edited-model'] })
+  check('a single-row query of a hand-edited entry reports it as skipped, not not-found',
+    single.body?.notFound?.length === 0 && single.body?.skipped?.includes('hand/edited-model'))
+
+  // Negative control: an entry that was only ever queried (never hand-edited) is
+  // not skipped, so the skip rule really keys off the manual source and not just
+  // off "the model already exists".
+  const controlQuery = await callWrite('catalog/query-openrouter', { modelIds: ['plain/chat-only'] })
+  check('control: an entry that was never hand-edited is not skipped',
+    Array.isArray(controlQuery.body?.skipped) && controlQuery.body.skipped.length === 0)
 }
 
 // 7. The internal fields never reach the DSH route configuration. "Fetch market
