@@ -12,4 +12,4 @@ provider 把缓存折进一个 prompt 总数时（`prompt_tokens`、`usageMetada
 
 ## 断言判据
 
-usage 断言样例的判别力来自缓存字段：只给 prompt / candidates 的样例解不出漏减，跑绿也测不到东西。范例：`plugins/dsh-antigravity-auth/tests/llm-adapter.spec.ts` 的 disjoint 与 clamp 两条。
+usage 断言样例的判别力来自缓存字段：只给 prompt / candidates 的样例解不出漏减，跑绿也测不到东西。范例：`@deepseek-ai/dsh-llm-deepseek` 的 `tests/stream.spec.ts`「emits first-seen blocks, raw tool JSON and cumulative disjoint usage before finish」那条——缓存折进 prompt 总数时，`inputTokens` 与 `cacheReadTokens` / `cacheWriteTokens` 三个字段互不重叠，`totalTokens` 另照抄 provider 给的权威值。

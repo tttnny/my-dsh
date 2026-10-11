@@ -46,7 +46,7 @@
 
 ### 类型检查
 
-包带不带 `typecheck` 由它自己决定，带上就进 `check`。**带 `build` + `src/` 的包默认带上**：源码在那里被构建，类型信息可查；`tsc` 在包的 `devDependencies` 里。**判断依据是源码形态，不是包的新旧**——拿新旧当判据是错的（`dsh-model-submenu` 就是后补上的老包）。脚本具体怎么写由各包自己定：单份源码是一句 `tsc -p tsconfig.json --noEmit`，两半边各一份配置就分两条 `tsc`（`dsh-antigravity-auth`），差别只在 `--pretty false` 这类开关。
+包带不带 `typecheck` 由它自己决定，带上就进 `check`。**带 `build` + `src/` 的包默认带上**：源码在那里被构建，类型信息可查；`tsc` 在包的 `devDependencies` 里。**判断依据是源码形态，不是包的新旧**——拿新旧当判据是错的（`dsh-model-submenu` 就是后补上的老包）。脚本具体怎么写由各包自己定：单份源码是一句 `tsc -p tsconfig.json --noEmit`，两半边各一份配置就分两条 `tsc`，差别只在 `--pretty false` 这类开关。
 
 两类例外，各自成立的理由不同：
 

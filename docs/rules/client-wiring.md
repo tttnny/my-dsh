@@ -16,6 +16,6 @@
 
 ## 裸包名那一行才带浏览器半边
 
-`dsh-client-modules` 按「该 Loader 行解析到的最近 `package.json` 是否声明 `dsh.client`」逐行判定，`exactPackageSpecifier` 判据**拒掉子路径说明符**（`@scope/pkg/sub`）：`dsh-antigravity-auth` 的 `pkg/search`、`pkg/image`、`pkg/video` 行都拿不到浏览器半边，只有**裸包名那一行**承载它。同一个包被两条 active 行解析到会直接抛 `resolves from multiple active Loader sources`。
+`dsh-client-modules` 按「该 Loader 行解析到的最近 `package.json` 是否声明 `dsh.client`」逐行判定，`exactPackageSpecifier` 判据**拒掉子路径说明符**（`@scope/pkg/sub`）：子路径行拿不到浏览器半边，只有**裸包名那一行**承载它。同一个包被两条 active 行解析到会直接抛 `resolves from multiple active Loader sources`。
 
 插件配置页的静默失败（注册项 key 写歪、卡片没有入口、标题退回包名）在 [plugin-config-page.md](./plugin-config-page.md)「静默失败」。

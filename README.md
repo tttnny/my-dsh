@@ -23,15 +23,10 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>
-      <td rowspan="2"><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
+      <td><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
       <td><a href="./plugins/dsh-a6api"><code>@lynn123411/dsh-a6api</code></a></td>
       <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 左侧边栏底部「A6api」入口（与「设置」同处），浮层从按钮右侧展开，含账户余额 / 价格波动 / 模型市场 / 配置胶囊行<br>· 模型协议三选一（OpenAI Chat / OpenAI Response / Messages，整条线路共用），接入地址固定为官方地址<br>· 模型目录：拉取市场模型、从 OpenRouter 查询参数与推理档位，档位来源分已确认 / 未确认（未确认标「档位未确认」）<br>· 配置页挂在「<b>插件</b>」页：注册进 <code>plugins.bundle.config</code>（key <code>@lynn123411/dsh-a6api</code>），进本插件详情页即可直接改</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-a6api</code></td>
-    </tr>
-    <tr>
-      <td><a href="./plugins/dsh-antigravity-auth"><code>@lynn123411/dsh-antigravity-auth</code></a></td>
-      <td><b>Antigravity 全套权益接入</b><br>· Google Antigravity 私有能力包：Gemini 2.5/3.1/3.7、Claude 3.5/3.7 与 GPT-OSS 原生模型接入<br>· 突破 127.0.0.1 严格回环限制，支持全网卡监听（0.0.0.0）与远程手动授权回调换票<br>· 搭载 Google Search Grounding 联网搜索、多模态生图与视频分析工具<br>· 配置卡片挂在「<b>插件</b>」页本插件的配置页（<code>plugins.bundle.config</code>，key <code>@lynn123411/dsh-antigravity-auth</code>）</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-antigravity-auth</code></td>
     </tr>
     <tr>
       <td><b>🎛️ 模型选择</b><br><i>输入框里模型选择器的形态</i></td>
