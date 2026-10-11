@@ -5,8 +5,8 @@
  * 没有任何容器级的线或底色；字号、行高、颜色照抄官方 @deepseek-ai/dsh-client-ui-tool 的
  * ToolRow / AskQuestionCard，避免同一页出现两套视觉。
  *
- * 冻结（只读）不换一套样式：控件还是那些控件、位置还是那些位置，只是锁住——「长得和可填时
- * 一模一样」是这一版明确要的样子。 */
+ * 冻结（只读）不换一套样式，也不折叠：控件还是那些控件、位置还是那些位置，只是锁住——「长得和
+ * 可填时一模一样」是这一版明确要的样子；顶上那行摘要只是加了一行字，不是开关。 */
 
 .dsg-root {
   display: flex;
@@ -21,18 +21,42 @@
   gap: 16px;
 }
 
-/* 冻结之后整块收成一行摘要（DisclosureRow 自带那行与箭头），点开才是停住的表。
-   行内的字号、颜色沿用官方过程行的三级文字，不再另调。 */
-.dsg-frozen {
-  min-width: 0;
-}
-
-/* 本轮没有通过表单作答：冻结态顶上那行说明，与「本轮已过」同一档小灰字。 */
+/* 冻结态顶上那两行小灰字（摘要行与本轮没作答的说明）共用一档字号与颜色。 */
+.dsg-summary,
 .dsg-unanswered {
-  margin: 0;
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* 冻结之后顶上那行摘要：本轮几题、答了几题。它只是文字——不是折叠开关，没有箭头、不可点；
+   整块始终摊开，表就在它下面。 */
+.dsg-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+/* 图标跟摘要同一行、同一个盒；只作点缀（图标自身已 aria-hidden）。 */
+.dsg-summaryIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: calc(16px + var(--dsh-content-font-delta, 0px));
+  height: calc(16px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsg-summaryIcon svg {
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+}
+
+/* 本轮没有通过表单作答：冻结态顶上那行说明（字号与颜色跟摘要行共用上面那条）。 */
+.dsg-unanswered {
+  margin: 0;
 }
 
 .dsg-list {
@@ -113,6 +137,31 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* 单选那题的选择器画成圈。多选题的方框保持系统默认外观（这里一个字不动它），所以只有挂着
+   dsg-optionSingle 的单选选择器覆盖原生画法：大小 16×16、线宽 1px、选中色品牌色——都跟方框看齐。
+   它底下仍是 ui-primitives 的勾选框控件（.checkbox input 那套 focus/disabled 规则照旧生效），
+   勾选、取消、一题至多一项的行为一个字不改；圈只是个画法。
+   corner-shape: round 是仓库约定：完整圆形要跟 border-radius: 50% 成对出现（见 ui-theme 的
+   corner-shape 规范），否则 superellipse 会把这个圆揉成方圆形。 */
+.dsg-optionSingle input[type='checkbox'] {
+  box-sizing: border-box;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 50%;
+  corner-shape: round;
+  background-color: var(--dsw-alias-bg-base);
+  cursor: inherit;
+}
+
+/* 选中：圈里一个实心点，颜色与方框的选中色同一个 token。 */
+.dsg-optionSingle input[type='checkbox']:checked {
+  border-color: var(--dsw-alias-brand-primary);
+  background-image: radial-gradient(circle, var(--dsw-alias-brand-primary) 0 42%, transparent 47%);
+}
+
 .dsg-badge {
   flex: none;
 }
@@ -169,14 +218,6 @@
 .dsg-root[data-readonly='true'] .dsg-option:has(input:disabled) {
   opacity: 1;
   cursor: default;
-}
-
-.dsg-closed {
-  margin: 0;
-  align-self: stretch;
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  line-height: calc(20px + var(--dsh-content-font-delta, 0px));
-  color: var(--dsw-alias-label-tertiary);
 }
 
 .dsg-violations {

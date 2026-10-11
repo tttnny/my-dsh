@@ -199,7 +199,12 @@ test('样式注入一次，标签带包身份', () => {
 // class 名在 JSX 与 CSS 之间单边漂移 = 样式静默失效，构建与运行都不报错
 const jsx = readFileSync(join(root, 'src', 'client', 'GrillingForm.jsx'), 'utf8');
 const css = readFileSync(join(root, 'src', 'client', 'GrillingForm.css'), 'utf8');
-const used = new Set([...jsx.matchAll(/"(dsg-[A-Za-z0-9-]+)"/g)].map((match) => match[1]));
+// 一个 className 字符串里可能列多个类名（如 'dsg-option dsg-optionSingle'），逐个取出来；
+// 引号两种都认（三元表达式里为整洁用单引号）。
+const used = new Set(
+  [...jsx.matchAll(/['"]((?:dsg-[A-Za-z0-9-]+\s*)+)['"]/g)]
+    .flatMap((match) => match[1].trim().split(/\s+/)),
+);
 const defined = new Set([...css.matchAll(/\.(dsg-[A-Za-z0-9-]+)/g)].map((match) => match[1]));
 test('JSX 里用到的 class 名都在 CSS 里', () => {
   const missing = [...used].filter((name) => !defined.has(name));
@@ -208,6 +213,28 @@ test('JSX 里用到的 class 名都在 CSS 里', () => {
 test('CSS 里的 class 名都在 JSX 里用到（没有死样式）', () => {
   const dead = [...defined].filter((name) => !used.has(name));
   assert.deepEqual(dead, []);
+});
+
+// 单选那题的选择器要"看着像圈"：方框是多选、保持系统默认外观，只有单选的 input 自己画。
+// 这几条断言钉住"圈"的四个组成：覆盖原生外观、圆形、选中一个点、颜色与方框同一个品牌色。
+const singleRule = /\.dsg-optionSingle input\[type='checkbox'\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+const singleCheckedRule = /\.dsg-optionSingle input\[type='checkbox'\]:checked\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+test('单选选择器：盖掉原生外观并画成圆（圆是完整圆形，按仓库约定配 corner-shape: round）', () => {
+  assert.notEqual(singleRule, '', '找不到单选选择器的规则');
+  assert.match(singleRule, /appearance:\s*none/);
+  assert.match(singleRule, /border-radius:\s*50%/);
+  assert.match(singleRule, /corner-shape:\s*round/);
+  assert.match(singleRule, /width:\s*16px/);
+  assert.match(singleRule, /height:\s*16px/);
+});
+test('单选选中态：圈里一个实心点，颜色用与方框同一个 --dsw-alias-brand-primary', () => {
+  assert.notEqual(singleCheckedRule, '', '找不到单选选中态的规则');
+  assert.match(singleCheckedRule, /--dsw-alias-brand-primary/);
+  assert.match(singleCheckedRule, /radial-gradient/);
+});
+test('多选那题不挂单选标记：方框仍是系统默认外观', () => {
+  const whole = css.match(/\.dsg-option input/g) ?? [];
+  assert.deepEqual(whole, [], '不许对 .dsg-option 的 input 整体改外观（那会把方框也改掉）');
 });
 
 // ui-primitives 的导出名核对：安装副本入口的导出表就是浏览器模块表会给的键，

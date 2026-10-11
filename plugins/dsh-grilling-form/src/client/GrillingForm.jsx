@@ -2,9 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   Button,
   Checkbox,
-  DisclosureRow,
   IconBranchOutlineRegular,
-  IconChevronDownOutlineRegular,
   IconDownloadOutlineRegular,
   IconInspectOutlineRegular,
   IconQuestionOutlineRegular,
@@ -118,8 +116,8 @@ import { createFormSession, initialFormAnswers } from '../form-session.js';
  * 这一轮就算过去了——表单不再换成一行行答案，而是**停住**：勾选框与自填框按提交时的样子原样
  * 留着，看得到、改不了、文字还能选中复制。冻结那份按用户**实际发出去的那条消息**反解重画
  * （他在原生输入框里改过、增删过的都以那条消息为准）；那条消息里根本没有作答块时，本轮就是
- * **没作答**（本地勾选与推荐默认都不许冒充他的答案，只挂一行说明）。冻结之后整块默认收成一行
- * 摘要，点开才是那张表——回看历史时几张大表不再铺满屏幕。
+ * **没作答**（本地勾选与推荐默认都不许冒充他的答案，只挂一行说明）。冻结之后**不折叠、始终
+ * 摊开**：顶上留一行摘要（本轮几题、答了几题），它不是开关——没有箭头、不可点，表就排在它下面。
  *
  * 槽位给轮次尾部条目的数据：本轮（`turn`，`TurnLocation`）、收尾位置（`seq`）与 `openFile`；
  * 分叉要的是**本轮结束位置** `turn.end.seq`——`seq` 是收尾助手那条，切在那儿会把这次调用切在
@@ -197,7 +195,7 @@ export function GrillingFormRow({ block, toolName, t, inspect }) {
 /**
  * 表单本体的两态：可填，与冻结（只读即冻结）。冻结那份按实发消息反解重画。
  * @param {GrillingFormProps} props - 表单模型、作答来源、分叉切点与交互回调。
- * @returns {import('react').ReactNode} 这一轮的表单（冻结后收成一行摘要，点开才是表）。
+ * @returns {import('react').ReactNode} 这一轮的表单（冻结后只在顶上多一行摘要，表照旧摊开）。
  */
 function GrillingForm({ model, toolName, callId, sessionId, t, useInput, inputActions, replyText, forkSeq, forkAt }) {
   const draft = useInput((state) => state.draft);
@@ -206,8 +204,6 @@ function GrillingForm({ model, toolName, callId, sessionId, t, useInput, inputAc
   const [storedAnswers, setStoredAnswers] = useState(
     () => initialFormAnswers({ sessionId, callId, storage: storageOf() }),
   );
-  // 冻结之后整块默认收起来（回看时几张大表不再铺满屏幕）；还没冻结时这个 state 用不上。
-  const [frozenOpen, setFrozenOpen] = useState(false);
   // 分叉失败了就在按键上说明；换一轮（callId 变了）时由 React 按新的初始值重建。
   const [forkFailed, setForkFailed] = useState(false);
   // 两表不变量、冻结判定、写穿顺序、导入门禁与草稿状态都归内壳管（见 src/form-session.js）；
@@ -267,34 +263,31 @@ function GrillingForm({ model, toolName, callId, sessionId, t, useInput, inputAc
     </div>
   );
 
-  // 冻结：默认收成一行摘要（这轮的题数、答了几题、答案怎么来的），点开才是那张停住的表。
+  // 冻结：不折叠、始终摊开。顶上留一行摘要（几个题、答了几题、问号图标），它不是开关——
+  // 没有箭头、不可点；底下就是那张停住的表。
   if (readOnly) {
     return (
       <div className="dsg-root" data-tool={toolName} data-state={model.state} data-readonly="true">
         <div className="dsg-form">
-          <DisclosureRow
-            className="dsg-frozen"
-            icon={<IconQuestionOutlineRegular />}
-            title={t('row.frozenSummary', {
+          <p className="dsg-summary">
+            <span className="dsg-summaryIcon">
+              <IconQuestionOutlineRegular />
+            </span>
+            {t('row.frozenSummary', {
               total: model.questions.length,
               answered: questionsAnswered(model.questions, answers),
             })}
-            open={frozenOpen}
-            expandable
-            onToggle={() => setFrozenOpen((open) => !open)}
-          >
-            {unanswered ? <p className="dsg-unanswered">{t('row.unanswered')}</p> : null}
-            <QuestionList
-              questions={model.questions}
-              answers={answers}
-              locked
-              t={t}
-              onToggleOption={toggleOption}
-              onCustom={writeCustom}
-            />
-            <p className="dsg-closed">{t('row.closed')}</p>
-            {footer}
-          </DisclosureRow>
+          </p>
+          {unanswered ? <p className="dsg-unanswered">{t('row.unanswered')}</p> : null}
+          <QuestionList
+            questions={model.questions}
+            answers={answers}
+            locked
+            t={t}
+            onToggleOption={toggleOption}
+            onCustom={writeCustom}
+          />
+          {footer}
         </div>
       </div>
     );
@@ -382,7 +375,9 @@ function QuestionList({ questions, answers, locked, t, onToggleOption, onCustom 
  * 锁住，但长相与可填时一模一样（勾选态、自填的字、推荐徽标、说明都原样留着，只是改不了）。
  *
  * 单选靠勾选框自己的开关语义表达（ui-primitives 里没有单选控件）：选中那一项上再点一下就
- * 取消，勾别的项时上一个自动让位——内壳保证一题至多留一项。
+ * 取消，勾别的项时上一个自动让位——内壳保证一题至多留一项。只是**外观**上把单选那题的选择器
+ * 画成圆圈加实心点（`dsg-optionSingle`，见 GrillingForm.css）：它底下仍是那个勾选框控件，
+ * 键盘、读屏念的都是「复选框」，勾选/取消的行为一个字不改。
  *
  * 自填框用原生 textarea——ui-primitives 没有多行输入控件，官方那张答题卡也是自己画的
  * textarea；除它之外的控件都用 ui-primitives。
@@ -397,7 +392,7 @@ function OptionList({ question, answer, locked, t, onToggleOption, onCustom }) {
         <div className="dsg-optionRow" key={option.label}>
           <div className="dsg-optionMain">
             <Checkbox
-              className="dsg-option"
+              className={question.multiSelect === false ? 'dsg-option dsg-optionSingle' : 'dsg-option'}
               checked={selected.includes(option.label)}
               disabled={locked}
               label={option.displayLabel}

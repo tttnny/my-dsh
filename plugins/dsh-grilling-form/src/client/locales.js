@@ -7,7 +7,6 @@ export const NS = 'grillingForm';
 export const zh = {
   'row.frozenSummary': '本轮已过 · {total} 题 · 已填 {answered}',
   'row.unanswered': '本轮没有通过表单作答',
-  'row.closed': '本轮已过，仅供查看',
   'row.rejected': '入参被拒绝',
   'row.violations': '校验失败',
   'row.failed': '调用失败',
@@ -30,7 +29,6 @@ export const zh = {
 export const en = {
   'row.frozenSummary': 'Round over · {total} question(s) · {answered} answered',
   'row.unanswered': 'This round was answered without the form',
-  'row.closed': 'This round is over; the form is read-only',
   'row.rejected': 'Rejected before showing',
   'row.violations': 'Rejected input',
   'row.failed': 'Tool call failed',

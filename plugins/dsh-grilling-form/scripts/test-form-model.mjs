@@ -416,7 +416,7 @@ test('重复导入：原地替换块本身，块外手打的内容一个不动',
   const first = applyImport('前面的话。', bodyOf('选 A'));
   const second = applyImport(first, bodyOf('改选 B'));
   assert.equal(second, applyImport('前面的话。', bodyOf('改选 B')));
-  assert.match(second, /^【盘问作答】/);
+  assert.match(second, /^【拷问作答】/);
   assert.match(second, /Q2 · Deadline：\n- 改选 B/);
   assert.doesNotMatch(second, /选 A/);
   assert.equal(second.slice(-'前面的话。'.length), '前面的话。');
@@ -450,6 +450,17 @@ test('草稿反解：草稿里那段导入块逐题回到作答表；没块、�
   assert.equal(parseImportedDraft('我自己的话。', questions), undefined);
   assert.equal(parseImportedDraft(`${IMPORT_BLOCK_START}\n跟哪道题都对不上：随便\n${IMPORT_BLOCK_END}`, questions), undefined);
   assert.equal(parseImportedDraft(undefined, questions), undefined);
+});
+
+test('只认新标记：升级前那段【盘问作答】的块不算作答块，导入时也不替换它', () => {
+  const questions = [call({ options: [{ label: 'A：这样', displayLabel: 'A：这样' }] })];
+  const legacy = '【盘问作答】\nQ2 · Deadline：\n- 选 A\n【/盘问作答】';
+  assert.equal(parseImportedAnswersResult(legacy, questions).kind, 'none', '老轮次的那段不再当作答块');
+  assert.equal(parseImportedDraft(legacy, questions), undefined);
+  // 写出去只写新标记；草稿里那段旧的留在原地（不换成新的，也不被它当成已有块替换）
+  const written = applyImport(legacy, bodyOf('选 A'));
+  assert.match(written, /^【拷问作答】/, '写出去的是新标记');
+  assert.match(written, /【盘问作答】\nQ2 · Deadline：\n- 选 A\n【\/盘问作答】$/, '旧段原样留在后面');
 });
 
 // --- 只读判定：交回把本轮带过去的那条用户发言 ---

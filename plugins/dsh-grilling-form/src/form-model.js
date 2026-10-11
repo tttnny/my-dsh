@@ -90,18 +90,23 @@ import { normalizeOption } from './recommendation.js';
 
 /** 导入块的起止行：重复导入时靠它认出上一次导入的那一段，原地替换。
  *
+ * **只认这两个标记**：升级前那版写出去的是【盘问作答】/【/盘问作答】，现在一律不算作答块
+ * （老轮次按「没作答」显示，草稿里残留的旧段不被替换、也不当已有块——用户自己删）。
+ *
  * **改协议（这两个常量、工具名、字段语义、作答段的行形）时的联动点**——机械细节只归本包，
  * 技能正文那边不写这些，只需要核对它有没有引用旧格式：
- *   1. `src/index.js`：工具的 description / 各字段说明 / PENDING_MESSAGE（模型的运行时自述）；
- *   2. `scripts/test-form-model.mjs`、`scripts/smoke-host.mjs`、`scripts/test-form-session.mjs`、
- *      `scripts/test-render.mjs` 里的字面量钉（起止行、作答段的逐行形状、会话键）；
- *   3. 本包 `README.md` 与仓库根 `README.md` 的插件表；
- *   4. matt-skills-dsh 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）：工具改名时
+ *   1. `src/index.js`：工具的 description / 各字段说明 / PENDING_MESSAGE（模型的运行时自述；
+ *      它说的是作答段的**行形**——标题以全角冒号收尾、每项一行带 `- `，不含起止行本身）；
+ *   2. 写死起止行字面量的三处测试：`scripts/test-form-model.mjs`（含那条「只认新标记」的老标记
+ *      钉子）、`scripts/test-form-session.mjs`、`scripts/test-render.mjs`；
+ *   3. `scripts/smoke-host.mjs` 钉的是作答段的行形（起止行不在其内）；
+ *   4. 本包 `README.md` 与仓库根 `README.md`；
+ *   5. matt-skills-dsh 的 grilling 技能正文（`skills/productivity/grilling/SKILL.md`）：工具改名时
  *      正文里那句工具名要跟着改。它不随本包发布、也没有任何测试看得见它，漂移只会以模型行为
  *      静默表现出来。
  * 新增任何写死这些字面量的测试或文档，都要补进这份清单。 */
-export const IMPORT_BLOCK_START = '【盘问作答】';
-export const IMPORT_BLOCK_END = '【/盘问作答】';
+export const IMPORT_BLOCK_START = '【拷问作答】';
+export const IMPORT_BLOCK_END = '【/拷问作答】';
 
 /** 本插件的 wire 工具名：浏览器半边靠它在本轮里认出那次调用。 */
 export const TOOL_NAME = 'grilling_form';

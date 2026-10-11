@@ -107,10 +107,10 @@ test('导入：有作答时把块写进草稿（替换旧块 / 放在最前）�
   const session = sessionOf();
   assert.equal(
     session.importInto('我另外想说一句。'),
-    '【盘问作答】\nQ1 · 落点：\n- A：详情页\n【/盘问作答】\n\n我另外想说一句。',
+    '【拷问作答】\nQ1 · 落点：\n- A：详情页\n【/拷问作答】\n\n我另外想说一句。',
   );
   const again = sessionOf();
-  assert.match(again.importInto('【盘问作答】\n旧的一行\n【/盘问作答】\n\n后面的话'), /Q1 · 落点：\n- A：详情页/);
+  assert.match(again.importInto('【拷问作答】\n旧的一行\n【/拷问作答】\n\n后面的话'), /Q1 · 落点：\n- A：详情页/);
   const empty = sessionOf({ storedAnswers: { a: { selected: [], custom: '' }, b: { selected: [], custom: '' } } });
   assert.equal(empty.canImport, false);
   assert.equal(empty.importInto('原样'), '原样');
@@ -125,7 +125,7 @@ test('草稿状态：没块＝还没导入、块正是当前这份＝已导入�
   assert.equal(changed.draftState, 'stale', '表单改过之后草稿里那份就旧了');
   const nothing = sessionOf({ storedAnswers: { a: { selected: [], custom: '' }, b: { selected: [], custom: '' } } });
   assert.equal(nothing.draftState, 'empty');
-  assert.equal(sessionOf({ replyText: '【盘问作答】\nQ1 · 落点：\n- A：详情页\n【/盘问作答】', draft: '' }).draftState, 'empty', '冻结之后没有导入这回事');
+  assert.equal(sessionOf({ replyText: '【拷问作答】\nQ1 · 落点：\n- A：详情页\n【/拷问作答】', draft: '' }).draftState, 'empty', '冻结之后没有导入这回事');
 });
 
 test('单选：再勾一个就换掉上一个，一题至多留一项；自填照旧留着', () => {
@@ -144,7 +144,7 @@ test('冻结：按实发消息重画，写操作改不动（原样返回），�
   const storage = fakeStorage();
   const session = sessionOf({
     storage,
-    replyText: '【盘问作答】\n范围呢？：\n- 只改插件\n【/盘问作答】',
+    replyText: '【拷问作答】\n范围呢？：\n- 只改插件\n【/拷问作答】',
   });
   assert.equal(session.readOnly, true);
   assert.deepEqual(session.answers.a, { selected: [], custom: '' }, '块里没有的题就是没作答，推荐默认不许勾回来');
@@ -169,7 +169,7 @@ test('冻结：实发消息里根本没有块＝没作答（本地勾选与推�
 test('冻结：块坏了才退回本地那份（内容不凭空消失），并标出这是退回的一份', () => {
   const session = sessionOf({
     storedAnswers: { b: { selected: [], custom: '本地自填' } },
-    replyText: '【盘问作答】\n跟哪道题都对不上：随便\n【/盘问作答】',
+    replyText: '【拷问作答】\n跟哪道题都对不上：随便\n【/拷问作答】',
   });
   assert.equal(session.unanswered, false);
   assert.deepEqual(session.answers.a, { selected: ['A：详情页（推荐）'], custom: '' });
