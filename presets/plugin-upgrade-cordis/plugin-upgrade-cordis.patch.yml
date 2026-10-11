@@ -1,5 +1,6 @@
 # Agent preset plugin-upgrade-cordis: the shipped `cordis` row copied verbatim
-# (same persona, same tool matrix, same sub-agent/compaction groups), plus the
+# from dsh 0.2.1-alpha.2 (`@deepseek-ai/dsh-web-app/presets/cordis.patch.yml`) —
+# same persona, same tool matrix, same sub-agent/compaction groups — plus the
 # 11 plugin-engineering skills vendored under ./skills/. See README.md.
 - insert:
     - id: preset-plugin-upgrade-cordis
@@ -15,13 +16,14 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: Your working directory is {{cwd}}.
               prefix: >-
                 You are a coding agent powered by the {{model}} model.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
               maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
           - id: tool-bash
             name: '@deepseek-ai/dsh-tool-bash'
             disabled: !!js process.platform === 'win32'
@@ -36,6 +38,8 @@
               sampleOverCapGlobResults: false
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
           - id: command-goal
             name: '@deepseek-ai/dsh-command-goal'
           - id: tool-goal
@@ -94,41 +98,29 @@
                   provider: spawn
                   toolName: subagent
                   modelSelectionSettings: true
-                  backgroundMode: continuable
+                  toolFilter:
+                    deny:
+                      - schedule_create
+                      - schedule_delete
+                      - schedule_list
+                      - schedule_update
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: fork
                   toolName: subagent_fork
-                  backgroundMode: continuable
-              - id: tool-subagent-codex
-                name: '@deepseek-ai/dsh-tool-subagent'
-                disabled: true
-                config:
-                  provider: codex
-                  toolName: subagent_codex
-                  backgroundMode: one-shot
-                  maxDepth: provider-managed
-              - id: tool-subagent-claude-code
-                name: '@deepseek-ai/dsh-tool-subagent'
-                disabled: true
-                config:
-                  provider: claude-code
-                  toolName: subagent_claude_code
-                  backgroundMode: one-shot
-                  maxDepth: provider-managed
+                  toolFilter:
+                    deny:
+                      - schedule_create
+                      - schedule_delete
+                      - schedule_list
+                      - schedule_update
               - id: workflow-ptc
                 name: '@deepseek-ai/dsh-workflow-ptc'
                 config:
                   provider: spawn
               - id: tool-workflow
                 name: '@deepseek-ai/dsh-tool-workflow'
-              - id: tool-ralph
-                name: '@deepseek-ai/dsh-tool-ralph'
-                disabled: true
-                config:
-                  subagentProvider: spawn
-                  maxRounds: 64
           - id: tool-ask-user
             name: '@deepseek-ai/dsh-tool-ask-user'
           - id: tool-todo

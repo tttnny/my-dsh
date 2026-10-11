@@ -1,6 +1,11 @@
 # 上游来源与再同步
 
-本 preset 的 `skills/` 是**上游仓库的逐字复制**，不是依赖。这份文件记来源、钉住的提交、哈希配方、同步步骤与判据；机器可读的那一份是 [upstream-lock.json](./upstream-lock.json)，检查工具是 [check-upstream.mjs](./check-upstream.mjs)。
+本 preset 有**两份外来内容**，来源与再同步方式各不相同：
+
+1. `skills/` —— [oh-my-dsh/dsh-plugin-upgrade-skill](https://github.com/oh-my-dsh/dsh-plugin-upgrade-skill) 的**逐字复制**，见「来源」与「再同步步骤」；
+2. `plugin-upgrade-cordis.patch.yml` —— DSH 官方 `@deepseek-ai/dsh-web-app/presets/cordis.patch.yml` 的**抄本**，见「再抄官方 preset」。
+
+本文记来源、钉住的提交、哈希配方、同步步骤与判据；机器可读的那一份是 [upstream-lock.json](./upstream-lock.json)，检查工具是 [check-upstream.mjs](./check-upstream.mjs)（只覆盖第 1 项，第 2 项靠版本对齐与 `--dump-config`）。
 
 ## 来源
 
@@ -72,6 +77,26 @@ node presets/$ID/check-upstream.mjs --verify
 6. **真装载**：隔离 `DSH_HOME` boot 后在 `/` 菜单「技能」段看到 11 个技能（步骤见 README.md「验证」）。
 
 上游 `skills/README.md` 的表若增删了技能，本 preset 的 `README.md`「随包技能」表、`package.json` 的 `description`、`upstream-lock.json`（`--write` 自动）一起改；内容变了就把 `package.json` 的 `version` 加一位。
+
+## 再抄官方 preset
+
+`plugin-upgrade-cordis.patch.yml` 是官方 `presets/cordis.patch.yml` 的抄本，**抄的版本必须等于运行中的 DSH**。升级 DSH 后按下面重抄（本包只改三处，别多改）：
+
+```
+BASE=<DSH 安装>/node_modules/.pnpm/@deepseek-ai+dsh-web-app@<版本>_*/node_modules/@deepseek-ai/dsh-web-app/presets/cordis.patch.yml
+```
+
+1. 把 `$BASE` 整份内容抄成 `plugin-upgrade-cordis.patch.yml`；
+2. 只改三处：
+   - 顶部注释块（换成指向本 preset 与本文件）；
+   - `- id: preset-cordis` → `- id: preset-plugin-upgrade-cordis`，`config.id` → `plugin-upgrade-cordis`，加 `config.name` / `config.description`，`config.order` → 台账值（见 [docs/rules/presets.md](../../docs/rules/presets.md)「order 台账」）；
+   - `skill-filesystem` 行的 `customSkillDirs`：在官方那条**之前**插本包的根（`createRequire(baseUrl).resolve('@lynn123411/dsh-preset-plugin-upgrade-cordis/package.json')` + `join(dir, 'skills')`），并保留说明注释。**顺序即优先级**；
+3. `diff -u "$BASE" plugin-upgrade-cordis.patch.yml` 复核：除上述三处外应当**没有别的差异**——这是唯一能证明「逐字保留」的检查；
+4. 扫一遍提示词变量：`grep -oE '\{\{[a-zA-Z_]+\}\}' plugin-upgrade-cordis.patch.yml | sort -u`，结果必须落在该版 `agent-loop` 注册的变量里（0.2.1-alpha.2 只有 `model` 与 `provider`）。引用了不存在的变量 → 每次请求都抛 `unknown prompt variable`，而 preset 照样可选；
+5. `--dump-config` exit 0，且组合树里出现 `preset-plugin-upgrade-cordis` 行；
+6. 更新 `package.json` 的 `engines.dsh` 与 `version`（加一位），更新 README.md 的「与官方创造模式的异同」与实测记录。
+
+`check-upstream.mjs` **不覆盖这一步**：它只管 `skills/`，与官方 preset 无关。
 
 ## 哈希配方
 

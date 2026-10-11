@@ -1,6 +1,6 @@
 # plugin-upgrade-cordis — 插件升级创造模式
 
-> 官方**创造模式**（preset id `cordis`）**逐字保留**：同样的 persona、同样的工具矩阵、同样的计划 / 压缩 / 子代理编排与动态插件工具 `tool-cordis`。在此之上并入 [oh-my-dsh/dsh-plugin-upgrade-skill](https://github.com/oh-my-dsh/dsh-plugin-upgrade-skill) 的 **11 个插件工程技能**（随包 `skills/`）。会话选择器里的显示名是**插件升级创造模式**。
+> 官方**创造模式**（preset id `cordis`，抄自 DSH **0.2.1-alpha.2** 的 `presets/cordis.patch.yml`）**逐字保留**：同样的 persona、同样的工具矩阵、同样的计划 / 压缩 / 子代理编排与动态插件工具 `tool-cordis`。在此之上并入 [oh-my-dsh/dsh-plugin-upgrade-skill](https://github.com/oh-my-dsh/dsh-plugin-upgrade-skill) 的 **11 个插件工程技能**（随包 `skills/`）。会话选择器里的显示名是**插件升级创造模式**。
 
 ## 与官方创造模式的异同
 
@@ -11,6 +11,8 @@
 | 显示名 / order | 创造模式 / 4 | 插件升级创造模式 / 6 |
 
 `skill-filesystem` 那一行只改了 `customSkillDirs`：在官方那条之前插入本包的根，其余字段一字未动。
+
+抄本的基线随 DSH 走：**抄本必须与运行中的 DSH 同一个版本**。官方 `presets/*.patch.yml` 每一版都会动（0.2.0-rc.2 → 0.2.1-alpha.2 就改了 6 处：删 `{{cwd}}` 的 persona suffix、加 `time-context` 与 `tool-schedule` 两行、子代理改回 `toolFilter.deny`、删 `backgroundMode`、删已废的 codex / claude-code / ralph 行）。抄本落后就会读到已被删掉的字段——其中 `{{cwd}}` 那种是**硬故障**（提示词变量严格解析，抛错即整轮请求失败），见下面「已知边界」。
 
 ## 组成
 
@@ -58,7 +60,7 @@ plugin-upgrade-cordis/
 | `dsh-v0.1.7-rc.2 → dsh-v0.2.0-rc.1` | ✅ 6 张卡（[v0.2.0-rc.1.md](skills/plugin-upgrade/references/v0.2.0-rc.1.md)） |
 | `dsh-v0.1.7-rc.1 → dsh-v0.1.7-rc.2` | ❌ 未成卡（卡文件内自带声明） |
 | `dsh-v0.2.0-rc.1 → dsh-v0.2.0-rc.2` | ⚠️ 只有同文件末尾两条 field notes，未成卡 |
-| `dsh-v0.2.0-rc.2 → dsh-v0.2.1-alpha.1` | ❌ 上游尚无（DSH 已发布 0.2.1-alpha.1） |
+| `dsh-v0.2.0-rc.2 → dsh-v0.2.1-alpha.1` | ❌ 上游尚无（DSH 已发布 0.2.1-alpha.2） |
 
 完整索引在 [references/README.md](skills/plugin-upgrade/references/README.md)，**按 `from → to` 走廊读，不按文件名顺序**。目标版本没有卡时，**同步上游解决不了**——那正是随包 `dsh-upgrade-audit`（对比两个版本、产证据）与 `plugin-workflow`（编排）的用武之地；产出的证据可以回馈成上游的一张新卡。
 
@@ -123,6 +125,14 @@ node presets/plugin-upgrade-cordis/check-upstream.mjs
 
 **真装载**——隔离 `DSH_HOME` 的 profile 里 `dsh plugin add` 本目录后 boot（`--port 0 --no-open`），在新会话里选中本 preset，打开 `/` 菜单的「技能」段：应与官方 4 个技能同时在列。实测记录见下。
 
+### 适配实测记录（0.2.1-alpha.2，2026-10-11）
+
+隔离 `DSH_HOME` 里建一个只挂 `dsh-base` + `dsh-web-app` + 本目录的 web profile（`pnpm install` 重建 `link:`），boot（`--port 0 --no-open`）**无任何启动诊断**；`--dump-config` exit 0，组合树里 `preset-plugin-upgrade-cordis` 行的 `config.plugins` 与官方 `cordis` 逐行对齐（只剩三处既定差异：行 id、显示名 / order、`skill-filesystem` 多一个 custom root）。裸探针（真实 `FileSystemSkillProvider` + `customSkillDirs=[skills/]`，取 0.2.1 的 `get(candidate, options)` 签名）给：11 个候选、`source=custom`、0 条警告、11 个 `SKILL.md` 正文全部可加载。
+
+**提示词变量是这一版的重点**：0.2.1 的 `agent-loop` 只注册 `model` 与 `provider` 两个变量（`cwd` 已删，工作目录改由 `working-directory` 服务的 context 注入），而 `{{…}}` 严格解析、未注册即抛错。本 preset 的 patch 现在只引用 `{{model}}`——`grep -oE '\{\{[a-zA-Z_]+\}\}' <patch>` 的结果必须落在 `model` / `provider` 之内。
+
+> **选择器里的会话形式**：0.2.0 的记录（官方 4 个 + 本包 11 个全部在列、order 第 6 位）仍然成立，本轮没有在浏览器里重跑选择器那一段。
+
 ### 适配实测记录（0.2.0-rc.2，2026-10-06）
 
 隔离 `DSH_HOME`（复制 web profile 后 `pnpm install` 重建 `link:`）装本目录并 boot，无任何启动诊断；选择器按 order 列出：
@@ -136,6 +146,8 @@ node presets/plugin-upgrade-cordis/check-upstream.mjs
 ## 已知边界
 
 - **上游技能正文按上游仓库根写**：`dsh-benchmark-case` 提到 `benchmark/tasks/`、`scripts/validate.mjs`，`plugin-release` / `plugin-test` 提到上游的 cohort 与快照目录。这些**不是本包内容**，本包只随 `skills/`——用到那些技能时按上游仓库（或用户自己的插件仓库）的实际布局走。上游的 `scripts/`、`benchmark/`、`paper/` 一律未收录。
+- **抄本的基线会随 DSH 漂**：`plugin-upgrade-cordis.patch.yml` 抄自 0.2.1-alpha.2 的官方 `cordis`，官方每版都可能改它。升级 DSH 后要按新版官方文件重抄一遍（步骤见 [UPSTREAM.md](./UPSTREAM.md)「再抄官方 preset」）。抄本落后不会报错，只会静默地少几个插件行；**唯一会当场炸的是引用已被删掉的提示词变量**——那种情况下这一轮的请求会以 `unknown prompt variable` 失败，而 preset 照旧出现在选择器里。
+- **`engines.dsh` 按 semver 管不到预发布版**：`>=0.2.1-alpha.2` 只容得下三位号完全相同的预发布版本；更旧的 `>=0.2.0-rc.2` 根本不收 `0.2.1-alpha.2`（预发布只在 `[major, minor, patch]` 全等时进范围）。所以这个字段是**声明与文档**，不是闸门——0.2.1 里强制的是 `peerDependencies`。
 - **技能正文逐字复制、不做本地改写**：要改内容就改上游，再按 [UPSTREAM.md](./UPSTREAM.md) 重新同步，否则下次同步会把本地改动冲掉。`check-upstream.mjs --verify` 就是用来抓这种「本地被改过」的。
 - **上游更新了要不要跟**：只看 `skills/` 下的变更——`node check-upstream.mjs` 说了算；上游的 `benchmark/` / `paper/` / CI 再热闹也与此无关。**卡缺口（见上「版本卡覆盖」）不是同步能解决的**，那种目标版本要用 `dsh-upgrade-audit` 自己产证据。
 - 上游 `skills/README.md` 的收录清单与作者表保留在 `upstream/`，便于对照。
