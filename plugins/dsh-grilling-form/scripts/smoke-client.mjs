@@ -267,4 +267,22 @@ test('引到的 ui-primitives 名字都在安装副本的导出表里（成对�
   assert.deepEqual(missing, []);
 });
 
+// 渲染自检（test-render.mjs）用一张替身表顶掉真 ui-primitives。替身漏一个名字，那一处就是
+// undefined：React 只打一行 warning、渲染自检全绿，而**依赖它的那条分支根本没被测到**
+// （本项目就漏过 IconCheckOutlineRegular——「已导入」那半边从没真渲染过）。
+const renderScript = readFileSync(join(root, 'scripts', 'test-render.mjs'), 'utf8');
+const stubBlock = /const primitives = \{(.*?)\n\};/s.exec(renderScript)?.[1] ?? '';
+const stubbedPrimitives = new Set(
+  [...stubBlock.matchAll(/^\s*([A-Za-z_][A-Za-z0-9_]*):/gm)].map((match) => match[1]),
+);
+test('渲染替身表覆盖源码引到的每一个 ui-primitives 名字（漏一个＝那处是 undefined、且那条分支没被测到）', () => {
+  assert.ok(stubbedPrimitives.size > 0, '没解析到替身表，下面的核对是空转');
+  const unstubbed = [...primitiveImports].filter((name) => !stubbedPrimitives.has(name));
+  assert.deepEqual(unstubbed, [], '这些名字在渲染自检里是 undefined');
+});
+test('渲染替身表没有用不到的替身（死替身会让人以为那一处被测过）', () => {
+  const dead = [...stubbedPrimitives].filter((name) => !primitiveImports.has(name));
+  assert.deepEqual(dead, []);
+});
+
 console.log('  浏览器半边：全部通过');

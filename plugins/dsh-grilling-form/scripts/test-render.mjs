@@ -33,15 +33,18 @@ globalThis.document = {
 };
 
 /** 只渲染 props 的 ui-primitives 替身，见文件头。每次渲染记下 Button 收到的那份 props：
- * 导入键与分叉键的受控状态、onClick、class 只能在这里摸到。 */
+ * 导入键与分叉键的受控状态、onClick、class 只能在这里摸到。
+ * **这份替身表必须与源码引到的名字逐一对齐**（多一个、少一个都由 smoke-client.mjs 拦下）：
+ * 少一个，那一处就是 undefined，React 只打一行 warning、这里的断言却全绿。 */
 let buttons = [];
 const primitives = {
   MarkdownText: ({ text }) => createElement('span', null, text),
-  StateDot: () => createElement('span', null),
   IconQuestionOutlineRegular: () => null,
   IconInspectOutlineRegular: () => null,
   IconDownloadOutlineRegular: () => null,
   IconBranchOutlineRegular: () => null,
+  // 导入键在「已是当前那份」时换成它（打勾图标）：替身要给得出，否则「已导入」那半边是空的。
+  IconCheckOutlineRegular: () => createElement('span', { 'data-icon': 'check' }),
   Checkbox: ({ checked, label, disabled, className }) => createElement(
     'label',
     { 'data-checked': String(checked), 'data-disabled': String(disabled === true), 'data-class': String(className) },
@@ -49,7 +52,13 @@ const primitives = {
   ),
   Button: (props) => {
     buttons.push(props);
-    return createElement('button', { disabled: props.disabled === true, type: 'button', title: props.title }, props.children);
+    // icon 也要渲染出来：真 Button 把它画在文案前，替身丢掉它就等于图标那半边从没被测过。
+    return createElement(
+      'button',
+      { disabled: props.disabled === true, type: 'button', title: props.title },
+      props.icon ?? null,
+      props.children,
+    );
   },
   Tag: ({ children }) => createElement('span', null, children),
 };
@@ -303,6 +312,9 @@ test('导入键：还没导入时是「导入输入框」，草稿里已经是�
   const imported = html({ draft: '【拷问作答】\nQ2 · Host 权威层：\n- B：新建一层\n【/拷问作答】' });
   assert.match(imported.markup, /已导入/);
   assert.doesNotMatch(imported.markup, />导入输入框</);
+  // 「已导入」那份的图标与「还没导入」那份不同：一个打勾、一个下载（图标是 undefined 时两边都空）
+  assert.match(imported.markup, /data-icon="check"/);
+  assert.doesNotMatch(fresh.markup, /data-icon="check"/);
 });
 
 test('导入键：表单改过之后草稿里那份就旧了——按键变「更新输入框」，草稿再点一次才追上', () => {
