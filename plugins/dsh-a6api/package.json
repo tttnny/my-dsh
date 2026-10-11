@@ -69,9 +69,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "node scripts/smoke-client.mjs",
     "test:sync": "node scripts/test-sync-settings.mjs",
+    "test:probe-protocol": "node scripts/test-probe-protocol.mjs",
     "test:auth-bootstrap": "node scripts/test-auth-bootstrap.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
-    "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm test:sync && pnpm test:auth-bootstrap && pnpm assert:lib-untracked"
+    "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm test:sync && pnpm test:probe-protocol && pnpm test:auth-bootstrap && pnpm assert:lib-untracked"
   },
   "engines": {
     "node": "^22.19 || >=24",
