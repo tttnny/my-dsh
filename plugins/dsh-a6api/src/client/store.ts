@@ -75,6 +75,7 @@ class A6ApiStore {
     loading: true,
     config: {
       baseURL: 'https://api.a6api.com',
+      protocol: 'openai-completions',
       apiKey: '',
       userId: '',
       activeModels: [],
@@ -284,8 +285,8 @@ class A6ApiStore {
     }
   }
 
-  /** 对全部（或指定）目录模型查 OpenRouter 并填充参数 */
-  public async queryOpenRouter(modelIds?: string[]): Promise<{ ok: boolean; updated?: number; notFound?: string[]; error?: string }> {
+  /** 对全部（或指定）目录模型查 OpenRouter 并填充参数；手改过档位（manual）的条目会被服务端跳过 */
+  public async queryOpenRouter(modelIds?: string[]): Promise<{ ok: boolean; updated?: number; notFound?: string[]; skipped?: string[]; error?: string }> {
     if (this.state.catalogBusy) return { ok: false, error: '目录操作进行中' };
     this.state.catalogBusy = 'query';
     this.notify();
@@ -294,7 +295,7 @@ class A6ApiStore {
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
         await this.fetchCatalog();
-        return { ok: true, updated: json.updated, notFound: json.notFound || [] };
+        return { ok: true, updated: json.updated, notFound: json.notFound || [], skipped: json.skipped || [] };
       }
       const errText = json?.error || `HTTP ${res.status}`;
       this.state.error = errText;
@@ -674,7 +675,7 @@ class A6ApiStore {
 
   /**
    * 启动预热：插件随 DSH 启动即后台拉取一次完整状态。
-   * 输入框下方的按钮在应用启动时就已挂载，预热让用户打开浮层/设置页时数据早已就绪 → 秒开无 spinner。
+   * 侧边栏底部的入口在应用启动时就已挂载，预热让用户打开浮层/设置页时数据早已就绪 → 秒开无 spinner。
    * 未配置凭据时 /state 返回默认回退数据，无害；后续保存配置/轮询会持续刷新。
    * 目录一并预热（模型目录 tab 徽标/首屏不等待首次进入）。
    */

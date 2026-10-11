@@ -4,7 +4,7 @@
  * Loads the built `lib/client.js` the same way the Web shell does (through a
  * `window.__ModuleLoader__.load` stub), gives it fake cordis services, and
  * asserts every registration this plugin's **Plugins** page form and the
- * composer dock entry depend on, plus one render of each. Run with:
+ * sidebar footer entry depend on, plus one render of each. Run with:
  * node scripts/smoke-client.mjs
  *
  * The fake context models the kernel's inject guard, so reading a service the
@@ -91,10 +91,20 @@ globalThis.document = {
     return null
   },
   createElement: () => fakeElement(),
-  addEventListener() {},
-  removeEventListener() {},
+  addEventListener: (type, listener) => { documentListeners.push({ type, listener }) },
+  removeEventListener: (type, listener) => {
+    const at = documentListeners.findIndex(entry => entry.type === type && entry.listener === listener)
+    if (at >= 0) documentListeners.splice(at, 1)
+  },
   activeElement: null,
 }
+
+/**
+ * Document-level listeners the bundle installed. The escape/outside-click
+ * dismissal is a document listener pair, so the cases below can fire the real
+ * handlers instead of poking component state.
+ */
+const documentListeners = []
 
 let loaded
 globalThis.window.__ModuleLoader__.load = (row) => {
@@ -106,6 +116,22 @@ const registrations = []
 const injects = []
 const locales = []
 const errors = []
+
+/**
+ * Optional `pluginNavigation` implementation. The Host's plugin-manager page
+ * provides this service only while it is mounted, so the fake context exposes
+ * it as a settable slot: tests flip it between "available" and "absent" to prove
+ * the 「配置」 pill follows the service instead of being frozen at load time.
+ */
+let pluginNavigationImpl
+
+/**
+ * Fake `modelDirectories`. The entry resolves the current session's model
+ * selection through it, the same service the composer's own model picker reads,
+ * so a fake directory with a live subscription is how the cases below observe
+ * "the card follows the session's model".
+ */
+let modelDirectoriesImpl
 
 /**
  * Service table. `ctx.get(name)` reads from here (cordis' reflect.get never
@@ -152,17 +178,25 @@ const services = () => ({
  * `cannot get property "x" without inject`, so a bundle that reads e.g.
  * `ctx.locale` without declaring it fails here instead of in the profile.
  *
+ * `ctx.on` is recorded so the bundle's optional-service subscription can be
+ * observed; `internal/service` listeners are what a real Host emits when
+ * `pluginNavigation` is provided or retracted.
+ *
  * @param {string} label - context label used in recorded diagnostics.
  * @param {string[]} declared - services the plugin declared through `inject`.
  * @returns {object} the guarded context.
  */
 function makeCtx(label, declared = []) {
   const table = services()
+  const serviceListeners = []
   const base = {
     label,
     effect: (fn) => { fn(); return () => {} },
-    on: () => () => {},
-    get: (name) => table[name],
+    on: (name, listener) => { serviceListeners.push({ name, listener }); return () => {} },
+    get: (name) => (name === 'pluginNavigation'
+      ? pluginNavigationImpl
+      : name === 'modelDirectories' ? modelDirectoriesImpl : table[name]),
+    emitService: (name) => { for (const entry of serviceListeners) if (entry.name === 'internal/service') entry.listener(name) },
   }
   return new Proxy(base, {
     get(target, prop) {
@@ -179,7 +213,7 @@ new Function('window', 'document', source)(globalThis.window, globalThis.documen
 
 check('bundle registers under its package id', loaded?.id === '@lynn123411/dsh-a6api')
 // The settings panel renders ui-primitives controls the shell seeds at runtime;
-// the module table supplies them as inert components so the composer-dock render
+// the module table supplies them as inert components so the sidebar-entry render
 // self-check below still exercises the hand-drawn popup it owns.
 //
 // Two things matter about this table:
@@ -190,7 +224,17 @@ check('bundle registers under its package id', loaded?.id === '@lynn123411/dsh-a
 //     returned null would hide every anchor from the tree under test (and would
 //     not model the primitive at all).
 const primitiveReads = []
-const TooltipStub = ({ children }) => children ?? null
+/**
+ * Every `Tooltip` label rendered, in order. The stub renders its anchor child
+ * and records nothing else, so this is how a case can prove the entry's hover
+ * text actually says what the icon means instead of only that some Tooltip
+ * exists somewhere in the tree.
+ */
+const tooltipLabels = []
+const TooltipStub = ({ children, label }) => {
+  tooltipLabels.push(label)
+  return children ?? null
+}
 const primitivesStub = new Proxy({}, {
   get: (_t, key) => {
     if (typeof key === 'symbol') return undefined
@@ -218,8 +262,15 @@ try {
   check('guard rejects an undeclared service read', /cannot get property "locale" without inject/.test(error.message))
 }
 
+/**
+ * The context the bundle's production wiring closed over. Keeping it lets a
+ * case replay the Host's `internal/service` notification, which is how the
+ * optional `pluginNavigation` change is observed by the mounted entry.
+ */
+let currentCtx
 try {
-  exported.apply(makeCtx('root', exported.inject ?? []))
+  currentCtx = makeCtx('root', exported.inject ?? [])
+  exported.apply(currentCtx)
   check('apply() survives the inject guard', true)
 } catch (error) {
   check('apply() survives the inject guard', false)
@@ -240,19 +291,28 @@ check('no settings-page section is registered any more',
 
 check('locale dictionaries registered in this plugin namespace', locales.includes(NS))
 
-const dock = registrations.find(r => r.name === 'conversation.composer.dock')
-check('composer dock entry registered', dock !== undefined)
-check('composer dock entry keeps its own id', dock?.id === 'dsh-a6api-current-model')
-check('composer dock entry sits left of the official stats pills', dock?.order === -1)
-check('the sidebar footer entry is gone', !registrations.some(r => r.name === 'sidebar.footer.action'))
+// The model-card trigger left the composer row for the sidebar foot, where the
+// shell stacks footer actions directly ABOVE Settings. What the sidebar reads
+// from this registration is its metadata (fresh id, stable order, own label)
+// plus the component; a second registration for the same entry is a duplicate.
+const entry = registrations.find(r => r.name === 'sidebar.footer.action')
+check('sidebar footer entry registered', entry !== undefined)
+check('sidebar footer entry carries its own id', entry?.id === 'dsh-a6-sidebar-entry')
+check('sidebar footer entry is the only one on this slot',
+  registrations.filter(r => r.name === 'sidebar.footer.action').length === 1)
+check('sidebar footer entry sorts above the optional Cordis panel', entry?.order === -1)
+check('sidebar footer entry declares its label', entry?.label === 'A6api')
+check('sidebar footer entry uses this plugin locale namespace', entry?.locale === NS)
+check('the composer dock entry is gone for good',
+  !registrations.some(r => r.name === 'conversation.composer.dock'))
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 
-// 渲染自检:输入框下方那一行的组件渲染出「A6api」按钮,点击后贴按钮上沿展开浮层。
+// 渲染自检:侧边栏底部的组件渲染出「A6api」入口按钮,点击后从按钮右侧展开卡片浮层。
 const React = require('react')
 const { act, create } = require('react-test-renderer')
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
-check('composer dock entry exposes a component', typeof dock?.component === 'function')
+check('sidebar footer entry exposes a component', typeof entry?.component === 'function')
 
 /**
  * Collects the text inside a test-renderer node (the stub primitives render no
@@ -327,29 +387,350 @@ function unmountQuietly(renderer) {
   }
 }
 
-const buttonRect = { left: 600, top: 772, right: 660, bottom: 794, width: 60, height: 22 }
-let tree
-act(() => {
-  tree = create(React.createElement(dock.component, { sessionId: 'session-1' }), {
-    createNodeMock: () => ({ getBoundingClientRect: () => buttonRect, contains: () => false }),
+/**
+ * The model card's anchor geometry in the fake sidebar: a rail-sized button
+ * parked at the left edge of a 1280x800 viewport, near the bottom where the
+ * sidebar foot sits. The popup must open to its RIGHT and hug the button's
+ * band, so every expected offset below is derived from these numbers.
+ */
+const buttonRect = { left: 8, top: 700, right: 44, bottom: 736, width: 36, height: 36 }
+/** The popup's own measurements, taken by the component after it mounts. */
+const popupRect = { left: 52, top: 300, right: 552, bottom: 728, width: 500, height: 428 }
+/**
+ * Pointer targets for the outside-click cases. `contains` must answer honestly
+ * per node or the dismissal case is vacuous: a press INSIDE the popup is the
+ * negative control that proves a press outside is what closes it.
+ */
+const insidePopupTarget = { nodeName: 'MARK' }
+const outsideTarget = { nodeName: 'OUTSIDE' }
+/** The trigger button's own node mock answers for exactly this target. */
+const buttonTarget = { nodeName: 'BUTTON' }
+
+/**
+ * Render the sidebar entry with the standard props the shell composes for a
+ * `root` list entry: the owner's `wide`, the locale seat's `t`, and the global
+ * `useSessions` hook. The entry's own optional readers arrive through the
+ * registered component itself (the production wiring), NOT through these props:
+ * a stub `useSessions` returning the main-view session is what lets the same
+ * render exercise the "current session" path without the real session service.
+ */
+function renderEntry({ wide = true } = {}) {
+  return create(React.createElement(entry.component, {
+    wide,
+    t: (key) => key,
+    useSessions: (selector) => selector({ byId: { 'session-1': { id: 'session-1', retainedBy: { mainView: 1 } } } }),
+  }), {
+    createNodeMock: (element) => (element.type === 'div' && element.props?.className === 'dsh-a6-sidebar-popup'
+      ? { getBoundingClientRect: () => popupRect, contains: (node) => node === insidePopupTarget }
+      : { getBoundingClientRect: () => buttonRect, contains: (node) => node === buttonTarget }),
   })
-})
+}
+
+let tree
+act(() => { tree = renderEntry({ wide: true }) })
 const button = tree.root.findByType('button')
-check('dock button carries the A6api text', button.children.join('') === 'A6api')
-check('dock button starts collapsed', button.props['aria-expanded'] === false)
+check('sidebar entry button carries the A6api text when the sidebar is wide',
+  textOf(button) === 'A6api')
+check('sidebar entry button starts collapsed', button.props['aria-expanded'] === false)
 // The anchor's own hover text is drawn before the popup exists, so count reads
 // from before the click: the migration guard below only reports honestly if this
 // tree really reached `Tooltip` instead of just carrying the popup's markup.
-const dockReadsAt = primitiveReads.length
+const entryReadsAt = primitiveReads.length
 act(() => button.props.onClick())
 const popups = tree.root.findAll(node => node.props.role === 'dialog')
-check('dock button opens the model card popup', popups.length === 1)
-check('popup height is capped to the space above the button', popups[0]?.props.style?.maxHeight === 772 - 2 * 8)
+check('sidebar entry button opens the model card popup', popups.length === 1)
+// The popup hugs the button's right edge + gap, and its bottom sits a gap above
+// the button's top edge (viewport height - top + gap). maxHeight is the free
+// space above the button.
+check('popup opens to the right of the button', popups[0]?.props.style?.left === 44 + 8)
+check('popup bottom hugs the button band', popups[0]?.props.style?.bottom === 800 - 700 + 8)
+check('popup height is capped to the space above the button', popups[0]?.props.style?.maxHeight === 700 - 2 * 8)
+// Width: the 500px cap wins here because 1280 - 52 - 8 leaves plenty of room.
+// The viewport-respecting branch is exercised by the narrow-window case below,
+// so this pair together pins the whole formula rather than just its literal.
+check('popup width takes the 500px cap when the viewport allows',
+  popups[0]?.props.style?.width === 500)
 check(
-  'the composer dock draws its hover text through the ui-primitives Tooltip',
-  primitiveReads.slice(dockReadsAt).includes('Tooltip'),
+  'the sidebar entry draws its hover text through the ui-primitives Tooltip',
+  primitiveReads.slice(entryReadsAt).includes('Tooltip'),
 )
-unmountQuietly(tree)
+// The hover text must say what the entry IS (its own copy), not be an empty or
+// borrowed bubble: with no session on an A6api model yet, the anchor explains
+// that state — the identity copy arrives with the A6api case further down.
+check('the entry anchor carries this plugin’s own hover copy',
+  tooltipLabels.includes('sidebarTipNoModel'))
+
+// Dismissal: Escape and an outside pointer press both close the popup. These
+// are the document listeners the component installs while open, so firing them
+// is the same path the browser takes.
+const popupOpen = () => tree.root.findAll(node => node.props.role === 'dialog').length === 1
+check('popup is open before the dismissal cases', popupOpen())
+const escape = documentListeners.filter(entry => entry.type === 'keydown')
+check('the open popup installs its dismissal listeners', escape.length >= 1)
+act(() => { for (const entry of escape) entry.listener({ key: 'Escape' }) })
+check('Escape closes the popup', !popupOpen())
+
+act(() => button.props.onClick())
+check('popup reopens after Escape', popupOpen())
+const outsidePress = documentListeners.filter(entry => entry.type === 'pointerdown')
+check('the open popup installs its pointer dismissal listener', outsidePress.length >= 1)
+// Negative control first: a press inside the popup (and one on the trigger) must
+// NOT close it — without this, a handler that closes on every pointer event
+// would still pass the outside case below.
+act(() => { for (const entry of outsidePress) entry.listener({ target: insidePopupTarget }) })
+check('a pointer press inside the popup leaves it open', popupOpen())
+act(() => { for (const entry of outsidePress) entry.listener({ target: buttonTarget }) })
+check('a pointer press on the trigger leaves the popup open (the click toggles it)', popupOpen())
+act(() => { for (const entry of outsidePress) entry.listener({ target: outsideTarget }) })
+check('an outside pointer press closes the popup', !popupOpen())
+
+// A window too narrow for a 500px card must not grow it past the viewport: the
+// popup takes the remaining space to the right of the button instead.
+const realInnerWidth = globalThis.window.innerWidth
+globalThis.window.innerWidth = 320
+let narrowTree
+act(() => { narrowTree = renderEntry({ wide: true }) })
+act(() => { narrowTree.root.findByType('button').props.onClick() })
+const narrowPopup = narrowTree.root.findAll(node => node.props.role === 'dialog')[0]
+check('popup width shrinks to the space right of the button in a narrow window',
+  narrowPopup?.props.style?.width === 320 - (44 + 8) - 8)
+check('popup keeps its left edge anchored to the button in a narrow window',
+  narrowPopup?.props.style?.left === 44 + 8)
+act(() => { narrowTree.unmount() })
+
+// A window narrower than the button's own right edge plus a usable card leaves
+// the plain formula with a negative width. The popup must clamp to its width
+// floor instead of handing CSS an impossible value, and must pull its left edge
+// back so the card still starts on screen.
+globalThis.window.innerWidth = 100
+let tinyTree
+act(() => { tinyTree = renderEntry({ wide: true }) })
+act(() => { tinyTree.root.findByType('button').props.onClick() })
+const tinyPopup = tinyTree.root.findAll(node => node.props.role === 'dialog')[0]
+check('popup width never goes negative in a tiny window',
+  typeof tinyPopup?.props.style?.width === 'number' && tinyPopup.props.style.width > 0)
+check('popup keeps its width floor in a tiny window', tinyPopup?.props.style?.width === 240)
+check('popup pulls its left edge back into the viewport in a tiny window',
+  tinyPopup?.props.style?.left === 8)
+act(() => { tinyTree.unmount() })
+globalThis.window.innerWidth = realInnerWidth
+
+act(() => tree.unmount())
+
+// Narrow (rail) form: the icon alone, no visible label text.
+let railTree
+act(() => { railTree = renderEntry({ wide: false }) })
+const railButton = railTree.root.findByType('button')
+check('sidebar entry drops its text label when the sidebar is a rail',
+  textOf(railButton) === '')
+check('sidebar entry keeps an accessible name for the rail icon',
+  railButton.props['aria-label'] === 'A6api')
+act(() => railTree.unmount())
+
+// The 「配置」 pill reaches the plugin's own configuration page through the
+// host's pluginNavigation service. It is an OPTIONAL dependency: when the
+// service is absent the pill hides and the entry itself still renders, because
+// a missing pill must never take the whole plugin off the page. The service is
+// provided by the plugin-manager page and retracted when that page unmounts, so
+// the cases below also cover the retraction path, not just the load-time probe.
+const openBundleCalls = []
+pluginNavigationImpl = { openBundle: (name) => { openBundleCalls.push(name) } }
+let configTree
+const configRenderFailedWith = (() => {
+  try {
+    act(() => { configTree = renderEntry() })
+    act(() => { configTree.root.findByType('button').props.onClick() })
+    return undefined
+  } catch (error) {
+    return error
+  }
+})()
+check('the sidebar entry renders when pluginNavigation is available', configRenderFailedWith === undefined)
+if (configRenderFailedWith) console.log(`       ${configRenderFailedWith.message}`)
+if (configTree) {
+  const configPill = configTree.root.findAll(node => node.props?.className === 'dsh-a6-config-pill')
+  check('the card renders a 「配置」 pill when pluginNavigation is available', configPill.length === 1)
+  const pillClickFailedWith = (() => {
+    try { act(() => { configPill[0]?.props.onClick() }); return undefined } catch (error) { return error }
+  })()
+  check('the 「配置」 pill opens this bundle through pluginNavigation',
+    pillClickFailedWith === undefined
+    && openBundleCalls.length === 1 && openBundleCalls[0] === '@lynn123411/dsh-a6api')
+  if (pillClickFailedWith) console.log(`       ${pillClickFailedWith.message}`)
+
+  // Retraction: the Host page unmounted and withdrew the service. A live pill
+  // for a page that is gone would be a dead control, so it must disappear —
+  // without taking the entry down with it.
+  pluginNavigationImpl = undefined
+  const retractedWith = (() => {
+    try {
+      act(() => { currentCtx?.emitService('pluginNavigation') })
+      return undefined
+    } catch (error) {
+      return error
+    }
+  })()
+  check('withdrawing pluginNavigation does not throw', retractedWith === undefined)
+  if (retractedWith) console.log(`       ${retractedWith.message}`)
+  check('the 「配置」 pill hides once pluginNavigation is withdrawn',
+    configTree.root.findAll(node => node.props?.className === 'dsh-a6-config-pill').length === 0)
+  check('the entry itself survives the withdrawal',
+    configTree.root.findAll(node => node.type === 'button').length >= 1)
+  act(() => { configTree.unmount() })
+}
+
+// Absent from the start: a deployment without the plugin-manager page still
+// gets the model card, just without the config pill.
+let noNavTree
+let noNavFailedWith
+try {
+  act(() => { noNavTree = renderEntry() })
+  act(() => { noNavTree.root.findByType('button').props.onClick() })
+} catch (error) {
+  noNavFailedWith = error
+}
+check('the sidebar entry survives a deployment without pluginNavigation',
+  noNavFailedWith === undefined)
+check('the 「配置」 pill hides when pluginNavigation is unavailable',
+  noNavFailedWith === undefined
+  && noNavTree.root.findAll(node => node.props?.className === 'dsh-a6-config-pill').length === 0)
+if (noNavFailedWith) console.log(`       ${noNavFailedWith.message}`)
+if (noNavTree) act(() => { noNavTree.unmount() })
+
+// Late arrival: the plugin-manager page usually mounts AFTER this bundle, so
+// the pill must appear when the service lands — a load-time-only probe would
+// leave the pill permanently missing on the common path (and the retraction
+// case above already covers the mirror-image withdrawal).
+{
+  pluginNavigationImpl = undefined
+  const lateCalls = []
+  let lateTree
+  const lateFailedWith = (() => {
+    try {
+      act(() => { lateTree = renderEntry() })
+      act(() => { lateTree.root.findByType('button').props.onClick() })
+      return undefined
+    } catch (error) {
+      return error
+    }
+  })()
+  check('the entry renders before pluginNavigation arrives', lateFailedWith === undefined)
+  check('no 「配置」 pill before pluginNavigation arrives',
+    lateFailedWith === undefined
+    && lateTree.root.findAll(node => node.props?.className === 'dsh-a6-config-pill').length === 0)
+  if (lateFailedWith) console.log(`       ${lateFailedWith.message}`)
+  if (lateTree) {
+    // The Host provides the service, then notifies every dependent fiber.
+    pluginNavigationImpl = { openBundle: (name) => { lateCalls.push(name) } }
+    const arrivalFailedWith = (() => {
+      try { act(() => { currentCtx?.emitService('pluginNavigation') }); return undefined } catch (error) { return error }
+    })()
+    check('the pluginNavigation arrival notification does not throw', arrivalFailedWith === undefined)
+    if (arrivalFailedWith) console.log(`       ${arrivalFailedWith.message}`)
+    const latePill = lateTree.root.findAll(node => node.props?.className === 'dsh-a6-config-pill')
+    check('the 「配置」 pill appears once pluginNavigation arrives', latePill.length === 1)
+    act(() => { latePill[0]?.props.onClick() })
+    check('the late-arriving 「配置」 pill still opens this bundle',
+      lateCalls.length === 1 && lateCalls[0] === '@lynn123411/dsh-a6api')
+    act(() => { lateTree.unmount() })
+  }
+  pluginNavigationImpl = undefined
+}
+
+/**
+ * A fake `ModelDirectory` with a live store, mirroring the real one's contract:
+ * `store.getSnapshot()` carries the session's current selection and
+ * `store.subscribe()` fires on every switch. Returning it per session is what
+ * lets the cases below drive the card through a model switch.
+ *
+ * @param {{provider?: string, model?: string}|null} initial - starting selection.
+ * @returns {{directory: object, set: (next: object|null) => void, asked: string[]}} the fake.
+ */
+function fakeDirectory(initial) {
+  let snapshot = { current: initial, groups: [], failures: [] }
+  const listeners = new Set()
+  const asked = []
+  return {
+    asked,
+    directory: {
+      store: {
+        getSnapshot: () => snapshot,
+        subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+      },
+    },
+    set: (next) => {
+      snapshot = { current: next, groups: [], failures: [] }
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
+// The card's two halves are observable from the outside: the account-overview
+// pill row is present in every state, and the model area dims exactly when the
+// current session is not on an A6api model. `useSessions` is the only source of
+// the session identity here, so seeing the fake directory asked for its id is
+// also what proves the root entry resolved the current session correctly.
+{
+  const fake = fakeDirectory({ provider: 'a6api', model: 'a6api/gpt-4o' })
+  modelDirectoriesImpl = { directoryFor: (sessionId) => { fake.asked.push(sessionId); return fake.directory } }
+  let cardTree
+  act(() => { cardTree = renderEntry() })
+  act(() => { cardTree.root.findByType('button').props.onClick() })
+  check('the entry resolves the model directory for the main-view session',
+    fake.asked.length >= 1 && fake.asked.every(id => id === 'session-1'))
+  // With an A6api model in use, the anchor's hover text is the identity copy —
+  // the same sentence the user reads to confirm what the icon is.
+  check('the entry anchor names itself when an A6api model is in use',
+    tooltipLabels.includes('sidebarTip'))
+  check('the popup keeps the account-overview pill row',
+    cardTree.root.findAll(node => node.props?.className === 'dsh-a6-sidebar-pills').length === 1)
+  check('an A6api session shows the model area undimmed',
+    cardTree.root.findAll(node => node.props?.className === 'dsh-a6-sidebar-card-dimmed').length === 0)
+
+  // Switching the session's model must follow live, without remounting.
+  fake.set({ provider: 'deepseek-account', model: 'deepseek-account/deepseek-chat' })
+  check('switching to a non-A6api model dims the model area live',
+    cardTree.root.findAll(node => node.props?.className === 'dsh-a6-sidebar-card-dimmed').length === 1)
+  check('the account-overview pill row survives the dimming',
+    cardTree.root.findAll(node => node.props?.className === 'dsh-a6-sidebar-pills').length === 1)
+  fake.set({ provider: 'a6api', model: 'a6api/claude-sonnet' })
+  check('switching back to an A6api model un-dims the model area live',
+    cardTree.root.findAll(node => node.props?.className === 'dsh-a6-sidebar-card-dimmed').length === 0)
+  act(() => { cardTree.unmount() })
+  modelDirectoriesImpl = undefined
+}
+
+// Re-mounting the entry (the page refresh / hot-reload path) must not leave work
+// behind: the only timers this half arms are the 500ms service retry and the
+// warm-up timer, and both must be cancelled on unmount. A leaked retry would
+// re-register work on every HMR pass, which is exactly the "duplicate entry"
+// class of bug the registration case above guards on the other end.
+{
+  const realSetTimeout = globalThis.setTimeout
+  const realClearTimeout = globalThis.clearTimeout
+  const armed = new Map()
+  let nextTimerId = 1
+  globalThis.setTimeout = () => {
+    const id = nextTimerId++
+    armed.set(id, true)
+    return id
+  }
+  globalThis.clearTimeout = (id) => { armed.delete(id) }
+  try {
+    // No modelDirectories yet: the entry arms its 500ms retry, then unmounts
+    // before the service arrives — the classic leak this case pins.
+    modelDirectoriesImpl = undefined
+    let retryTree
+    act(() => { retryTree = renderEntry() })
+    act(() => { retryTree.root.findByType('button').props.onClick() })
+    check('a late modelDirectories service arms a retry timer', armed.size >= 1)
+    act(() => { retryTree.unmount() })
+    check('unmounting the entry cancels its pending service-retry timer', armed.size === 0)
+  } finally {
+    globalThis.setTimeout = realSetTimeout
+    globalThis.clearTimeout = realClearTimeout
+  }
+}
 
 // 插件页 bundle 配置的渲染自检：注册在 `plugins.bundle.config` 上的卡片组件必须能 headless
 // 渲染，「基础配置」页渲染出三个输入框（API Key / 系统访问令牌 / 账号 ID）与保存
@@ -453,6 +834,96 @@ if (panelTree) {
   )[0]
   check('config page renders its save button', saveButton !== undefined)
 
+  // The gateway-node section is gone for good: the config page owns no node
+  // control, and none of its copy survives in the rendered output. The address
+  // is plugin-owned from here on, so a re-appearing control is a regression.
+  // Text must come from the config page subtree: `t` is an identity stub, so a
+  // surviving node string would show up verbatim as its locale key.
+  const configPageText = configPage === undefined ? '' : textOf(configPage)
+  const nodeControls = configPage === undefined ? [] : configPage.findAll(
+    (node) => node.props?.id === 'dsh-a6-node' ||
+      node.props?.className === 'dsh-a6-node-url' ||
+      node.props?.className === 'dsh-a6-node-custom',
+  )
+  check('config page renders no gateway-node control', nodeControls.length === 0)
+  check(
+    'config page renders no gateway-node copy',
+    !['nodeTitle', 'nodeDesc', 'nodeCdn', 'nodeDirect', 'nodeCustom', 'customNodePlaceholder']
+      .some(key => configPageText.includes(key)),
+  )
+
+  // The model-protocol section: one choice for the whole route, three options,
+  // OpenAI Chat first (the default that keeps existing setups unchanged). The
+  // stub primitives render nothing of their own, so the segments are read off
+  // the props the page handed SegmentedControl.
+  const protocolControl = configPage === undefined ? undefined : configPage.findAll(
+    (node) => node.props?.id === 'dsh-a6-protocol',
+  )[0]
+  check('config page renders the model-protocol choice', protocolControl !== undefined)
+  const protocolValues = (protocolControl?.props.options ?? []).map(option => option.value)
+  check(
+    'config page offers exactly the three host protocols',
+    protocolValues.join(',') === 'openai-completions,openai-responses,anthropic-messages',
+  )
+  check(
+    'config page defaults the protocol choice to OpenAI Chat',
+    protocolControl?.props.value === 'openai-completions',
+  )
+  // Position is asserted by tree order, not by text: the credentials fields sit
+  // above the protocol choice, which sits above the integration overview. The
+  // integration title is an h3, so it is a host node even with stub primitives;
+  // `t` is an identity stub, so its text is the locale key.
+  const orderedNodes = configPage === undefined ? [] : configPage.findAll(() => true)
+  const indexOfFirst = (predicate) => orderedNodes.findIndex(predicate)
+  const credentialIndex = indexOfFirst(
+    (node) => node.props?.type === 'password',
+  )
+  const protocolIndex = indexOfFirst((node) => node.props?.id === 'dsh-a6-protocol')
+  const integrationIndex = indexOfFirst(
+    (node) => elementText(node.props?.children) === 'integrationTitle',
+  )
+  check(
+    'the protocol section sits after the credentials and before the integration overview',
+    credentialIndex >= 0 && protocolIndex > credentialIndex && integrationIndex > protocolIndex,
+  )
+
+  // The integration overview describes the route the plugin actually writes, so
+  // its provider-value row must name the selected protocol instead of a fixed
+  // "OpenAI-compatible" claim that a Messages route would contradict.
+  check(
+    'the integration overview names the protocol actually in use',
+    elementText(configPage.findAll(
+      (node) => node.props?.className === 'dsh-a6-field-value',
+    )[0]?.props?.children).includes('protocolChat'),
+  )
+
+  // Switching must say which protocol is now in effect, and the switch must be
+  // the one-way channel it claims to be: no hidden second state.
+  check(
+    'the protocol section states which protocol is in effect',
+    configPageText.includes('protocolCurrent'),
+  )
+  act(() => protocolControl?.props.onChange('anthropic-messages'))
+  const switchedPage = panelTree.root.findAll(
+    (node) => node.props?.className === 'dsh-a6-config-page',
+  )[0]
+  const switchedControl = switchedPage?.findAll(
+    (node) => node.props?.id === 'dsh-a6-protocol',
+  )[0]
+  const switchedText = switchedPage === undefined ? '' : textOf(switchedPage)
+  check('switching selects the clicked protocol', switchedControl?.props.value === 'anthropic-messages')
+  check(
+    'switching replaces the description with the new protocol’s',
+    switchedText.includes('protocolMessagesHint') && !switchedText.includes('protocolChatHint'),
+  )
+  check('the in-effect line follows the switch', switchedText.includes('protocolCurrent'))
+  check(
+    'the integration overview follows the switch',
+    elementText(switchedPage?.findAll(
+      (node) => node.props?.className === 'dsh-a6-field-value',
+    )[0]?.props?.children).includes('protocolMessages'),
+  )
+
   // Migration guard: the custom `[data-tooltip]` attribute must be gone from the
   // rendered tree, and the bundle must have asked ui-primitives for `Tooltip`.
   const allProps = hostPropNames(panelTree)
@@ -473,39 +944,36 @@ if (panelTree) {
   }
 }
 
-// The dock half is the second reader of `Tooltip`: its «A6api» anchor and the
-// account pills inside the popup all carry hover text. The loop in front of it
-// already read the module table; proving the whole half is free of the retired
-// attribute needs the popup rendered.
-const dockTreeReadsAt = primitiveReads.length
-let dockTree
-const dockTreeFailedWith = (() => {
+// The sidebar entry is the second reader of `Tooltip`: its «A6api» anchor and
+// the account pills inside the popup all carry hover text. The loop in front of
+// it already read the module table; proving the whole half is free of the
+// retired attribute needs the popup rendered.
+const entryTreeReadsAt = primitiveReads.length
+let entryTree
+const entryTreeFailedWith = (() => {
   try {
-    act(() => {
-      dockTree = create(React.createElement(dock.component, { sessionId: 'session-2' }), {
-        createNodeMock: () => ({ getBoundingClientRect: () => buttonRect, contains: () => false }),
-      })
-    })
+    act(() => { entryTree = renderEntry({ wide: true }) })
+    act(() => { entryTree.root.findByType('button').props.onClick() })
     return undefined
   } catch (error) {
     return error
   }
 })()
-check('composer dock entry renders with its hover anchors', dockTreeFailedWith === undefined)
-if (dockTreeFailedWith) console.log(`       ${dockTreeFailedWith.message}`)
-if (dockTree) {
-  const dockProps = hostPropNames(dockTree)
-  const dockTooltipProps = [...dockProps].filter(name => name.startsWith('data-tooltip'))
-  check('no data-tooltip prop survives in the composer dock', dockTooltipProps.length === 0)
+check('sidebar entry renders with its hover anchors and popup', entryTreeFailedWith === undefined)
+if (entryTreeFailedWith) console.log(`       ${entryTreeFailedWith.message}`)
+if (entryTree) {
+  const entryProps = hostPropNames(entryTree)
+  const entryTooltipProps = [...entryProps].filter(name => name.startsWith('data-tooltip'))
+  check('no data-tooltip prop survives in the sidebar entry', entryTooltipProps.length === 0)
   check(
-    'the composer dock draws its hover text through the ui-primitives Tooltip',
-    primitiveReads.slice(dockTreeReadsAt).includes('Tooltip'),
+    'the sidebar entry draws its hover text through the ui-primitives Tooltip',
+    primitiveReads.slice(entryTreeReadsAt).includes('Tooltip'),
   )
   try {
-    unmountQuietly(dockTree)
-    check('composer dock test tree unmounts cleanly', true)
+    unmountQuietly(entryTree)
+    check('sidebar entry test tree unmounts cleanly', true)
   } catch (error) {
-    check('composer dock test tree unmounts cleanly', false)
+    check('sidebar entry test tree unmounts cleanly', false)
     console.log(`       ${error.message}`)
   }
 }
@@ -531,8 +999,10 @@ try {
 const rowConfigs = registrations.filter(r => r.name === BUNDLE_CONFIG_SLOT)
 check('the bundle config registers on every apply, independent of other plugins',
   rowConfigs.length === 1 && rowConfigs[0]?.key === BUNDLE_CONFIG_KEY)
-check('the composer dock registers independently of the bundle config',
-  registrations.some(r => r.name === 'conversation.composer.dock'))
+check('the sidebar footer entry registers independently of the bundle config',
+  registrations.some(r => r.name === 'sidebar.footer.action'))
+check('re-applying registers the sidebar entry exactly once',
+  registrations.filter(r => r.name === 'sidebar.footer.action').length === 1)
 check('no settings-page section is registered on the independent path',
   registrations.every(r => r.name !== 'settings.section'))
 check('independent path stays error-free', errors.length === 0)

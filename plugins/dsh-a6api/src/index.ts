@@ -6,7 +6,7 @@ import { resolveModelMeta, getCatalog, upsertCatalogEntries, clearCatalog, query
 import { createConfigAccess } from './server/sync.js';
 import type { ConfigAccess } from './server/sync.js';
 import type { A6ApiConfig, A6ApiStateResponse, MarketplacePin, MerchantChannelInfo, ModelCardData } from './types.js';
-import { validateReasoningEfforts } from './types.js';
+import { MODEL_PROTOCOLS, isModelProtocol, validateReasoningEfforts } from './types.js';
 
 export const name = '@lynn123411/dsh-a6api';
 export const inject = ['webServer', 'connection'];
@@ -19,7 +19,7 @@ export {
   fetchMarketplacePins,
   deriveUserIdFromToken,
 } from './server/a6api-client.js';
-export { probeSingleModel, getKnownMerchantsFromLogs } from './server/probe.js';
+export { probeSingleModel, buildProbeRequest, getKnownMerchantsFromLogs } from './server/probe.js';
 export {
   resolveModelMeta,
   inferBrand,
@@ -418,6 +418,9 @@ async function buildStateResponse(config: A6ApiConfig, configAccess: ConfigAcces
       maxTokens: meta.maxTokens,
       modalities: meta.modalities,
       hasReasoning: Boolean(meta.reasoningEfforts || meta.thinkingFormat),
+      // 「档位未确认」标记：档位来源不是 queried/manual（含旧条目缺字段）即未确认；
+      // 非推理模型（reasoningEfforts === false）永不标——它本来就不带档位
+      reasoningSource: meta.reasoningEfforts ? (meta.reasoningSource ?? 'default') : undefined,
       inDsh: dshSet.has(mId),
       merchant: cachedCard,
       probeStatus: cachedCard ? 'success' : 'idle',
@@ -543,6 +546,14 @@ export function apply(ctx: any): void {
             if (pathname === '/config' && req.method === 'POST') {
               const body = await parseJsonBody(req);
               const current = await configAccess.readConfig();
+              // 协议是整条线路共用的选择：先校验再动任何东西。非法值直接 400，
+              // 不写凭据、不写协议、不重建线路配置（否则会出现「界面显示 A、实际跑 B」）。
+              if (body.protocol !== undefined && !isModelProtocol(body.protocol)) {
+                return sendJson(res, 400, {
+                  ok: false,
+                  error: `非法模型协议：${String(body.protocol)}（仅支持 ${MODEL_PROTOCOLS.join(' / ')}）`,
+                });
+              }
               // 兼容旧客户端 bundle 仍会发送 sessionCookie：同一凭据，取任一非占位值
               const rawToken =
                 body.accessToken !== undefined && body.accessToken !== MASK
@@ -563,7 +574,10 @@ export function apply(ctx: any): void {
               }
 
               const updated: A6ApiConfig = {
-                baseURL: body.baseURL !== undefined ? body.baseURL : current.baseURL,
+                // 接入地址固定为官方地址：请求体里即使带着旧客户端发的 baseURL 也一律忽略
+                baseURL: current.baseURL,
+                // 未发送 = 沿用当前生效的协议（读自线路块，其次插件数据文件）
+                protocol: body.protocol !== undefined ? body.protocol : current.protocol,
                 apiKey: newApiKey,
                 accessToken: rawToken,
                 userId: body.userId !== undefined && body.userId !== MASK ? body.userId : current.userId,
@@ -592,14 +606,20 @@ export function apply(ctx: any): void {
                 await configAccess.writeConfig(credWrites);
               }
 
-              // 同步 DSH settings（与旧行为一致：仅当有活动模型时）。
-              // 注：零模型时无法持久化 baseURL——llm-pi-ai 对手写路由无合法的零模型表示
-              // （models: [] 会被 assertServiceable 拒绝并毒化下次启动），a6api 块此时不存在，
-              // 节点设置属惰性状态，待用户启用模型时随块一并落盘。
-              if (updated.activeModels.length > 0) {
-                await configAccess.syncModels(updated.baseURL, updated.activeModels);
+              // 协议落插件自己的数据文件：一个模型都没启用时选它也要记得住（线路块那时不存在）。
+              // 一个模型都没启用时也照写，这正是「离开页面再回来仍然保留」的落点。
+              if (updated.protocol !== current.protocol) {
+                await configAccess.setProtocol(updated.protocol);
               }
-              // 配置（含凭据/节点/模型列表）已变更：作废 /state 短缓存，下次拉取立即重建；
+
+              // 同步 DSH settings（与旧行为一致：仅当有活动模型时）。
+              // 注：零模型时 llm-pi-ai 对手写路由无合法的零模型表示（models: [] 会被
+              // assertServiceable 拒绝并毒化下次启动），a6api 块此时不存在，
+              // 待用户启用模型时随块一并落盘（接入地址固定为官方地址）。
+              if (updated.activeModels.length > 0) {
+                await configAccess.syncModels(updated.activeModels, updated.protocol);
+              }
+              // 配置（含凭据/模型列表）已变更：作废 /state 短缓存，下次拉取立即重建；
               // 价格波动缓存同样按凭据键控，一并作废（避免旧计数/旧鉴权失败态残留）
               stateMemo.invalidate();
               priceCountsMemo.invalidate();
@@ -631,7 +651,9 @@ export function apply(ctx: any): void {
               const modelName = body.modelName;
 
               if (modelName && modelName !== 'all') {
-                const result = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, modelName);
+                // 协议现读现用：readConfig 每次都以线路块里的 api 为准（零模型时才回落到插件记住的
+                // 那个），所以换协议后下一次探测立刻走新协议，不需要重启。
+                const result = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, modelName, config.protocol);
                 if (result.merchant) {
                   merchantCardCache.set(modelName.toLowerCase(), { card: result.merchant, at: Date.now() });
                 }
@@ -664,7 +686,7 @@ export function apply(ctx: any): void {
                   if (i >= modelIds.length) return;
                   const m = modelIds[i];
                   try {
-                    const r = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, m);
+                    const r = await probeSingleModel(config.baseURL, config.apiKey, config.userId, token, m, config.protocol);
                     if (r.merchant) {
                       merchantCardCache.set(m.toLowerCase(), { card: r.merchant, at: Date.now() });
                     }
@@ -712,12 +734,13 @@ export function apply(ctx: any): void {
             if (pathname === '/sync-models' && req.method === 'POST') {
               const body = await parseJsonBody(req);
               await configAccess.ensureMigrated();
-              const config = await configAccess.readConfig();
               const modelIds = Array.isArray(body.modelIds) ? body.modelIds : [];
-              const baseURL = body.baseURL || config.baseURL;
+              // 请求体里的 baseURL 不再被接受：接入地址由插件定死为官方地址
+              // 协议同样不接受请求体指定：以当前生效的那个为准（读自线路块，其次插件数据文件）
 
               // 模型列表唯一真相源 = DSH llm-pi-ai 条目的 providers.a6api.models
-              await configAccess.syncModels(baseURL, modelIds);
+              const current = await configAccess.readConfig();
+              await configAccess.syncModels(modelIds, current.protocol);
 
               const dshConfiguredModels = await configAccess.getDshConfiguredModels();
               // DSH 已启用模型列表已变更（响应含 dshConfiguredModels/回退模型列表）
@@ -747,7 +770,7 @@ export function apply(ctx: any): void {
               if ((!card || !tokenId) && config.apiKey) {
                 let probedOk = false;
                 try {
-                  const probe = await probeSingleModel(config.baseURL, config.apiKey, userId, token, modelName);
+                  const probe = await probeSingleModel(config.baseURL, config.apiKey, userId, token, modelName, config.protocol);
                   probedOk = Boolean(probe && probe.success);
                   if (!tokenId && probe.tokenId && Number(probe.tokenId) > 0) tokenId = Number(probe.tokenId);
                   if (!card && probe.merchant) {
@@ -840,7 +863,7 @@ export function apply(ctx: any): void {
               if (!card && config.apiKey) {
                 let probedOk = false;
                 try {
-                  const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName);
+                  const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName, config.protocol);
                   probedOk = Boolean(probe && probe.success);
                   if (probe.merchant) {
                     card = probe.merchant;
@@ -879,7 +902,7 @@ export function apply(ctx: any): void {
               if (!card && config.apiKey) {
                 let probedOk = false;
                 try {
-                  const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName);
+                  const probe = await probeSingleModel(config.baseURL, config.apiKey, config.userId, config.accessToken || '', modelName, config.protocol);
                   probedOk = Boolean(probe && probe.success);
                   if (probe.merchant) {
                     card = probe.merchant;
@@ -974,9 +997,16 @@ export function apply(ctx: any): void {
               for (const m of models) {
                 if (!before.has(m.id.toLowerCase())) added++;
               }
-              // reasoningEfforts 默认 = DSH 全部思考档位（upsert 只补缺失字段，已有自定义不受影响）
+              // reasoningEfforts 默认 = DSH 全部思考档位，来源 = default（未确认）：
+              // 手写线路上的新模型不退化成非推理模型，但界面上如实标「档位未确认」；
+              // upsert 为「只补缺失」，已有条目（含用户手改的档位与来源）不受影响
               await upsertCatalogEntries(
-                models.map((m) => ({ id: m.id, brand: m.brand, reasoningEfforts: m.reasoningEfforts })),
+                models.map((m) => ({
+                  id: m.id,
+                  brand: m.brand,
+                  reasoningEfforts: m.reasoningEfforts,
+                  reasoningSource: m.reasoningSource,
+                })),
               );
               // 目录品牌参与 /state 卡片元数据：作废短缓存
               stateMemo.invalidate();
@@ -1009,7 +1039,7 @@ export function apply(ctx: any): void {
                   const dshModels = await configAccess.getDshConfiguredModels();
                   const dshSet = new Set(dshModels.map((m) => m.toLowerCase()));
                   if (config.activeModels.length > 0 && result.updated.some((u) => dshSet.has(u.id.toLowerCase()))) {
-                    await configAccess.syncModels(config.baseURL, config.activeModels);
+                    await configAccess.syncModels(config.activeModels, config.protocol);
                   }
                 } catch (err: any) {
                   console.warn('[dsh-a6api] query-openrouter: resync settings failed:', err?.message || err);
@@ -1021,6 +1051,8 @@ export function apply(ctx: any): void {
                 ok: true,
                 updated: result.updated.length,
                 notFound: result.notFound,
+                // 用户手改过档位的条目：按覆盖规则跳过，前端据此提示「N 个未改动」
+                skipped: result.skipped,
               });
             }
 
@@ -1082,7 +1114,7 @@ export function apply(ctx: any): void {
                 const config = await configAccess.readConfig();
                 const dshModels = await configAccess.getDshConfiguredModels();
                 if (dshModels.some((m) => m.toLowerCase() === entry.id.toLowerCase()) && config.activeModels.length > 0) {
-                  await configAccess.syncModels(config.baseURL, config.activeModels);
+                  await configAccess.syncModels(config.activeModels, config.protocol);
                 }
               } catch (err: any) {
                 console.warn('[dsh-a6api] catalog update: resync settings failed:', err?.message || err);

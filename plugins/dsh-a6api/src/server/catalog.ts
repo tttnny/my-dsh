@@ -3,24 +3,41 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
 import { fetchWithNetRetry } from './net.js';
-import type { A6ApiModelMeta, CatalogModelEntry } from '../types.js';
+import {
+  DEFAULT_MODEL_PROTOCOL,
+  THINKING_LEVEL_KEYS,
+  isModelProtocol,
+  validateReasoningEfforts,
+} from '../types.js';
+import type {
+  A6ApiModelMeta,
+  CatalogModelEntry,
+  ModelProtocol,
+  ReasoningSource,
+} from '../types.js';
 
 /**
  * 模型目录（运行时数据，取代旧的静态 A6API_CATALOG）。
  *
- * - 持久化：`$DSH_HOME/dsh-a6api/catalog.json`（结构 `{ version: 1, entries: [...] }`），
+ * - 持久化：`$DSH_HOME/dsh-a6api/catalog.json`（结构 `{ version: 2, protocol, entries: [...] }`），
  *   初始为空；「模型目录」页从 A6API 市场拉取模型 ID、从 OpenRouter 查询参数后建立。
  *   v1.4 起位于插件子目录（与 DSH「组件自建 home 子目录」惯例一致），不再占用
  *   `$DSH_HOME` 根目录；旧版根目录文件（<=1.3 `dsh-a6api-catalog.json`）首次读取时
  *   自动搬迁（保持数据无损），搬迁后旧文件即删除。
+ * - 顶层 `protocol` = 用户选的模型协议（整条线路共用）。落在这里是因为 DSH 线路配置
+ *   在一个模型都没启用时整块不存在，协议无处可存；v1 旧文件缺该字段即默认协议。
  * - 条目字段 = DSH llm-pi-ai 条目的原生模型字段（id/name/contextWindow/
  *   maxTokens/input/reasoningEfforts），外加内部附带的 brand（来自 A6API 市场渠道，
- *   仅用于可用模型卡片展示，不写入 llm-pi-ai 条目配置）。
+ *   仅用于可用模型卡片展示）与 reasoningSource / reasoningChange（档位来源与本次
+ *   数量变化）。这三个内部字段都不写入 llm-pi-ai 条目配置（见 sync.ts 的 buildA6apiBlock）。
+ * - 档位来源：`default`（写死 7 档，未确认）/ `queried`（第三方查得，已确认）/
+ *   `manual`（用户手改，已确认）。「获取市场模型」只写 default；一键查询只更新来源
+ *   不是 manual 的条目；用户手改一律记 manual。缺字段的旧条目读作 default。
  * - 目录为唯一参数真相源：「可用模型」页写入 llm-pi-ai 条目配置时从此取字段，缺则省略
  *   （由 llm-pi-ai 默认值兜底），不再有任何内置手写默认参数。
  */
 
-const CATALOG_VERSION = 1;
+const CATALOG_VERSION = 2;
 
 /** 当前 catalog 文件路径（v1.4+：插件子目录，不再占用 DSH home 根目录）。
  *  dshHomePath 与 DSH 的 resolveDshHome 完全一致：显式配置 home → $DSH_HOME（~ 展开）→ ~/.dsh。 */
@@ -62,6 +79,8 @@ function ensureRelocated(): void {
 
 /** 进程内缓存：resolveModelMeta 等同步路径直接读内存 */
 let catalogCache: CatalogModelEntry[] | null = null;
+/** 顶层协议（缺字段/非法值 = 默认协议）：与 entries 同一次读取加载，写盘时一并落回。 */
+let protocolCache: ModelProtocol | null = null;
 
 function ensureLoaded(): CatalogModelEntry[] {
   if (catalogCache) return catalogCache;
@@ -75,6 +94,8 @@ function ensureLoaded(): CatalogModelEntry[] {
       catalogCache = Array.isArray(j?.entries)
         ? j.entries.filter((e: any) => e && typeof e.id === 'string')
         : [];
+      // 协议：v1 旧文件没有这个字段，任何缺失/非法值都读作默认协议（不抛错）
+      protocolCache = isModelProtocol(j?.protocol) ? j.protocol : DEFAULT_MODEL_PROTOCOL;
       if (file !== catalogFile()) {
         // 搬迁失败的回退读取：数据已进内存，清理旧文件
         try {
@@ -87,11 +108,26 @@ function ensureLoaded(): CatalogModelEntry[] {
     }
   }
   catalogCache = [];
+  protocolCache = DEFAULT_MODEL_PROTOCOL;
   return catalogCache as CatalogModelEntry[];
 }
 
 export function getCatalog(): CatalogModelEntry[] {
   return ensureLoaded();
+}
+
+/** 读取目录顶层记住的模型协议（缺失 = 默认协议）。 */
+export function getCatalogProtocol(): ModelProtocol {
+  ensureLoaded();
+  return protocolCache ?? DEFAULT_MODEL_PROTOCOL;
+}
+
+/** 记录模型协议（整条线路共用）。与条目写操作共用同一写链；写盘后才更新内存缓存。 */
+export async function setCatalogProtocol(protocol: ModelProtocol): Promise<void> {
+  await enqueueWrite(async () => {
+    // 不预先改 protocolCache：写盘失败时缓存必须仍与磁盘一致，下次读才不会报假协议
+    await writeCatalog(ensureLoaded(), protocol);
+  });
 }
 
 export function getCatalogEntry(id: string): CatalogModelEntry | undefined {
@@ -115,21 +151,34 @@ function enqueueWrite(fn: () => Promise<void>): Promise<void> {
 }
 
 /** 原子写盘（tmp+rename）成功后才更新内存缓存；写失败时缓存保持与磁盘一致的旧值 */
-async function writeCatalog(entries: CatalogModelEntry[]): Promise<void> {
+async function writeCatalog(entries: CatalogModelEntry[], protocol?: ModelProtocol): Promise<void> {
   const file = catalogFile();
+  // 协议与条目同写：调用方未指定时沿用内存里记住的那个，避免任何一次写盘把用户选的协议冲掉
+  const nextProtocol = protocol ?? protocolCache ?? DEFAULT_MODEL_PROTOCOL;
   await fsp.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify({ version: CATALOG_VERSION, entries }, null, 2), {
-    encoding: 'utf8',
-    mode: 0o644,
-  });
+  await fsp.writeFile(
+    tmp,
+    JSON.stringify({ version: CATALOG_VERSION, protocol: nextProtocol, entries }, null, 2),
+    {
+      encoding: 'utf8',
+      mode: 0o644,
+    },
+  );
   await fsp.rename(tmp, file);
   catalogCache = entries;
+  protocolCache = nextProtocol;
 }
 
-/** 合并新增条目（不覆盖已有条目的既有字段；仅补缺失字段，参数以用户已保存/查询到的为准）。
- *  undefined 字段不参与合并（避免覆盖已有值）；按小写 id 去重（保留首个 casing，避免大小写幽灵重复）。 */
-export async function upsertCatalogEntries(entries: CatalogModelEntry[]): Promise<void> {
+/**
+ * 合并目录条目的内部实现。两种模式：
+ * - `fill`：只补缺失字段——已有条目的既有字段一律保留（市场拉取用；用户手改过的档位
+ *   与来源不会被下一轮「获取市场模型」冲掉）；
+ * - `overwrite`：新值覆盖旧值（查询用）；`undefined` 不参与，`null` = 删除该字段
+ *   （与 updateCatalogEntry 的 null 语义一致，用于清掉「本次变更」这类过时记录）。
+ * 按小写 id 去重并保留首个 casing。
+ */
+async function mergeIntoCatalog(entries: CatalogModelEntry[], mode: 'fill' | 'overwrite'): Promise<void> {
   await enqueueWrite(async () => {
     const cur = ensureLoaded();
     const map = new Map<string, CatalogModelEntry>();
@@ -138,10 +187,38 @@ export async function upsertCatalogEntries(entries: CatalogModelEntry[]): Promis
       const clean = Object.fromEntries(Object.entries(e).filter(([, v]) => v !== undefined)) as CatalogModelEntry;
       const key = clean.id.toLowerCase();
       const prev = map.get(key);
-      map.set(key, prev ? { ...prev, ...clean } : clean);
+      if (!prev) {
+        map.set(key, clean);
+        continue;
+      }
+      if (mode === 'fill') {
+        // 只补缺失字段：已有条目的既有字段（含用户手改/已查询的档位与来源）一律保留
+        const merged: CatalogModelEntry = { ...prev };
+        for (const [k, v] of Object.entries(clean)) {
+          if ((prev as any)[k] === undefined || (prev as any)[k] === null) (merged as any)[k] = v;
+        }
+        // brand 是市场渠道给的展示元数据（唯一写入方就是市场拉取），随最新名单刷新；
+        // 档位与来源则严格只在缺失时才补，避免把查到的真实档位打回默认 7 档
+        if (clean.brand !== undefined) merged.brand = clean.brand;
+        merged.id = prev.id;
+        map.set(key, merged);
+      } else {
+        const merged: CatalogModelEntry = { ...prev, ...clean, id: prev.id };
+        for (const [k, v] of Object.entries(clean)) {
+          if (v === null) delete (merged as any)[k];
+        }
+        map.set(key, merged);
+      }
     }
     await writeCatalog([...map.values()]);
   });
+}
+
+/** 合并新增条目（只补缺失字段：已有条目的既有字段一律保留，参数以用户已保存/查询到的为准）。
+ *  注意：合并语义是「已有值优先」，不是「新值优先」——需要覆盖已有字段的写路径
+ *  （查询/更新）用 overwrite 模式，不要靠这个函数兜底。 */
+export async function upsertCatalogEntries(entries: CatalogModelEntry[]): Promise<void> {
+  await mergeIntoCatalog(entries, 'fill');
 }
 
 /** 清空目录（重新从 A6API 拉取/OpenRouter 填充前使用）。llm-pi-ai 条目中已启用的模型不受影响 */
@@ -151,7 +228,24 @@ export async function clearCatalog(): Promise<void> {
   });
 }
 
-/** 全量替换式更新单个条目（模型目录页保存修改用）；patch 中值为 null 的字段 = 删除该字段。返回更新后的条目 */
+/** 档位字典/非推理标记是否等价（键序无关）：只有真改了档位才记 manual，改名称/上下文长度不算手改档位 */
+function sameReasoningEfforts(
+  a: CatalogModelEntry['reasoningEfforts'],
+  b: CatalogModelEntry['reasoningEfforts'],
+): boolean {
+  if (a === false || b === false) return a === b;
+  if (a === undefined || a === null || b === undefined || b === null) {
+    return (a ?? null) === (b ?? null);
+  }
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => k in b && a[k] === b[k]);
+}
+
+/** 全量替换式更新单个条目（模型目录页保存修改用）；patch 中值为 null 的字段 = 删除该字段。返回更新后的条目。
+ *  用户手改档位（含改为非推理模型）时来源一并记为 manual：标记消失，后续查询也不再改动它。
+ *  只改名称/上下文长度这类与档位无关的字段不算手改档位（否则一次改名就把该模型的档位永久冻结）。 */
 export async function updateCatalogEntry(
   id: string,
   patch: Partial<Omit<CatalogModelEntry, 'id'>>,
@@ -164,6 +258,11 @@ export async function updateCatalogEntry(
     const next: CatalogModelEntry = { ...cur[idx], ...patch, id: cur[idx].id, updatedAt: Date.now() };
     for (const k of Object.keys(patch)) {
       if ((patch as any)[k] === null) delete (next as any)[k];
+    }
+    // 用户手改了档位：来源记 manual（已确认），并清掉与本次无关的「本次变更」记录
+    if ('reasoningEfforts' in patch && !sameReasoningEfforts(cur[idx].reasoningEfforts, next.reasoningEfforts)) {
+      next.reasoningSource = 'manual';
+      delete next.reasoningChange;
     }
     const list = cur.slice();
     list[idx] = next;
@@ -240,6 +339,10 @@ export function resolveModelMeta(modelId: string): A6ApiModelMeta {
       contextWindow: entry.contextWindow ?? 262144,
       maxTokens: entry.maxTokens ?? 32768,
       modalities: entry.input && entry.input.length > 0 ? [...entry.input] : ['text'],
+      // 档位来源随档位字典下发（非推理 false 不标；字典存在但无来源 = 旧数据/默认 = 未确认）
+      ...(entry.reasoningEfforts && typeof entry.reasoningEfforts === 'object'
+        ? { reasoningSource: entry.reasoningSource ?? 'default' }
+        : {}),
       ...(entry.reasoningEfforts && typeof entry.reasoningEfforts === 'object' && Object.keys(entry.reasoningEfforts).length > 0
         ? {
             reasoningEfforts: Object.fromEntries(
@@ -291,7 +394,10 @@ function buildWebHeaders(userId?: string, accessToken?: string): Record<string, 
 export async function fetchMarketplaceModels(
   userId?: string,
   accessToken?: string,
-): Promise<{ models: { id: string; brand?: string; reasoningEfforts: Record<string, string | null> }[]; failedPages: number }> {
+): Promise<{
+  models: { id: string; brand?: string; reasoningEfforts: Record<string, string | null>; reasoningSource: ReasoningSource }[];
+  failedPages: number;
+}> {
   if (!userId && !accessToken) {
     throw new Error('需先配置系统访问令牌才能获取市场模型');
   }
@@ -327,7 +433,10 @@ export async function fetchMarketplaceModels(
   };
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-  const byModel = new Map<string, { id: string; brand?: string; reasoningEfforts: Record<string, string | null> }>();
+  const byModel = new Map<
+    string,
+    { id: string; brand?: string; reasoningEfforts: Record<string, string | null>; reasoningSource: ReasoningSource }
+  >();
   for (const it of all) {
     const name = it?.model_name;
     if (!name) continue;
@@ -335,8 +444,10 @@ export async function fetchMarketplaceModels(
       byModel.set(name, {
         id: String(name),
         brand: normalizeBrand(it?.brand),
-        // 默认声明 DSH 全部思考档位（用户可修改；upsert 仅补缺失字段，已有自定义不受影响）
+        // 默认声明 DSH 全部思考档位：手写线路上的新模型不会退化成非推理模型。
+        // 来源 = default（未确认），等一键查询查到真实档位后才转为已确认。
         reasoningEfforts: { ...DEFAULT_REASONING_EFFORTS },
+        reasoningSource: 'default',
       });
     }
   }
@@ -417,30 +528,104 @@ function orModalities(m: any): ('text' | 'image')[] {
   return [...set];
 }
 
+/** 目录条目的档位数量（false = 非推理、缺字段 = 未声明，均计 0） */
+function countReasoningLevels(value: CatalogModelEntry['reasoningEfforts']): number {
+  return value && typeof value === 'object' ? Object.keys(value).length : 0;
+}
+
+/**
+ * 上游档位白名单 → DSH 档位字典（服务端唯一映射点）：
+ * - 上游用字符串 `"none"` 表示「关闭」→ DSH 的 `off: null`（不带线上值）；
+ * - 其余档位名与 DSH 档位同名，直接用档位名本身作线上拼写；
+ * - 上游（或今后新增）无法映射的 token 直接丢弃，不写死白名单；
+ * - DSH 要求除 off 外至少一个思考档位，因此只映射出 off（或一个都没有）时返回 null
+ *   ——调用方按「上游有没有明确说没有档位」决定下一步（见 declaresNoReasoning）。
+ * 键序按 DSH 档位顺序输出，保证目录里的展示与写盘结果稳定。
+ */
+function mapEffortsToDsh(supported: unknown): Record<string, string | null> | null {
+  if (!Array.isArray(supported)) return null;
+  const tokens = new Set(supported.map((t) => String(t ?? '').trim().toLowerCase()).filter(Boolean));
+  const out: Record<string, string | null> = {};
+  for (const key of THINKING_LEVEL_KEYS) {
+    if (key === 'off') {
+      if (tokens.has('none') || tokens.has('off')) out.off = null;
+      continue;
+    }
+    if (tokens.has(key)) out[key] = key;
+  }
+  if (!Object.keys(out).some((k) => k !== 'off')) return null;
+  // 与服务端 /catalog/update、客户端编辑保存共用同一套 DSH 语义校验，映射结果必须过
+  const checked = validateReasoningEfforts(out);
+  return checked.ok && checked.value !== false ? checked.value : null;
+}
+
+/**
+ * 上游是否**明确**声明该模型没有推理档位：给了档位白名单，而白名单里只有
+ * 「关闭」（`none` / `off`）。这是「上游明确无推理能力」，与「有推理标记但没给明细」
+ * 不同——前者应写成非推理模型，后者才保持默认档位并标未确认。
+ * 空数组或只有无法识别的 token 不算明确声明（那是「没给明细」，不是「说没有」）。
+ */
+function declaresNoReasoning(supported: unknown): boolean {
+  if (!Array.isArray(supported) || supported.length === 0) return false;
+  const tokens = supported.map((t) => String(t ?? '').trim().toLowerCase()).filter(Boolean);
+  return tokens.length > 0 && tokens.every((t) => t === 'none' || t === 'off');
+}
+
+/**
+ * 「上游有推理相关标记」的判定（无档位明细时的分支依据）：
+ * 顶层 `reasoning` 对象是实测的主线索；`supported_parameters` 里出现 reasoning /
+ * reasoning_effort 作为辅助，避免把「有推理能力但没给白名单」的模型误判成非推理。
+ */
+function hasReasoningMarker(m: any): boolean {
+  if (m?.reasoning !== undefined && m?.reasoning !== null) return true;
+  const params: unknown[] = Array.isArray(m?.supported_parameters) ? m.supported_parameters : [];
+  return params.some((p) => {
+    const s = String(p ?? '').toLowerCase();
+    return s === 'reasoning' || s === 'reasoning_effort';
+  });
+}
+
 export interface OrQueryResult {
   updated: CatalogModelEntry[];
   notFound: string[];
+  /** 来源为 manual、按覆盖规则被跳过的 ID（用户手改过的档位一律不覆盖） */
+  skipped: string[];
 }
 
 /**
  * 对一批模型 ID 查询 OpenRouter 并填充目录（能查到的填充，查不到的保持空参数字段）。
- * 返回更新统计：updated 为本次填充/变更的条目，notFound 为查无的 ID。
+ * 档位按上游返回分四种处理：
+ * - 带档位白名单 → 收窄为 DSH 档位字典，来源记 queried（已确认）；数量与上一次不同时
+ *   记下「本次变更」（from/to/at），供目录行渲染「本次从 N 档变 M 档」；
+ * - 白名单里只有「关闭」→ 上游明确没有推理档位 → 非推理模型（false），来源记 queried；
+ * - 有推理标记但无档位明细 → 保持默认 7 档，来源仍为未确认；
+ * - 完全没有推理相关标记 → 写入非推理模型（false），来源记 queried。
+ * 覆盖规则：来源为 manual 的条目一律跳过（不靠合并语义兜底，在这里显式跳过）。
+ * 返回更新统计：updated 为本次写入的条目，notFound 为查无的 ID，skipped 为跳过的 ID。
  */
 export async function queryOpenRouter(ids: string[]): Promise<OrQueryResult> {
   const uniq = [...new Set(ids.map((s) => String(s).trim()).filter(Boolean))];
-  if (uniq.length === 0) return { updated: [], notFound: [] };
+  if (uniq.length === 0) return { updated: [], notFound: [], skipped: [] };
   const models = await getOpenRouterModels();
   const updated: CatalogModelEntry[] = [];
   const notFound: string[] = [];
+  const skipped: string[] = [];
+  const now = Date.now();
 
   for (const id of uniq) {
+    const prevEntry = getCatalogEntry(id);
+    // 覆盖规则：用户手改过的档位（manual）查询一律跳过——合并语义是覆盖式的，不能指望它保住手改值
+    if (prevEntry?.reasoningSource === 'manual') {
+      skipped.push(id);
+      continue;
+    }
     const hit = matchOpenRouter(models, id);
     if (!hit) {
       notFound.push(id);
       continue;
     }
     const patch: Partial<Omit<CatalogModelEntry, 'id'>> = {
-      updatedAt: Date.now(),
+      updatedAt: now,
     };
     const ctx = hit.context_length ?? hit.top_provider?.context_length;
     if (ctx != null && Number(ctx) > 0) patch.contextWindow = Number(ctx);
@@ -449,11 +634,38 @@ export async function queryOpenRouter(ids: string[]): Promise<OrQueryResult> {
     const mods = orModalities(hit);
     if (mods.length > 0) patch.input = mods;
     // name 仅允许用户手动填写：不从此处填充（用户未填则保持为空，写 llm-pi-ai 条目配置时省略）
+
+    const mapped = mapEffortsToDsh(hit.reasoning?.supported_efforts);
+    if (mapped) {
+      const from = countReasoningLevels(prevEntry?.reasoningEfforts);
+      const to = Object.keys(mapped).length;
+      patch.reasoningEfforts = mapped;
+      patch.reasoningSource = 'queried';
+      // 数量没变就不留旧记录（避免展示一条与本次无关的「本次变更」）
+      patch.reasoningChange = from !== to ? { from, to, at: now } : null;
+    } else if (declaresNoReasoning(hit.reasoning?.supported_efforts)) {
+      // 上游给了白名单、里面只有「关闭」：明确没有可用的推理档位 → 非推理模型，已确认。
+      // 不能退回默认 7 档：那等于替上游声明它不接受的档位，用户选中就会直接被上游报错。
+      patch.reasoningEfforts = false;
+      patch.reasoningSource = 'queried';
+      patch.reasoningChange = null;
+    } else if (hasReasoningMarker(hit)) {
+      // 有推理标记但没有档位明细：保持默认 7 档，来源仍为未确认（missing/非法值都读作 default）
+      patch.reasoningEfforts = { ...DEFAULT_REASONING_EFFORTS };
+      patch.reasoningSource = 'default';
+      patch.reasoningChange = null;
+    } else {
+      // 完全没有推理相关标记：上游明确无推理能力 → 非推理模型，来源 queried（已确认，标记不再显示）
+      patch.reasoningEfforts = false;
+      patch.reasoningSource = 'queried';
+      patch.reasoningChange = null;
+    }
+
     updated.push({ id, ...patch });
   }
 
   if (updated.length > 0) {
-    await upsertCatalogEntries(updated);
+    await mergeIntoCatalog(updated, 'overwrite');
   }
-  return { updated, notFound };
+  return { updated, notFound, skipped };
 }

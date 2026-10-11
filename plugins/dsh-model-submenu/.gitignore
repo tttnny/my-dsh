@@ -1,4 +1,5 @@
-node_modules/
+# 不带尾斜杠：尾斜杠只匹配目录，worktree 里的 node_modules 是指向主仓库的软链，尾斜杠放行
+node_modules
 lib/
 .DS_Store
 *.log

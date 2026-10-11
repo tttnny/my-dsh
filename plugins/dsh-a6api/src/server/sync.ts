@@ -2,14 +2,15 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { getCatalogEntry } from './catalog.js';
+import { getCatalogEntry, getCatalogProtocol, setCatalogProtocol } from './catalog.js';
 import { deriveUserIdFromToken } from './a6api-client.js';
-import type { A6ApiConfig } from '../types.js';
+import { DEFAULT_MODEL_PROTOCOL, isModelProtocol } from '../types.js';
+import type { A6ApiConfig, ModelProtocol } from '../types.js';
 
 /**
  * DSH 原生配置整合（消除插件独立配置文件 dsh-a6api-config.json）：
  * - 凭据（API Key / 系统访问令牌 / userId）→ ~/.dsh/.credentials.yaml（refs，0600）
- * - 非机密状态（baseURL / 模型列表）→ 当前 Profile 的 `llm-pi-ai` 条目配置（`ctx.settings` 是
+ * - 非机密状态（模型列表）→ 当前 Profile 的 `llm-pi-ai` 条目配置（`ctx.settings` 是
  *   SettingsForms：`describe()` 读，`update()`/`mutate()` 写，字段须为 Volatile 才可热更新；
  *   旧 `~/.dsh/settings.yaml` 已被内核一次性导入并改名 `.imported`，不再是可读可写的落点）
  * - 凭据 → `ctx.credentials`（env 优先语义），缺失时兜底直读 ~/.dsh/.credentials.yaml。
@@ -23,7 +24,8 @@ export const A6API_USER_REF = 'A6API_USER_ID';
 
 const SETTINGS_NS = 'llm-pi-ai';
 const PROVIDER_KEY = 'a6api';
-const DEFAULT_BASE_URL = 'https://api.a6api.com';
+/** 接入地址由插件定死：官方网关是唯一入口，界面与配置都不再提供改动入口 */
+export const OFFICIAL_BASE_URL = 'https://api.a6api.com';
 const LEGACY_CONFIG_NAME = 'dsh-a6api-config.json';
 
 /** 原子写入：先写临时文件（0600/0644）再 rename，避免崩溃截断与权限位泄露 */
@@ -61,11 +63,6 @@ function getSettings(ctx: any) {
     if (ctx && typeof ctx.get === 'function') return ctx.get('settings');
   } catch {}
   return undefined;
-}
-
-/** 去掉 OpenAI 兼容端点的 /v1 后缀，还原插件 API 调用所用的裸地址 */
-function stripV1(baseURL: string): string {
-  return baseURL.replace(/\/v1\/?$/, '');
 }
 
 // ===== .credentials.yaml 手写读写（原生缝缺失时的兜底，格式与 DSH 一致：version:1 + refs） =====
@@ -159,9 +156,11 @@ export async function writeCredentialKey(refKey: string, value: string): Promise
 
 // ===== 旧版独立配置文件（dsh-a6api-config.json）读取与规范化 =====
 
-/** 旧字段别名收敛：accessToken / systemAccessToken / sessionCookie 是同一个凭据的历代命名 */
+/**
+ * 旧字段别名收敛：accessToken / systemAccessToken / sessionCookie 是同一个凭据的历代命名。
+ * 接入地址不在此列：它已由插件定死为官方地址，旧文件里的地址字段一律丢弃。
+ */
 function normalizeLegacy(parsed: any): {
-  baseURL: string;
   apiKey: string;
   accessToken: string;
   userId: string;
@@ -171,18 +170,16 @@ function normalizeLegacy(parsed: any): {
     apiKey: typeof parsed?.apiKey === 'string' ? parsed.apiKey : '',
     accessToken: String(parsed?.accessToken || parsed?.systemAccessToken || parsed?.sessionCookie || ''),
     userId: String(parsed?.userId || ''),
-    baseURL: typeof parsed?.baseURL === 'string' && parsed.baseURL ? parsed.baseURL : DEFAULT_BASE_URL,
     activeModels: Array.isArray(parsed?.activeModels) ? parsed.activeModels.filter((m: any) => typeof m === 'string') : [],
   };
 }
 
 /** 旧文件读取（迁移未完成/失败时的末级兜底；别名只在读取链上存在） */
-async function readLegacyConfig(): Promise<A6ApiConfig | null> {
+async function readLegacyConfig(): Promise<Omit<A6ApiConfig, 'baseURL' | 'protocol'> | null> {
   try {
     const raw = await fsp.readFile(legacyConfigFile(), 'utf8');
     const legacy = normalizeLegacy(JSON.parse(raw));
     return {
-      baseURL: legacy.baseURL,
       apiKey: legacy.apiKey,
       accessToken: legacy.accessToken || undefined,
       userId: legacy.userId || undefined,
@@ -193,9 +190,17 @@ async function readLegacyConfig(): Promise<A6ApiConfig | null> {
   }
 }
 
-/** 构建 llm-pi-ai.providers.a6api 块（与 DSH 原生 schema 兼容：openai-completions + /v1 端点）。
- *  参数来自模型目录（getCatalogEntry）：有则写入，缺则省略该字段（llm-pi-ai 默认值兜底）。 */
-function buildA6apiBlock(baseURL: string, modelIds: string[]): Record<string, any> {
+/**
+ * 构建 llm-pi-ai.providers.a6api 块。协议决定三件事，且必须一起对：
+ * - `api` = 协议标识；
+ * - 地址结尾：OpenAI 两种协议带 `/v1`（宿主向 `{baseURL}/models` 取模型）；
+ *   Messages **不带**（宿主会再拼 `/v1/messages`，带上就变成 `/v1/v1/messages`）；
+ * - 「不支持开发者角色」开关：只写在存在该字段的 OpenAI 两种协议上。Messages 的
+ *   类型里没有这个概念，而宿主会拒绝「本条线路没有模型能读到」的开关，写了整条线路
+ *   都存不进去，所以 Messages 下整个 `compat` 键都不出现。
+ * 模型参数来自模型目录（getCatalogEntry）：有则写入，缺则省略该字段（llm-pi-ai 默认值兜底）。
+ */
+function buildA6apiBlock(modelIds: string[], protocol: ModelProtocol): Record<string, any> {
   const models = modelIds.map((id) => {
     const entry = getCatalogEntry(id);
     const m: Record<string, any> = { id };
@@ -208,13 +213,18 @@ function buildA6apiBlock(baseURL: string, modelIds: string[]): Record<string, an
     }
     return m;
   });
-  return {
+  const block: Record<string, any> = {
     displayName: 'A6API',
     apiKeyEnv: A6API_CRED_REF,
-    api: 'openai-completions',
-    baseURL: baseURL.endsWith('/v1') ? baseURL : `${baseURL.replace(/\/+$/, '')}/v1`,
+    api: protocol,
+    // Messages 收裸地址（宿主补 /v1/messages）；OpenAI 两种协议收带 /v1 的前缀
+    baseURL: protocol === 'anthropic-messages' ? OFFICIAL_BASE_URL : `${OFFICIAL_BASE_URL}/v1`,
     models,
   };
+  if (protocol !== 'anthropic-messages') {
+    block.compat = { supportsDeveloperRole: false };
+  }
+  return block;
 }
 
 export interface ConfigAccess {
@@ -224,8 +234,10 @@ export interface ConfigAccess {
   readConfig(): Promise<A6ApiConfig>;
   /** 写入凭据字段（空串 = 清除，走 unset）；settings 同步请用 syncModels */
   writeConfig(parts: Partial<Pick<A6ApiConfig, 'apiKey' | 'accessToken' | 'userId'>>): Promise<void>;
-  /** 把模型列表（与 baseURL）同步进当前 Profile `llm-pi-ai` 条目的 providers.a6api 块 */
-  syncModels(baseURL: string, modelIds: string[]): Promise<void>;
+  /** 把模型列表同步进当前 Profile `llm-pi-ai` 条目的 providers.a6api 块（地址固定为官方地址） */
+  syncModels(modelIds: string[], protocol?: ModelProtocol): Promise<void>;
+  /** 记录用户选的模型协议（整条线路共用）：写插件数据文件，零模型时也记得住 */
+  setProtocol(protocol: ModelProtocol): Promise<void>;
   /** 当前 DSH 已配置的 a6api 模型 ID 列表 */
   getDshConfiguredModels(): Promise<string[]>;
 }
@@ -262,10 +274,12 @@ export function createConfigAccess(ctx: any): ConfigAccess {
    * 读 llm-pi-ai.providers.a6api 块：0.1.7 起配置由 Profile 条目承载——
    * `ctx.settings` 是 SettingsForms，`describe()` 按条目 id 返回该条目的实时配置值；
    * 旧的 `settings.get(ns)` 方法已随 0.1.6 的 SettingsProvider 一并删除。
+   * 取模型列表，并取 `api`（DSH 实际在跑的那个协议，是协议读取的最高优先级）。
+   * 块里的接入地址是历史遗留，插件不再读它（地址由 OFFICIAL_BASE_URL 定死）。
    */
   const readA6apiBlock = async (
     settings: any,
-  ): Promise<{ baseURL?: string; models: string[] } | null> => {
+  ): Promise<{ models: string[]; protocol?: ModelProtocol } | null> => {
     try {
       if (settings && typeof settings.describe === 'function') {
         const descriptor = settings
@@ -275,12 +289,12 @@ export function createConfigAccess(ctx: any): ConfigAccess {
         const block = value && value.providers ? value.providers[PROVIDER_KEY] : undefined;
         if (block && typeof block === 'object') {
           return {
-            baseURL: typeof block.baseURL === 'string' ? block.baseURL : undefined,
             models: Array.isArray(block.models)
               ? block.models
                   .map((m: any) => (typeof m === 'string' ? m : m && typeof m.id === 'string' ? m.id : ''))
                   .filter(Boolean)
               : [],
+            ...(isModelProtocol(block.api) ? { protocol: block.api } : {}),
           };
         }
       }
@@ -318,22 +332,27 @@ export function createConfigAccess(ctx: any): ConfigAccess {
       }
     }
 
-    // 非机密状态：只读 llm-pi-ai.providers.a6api 块（ctx.settings.describe()），无替代文件落点
-    let baseURL = DEFAULT_BASE_URL;
+    // 非机密状态：只读 llm-pi-ai.providers.a6api 块里的模型列表（ctx.settings.describe()）。
+    // 接入地址不从块里读：它由插件定死为官方地址，旧配置里存过的 CDN/直连/自定义地址一律忽略。
+    // 协议以块里的 api 为准（DSH 实际在跑的真相）；块不存在（零模型）时用插件数据文件记住的那个。
     let activeModels: string[] = [];
+    let protocol: ModelProtocol = DEFAULT_MODEL_PROTOCOL;
     const block = await readA6apiBlock(settings);
     if (block) {
-      if (block.baseURL) baseURL = stripV1(block.baseURL) || DEFAULT_BASE_URL;
       activeModels = block.models;
+      protocol = block.protocol ?? getCatalogProtocol();
+    } else {
+      protocol = getCatalogProtocol();
     }
 
     // 末级兜底：原生凭据为空且旧插件私有文件仍在（迁移未完成或失败）→ 旧文件只填空字段，
-    // 非机密状态始终以原生 settings 为准（避免旧值遮蔽用户迁移失败后新改的节点/模型）
+    // 非机密状态始终以原生 settings 为准（旧文件里的地址与模型不遮蔽原生状态）
     if (!apiKey && !accessToken && fs.existsSync(legacyConfigFile())) {
       const legacy = await readLegacyConfig();
       if (legacy) {
         return {
-          baseURL: baseURL || legacy.baseURL,
+          baseURL: OFFICIAL_BASE_URL,
+          protocol,
           apiKey: apiKey || legacy.apiKey,
           accessToken: accessToken || legacy.accessToken,
           userId: userId || legacy.userId,
@@ -342,7 +361,7 @@ export function createConfigAccess(ctx: any): ConfigAccess {
       }
     }
 
-    return { baseURL, apiKey, accessToken, userId, activeModels };
+    return { baseURL: OFFICIAL_BASE_URL, protocol, apiKey, accessToken, userId, activeModels };
   };
 
   const writeConfig = async (
@@ -374,7 +393,8 @@ export function createConfigAccess(ctx: any): ConfigAccess {
     }
   };
 
-  const syncModels = async (baseURL: string, modelIds: string[]): Promise<void> => {
+  // 未指定协议时沿用记住的那个（而不是硬编码默认）：任何一次同步都不该把用户选的协议悄悄改回默认
+  const syncModels = async (modelIds: string[], protocol: ModelProtocol = getCatalogProtocol()): Promise<void> => {
     const settings = getSettings(ctx);
     if (!settings || typeof settings.update !== 'function' || typeof settings.mutate !== 'function') {
       throw new Error('[dsh-a6api] ctx.settings (SettingsForms) 不可用：无法同步 a6api 模型配置');
@@ -382,15 +402,24 @@ export function createConfigAccess(ctx: any): ConfigAccess {
     if (modelIds.length === 0) {
       // DSH 硬约束：llm-pi-ai 对手写路由（a6api 不在内置 catalog）不存在合法的「零模型」表示，
       // assertServiceable 会拒绝 models: []（"resolves no models..."），写盘将毒化下次启动。
-      // 空列表 = 移除整个 a6api 块（路由从 DSH 消失；baseURL 随块一并移除，属 schema 约束下的必然）。
+      // 空列表 = 移除整个 a6api 块（路由从 DSH 消失；地址随块一并移除，属 schema 约束下的必然）。
       // 失败直接抛：0.1.7 起唯一落点是 Profile 条目配置，没有可回退的替代文件。
       await settings.mutate(SETTINGS_NS, [{ op: 'unset', path: ['providers', PROVIDER_KEY] }]);
       return;
     }
 
-    const block = buildA6apiBlock(baseURL, modelIds);
+    const block = buildA6apiBlock(modelIds, protocol);
     // 原生缝：条目串行写队列 + schema 校验 + 热发布（合并语义，不影响其他 provider）；失败直接抛。
     await settings.update(SETTINGS_NS, { providers: { [PROVIDER_KEY]: block } });
+  };
+
+  /**
+   * 记录用户选的协议。DSH 线路配置在一个模型都没启用时整块不存在，协议在那里无处可存，
+   * 所以落插件自己的数据文件（catalog.json 顶层）；等启用模型时 syncModels 自动带上。
+   */
+  const setProtocol = async (protocol: ModelProtocol): Promise<void> => {
+    await ensureMigrated();
+    await setCatalogProtocol(protocol);
   };
 
   const getDshConfiguredModels = async (): Promise<string[]> => {
@@ -456,14 +485,15 @@ export function createConfigAccess(ctx: any): ConfigAccess {
       return;
     }
 
-    // settings：仅当 a6api 块不存在时回填（绝不覆盖用户已配置的 provider）
+    // settings：仅当 a6api 块不存在时回填（绝不覆盖用户已配置的 provider）；
+    // 旧文件里的地址不参与回填（接入地址一律官方）
     const block = await readA6apiBlock(getSettings(ctx));
     if (!block && legacy.activeModels.length > 0) {
-      await syncModels(legacy.baseURL, legacy.activeModels);
+      await syncModels(legacy.activeModels, getCatalogProtocol());
     }
 
     await archiveLegacy(filePath);
   };
 
-  return { ensureMigrated, readConfig, writeConfig, syncModels, getDshConfiguredModels };
+  return { ensureMigrated, readConfig, writeConfig, syncModels, setProtocol, getDshConfiguredModels };
 }

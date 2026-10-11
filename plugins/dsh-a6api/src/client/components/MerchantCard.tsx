@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button, Tag, Tooltip, type TagTone } from '@deepseek-ai/dsh-client-ui-primitives';
 import { dictionaryT, type A6apiT } from '../locales.js';
 import { store } from '../store.js';
-import type { ModelCardData } from '../../types.js';
+import { isReasoningConfirmed, type ModelCardData } from '../../types.js';
 
 // 秒级时间戳 → 绝对时间文案 (MM-DD HH:mm:ss，跨年时带年)
 const formatAbsolute = (tsSec: number) => {
@@ -33,8 +33,8 @@ const tagToneOf = (label: string): TagTone => {
 };
 
 /**
- * 商户卡片：设置页「可用模型」列表与输入框下方浮层共用。
- * 浮层侧注册未带 locale，故 `t` 缺省回落到本插件字典。
+ * 商户卡片：设置页「可用模型」列表与侧边栏入口浮层共用。
+ * `t` 由浮层透传，缺省回落到本插件字典。
  */
 export const MerchantCard: React.FC<{
   model: ModelCardData;
@@ -46,7 +46,7 @@ export const MerchantCard: React.FC<{
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimerRef = useRef<any>(null);
 
-  // ===== 探测完成 → 卡片刷新动画（输入框下方浮层与设置页共用本组件，一处生效两处） =====
+  // ===== 探测完成 → 卡片刷新动画（侧边栏入口浮层与设置页共用本组件，一处生效两处） =====
   // 触发条件：本卡片 probeStatus 由 'probing' 跃迁到终态（success/error），即探测结果回填瞬间。
   // 动画全部基于 box-shadow/::after/子列 opacity-transform，根节点不加 transform/filter，
   // 避免把内部 position:fixed 的固定弹窗裹进动画 containing block。
@@ -240,6 +240,13 @@ export const MerchantCard: React.FC<{
         { key: 'quality', tone: 'neutral' as TagTone, label: t('tagQuality') },
       ];
 
+  // 「档位未确认」：服务端下发来源，非 queried/manual 即未确认（判据与目录页共用 types.ts 那一份）。
+  // 兼容旧版 /state（不下发 reasoningSource）：只要有推理档位就按未确认显示，宁可多标不可漏标。
+  const reasoningUnconfirmed =
+    model.reasoningSource !== undefined
+      ? !isReasoningConfirmed(model.reasoningSource)
+      : model.hasReasoning;
+
   return (
     <div
       className={`dsh-a6-official-card${model.inDsh ? ' in-dsh' : ''}${
@@ -325,6 +332,15 @@ export const MerchantCard: React.FC<{
                   </span>
                 </Tooltip>
               )}
+              {/* 「档位未确认」标记：来源不是 queried/manual（含升级后的旧条目）即显示。
+                  非推理模型（reasoningSource 缺省）不显示——它本来就不带档位 */}
+              {reasoningUnconfirmed && (
+                <Tooltip label={t('reasoningUnconfirmedTip')} side="bottom" align="center" gap={6} maxWidth={320} portal>
+                  <span className="dsh-a6-reasoning-unconfirmed">
+                    <Tag tone="outline">{t('reasoningUnconfirmed')}</Tag>
+                  </span>
+                </Tooltip>
+              )}
             </div>
             {merchant?.description && (
               <div className="dsh-a6-sub-desc">{merchant.description}</div>
@@ -334,7 +350,7 @@ export const MerchantCard: React.FC<{
 
         {/* Col 2: Pricing Summary + Ratio Tag */}
         {/* 价格/倍率纯展示文案原先挂原生 title，现统一由 Tooltip 承担；
-            卡片与输入框浮层都可能被 overflow 裁剪，故一律 `portal` */}
+            卡片与侧边栏入口浮层都可能被 overflow 裁剪，故一律 `portal` */}
         {merchant ? (
           <div className="dsh-a6-bar-pricing">
             <div className="dsh-a6-price-col">
@@ -441,7 +457,7 @@ export const MerchantCard: React.FC<{
       </div>
 
       {/* 2. Bottom Footer: 时间戳左下角 + 操作按钮右下角 */}
-      {/* 卡片在「可用模型」列表与输入框浮层里都处于 overflow 容器内，气泡一律 `portal` */}
+      {/* 卡片在「可用模型」列表与侧边栏入口浮层里都处于 overflow 容器内，气泡一律 `portal` */}
       <div className="dsh-a6-card-footer">
         <div className="dsh-a6-time-stack">
           <Tooltip label={t('lastSuccessTip')} side="bottom" align="center" gap={6} maxWidth={320} portal>

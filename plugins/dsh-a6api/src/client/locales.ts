@@ -16,9 +16,9 @@ export type A6apiT = TranslateNS<typeof NS>;
 /**
  * Translator over the Chinese source dictionary. The settings card always
  * receives the seat-bound `t`; this default exists only for the components the
- * composer dock popup shares (`MerchantCard`, `PricePill`, `MarketPill`) —
- * that registration declares no locale namespace and is outside this change.
- * `{name}` placeholders follow the locale runtime's template contract.
+ * sidebar entry's popup shares (`MerchantCard`, `PricePill`, `MarketPill`) when
+ * called without that prop. `{name}` placeholders follow the locale runtime's
+ * template contract.
  */
 export const dictionaryT = ((key: string, params?: Record<string, unknown>) => {
   const template = zh[key as A6apiLocaleKey];
@@ -40,7 +40,6 @@ export type A6apiLocaleKey =
   | 'cancel' | 'cancelProbeTip'
   | 'emptyLoading' | 'emptyNoMatch' | 'emptyEnabled' | 'emptyProbed' | 'emptyNoKey' | 'emptyNone'
   // Config tab
-  | 'nodeTitle' | 'nodeDesc' | 'nodeCdn' | 'nodeDirect' | 'nodeCustom' | 'customNodePlaceholder'
   | 'authTitle' | 'authDesc'
   | 'apiKeyLabel' | 'clear' | 'hide' | 'show'
   | 'apiKeyPlaceholderSet' | 'apiKeyPlaceholder' | 'apiKeyHintSet' | 'apiKeyHint'
@@ -48,6 +47,9 @@ export type A6apiLocaleKey =
   | 'userIdLabel' | 'userIdPlaceholderSet' | 'userIdPlaceholder' | 'userIdHintSet' | 'userIdHint'
   | 'helpOpen' | 'helpClose' | 'helpTitle' | 'helpStep1Prefix' | 'helpStep1Suffix'
   | 'helpStep2Prefix' | 'helpStep2Suffix' | 'helpStep3'
+  | 'protocolTitle' | 'protocolDesc' | 'protocolCurrent'
+  | 'protocolChat' | 'protocolChatHint' | 'protocolResponses' | 'protocolResponsesHint'
+  | 'protocolMessages' | 'protocolMessagesHint'
   | 'integrationTitle' | 'integrationDescPrefix' | 'integrationDescSuffix'
   | 'providerKey' | 'providerCompatible' | 'enabledModelsKey' | 'noEnabledModels'
   | 'save' | 'saving' | 'saveSuccess'
@@ -67,12 +69,13 @@ export type A6apiLocaleKey =
   | 'emptyCatalog' | 'emptyCatalogHint' | 'emptyFiltered' | 'badgeAvailable'
   | 'queryOne' | 'queryOneTip' | 'edit'
   | 'paramContext' | 'paramOutput' | 'paramInput' | 'paramReasoning' | 'paramNonReasoning'
+  | 'reasoningUnconfirmed' | 'reasoningUnconfirmedTip' | 'reasoningChanged'
   | 'fieldName' | 'fieldNamePlaceholder' | 'fieldContext' | 'fieldContextPlaceholder'
   | 'fieldMaxTokens' | 'fieldMaxTokensPlaceholder' | 'fieldInput'
   | 'fieldReasoning' | 'fieldReasoningFormat' | 'fieldReasoningPlaceholder'
   | 'fieldReasoningCapability' | 'fieldNonReasoning'
   | 'msgFetchedWithFailures' | 'msgFetched' | 'errFetch'
-  | 'msgQueriedAll' | 'msgQueriedAllNotFound' | 'errQuery' | 'msgQueriedOne' | 'msgQueriedOneNotFound'
+  | 'msgQueriedAll' | 'msgQueriedAllNotFound' | 'msgQueriedAllSkipped' | 'errQuery' | 'msgQueriedOne' | 'msgQueriedOneNotFound' | 'msgQueriedOneSkipped'
   | 'msgCleared' | 'errClear' | 'errContextWindow' | 'errMaxTokens' | 'errReasoningFormat'
   | 'msgSaved' | 'msgSavedSynced' | 'errSave'
   // Merchant card
@@ -100,7 +103,11 @@ export type A6apiLocaleKey =
   | 'tagStable' | 'tagCheap' | 'tagFast' | 'tagQuality'
   // Price / market pills
   | 'priceLabel' | 'priceTipNoToken' | 'priceTipAuthError' | 'priceTipZero' | 'priceTipPending'
-  | 'marketLabel' | 'marketTip';
+  | 'marketLabel' | 'marketTip'
+  // Sidebar entry + its popup
+  | 'sidebarTip' | 'sidebarTipOpen' | 'sidebarTipNoModel' | 'sidebarDialogLabel'
+  | 'sidebarBalanceTip' | 'configPill'
+  | 'sidebarNoModel' | 'sidebarNoMerchant' | 'sidebarNoMerchantHint' | 'sidebarOtherModel' | 'sidebarSwitchHint';
 
 /** English copy. */
 export const en: Record<A6apiLocaleKey, string> = {
@@ -134,12 +141,6 @@ export const en: Record<A6apiLocaleKey, string> = {
   emptyProbed: 'No merchant route has been probed yet. Use “Probe merchant” on a model card or “Probe all” above to start.',
   emptyNoKey: 'Open the Configuration tab, enter your A6API API key and save it to load the available model list automatically.',
   emptyNone: 'This token has no available models. Check the token restrictions in the A6API console.',
-  nodeTitle: 'API gateway node (Base URL)',
-  nodeDesc: 'Pick the A6API gateway closest to you; both CDN and direct fallback nodes are available.',
-  nodeCdn: 'CDN recommended',
-  nodeDirect: 'direct fallback',
-  nodeCustom: 'Custom node',
-  customNodePlaceholder: 'https://your-custom-gateway.com',
   authTitle: 'Authentication and token credentials',
   authDesc: 'Configure the API key used for model calls and the system access token used to sync account balance and merchant quotes.',
   apiKeyLabel: 'A6API key',
@@ -168,6 +169,15 @@ export const en: Record<A6apiLocaleKey, string> = {
   helpStep2Prefix: 'In the “System access token” section click to copy the token string (for example ',
   helpStep2Suffix: ')',
   helpStep3: 'Paste it into the system access token field above and click “Save configuration” to sync the balance automatically.',
+  protocolTitle: 'Model protocol',
+  protocolDesc: 'One protocol for the whole route: every model enabled under “Available models” uses it. The endpoint address and the request switches are written to match.',
+  protocolCurrent: 'In effect: {name}',
+  protocolChat: 'OpenAI Chat',
+  protocolChatHint: 'OpenAI-compatible chat completions at /v1/chat/completions. Keeps existing setups unchanged.',
+  protocolResponses: 'OpenAI Response',
+  protocolResponsesHint: 'The newer Responses API at /v1/responses, with the same address shape as Chat.',
+  protocolMessages: 'Messages',
+  protocolMessagesHint: 'Anthropic Messages at /v1/messages: keep the address without /v1, or it becomes /v1/v1/messages.',
   integrationTitle: 'DSH native LLM provider integration',
   integrationDescPrefix: 'The plugin registered A6API as the native DSH model provider (',
   integrationDescSuffix: '). Models enabled under “Available models” are written to the DSH configuration automatically.',
@@ -242,6 +252,9 @@ export const en: Record<A6apiLocaleKey, string> = {
   paramInput: 'Input {value}',
   paramReasoning: '{count} reasoning levels',
   paramNonReasoning: 'Non-reasoning',
+  reasoningUnconfirmed: 'Levels unverified',
+  reasoningUnconfirmedTip: 'These reasoning levels are a placeholder: they come from the plugin default or from before this version, not from an upstream query. Query this model or edit its levels to confirm them.',
+  reasoningChanged: 'Levels changed from {from} to {to} this time',
   fieldName: 'Name (name)',
   fieldNamePlaceholder: 'User-supplied only; leave empty to omit it from the DSH configuration',
   fieldContext: 'Context window (contextWindow)',
@@ -259,9 +272,11 @@ export const en: Record<A6apiLocaleKey, string> = {
   errFetch: 'Fetch failed',
   msgQueriedAll: 'Updated parameters for {updated} models',
   msgQueriedAllNotFound: ', {notFound} were not found on OpenRouter (leave them empty to fill in manually)',
+  msgQueriedAllSkipped: ', {skipped} have hand-edited levels and were left untouched',
   errQuery: 'Query failed',
   msgQueriedOne: 'Filled parameters for “{id}” from OpenRouter',
   msgQueriedOneNotFound: '“{id}” was not found on OpenRouter; fill its parameters manually',
+  msgQueriedOneSkipped: '“{id}” has hand-edited levels; the query left it untouched',
   msgCleared: 'Catalog cleared; you can fetch models from A6API again',
   errClear: 'Clear failed',
   errContextWindow: 'contextWindow must be a positive integer',
@@ -370,6 +385,17 @@ export const en: Record<A6apiLocaleKey, string> = {
   priceTipPending: '{count} price changes need attention; click to handle them on the website',
   marketLabel: 'Model market',
   marketTip: 'Open the A6api model market',
+  sidebarTip: 'Current session’s A6api model card',
+  sidebarTipOpen: 'Collapse the A6api model card',
+  sidebarTipNoModel: 'This session uses no A6api model; the card is dimmed',
+  sidebarDialogLabel: 'Current session A6api model card',
+  sidebarBalanceTip: 'Account balance (synced every 60 seconds)',
+  configPill: 'Configure',
+  sidebarNoModel: 'This session uses no A6api model',
+  sidebarNoMerchant: 'No merchant data for “{name}”',
+  sidebarNoMerchantHint: 'Probe this model on the plugin’s configuration page',
+  sidebarOtherModel: '“{name}” has no merchant data yet',
+  sidebarSwitchHint: 'Switch to an A6api model to see its merchant card',
 };
 
 /** Chinese copy (the key-set source of truth). */
@@ -404,12 +430,6 @@ export const zh: Record<A6apiLocaleKey, string> = {
   emptyProbed: '尚未探测任何模型商户线路，点击模型卡片上的「探测商家」或上方「一键全量探测」即可开始。',
   emptyNoKey: '请前往「基础配置」页面填入您的 A6API 令牌 (API Key) 并保存，即可自动加载可用模型列表。',
   emptyNone: '当前令牌暂无可用模型，请检查 A6API 控制台中的令牌限制设置。',
-  nodeTitle: 'API 接入节点 (Base URL)',
-  nodeDesc: '选择离您最近的 A6API 聚合网关接入点，支持 CDN 节点与直连备用节点。',
-  nodeCdn: 'CDN 推荐',
-  nodeDirect: '直连备用',
-  nodeCustom: '自定义节点',
-  customNodePlaceholder: 'https://your-custom-gateway.com',
   authTitle: '访问鉴权与令牌凭据',
   authDesc: '配置模型调用 API Key 以及用于同步账户余额与商户行情的系统访问令牌。',
   apiKeyLabel: 'A6API 令牌 (API Key)',
@@ -438,6 +458,15 @@ export const zh: Record<A6apiLocaleKey, string> = {
   helpStep2Prefix: '在「系统访问令牌」栏目直接点击复制令牌字符串（例如 ',
   helpStep2Suffix: '）',
   helpStep3: '粘贴到上方的「系统访问令牌」输入框中并点击下方「保存配置」即可自动同步余额！',
+  protocolTitle: '模型协议',
+  protocolDesc: '整条线路共用这一个选择：所有已启用模型一起走。接入地址结尾与请求开关会按所选协议一并写对。',
+  protocolCurrent: '当前生效：{name}',
+  protocolChat: 'OpenAI Chat',
+  protocolChatHint: 'OpenAI 兼容的 chat completions，端点 /v1/chat/completions。升级后保持现有行为不变。',
+  protocolResponses: 'OpenAI Response',
+  protocolResponsesHint: '较新的 Responses 接口，端点 /v1/responses；接入地址写法与 Chat 相同。',
+  protocolMessages: 'Messages',
+  protocolMessagesHint: 'Anthropic Messages，端点 /v1/messages：接入地址必须不带 /v1，否则会拼成 /v1/v1/messages。',
   integrationTitle: 'DSH 原生 LLM 提供商集成状态',
   integrationDescPrefix: '插件已将 A6API 注册为 DSH 原生模型提供商 (',
   integrationDescSuffix: ')。在「可用模型」中启用的模型将自动写入 DSH 配置文件。',
@@ -512,6 +541,9 @@ export const zh: Record<A6apiLocaleKey, string> = {
   paramInput: '输入 {value}',
   paramReasoning: '推理 {count} 档',
   paramNonReasoning: '非推理',
+  reasoningUnconfirmed: '档位未确认',
+  reasoningUnconfirmedTip: '这些档位是插件默认值或升级前的旧数据，不是向上游查到的。查询该模型或手动修改档位后，此标记会消失。',
+  reasoningChanged: '本次从 {from} 档变 {to} 档',
   fieldName: '名称 (name)',
   fieldNamePlaceholder: '仅用户填写，留空则不写入 DSH 配置',
   fieldContext: '上下文窗口 (contextWindow)',
@@ -529,9 +561,11 @@ export const zh: Record<A6apiLocaleKey, string> = {
   errFetch: '获取失败',
   msgQueriedAll: '已更新 {updated} 个模型参数',
   msgQueriedAllNotFound: '，{notFound} 个未在 OpenRouter 查到（参数留空可手动填写）',
+  msgQueriedAllSkipped: '，{skipped} 个档位是手动修改过的，已跳过不动',
   errQuery: '查询失败',
   msgQueriedOne: '「{id}」已从 OpenRouter 填充参数',
   msgQueriedOneNotFound: '「{id}」在 OpenRouter 未查到，可手动填写参数',
+  msgQueriedOneSkipped: '「{id}」的档位是手动修改过的，本次查询未改动它',
   msgCleared: '模型目录已清空，可重新「从 A6API 获取市场模型」',
   errClear: '清空失败',
   errContextWindow: 'contextWindow 必须是正整数',
@@ -640,6 +674,17 @@ export const zh: Record<A6apiLocaleKey, string> = {
   priceTipPending: '有 {count} 条价格变动待处理，点击前往官网处理',
   marketLabel: '模型市场',
   marketTip: '前往 A6api 模型市场',
+  sidebarTip: '当前会话的 A6api 模型卡片',
+  sidebarTipOpen: '收起 A6api 模型卡片',
+  sidebarTipNoModel: '当前会话未使用 A6api 模型，卡片已置灰',
+  sidebarDialogLabel: '当前会话 A6api 模型卡片',
+  sidebarBalanceTip: '账户余额（每 60 秒自动同步）',
+  configPill: '配置',
+  sidebarNoModel: '当前会话未使用 A6api 模型',
+  sidebarNoMerchant: '未找到「{name}」的商户数据',
+  sidebarNoMerchantHint: '可在本插件配置页中探测该模型',
+  sidebarOtherModel: '「{name}」暂无商户数据',
+  sidebarSwitchHint: '切换到 A6api 模型后自动展示商户卡片',
 };
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

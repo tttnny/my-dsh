@@ -11,23 +11,23 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { A6apiT } from '../locales.js';
 import { store } from '../store.js';
-import type { A6ApiConfig } from '../../types.js';
+import { MODEL_PROTOCOLS, isModelProtocol } from '../../types.js';
+import type { A6ApiConfig, ModelProtocol } from '../../types.js';
 
 /** 与服务端 maskConfig 一致的脱敏占位符：代表「已配置，但密钥只存于本机」 */
 const MASK = '••••••••';
 
-/** 网关节点：官方两个固定节点，其余 URL 一律走自定义节点 */
-type NodeChoice = 'https://api.a6api.com' | 'https://a6.a6api.com' | 'custom';
-
-const DEFAULT_NODE = 'https://api.a6api.com';
-const DIRECT_NODE = 'https://a6.a6api.com';
-
-const isCustomNode = (baseURL: string): boolean =>
-  baseURL !== '' && baseURL !== DEFAULT_NODE && baseURL !== DIRECT_NODE;
+/** 三个协议的中文/英文显示名与说明键（顺序 = 宿主可选用顺序，第一个是默认）。 */
+const PROTOCOL_LABEL_KEYS: Record<ModelProtocol, { label: Parameters<A6apiT>[0]; hint: Parameters<A6apiT>[0] }> = {
+  'openai-completions': { label: 'protocolChat', hint: 'protocolChatHint' },
+  'openai-responses': { label: 'protocolResponses', hint: 'protocolResponsesHint' },
+  'anthropic-messages': { label: 'protocolMessages', hint: 'protocolMessagesHint' },
+};
 
 /**
  * 基础配置页：单列设置字段行（label / 控件 / hint 三段式），字段之间 0.5px 发丝线。
  *
+ * 接入地址不在这页出现：它由插件定死为官方地址，没有展示与改动入口。
  * 密钥类字段只在客户端持有脱敏占位符 `MASK`：输入框留空表示「沿用已保存值」，
  * 保存时不回传该字段；点「清除」后回传空串删除。
  */
@@ -39,16 +39,11 @@ export const ConfigPanel: React.FC<{
   const [apiKey, setApiKey] = useState(config.apiKey || '');
   const [accessToken, setAccessToken] = useState(config.accessToken || '');
   const [userId, setUserId] = useState(config.userId || '');
+  // 协议：未选择时按服务端读回来的生效值（线路块优先，其次插件数据文件）
+  const [protocol, setProtocol] = useState<ModelProtocol>(config.protocol);
   const [clearKey, setClearKey] = useState(false);
   const [clearToken, setClearToken] = useState(false);
   const [clearUserId, setClearUserId] = useState(false);
-  const [node, setNode] = useState<NodeChoice>(() =>
-    isCustomNode(config.baseURL) ? 'custom' : config.baseURL === DIRECT_NODE ? DIRECT_NODE : DEFAULT_NODE,
-  );
-  // 自定义节点输入框：baseURL 非官方节点时以其为初值（customBaseURL 死字段已移除）
-  const [customNode, setCustomNode] = useState(
-    isCustomNode(config.baseURL) ? config.baseURL : '',
-  );
   const [showKey, setShowKey] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -65,32 +60,25 @@ export const ConfigPanel: React.FC<{
     setApiKey(config.apiKey || '');
     setAccessToken(config.accessToken || '');
     setUserId(config.userId || '');
+    setProtocol(isModelProtocol(config.protocol) ? config.protocol : MODEL_PROTOCOLS[0]);
     setClearKey(false);
     setClearToken(false);
     setClearUserId(false);
-    setNode(
-      isCustomNode(config.baseURL)
-        ? 'custom'
-        : config.baseURL === DIRECT_NODE
-          ? DIRECT_NODE
-          : DEFAULT_NODE,
-    );
-    setCustomNode(isCustomNode(config.baseURL) ? config.baseURL : '');
   }, [config]);
 
   const handleSave = async () => {
     setSaving(true);
-    const finalBaseUrl =
-      node === 'custom' ? customNode.trim() || DEFAULT_NODE : node;
-    // 未修改（占位符态）→ 不发送该字段，服务端保留原值；点击「清除」→ 发送空串删除
+    // 未修改（占位符态）→ 不发送该字段，服务端保留原值；点击「清除」→ 发送空串删除。
+    // 请求体不含地址字段：接入地址由插件定死为官方地址，不随保存上传。
     const newApiKey = apiKeySet ? (clearKey ? '' : undefined) : apiKey.trim();
     const newToken = tokenSet ? (clearToken ? '' : undefined) : accessToken.trim();
     const newUserId = userIdSet ? (clearUserId ? '' : undefined) : userId.trim();
     const ok = await store.saveConfig({
+      // 协议随保存一起送出（服务端再校验一次；非法值 400 拒绝，不写任何配置）
+      protocol,
       ...(newApiKey !== undefined ? { apiKey: newApiKey } : {}),
       ...(newToken !== undefined ? { accessToken: newToken } : {}),
       ...(newUserId !== undefined ? { userId: newUserId } : {}),
-      baseURL: finalBaseUrl,
     });
     setSaving(false);
     if (ok) {
@@ -139,45 +127,7 @@ export const ConfigPanel: React.FC<{
 
   return (
     <div className="dsh-a6-config-page">
-      {/* 1. API Gateway Node Selection */}
-      <section className="dsh-a6-config-section">
-        <h3 className="dsh-a6-heading-title">{t('nodeTitle')}</h3>
-        <p className="dsh-a6-heading-desc">{t('nodeDesc')}</p>
-
-        <div className="dsh-a6-fields">
-          <div className="dsh-a6-field">
-            <div className="dsh-a6-field-head">
-              <span className="dsh-a6-label">{t('nodeTitle')}</span>
-            </div>
-            <SegmentedControl<NodeChoice>
-              id="dsh-a6-node"
-              value={node}
-              label={t('nodeTitle')}
-              options={[
-                { value: DEFAULT_NODE, label: t('nodeCdn') },
-                { value: DIRECT_NODE, label: t('nodeDirect') },
-                { value: 'custom', label: t('nodeCustom') },
-              ]}
-              onChange={setNode}
-            />
-            <span className="dsh-a6-hint dsh-a6-node-url">
-              {node === 'custom' ? customNode.trim() || t('customNodePlaceholder') : node}
-            </span>
-            {node === 'custom' && (
-              <Input
-                className="dsh-a6-node-custom"
-                type="text"
-                aria-label={t('customNodePlaceholder')}
-                placeholder={t('customNodePlaceholder')}
-                value={customNode}
-                onChange={(e) => setCustomNode(e.target.value)}
-              />
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* 2. Authentication Tokens */}
+      {/* 1. Authentication Tokens */}
       <section className="dsh-a6-config-section">
         <h3 className="dsh-a6-heading-title">{t('authTitle')}</h3>
         <p className="dsh-a6-heading-desc">{t('authDesc')}</p>
@@ -312,6 +262,35 @@ export const ConfigPanel: React.FC<{
         </div>
       </section>
 
+      {/* 2. Model Protocol — one choice for the whole route, between the
+          credentials and the integration overview */}
+      <section className="dsh-a6-config-section">
+        <h3 className="dsh-a6-heading-title">{t('protocolTitle')}</h3>
+        <p className="dsh-a6-heading-desc">{t('protocolDesc')}</p>
+
+        <div className="dsh-a6-fields">
+          <div className="dsh-a6-field">
+            <div className="dsh-a6-field-head">
+              <span className="dsh-a6-label">{t('protocolTitle')}</span>
+            </div>
+            <SegmentedControl<ModelProtocol>
+              id="dsh-a6-protocol"
+              value={protocol}
+              label={t('protocolTitle')}
+              options={MODEL_PROTOCOLS.map((value) => ({
+                value,
+                label: t(PROTOCOL_LABEL_KEYS[value].label),
+              }))}
+              onChange={setProtocol}
+            />
+            <span className="dsh-a6-hint">{t(PROTOCOL_LABEL_KEYS[protocol].hint)}</span>
+            <span className="dsh-a6-hint dsh-a6-protocol-current">
+              {t('protocolCurrent', { name: t(PROTOCOL_LABEL_KEYS[protocol].label) })}
+            </span>
+          </div>
+        </div>
+      </section>
+
       {/* 3. DSH LLM Provider Integration Overview */}
       <section className="dsh-a6-config-section">
         <h3 className="dsh-a6-heading-title">{t('integrationTitle')}</h3>
@@ -328,6 +307,8 @@ export const ConfigPanel: React.FC<{
             </div>
             <span className="dsh-a6-field-value">
               <code>a6api</code> {t('providerCompatible')}
+              {' · '}
+              {t(PROTOCOL_LABEL_KEYS[protocol].label)}
             </span>
           </div>
           <div className="dsh-a6-field">

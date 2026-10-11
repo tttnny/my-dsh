@@ -1,5 +1,30 @@
+/**
+ * DSH llm-pi-ai 线路可用的三个协议标识（宿主只接受这三个，写别的值直接拒收）。
+ * 顺序 = 宿主的可选用顺序，第一个是默认（与现有行为一致）。
+ */
+export const MODEL_PROTOCOLS = [
+  'openai-completions',
+  'openai-responses',
+  'anthropic-messages',
+] as const;
+
+export type ModelProtocol = (typeof MODEL_PROTOCOLS)[number];
+
+/** 未选择过协议时的默认：OpenAI Chat，与升级前行为完全一致。 */
+export const DEFAULT_MODEL_PROTOCOL: ModelProtocol = 'openai-completions';
+
+/** 校验协议标识（配置界面与服务端共用）：只认三个精确字符串。 */
+export function isModelProtocol(value: unknown): value is ModelProtocol {
+  return typeof value === 'string' && (MODEL_PROTOCOLS as readonly string[]).includes(value);
+}
+
 export interface A6ApiConfig {
   baseURL: string;
+  /**
+   * 当前生效的模型协议（整条线路共用）。读取优先级：DSH 线路配置里的 `api` 为准，
+   * 没有线路块时用插件数据文件里记住的那个；非法/缺失一律读作默认协议。
+   */
+  protocol: ModelProtocol;
   apiKey: string;
   accessToken?: string;
   userId?: string;
@@ -11,7 +36,30 @@ export interface A6ApiConfig {
 }
 
 /**
- * 模型目录条目（llm-pi-ai 原生模型字段 + 内部 brand）。
+ * 推理档位来源（仅插件内部使用，不写入 llm-pi-ai 条目配置）：
+ * - `default`：插件写死的默认 7 档，或任何来源不明的旧数据 → 「未确认」
+ * - `queried`：从第三方查询得来 → 已确认
+ * - `manual`：用户手改 → 已确认，且后续查询一律跳过
+ */
+export type ReasoningSource = 'default' | 'queried' | 'manual';
+
+/**
+ * 「未确认」判定：来源不是 queried 也不是 manual 即为未确认。
+ * 旧条目没有来源字段（undefined）读作 default，因此升级后一律未确认。
+ */
+export function isReasoningConfirmed(source: ReasoningSource | undefined | null): boolean {
+  return source === 'queried' || source === 'manual';
+}
+
+/** 本次查询造成的档位数量变化（上一次 → 本次及时间），用于渲染「本次从 N 档变 M 档」 */
+export interface ReasoningChange {
+  from: number;
+  to: number;
+  at: number;
+}
+
+/**
+ * 模型目录条目（llm-pi-ai 原生模型字段 + 内部 brand / 档位来源）。
  * 可选字段缺省 = 参数未获取/未填写，写 llm-pi-ai 条目配置时省略该字段（llm-pi-ai 默认值兜底）。
  */
 export interface CatalogModelEntry {
@@ -24,6 +72,10 @@ export interface CatalogModelEntry {
   reasoningEfforts?: Record<string, string | null> | false;
   /** 仅插件内部使用：品牌来自 A6API 市场渠道，不写入 llm-pi-ai 条目配置 */
   brand?: string;
+  /** 仅插件内部使用：当前档位声明的来源。缺省读作 default（未确认，升级兼容） */
+  reasoningSource?: ReasoningSource;
+  /** 仅插件内部使用：最近一次查询造成的档位数量变化；数量未变或用户手改后清空（null = 已清除） */
+  reasoningChange?: ReasoningChange | null;
   /** 最近一次 OpenRouter 查询/人工修改时间 */
   updatedAt?: number;
 }
@@ -80,6 +132,8 @@ export interface A6ApiModelMeta {
   maxTokens: number;
   modalities: ('text' | 'image')[];
   reasoningEfforts?: Record<string, string>;
+  /** 档位来源（来自目录条目）：非 queried/manual 即未确认；无目录条目时缺省 */
+  reasoningSource?: ReasoningSource;
   thinkingFormat?: string;
   officialPriceMicros?: {
     input: number;
@@ -208,6 +262,11 @@ export interface ModelCardData {
   maxTokens: number;
   modalities: ('text' | 'image')[];
   hasReasoning: boolean;
+  /**
+   * 档位来源（从目录下发，仅用于「档位未确认」标记）：
+   * 不是 queried 也不是 manual 即为未确认；非推理模型（false）永不标未确认。
+   */
+  reasoningSource?: ReasoningSource;
   inDsh: boolean;
   merchant?: MerchantChannelInfo;
   probeStatus: 'idle' | 'queued' | 'probing' | 'success' | 'error';
