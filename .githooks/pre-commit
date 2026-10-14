@@ -51,7 +51,11 @@ for pkg in $pkgs; do
   fi
 
   echo "pre-commit: $pkg -> pnpm check"
-  if ! (cd "$pkg" && pnpm check); then
+  # 成功时不回放输出：那是两百多行 ok 清单，纯噪声——钩子的输出会原样进调用方（含
+  # agent）的上下文，那边压不掉。失败才回放末尾，够看清是哪几条红的。
+  if ! out=$(cd "$pkg" && pnpm check 2>&1); then
+    echo "pre-commit: $pkg 的 check 没过，输出末尾 40 行："
+    printf '%s\n' "$out" | tail -n 40
     failed="$failed $pkg"
   fi
 done
