@@ -5,9 +5,9 @@ import { dictionaryT, type A6apiT } from '../locales.js';
 const MARKET_URL = 'https://a6api.com/models';
 
 /**
- * 「模型市场」胶囊(侧边栏入口浮层):与账户余额 / 价格波动胶囊同款外观,
- * 点击直达 A6api 官网模型市场。浮层侧 `t` 由 SidebarCard 透传，缺省回落到本插件字典。
- * 悬停文案由原生 Tooltip 提供；浮层自身 `overflow-y:auto`，故用 `portal` 逃出裁剪。
+ * 「模型市场」胶囊(侧边栏入口弹窗):与账户余额 / 价格波动胶囊同款外观,
+ * 点击直达 A6api 官网模型市场。弹窗侧 `t` 由 SidebarCard 透传，缺省回落到本插件字典。
+ * 悬停文案由原生 Tooltip 提供；弹窗自身 `overflow-y:auto`，故用 `portal` 逃出裁剪。
  */
 export const MarketPill: React.FC<{ t?: A6apiT }> = ({ t = dictionaryT }) => {
   const onClick = () => {

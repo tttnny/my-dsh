@@ -162,7 +162,7 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* 「模型市场」胶囊(侧边栏入口浮层):与余额 / 价格波动胶囊同款外观,点击直达官网模型页 */
+/* 「模型市场」胶囊(侧边栏入口弹窗):与余额 / 价格波动胶囊同款外观,点击直达官网模型页 */
 .dsh-a6-market-pill {
   display: inline-flex;
   align-items: center;
@@ -1248,30 +1248,30 @@
   border-radius: 12px;
 }
 
-/* 弹出卡片浮层:从按钮右缘往右、底部贴着按钮一带;left/bottom/maxHeight/width 由组件内联给出 */
-.dsh-a6-sidebar-popup {
-  position: fixed;
-  z-index: 2147483000;
-  box-sizing: border-box;
+/* 居中弹窗:宿主 Modal 的卡片默认只有 380px 宽、高度只受遮罩内边距约束,这里放宽到
+   500px 并把高度上限收到视口 85%。宿主 Modal 的样式表在页面加载时进 <head>,本插件
+   的 <style> 在 apply 时追加,同优先级下后者生效。居中、遮罩、Esc、关闭按钮与焦点
+   回收都由 Modal 原子提供,这里只管尺寸与滚动。 */
+.dsh-a6-sidebar-modal {
+  width: min(500px, 100%);
+  max-height: min(85vh, 100%);
+  /* 兜底滚动:正文行若没能收缩(宿主结构变化),整卡仍可滚,内容不会被裁掉 */
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: var(--dsw-alias-bg-layer-1, #ffffff);
-  border: 1px solid var(--dsw-alias-border-l1, #e2e8f0);
-  border-radius: 12px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.06);
-  padding: 10px;
-  animation: dsh-a6-popup-in 0.18s ease-out;
 }
 
-@keyframes dsh-a6-popup-in {
-  from {
-    opacity: 0;
-    transform: translateX(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+/* 正文区作为 .dialog 的 flex 项允许收缩,下面的正文行才有可分配的滚动高度 */
+.dsh-a6-sidebar-modal-content {
+  min-height: 0;
+}
+
+/* 正文行 = .content 的最后一个子元素(本弹窗不给宿主 Modal 传 description):它吃掉
+   剩余高度并自己滚动,标题栏与关闭按钮因此常驻卡片顶部。 */
+.dsh-a6-sidebar-modal-content > :last-child {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .dsh-a6-sidebar-empty {
@@ -1298,8 +1298,12 @@
   user-select: none;
 }
 
-/* 浮层顶部账户速览胶囊行:与设置页头部同款视觉,缩窄紧凑版(余额纯展示 + 价格波动可跳 + 模型市场直达 + 配置直达) */
+/* 弹窗顶部账户速览胶囊行:与设置页头部同款视觉,缩窄紧凑版(余额纯展示 + 价格波动可跳 + 模型市场直达 + 配置直达)。
+   正文滚动时钉在滚动区顶部,四枚胶囊始终可点。 */
 .dsh-a6-sidebar-pills {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1307,6 +1311,7 @@
   padding: 2px 2px 10px;
   margin-bottom: 10px;
   border-bottom: 1px solid var(--dsw-alias-border-l2, #e2e8f0);
+  background: var(--dsw-alias-bg-layer-2, #ffffff);
 }
 
 .dsh-a6-sidebar-pills .dsh-a6-header-balance-badge,
@@ -1331,7 +1336,7 @@
   line-height: 1;
 }
 
-/* 浮层内余额胶囊为纯展示:禁掉设置页的 hover 反馈与手型(需写在通用 hover 规则之后) */
+/* 弹窗内余额胶囊为纯展示:禁掉设置页的 hover 反馈与手型(需写在通用 hover 规则之后) */
 .dsh-a6-sidebar-balance-pill,
 .dsh-a6-sidebar-balance-pill:hover {
   cursor: default;
@@ -1505,7 +1510,7 @@
 }
 
 /* ============================================================
- * 探测完成 → 卡片刷新动画（MerchantCard，侧边栏入口浮层与设置页共用）
+ * 探测完成 → 卡片刷新动画（MerchantCard，侧边栏入口弹窗与设置页共用）
  * 触发：probeStatus 由 probing 跃迁到 success/error 时挂 .dsh-a6-card-refresh
  * refresh-ok = 成功取到商户；refresh-err = 探测失败
  * 根节点仅改 box-shadow/::after（不加 transform/filter），避免把内部

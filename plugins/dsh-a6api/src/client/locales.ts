@@ -105,7 +105,7 @@ export type A6apiLocaleKey =
   | 'priceLabel' | 'priceTipNoToken' | 'priceTipAuthError' | 'priceTipZero' | 'priceTipPending'
   | 'marketLabel' | 'marketTip'
   // Sidebar entry + its popup
-  | 'sidebarTip' | 'sidebarTipOpen' | 'sidebarTipNoModel' | 'sidebarDialogLabel'
+  | 'sidebarTip' | 'sidebarTipNoModel' | 'sidebarDialogLabel' | 'dialogClose'
   | 'sidebarBalanceTip' | 'configPill'
   | 'sidebarNoModel' | 'sidebarNoMerchant' | 'sidebarNoMerchantHint' | 'sidebarOtherModel' | 'sidebarSwitchHint';
 
@@ -386,9 +386,9 @@ export const en: Record<A6apiLocaleKey, string> = {
   marketLabel: 'Model market',
   marketTip: 'Open the A6api model market',
   sidebarTip: 'Current session’s A6api model card',
-  sidebarTipOpen: 'Collapse the A6api model card',
   sidebarTipNoModel: 'This session uses no A6api model; the card is dimmed',
   sidebarDialogLabel: 'Current session A6api model card',
+  dialogClose: 'Close',
   sidebarBalanceTip: 'Account balance (synced every 60 seconds)',
   configPill: 'Configure',
   sidebarNoModel: 'This session uses no A6api model',
@@ -675,9 +675,9 @@ export const zh: Record<A6apiLocaleKey, string> = {
   marketLabel: '模型市场',
   marketTip: '前往 A6api 模型市场',
   sidebarTip: '当前会话的 A6api 模型卡片',
-  sidebarTipOpen: '收起 A6api 模型卡片',
   sidebarTipNoModel: '当前会话未使用 A6api 模型，卡片已置灰',
   sidebarDialogLabel: '当前会话 A6api 模型卡片',
+  dialogClose: '关闭',
   sidebarBalanceTip: '账户余额（每 60 秒自动同步）',
   configPill: '配置',
   sidebarNoModel: '当前会话未使用 A6api 模型',

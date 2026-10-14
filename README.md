@@ -25,7 +25,7 @@
     <tr>
       <td><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
       <td><a href="./plugins/dsh-a6api"><code>@lynn123411/dsh-a6api</code></a></td>
-      <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 左侧边栏底部「A6api」入口（与「设置」同处），浮层从按钮右侧展开，含账户余额 / 价格波动 / 模型市场 / 配置胶囊行<br>· 模型协议三选一（OpenAI Chat / OpenAI Response / Messages，整条线路共用），接入地址固定为官方地址<br>· 模型目录：拉取市场模型、从 OpenRouter 查询参数与推理档位，档位来源分已确认 / 未确认（未确认标「档位未确认」）<br>· 配置页挂在「<b>插件</b>」页：注册进 <code>plugins.bundle.config</code>（key <code>@lynn123411/dsh-a6api</code>），进本插件详情页即可直接改</td>
+      <td><b>A6API 接入</b><br>· 将 A6API 聚合网关注册为 DSH 原生 LLM 提供商，模型一键同步进选择器<br>· 多标签页视图、余额（$ / ¥）与调用明细、模型白名单同步<br>· 商户线路实时探测与全景指标卡片（含官方 vs 商户价格对比）<br>· 左侧边栏底部「A6api」入口（与「设置」同处），点击在屏幕正中弹出原生 Modal 商户卡片（宽 500px、高不超视口 85%），含账户余额 / 价格波动 / 模型市场 / 配置胶囊行<br>· 模型协议三选一（OpenAI Chat / OpenAI Response / Messages，整条线路共用），接入地址固定为官方地址<br>· 模型目录：拉取市场模型、从 OpenRouter 查询参数与推理档位，档位来源分已确认 / 未确认（未确认标「档位未确认」）<br>· 配置页挂在「<b>插件</b>」页：注册进 <code>plugins.bundle.config</code>（key <code>@lynn123411/dsh-a6api</code>），进本插件详情页即可直接改</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-a6api</code></td>
     </tr>
     <tr>

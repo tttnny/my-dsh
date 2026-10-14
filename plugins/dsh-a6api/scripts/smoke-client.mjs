@@ -44,6 +44,12 @@ const check = (label, ok) => {
  * smallest DOM that survives those calls — nothing here asserts on the UI.
  */
 const styleTags = []
+/**
+ * Every element the bundle created, in order. Its stylesheet is the only place
+ * the dialog's size/scroll rules live, so reading that element back is how the
+ * CSS half of the migration is pinned without a browser.
+ */
+const createdElements = []
 const fakeElement = () => ({
   id: '',
   style: { cssText: '' },
@@ -62,12 +68,30 @@ const fakeElement = () => ({
   },
 })
 
+/**
+ * Document-level listeners the bundle installed. The retired hand-rolled popup
+ * dismissed itself through an Escape/outside-click pair installed here, so the
+ * sidebar cases below assert this stays EMPTY: dismissal belongs to the Modal
+ * atom now, and a second handler would race it (closing on the mask press it
+ * already handled).
+ */
+const documentListeners = []
+/**
+ * Window-level listeners the bundle installed. The same retired popup also
+ * parked resize/scroll listeners here to recompute its own rect; nothing the
+ * bundle owns should be measuring the viewport any more either.
+ */
+const windowListeners = []
+
 globalThis.window = {
   __ModuleLoader__: {
     load: () => {},
   },
-  addEventListener() {},
-  removeEventListener() {},
+  addEventListener: (type, listener) => { windowListeners.push({ type, listener }) },
+  removeEventListener: (type, listener) => {
+    const at = windowListeners.findIndex(entry => entry.type === type && entry.listener === listener)
+    if (at >= 0) windowListeners.splice(at, 1)
+  },
   innerWidth: 1280,
   innerHeight: 800,
 }
@@ -90,7 +114,11 @@ globalThis.document = {
     // bundle take its inject path exactly once.
     return null
   },
-  createElement: () => fakeElement(),
+  createElement: () => {
+    const element = fakeElement()
+    createdElements.push(element)
+    return element
+  },
   addEventListener: (type, listener) => { documentListeners.push({ type, listener }) },
   removeEventListener: (type, listener) => {
     const at = documentListeners.findIndex(entry => entry.type === type && entry.listener === listener)
@@ -98,13 +126,6 @@ globalThis.document = {
   },
   activeElement: null,
 }
-
-/**
- * Document-level listeners the bundle installed. The escape/outside-click
- * dismissal is a document listener pair, so the cases below can fire the real
- * handlers instead of poking component state.
- */
-const documentListeners = []
 
 let loaded
 globalThis.window.__ModuleLoader__.load = (row) => {
@@ -214,15 +235,16 @@ new Function('window', 'document', source)(globalThis.window, globalThis.documen
 check('bundle registers under its package id', loaded?.id === '@lynn123411/dsh-a6api')
 // The settings panel renders ui-primitives controls the shell seeds at runtime;
 // the module table supplies them as inert components so the sidebar-entry render
-// self-check below still exercises the hand-drawn popup it owns.
+// self-check below still exercises the dialog it wires to the Modal atom.
 //
 // Two things matter about this table:
 //   * every read is recorded, so a case can prove the bundle actually reached
-//     for `Tooltip` instead of hand-rolling a bubble;
+//     for `Tooltip` / `Modal` instead of hand-rolling a bubble or a popup;
 //   * `Tooltip` renders its anchor child, because the real primitive clones the
 //     anchor and only the region around it becomes a bubble — a stub that
 //     returned null would hide every anchor from the tree under test (and would
-//     not model the primitive at all).
+//     not model the primitive at all). `Modal` models its own contract the same
+//     way: nothing while closed, a `role="dialog"` card while open.
 const primitiveReads = []
 /**
  * Every `Tooltip` label rendered, in order. The stub renders its anchor child
@@ -235,12 +257,30 @@ const TooltipStub = ({ children, label }) => {
   tooltipLabels.push(label)
   return children ?? null
 }
+/**
+ * Every open call the entry made to the Modal atom, in order, as the primitive
+ * received it. The atom owns the mask, the centring, Escape, mask click and the
+ * focus return — none of which is observable under a stub — so what the cases
+ * can pin down is the contract the entry hands it: this plugin's title and close
+ * copy, its own sizing hooks, and a close command that really closes.
+ */
+const modalCalls = []
+const ModalStub = ({ open, onClose, title, closeLabel, className, contentClassName, children }) => {
+  if (!open) return null
+  modalCalls.push({ onClose, title, closeLabel, className, contentClassName })
+  return React.createElement(
+    'div',
+    { role: 'dialog', 'aria-modal': 'true', 'aria-label': title, className },
+    children ?? null,
+  )
+}
 const primitivesStub = new Proxy({}, {
   get: (_t, key) => {
     if (typeof key === 'symbol') return undefined
     if (key === '__esModule') return true
     primitiveReads.push(String(key))
     if (key === 'Tooltip') return TooltipStub
+    if (key === 'Modal') return ModalStub
     return () => null
   },
 })
@@ -308,7 +348,21 @@ check('the composer dock entry is gone for good',
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 
-// 渲染自检:侧边栏底部的组件渲染出「A6api」入口按钮,点击后从按钮右侧展开卡片浮层。
+// The dialog's size and scroll rules live in the bundle's own stylesheet, and
+// this is the only place they ARE the behaviour: React nodes cannot fail if the
+// CSS goes missing. So read the injected sheet back — it must carry the two
+// hooks the Modal atom is given, and must no longer carry the retired
+// side-anchored popup rule that computed its own left/bottom inline.
+const injectedCss = createdElements.find(element => element.id === 'dsh-a6api-styles')?.textContent ?? ''
+check('the bundle injects its own stylesheet', injectedCss !== '')
+check('the stylesheet sizes the centred card through the Modal atom’s dialog hook',
+  injectedCss.includes('.dsh-a6-sidebar-modal {'))
+check('the stylesheet scrolls the dialog body instead of the whole card',
+  injectedCss.includes('.dsh-a6-sidebar-modal-content > :last-child'))
+check('the retired side-anchored popup rule is gone',
+  !injectedCss.includes('.dsh-a6-sidebar-popup'))
+
+// 渲染自检:侧边栏底部的组件渲染出「A6api」入口按钮,点击后在屏幕正中弹出卡片弹窗。
 const React = require('react')
 const { act, create } = require('react-test-renderer')
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -388,42 +442,19 @@ function unmountQuietly(renderer) {
 }
 
 /**
- * The model card's anchor geometry in the fake sidebar: a rail-sized button
- * parked at the left edge of a 1280x800 viewport, near the bottom where the
- * sidebar foot sits. The popup must open to its RIGHT and hug the button's
- * band, so every expected offset below is derived from these numbers.
- */
-const buttonRect = { left: 8, top: 700, right: 44, bottom: 736, width: 36, height: 36 }
-/** The popup's own measurements, taken by the component after it mounts. */
-const popupRect = { left: 52, top: 300, right: 552, bottom: 728, width: 500, height: 428 }
-/**
- * Pointer targets for the outside-click cases. `contains` must answer honestly
- * per node or the dismissal case is vacuous: a press INSIDE the popup is the
- * negative control that proves a press outside is what closes it.
- */
-const insidePopupTarget = { nodeName: 'MARK' }
-const outsideTarget = { nodeName: 'OUTSIDE' }
-/** The trigger button's own node mock answers for exactly this target. */
-const buttonTarget = { nodeName: 'BUTTON' }
-
-/**
- * Render the sidebar entry with the standard props the shell composes for a
- * `root` list entry: the owner's `wide`, the locale seat's `t`, and the global
- * `useSessions` hook. The entry's own optional readers arrive through the
- * registered component itself (the production wiring), NOT through these props:
- * a stub `useSessions` returning the main-view session is what lets the same
- * render exercise the "current session" path without the real session service.
+ * The dialog is the Host's own centred `Modal` atom, so nothing here measures
+ * geometry any more: the atom owns the mask, the centring, Escape, mask click
+ * and the focus return, and a stub cannot stand in for any of that. What these
+ * cases pin down is the contract the entry hands the atom (this plugin's own
+ * title/close copy and sizing hooks) plus the thing the migration is about —
+ * that the entry positions and dismisses NOTHING itself.
  */
 function renderEntry({ wide = true } = {}) {
   return create(React.createElement(entry.component, {
     wide,
     t: (key) => key,
     useSessions: (selector) => selector({ byId: { 'session-1': { id: 'session-1', retainedBy: { mainView: 1 } } } }),
-  }), {
-    createNodeMock: (element) => (element.type === 'div' && element.props?.className === 'dsh-a6-sidebar-popup'
-      ? { getBoundingClientRect: () => popupRect, contains: (node) => node === insidePopupTarget }
-      : { getBoundingClientRect: () => buttonRect, contains: (node) => node === buttonTarget }),
-  })
+  }))
 }
 
 let tree
@@ -432,24 +463,35 @@ const button = tree.root.findByType('button')
 check('sidebar entry button carries the A6api text when the sidebar is wide',
   textOf(button) === 'A6api')
 check('sidebar entry button starts collapsed', button.props['aria-expanded'] === false)
-// The anchor's own hover text is drawn before the popup exists, so count reads
+// The anchor's own hover text is drawn before the dialog exists, so count reads
 // from before the click: the migration guard below only reports honestly if this
-// tree really reached `Tooltip` instead of just carrying the popup's markup.
+// tree really reached `Tooltip` instead of just carrying the dialog's markup.
 const entryReadsAt = primitiveReads.length
 act(() => button.props.onClick())
-const popups = tree.root.findAll(node => node.props.role === 'dialog')
-check('sidebar entry button opens the model card popup', popups.length === 1)
-// The popup hugs the button's right edge + gap, and its bottom sits a gap above
-// the button's top edge (viewport height - top + gap). maxHeight is the free
-// space above the button.
-check('popup opens to the right of the button', popups[0]?.props.style?.left === 44 + 8)
-check('popup bottom hugs the button band', popups[0]?.props.style?.bottom === 800 - 700 + 8)
-check('popup height is capped to the space above the button', popups[0]?.props.style?.maxHeight === 700 - 2 * 8)
-// Width: the 500px cap wins here because 1280 - 52 - 8 leaves plenty of room.
-// The viewport-respecting branch is exercised by the narrow-window case below,
-// so this pair together pins the whole formula rather than just its literal.
-check('popup width takes the 500px cap when the viewport allows',
-  popups[0]?.props.style?.width === 500)
+const dialogs = () => tree.root.findAll(node => node.props.role === 'dialog')
+check('sidebar entry button opens the model card dialog', dialogs().length === 1)
+check(
+  'the sidebar entry opens the ui-primitives Modal atom instead of a hand-drawn popup',
+  primitiveReads.slice(entryReadsAt).includes('Modal'),
+)
+// The entry no longer computes a fixed position or handles its own dismissal:
+// no document/window listeners that would either race the atom's own close paths
+// or re-measure the viewport to reposition a card that is now centred. Both are
+// the point of the migration, so both are asserted.
+check('the open dialog installs no dismissal listener of its own',
+  documentListeners.length === 0)
+check('the open dialog installs no viewport listener of its own',
+  windowListeners.length === 0)
+// The atom needs a real close command from its owner; this is the only dismissal
+// path the entry still owns.
+const opened = modalCalls[modalCalls.length - 1]
+check('the dialog hands the Modal atom a close command', typeof opened?.onClose === 'function')
+check('the dialog title is this plugin’s own copy', opened?.title === 'sidebarDialogLabel')
+check('the dialog carries a localized close-button label', opened?.closeLabel === 'dialogClose')
+check('the dialog is sized by this plugin’s own class',
+  opened?.className === 'dsh-a6-sidebar-modal')
+check('the dialog body is scrolled by this plugin’s own class',
+  opened?.contentClassName === 'dsh-a6-sidebar-modal-content')
 check(
   'the sidebar entry draws its hover text through the ui-primitives Tooltip',
   primitiveReads.slice(entryReadsAt).includes('Tooltip'),
@@ -460,60 +502,17 @@ check(
 check('the entry anchor carries this plugin’s own hover copy',
   tooltipLabels.includes('sidebarTipNoModel'))
 
-// Dismissal: Escape and an outside pointer press both close the popup. These
-// are the document listeners the component installs while open, so firing them
-// is the same path the browser takes.
-const popupOpen = () => tree.root.findAll(node => node.props.role === 'dialog').length === 1
-check('popup is open before the dismissal cases', popupOpen())
-const escape = documentListeners.filter(entry => entry.type === 'keydown')
-check('the open popup installs its dismissal listeners', escape.length >= 1)
-act(() => { for (const entry of escape) entry.listener({ key: 'Escape' }) })
-check('Escape closes the popup', !popupOpen())
-
-act(() => button.props.onClick())
-check('popup reopens after Escape', popupOpen())
-const outsidePress = documentListeners.filter(entry => entry.type === 'pointerdown')
-check('the open popup installs its pointer dismissal listener', outsidePress.length >= 1)
-// Negative control first: a press inside the popup (and one on the trigger) must
-// NOT close it — without this, a handler that closes on every pointer event
-// would still pass the outside case below.
-act(() => { for (const entry of outsidePress) entry.listener({ target: insidePopupTarget }) })
-check('a pointer press inside the popup leaves it open', popupOpen())
-act(() => { for (const entry of outsidePress) entry.listener({ target: buttonTarget }) })
-check('a pointer press on the trigger leaves the popup open (the click toggles it)', popupOpen())
-act(() => { for (const entry of outsidePress) entry.listener({ target: outsideTarget }) })
-check('an outside pointer press closes the popup', !popupOpen())
-
-// A window too narrow for a 500px card must not grow it past the viewport: the
-// popup takes the remaining space to the right of the button instead.
-const realInnerWidth = globalThis.window.innerWidth
-globalThis.window.innerWidth = 320
-let narrowTree
-act(() => { narrowTree = renderEntry({ wide: true }) })
-act(() => { narrowTree.root.findByType('button').props.onClick() })
-const narrowPopup = narrowTree.root.findAll(node => node.props.role === 'dialog')[0]
-check('popup width shrinks to the space right of the button in a narrow window',
-  narrowPopup?.props.style?.width === 320 - (44 + 8) - 8)
-check('popup keeps its left edge anchored to the button in a narrow window',
-  narrowPopup?.props.style?.left === 44 + 8)
-act(() => { narrowTree.unmount() })
-
-// A window narrower than the button's own right edge plus a usable card leaves
-// the plain formula with a negative width. The popup must clamp to its width
-// floor instead of handing CSS an impossible value, and must pull its left edge
-// back so the card still starts on screen.
-globalThis.window.innerWidth = 100
-let tinyTree
-act(() => { tinyTree = renderEntry({ wide: true }) })
-act(() => { tinyTree.root.findByType('button').props.onClick() })
-const tinyPopup = tinyTree.root.findAll(node => node.props.role === 'dialog')[0]
-check('popup width never goes negative in a tiny window',
-  typeof tinyPopup?.props.style?.width === 'number' && tinyPopup.props.style.width > 0)
-check('popup keeps its width floor in a tiny window', tinyPopup?.props.style?.width === 240)
-check('popup pulls its left edge back into the viewport in a tiny window',
-  tinyPopup?.props.style?.left === 8)
-act(() => { tinyTree.unmount() })
-globalThis.window.innerWidth = realInnerWidth
+// Dismissal now belongs to the Modal atom (Escape, mask click, close button),
+// so the entry's own duty is one thing: the close command it handed the atom
+// must actually close the dialog. The reopen case proves the entry is not a
+// one-shot — the trigger stays a trigger after a close.
+act(() => opened.onClose())
+check('the dialog’s close command closes it', dialogs().length === 0)
+act(() => tree.root.findByType('button').props.onClick())
+check('the entry reopens the dialog after a close', dialogs().length === 1)
+check('reopening hands the atom a fresh call', modalCalls.length >= 2)
+act(() => { modalCalls[modalCalls.length - 1].onClose() })
+check('the reopened dialog closes too', dialogs().length === 0)
 
 act(() => tree.unmount())
 
@@ -682,7 +681,7 @@ function fakeDirectory(initial) {
   // the same sentence the user reads to confirm what the icon is.
   check('the entry anchor names itself when an A6api model is in use',
     tooltipLabels.includes('sidebarTip'))
-  check('the popup keeps the account-overview pill row',
+  check('the dialog keeps the account-overview pill row',
     cardTree.root.findAll(node => node.props?.className === 'dsh-a6-sidebar-pills').length === 1)
   check('an A6api session shows the model area undimmed',
     cardTree.root.findAll(node => node.props?.className === 'dsh-a6-sidebar-card-dimmed').length === 0)
@@ -945,9 +944,9 @@ if (panelTree) {
 }
 
 // The sidebar entry is the second reader of `Tooltip`: its «A6api» anchor and
-// the account pills inside the popup all carry hover text. The loop in front of
+// the account pills inside the dialog all carry hover text. The loop in front of
 // it already read the module table; proving the whole half is free of the
-// retired attribute needs the popup rendered.
+// retired attribute needs the dialog rendered.
 const entryTreeReadsAt = primitiveReads.length
 let entryTree
 const entryTreeFailedWith = (() => {
@@ -959,7 +958,7 @@ const entryTreeFailedWith = (() => {
     return error
   }
 })()
-check('sidebar entry renders with its hover anchors and popup', entryTreeFailedWith === undefined)
+check('sidebar entry renders with its hover anchors and dialog', entryTreeFailedWith === undefined)
 if (entryTreeFailedWith) console.log(`       ${entryTreeFailedWith.message}`)
 if (entryTree) {
   const entryProps = hostPropNames(entryTree)

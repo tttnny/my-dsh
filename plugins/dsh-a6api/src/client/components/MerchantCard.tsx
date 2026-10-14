@@ -33,8 +33,8 @@ const tagToneOf = (label: string): TagTone => {
 };
 
 /**
- * 商户卡片：设置页「可用模型」列表与侧边栏入口浮层共用。
- * `t` 由浮层透传，缺省回落到本插件字典。
+ * 商户卡片：设置页「可用模型」列表与侧边栏入口弹窗共用。
+ * `t` 由弹窗透传，缺省回落到本插件字典。
  */
 export const MerchantCard: React.FC<{
   model: ModelCardData;
@@ -46,7 +46,7 @@ export const MerchantCard: React.FC<{
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimerRef = useRef<any>(null);
 
-  // ===== 探测完成 → 卡片刷新动画（侧边栏入口浮层与设置页共用本组件，一处生效两处） =====
+  // ===== 探测完成 → 卡片刷新动画（侧边栏入口弹窗与设置页共用本组件，一处生效两处） =====
   // 触发条件：本卡片 probeStatus 由 'probing' 跃迁到终态（success/error），即探测结果回填瞬间。
   // 动画全部基于 box-shadow/::after/子列 opacity-transform，根节点不加 transform/filter，
   // 避免把内部 position:fixed 的固定弹窗裹进动画 containing block。
@@ -273,7 +273,7 @@ export const MerchantCard: React.FC<{
                   </span>
                 </>
               )}
-              {/* 徽标自身较长（提示很长），底部居中并 `portal` 逃出卡片/浮层的裁剪与层叠上下文 */}
+              {/* 徽标自身较长（提示很长），底部居中并 `portal` 逃出卡片/弹窗的裁剪与层叠上下文 */}
               {isPinnedHere && !isChannelDisabled && (
                 <Tooltip
                   label={
@@ -350,7 +350,7 @@ export const MerchantCard: React.FC<{
 
         {/* Col 2: Pricing Summary + Ratio Tag */}
         {/* 价格/倍率纯展示文案原先挂原生 title，现统一由 Tooltip 承担；
-            卡片与侧边栏入口浮层都可能被 overflow 裁剪，故一律 `portal` */}
+            卡片与侧边栏入口弹窗都可能被 overflow 裁剪，故一律 `portal` */}
         {merchant ? (
           <div className="dsh-a6-bar-pricing">
             <div className="dsh-a6-price-col">
@@ -457,7 +457,7 @@ export const MerchantCard: React.FC<{
       </div>
 
       {/* 2. Bottom Footer: 时间戳左下角 + 操作按钮右下角 */}
-      {/* 卡片在「可用模型」列表与侧边栏入口浮层里都处于 overflow 容器内，气泡一律 `portal` */}
+      {/* 卡片在「可用模型」列表与侧边栏入口弹窗里都处于 overflow 容器内，气泡一律 `portal` */}
       <div className="dsh-a6-card-footer">
         <div className="dsh-a6-time-stack">
           <Tooltip label={t('lastSuccessTip')} side="bottom" align="center" gap={6} maxWidth={320} portal>
