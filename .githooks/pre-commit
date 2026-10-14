@@ -63,5 +63,7 @@ if [ -n "$failed" ]; then
   exit 1
 fi
 
-echo "pre-commit: 通过（$pkgs）"
+# 变量写成 ${}：紧跟全角括号时，macOS 的 /bin/sh（bash 3.2）会把括号的首字节吞进变量名，
+# set -u 下直接以 unbound variable 崩掉——检查全过的提交反而被这道闸门自己拦住。
+echo "pre-commit: 通过（${pkgs}）"
 exit 0
