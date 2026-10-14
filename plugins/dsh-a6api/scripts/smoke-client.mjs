@@ -43,7 +43,6 @@ const check = (label, ok) => {
  * tag, the tooltip portal) and starts a warm-up timer, so the sandbox needs the
  * smallest DOM that survives those calls — nothing here asserts on the UI.
  */
-const styleTags = []
 /**
  * Every element the bundle created, in order. Its stylesheet is the only place
  * the dialog's size/scroll rules live, so reading that element back is how the
@@ -108,10 +107,9 @@ globalThis.document = {
   getElementById() {
     return null
   },
-  querySelector(selector) {
-    styleTags.push(selector)
-    // Only the stylesheet guard asks; reporting the tag as absent makes the
-    // bundle take its inject path exactly once.
+  // 无人调用：插件的样式表守卫走 getElementById。留着只是让 DOM 面像样，
+  // 别把「回 null 让 bundle 每次都走注入路径」当成一条断言——它不是。
+  querySelector() {
     return null
   },
   createElement: () => {

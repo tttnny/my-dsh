@@ -35,7 +35,7 @@ A6API 多模型聚合站接入插件：将 A6API 聚合网关注册为 DSH 原�
 cd plugins/dsh-a6api && pnpm check
 ```
 
-`check` 串起类型检查、构建、浏览器半边自检（`scripts/smoke-client.mjs`）、四份服务端行为测试（配置读写与协议写入 `test-sync-settings.mjs`、探测请求按协议构造 `test-probe-protocol.mjs`、账号 ID 自举 `test-auth-bootstrap.mjs`、档位来源 `test-reasoning-source.mjs`）与两道德性门禁（`lib/` 不被索引跟踪；`lib/types` 与 `src/` 一一对应，陈旧或缺失的声明都判失败）。自检装载构建产物 `lib/client.js`，除装配层（本插件在插件页的 bundle 配置注册、侧边栏入口注册，并核对本插件没有注册聊天输入框那一行的入口）外，还渲染配置卡片与侧边栏入口弹窗，核对「基础配置」的字段与保存按钮、侧边栏入口的宽窄形制、弹窗交给 `Modal` 原子的标题／关闭文案与两个尺寸钩子类、插件自己不再装任何 document/window 监听、注入的样式表里旧的侧向定位规则已消失与「配置」胶囊，并看守悬停提示仍走 ui-primitives 的 `Tooltip`——渲染树与 bundle 里都不应再出现插件自造的提示属性。
+`check`（链条以 `package.json` 的 `scripts` 为准，这里的清单只是给人看）串起类型检查、构建、浏览器半边自检（`scripts/smoke-client.mjs`）、四份服务端行为测试（配置读写与协议写入 `test-sync-settings.mjs`、探测请求按协议构造 `test-probe-protocol.mjs`、账号 ID 自举 `test-auth-bootstrap.mjs`、档位来源 `test-reasoning-source.mjs`）与两道德性门禁（`lib/` 不被索引跟踪；`lib/types` 与 `src/` 一一对应，陈旧或缺失的声明都判失败）。自检装载构建产物 `lib/client.js`，除装配层（本插件在插件页的 bundle 配置注册、侧边栏入口注册，并核对本插件没有注册聊天输入框那一行的入口）外，还渲染配置卡片与侧边栏入口弹窗，核对「基础配置」的字段与保存按钮、侧边栏入口的宽窄形制、弹窗交给 `Modal` 原子的标题／关闭文案与两个尺寸钩子类、插件自己不再装任何 document/window 监听、注入的样式表里旧的侧向定位规则已消失与「配置」胶囊，并看守悬停提示仍走 ui-primitives 的 `Tooltip`——渲染树与 bundle 里都不应再出现插件自造的提示属性。
 
 ## 安装
 
