@@ -17,6 +17,7 @@ profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就�
 
 - **自带构建的插件（`src/` → `lib/`）先 `pnpm build`**：链接过去的是构建产物，编辑 `src/` 不 build 等于没改。
 - **客户端半边**：刷新页面即生效（bundle 按 `rev` 下发并带长期缓存，HMR 重新哈希后才换 `rev`，必要时硬刷新 `Cmd+Shift+R`）。
+  想确认这一次到底拿到哪份产物：`curl -s "$DSH_WEB_URL/plugins/??<包名>/client.js&rev=<rev>" | grep -c '<你新写的类名或文案>'`。`rev` 从首页 HTML 里该插件那条 `"url":"plugins/??@lynn123411/dsh-<name>/client.js&rev=…"` 抄；不带 `rev` 请求会 404。产物里 grep 到你新写的东西，才算真的换上了。
 - **宿主半边**：重启 DSH 实例——loader 只在启动时装载。增删 `link:` 包、或本地覆盖某个安装包，同样要重启：解析表在进程启动时固定。
 
 ## 内核包解析

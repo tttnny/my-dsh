@@ -39,10 +39,16 @@
 
 - **先确认断言脚本打的是 `src/` 还是构建产物**：`dsh-a6api` 的 `scripts/test-*.mjs` 一律 `import('../lib/index.js')`（`smoke-client.mjs` 读 `lib/client.js`），改完 `src/` 必须先 `pnpm build` 再跑，否则测的还是旧产物——变异后忘了重建，会得到一条假的「断言没抓住」。`dsh-grilling-form` 用 `pnpm test` 自己先构建一次来消除这个前提；`dsh-chat-translate` 有一半脚本直接打 `src/`。照抄邻居前先看它 `import` 的是哪一边。
 - **还原用 `git checkout -- <file>`，别手工备份**：`cp src/x.ts /tmp/x.bak` 这类备份失败是静默的（`||` 兜底只在前一条命令失败时才生效，而它常常成功了），变异会留在源码里而你以为已经还原。要么在改动前 `git stash`，要么直接 `git checkout -- <file>`——后者失败会报错，不会静默。
+- **探针的锚点要唯一**：往源码里塞临时探针时，别拿 `str.replace(x, y, 1)` 打在「文件里第一个 `  return (`」这类到处都有的形状上——它会插进另一个函数，报出来的还是 `Invalid hook call` 这种看不懂的错。锚点带上上下文，或改用 `git apply` 的补丁。
+- **收尾核对 `git status --short`**：除你本来要改的文件外不该有别的。变异留下的痕迹、顺手做的别的改动、被打乱的工作区（比如多余的 `git stash`），只有在这里才看得见——变异测试的完成判据就是这一行干净。
 
 ### 提交闸门（`.githooks/pre-commit`）
 
 「改完跑 check」有闸门兜着，不靠自觉：仓库根的 `.githooks/pre-commit` **只看本次改动的包**，逐个在包目录跑它自己的 `check`。装法与跳法写在该文件头部（`git config core.hooksPath .githooks`；`SKIP_CHECK=1 git commit` 跳过一次）。没有 `check` 脚本、或没装 `node_modules` 的包会明说并跳过——不让提交在静默里少跑一道闸门。
+
+**成功只打一行、失败才回放输出**（`pre-commit: $pkg -> pnpm check` 之后直接是 `pre-commit: 通过（<包名>）`）：那段两百多行的 `ok` 清单对调用方（尤其 agent）是纯噪声，而钩子的输出压在调用方那一侧。要看全量转录就自己 `cd <包>` 跑一次。
+
+闸门是这仓库唯一的自动门禁（没有 CI），所以它自己坏了代价最大，改完必须验收一次：走一次**真实提交**，成功路径打出 `pre-commit: 通过（<包名>）`；再确认它真的装着——`git config --get core.hooksPath` 应回 `.githooks`（这条配置不进版本库，新克隆默认没有闸门）。`SKIP_CHECK=1` 只在确实跑不了时用；「检查全过的提交反而被钩子拦住」是钩子自己的 bug，去修钩子。
 
 ### 类型检查
 
@@ -65,4 +71,5 @@
 | 用户反馈「刚发的包装不上」 | [release.md](./release.md)「用户反馈『刚发的包装不上』」 |
 | 插件从页面消失、宿主日志无异常、组件要进浏览器 | [client-wiring.md](./client-wiring.md) |
 | 配置页放哪、key 怎么拼、卡片没有入口 / 标题退回包名 | [plugin-config-page.md](./plugin-config-page.md) |
+| 改插件的界面、挑宿主现成控件、要肉眼确认 | [plugin-ui.md](./plugin-ui.md) |
 | 自建 LLM 适配器的 usage 映射 | [llm-adapter.md](./llm-adapter.md) |
