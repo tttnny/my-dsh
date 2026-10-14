@@ -1221,11 +1221,11 @@
 
 .dsh-a6-sidebar-btn:hover,
 .dsh-a6-sidebar-btn[aria-expanded='true'] {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(148, 163, 184, 0.16));
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .dsh-a6-sidebar-btn:focus-visible {
-  outline: 2px solid var(--dsw-alias-label-tertiary, #94a3b8);
+  outline: 2px solid var(--dsw-alias-label-tertiary);
   outline-offset: 2px;
 }
 
@@ -1281,7 +1281,7 @@
   justify-content: center;
   gap: 10px;
   padding: 28px 16px;
-  color: var(--dsw-alias-label-secondary, #64748b);
+  color: var(--dsw-alias-label-secondary);
   font-size: 13px;
 }
 
@@ -1310,8 +1310,8 @@
   flex-wrap: wrap;
   padding: 2px 2px 10px;
   margin-bottom: 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2, #e2e8f0);
-  background: var(--dsw-alias-bg-layer-2, #ffffff);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .dsh-a6-sidebar-pills .dsh-a6-header-balance-badge,
@@ -1340,8 +1340,8 @@
 .dsh-a6-sidebar-balance-pill,
 .dsh-a6-sidebar-balance-pill:hover {
   cursor: default;
-  border-color: var(--dsw-alias-border-l2, #e2e8f0);
-  background: var(--dsw-alias-bg-layer-2, #ffffff);
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 /* 「配置」胶囊:与同排胶囊同款外观,点击直达本插件的完整配置页 */
