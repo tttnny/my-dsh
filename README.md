@@ -55,7 +55,7 @@
 
 | preset | 说明 | 安装 |
 | --- | --- | --- |
-| [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份（`prefix` 即完整系统提示词、关闭运行时快照）＋ 文件工具 `read` / `write` / `edit`，**整组不含 shell**。工具目录就是这三个——没有 bash / pwsh、没有检索 / `read_image`、没有技能 / 计划 / 目标 / 子代理。随包的 `tool-filter` 行在 `system-prompt/assemble` 处把 `read_image` 与 profile 根层的 `grilling_form` 移出模型可见目录（`tools.restrict()` 只筛继承工具、兄弟行包注册表又输给 loader 的并发装载，两条路都已实测不成立） | `dsh plugin --profile web add @lynn123411/dsh-preset-minimal-fs` |
+| [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方 `minimal` 的身份（`prefix` 即完整系统提示词、关闭运行时快照）＋ 文件工具 `read` / `write` / `edit`，**整组不含 shell**。工具目录就是这三个——没有 bash / pwsh、没有检索 / `read_image`、没有技能 / 计划 / 目标 / 子代理。`tool-fs` 行的 `readImage: false` 让 `read_image` 根本不注册；profile 根层的 `grilling_form` 由随包的 `tool-filter` 行在 `system-prompt/assemble` 处移出模型可见目录 | `dsh plugin --profile web add @lynn123411/dsh-preset-minimal-fs` |
 | [plugin-upgrade-cordis](./presets/plugin-upgrade-cordis) | **插件升级创造模式**：官方创造模式（`cordis`）逐字保留（persona、工具矩阵、计划 / 压缩 / 子代理编排、动态插件工具 `tool-cordis`），另并入 [dsh-plugin-upgrade-skill](https://github.com/oh-my-dsh/dsh-plugin-upgrade-skill) 的 **11 个插件工程技能**（随包 `skills/`）：`plugin-upgrade` / `plugin-workflow` / `plugin-write` / `plugin-test` / `plugin-release` / `plugin-runtime-debug` / `plugin-fleet-sweep` / `plugin-heavy-dep` / `dsh-upgrade-audit` / `dsh-benchmark-case` / `generic-migration` | `dsh plugin --profile web add @lynn123411/dsh-preset-plugin-upgrade-cordis` |
 
 > `presets/` 下的 preset 都是可安装的 **bundle 包**（npm 名 `@lynn123411/dsh-preset-<id>`），安装命令与插件同一条：它把包写进 profile 的 `dependencies`、并把包名登记进 `dsh.profile.bundles`。装完**重启 DSH**，再在新建会话界面选择对应模式——preset 的挂载在进程内只装载一次，改 patch 或随包文件都不会热更。开发副本把包名换成仓库内路径：`dsh plugin --profile web add ./presets/<id>`（在仓库根执行，会记成 `link:`）。
