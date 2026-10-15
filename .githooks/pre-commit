@@ -1,9 +1,15 @@
 #!/bin/sh
-# my-dsh pre-commit：**改了哪个包就在哪个包里跑它自己的 check**。
+# my-dsh pre-commit：**改了哪个包就在哪个包里跑它自己的 check**，外加一道仓库级台账检查。
 #
 # 为什么在提交这一侧：仓库根没有 package.json、没有 CI，`docs/rules/plugins.md`「验证」
 # 只写了「改完在所在包目录跑 pnpm check」——纯靠自觉。本钩子把它变成闸门：只跑本次
 # 改动触及的包，没动的包不跑，所以代价与改动规模成正比。
+#
+# 两道闸门：
+#   1. 台账：改到 plugins/、presets/、根 README.md、docs/rules/ 或 tools/ 时跑
+#      `node tools/assert-ledger.mjs`（判据见该文件头部）。零依赖、纯读文件，很快。
+#   2. 包：改到的每个包在它自己目录跑 `pnpm check`。**有 check 就跑**——没有 node_modules
+#      也照跑（preset 的 check 本来就不需要依赖），跑不过就拦，不静默少跑一道闸门。
 #
 # 装法（仓库根执行一次）：
 #   git config core.hooksPath .githooks
@@ -14,7 +20,7 @@
 set -u
 
 if [ "${SKIP_CHECK:-0}" = "1" ]; then
-  echo "pre-commit: SKIP_CHECK=1，跳过包检查"
+  echo "pre-commit: SKIP_CHECK=1，跳过全部检查"
   exit 0
 fi
 
@@ -25,15 +31,24 @@ cd "$root" || exit 0
 changed=$(git diff --cached --name-only --diff-filter=ACMR) || exit 0
 [ -n "$changed" ] || exit 0
 
+failed=""
+
+# ── 1. 仓库级台账 ────────────────────────────────────────────────────────────
+if printf '%s\n' "$changed" | grep -qE '^(plugins|presets)/|^README\.md$|^docs/rules/|^tools/'; then
+  echo "pre-commit: 台账 -> node tools/assert-ledger.mjs"
+  if ! out=$(node tools/assert-ledger.mjs --quiet 2>&1); then
+    echo "pre-commit: 台账不一致："
+    printf '%s\n' "$out" | tail -n 40
+    failed="$failed 台账"
+  fi
+fi
+
+# ── 2. 本次改动触及的包 ──────────────────────────────────────────────────────
 # 只认 plugins/<dir> 与 presets/<dir> 这两层的包目录，去重。
 pkgs=$(printf '%s\n' "$changed" \
   | grep -E '^(plugins|presets)/[^/]+/' \
   | cut -d/ -f1,2 \
   | sort -u)
-
-[ -n "$pkgs" ] || exit 0
-
-failed=""
 
 for pkg in $pkgs; do
   [ -f "$pkg/package.json" ] || continue
@@ -44,13 +59,12 @@ for pkg in $pkgs; do
     continue
   fi
 
-  # 依赖没装：跑不了就跳过，但明说，别让提交悄悄过掉一道本该跑的闸门。
+  echo "pre-commit: $pkg -> pnpm check"
+  # 依赖没装不再是跳过的理由：preset 的 check 不需要依赖，而漏跑一道闸门比跑失败更贵。
   if [ ! -d "$pkg/node_modules" ]; then
-    echo "pre-commit: $pkg 没有 node_modules（先 cd $pkg && pnpm install），跳过"
-    continue
+    echo "pre-commit: 提示：$pkg 没有 node_modules，check 若需要依赖就先 cd $pkg && pnpm install"
   fi
 
-  echo "pre-commit: $pkg -> pnpm check"
   # 成功时不回放输出：那是两百多行 ok 清单，纯噪声——钩子的输出会原样进调用方（含
   # agent）的上下文，那边压不掉。失败才回放末尾，够看清是哪几条红的。
   if ! out=$(cd "$pkg" && pnpm check 2>&1); then
@@ -62,12 +76,14 @@ done
 
 if [ -n "$failed" ]; then
   echo ""
-  echo "pre-commit: 检查没过的包：$failed"
+  echo "pre-commit: 没过的检查：${failed}"
   echo "修好再提交；确定要跳过这一次就 SKIP_CHECK=1 git commit ..."
   exit 1
 fi
 
 # 变量写成 ${}：紧跟全角括号时，macOS 的 /bin/sh（bash 3.2）会把括号的首字节吞进变量名，
 # set -u 下直接以 unbound variable 崩掉——检查全过的提交反而被这道闸门自己拦住。
-echo "pre-commit: 通过（${pkgs}）"
+# 多个包折成一行：成功路径只打一行，调用方（尤其 agent）那边才压得住。
+pkgs_line=$(printf '%s' "${pkgs:-仅台账}" | tr '\n' ' ')
+echo "pre-commit: 通过（${pkgs_line% }）"
 exit 0
