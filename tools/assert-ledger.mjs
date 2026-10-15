@@ -128,9 +128,17 @@ for (const file of readdirSync(root)) {
 
 // ── 5. files 与 bundle patch 指的条目存在 ─────────────────────────────────────
 for (const entry of packages) {
+  // 构建产物（`lib/` 这类）在没构建过的克隆里本来就不存在，包自己的 .gitignore 是它的登记位：
+  // 被 ignore 掉的条目跳过存在性检查，其余条目照查。
+  const gitignore = existsSync(join(entry.dir, '.gitignore')) ? readFileSync(join(entry.dir, '.gitignore'), 'utf8') : '';
+  const ignored = new Set(
+    gitignore.split('\n')
+      .map((line) => line.replace(/#.*$/, '').trim().replace(/^\//, '').replace(/\/$/, ''))
+      .filter((line) => line !== ''),
+  );
   for (const pattern of entry.pkg.files ?? []) {
     const probe = pattern.replace(/\/\*\*.*$/, '').replace(/\/\*[^]*$/, '').replace(/\/$/, '');
-    if (probe === '') continue;
+    if (probe === '' || ignored.has(probe)) continue;
     if (!existsSync(join(entry.dir, probe))) {
       fail(`${entry.rel}/package.json`, `files 里的 ${pattern} 在目录里不存在（删条目或补文件，清单只写还存在的）`);
     }
@@ -229,6 +237,13 @@ for (const profile of localProfiles) {
       fail(
         `${rel(profile.dir)}/node_modules/@lynn123411/${entry.name.split('/')[1]}`,
         `开发副本被物化成实体副本（${state.version ?? '版本不明'}）；跑 node tools/dev-link.mjs --write 连回仓库`,
+      );
+      continue;
+    }
+    if (state.state === 'dangling') {
+      fail(
+        `${rel(profile.dir)}/node_modules/@lynn123411/${entry.name.split('/')[1]}`,
+        `软链断了（${state.target}）——这个 profile 装载时解析不到它；跑 node tools/dev-link.mjs --write 重连`,
       );
       continue;
     }

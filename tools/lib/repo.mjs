@@ -254,8 +254,13 @@ export function runningInstances() {
 export function devCopyState(profileDir, name) {
   const short = name.split('/')[1];
   const path = join(profileDir, 'node_modules/@lynn123411', short);
-  if (!existsSync(path)) return { state: 'missing' };
-  const stat = lstatSync(path);
+  // 这里必须用 lstat：断掉的软链 existsSync 也答 false，会被误报成「没装」。
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch {
+    return { state: 'missing' };
+  }
   if (!stat.isSymbolicLink()) {
     let version;
     try {
@@ -270,7 +275,7 @@ export function devCopyState(profileDir, name) {
   try {
     version = readJson(join(path, 'package.json')).version;
   } catch {
-    version = undefined;
+    return { state: 'dangling', target };
   }
   return { state: 'link', target, version };
 }
