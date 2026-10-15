@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "note": "抄本登记表：抄自官方 @deepseek-ai/dsh-web-app/presets/*.patch.yml 的 preset，在这里登记抄的是哪一个、保留哪些差异。tools/assert-ledger.mjs 判据 11 照这张表逐行比对（比对前先去掉空行与注释行）。官方动了就要重抄，不要改这张表来迁就落后的抄本。",
+  "copies": [
+    {
+      "id": "plugin-upgrade-cordis",
+      "official": "cordis",
+      "renames": [
+        { "pattern": "preset-plugin-upgrade-cordis", "replacement": "preset-cordis" },
+        { "pattern": "^(\\s*)id: plugin-upgrade-cordis\\s*$", "replacement": "$1id: cordis" },
+        { "pattern": "^(\\s*order:) \\d+\\s*$", "replacement": "$1 4" }
+      ],
+      "dropLines": [
+        "^\\s{8,}(?:name|description): .*",
+        "- !!js process\\.getBuiltinModule\\('node:path'\\)\\.join\\(process\\.getBuiltinModule\\('node:path'\\)\\.dirname\\(process\\.getBuiltinModule\\('node:module'\\)\\.createRequire\\(baseUrl\\)\\.resolve\\('@lynn123411/dsh-preset-plugin-upgrade-cordis/package\\.json'\\)\\), 'skills'\\)"
+      ],
+      "reason": "官方创造模式的 persona、工具矩阵、计划 / 压缩 / 子代理编排与动态插件工具逐字保留；差异只有四处：顶部注释、行 id 与 display 名、order（自有 preset 排在官方之后），以及 skill-filesystem 多一条本包 skills/ 的自定义技能根"
+    },
+    {
+      "id": "minimal-fs",
+      "official": null,
+      "renames": [],
+      "dropLines": [],
+      "reason": "不是抄本：身份与文件工具三行照官方 minimal 逐字搬，工具目录收窄与 persona 的 complete: true 是自己加的定形，没有逐行对应的官方文件"
+    }
+  ]
+}

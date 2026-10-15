@@ -1,0 +1,35 @@
+name: check
+
+# 仓库级 check：台账 + 每个包自己的 check。本机的同一件事是 `.githooks/pre-commit`（只看改动的包），
+# 这里一次跑全部，换台机器或有人没装钩子时也拦得住。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 版本随各包 `engines.node`（^22.19 || >=24）。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: corepack enable
+
+      # 仓库根不放 package.json、不放依赖（根 AGENTS.md 第 7 条），所以在每个有依赖的包目录里装。
+      # 冻结 lock：CI 不重解版本，`engines.dsh` 那条区间怎么解由各包已提交的 pnpm-lock.yaml 说了算。
+      - name: install
+        run: |
+          for dir in plugins/* presets/*; do
+            if [ -f "$dir/package.json" ] && grep -qE '"(dependencies|devDependencies|peerDependencies)"' "$dir/package.json"; then
+              echo "== $dir"
+              (cd "$dir" && pnpm install --frozen-lockfile)
+            fi
+          done
+
+      - name: check
+        run: node tools/check.mjs

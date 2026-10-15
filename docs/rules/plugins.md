@@ -23,7 +23,8 @@
 - `engines.dsh` 写**大于等于当前版本**的 SemVer 范围（`>=` + 当前 DSH 版本），不写精确版本；当前版本以运行中的 DSH 为准，本文件不复述具体号。
 - 所有 `@deepseek-ai/dsh-*` 的 `peerDependencies` / `devDependencies` 与 `engines.dsh` 写**同一个**范围字符串；改完跑 `pnpm install --lockfile-only` 同步 lock 的 importers 段。
 - `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 是独立基线，照各自现值声明，不参与上面这条。
-- **内核升版后的批量跟随**：`node tools/dsh-baseline.mjs --write` 一次改齐全部包的上面三处（目标值从已装内核读，改完在每个动过的包里跑 `pnpm install`）；`--bump patch` 顺带升版本号。哪一处漂了由 `node tools/assert-ledger.mjs` 抓。
+- **内核升版后的批量跟随**：`node tools/dsh-baseline.mjs --write` 一次改齐全部包的上面三处（目标值从已装内核读；有依赖声明的包改完跑 `pnpm install`，没有依赖的包跳过安装并删掉空 lock）；`--bump patch` 顺带升版本号。哪一处漂了由 `node tools/assert-ledger.mjs` 抓，落盘前可以先跑一次 `dsh-baseline.mjs --check` 看齐没齐。
+- **手工写死的内核版本也要跟**：自检脚本的断言与注释、`README.md`、`<id>.patch.yml` 里写到的内核版本，必须与本包 `engines.dsh` 同串。只查这几个「规则面」——`DETAILS.md` 的历史实测记录与 `skills/`、`upstream/` 的 vendored 内容不查，它们记的是当时的版本，改它们等于篡改证据。
 - 兄弟 preset 的同一规则见 [presets.md](./presets.md)「版本与依赖」。
 
 ## 配置界面
@@ -34,7 +35,9 @@
 
 改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。漏了 `check` 的包以它自己 `scripts` 里的那几条为准。
 
-跨文件的台账（包名与目录名、`engines.dsh` 与全部 `dsh-*` 同串、cordis / schemastery 基线、许可声明位、`files` 与 bundle patch 指得到、插件 README 三段、根 README 与目录互相覆盖、preset order 台账、开发副本还是不是软链）由 `node tools/assert-ledger.mjs` 一次查完——`check` 只管包内，看不见这些。
+跨文件的台账（包名与目录名、`engines.dsh` 与全部 `dsh-*` 同串、cordis / schemastery 基线、手工写死的内核版本字面量、许可声明位、`files` 与 bundle patch 指得到、插件 README 三段、根 README 与目录互相覆盖、preset order 台账、开发副本还是不是软链、preset 抄本与内核同版本）由 `node tools/assert-ledger.mjs` 一次查完——`check` 只管包内，看不见这些。
+
+**仓库级一次跑齐**：`node tools/check.mjs` 跑「台账 + 每个包自己的 `check`」，CI（[.github/workflows/check.yml](../../.github/workflows/check.yml)）跑的就是它。它不替你在包的目录里 `pnpm install`——缺依赖会明说并回退出码 2，别把「没跑」当成「通过」。
 
 ### 证明断言有牙齿（变异测试）
 
@@ -51,7 +54,13 @@
 
 改完就跑有闸门兜着：`.githooks/pre-commit` 只看本次改动的包，逐个在包目录跑它自己的 `check`（没有 `check` 脚本的包会明说并跳过），另外只要改到 `plugins/`、`presets/`、根 `README.md`、`docs/rules/` 或 `tools/` 就跑一遍 `tools/assert-ledger.mjs`。装法（`git config core.hooksPath .githooks`）、跳法（`SKIP_CHECK=1 git commit`）与成功 / 失败各打什么，都写在该文件头部。
 
-闸门是这仓库唯一的自动门禁（没有 CI），所以它自己坏了代价最大，改完必须验收一次：走一次**真实提交**，成功路径打出 `pre-commit: 通过（<包名>）`；再确认它真的装着——`git config --get core.hooksPath` 应回 `.githooks`（这条配置不进版本库，新克隆默认没有闸门）。`SKIP_CHECK=1` 只在确实跑不了时用；「检查全过的提交反而被钩子拦住」是钩子自己的 bug，去修钩子。
+闸门自己坏了代价最大，改完必须验收一次：走一次**真实提交**，成功路径打出 `pre-commit: 通过（<包名>）`；再确认它真的装着——`git config --get core.hooksPath` 应回 `.githooks`（这条配置不进版本库，新克隆默认没有闸门）。`SKIP_CHECK=1` 只在确实跑不了时用；「检查全过的提交反而被钩子拦住」是钩子自己的 bug，去修钩子。
+
+### 仓库级 check 与 CI（`tools/check.mjs`、`.github/workflows/check.yml`）
+
+本机钩子的两道短板它都补上：钩子只看本次改动的包，且只有装了钩子的机器才有。`node tools/check.mjs` 在仓库根一次跑「台账 + 全部包的 `check`」；CI 在每个有依赖的包目录 `pnpm install --frozen-lockfile` 之后跑同一个脚本，所以「换台机器能不能过」有一份可复现的答案。
+
+两件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 与 `tools/probes/` 里要真内核的探针只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收。
 
 ### 类型检查
 

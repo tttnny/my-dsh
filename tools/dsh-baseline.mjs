@@ -12,13 +12,15 @@
  *
  * 用法：
  *   node tools/dsh-baseline.mjs                        # 干跑：列出每个包要改的字段
- *   node tools/dsh-baseline.mjs --dsh 0.2.1-alpha.3
+ *   node tools/dsh-baseline.mjs --dsh <版本>
  *   node tools/dsh-baseline.mjs --write                # 落盘 + 在改动的包里跑 pnpm install
  *   node tools/dsh-baseline.mjs --write --bump patch   # 顺带把版本号加一位
  *   node tools/dsh-baseline.mjs --only dsh-a6api       # 只动一个包
- * 退出码：0 已对齐或改写成功，1 有包改写失败，2 跑不起来。
+ *   node tools/dsh-baseline.mjs --check                # 门禁：全部对齐才回 0（不落盘）
+ * 退出码：0 已对齐或改写成功，1 有包改写失败或有包没跟上，2 跑不起来。
  */
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { currentKernel, kernelBaselines, listPackages, repoRoot, writeJson } from './lib/repo.mjs';
@@ -43,12 +45,31 @@ function bumpVersion(version, kind) {
   return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
 }
 
+/** 声明了依赖的包才值得跑 `pnpm install`；没有依赖的包跑它只会留下一个空 lock。 */
+function hasDependencies(pkg) {
+  return ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
+    .some((field) => Object.keys(pkg[field] ?? {}).length > 0);
+}
+
+/** lock 里每个 importer 都是空映射——`pnpm install` 在无依赖目录里留下的就是这种空壳。 */
+function isEmptyLock(path) {
+  if (!existsSync(path)) return false;
+  const importers = readFileSync(path, 'utf8').split('importers:')[1];
+  if (importers === undefined || /^\s{2}\S/m.test(importers) === false) return false;
+  return importers.split('\n').every((line) => !/^\s{2}\S/.test(line) || /^\s{2}\S+: \{\}\s*$/.test(line));
+}
+
 const args = parseArgs(process.argv.slice(2));
 const root = repoRoot(resolve(join(import.meta.dirname, '..')));
 const write = args.write === true;
+const check = args.check === true;
 const bump = typeof args.bump === 'string' ? args.bump : undefined;
 if (bump !== undefined && !['patch', 'minor', 'major'].includes(bump)) {
   console.error(`dsh-baseline: --bump 只认 patch / minor / major（给的是 ${bump}）`);
+  process.exit(2);
+}
+if (write && check) {
+  console.error('dsh-baseline: --write 与 --check 互斥');
   process.exit(2);
 }
 
@@ -119,6 +140,26 @@ for (const item of plans) {
   for (const change of changes) console.log(`  ${change.path}: ${change.from ?? '（缺）'} -> ${change.to}`);
 }
 
+/** 没有依赖声明的包目录里不该有 lock（`pnpm install` 只会留个空壳）；返回这些包。 */
+function emptyLocks() {
+  return packages
+    .filter((entry) => !hasDependencies(entry.pkg) && isEmptyLock(join(entry.dir, 'pnpm-lock.yaml')))
+    .map((entry) => entry.rel);
+}
+
+if (check) {
+  const locks = emptyLocks();
+  for (const rel of locks) console.error(`dsh-baseline: ${rel}/pnpm-lock.yaml 是空 lock——没有依赖的包不入库 lock，删掉它`);
+  if (touched.length === 0 && locks.length === 0) {
+    console.log('\ndsh-baseline: --check 通过，全部包已对齐');
+    process.exit(0);
+  }
+  console.error(`\ndsh-baseline: --check 不通过——${touched.length} 个包要改${locks.length === 0 ? '' : `，${locks.length} 个空 lock 要删`}；落盘跑 node tools/dsh-baseline.mjs --write --bump patch`);
+  process.exit(1);
+}
+if (emptyLocks().length > 0 && !write) {
+  console.log('\ndsh-baseline: 提示——没有依赖的包目录里有空 lock，跑 --write 会顺手删掉');
+}
 if (touched.length === 0 && !write) {
   console.log('\ndsh-baseline: 全部包已对齐，没有要改的');
   process.exit(0);
@@ -135,6 +176,18 @@ for (const item of plans) {
   apply(entry.pkg, changes);
   if (bump !== undefined) entry.pkg.version = bumpVersion(entry.pkg.version, bump);
   writeJson(entry.pkgPath, entry.pkg);
+  const lockPath = join(entry.dir, 'pnpm-lock.yaml');
+  if (!hasDependencies(entry.pkg)) {
+    // 没有依赖的包（两个 preset）不该有 lock：跑 install 只会生成一个空壳，还得再删一次；
+    // 顺手清掉上一轮留下的那一份。
+    if (existsSync(lockPath)) {
+      rmSync(lockPath);
+      console.log(`\ndsh-baseline: ${entry.rel} 已改写（没有依赖声明，跳过 pnpm install，删掉空 lock）`);
+    } else {
+      console.log(`\ndsh-baseline: ${entry.rel} 已改写（没有依赖声明，跳过 pnpm install）`);
+    }
+    continue;
+  }
   console.log(`\ndsh-baseline: ${entry.rel} 已改写，跑 pnpm install`);
   try {
     execFileSync('pnpm', ['install'], { cwd: entry.dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

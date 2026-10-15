@@ -25,7 +25,8 @@ DSH 源码已拉取到本地 `/Users/tny/Desktop/work/other/deepseek-harness`；
 | 插件配置界面放哪、key 怎么来、静默失败 | `docs/rules/plugin-config-page.md` |
 | `presets/` | `docs/rules/presets.md` |
 | 根 `README.md` 的骨架与插件表 | `docs/rules/to-readme.md` |
-| 跑 / 改仓库级工具：台账、新插件骨架、内核基线跟进、宿主冒烟、界面截图、开发副本 | `tools/README.md` |
+| 跑 / 改仓库级工具：台账、仓库级 check、新插件骨架、内核基线跟进、内核差异、宿主冒烟、界面截图、开发副本 | `tools/README.md` |
+| 内核升版后一次改齐声明、把手工写死的版本跟齐、看两个内核之间改了什么 | `docs/rules/plugins.md`「版本与依赖」、`node tools/kernel-diff.mjs <旧版本>` |
 | issue 与 wayfinder 票务、triage label、领域文档消费规则 | 见下方 `## Agent skills` |
 
 ## Agent skills

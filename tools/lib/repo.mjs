@@ -203,6 +203,22 @@ export function dshHome() {
 }
 
 /**
+ * 内核自带的官方 preset 目录（`@deepseek-ai/dsh-web-app/presets/`）。
+ * 自有 preset 的抄本要与这里的同名文件对齐，所以每个 agent 都要找一次这条路径。
+ * @param {{dir: string}} kernel - 内核安装树。
+ * @returns {string|undefined} 目录路径；这台机器没装 web-app 时返回 undefined。
+ */
+export function kernelPresetsDir(kernel) {
+  const store = join(kernel.dir, 'node_modules/.pnpm');
+  if (!existsSync(store)) return undefined;
+  for (const entry of readdirSync(store).filter((name) => name.startsWith('@deepseek-ai+dsh-web-app@'))) {
+    const dir = join(store, entry, 'node_modules/@deepseek-ai/dsh-web-app/presets');
+    if (existsSync(dir)) return dir;
+  }
+  return undefined;
+}
+
+/**
  * 一个 DSH 主目录里的 profile。
  * @param {string} [home] - DSH 主目录，默认 `dshHome()`。
  * @returns {Array<{name: string, dir: string, pkgPath: string, pkg: any}>} 带 package.json 的 profile。

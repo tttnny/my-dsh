@@ -59,7 +59,9 @@ dsh plugin --profile web add ./presets/minimal-fs
 
 ## 验证
 
-**组合解析（必跑）**——把本目录的 patch 叠到 web profile 上，看它能否进组合树：
+`pnpm check` 一次跑两条：patch 的组合解析，以及 [真装载探针](../../tools/probes/minimal-fs.mjs)——后者用**真实内核包**（真 cordis `Context`、真 `ToolRuntime`、真 `SystemPrompt`、真 `dsh-tool-fs`）把本 preset 的 `tool-fs` config 与过滤行各装配一遍，断言 `read` / `write` / `edit` 在、`read_image` 与 `grilling_form` 不在，并各带一条对照。探针从已装内核取实现，也可以 `--kernel <内核安装树>` 点名一份；没装内核的机器（CI）它会明说并跳过。
+
+**组合解析**——把本目录的 patch 叠到 web profile 上，看它能否进组合树：
 
 ```bash
 node "<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js" \
@@ -85,13 +87,13 @@ for raw in sys.stdin:
 "
 ```
 
-期望输出 `['edit', 'read', 'write']`——`bash` / `pwsh` 不出现，`read_image` 也不出现。UI 的「工具」面板只反映装配期的定义解析，不等于模型实际收到的目录——**以会话日志为准**。
+期望输出 `['edit', 'read', 'write']`——`bash` / `pwsh` 不出现，`read_image` 也不出现。UI 的「工具」面板只反映装配期的定义解析，不等于模型实际收到的目录——**以会话日志为准**。探针证明的是装配结果；这一段证明的是模型真的只收到那三个。
 
 **适配实测记录（0.2.1-alpha.4，2026-10-15）**
 
-- **组合解析**：`node "<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js" --profile web --patch presets/minimal-fs/minimal-fs.patch.yml --dump-config` exit 0，组合树里 `preset-minimal-fs` 行带着 `persona` / `tool-fs` / `tool-filter` 三行，`tool-fs` 的 config 是 `read: true` / `readImage: false` / `write: true` / `edit: true`。
+- **组合解析**：`pnpm check` 里的 `preset-compose.mjs minimal-fs` 报 ok（组合 3 行，order 5），组合树里 `preset-minimal-fs` 行带着 `persona` / `tool-fs` / `tool-filter` 三行，`tool-fs` 的 config 是 `read: true` / `readImage: false` / `write: true` / `edit: true`。
 - **导出解析**：在 profile 目录里 `import('@lynn123411/dsh-preset-minimal-fs/tool-filter')` 成功，`inject` 为 `['systemPrompt']`。
-- **真装载**（真 0.2.1-alpha.4 的 cordis `Context` + `ToolRuntime` + `SystemPrompt` + `dsh-tool-fs`，`attachments` 已挂载；带三组对照）：
+- **真装载**：`node tools/probes/minimal-fs.mjs` 6/6 通过（跑在已装内核那版的实现上；带三组对照）：
   - 本 preset 那份 config 注册出 `read` / `write` / `edit`，`read_image` 取不到；
   - 对照一（同 config 只把 `readImage` 改回 true）：`read_image` 注册得上——上面的负例不是「这个上下文根本注册不了」；
   - 对照二（`read: false` / `write: false` / `edit: false`，`readImage: true`）：三个文件工具都取不到、`read_image` 在——四个开关各管各的；

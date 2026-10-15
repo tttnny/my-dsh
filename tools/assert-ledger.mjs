@@ -12,27 +12,55 @@
  *   7. 根 `README.md` 与包目录互相覆盖（都指向对方，且没有指向不存在目录的链接）
  *   8. `docs/rules/presets.md` 的 order 台账与各 preset 的 `<id>.patch.yml` 一致
  *   9. 本机开发副本是软链、指向本仓库、版本号与仓库一致（没装开发副本的机器跳过这一项）
+ *  10. 规则面（`README.md`、DETAILS 以外的 `.md`、`.patch.yml`、`.mjs` / `.js` / `.ts`）里的内核
+ *      版本字面量与本包 `engines.dsh` 同串；历史实测记录（`DETAILS.md`）与 vendored 内容不查
+ *  11. 抄自官方 preset 的 `<id>.patch.yml` 与已装内核的官方同名文件逐行一致，只放行已登记的差异
  *
  * 判据来自 docs/rules/plugins.md、release.md、presets.md、to-readme.md 与 AGENTS.md；
  * 改了那些约定就同步改这里，两边是同一件事的两个位置，不允许只改一边。
  *
- * 用法：node tools/assert-ledger.mjs [--quiet]
+ * 用法：node tools/assert-ledger.mjs [--quiet] [--dsh <版本>]
  * 退出码：0 全部一致，1 有漂移（逐条打印文件与修法）。
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import {
+  currentKernel,
   declaredRanges,
   devCopyState,
   dshHome,
+  kernelPresetsDir,
   listPackages,
   profiles,
   repoRoot,
 } from './lib/repo.mjs';
 
+/** 逐个解析 `--k v` 与 `--flag`。 */
+function parseArgs(argv) {
+  const out = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const key = argv[i];
+    if (!key.startsWith('--')) continue;
+    const next = argv[i + 1];
+    out[key.slice(2)] = next === undefined || next.startsWith('--') ? true : ((i += 1), next);
+  }
+  return out;
+}
+
+/** 把一段文本按行归一，逐行比对；返回两边都还有内容的第一处差异。 */
+function firstDifference(a, b) {
+  const linesA = a.split('\n');
+  const linesB = b.split('\n');
+  for (let i = 0; i < Math.max(linesA.length, linesB.length); i += 1) {
+    if (linesA[i] !== linesB[i]) return { line: i + 1, expected: linesA[i] ?? '（文件在这里结束）', actual: linesB[i] ?? '（文件在这里结束）' };
+  }
+  return undefined;
+}
+
+const args = parseArgs(process.argv.slice(2));
 const root = repoRoot(resolve(join(import.meta.dirname, '..')));
-const quiet = process.argv.includes('--quiet');
+const quiet = args.quiet === true;
 
 /** 逐条收集发现，最后一起打印：一次提交要把该修的看全，不要修一条跑一次。 */
 const findings = [];
@@ -264,8 +292,118 @@ for (const profile of localProfiles) {
   }
 }
 
+// ── 10. 内核版本字面量 ───────────────────────────────────────────────────────
+// 硬钉内核版本的地方除了 package.json 的声明，还有自检断言、脚本注释与文档里的版本标注。
+// 查的是「规则面」：README、非 DETAILS 的 .md、.patch.yml 与脚本；历史实测记录与 vendored
+// 内容天然记着当时的版本号，不查（范围与理由见 docs/rules/plugins.md「版本与依赖」）。
+//
+// 两条收窄，避免把无关的版本号当漂移：一行里要有「内核 / dsh / engines」这类语境词，版本号
+// 前面不能紧跟字母与 `.-/:`（排除 `127.0.0.1`、`1e0.1.7`、`transform 1.21.21-1.79` 这类）。
+const NUMBER_LITERAL = /(^|[^\w./:-])(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/g;
+const KERNEL_CONTEXT = /内核|[dD][sS][hH]|engines/;
+const LITERAL_IGNORED_DIRS = new Set(['.git', 'node_modules', 'lib', 'dist', 'tmp', 'skills', 'upstream']);
+const LITERAL_IGNORED_FILES = new Set(['pnpm-lock.yaml', 'upstream-lock.json']);
+/** 展示命令行形状的英文注释：那里写的是「怎么调这个工具」，不是「现在是什么版本」。 */
+const literalExempt = new Map([
+  ['tools/dsh-env.mjs', '用法示例要给出 --dsh <版本> 的形状，不是现状声明'],
+  ['tools/dsh-baseline.mjs', '同上'],
+]);
+/** 列出包目录里所有要查版本字面量的文件（相对仓库根的路径）。 */
+function literalFiles(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.') || LITERAL_IGNORED_DIRS.has(entry.name) || LITERAL_IGNORED_FILES.has(entry.name)) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...literalFiles(path));
+      continue;
+    }
+    if (/\.(md|mjs|js|ts|tsx|jsx|yml|yaml)$/.test(entry.name) && !entry.name.startsWith('DETAILS')) out.push(path);
+  }
+  return out;
+}
+for (const entry of packages) {
+  const engine = entry.pkg.engines?.dsh;
+  if (typeof engine !== 'string' || !/^>=/.test(engine)) continue;
+  const expected = engine.slice(2);
+  for (const path of literalFiles(entry.dir)) {
+    const repoPath = rel(path);
+    if (literalExempt.has(repoPath)) continue;
+    for (const [index, line] of readFileSync(path, 'utf8').split('\n').entries()) {
+      if (!KERNEL_CONTEXT.test(line)) continue;
+      for (const match of line.matchAll(NUMBER_LITERAL)) {
+        if (match[2] === expected) continue;
+        fail(
+          `${repoPath}:${index + 1}`,
+          `写着内核版本 ${match[2]}，本包 engines.dsh 是 ${engine}——冒烟与自检都要跟到当前内核；历史实测记录写进 DETAILS.md，那里不查`,
+        );
+      }
+    }
+  }
+}
+
+// ── 11. 抄自官方 preset 的抄本与内核同版本 ────────────────────────────────────
+// 官方 `presets/*.patch.yml` 每一版都会动，抄本落后不报错、只静默与官方不一致（见
+// docs/rules/presets.md「版本与依赖」）。这里把它变成提交时就要过的门禁：逐行比对，
+// 只放行登记在 lib/preset-copies.json 里的那几处。
+const copiesPath = join(root, 'tools/lib/preset-copies.json');
+if (!existsSync(copiesPath)) {
+  fail('tools/lib/preset-copies.json', '缺这份抄本登记表：每个抄自官方 preset 的 <id>.patch.yml 都要登记');
+} else {
+  const copies = JSON.parse(readFileSync(copiesPath, 'utf8')).copies ?? [];
+  const known = new Set(copies.map((copy) => copy.id));
+  for (const entry of presetPackages) {
+    const id = entry.rel.split('/')[1];
+    if (!known.has(id)) {
+      fail('tools/lib/preset-copies.json', `presets/${id} 没有登记——抄自官方就登记，自己写的把 official 写成 null`);
+    }
+  }
+  let kernel;
+  try {
+    kernel = currentKernel(typeof args.dsh === 'string' ? args.dsh : undefined);
+  } catch (error) {
+    // 没装内核的机器（CI）跳过这一条：抄本比对的对象就在内核里。
+    if (!quiet) console.log(`assert-ledger: 跳过抄本比对（${error.message}）`);
+  }
+  if (kernel !== undefined) {
+    const presetsDir = kernelPresetsDir(kernel);
+    if (presetsDir === undefined) {
+      fail('（抄本）', `内核 ${kernel.version} 里没有 @deepseek-ai/dsh-web-app，抄本无从比对`);
+    }
+    for (const copy of copies) {
+      if (copy.official === null) continue;
+      const officialPath = join(presetsDir, `${copy.official}.patch.yml`);
+      const localPath = join(root, 'presets', copy.id, `${copy.id}.patch.yml`);
+      if (!existsSync(officialPath)) {
+        fail(`presets/${copy.id}/${copy.id}.patch.yml`, `内核 ${kernel.version} 里没有官方 ${copy.official}.patch.yml`);
+        continue;
+      }
+      if (!existsSync(localPath)) {
+        fail(`presets/${copy.id}`, `登记表里有这个抄本，但 ${copy.id}.patch.yml 不在目录里`);
+        continue;
+      }
+      const normalize = (text, renames) => text
+        .split('\n')
+        .filter((line) => line.trim() !== '' && !/^\s*#/.test(line) && !copy.dropLines.some((pattern) => new RegExp(pattern).test(line)))
+        .map((line) => renames.reduce((out, [pattern, replacement]) => out.replace(new RegExp(pattern), replacement), line))
+        .filter((line) => line.trim() !== '' && !/^\s*#/.test(line))
+        .join('\n')
+        .trim();
+      const official = normalize(readFileSync(officialPath, 'utf8'), []);
+      const local = normalize(readFileSync(localPath, 'utf8'), copy.renames.map(({ pattern, replacement }) => [pattern, replacement]));
+      const diff = firstDifference(official, local);
+      if (diff !== undefined) {
+        fail(
+          `presets/${copy.id}/${copy.id}.patch.yml`,
+          `与内核 ${kernel.version} 的官方 ${copy.official}.patch.yml 不一致（归一后第 ${diff.line} 行）\n      官方：${diff.expected}\n      抄本：${diff.actual}\n      官方动了就重抄；确实要保留的差异登记到 tools/lib/preset-copies.json`,
+        );
+      }
+    }
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────────
-const checks = 9;
+const checks = 11;
 if (findings.length === 0) {
   if (!quiet) {
     console.log(`assert-ledger: ok（${packages.length} 个包，${checks} 项判据；开发副本 ${localProfiles.length} 个 profile）`);

@@ -46,7 +46,15 @@ preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle
 - **真装载**：`node tools/host-smoke.mjs` 起一个第二实例，判本仓 bundle 全部解析到、首页 200、客户端 bundle 取得到、启动日志无装载异常。装进 profile 的命令见「安装与启用」。
 - **工具目录**：以会话日志里真正发给模型的数组为准——日志是 `session.v4.jsonl.zstd`，读 `request/header` 事件的 `data.header.tools`。UI 的「工具」面板只反映装配期的定义解析，不等于该数组。
 
-随包带**第三方内容**（vendored `skills/` 等）的 preset 另配一份 `upstream-lock.json`（钉住的 commit ＋ 逐目录树哈希）与检查脚本：离线查形态与完整性、在线查上游漂移，同步后 `--write` 重钉。范例与哈希配方见 `presets/plugin-upgrade-cordis/`，它的 `check` 就是离线那一条。
+随包带**第三方内容**（vendored `skills/` 等）的 preset 另配一份 `upstream-lock.json`（钉住的 commit ＋ 逐目录树哈希）与检查脚本：离线查形态与完整性、在线查上游漂移，同步后 `--write` 重钉。范例与哈希配方见 `presets/plugin-upgrade-cordis/`。
+
+preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂上游那一条：`plugin-upgrade-cordis` 的 `check` 是「上游离线核对 + 组合解析」，`minimal-fs` 的 `check` 是「组合解析 + [真装载探针](../../tools/probes/minimal-fs.mjs)」。真装载要起第二个实例（`tools/host-smoke.mjs`）或跑真内核的探针，只在装了 DSH 的机器上有意义：本机验收要跑，CI（`node tools/check.mjs`）跑不了。
+
+## 抄本基线
+
+抄自官方 `@deepseek-ai/dsh-web-app/presets/<官方 id>.patch.yml` 的 `<id>.patch.yml`，必须与**已装内核**里那一份同版本：官方每一版都会动，抄本落后不报错、只静默与官方不一致，唯一会当场炸的是引用了已被删掉的提示词变量（如 `0.2.0-rc.2` 删掉的 `{{cwd}}`：变量严格解析，抛错即整轮请求失败）。官方动了就按该 preset 的 `UPSTREAM.md` 重抄。
+
+「抄的是哪一个、保留哪些差异」登记在 `tools/lib/preset-copies.json`。没登记会红；已登记的差异之外还有一行不一致，也红。比对的对象是已装内核自带的官方文件，所以它跟着内核走——官方目录在哪由 `node tools/dsh-env.mjs` 打出。自己写的、不抄官方的 preset，`official` 写 `null`，只登记「为什么不算抄本」。
 
 ## order 台账
 

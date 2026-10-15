@@ -7,17 +7,18 @@
  * 这里把它变成一次查询。
  *
  * 用法：
- *   node tools/dsh-env.mjs                     # 人读的一行一项
- *   node tools/dsh-env.mjs --dsh 0.2.1-alpha.3 # 指定内核版本（默认取已装最高版本）
- *   node tools/dsh-env.mjs --json              # 机器读
+ *   node tools/dsh-env.mjs            # 人读的一行一项
+ *   node tools/dsh-env.mjs --dsh <版本> # 指定内核版本（默认取已装最高版本）
+ *   node tools/dsh-env.mjs --json     # 机器读
  */
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import {
   currentKernel,
   dshHome,
   kernelBaselines,
+  kernelPresetsDir,
   launcherDir,
   profiles,
   repoRoot,
@@ -55,6 +56,9 @@ const report = {
   kernelVersion: kernel.version,
   kernelDir: kernel.dir,
   kernelPkg: join(kernel.dir, 'node_modules/@deepseek-ai/dsh/package.json'),
+  kernelReal: realpathSync(join(kernel.dir, 'node_modules/@deepseek-ai/dsh')),
+  kernelStore: join(kernel.dir, 'node_modules/.pnpm'),
+  kernelPresetsDir: kernelPresetsDir(kernel) ?? null,
   dshBin: kernel.bin,
   dshBinExists: existsSync(kernel.bin),
   baselines,
@@ -70,6 +74,9 @@ if (args.json === true) {
     ['DSH_HOME', report.dshHome],
     ['profile', `${report.profile}${report.profileExists ? '' : '（不存在）'} → ${report.profileDir}`],
     ['内核', `${report.kernelVersion}（${report.kernelDir}）`],
+    ['内核实现', report.kernelReal],
+    ['内核包仓', report.kernelStore],
+    ['官方 preset', report.kernelPresetsDir ?? '（这台机器没装 @deepseek-ai/dsh-web-app）'],
     ['dsh 二进制', `${report.dshBin}${report.dshBinExists ? '' : '（不存在）'}`],
     ['内核对齐目标', `engines.dsh >=${report.baselines.dsh} · cordis ${report.baselines.cordis ?? '（内核未声明）'} · schemastery ${report.baselines.schemastery ?? '（内核未声明）'}`],
     ['启动器', report.launcherDir ?? '（找不到）'],

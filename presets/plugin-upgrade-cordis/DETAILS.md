@@ -97,7 +97,9 @@ dsh plugin --profile web add ./presets/plugin-upgrade-cordis
 
 ## 验证
 
-**组合解析（必跑）**——把本目录的 patch 叠到 web profile 上：
+`pnpm check` 一次跑两道门禁：随包技能的完整性与形态（离线）、本 patch 的组合解析。跨文件的第三道——**抄本与已装内核的官方 `cordis.patch.yml` 逐行一致**——由 `node tools/assert-ledger.mjs` 判据 11 查（登记表在 `tools/lib/preset-copies.json`，只放行顶部注释、行 id 与显示名、`order`、`skill-filesystem` 多一条自定义技能根这四处），官方动了它就红，不必再手工 `diff`。
+
+**组合解析**——把本目录的 patch 叠到 web profile 上：
 
 ```bash
 node "<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js" \
@@ -130,7 +132,7 @@ node presets/plugin-upgrade-cordis/check-upstream.mjs
 
 运行中的 DSH 升到 0.2.1-alpha.4 后按 [UPSTREAM.md](./UPSTREAM.md)「再抄官方 preset」重抄一遍。这版官方只动了一处，抄本已跟上：`config.plugins` 末尾新增 `tool-plugin-market` 行（`@deepseek-ai/dsh-plugin-market/tools`，与 `tool-plugin-manager` 同款 `disabled: !!js "!ctx.get('profileContext')"`）。
 
-- `diff -u <官方 cordis.patch.yml> plugin-upgrade-cordis.patch.yml`：只剩三处既定差异（顶部注释、行 id / 显示名 / `order`、`skill-filesystem` 多一个 custom root）。
+- `diff -u <官方 cordis.patch.yml> plugin-upgrade-cordis.patch.yml`：只剩三处既定差异（顶部注释、行 id / 显示名 / `order`、`skill-filesystem` 多一个 custom root）；这一条现在是自动门禁（`assert-ledger.mjs` 判据 11）。
 - `--dump-config` exit 0，组合树里 `preset-plugin-upgrade-cordis` 行与它的 `config.plugins` 齐全。
 - `check-upstream.mjs --verify` PASS（11 个技能的树哈希与锁一致），在线模式报 `identical`。
 - 提示词变量扫描仍只落在 `{{model}}`：0.2.1-alpha.4 的 `agent-loop` 也只注册 `model` 与 `provider` 两个变量。
