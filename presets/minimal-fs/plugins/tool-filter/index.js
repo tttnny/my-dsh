@@ -3,38 +3,22 @@
  *
  * `system-prompt/assemble` is the waterfall that produces the prompt an agent
  * sends, and its `assembly.tools` is the exact array of tool schemas the model
- * receives. Rewriting it here is the subtraction `@deepseek-ai/dsh-tool-fs`
- * does not offer: that package registers `read` / `write` / `edit` /
- * `read_image` together and has no per-tool switch.
+ * receives. Rewriting it here withdraws a tool this preset's scope inherited
+ * from a layer above it and cannot decline by omission.
  *
- * Two mechanisms that look right and are not, both tried and measured on a
- * real session:
+ * `grilling_form` is that tool: `@lynn123411/dsh-grilling-form` registers it
+ * from its own bundle-layer row (the root `- id: tool-grilling-form` insert in
+ * the package's `cordis.patch.yml`, live once the package is in
+ * `dsh.profile.bundles`), so the GLOBAL layer hands it to every scope.
+ * Withholding it here is what keeps the catalog at the three file tools.
  *
- * - `ctx.tools.restrict({ allow })` masks the tools a scope INHERITS — the
- *   global layer and its ancestor layers — and never what the same scope
- *   registers itself. A preset's rows register into the preset's own scope, so
- *   there is nothing for it to subtract and `read_image` survives.
- * - Wrapping `ctx.tools.register` from a SIBLING row loses a race: the loader
- *   starts every row of one composition with
- *   `Promise.allSettled(config.map(...))`, so sibling `apply` bodies run
- *   concurrently and `read_image` is registered before the wrapper lands.
- *
- * The waterfall has neither problem. It runs per assembly, in this row's
- * scope, on the one array that matters — so the exclusion cannot be outrun and
- * does not depend on row order. The tool itself stays registered and callable
- * by anything that addresses it directly; what changes is the catalog the
- * model is shown.
+ * `read_image` needs no entry: `@deepseek-ai/dsh-tool-fs` selects each tool by
+ * its own config switch, and this preset's `tool-fs` row sets `readImage:
+ * false`, so the tool is never registered in the first place.
  *
  * Hiding a tool from the assembled catalog is the mechanism the tool package
  * itself already uses — it withholds `read_image` from a route whose model
- * declares no image input — so this is an intended seam, not a workaround.
- *
- * `grilling_form` is the second name in the list for the opposite reason:
- * `@lynn123411/dsh-grilling-form` registers it from its own bundle-layer row (the
- * root `- id: tool-grilling-form` insert in the package's `cordis.patch.yml`, live
- * once the package is in `dsh.profile.bundles`), so the GLOBAL layer hands it to
- * every scope and this preset cannot decline it by omission. Withholding it here is
- * what keeps the catalog at the three file tools.
+ * declares no image input — so this is an intended seam.
  *
  * The row is mounted as this package's `./tool-filter` export, not as a path
  * relative to the preset composition: a preset row's baseUrl is the profile
@@ -45,7 +29,7 @@
  */
 
 /** The tool names removed from every catalog assembled in this preset's scope. */
-const HIDDEN = ['read_image', 'grilling_form']
+const HIDDEN = ['grilling_form']
 
 /** The prompt registry is where the exclusion is enforced. */
 export const inject = ['systemPrompt']

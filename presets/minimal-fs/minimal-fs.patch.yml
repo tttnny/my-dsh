@@ -4,12 +4,12 @@
 # `description` are the preset's display metadata and `id` stays `minimal-fs`.
 #
 # A preset row is imported with the declaring tree's baseUrl. For a bundle patch
-# that baseUrl is the PROFILE directory — measured on 0.2.0-rc.2, a probe preset
-# row saw `file:///<DSH_HOME>/profiles/web/` — so the old relative
-# `./plugins/tool-filter/index.js` specifier would resolve under the profile and
-# never reach this package. The filter row therefore names this package's
-# `./tool-filter` export, which Node resolves from the profile's node_modules
-# once this bundle is installed. See README.md「安装与启用」.
+# that baseUrl is the PROFILE directory — a probe preset row observes
+# `file:///<DSH_HOME>/profiles/web/` — so a relative specifier such as
+# `./plugins/tool-filter/index.js` resolves under the profile and never reaches
+# this package. The filter row therefore names this package's `./tool-filter`
+# export, which Node resolves from the profile's node_modules once this bundle
+# is installed. See README.md「安装与启用」.
 - insert:
     - id: preset-minimal-fs
       name: '@deepseek-ai/dsh-agent-preset'
@@ -32,17 +32,23 @@
               includeRuntimeContext: false
 
           # ── filesystem ────────────────────────────────────────────────────
-          # Registers `read` / `write` / `edit` (and `read_image`, when the host
-          # mounts `attachments`) in this preset's scope. The `fs` service, its
-          # observation policy, the sandbox, approval and persistence stay in the
-          # host composition.
+          # Registers exactly `read` / `write` / `edit` in this preset's scope.
+          # `@deepseek-ai/dsh-tool-fs` selects each tool through its own config
+          # switch, so `read_image` is never registered here; the `fs` service,
+          # its observation policy, the sandbox, approval and persistence stay
+          # in the host composition.
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: false
+              write: true
+              edit: true
 
           # ── catalog narrowing ─────────────────────────────────────────────
-          # `@deepseek-ai/dsh-tool-fs` has no per-tool switch, so `read_image` is
-          # removed from the assembled catalog by the `system-prompt/assemble`
-          # waterfall inside this row. The specifier is this package's
-          # `./tool-filter` export.
+          # Withdraws `grilling_form` from the catalog assembled in this preset's
+          # scope. That tool is registered by a root-layer row of another bundle,
+          # so this scope inherits it and cannot decline it by omission. The
+          # specifier is this package's `./tool-filter` export.
           - id: tool-filter
             name: '@lynn123411/dsh-preset-minimal-fs/tool-filter'

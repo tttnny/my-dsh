@@ -1,6 +1,6 @@
 # minimal-fs — 极简文件测试模式
 
-> 官方 `minimal`（极简模式）的**身份**，并入文件工具三件套（`read` / `write` / `edit`）——**没有 shell**。工具目录就是这三行：没有 `bash` / `pwsh`、没有 `glob` / `grep`、没有 `read_image`、没有 skill / 计划 / 目标 / 子代理 / 网页，也没有 `grilling_form`（由 `@lynn123411/dsh-grilling-form` 包内根层行注册，本 preset 的 `tool-filter` 行把它一并移出模型可见目录）。专门用来做**模型能力对照测试**——排除一切命令执行与工具编排的便利，只看模型靠「读文件 + 写文件」能走多远。
+> 官方 `minimal`（极简模式）的**身份**，并入文件工具三件套（`read` / `write` / `edit`）——**没有 shell**。工具目录就是这三行：没有 `bash` / `pwsh`、没有 `glob` / `grep`、没有 `read_image`（`tool-fs` 行的 `readImage: false` 让它根本不注册）、没有 skill / 计划 / 目标 / 子代理 / 网页，也没有 `grilling_form`（由 `@lynn123411/dsh-grilling-form` 包内根层行注册，本 preset 的 `tool-filter` 行把它移出模型可见目录）。专门用来做**模型能力对照测试**——排除一切命令执行与工具编排的便利，只看模型靠「读文件 + 写文件」能走多远。
 
 ## 与官方极简模式的异同
 
@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | persona | `prefix` 即完整系统提示词（`complete: true`）、关闭运行时快照 | **逐字相同** |
 | shell | 持久 shell（`bash`，Windows 下 `pwsh`） | **整组不含**（PTY 服务、终端后端与工具行都没有） |
-| 文件工具 | 无（宿主那条 `tool-fs` 行被 web 层禁用） | `read` / `write` / `edit`（`read_image` 已移出模型可见目录） |
+| 文件工具 | 只有 `read_image`（`read` / `write` / `edit` 关掉） | `read` / `write` / `edit`（`readImage: false`，`read_image` 不注册） |
 | 上下文压缩 | 无 | 无 |
 | 指令文件（`AGENTS.md`） | 不加载 | 不加载 |
 
@@ -34,19 +34,15 @@ minimal-fs/
 
 **过滤行为什么写成包内子路径 `@lynn123411/dsh-preset-minimal-fs/tool-filter`**：preset 行由声明它那棵树按该树的 `baseUrl` 导入。bundle patch 的行整体合入 profile 的根 include，所以这个 `baseUrl` 是 **profile 目录**，不是本 preset 目录——实测一条探针 preset 行看到的 `baseUrl` 是 `file:///<DSH_HOME>/profiles/web/`。因此 `./plugins/tool-filter/index.js` 这种相对写法会落到 profile 下、永远够不到本目录；改用本包的 `exports` 子路径后，Node 从 profile 的 `node_modules`（即装进去的这份 bundle）解析到同一个文件。
 
-## 为什么过滤点在 `system-prompt/assemble`
+## 目录收窄
 
-`@deepseek-ai/dsh-tool-fs` 一个包同时注册 `read` / `write` / `edit` / `read_image`，**没有逐工具开关**。下面几条路都试过、都不成立：
+`read_image` 不需要过滤：`@deepseek-ai/dsh-tool-fs` 按每个工具自己的开关装配，本 preset 的 `tool-fs` 行写 `readImage: false`，这个工具**根本不注册**。
 
-- **`ctx.tools.restrict({ allow })`**：它筛的是**本 scope 继承来的**工具（全局层与祖先层），源码明确写了「never what its OWN layer registers」。preset 的模型可见行注册进的正是 preset 自己这一层，没有「继承来的工具」给它减 → `read_image` 原样留下。
-- **兄弟行包 `ctx.tools.register`**：loader 用 `Promise.allSettled(config.map(...))` **并发**启动同一组合的所有行，所以「谁先 apply」是竞态；`dsh-tool-fs` 的 `read`/`write`/`edit` 在它 `apply` 里同步注册，过滤器落地时它已经注册完了 → 仍然留下。
-- **旧的相对路径行**：preset 目录形态下成立（挂载把 baseUrl 改到组合目录），新形态下 `baseUrl` 是 profile 目录，相对行必挂（见上节）。
+要过滤的是 `grilling_form`。它由 `@lynn123411/dsh-grilling-form` 包内 `cordis.patch.yml` 的**根层行**注册（随该包进 `dsh.profile.bundles` 生效，见该插件 README「安装」），注册进**全局层**、被每个 scope 继承——本 preset 靠「不声明就没有」是拿不到的，所以在名单里写下它，模型可见目录才回到这三件套。
 
-可用的落点是 `system-prompt/assemble` 这个 waterfall：它的 `assembly.tools` **就是模型最终收到的工具 schema 数组**（见 `PromptAssembly` 类型），返回的 assembly 是权威值。`plugins/tool-filter/index.js` 在那里按名单过滤——per-assembly、在本 preset 的 scope 内、不依赖行顺序、不碰上游包、不需要解析裸包名。这也正是官方自己隐藏 `read_image` 的机制（路由模型不支持图片输入时它就从该数组里被拿掉），属于设计内的缝。
+过滤点是 `system-prompt/assemble` 这个 waterfall：它的 `assembly.tools` **就是模型最终收到的工具 schema 数组**（见 `PromptAssembly` 类型），返回的 assembly 是权威值。`plugins/tool-filter/index.js` 在那里按名单收窄——per-assembly、在本 preset 的 scope 内、不依赖行顺序、不碰上游包、不需要解析裸包名。
 
-过滤后 `read_image` 仍然注册在工具表里，只是**不出现在模型目录中**；直接点名调用它不会被过滤拦下，而这个 preset 的场景里没有别的调用方。
-
-名单里的第二个名字是 `grilling_form`：它由 `@lynn123411/dsh-grilling-form` 包内 `cordis.patch.yml` 的**根层行**注册（随该包进 `dsh.profile.bundles` 生效，见该插件 README「安装」），落进**全局层**、被每个 scope 继承，所以本 preset 靠「不声明就没有」是拿不到的——在名单里写下它，模型可见目录才回到这三件套。同样的道理：过滤只改模型目录，工具本身照旧注册，直接点名仍可调用。
+过滤只改模型目录：`grilling_form` 仍然注册在工具表里，直接点名调用它不会被拦下，而这个 preset 的场景里没有别的调用方。
 
 ## 安装与启用
 
@@ -90,15 +86,16 @@ for raw in sys.stdin:
 
 期望输出 `['edit', 'read', 'write']`——`bash` / `pwsh` 不出现，`read_image` 也不出现。UI 的「工具」面板只反映装配期的定义解析，不等于模型实际收到的目录——**以会话日志为准**。
 
-**适配实测记录（0.2.0-rc.2，2026-09-30）**——隔离 `DSH_HOME` 建一个 web profile，用上面的 `dsh plugin add` 装本目录，再叠一条探针宿主行：等 preset 挂载后对它的 scope 调 `systemPrompt.assemble({ scope })`，打印行状态与模型可见目录。实测结果：
+**适配实测记录（0.2.1-alpha.3，2026-10-15）**
 
-```
-PROBE_ROWS     ["persona=up","tool-fs=up","tool-filter=up"]
-PROBE_TOOLS    ["edit","read","write"]
-PROBE_SECTIONS [{"name":"deployment:persona-prefix","text":"You are a helpful software engineer assistant."}]
-PROBE_CONTEXTS []
-```
+- **组合解析**：`node "<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js" --profile web --patch presets/minimal-fs/minimal-fs.patch.yml --dump-config` exit 0，组合树里 `preset-minimal-fs` 行带着 `persona` / `tool-fs` / `tool-filter` 三行，`tool-fs` 的 config 是 `read: true` / `readImage: false` / `write: true` / `edit: true`。
+- **导出解析**：在 profile 目录里 `import('@lynn123411/dsh-preset-minimal-fs/tool-filter')` 成功，`inject` 为 `['systemPrompt']`。
+- **真装载**（真 0.2.1-alpha.3 的 cordis `Context` + `ToolRuntime` + `SystemPrompt` + `dsh-tool-fs`，`attachments` 已挂载；带三组对照）：
+  - 本 preset 那份 config 注册出 `read` / `write` / `edit`，`read_image` 取不到；
+  - 对照一（同 config 只把 `readImage` 改回 true）：`read_image` 注册得上——上面的负例不是「这个上下文根本注册不了」；
+  - 对照二（`read: false` / `write: false` / `edit: false`，`readImage: true`）：三个文件工具都取不到、`read_image` 在——四个开关各管各的；
+  - 过滤行进这个组合后，`systemPrompt.assemble({}).tools` 的名字是 `["edit","read","write"]`；装进去之前是 `["edit","grilling_form","read","write"]`，且过滤后 `grilling_form` 仍注册在工具表里（`ctx.tools.get` 取得到）。
 
-反向对照（同组合、只去掉 `tool-filter` 行）：模型可见目录变成 `["edit","read","read_image","write"]`——`read_image` 确实是这一行移除的，不是它根本没注册。三条行全 `up` 说明过滤行是作为本包 `./tool-filter` 导出被解析并激活的。
+本轮没有重跑真会话日志那条路：上面的模型可见目录来自真内核装配，不是在会话日志的 `request/header` 里读回来的。`read_image` 与 `grilling_form` 的那两条对照已经分别钉住各自的负例（缺了对照，「取不到」也可能只是这个上下文根本装配不了它）。
 
-其它同样值得确认的点：系统提示词只有 `You are a helpful software engineer assistant.` 一句，`AGENTS.md`、技能目录、运行时快照都不出现（`PROBE_CONTEXTS` 为空）。
+**提示词形状（凭 0.2.1-alpha.3 与 0.2.0-rc.2 的实现对比）**：`dsh-system-prompt` 与 `dsh-persona` 的实现逐字未变，唯一的差别是 `CONTEXT_ORDERS` 多了 `TEAM_IDENTITY`（125）、`HARNESS_SOURCE`（200）、`WEB_SURFACE`（210）三条。alpha.3 把「实现 checkout」与「Web GUI 地址」搬到了 `@deepseek-ai/dsh-harness-dev-context`，它在**根层**同时注册 `harness:source` 与 `app:web-surface` 两个**段落**和两条**运行时上下文**。这两样都被本 preset 的身份行挡在外面：`complete: true` 让 `assemble` 只留那一个段落，`includeRuntimeContext: false` 让上下文只剩 `required` 的条目——两者都不带 `required`。因此模型仍只收到 `You are a helpful software engineer assistant.` 一句，`AGENTS.md`、技能目录、运行时快照都不出现。这一段是读宿主实现得出的结论，本轮没有在真会话的提示词里复测。
