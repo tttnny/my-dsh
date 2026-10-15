@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-a6api",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "A6API 多模型聚合站接入插件：原生 LLM 提供商注册、账户实时余额与价格波动监控、Token 白名单同步、商户线路探测与全景指标卡片",
   "license": "MIT",
   "author": "lynn123411",
@@ -78,14 +78,14 @@
   },
   "engines": {
     "node": "^22.19 || >=24",
-    "dsh": ">=0.2.1-alpha.2"
+    "dsh": ">=0.2.1-alpha.3"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.5-alpha.1",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.1-alpha.2",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-alpha.2",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.1-alpha.2",
-    "@deepseek-ai/dsh-home-paths": ">=0.2.1-alpha.2",
+    "@deepseek-ai/cordis": "^4.0.5-alpha.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.1-alpha.3",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-alpha.3",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.1-alpha.3",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.1-alpha.3",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.18",
     "esbuild": "^0.25.0",
@@ -94,9 +94,9 @@
     "typescript": "^6.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.5-alpha.1",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-alpha.2",
-    "@deepseek-ai/dsh-home-paths": ">=0.2.1-alpha.2"
+    "@deepseek-ai/cordis": "^4.0.5-alpha.2",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-alpha.3",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.1-alpha.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
