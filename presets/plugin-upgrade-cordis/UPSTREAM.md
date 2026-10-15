@@ -28,7 +28,7 @@ node presets/plugin-upgrade-cordis/check-upstream.mjs --verify # 离线：本地
 
 exit 0 = 无需动作，1 = 该同步 / 本地漂了，2 = 问不到（网络、限流可设 `GITHUB_TOKEN`、提交被改写）。
 
-**版本卡缺口不属于同步问题**：目标 DSH 版本在上游没有对应卡时，同步也变不出卡来——那要用随包的 `dsh-upgrade-audit` 自己产证据（见 README.md「版本卡覆盖」）。
+**版本卡缺口不属于同步问题**：目标 DSH 版本在上游没有对应卡时，同步也变不出卡来——那要用随包的 `dsh-upgrade-audit` 自己产证据（见 [DETAILS.md](./DETAILS.md)「版本卡覆盖」）。
 
 ## 收录范围
 
@@ -72,11 +72,11 @@ node presets/$ID/check-upstream.mjs --verify
 1. `check-upstream.mjs --verify` PASS（= 11 个技能的树哈希与锁逐一对上，`skills/` 根无散 `.md`，每个 `SKILL.md` 的 `name` 等于目录名）；
 2. `diff -rq <上游>/skills/<n> presets/<id>/skills/<n>`（外加 `LICENSE`）逐目录全绿——第 1 条只证明「和锁一致」，这一条才证明「和上游一致」；
 3. `check-upstream.mjs` 在线模式报 `identical`（钉的提交就是当前上游该路径的状态）；
-4. **真实发现**：按 README.md「验证」第二条（真实 `FileSystemSkillProvider` + `customSkillDirs=[skills/]`）跑一遍，报 11 个候选、0 条警告；
+4. **真实发现**：按 [DETAILS.md](./DETAILS.md)「验证」第二条（真实 `FileSystemSkillProvider` + `customSkillDirs=[skills/]`）跑一遍，报 11 个候选、0 条警告；
 5. **组合仍能解析**：`--dump-config` exit 0 且出现 `preset-plugin-upgrade-cordis` 行；
-6. **真装载**：隔离 `DSH_HOME` boot 后在 `/` 菜单「技能」段看到 11 个技能（步骤见 README.md「验证」）。
+6. **真装载**：隔离 `DSH_HOME` boot 后在 `/` 菜单「技能」段看到 11 个技能（步骤见 [DETAILS.md](./DETAILS.md)「验证」）。
 
-上游 `skills/README.md` 的表若增删了技能，本 preset 的 `README.md`「随包技能」表、`package.json` 的 `description`、`upstream-lock.json`（`--write` 自动）一起改；内容变了就把 `package.json` 的 `version` 加一位。
+上游 `skills/README.md` 的表若增删了技能，本 preset 的 [DETAILS.md](./DETAILS.md)「随包技能」表、`package.json` 的 `description`、`upstream-lock.json`（`--write` 自动）一起改；内容变了就把 `package.json` 的 `version` 加一位。
 
 ## 再抄官方 preset
 
@@ -92,9 +92,9 @@ BASE=<DSH 安装>/node_modules/.pnpm/@deepseek-ai+dsh-web-app@<版本>_*/node_mo
    - `- id: preset-cordis` → `- id: preset-plugin-upgrade-cordis`，`config.id` → `plugin-upgrade-cordis`，加 `config.name` / `config.description`，`config.order` → 台账值（见 [docs/rules/presets.md](../../docs/rules/presets.md)「order 台账」）；
    - `skill-filesystem` 行的 `customSkillDirs`：在官方那条**之前**插本包的根（`createRequire(baseUrl).resolve('@lynn123411/dsh-preset-plugin-upgrade-cordis/package.json')` + `join(dir, 'skills')`），并保留说明注释。**顺序即优先级**；
 3. `diff -u "$BASE" plugin-upgrade-cordis.patch.yml` 复核：除上述三处外应当**没有别的差异**——这是唯一能证明「逐字保留」的检查；
-4. 扫一遍提示词变量：`grep -oE '\{\{[a-zA-Z_]+\}\}' plugin-upgrade-cordis.patch.yml | sort -u`，结果必须落在该版 `agent-loop` 注册的变量里（0.2.1-alpha.3 只有 `model` 与 `provider`）。引用了不存在的变量 → 每次请求都抛 `unknown prompt variable`，而 preset 照样可选；
+4. 扫一遍提示词变量：`grep -oE '\{\{[a-zA-Z_]+\}\}' plugin-upgrade-cordis.patch.yml | sort -u`，结果必须落在该版 `agent-loop` 注册的变量里（0.2.1-alpha.4 只有 `model` 与 `provider`）。引用了不存在的变量 → 每次请求都抛 `unknown prompt variable`，而 preset 照样可选；
 5. `--dump-config` exit 0，且组合树里出现 `preset-plugin-upgrade-cordis` 行；
-6. 更新 `package.json` 的 `engines.dsh` 与 `version`（加一位），更新 README.md 的「与官方创造模式的异同」与实测记录。
+6. 更新 `package.json` 的 `engines.dsh` 与 `version`（加一位），更新 [DETAILS.md](./DETAILS.md) 的「与官方创造模式的异同」与实测记录。
 
 `check-upstream.mjs` **不覆盖这一步**：它只管 `skills/`，与官方 preset 无关。
 
