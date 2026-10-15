@@ -4,8 +4,9 @@ profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就�
 
 ## 建立与校验
 
-- 建立：`cd ~/.dsh/profiles/web && pnpm add "link:<my-dsh 绝对路径>/plugins/dsh-<name>" --offline`。包不在目录根部时链接实际包目录。建成后 `pnpm install` 幂等，可随时重跑。
-- 校验：`ls -la ~/.dsh/profiles/web/node_modules/@lynn123411/ | grep dsh-<name>` 出软链接，且经该路径读到的 `package.json` 版本号等于仓库版本号。
+`node tools/dev-link.mjs` 一次查全部 profile × 全部自有包：软链还在不在、指得对不对、读到的版本号对不对、被市场顶掉的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包（客户端半边因此不会被服务）。`--write` 把有问题的连回仓库。
+
+它跑的就是手工那一条：`cd ~/.dsh/profiles/web && pnpm add "link:<my-dsh 绝对路径>/plugins/dsh-<name>" --offline`（包不在目录根部时链接实际包目录）；建成后 `pnpm install` 幂等，可随时重跑。
 
 ## 保持软链
 
@@ -16,9 +17,8 @@ profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就�
 ## 生效时机
 
 - **自带构建的插件（`src/` → `lib/`）先 `pnpm build`**：链接过去的是构建产物，编辑 `src/` 不 build 等于没改。
-- **客户端半边**：刷新页面即生效（bundle 按 `rev` 下发并带长期缓存，HMR 重新哈希后才换 `rev`，必要时硬刷新 `Cmd+Shift+R`）。
-  想确认这一次到底拿到哪份产物：`curl -s "$DSH_WEB_URL/plugins/??<包名>/client.js&rev=<rev>" | grep -c '<你新写的类名或文案>'`。`rev` 从首页 HTML 里该插件那条 `"url":"plugins/??@lynn123411/dsh-<name>/client.js&rev=…"` 抄；不带 `rev` 请求会 404。产物里 grep 到你新写的东西，才算真的换上了。
-- **宿主半边**：重启 DSH 实例——loader 只在启动时装载。增删 `link:` 包、或本地覆盖某个安装包，同样要重启：解析表在进程启动时固定。
+- **客户端半边**：刷新页面即生效（bundle 按 `rev` 下发并带长期缓存，HMR 重新哈希后才换 `rev`，必要时硬刷新 `Cmd+Shift+R`）。想确认这一次到底拿到哪份产物：`node tools/verify-client.mjs <包> --needle '<你新写的类名或文案>'`（`--build` 连构建一起做）——它抄首页上那条带 `rev` 的地址、带 cookie 取回 bundle、在产物里找那段新东西，找不到就 FAIL。
+- **宿主半边**：重启 DSH 实例——loader 只在启动时装载。增删 `link:` 包、或本地覆盖某个安装包，同样要重启：解析表在进程启动时固定。改完不想动正在服务的这个实例时，用 `node tools/host-smoke.mjs`：它拿一份副本 home 起第二个实例（临时端口、不开浏览器、不碰启动器），判「本仓 bundle 全部解析到 + 首页 200 + 每个客户端 bundle 取得到 + 启动日志里没有装载异常」。正在跑那个实例的日志路径由 `node tools/dsh-env.mjs` 打出——启动期的装载异常就写在那里。
 
 ## 内核包解析
 

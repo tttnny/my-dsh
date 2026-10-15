@@ -33,11 +33,6 @@
 
 自检管不了布局：居中、高度上限、滚动归属、遮挡、`sticky` 都只有真浏览器能证明。改完界面真跑一次——`plugins/dsh-a6api` 的弹窗就是这么验的：居中误差 0px、高度正好视口 85%、正文滚 400px 后标题栏与胶囊行不动、页面零报错。
 
-本机工具：`node scripts/gui-shot.mjs --click 'button[aria-label="A6api"]' --shot tmp/ui.png`。`/scripts/` 是本机开发工具的约定目录（见 `.gitignore` 里那行注释，所以它不入库）；换台机器没有它时，按下面四步重建，非显然的常量都在这里：
-
-1. **无头浏览器**：playwright 缓存里的 Chrome for Testing，`~/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`，参数 `--headless=new --remote-debugging-port=<端口> --user-data-dir=tmp/chrome-profile --no-first-run`。
-2. **登录**：先 navigate 到 `$DSH_WEB_AUTH_URL`（答 303 并种下会话 cookie），再 navigate 到 `$DSH_WEB_URL`。
-3. **等插件挂上**：轮询 `!!document.querySelector('<你的入口选择器>')`。插件是启动后台预热的，别用固定 sleep 赌它；找不到就打出 `document.body.innerText` 的前几百字看页面停在哪。
-4. **点它、量它、拍它**：几何直接读 `getBoundingClientRect()` 回传（比截图更硬），截图走 `Page.captureScreenshot` 落盘到 `./tmp`，页面报错用 `window.addEventListener('error', …)` 收（浏览器 console 在这一侧看不见）。想验「内容变高时会不会被裁」，往滚动容器里塞一个 `height: 2000px; flex: none` 的方块再看——`flex: none` 不能省，否则它自己会被压扁，量出来的是假的。
+本机工具：`node tools/gui-shot.mjs --click 'button[aria-label="A6api"]' --shot tmp/ui.png`（已入库，索引见 `tools/README.md`）。它把跑着的 GUI 拉进无头浏览器：`--wait '<选择器>'` 轮询到插件挂上为止（插件是启动后台预热的，别用固定 sleep 赌）、`--eval` 带一段 JS 直接读 `getBoundingClientRect()` 回传（比截图更硬）、`--shot` 落一张图、页面报错用 `window.addEventListener('error', …)` 收（浏览器 console 在这一侧看不见）。想验「内容变高时会不会被裁」，往滚动容器里塞一个 `height: 2000px; flex: none` 的方块再看——`flex: none` 不能省，否则它自己会被压扁，量出来的是假的。其余非显然的常量与坑写在 `tools/gui-shot.mjs` 头部。
 
 改完 `lib/` 想确认页面真的换上了新 bundle（「刷新即生效」的查法）见 [dev-copy.md](./dev-copy.md)「生效时机」。

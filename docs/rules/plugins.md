@@ -6,6 +6,8 @@
 
 一个插件一个目录：目录名 `dsh-<name>`，npm 包名 `@lynn123411/dsh-<name>`，目录内含 `README.md`。发布形态是 **bundle 包**：`package.json` 声明 `dsh.bundle.patch`，安装时包名自动登记进 profile 的 `dsh.profile.bundles`；形态标在根 `README.md` 的「说明」列。
 
+新建插件用 `node tools/new-plugin.mjs dsh-<name>`（`--host-only` 只铺宿主半边）：它按当前内核基线生成 package.json、tsconfig、build.mjs、`cordis.patch.yml`、两半边的自检骨架、README 三段、locale 与图标，生成即 `pnpm check` 绿；收尾只有两步（根 README 加一行、改 `src/` 里的 TODO），它会把这两步打出来。
+
 ## 许可
 
 许可只由各包 `package.json` 的 `license` 字段声明，仓库各层目录与发布清单都不附带许可文书。根 `README.md`「许可证」段的措辞随本条（版式见 [to-readme.md](./to-readme.md)）。
@@ -21,6 +23,7 @@
 - `engines.dsh` 写**大于等于当前版本**的 SemVer 范围（`>=` + 当前 DSH 版本），不写精确版本；当前版本以运行中的 DSH 为准，本文件不复述具体号。
 - 所有 `@deepseek-ai/dsh-*` 的 `peerDependencies` / `devDependencies` 与 `engines.dsh` 写**同一个**范围字符串；改完跑 `pnpm install --lockfile-only` 同步 lock 的 importers 段。
 - `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 是独立基线，照各自现值声明，不参与上面这条。
+- **内核升版后的批量跟随**：`node tools/dsh-baseline.mjs --write` 一次改齐全部包的上面三处（目标值从已装内核读，改完在每个动过的包里跑 `pnpm install`）；`--bump patch` 顺带升版本号。哪一处漂了由 `node tools/assert-ledger.mjs` 抓。
 - 兄弟 preset 的同一规则见 [presets.md](./presets.md)「版本与依赖」。
 
 ## 配置界面
@@ -29,7 +32,9 @@
 
 ## 验证
 
-改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。仓库根没有 `package.json`，也没有仓库级脚本；漏了 `check` 的包以它自己 `scripts` 里的那几条为准。
+改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。漏了 `check` 的包以它自己 `scripts` 里的那几条为准。
+
+跨文件的台账（包名与目录名、`engines.dsh` 与全部 `dsh-*` 同串、cordis / schemastery 基线、许可声明位、`files` 与 bundle patch 指得到、插件 README 三段、根 README 与目录互相覆盖、preset order 台账、开发副本还是不是软链）由 `node tools/assert-ledger.mjs` 一次查完——`check` 只管包内，看不见这些。
 
 ### 证明断言有牙齿（变异测试）
 
@@ -44,9 +49,7 @@
 
 ### 提交闸门（`.githooks/pre-commit`）
 
-「改完跑 check」有闸门兜着，不靠自觉：仓库根的 `.githooks/pre-commit` **只看本次改动的包**，逐个在包目录跑它自己的 `check`。装法与跳法写在该文件头部（`git config core.hooksPath .githooks`；`SKIP_CHECK=1 git commit` 跳过一次）。没有 `check` 脚本、或没装 `node_modules` 的包会明说并跳过——不让提交在静默里少跑一道闸门。
-
-**成功只打一行、失败才回放输出**（`pre-commit: $pkg -> pnpm check` 之后直接是 `pre-commit: 通过（<包名>）`）：那段两百多行的 `ok` 清单对调用方（尤其 agent）是纯噪声，而钩子的输出压在调用方那一侧。要看全量转录就自己 `cd <包>` 跑一次。
+改完就跑有闸门兜着：`.githooks/pre-commit` 只看本次改动的包，逐个在包目录跑它自己的 `check`（没有 `check` 脚本的包会明说并跳过），另外只要改到 `plugins/`、`presets/`、根 `README.md`、`docs/rules/` 或 `tools/` 就跑一遍 `tools/assert-ledger.mjs`。装法（`git config core.hooksPath .githooks`）、跳法（`SKIP_CHECK=1 git commit`）与成功 / 失败各打什么，都写在该文件头部。
 
 闸门是这仓库唯一的自动门禁（没有 CI），所以它自己坏了代价最大，改完必须验收一次：走一次**真实提交**，成功路径打出 `pre-commit: 通过（<包名>）`；再确认它真的装着——`git config --get core.hooksPath` 应回 `.githooks`（这条配置不进版本库，新克隆默认没有闸门）。`SKIP_CHECK=1` 只在确实跑不了时用；「检查全过的提交反而被钩子拦住」是钩子自己的 bug，去修钩子。
 
@@ -73,3 +76,4 @@
 | 配置页放哪、key 怎么拼、卡片没有入口 / 标题退回包名 | [plugin-config-page.md](./plugin-config-page.md) |
 | 改插件的界面、挑宿主现成控件、要肉眼确认 | [plugin-ui.md](./plugin-ui.md) |
 | 自建 LLM 适配器的 usage 映射 | [llm-adapter.md](./llm-adapter.md) |
+| 建新插件骨架、内核基线跟进、宿主半边冒烟、台账、找 `dsh` 二进制 | `tools/README.md` |

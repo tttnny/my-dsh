@@ -34,12 +34,13 @@ preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle
 
 ## 验证
 
-preset 包没有 `check`，形态验证是两条命令：
+每个 preset 都有自己的 `check`（提交闸门认得它们），三条判据：
 
-- **组合解析**：`node "<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js" --profile web --patch presets/<id>/<id>.patch.yml --dump-config` —— exit 0，且组合树里出现 `preset-<id>` 行与它的 `config.plugins`。`--dump-config` 只组合、不装载、不求值 `!!js`。
-- **真装载与工具目录**：在隔离 `DSH_HOME` 的 profile 里装本目录后 boot（`--port 0 --no-open`）；工具目录以会话日志里真正发给模型的数组为准——日志是 `session.v4.jsonl.zstd`，读 `request/header` 事件的 `data.header.tools`。UI 的「工具」面板只反映装配期的定义解析，不等于该数组。
+- **组合解析**：`node tools/preset-compose.mjs <id>`（`--all` 跑全部）——在临时 DSH_HOME 上跑一次 `--dump-config`，判 exit 0、组合树里有 `preset-<id>` 行、`config.id` 与目录名一致、`order` 与 patch 一致、`config.plugins` 非空。只组合、不装载、不求值 `!!js`；临时 home 里不放 `node_modules`，不动正在服务的 profile。
+- **真装载**：`node tools/host-smoke.mjs` 起一个第二实例，判本仓 bundle 全部解析到、首页 200、客户端 bundle 取得到、启动日志无装载异常。装进 profile 的命令见「安装与启用」。
+- **工具目录**：以会话日志里真正发给模型的数组为准——日志是 `session.v4.jsonl.zstd`，读 `request/header` 事件的 `data.header.tools`。UI 的「工具」面板只反映装配期的定义解析，不等于该数组。
 
-随包带**第三方内容**（vendored `skills/` 等）的 preset 另配一份 `upstream-lock.json`（钉住的 commit ＋ 逐目录树哈希）与检查脚本：离线查形态与完整性、在线查上游漂移，同步后 `--write` 重钉。范例与哈希配方见 `presets/plugin-upgrade-cordis/`。
+随包带**第三方内容**（vendored `skills/` 等）的 preset 另配一份 `upstream-lock.json`（钉住的 commit ＋ 逐目录树哈希）与检查脚本：离线查形态与完整性、在线查上游漂移，同步后 `--write` 重钉。范例与哈希配方见 `presets/plugin-upgrade-cordis/`，它的 `check` 就是离线那一条。
 
 ## order 台账
 

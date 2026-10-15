@@ -4,7 +4,7 @@
 
 用户下令发布到 npm 后，把该发的包（插件、preset 一视同仁）`npm publish` 发完就结束：**不跑发布后验证**——不装一遍、不解包 tarball、不 boot 加载、不查 registry 传播；也不回头确认、不追问别的包要不要一起发。答复里报包名、版本、`dist-tags.latest` 就够；发布成功的凭据是 `npm publish` 打出的 `+ pkg@ver`。
 
-发布前的门禁照跑：各包自己的 `check`（见 [plugins.md](./plugins.md)「验证」）与 `npm pack --dry-run` 清单。`git push` 同样只在用户下令后执行。
+发布前的门禁照跑：各包自己的 `check`（见 [plugins.md](./plugins.md)「验证」）、`node tools/assert-ledger.mjs`（清单与目录的一致性）与 `npm pack --dry-run` 清单。`git push` 同样只在用户下令后执行。
 
 ## 发布不回装
 
@@ -15,6 +15,7 @@
 - **产物不入库**：`build` 生成的镜像目录（`lib/` 这类与 `src/` 对应的副本）由包的 `.gitignore` 挡住、留在 `files` 里、并由 `check` 的产物门禁断言未被 git 跟踪——`files` 不含产物目录时 npm 会漏打运行入口。手写源码形式的 `lib/` 属源码，不受这条约束。
 - **镜像与 `src/` 一一对应**：`build` 必须在 emit 前清掉上一轮的声明产物（`rmSync('lib/types')`，见 `dsh-a6api`/`dsh-chat-translate` 的 `build.mjs`），因为 `tsc` 从不清理 `outDir`：删掉或改名的模块会把它旧的 `.d.ts` 一直留在 `lib/types` 里。这条只能由「清镜像」保证，`.gitignore` 与「产物未被跟踪」都看不见陈旧文件（`lib` 是 gitignore 的，`git status` 不显示）。带声明产物的包用 `assert:lib-mirror` 这类闸门把这份一致性钉住：它同时查陈旧（`lib/types` 有 `src/` 已不存在的声明，会随 `files` 进发布包）与缺失（`src/` 的模块没发出声明，即 `build` 没跑完）。构建脚本里的声明 emit 失败必须是**非零退出**，只 `warn` 会让整个声明镜像静默消失。
 - 发布产物由包自己的 `build` 出：`dsh-grilling-form` 另有 `prepack`，发布时现打一次；其余包靠发布前已跑过的 `check`。
+- 内核升版后各包声明的批量跟随与版本号，一次做完：`node tools/dsh-baseline.mjs --write --bump patch`（见 [plugins.md](./plugins.md)「版本与依赖」）。
 - 删掉任何文件时当场同步 `files`、`scripts` 与镜像断言，清单只写还存在的条目。许可声明见 [plugins.md](./plugins.md)「许可」。
 
 ## 查已发布版本
