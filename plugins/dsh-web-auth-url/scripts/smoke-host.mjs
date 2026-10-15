@@ -1,5 +1,5 @@
 /**
- * 宿主半边自检：把两个承重点放在 **真实的 0.2.1-alpha.3 内核服务** 上跑，而不是桩件——
+ * 宿主半边自检：把两个承重点放在 **真实的 0.2.1-alpha.4 内核服务** 上跑，而不是桩件——
  * 这两条断言的全部意义就是「DSH 换了实现，本插件立刻挂」：
  *
  * 1. 托管环境变量：真实 `ctx.shellEnv`（@deepseek-ai/dsh-shell-env）的
@@ -44,7 +44,7 @@ const AUTH_URL = `${CLEAN_URL}/?token=${TOKEN}`;
 
 /** 本插件贡献的段落名。 */
 const SECTION_NAME = 'app:web-auth-url';
-/** 0.2.1-alpha.3 `SECTION_ORDERS.WEB_SURFACE` 的实际取值，锚点漂了必须当场失败。 */
+/** 0.2.1-alpha.4 `SECTION_ORDERS.WEB_SURFACE` 的实际取值，锚点漂了必须当场失败。 */
 const ANCHOR_ORDER = 10100;
 
 /** 读一个已安装包的真实版本号（沿解析出的入口向上找同名 package.json）。 */
@@ -105,13 +105,13 @@ assert.equal(realpathSync(selfDir()), selfDir(), 'selfDir 必须已经是 realpa
 assert.equal(existsSync(join(selfDir(), manifest.main)), true, 'selfDir 必须能拼出真实入口文件');
 assert.equal(existsSync(join(selfDir(), 'cordis.patch.yml')), true, 'selfDir 必须能拼出随包文件');
 
-assert.equal(manifest.engines.dsh, '>=0.2.1-alpha.3', 'engines.dsh 必须声明不低于基线 0.2.1-alpha.3 的支持范围');
+assert.equal(manifest.engines.dsh, '>=0.2.1-alpha.4', 'engines.dsh 必须声明不低于基线 0.2.1-alpha.4 的支持范围');
 assert.equal(manifest.peerDependencies['@deepseek-ai/cordis'], '^4.0.5-alpha.2');
 assert.equal(installedVersion('@deepseek-ai/cordis'), '4.0.5-alpha.2', 'cordis 必须对齐安装版本');
 assert.equal(manifest.dependencies['@deepseek-ai/schemastery'], '^3.18.5-alpha.2');
 assert.equal(installedVersion('@deepseek-ai/schemastery'), '3.18.5-alpha.2', 'schemastery 必须对齐安装版本');
-// engines.dsh 写成 >=0.2.1-alpha.3（大于等于当前版本），而 devDependencies
-// 仍定向安装基线版本 0.2.1-alpha.3，两者刻意不同：声明层必须写同一个范围，安装层必须钉住基线。
+// engines.dsh 写成 >=0.2.1-alpha.4（大于等于当前版本），而 devDependencies
+// 仍定向安装基线版本 0.2.1-alpha.4，两者刻意不同：声明层必须写同一个范围，安装层必须钉住基线。
 for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env']) {
   assert.equal(
     manifest.devDependencies[pkg],
@@ -120,8 +120,8 @@ for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env
   );
   assert.equal(
     installedVersion(pkg),
-    '0.2.1-alpha.3',
-    '自检跑的内核包必须仍是基线版本 0.2.1-alpha.3',
+    '0.2.1-alpha.4',
+    '自检跑的内核包必须仍是基线版本 0.2.1-alpha.4',
   );
 }
 
@@ -159,10 +159,10 @@ for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env
   assert.equal(anchorOrder, ANCHOR_ORDER, 'WEB_SURFACE 位置值变了，+10 的紧邻关系必须重新核对');
 
   /**
-   * 复刻 `app:web-surface` 的注册：0.2.1-alpha.3 由
+   * 复刻 `app:web-surface` 的注册：0.2.1-alpha.4 由
    * `@deepseek-ai/dsh-harness-dev-context` 以
    * `section({ name: 'app:web-surface', order: getSectionOrder('WEB_SURFACE') })` 注册
-   * （安装副本 `lib/index.js` 第 110-114 行）。它不在本插件的依赖里，所以只能照同样的
+   * （安装副本 `lib/index.js` 第 110-115 行）。它不在本插件的依赖里，所以只能照同样的
    * 两件事复刻一个再断言紧邻；「这个名字对得上那个注册方」靠读那一处源码保证，不是
    * 这条断言证明的。名字与期望值都写成一字不改的字面量，改任何一处都得同时面对另一处。
    */

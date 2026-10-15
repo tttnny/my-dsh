@@ -87,11 +87,11 @@ for raw in sys.stdin:
 
 期望输出 `['edit', 'read', 'write']`——`bash` / `pwsh` 不出现，`read_image` 也不出现。UI 的「工具」面板只反映装配期的定义解析，不等于模型实际收到的目录——**以会话日志为准**。
 
-**适配实测记录（0.2.1-alpha.3，2026-10-15）**
+**适配实测记录（0.2.1-alpha.4，2026-10-15）**
 
 - **组合解析**：`node "<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js" --profile web --patch presets/minimal-fs/minimal-fs.patch.yml --dump-config` exit 0，组合树里 `preset-minimal-fs` 行带着 `persona` / `tool-fs` / `tool-filter` 三行，`tool-fs` 的 config 是 `read: true` / `readImage: false` / `write: true` / `edit: true`。
 - **导出解析**：在 profile 目录里 `import('@lynn123411/dsh-preset-minimal-fs/tool-filter')` 成功，`inject` 为 `['systemPrompt']`。
-- **真装载**（真 0.2.1-alpha.3 的 cordis `Context` + `ToolRuntime` + `SystemPrompt` + `dsh-tool-fs`，`attachments` 已挂载；带三组对照）：
+- **真装载**（真 0.2.1-alpha.4 的 cordis `Context` + `ToolRuntime` + `SystemPrompt` + `dsh-tool-fs`，`attachments` 已挂载；带三组对照）：
   - 本 preset 那份 config 注册出 `read` / `write` / `edit`，`read_image` 取不到；
   - 对照一（同 config 只把 `readImage` 改回 true）：`read_image` 注册得上——上面的负例不是「这个上下文根本注册不了」；
   - 对照二（`read: false` / `write: false` / `edit: false`，`readImage: true`）：三个文件工具都取不到、`read_image` 在——四个开关各管各的；
@@ -99,4 +99,4 @@ for raw in sys.stdin:
 
 本轮没有重跑真会话日志那条路：上面的模型可见目录来自真内核装配，不是在会话日志的 `request/header` 里读回来的。`read_image` 与 `grilling_form` 的那两条对照已经分别钉住各自的负例（缺了对照，「取不到」也可能只是这个上下文根本装配不了它）。
 
-**提示词形状（凭 0.2.1-alpha.3 与 0.2.0-rc.2 的实现对比）**：`dsh-system-prompt` 与 `dsh-persona` 的实现逐字未变，唯一的差别是 `CONTEXT_ORDERS` 多了 `TEAM_IDENTITY`（125）、`HARNESS_SOURCE`（200）、`WEB_SURFACE`（210）三条。alpha.3 把「实现 checkout」与「Web GUI 地址」搬到了 `@deepseek-ai/dsh-harness-dev-context`，它在**根层**同时注册 `harness:source` 与 `app:web-surface` 两个**段落**和两条**运行时上下文**。这两样都被本 preset 的身份行挡在外面：`complete: true` 让 `assemble` 只留那一个段落，`includeRuntimeContext: false` 让上下文只剩 `required` 的条目——两者都不带 `required`。因此模型仍只收到 `You are a helpful software engineer assistant.` 一句，`AGENTS.md`、技能目录、运行时快照都不出现。这一段是读宿主实现得出的结论，本轮没有在真会话的提示词里复测。
+**提示词形状（凭 0.2.1-alpha.4 与 0.2.0-rc.2 的实现对比）**：`dsh-system-prompt` 与 `dsh-persona` 的实现逐字未变，唯一的差别是 `CONTEXT_ORDERS` 多了 `TEAM_IDENTITY`（125）、`HARNESS_SOURCE`（200）、`WEB_SURFACE`（210）三条。`@deepseek-ai/dsh-harness-dev-context` 把「实现 checkout」与「Web GUI 地址」放在**根层**，同时注册 `harness:source` 与 `app:web-surface` 两个**段落**和两条**运行时上下文**。这两样都被本 preset 的身份行挡在外面：`complete: true` 让 `assemble` 只留那一个段落，`includeRuntimeContext: false` 让上下文只剩 `required` 的条目——两者都不带 `required`。因此模型仍只收到 `You are a helpful software engineer assistant.` 一句，`AGENTS.md`、技能目录、运行时快照都不出现。这一段是读宿主实现得出的结论，本轮没有在真会话的提示词里复测。
