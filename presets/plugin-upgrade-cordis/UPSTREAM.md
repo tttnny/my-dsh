@@ -92,7 +92,7 @@ BASE=<DSH 安装>/node_modules/.pnpm/@deepseek-ai+dsh-web-app@<版本>_*/node_mo
    - `- id: preset-cordis` → `- id: preset-plugin-upgrade-cordis`，`config.id` → `plugin-upgrade-cordis`，加 `config.name` / `config.description`，`config.order` → 台账值（见 [docs/rules/presets.md](../../docs/rules/presets.md)「order 台账」）；
    - `skill-filesystem` 行的 `customSkillDirs`：在官方那条**之前**插本包的根（`createRequire(baseUrl).resolve('@lynn123411/dsh-preset-plugin-upgrade-cordis/package.json')` + `join(dir, 'skills')`），并保留说明注释。**顺序即优先级**；
 3. `diff -u "$BASE" plugin-upgrade-cordis.patch.yml` 复核：除上述三处外应当**没有别的差异**——这是唯一能证明「逐字保留」的检查；
-4. 扫一遍提示词变量：`grep -oE '\{\{[a-zA-Z_]+\}\}' plugin-upgrade-cordis.patch.yml | sort -u`，结果必须落在该版 `agent-loop` 注册的变量里（0.2.1-alpha.2 只有 `model` 与 `provider`）。引用了不存在的变量 → 每次请求都抛 `unknown prompt variable`，而 preset 照样可选；
+4. 扫一遍提示词变量：`grep -oE '\{\{[a-zA-Z_]+\}\}' plugin-upgrade-cordis.patch.yml | sort -u`，结果必须落在该版 `agent-loop` 注册的变量里（0.2.1-alpha.3 只有 `model` 与 `provider`）。引用了不存在的变量 → 每次请求都抛 `unknown prompt variable`，而 preset 照样可选；
 5. `--dump-config` exit 0，且组合树里出现 `preset-plugin-upgrade-cordis` 行；
 6. 更新 `package.json` 的 `engines.dsh` 与 `version`（加一位），更新 README.md 的「与官方创造模式的异同」与实测记录。
 
