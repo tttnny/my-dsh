@@ -14,9 +14,9 @@
 
 ## 插件 README
 
-固定三段（范例 `plugins/dsh-model-submenu/README.md`）：一级标题 `# @lynn123411/dsh-<name>` + 一段功能简介；`## 特性` 用 `- **特性名**：特性说明` 列表；`## 安装` 给 `dsh plugin --profile web add @lynn123411/dsh-<name>` 代码块。需要时可在其间加节（如 `dsh-grilling-form` 的 `## 自检`）。
+固定四段（范例 `plugins/dsh-model-submenu/README.md`）：一级标题 `# @lynn123411/dsh-<name>` + 一段话概括这个插件是什么；`## 功能` 用 `- **功能名**：说明` 列表，只写用户能做什么；`## 特性` 用同一种列表，写实现形态、分工边界与硬保证；`## 安装` 给 `dsh plugin --profile web add @lynn123411/dsh-<name>` 代码块。四段之外**不加节**：装配形态、配置说明、开发副本、验证清单这类长篇内容放同目录的 `DETAILS.md`，README 里留一句指针（npm 的 `files` 要带上它）。
 
-只写现状：每条特性都是当前行为，不写版本号、变更叙事、上游来源（形态标在根 `README.md` 表格）。
+只写现状：每条都是当前行为，不写版本号、变更叙事、上游来源（形态标在根 `README.md` 表格）。要写验证记录（实测日期、对照实验）就写进 `DETAILS.md`，README 只留验证怎么做、结果在哪。
 
 ## 版本与依赖
 

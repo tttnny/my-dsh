@@ -62,7 +62,8 @@
     "assets",
     "locale",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "DETAILS.md"
   ],
   "scripts": {
     "build": "node build.mjs",

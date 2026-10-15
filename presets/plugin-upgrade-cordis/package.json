@@ -13,7 +13,8 @@
     "upstream-lock.json",
     "plugin-upgrade-cordis.patch.yml",
     "README.md",
-    "UPSTREAM.md"
+    "UPSTREAM.md",
+    "DETAILS.md"
   ],
   "license": "MIT",
   "scripts": {

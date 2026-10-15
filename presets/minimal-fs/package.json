@@ -10,7 +10,8 @@
   "files": [
     "plugins",
     "minimal-fs.patch.yml",
-    "README.md"
+    "README.md",
+    "DETAILS.md"
   ],
   "license": "MIT",
   "scripts": {

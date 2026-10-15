@@ -17,7 +17,8 @@
     "cordis.patch.yml",
     "README.md",
     "locale",
-    "assets"
+    "assets",
+    "DETAILS.md"
   ],
   "license": "MIT",
   "keywords": [

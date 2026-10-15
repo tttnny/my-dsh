@@ -8,7 +8,7 @@
  *   3. `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 写区间（不是精确版本），同包内与跨包同串
  *   4. 许可只由 `package.json` 的 `license` 声明，各层目录不附带许可文书
  *   5. `files` 与 `dsh.bundle.patch` 指的条目在目录里存在
- *   6. 插件 README 的三段固定形状，`## 安装` 里给的是本包名
+ *   6. 插件与 preset README 的四段固定形状，`## 安装` 里给的是本包名，README 指的 .md 都在目录里
  *   7. 根 `README.md` 与包目录互相覆盖（都指向对方，且没有指向不存在目录的链接）
  *   8. `docs/rules/presets.md` 的 order 台账与各 preset 的 `<id>.patch.yml` 一致
  *   9. 本机开发副本是软链、指向本仓库、版本号与仓库一致（没装开发副本的机器跳过这一项）
@@ -151,24 +151,32 @@ for (const entry of packages) {
   }
 }
 
-// ── 6. 插件 README 三段 ──────────────────────────────────────────────────────
-for (const entry of pluginPackages) {
+// ── 6. README 四段（插件与 preset 同形） ──────────────────────────────────────
+for (const entry of packages) {
   const path = join(entry.dir, 'README.md');
   if (!existsSync(path)) {
     fail(entry.rel, '缺 README.md');
     continue;
   }
   const text = readFileSync(path, 'utf8');
-  const heading = /^#\s+(\S+)\s*$/m.exec(text)?.[1];
-  if (heading !== entry.name) {
-    fail(`${entry.rel}/README.md`, `一级标题要写成 # ${entry.name}（现为 ${JSON.stringify(heading ?? '')}）`);
+  const heading = /^#\s+(.+?)\s*$/m.exec(text)?.[1];
+  // preset 的标题写成 `# <id> — <显示名>`，比对标题里第一个字段。
+  const expected = entry.kind === 'plugin' ? entry.name : entry.rel.split('/')[1];
+  const head = heading?.split(/\s+|[—–]/)[0];
+  if (head !== expected) {
+    fail(`${entry.rel}/README.md`, `一级标题要以 ${expected} 开头（现为 ${JSON.stringify(heading ?? '')}）`);
   }
-  for (const section of ['## 特性', '## 安装']) {
-    if (!text.includes(section)) fail(`${entry.rel}/README.md`, `缺「${section}」一节（插件 README 是固定三段）`);
+  for (const section of ['## 功能', '## 特性', '## 安装']) {
+    if (!text.includes(section)) fail(`${entry.rel}/README.md`, `缺「${section}」一节（README 是固定四段）`);
   }
   const install = text.slice(text.indexOf('## 安装'));
   if (!install.includes(`add ${entry.name}`)) {
     fail(`${entry.rel}/README.md`, `「## 安装」里要给 dsh plugin --profile web add ${entry.name}`);
+  }
+  // README 指向的同包文档（DETAILS.md 这类）必须真的在目录里，否则装出来就是个死链。
+  for (const match of text.matchAll(/\]\((?!https?:|#)([^)#\s]+\.md)(?:#[^)\s]*)?\)/g)) {
+    const target = join(entry.dir, decodeURI(match[1]));
+    if (!existsSync(target)) fail(`${entry.rel}/README.md`, `链接指向的 ${match[1]} 在目录里不存在`);
   }
 }
 

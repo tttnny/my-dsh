@@ -6,6 +6,12 @@ preset 范围的前门。
 
 一个 preset 一个目录：**目录名 = preset id**（= `@deepseek-ai/dsh-agent-preset` 行的 `config.id`），npm 包名 `@lynn123411/dsh-preset-<id>`，目录内含 `README.md`（文档，不是运行内容）。随包资源（`skills/`、`plugins/` 等）留在本目录，靠包的 `exports` 或 `createRequire(baseUrl).resolve()` 解析（见「行名解析」）。
 
+## preset README
+
+与插件同一套四段（范例 `presets/minimal-fs/README.md`）：一级标题 `# <id> — <显示名>` + 一段话概括；`## 功能` 写它给模型 / 用户带来什么；`## 特性` 写身份来源、组件取舍、声明形态与硬边界；`## 安装` 给 `dsh plugin --profile web add @lynn123411/dsh-preset-<id>` 代码块，另一条开发副本命令（`./presets/<id>`）紧接其后。
+
+四段之外**不加节**：与官方 preset 的逐项对照、组成、声明形态、安装步骤、验证流程、实测记录、已知边界、许可这些配置指南内容整体放同目录的 `DETAILS.md`，README 里留一句指针（npm 的 `files` 要带上它）。README 只写现状，`DETAILS.md` 才写版本走廊与实测记录。
+
 ## 声明形态
 
 preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle.patch`（string 或有序数组）指向本目录的 `<id>.patch.yml`。
@@ -30,7 +36,7 @@ preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle
 - `dsh plugin --profile <name> add <包名 | 本仓库目录路径>`：写进该 profile 的 `dependencies`（本地目录记 `link:`），识别到 `dsh.bundle` 就把包名追加进 `dsh.profile.bundles`。目录路径按**调用目录**解析，所以从仓库根写 `./presets/<id>` 即装本目录。
 - 行消费的仓库外插件要在同一条命令里**一并点名**：`dsh.profile.bundles` 只按 profile 的**直接依赖**登记，preset 的传递依赖装得下、行也解析得到，但进不了 bundle 层——插件自带客户端半边时，缺了它卡片退回原始 JSON。`link:` 开发副本连 `dependencies` 也不物化，开发副本命令同样要点名（`dsh plugin --profile web add ./presets/<id> <它消费的仓库内插件目录>`）。
 - preset 的挂载在进程内只装载一次：改 patch 或随包文件后**重启 DSH**，不会热更已挂载的那一份。
-- 给人敲的逐步指令由根 `README.md` 的 preset 表与各 preset 的 `README.md` 给。
+- 给人敲的逐步指令由根 `README.md` 的 preset 表与各 preset 的 `README.md` 给；逐项细则（与官方的异同、order、验证步骤与实测记录）在各自的 `DETAILS.md`。
 
 ## 验证
 
