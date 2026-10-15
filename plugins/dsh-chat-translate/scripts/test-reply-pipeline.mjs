@@ -161,11 +161,30 @@ await test('总开关关闭时原样返回且不发请求', async () => {
   assert.equal(results[0].detail, undefined, '开关关闭不发请求，也说不出细节');
 });
 
-await test('AI 未配置时不发请求、保留原文', async () => {
+await test('AI 未配置：不发请求、保留原文，但如实报出「设置没配好」这一类', async () => {
+  // 这一份 dispatcher 的 OpenAi 适配器拿不到 key（构造时没给凭据读取器），
+  // 于是 isAvailable 为假——正是「设置没配好」的形态。
   const { dispatcher } = makeDispatcher();
   const results = await dispatcher.translateReplyBlocks(['一段正文']);
   assert.equal(results[0].ok, false);
   assert.equal(results[0].translated, '一段正文');
+  assert.equal(
+    results[0].reason,
+    'not-configured',
+    '设置问题与通道伤分开报：客户端据此换文案（去哪儿改，而不是点重试）'
+  );
+  assert.match(results[0].detail ?? '', /not configured/, '说清缺的是什么');
+});
+
+await test('设置问题逐块如实回报：同一批每一块都带类别与同一句原因', async () => {
+  const { dispatcher } = makeDispatcher();
+  const results = await dispatcher.translateReplyBlocks(['第一块', '第二块']);
+  assert.equal(results.length, 2);
+  for (const result of results) {
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'not-configured');
+    assert.ok((result.detail ?? '').length > 0);
+  }
 });
 
 await test('正文只有 openai 一条通道：别的适配器不参与', async () => {

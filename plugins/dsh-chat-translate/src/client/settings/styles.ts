@@ -99,4 +99,16 @@ export const SETTINGS_CSS = String.raw`
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* The save row keeps its two items together at the start of the row instead of
+   pushing them to the card's edges, so the hint reads as part of the button. */
+.dsh-tidy-actions {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.dsh-tidy-hint {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxxs-11);
+}
+
 `;

@@ -116,6 +116,24 @@ export class ConfigManager {
     );
   }
 
+  /**
+   * Name every missing piece of the AI channel, as the reply path reports a
+   * setup failure. This travels to the hover bubble and the screen reader, so
+   * it names fields rather than values and never echoes the key.
+   *
+   * @param config - the resolved config to inspect; defaults to the current one.
+   * @returns the unset pieces by name, or a generic phrase when all are set
+   * (the adapter may still refuse the configuration).
+   */
+  describeMissing(config: PluginConfig = this.getConfig()): string {
+    const missing: string[] = [];
+    if (!config.baseUrl.trim()) missing.push('Base URL');
+    if (!config.model.trim()) missing.push('model');
+    if (!this.credentials.getApiKey()) missing.push('API key');
+    if (missing.length === 0) return 'the translation channel is not configured';
+    return `not configured yet: ${missing.join(', ')}`;
+  }
+
   onConfigChange(listener: (config: PluginConfig) => void): () => void {
     return this.source.watch(listener);
   }

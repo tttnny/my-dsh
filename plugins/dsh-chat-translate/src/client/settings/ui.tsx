@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import * as React from 'react';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { Button, Input, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives';
@@ -6,11 +6,13 @@ import {
   settingsStore,
   SETTINGS_NAMESPACE,
   TRANSLATE_API_KEY_REF,
-  type ClientSettingsState,
+  type SettingsPageState,
 } from './store.ts';
 import { SETTINGS_CSS } from './styles.ts';
 import { NS, en, zh } from '../locales.ts';
 import { BUNDLE_CONFIG_KEY, BUNDLE_CONFIG_SLOT, setupPluginPage } from './plugin-page.ts';
+import { testServerChannel } from '../translate/api.ts';
+
 let stylesInjected = false;
 function ensureSettingsStyles(): void {
   if (stylesInjected || typeof document === 'undefined') return;
@@ -43,11 +45,11 @@ function withSamples(text: string, samples: Record<string, string>): React.React
 /**
  * Chat-translate's own configuration page inside the DSH **Plugins** page.
  *
- * The host's Plugins page owns per-plugin configuration: it draws the icon, the
- * title and the crumb, and renders a `plugins.bundle.config` entry ON the
- * bundle's own page, under its description and above its rows. The card keeps
- * its own chrome — the switches, the credential form, the section order — so the
- * move from the Settings page changed where it is reached from, not what it does.
+ * Every control stages its edit; **保存** writes the whole batch as one
+ * revision-fenced document mutation and then probes the channel, reporting
+ * what it found. Nothing here is written while the reader types, so a
+ * half-finished Base URL can never reach the translation path.
+ *
  * @param props - renderer-bound seat of the `plugins.bundle.config` slot: the
  * `view` asked for plus the `t` seat its `locale: NS` registration injects.
  * @returns The card element.
@@ -58,58 +60,37 @@ export function TidySettingsPanel(
   const { t } = props;
   ensureSettingsStyles();
 
-  const [state, setState] = useState<ClientSettingsState>(() => settingsStore.getState());
-  const [testing, setTesting] = useState<{ channel: string; running: boolean; ok?: boolean; message?: string } | null>(null);
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [savingKey, setSavingKey] = useState(false);
-  const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [state, setState] = useState<SettingsPageState>(() => settingsStore.getState());
+  const [testing, setTesting] = useState<{ running: boolean; ok?: boolean; message?: string } | null>(null);
 
   useEffect(() => {
-    return settingsStore.subscribe(() => {
-      setState(settingsStore.getState());
-    });
+    setState(settingsStore.getState());
+    return settingsStore.subscribe(() => setState(settingsStore.getState()));
   }, []);
 
-  const runTest = async (channel: string): Promise<void> => {
-    setTesting({ channel, running: true });
-    const res = await settingsStore.testChannel(channel);
-    const message = res.ok
-      ? t('testOk').replace('{latency}', String(res.latencyMs))
-      : t('testFail').replace('{error}', res.error || t('unknownError'));
-    setTesting({ channel, running: false, ok: res.ok, message });
+  const runTest = async (): Promise<void> => {
+    setTesting({ running: true });
+    const res = await testServerChannel('openai');
+    setTesting({
+      running: false,
+      ok: res.ok,
+      message: res.ok ? t('testOk').replace('{latency}', String(res.latencyMs)) : res.error || t('unknownError'),
+    });
   };
 
-  const handleSaveKey = async (): Promise<void> => {
-    setSavingKey(true);
-    setKeyMsg(null);
-    const res = await settingsStore.saveApiKey(apiKeyInput);
-    setSavingKey(false);
-    if (res.ok) {
-      const cleared = !apiKeyInput.trim();
-      setKeyMsg({
-        ok: true,
-        text: cleared
-          ? t('keyCleared')
-          : t('keySaved').replace('{home}', CREDENTIALS_PATH),
-      });
-      setApiKeyInput('');
-    } else {
-      setKeyMsg({
-        ok: false,
-        text: t('saveFailed').replace('{error}', res.error || t('unknownError')),
-      });
-    }
-  };
+  const saveDisabled = state.saving || state.invalid || !state.dirty || (!state.writable && state.apiKey.text.trim() === '');
 
   return (
     <div className="dsh-tidy-settings">
-      {/* 1. 总开关 */}
+      {/* 1. 总开关：拨了就生效（输入框下方那颗「译」胶囊是同一个状态，它没有保存按钮） */}
       <div className="dsh-tidy-card">
         <div className="dsh-tidy-title">
           <span>{t('masterTitle')}</span>
           <Switch
-            checked={state.enabled}
-            onChange={(next: boolean) => settingsStore.update({ enabled: next })}
+            checked={state.committed.enabled}
+            onChange={(next: boolean) => {
+              void settingsStore.setEnabled(next);
+            }}
             label={t('enableTranslation')}
           />
         </div>
@@ -118,14 +99,14 @@ export function TidySettingsPanel(
         </div>
       </div>
 
-      {state.enabled && (
+      {state.committed.enabled && (
         <>
           {/* 2. AI 通道 */}
           <div className="dsh-tidy-card">
             <div className="dsh-tidy-title">
               <span>{t('aiTitle')}</span>
-              <Tag tone={state.aiConfigured ? 'success' : 'warning'}>
-                {t(state.aiConfigured ? 'badgeConfigured' : 'badgeUnconfigured')}
+              <Tag tone={state.committed.aiConfigured ? 'success' : 'warning'}>
+                {t(state.committed.aiConfigured ? 'badgeConfigured' : 'badgeUnconfigured')}
               </Tag>
             </div>
             <div className="dsh-tidy-desc">{t('aiRule')}</div>
@@ -140,28 +121,17 @@ export function TidySettingsPanel(
                   })}
                 </div>
               </div>
-              <div className="dsh-tidy-input-row">
-                <Input
-                  type="password"
-                  className="dsh-tidy-field-wide"
-                  placeholder={state.aiConfigured ? t('apiKeyPlaceholderConfigured') : 'sk-...'}
-                  value={apiKeyInput}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKeyInput(e.target.value)}
-                  aria-label={t('apiKeyTitle')}
-                />
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={savingKey}
-                  onClick={handleSaveKey}
-                >
-                  {savingKey ? t('saving') : t('save')}
-                </Button>
-              </div>
+              <Input
+                type="password"
+                className="dsh-tidy-field-wide"
+                placeholder={
+                  state.committed.aiConfigured ? t('apiKeyPlaceholderConfigured') : 'sk-...'
+                }
+                value={state.apiKey.text}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => settingsStore.draft('apiKey', e.target.value)}
+                aria-label={t('apiKeyTitle')}
+              />
             </div>
-            {keyMsg && (
-              <div className={`dsh-tidy-test-result ${keyMsg.ok ? 'ok' : 'fail'}`}>{keyMsg.text}</div>
-            )}
 
             <div className="dsh-tidy-row">
               <div className="dsh-tidy-row-info">
@@ -177,10 +147,8 @@ export function TidySettingsPanel(
                 type="text"
                 className="dsh-tidy-field-wide"
                 placeholder="https://api.openai.com/v1"
-                value={state.baseUrl}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  settingsStore.update({ baseUrl: e.target.value })
-                }
+                value={state.baseUrl.text}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => settingsStore.draft('baseUrl', e.target.value)}
                 aria-label={t('baseUrlTitle')}
               />
             </div>
@@ -188,20 +156,15 @@ export function TidySettingsPanel(
               <div className="dsh-tidy-row-info">
                 <div className="dsh-tidy-row-title">{t('modelTitle')}</div>
                 <div className="dsh-tidy-row-desc">
-                  {withSamples(t('modelDesc'), {
-                    model1: 'gpt-4o-mini',
-                    model2: 'deepseek-chat',
-                  })}
+                  {withSamples(t('modelDesc'), { model1: 'gpt-4o-mini', model2: 'deepseek-chat' })}
                 </div>
               </div>
               <Input
                 type="text"
                 className="dsh-tidy-field-wide"
                 placeholder="gpt-4o-mini"
-                value={state.model}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  settingsStore.update({ model: e.target.value })
-                }
+                value={state.model.text}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => settingsStore.draft('model', e.target.value)}
                 aria-label={t('modelTitle')}
               />
             </div>
@@ -216,29 +179,58 @@ export function TidySettingsPanel(
                 min={500}
                 max={900000}
                 step={1000}
-                value={state.aiTimeoutMs}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                  const val = parseInt(e.target.value, 10);
-                  if (!Number.isFinite(val)) return;
-                  settingsStore.update({
-                    aiTimeoutMs: Math.min(Math.max(val, 500), 900000),
-                  });
-                }}
+                value={state.aiTimeoutMs.text}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  settingsStore.draft('aiTimeoutMs', e.target.value)
+                }
                 aria-label={t('timeoutTitle')}
               />
             </div>
 
-            <div className="dsh-tidy-row">
+            {/* 保存：唯一写盘的手势；写盘之后自动探一次通道，把结果报在这里 */}
+            <div className="dsh-tidy-row dsh-tidy-actions">
               <Button
-                variant="outline"
+                variant="primary"
                 size="sm"
-                disabled={testing?.running}
-                onClick={() => runTest('openai')}
+                className="dsh-tidy-save"
+                disabled={saveDisabled}
+                onClick={() => {
+                  void settingsStore.save();
+                }}
               >
+                {state.saving ? t('saving') : t('save')}
+              </Button>
+              {state.dirty && !state.saving && <span className="dsh-tidy-hint">{t('unsavedHint')}</span>}
+            </div>
+            {state.invalid && (
+              <div className="dsh-tidy-test-result fail" role="status">
+                {t('invalidTimeout')}
+              </div>
+            )}
+            {state.saveFailed && (
+              <div className="dsh-tidy-test-result fail" role="status">
+                {t('saveFailed').replace('{error}', t('unknownError'))}
+              </div>
+            )}
+            {state.probe !== undefined && !state.probe.running && (
+              <div
+                className={`dsh-tidy-test-result ${state.probe.ok ? 'ok' : 'fail'}`}
+                role="status"
+              >
+                {state.probe.ok
+                  ? t('saveProbeOk')
+                  : t('saveProbeFail').replace('{error}', state.probe.message || t('unknownError'))}
+              </div>
+            )}
+
+            <div className="dsh-tidy-row">
+              <Button variant="outline" size="sm" disabled={testing?.running} onClick={runTest}>
                 {testing?.running ? t('testing') : t('test')}
               </Button>
-              {testing?.channel === 'openai' && !testing.running && (
-                <span className={`dsh-tidy-test-result ${testing.ok ? 'ok' : 'fail'}`}>{testing.message}</span>
+              {testing !== null && !testing.running && (
+                <span className={`dsh-tidy-test-result ${testing.ok ? 'ok' : 'fail'}`}>
+                  {testing.message}
+                </span>
               )}
             </div>
           </div>
@@ -272,6 +264,8 @@ export function setupSettingsUi(ctx: any): void {
   const remoteCredentials = ctx.remote?.credentials ?? null;
   try {
     settingsStore.attach(configForms.get(SETTINGS_NAMESPACE), remoteCredentials);
+    // 保存之后自动探一次通道：探的就是刚刚写进去的那套设置。
+    settingsStore.useProbe(() => testServerChannel('openai'));
   } catch (err) {
     console.warn('[dsh-chat-translate] Failed to bind the configuration form:', err);
   }

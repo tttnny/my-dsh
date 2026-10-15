@@ -108,7 +108,7 @@ assert.ok(row !== undefined, '助手行渲染器没有注册进 conversation.cha
 
 // --- 设置与翻译池：让 canTranslate 成立，并把两行正文喂成「成功」与「失败」 ---
 
-const { settingsStore, chatTranslate } = exported;
+const { settingsStore, chatTranslate, createTranslateStore } = exported;
 
 settingsStore.attach(
   {
@@ -127,7 +127,11 @@ settingsStore.attach(
 await act(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
 });
-assert.equal(settingsStore.getState().aiConfigured, true, '测试前置：通道应视为已配置');
+assert.equal(
+  settingsStore.getState().committed.aiConfigured,
+  true,
+  '测试前置：通道应视为已配置'
+);
 
 let replyCalls = 0;
 /** 补跑那次请求挂住不返回：好在「在途」这个态上做断言（否则它瞬间就落定了）。 */
@@ -157,7 +161,7 @@ globalThis.fetch = async (url, init) => {
     json: async () => ({
       ok: true,
       results: blocks.map((block) =>
-        block === 'Broken block'
+        block.startsWith('Broken block')
           ? { original: block, translated: block, ok: false, cached: false, detail: 'channel timed out after 20000ms' }
           : { original: block, translated: `【译】${block}`, ok: true, cached: false }
       ),
@@ -178,7 +182,7 @@ await act(async () => {
 
 const translate = (key) => key;
 
-function renderRow(rowKey, text, container) {
+function renderRow(rowKey, text, container, store) {
   const componentProps = {
     node: {
       data: { status: 'settled', turn: 1, step: 1, blocks: [{ kind: 'text', text }] },
@@ -195,8 +199,10 @@ function renderRow(rowKey, text, container) {
     t: translate,
   };
   const root = createRoot(container);
+  const props = { ...componentProps };
+  if (store !== undefined) props.store = store;
   act(() => {
-    root.render(createElement(row.component, componentProps));
+    root.render(createElement(row.component, props));
   });
   return root;
 }
@@ -256,6 +262,30 @@ await test('成功块：正文无标记线、无缩进，左缘只有一条 6px 
   assert.equal(hotspot.tagName, 'BUTTON', '窄带应是可聚焦的 button');
   assert.equal(containerA.querySelector('.dsh-ct-retry'), null, '成功块没有 ↻');
   assert.equal(containerA.textContent.includes('【译】Hello world'), true, '应显示译文');
+});
+
+await test('悬浮工具条：块上方一颗按钮，文案是当前能做的动作，点它与点窄带等效', () => {
+  const toolbar = containerA.querySelector('.dsh-ct-toolbar');
+  assert.ok(toolbar !== null, '成功块上方应有悬浮工具条');
+  assert.ok(
+    containerA.querySelector('.dsh-ct-prose').contains(toolbar),
+    '工具条挂在正文块里（绝对定位在块上方），不是块外的另一行'
+  );
+  const button = toolbar.querySelector('.dsh-ct-toolbar-button');
+  assert.ok(button !== null, '工具条上应有一颗按钮');
+  assert.equal(button.tagName, 'BUTTON', '工具条按钮应是真的 button（可聚焦）');
+  assert.equal(button.textContent, 'toolbarShowOriginal', '读译文时提示「查看原文」');
+  // 工具条是 CSS 悬停显隐的（jsdom 不算样式），所以这里只验证它在树上、可点、
+  // 且点它走的是同一个动作——显隐规则由下面的样式断言兜住。
+  clickAt(button);
+  assert.equal(containerA.textContent.includes('【译】Hello world'), false, '点工具条应切回原文');
+  assert.equal(
+    containerA.querySelector('.dsh-ct-toolbar-button').textContent,
+    'toolbarShowTranslation',
+    '读原文时按钮文案翻成「查看译文」'
+  );
+  clickAt(containerA.querySelector('.dsh-ct-toolbar-button'));
+  assert.equal(containerA.textContent.includes('【译】Hello world'), true, '再点应切回译文');
 });
 
 await test('点正文（单击落字）不切换译文/原文', () => {
@@ -335,6 +365,11 @@ await test('失败块：一个真 ↻ 按钮、没有窄带，正文不响应点
   assert.ok(retry !== null, '失败块的 ↻ 应常驻，不靠悬停显形');
   assert.equal(retry.tagName, 'BUTTON', '↻ 应是真按钮（自己的点击目标）');
   assert.equal(retry.getAttribute('data-busy'), null, '落定的失败块：↻ 静止可点');
+  assert.equal(
+    containerB.querySelector('.dsh-ct-toolbar'),
+    null,
+    '失败块没有译文/原文可切，也就不该有悬浮工具条'
+  );
   // 读屏用户不悬停：Tooltip 的气泡只在 openOnClick 时才挂 aria-describedby，
   // 所以败因必须进按钮自己的标签，否则他们永远听不到「超时 / 断流 / 空返回」。
   assert.match(
@@ -347,7 +382,38 @@ await test('失败块：一个真 ↻ 按钮、没有窄带，正文不响应点
   assert.equal(replyCalls, before, '点正文不该触发补跑');
 });
 
-await test('点 ↻ = 整行补跑（真的又发了一次请求）', () => {
+await test('设置没配好：↻ 换成「去配置页」的读屏文案，按钮本身不动', async () => {
+  const containerE = document.createElement('div');
+  document.body.appendChild(containerE);
+  // 一个只服务这一行的独立池：座次可注入，所以不必先让单例池产出这个结果。
+  const store = createTranslateStore(async (blocks) =>
+    blocks.map((block) => ({
+      original: block,
+      translated: block,
+      ok: false,
+      cached: false,
+      detail: 'TRANSLATE_API_KEY is not configured',
+      reason: 'not-configured',
+    }))
+  );
+  const rootE = renderRow('ax9', 'unconfigured probe text', containerE, store);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const retry = containerE.querySelector('.dsh-ct-retry');
+  assert.ok(retry !== null, '设置没配好同样留 ↻：位置与可点性都不变（第一题选 C）');
+  assert.equal(retry.tagName, 'BUTTON');
+  assert.equal(retry.getAttribute('data-unconfigured'), 'true', '同一颗按钮挂了「没配好」的属性');
+  assert.match(
+    retry.getAttribute('aria-label'),
+    /retryAriaUnconfigured/,
+    '读屏听到的是「去插件页把 Key、地址、模型填齐」，而不是「点我重试一万次」'
+  );
+  assert.match(retry.getAttribute('aria-label'), /not configured/, '技术细节照旧带着');
+  act(() => rootE.unmount());
+});
+
+await test('点 ↻ = 只重发失败的那些块（真的又发了一次请求）', () => {
   const before = replyCalls;
   holdNextReply = true; // 让补跑悬在「在途」，下一步才在转圈态上断言
   clickAt(containerB.querySelector('.dsh-ct-retry'));
@@ -385,7 +451,8 @@ await test('失败→在途的迁移不重挂载 ↻：键盘焦点不掉回 bod
   // 且 ↻ 的在途态只换属性、不换元素。
   const containerD = document.createElement('div');
   document.body.appendChild(containerD);
-  const rootD = renderRow('ax4', 'Broken block', containerD);
+  // 一段全新的原文：池按内容寻址，复用过的文本到不了「失败」这一态。
+  const rootD = renderRow('ax4', 'Broken block again', containerD);
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
@@ -420,7 +487,8 @@ act(() => rootB.unmount());
 // 第三个行键：键盘补跑单独验一次（Enter 在 button 上会合成 click，最易双触发）。
 const containerC = document.createElement('div');
 document.body.appendChild(containerC);
-const rootC = renderRow('ax3', 'Broken block', containerC);
+// 又一段全新的原文（池按内容寻址：复用过的文本到不了「失败」这一态）。
+const rootC = renderRow('ax3', 'Broken block once more', containerC);
 // 这一行没有预先登记，挂载后自己会首跑一次；等它落定成「失败」再验键盘补跑。
 await act(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));

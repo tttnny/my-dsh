@@ -6,13 +6,18 @@
  * 默认完全一致。标记只剩两种语义类，且都只是状态钩子、不带任何绘制规则：
  * `dsh-ct-prose-translated`（有译文）与 `dsh-ct-prose-failed`（失败）。
  *
- * 交互压到左缘之外的两个东西上：
+ * 交互压到三个东西上，全部落在正文之外：
  * 1. 成功块的可点面是 `dsh-ct-hotspot`——正文左缘外侧那条 6px 透明窄带。它整条
  *    落在正文之外（不占正文一个像素），切换译文与原文都由它承载。
- * 2. 失败块的可点面是 `dsh-ct-retry`——一个真的 button（小 ↻），浮在正文左缘
+ * 2. 成功块上方还有一条 `dsh-ct-toolbar`：鼠标进入正文、或键盘焦点落进块里时，
+ *    在块**上方**浮出一颗按钮（文案就是当前能做的那个动作），鼠标移开收回。
+ *    它绝对定位，不占正文位置，也不改变排版；收起时用 visibility 而不是 display:none，
+ *    这样它仍在 Tab 序列里——键盘走到它，它就现身。
+ * 3. 失败块的可点面是 `dsh-ct-retry`——一个真的 button（小 ↻），浮在正文左缘
  *    外侧更远一点的位置；补跑在途时它原位转圈（`data-busy`），不重挂载。
  *
- * 两者都不给可见的焦点框：键盘可以聚焦，但界面不加任何标记——这是明说的取舍。
+ * 左缘那两样不给可见的焦点框：键盘可以聚焦，但界面不加任何标记——这是明说的
+ * 取舍；工具条上那颗按钮是浮出的可见控件，给一个可见的焦点环。
  * 悬停也不改任何视觉，只有指针变手型。动画声明尊重 `prefers-reduced-motion`。
  * 样式随 bundle 注入一次（`<style data-plugin-css>`），类名用固定前缀，不依赖
  * 宿主哈希类名。
@@ -41,11 +46,26 @@ export const ASSISTANT_CSS = [
   '.dsh-ct-hotspot{position:absolute;left:-6px;top:0;bottom:0;width:6px;margin:0;padding:0;border:0;background:0 0;cursor:pointer;z-index:2;-webkit-appearance:none;appearance:none}',
   // 键盘可聚焦，但不加任何可见标记：没有 outline，也没有别的变化。
   '.dsh-ct-hotspot:focus-visible{outline:none}',
+  // ---- 成功块上方的悬浮工具条：鼠标进入正文或键盘焦点落进块里时，在块**上方**
+  //      浮出一个小按钮（读译文时是「查看原文」，反之亦然）。它绝对定位在正文
+  //      之上，既不占正文位置、也不进排版流；鼠标移开即收回。左缘那条窄带照旧
+  //      存在——两条路都通向同一个动作。 ----
+  //     用 visibility 而不是 display:none 收起：display:none 会让按钮既不可聚焦、
+  //      也永远进不了 Tab 序列，「键盘焦点落进来时出现」就成了一句空话。visibility
+  //      仍然把它从指针与排版里拿走（不占位置、不接点击），但可聚焦——Tab 到它时
+  //      :focus-within 立刻让它现身，给出可见的焦点环。 ----
+  '.dsh-ct-toolbar{position:absolute;bottom:100%;left:0;margin-bottom:2px;visibility:hidden;opacity:0;z-index:4}',
+  '.dsh-ct-prose:hover>.dsh-ct-toolbar,.dsh-ct-prose:focus-within>.dsh-ct-toolbar{visibility:visible;opacity:1}',
+  '.dsh-ct-toolbar-button{display:inline-flex;align-items:center;gap:4px;margin:0;padding:1px 8px;border:0;border-radius:var(--dsw-radius-sm,4px);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:20px;cursor:pointer;-webkit-appearance:none;appearance:none}',
+  '.dsh-ct-toolbar-button:hover{color:var(--dsw-alias-label-primary)}',
+  // 工具条上的按钮给键盘一个看得见的落点（与左缘那两样不同：它是浮出的可见控件）。
+  '.dsh-ct-toolbar-button:focus-visible{outline:1px solid var(--dsw-alias-label-secondary);outline-offset:1px}',
   // ---- 失败块的 ↻：真按钮，常驻在正文左侧的空隙里（`left:-18px` + 16px 宽，
   //      右缘距正文 2px，覆盖不到任何文字）。它是失败段唯一的点击目标——失败
   //      块不放窄带，一段落只对应一个动作。 ----
   '.dsh-ct-retry{position:absolute;left:-18px;top:2px;width:16px;height:20px;display:flex;align-items:center;justify-content:center;margin:0;padding:0;border:0;background:0 0;color:var(--dsw-alias-state-error-primary);cursor:pointer;z-index:3;-webkit-appearance:none;appearance:none}',
   // 补跑在途：原位转圈（同一个节点，不重挂载——键盘焦点不掉），并停止承诺重复点。
+  '.dsh-ct-retry[data-unconfigured]{color:var(--dsw-alias-label-tertiary)}',
   '.dsh-ct-retry[data-busy]{cursor:default}',
   '.dsh-ct-retry[data-busy] .dsh-ct-retry-spin{animation:0.9s linear infinite dsh-ct-retry-spin}',
   '@keyframes dsh-ct-retry-spin{to{transform:rotate(360deg)}}',
@@ -132,11 +152,24 @@ export function proseClassNames(mark: ProseMark): string | undefined {
 /** 成功块的可点窄带类名：左缘外 6px 的透明带子，切换译文/原文。 */
 export const HOTSPOT_CLASS = 'dsh-ct-hotspot';
 
-/** 失败块的 ↻ 类名：一个真的 button，点它整行补跑。 */
+/** 成功块上方那条悬浮工具条的类名（鼠标进入或键盘聚焦时出现）。 */
+export const TOOLBAR_CLASS = 'dsh-ct-toolbar';
+
+/** 工具条上那颗按钮的类名。 */
+export const TOOLBAR_BUTTON_CLASS = 'dsh-ct-toolbar-button';
+
+/** 失败块的 ↻ 类名：一个真的 button，点它只重发这一块。 */
 export const RETRY_CLASS = 'dsh-ct-retry';
 
 /** 补跑在途态：挂在 ↻ 自己身上（同一个节点，只换属性，不重挂载）。 */
 export const RETRY_BUSY_ATTR = 'data-busy';
+
+/**
+ * 「设置还没配好」类失败：同一个 ↻ 位置上的按钮降到次要色（错误红是「通道伤了」
+ * 的颜色，设置问题不是通道伤）。位置、可点性、读屏标签都不变——第一题选了 C，
+ * 按钮不改成跳转，只是把它报的原因说清楚。
+ */
+export const RETRY_UNCONFIGURED_ATTR = 'data-unconfigured';
 
 /** ↻ 的转圈图标类名（转的是图标本身，按钮位置不动）。 */
 export const RETRY_SPIN_CLASS = 'dsh-ct-retry-spin';

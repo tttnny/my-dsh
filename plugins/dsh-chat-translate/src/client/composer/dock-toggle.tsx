@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import { Pill, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
-import { settingsStore, type ClientSettingsState } from '../settings/store.ts';
+import { settingsStore, type SettingsPageState } from '../settings/store.ts';
 import { NS } from '../locales.ts';
 
 /**
@@ -22,15 +22,20 @@ export type DockToggleProps = PropsLocale<typeof NS>;
  */
 export function ComposerTranslateToggle(props: DockToggleProps): ReactElement {
   const { t } = props;
-  const [state, setState] = useState<ClientSettingsState>(() => settingsStore.getState());
+  const [state, setState] = useState<SettingsPageState>(() => settingsStore.getState());
 
   useEffect(() => settingsStore.subscribe(() => setState(settingsStore.getState())), []);
 
   return (
-    <Tooltip label={() => (state.enabled ? t('dockOn') : t('dockOff'))} side="top" align="end" portal>
+    <Tooltip
+      label={() => (state.committed.enabled ? t('dockOn') : t('dockOff'))}
+      side="top"
+      align="end"
+      portal
+    >
       <Pill
-        active={state.enabled}
-        onClick={() => void settingsStore.update({ enabled: !settingsStore.getState().enabled })}
+        active={state.committed.enabled}
+        onClick={() => void settingsStore.setEnabled(!settingsStore.getState().committed.enabled)}
       >
         {t('dockLabel')}
       </Pill>

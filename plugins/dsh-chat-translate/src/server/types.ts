@@ -26,12 +26,21 @@ export interface ITranslationAdapter {
 }
 
 /**
+ * Why one block failed, as the client's label needs it. `channel` is a hurt
+ * channel (timeout, HTTP error, broken stream, empty return) — retrying it
+ * may work. `not-configured` is a setup problem (missing key, base URL or
+ * model) — retrying the same request can never fix it, so the wording points
+ * at the configuration page instead.
+ */
+export type TranslateFailureKind = 'channel' | 'not-configured';
+
+/**
  * One reply block's outcome, aligned by index with the request's block list.
  * Failure means the channel was hurt (timeout, HTTP error, broken stream,
- * empty return) — the answer's markdown shape is never a failure reason:
- * drift is repaired by construction, re-rolled once, or accepted as written
- * (the original stays one click away). `detail` carries the technical
- * one-liner for the hover text.
+ * empty return) or the channel is not configured — the answer's markdown shape
+ * is never a failure reason: drift is repaired by construction, re-rolled
+ * once, or accepted as written (the original stays one click away). `detail`
+ * carries the technical one-liner for the hover text.
  */
 export interface ReplyBlockResult {
   original: string;
@@ -45,4 +54,21 @@ export interface ReplyBlockResult {
    * no detail exists.
    */
   detail?: string;
+  /** Present only when `ok` is false: the failure class the label branches on. */
+  reason?: TranslateFailureKind;
+}
+
+/** A translation failure the reply path can classify for the client. */
+export class TranslationFailure extends Error {
+  readonly reason: TranslateFailureKind;
+
+  /**
+   * @param reason - failure class the client's label branches on.
+   * @param message - technical one-liner safe to show in a hover bubble.
+   */
+  constructor(reason: TranslateFailureKind, message: string) {
+    super(message);
+    this.name = 'TranslationFailure';
+    this.reason = reason;
+  }
 }

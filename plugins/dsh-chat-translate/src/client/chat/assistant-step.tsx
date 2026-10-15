@@ -39,7 +39,8 @@ import type {
   MarkdownPathImages,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import { settingsStore } from '../settings/store.ts';
-import { planAssistantRow } from './row-plan.ts';
+import { growingTailIndex, planAssistantRow } from './row-plan.ts';
+import type { ChannelState } from './row-plan.ts';
 import { isCleanHotspotClick } from './click-guard.ts';
 import { rowCopy } from '../locales.ts';
 import type { AssistantBlockLike } from './row-plan.ts';
@@ -51,10 +52,14 @@ import {
   RETRY_BUSY_ATTR,
   RETRY_CLASS,
   RETRY_SPIN_CLASS,
+  RETRY_UNCONFIGURED_ATTR,
+  TOOLBAR_BUTTON_CLASS,
+  TOOLBAR_CLASS,
   proseAction,
   proseClassNames,
 } from './styles.ts';
 import { chatTranslate, sameTexts } from './translate-store.ts';
+import type { BlockFailKind, ChatTranslateStore } from './translate-store.ts';
 
 // ---- 宿主 contract 的结构性镜像（source of truth: ui-chat slots.d.ts） ----
 
@@ -84,6 +89,11 @@ interface TurnProcessLike {
 }
 
 export interface AssistantStepProps {
+  /**
+   * 这一行用的翻译池。缺省是客户端半边那一个单例；测试按座次注入自己的池，
+   * 好把一行渲染成某个指定的结果态，而不必先让单例池产出那个结果。
+   */
+  readonly store?: RowTranslateStore;
   readonly node: {
     readonly data: NodeDataLike;
     readonly location?: { readonly kind?: string; readonly turn?: { readonly status?: string } };
@@ -196,7 +206,9 @@ function useSearchableHidden(hidden: boolean, reveal: () => void): React.RefObje
 }
 
 const subscribeSettings = (listener: () => void): (() => void) => settingsStore.subscribe(listener);
-const subscribeTranslate = (listener: () => void): (() => void) => chatTranslate.subscribe(listener);
+
+/** 行的翻译池：默认是客户端半边那一个单例，测试可以按座次注入自己的池。 */
+export type RowTranslateStore = Pick<ChatTranslateStore, 'ensure' | 'getState' | 'getVersion' | 'subscribe'>;
 
 /**
  * 行的视口在场状态（150px 缓冲）：进入视口才放行首跑请求。落定后的行不再
@@ -315,7 +327,9 @@ interface ProseBlockProps {
   showingOriginal: boolean;
   /** 仅 mark='failed' 时非 null：悬停文案的技术细节（通道伤一句）。 */
   fail: string | null;
-  /** 仅 mark='failed' 且补跑在途时为 true：↻ 原地转圈、暂不可重复点。 */
+  /** 仅 mark='failed' 时非 null：失败类别，决定悬停与读屏报哪一类原因、怎么救。 */
+  failKind: BlockFailKind | null;
+  /** 仅这一块被手点补跑时为 true：↻ 原地转圈、暂不可重复点。 */
   retryBusy: boolean;
   onToggle: () => void;
   onRetry: () => void;
@@ -346,6 +360,7 @@ function ProseBlock({
   mark,
   showingOriginal,
   fail,
+  failKind,
   retryBusy,
   onToggle,
   onRetry,
@@ -361,6 +376,27 @@ function ProseBlock({
 
   // 成功块才放窄带：没有结果的块（没送过模型、开关关闭、通道没配好、空白块、
   // 还在等结果的块）没有可切换的东西；失败块由 ↻ 承担唯一动作。
+  // 悬浮工具条：只在有东西可切时存在，块上方浮出，鼠标移开收回。文案就是此刻
+  // 能做的那个动作——读译文时提示「查看原文」，读原文时反过来。
+  const toolbar =
+    action !== 'toggle'
+      ? null
+      : React.createElement(
+          'div',
+          { className: TOOLBAR_CLASS },
+          React.createElement(
+            'button',
+            {
+              type: 'button',
+              className: TOOLBAR_BUTTON_CLASS,
+              onClick: () => {
+                onToggle();
+              },
+            },
+            showingOriginal ? copy.toolbarShowTranslation : copy.toolbarShowOriginal
+          )
+        );
+
   const hotspot =
     action !== 'toggle'
       ? null
@@ -399,9 +435,11 @@ function ProseBlock({
       type: 'button',
       className: RETRY_CLASS,
       // 败因进按钮自己的读屏标签：气泡只在 openOnClick 时才挂 aria-describedby，
-      // 读屏用户不悬停，标签是他们唯一能听到「超时 / 断流 / 空返回」的地方。
-      'aria-label': retryBusy ? copy.retryBusyAria(fail) : copy.retryAria(fail),
+      // 读屏用户不悬停，标签是他们唯一能听到「超时 / 断流 / 空返回」，或者听到
+      // 「设置还没配好、要去哪儿改」的地方。
+      'aria-label': retryBusy ? copy.retryBusyAria(fail, failKind) : copy.retryAria(fail, failKind),
       ...(retryBusy ? { [RETRY_BUSY_ATTR]: 'true' } : {}),
+      ...(failKind === 'not-configured' ? { [RETRY_UNCONFIGURED_ATTR]: 'true' } : {}),
       tabIndex: 0,
       onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -427,7 +465,7 @@ function ProseBlock({
     action !== 'retry'
       ? null
       : React.createElement(Tooltip, {
-          label: () => copy.failTitle(fail),
+          label: () => copy.failTitle(failKind, fail),
           side: 'top',
           portal: true,
           children: retryButton as Parameters<typeof Tooltip>[0]['children'],
@@ -437,6 +475,7 @@ function ProseBlock({
     'div',
     { className },
     retry,
+    toolbar,
     hotspot,
     React.createElement(MarkdownText, {
       text: source,
@@ -452,16 +491,25 @@ function ProseBlock({
 
 export const AssistantStepView = memo(function AssistantStepView(props: AssistantStepProps): ReactElement | null {
   ensureAssistantStyles();
-  const { node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, usePresentation, t } = props;
+  const { store, node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, usePresentation, t } = props;
   const data = node.data;
   const streaming = data.status === 'running';
   const interrupted = data.status === 'interrupted';
+  const translate = store ?? chatTranslate;
+  const subscribeStore = useCallback(
+    (listener: () => void): (() => void) => translate.subscribe(listener),
+    [translate]
+  );
 
-  const enabled = useSyncExternalStore(subscribeSettings, () => settingsStore.getState().enabled);
-  const aiConfigured = useSyncExternalStore(subscribeSettings, () => settingsStore.getState().aiConfigured);
-  useSyncExternalStore(subscribeTranslate, () => chatTranslate.getVersion());
+  // 只读**已保存**的值：页面上还没点保存的草稿不影响正在看的这一行。
+  const enabled = useSyncExternalStore(subscribeSettings, () => settingsStore.getState().committed.enabled);
+  const aiConfigured = useSyncExternalStore(
+    subscribeSettings,
+    () => settingsStore.getState().committed.aiConfigured
+  );
+  useSyncExternalStore(subscribeStore, () => translate.getVersion());
 
-  const canTranslate = enabled && aiConfigured;
+  const channel: ChannelState = !enabled ? 'off' : aiConfigured ? 'ready' : 'unconfigured';
   const rowKey = `a${node.anchorSeq ?? `t${data.turn}:s${data.step}`}`;
 
   const labels = useMemo(() => markdownLabels(t), [t]);
@@ -491,26 +539,35 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
         streaming,
         interrupted,
         groupPart,
-        canTranslate,
+        channel,
         outcomes: undefined,
       }),
-    [blocks, streaming, interrupted, groupPart, canTranslate]
+    [blocks, streaming, interrupted, groupPart, channel]
+  );
+
+  // 已经写完的块数：正文只往后追加，所以流式期间除了正在长的尾块，前面每一块的
+  // 内容都不会再变——「写定」就是它们的送译许可，不必等整段回答结束。
+  const frozenCount = useMemo(
+    () => (streaming ? growingTailIndex(blocks, groupPart) : plan.texts.length),
+    [blocks, groupPart, plan.texts.length, streaming]
   );
 
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const inView = useSettledInView(rootRef, !streaming && canTranslate && plan.entries !== null && plan.texts.length > 0);
+  const canTranslate = channel === 'ready';
+  const inView = useSettledInView(rootRef, canTranslate && plan.entries !== null && frozenCount > 0);
 
   useEffect(() => {
-    if (streaming || !canTranslate || !inView || plan.entries === null || plan.texts.length === 0) return;
-    chatTranslate.ensure(rowKey, plan.texts);
-  }, [streaming, canTranslate, inView, rowKey, plan]);
+    // 一冻结就送：进入视口后这一行的首跑（或下一批首跑）即刻发出，不等落定。
+    if (!canTranslate || !inView || plan.entries === null || frozenCount === 0) return;
+    translate.ensure(rowKey, plan.texts, { frozen: frozenCount });
+  }, [canTranslate, inView, rowKey, plan, frozenCount, translate]);
 
   const [originalKeys, setOriginalKeys] = useState<ReadonlySet<number>>(() => new Set());
 
   // 只认同代登记：rowKey 是会话内锚点，跨会话可能重号——texts 逐位相等才把
   // 旧 outcomes 挂上来，换代的那一帧（含换会话撞键）按「未登记」渲染——纯原文、
   // 左缘不出现任何东西，随后 ensure 重新登记。
-  const registered = chatTranslate.getState(rowKey);
+  const registered = translate.getState(rowKey);
   const rowState = registered !== undefined && sameTexts(registered.texts, plan.texts) ? registered : undefined;
   const displayed = useMemo(
     () =>
@@ -519,12 +576,13 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
         streaming,
         interrupted,
         groupPart,
-        canTranslate,
+        channel,
         outcomes: rowState?.outcomes,
-        rowRetrying: rowState?.retrying,
+        frozen: rowState?.settledThrough ?? frozenCount,
+        retrying: rowState?.retrying,
         originalKeys,
       }),
-    [blocks, streaming, interrupted, groupPart, canTranslate, rowState, originalKeys]
+    [blocks, streaming, interrupted, groupPart, channel, rowState, frozenCount, originalKeys]
   );
 
   const reasoningHidden =
@@ -546,11 +604,20 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     });
   }, []);
 
-  // 手动补跑：点失败块的 ↻ = 整行重发（无限次、不设额度）；在途再点是空操作——
-  // store 的 pending 短路让它是安全的，↻ 自己转着圈就是「已在跑」的答复。
-  const retryRow = useCallback(() => {
-    chatTranslate.ensure(rowKey, plan.texts, true);
-  }, [rowKey, plan]);
+  // 手动补跑：点失败块的 ↻ 只重发**失败的那些块**（无限次、不设额度）；已经
+  // 成功的块原地不动、连请求都不再发。在途的块再点是空操作——↻ 自己转着圈
+  // 就是「已在跑」的答复。
+  const retryBlock = useCallback(() => {
+    const failed: number[] = [];
+    const outcomes = rowState?.outcomes;
+    if (outcomes === undefined) return;
+    for (let index = 0; index < outcomes.length; index++) {
+      const outcome = outcomes[index];
+      if (outcome !== null && outcome !== undefined && !outcome.ok) failed.push(index);
+    }
+    if (failed.length === 0) return;
+    translate.ensure(rowKey, plan.texts, { frozen: frozenCount, retries: failed });
+  }, [frozenCount, plan, rowKey, rowState, translate]);
 
   // 早退在所有 hook 之后：行形态在 null 与可见之间切换时 hook 序列不变。
   if (displayed.entries === null) return null;
@@ -568,9 +635,10 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
             mark: entry.mark,
             showingOriginal: entry.showingOriginal,
             fail: entry.fail,
+            failKind: entry.failKind,
             retryBusy: entry.retryBusy,
             onToggle: () => toggleBlock(entry.key),
-            onRetry: retryRow,
+            onRetry: retryBlock,
             streaming,
             labels,
             mentions,

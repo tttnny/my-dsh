@@ -1,8 +1,10 @@
 import { describeError } from '../describe-error.ts';
+import { TranslationFailure } from './types.ts';
 import type {
   ITranslationAdapter,
   PluginConfig,
   ReplyBlockResult,
+  TranslateFailureKind,
 } from './types.ts';
 import type { ConfigManager } from './config.ts';
 import { LruDiskCache } from './cache.ts';
@@ -53,25 +55,45 @@ function replyPieceKey(piece: { block: number; index: number }): string {
 type BlockPart = { verbatim: string } | { piece: number };
 
 /**
- * 片段失败账本：pieceKey → 一句技术细节（进悬停文案）。只有通道伤会留账——
- * 译文形状问题由修复、重掷、照收三层消化，不再是否决理由。从未记账的缺失
- * 兜底为「没译回来」，因为说不出细节时这就是最诚实的描述。
+ * 片段失败账本：pieceKey → 一句技术细节（进悬停文案）与失败类别（决定悬停和
+ * 读屏报哪一类原因）。只有通道伤与设置问题会留账——译文形状问题由修复、重掷、
+ * 照收三层消化，不再是否决理由。从未记账的缺失兜底为「没译回来」，因为说不出
+ * 细节时这就是最诚实的描述。
  */
-type FailureLedger = Map<string, string>;
+interface FailureRecord {
+  detail: string;
+  reason: TranslateFailureKind;
+}
 
-function recordLedgerFailure(ledger: FailureLedger, keys: readonly string[], detail: string): void {
+type FailureLedger = Map<string, FailureRecord>;
+
+/** 从抛出的异常里认出类别；顺手带上它的技术一句。 */
+function classifyError(err: unknown): FailureRecord {
+  if (err instanceof TranslationFailure) return { detail: err.message, reason: err.reason };
+  return { detail: describeError(err), reason: 'channel' };
+}
+
+function recordLedgerFailure(
+  ledger: FailureLedger,
+  keys: readonly string[],
+  failure: FailureRecord
+): void {
   for (const key of keys) {
-    if (!ledger.has(key)) ledger.set(key, detail);
+    if (!ledger.has(key)) ledger.set(key, failure);
   }
 }
 
-/** 块败因细节：取第一个说得出话的缺失片段。 */
-function blockFailureDetail(ledger: FailureLedger, block: number, missing: readonly number[]): string {
+/** 块败因：取第一个说得出话的缺失片段。 */
+function blockFailure(
+  ledger: FailureLedger,
+  block: number,
+  missing: readonly number[]
+): FailureRecord {
   for (const index of missing) {
-    const detail = ledger.get(replyPieceKey({ block, index }));
-    if (detail !== undefined) return detail;
+    const failure = ledger.get(replyPieceKey({ block, index }));
+    if (failure !== undefined) return failure;
   }
-  return 'no translation came back';
+  return { detail: 'no translation came back', reason: 'channel' };
 }
 
 /** 把一段文本拆成 {head, core, tail}；core 为全空白时返回 null（整段逐字保留）。 */
@@ -113,12 +135,12 @@ export class TranslationDispatcher {
    *
    * **形状问题不否决内容**：修不好的片段自动重掷一次；再修不好就照收模型的
    * 译文（链接数不等时不回填，其余原样）——原文一键可回，可读的译文优先于
-   * 形状完整。失败只剩通道伤一种：超时、断流、空返回，块保持原文并带一句
-   * detail 供悬停报因，救活由用户的点击发起。
+   * 形状完整。失败只有两类：通道伤（超时、断流、空返回）与设置没配好；两者
+   * 都让块保持原文并带上类别与一句 detail，救活由用户的点击发起。
    *
    * 调用方传进来的每个块要么整块译出、要么整块保持原文：任一片段缺失都让该块
    * 作废，避免半中半英的段落；失败块带 `detail` 一句技术细节。每行只跑首跑
-   * 一次，通道恢复后由点击救活。
+   * 一次（新的写定块由调用方逐次递进来，本方法对它们各自独立决定成败）。
    *
    * 客户端按与宿主同源的 4096 估算 token 切批，所以一个 markdown 块可能跨多次
    * 调用；每次调用都独立决定成败，不会出现「前一段已挂译文、后一段失败」的
@@ -133,11 +155,20 @@ export class TranslationDispatcher {
     }));
 
     const config = this.configManager.getConfig();
+    // 总开关关着 = 用户明说不要翻译：不是失败，不给任何标记。
     if (!config.enabled) return results;
 
     // The channel id is fixed: the reply path has exactly one channel.
     const adapter = this.adapters.get(CHANNEL_ID);
-    if (!adapter || !adapter.isAvailable(config)) return results;
+    if (!adapter || !adapter.isAvailable(config)) {
+      // 通道没配齐：这是**要用户去改设置**的失败，不是静默保持原文——静默会让
+      // 用户以为插件坏了。路由还在，客户端会来问，所以逐块如实回报类别。
+      return results.map((result) => ({
+        ...result,
+        reason: 'not-configured' as const,
+        detail: this.configManager.describeMissing(config),
+      }));
+    }
 
     return this.serveReplyBlocks(blocks, results, adapter, config);
   }
@@ -208,7 +239,9 @@ export class TranslationDispatcher {
         parts.push(value);
       }
       if (missing.length > 0) {
-        results[block].detail = blockFailureDetail(ledger, block, missing);
+        const failure = blockFailure(ledger, block, missing);
+        results[block].detail = failure.detail;
+        results[block].reason = failure.reason;
         continue;
       }
       // 全围栏块（零片段）也走到这里：拼回即原文，按「已是最终形态」记成功
@@ -255,7 +288,7 @@ export class TranslationDispatcher {
         }
       });
     } catch (err) {
-      recordLedgerFailure(ledger, batch.map((piece) => replyPieceKey(piece)), describeError(err));
+      recordLedgerFailure(ledger, batch.map((piece) => replyPieceKey(piece)), classifyError(err));
       console.warn(
         `[dsh-chat-translate] reply batch of ${batch.length} failed, retrying per block: ${describeError(err)}`
       );
@@ -273,7 +306,7 @@ export class TranslationDispatcher {
           answer = (await this.fetchReplyAnswers(adapter, [piece], config))[0] ?? '';
         } catch (err) {
           if (answer === null) {
-            recordLedgerFailure(ledger, [key], describeError(err));
+            recordLedgerFailure(ledger, [key], classifyError(err));
             console.warn(
               `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
             );

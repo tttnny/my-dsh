@@ -3,6 +3,8 @@ import type {
   PluginConfig,
   TranslateAdapterOptions,
 } from './base.ts';
+import { TranslationFailure } from '../types.ts';
+import { TRANSLATE_API_KEY_REF } from '../credentials.ts';
 import type { KeyReader } from '../credentials.ts';
 
 /**
@@ -92,13 +94,21 @@ export class OpenAiCompatibleAdapter implements ITranslationAdapter {
     options?: TranslateAdapterOptions
   ): Promise<string> {
     const apiKey = this.credentials.getApiKey();
+    // 设置问题与通道伤分开报：前者的救法只有一个——去配置页把缺的那一项填上，
+    // 所以它带上让人一眼看懂的一类，客户端的标签据此换文案。
     if (!apiKey) {
-      throw new Error(`TRANSLATE_API_KEY is not configured in ~/.dsh/.credentials.yaml`);
+      throw new TranslationFailure(
+        'not-configured',
+        `${TRANSLATE_API_KEY_REF} is not configured in ~/.dsh/.credentials.yaml`
+      );
     }
     const baseUrl = (config.baseUrl || '').trim().replace(/\/+$/, '');
     const model = (config.model || '').trim();
     if (!baseUrl || !model) {
-      throw new Error('OpenAI channel: baseUrl or model is not configured');
+      throw new TranslationFailure(
+        'not-configured',
+        `OpenAI channel: ${!baseUrl ? 'baseUrl' : 'model'} is not configured`
+      );
     }
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -127,7 +137,10 @@ export class OpenAiCompatibleAdapter implements ITranslationAdapter {
       } catch {
         // ignore body parse errors
       }
-      throw new Error(`OpenAI-compatible API responded with ${response.status}${detail ? `: ${detail}` : ''}`);
+      throw new TranslationFailure(
+        'channel',
+        `OpenAI-compatible API responded with ${response.status}${detail ? `: ${detail}` : ''}`
+      );
     }
 
     const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };

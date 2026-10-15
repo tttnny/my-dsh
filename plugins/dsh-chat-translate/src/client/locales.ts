@@ -1,4 +1,5 @@
 /** Locale bundles for the chat-translate card on the DSH Plugins page. */
+import type { BlockFailKind } from './chat/translate-store.ts';
 
 /** Dictionary namespace owned by this plugin's settings card. */
 export const NS = 'settings.chatTranslate';
@@ -42,6 +43,11 @@ export const zh = {
   testOk: '连接正常，延迟 {latency}ms',
   testFail: '失败：{error}',
 
+  unsavedHint: '改动保存后才生效',
+  invalidTimeout: '超时填写不合法：请填 500 到 900000 之间的毫秒数',
+  saveProbeOk: '设置已保存，通道连接正常',
+  saveProbeFail: '设置已保存，但通道探测失败：{error}',
+
   behaviorTitle: '翻译范围',
   behaviorRule:
     '助手回答正文一律翻译，包括最终汇总与整段中文的块：中文块同样交给模型改写成自然中文，意义、术语与数字不变；空白块不送译、左缘不出现任何标记。思考链正文、工具调用标题与折叠摘要不翻译，代码块及其内部原样保留。',
@@ -51,10 +57,15 @@ export const zh = {
   dockOff: '正文翻译已关闭，点击开启',
 
   failTitle: '翻译失败',
-  retryAria: '翻译失败，点这个按钮重新翻译整行',
+  failTitleUnconfigured: '翻译通道还没配好',
+  retryAria: '翻译失败，点这个按钮重新翻译这一块',
   retryBusyAria: '正在重新翻译，请等待',
+  retryAriaUnconfigured: '翻译通道还没配好：先去「插件」页把 API Key、Base URL 与模型填齐，再回来点这个按钮重试',
+  retryBusyAriaUnconfigured: '正在重试，请等待',
   toggleToOriginalAria: '查看原文',
   toggleToTranslatedAria: '查看译文',
+  toolbarShowOriginal: '查看原文',
+  toolbarShowTranslation: '查看译文',
 } as const;
 
 /** Locale keys this plugin renders. */
@@ -96,6 +107,11 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   testOk: 'Connected, {latency}ms latency',
   testFail: 'Failed: {error}',
 
+  unsavedHint: 'Changes take effect after you save',
+  invalidTimeout: 'Invalid timeout: enter a number of milliseconds between 500 and 900000',
+  saveProbeOk: 'Settings saved; the channel answered',
+  saveProbeFail: 'Settings saved, but the channel probe failed: {error}',
+
   behaviorTitle: 'What gets translated',
   behaviorRule:
     'All assistant reply prose, the final summary and Chinese-only blocks included: Chinese blocks are also handed to the model, which rewrites them into natural Chinese while keeping meaning, terms and numbers unchanged; blank blocks are never sent and never marked. Think-chain text, tool-call titles and folded summaries are never translated; code blocks and their contents stay untouched.',
@@ -105,10 +121,16 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   dockOff: 'Translation is off; click to turn it on',
 
   failTitle: 'Translation failed',
-  retryAria: 'Translation failed — press this button to translate the whole row again',
+  failTitleUnconfigured: 'The translation channel is not configured yet',
+  retryAria: 'Translation failed — press this button to translate this block again',
   retryBusyAria: 'Translating again, please wait',
+  retryAriaUnconfigured:
+    'The translation channel is not configured yet: fill in the API Key, Base URL and model on the Plugins page, then press this button to retry',
+  retryBusyAriaUnconfigured: 'Retrying, please wait',
   toggleToOriginalAria: 'Show the original',
   toggleToTranslatedAria: 'Show the translation',
+  toolbarShowOriginal: 'Show the original',
+  toolbarShowTranslation: 'Show the translation',
 };
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -141,22 +163,31 @@ export function rowCopy(): {
    * `aria-describedby`，所以败因必须进标签本身——读屏用户不悬停，这是他们
    * 唯一能听到「超时 / 断流 / 空返回」的通道。
    */
-  retryAria: (detail?: string | null) => string;
+  retryAria: (detail?: string | null, kind?: BlockFailKind | null) => string;
   /** 补跑在途时 ↻ 的读屏标签：说清此刻按下去没有动作，同样带上败因。 */
-  retryBusyAria: (detail?: string | null) => string;
+  retryBusyAria: (detail?: string | null, kind?: BlockFailKind | null) => string;
   /** 窄带的读屏标签：读译文时提示可切回原文，反之亦然。 */
   toggleToOriginalAria: string;
   toggleToTranslatedAria: string;
-  /** 失败块悬停文案：本地化标签 + 服务端原样带来的技术一句（通道伤）。 */
-  failTitle: (detail?: string | null) => string;
+  /** 悬浮工具条上那颗按钮的文案：当前能做的那个动作。 */
+  toolbarShowOriginal: string;
+  toolbarShowTranslation: string;
+  /** 失败块悬停文案：本地化标签（按失败类别）+ 服务端带来的技术一句。 */
+  failTitle: (kind?: BlockFailKind | null, detail?: string | null) => string;
 } {
   const withDetail = (label: string, detail?: string | null): string =>
     detail === undefined || detail === '' || detail === null ? label : `${label} — ${detail}`;
+  /** 「设置还没配好」类失败的文案与通道伤不同：它要说清下一步去哪儿改。 */
+  const unconfigured = (kind?: BlockFailKind | null): boolean => kind === 'not-configured';
   return {
-    retryAria: (detail) => withDetail(rowT('retryAria'), detail),
-    retryBusyAria: (detail) => withDetail(rowT('retryBusyAria'), detail),
+    retryAria: (detail, kind) => withDetail(rowT(unconfigured(kind) ? 'retryAriaUnconfigured' : 'retryAria'), detail),
+    retryBusyAria: (detail, kind) =>
+      withDetail(rowT(unconfigured(kind) ? 'retryBusyAriaUnconfigured' : 'retryBusyAria'), detail),
     toggleToOriginalAria: rowT('toggleToOriginalAria'),
     toggleToTranslatedAria: rowT('toggleToTranslatedAria'),
-    failTitle: (detail) => withDetail(rowT('failTitle'), detail),
+    toolbarShowOriginal: rowT('toolbarShowOriginal'),
+    toolbarShowTranslation: rowT('toolbarShowTranslation'),
+    failTitle: (kind, detail) =>
+      withDetail(rowT(unconfigured(kind) ? 'failTitleUnconfigured' : 'failTitle'), detail),
   };
 }
