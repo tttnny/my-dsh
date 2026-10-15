@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-model-submenu",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "给输入框的模型选择器加上供应商层级：先选供应商，再选它下面的模型。",
   "license": "MIT",
   "publishConfig": {
