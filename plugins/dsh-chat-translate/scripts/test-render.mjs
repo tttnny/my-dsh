@@ -2,7 +2,8 @@
  * 渲染自检：用真 react 把助手行画进 jsdom，锁住这次改动的核心承诺。
  *
  * 正文左缘不再有任何线，可点的只有左缘之外的两样东西，它们各自是唯一的入口：
- *   1. 成功块：一条 6px 透明窄带（`.dsh-ct-hotspot`）承载译文/原文切换；
+ *   1. 成功块：一条 10px 透明窄带（`.dsh-ct-hotspot`）承载译文/原文切换；鼠标停在
+ *      它上面时，光标右边出一条气泡（`.dsh-ct-hint`，投在 body 下）跟着光标走；
  *      点正文（单击落字）不切换，拖选择字也不切换；
  *   2. 失败块：一个真 ↻ 按钮（`.dsh-ct-retry`）承载整行补跑，没有窄带；
  *      补跑在途时它原地转圈、不重挂载（键盘焦点不掉），再点是空操作。
@@ -230,6 +231,41 @@ function clickAt(element) {
   });
 }
 
+const move = (target, clientX, clientY) =>
+  act(() => {
+    target.dispatchEvent(
+      new dom.window.MouseEvent('mousemove', { clientX, clientY, bubbles: true, cancelable: true })
+    );
+  });
+
+/** React 的 onMouseLeave 由 mouseout 合成：相关目标落在带子之外才算离开。 */
+function leaveTo(element, related) {
+  act(() => {
+    element.dispatchEvent(
+      new dom.window.MouseEvent('mouseout', { bubbles: true, cancelable: true, relatedTarget: related })
+    );
+  });
+}
+
+/**
+ * jsdom 不做布局：offsetWidth / offsetHeight 恒为 0，气泡的贴合判断（右边放不下
+ * 就翻到左边、上下贴边就收回视口）也就永远走不到。这里补上真实的尺寸语义，
+ * 只影响气泡自己——渲染层只在这一处量元素尺寸。
+ */
+let hintBox = { width: 0, height: 0 };
+Object.defineProperty(dom.window.HTMLElement.prototype, 'offsetWidth', {
+  configurable: true,
+  get() {
+    return hintBox.width;
+  },
+});
+Object.defineProperty(dom.window.HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return hintBox.height;
+  },
+});
+
 function dragFromTo(from, to) {
   act(() => {
     from.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
@@ -280,35 +316,60 @@ await test('窄带仍是切换的唯一入口，块里没有别的可点物', ()
   assert.equal(block.querySelectorAll('button').length, 1, '块里只有窄带一个可点物');
 });
 
-await test('悬停提示只在透明带上跟着光标：移到正文上不动它', () => {
+await test('悬停气泡：没人悬停时不显形，鼠标移到正文上也不显形', () => {
   const block = containerA.querySelector('.dsh-ct-prose');
-  const strip = containerA.querySelector('.dsh-ct-hotspot');
-  const hint = containerA.querySelector('.dsh-ct-hint');
-  assert.ok(hint !== null, '成功块里应有一个气泡锚点');
-  assert.equal(hint.getAttribute('aria-hidden'), 'true', '锚点只是定位用的装饰，读屏忽略');
-  assert.equal(hint.parentElement, strip, '锚点是透明带的孩子，坐标以带子为基准');
+  const bubble = document.body.querySelector('.dsh-ct-hint');
+  assert.ok(bubble !== null, '成功块在 body 下常挂一条气泡');
+  assert.equal(bubble.getAttribute('aria-hidden'), 'true', '气泡是纯装饰，读屏忽略');
+  assert.equal(bubble.closest('.dsh-ct-prose'), null, '气泡不在正文块里：块自己的裁剪与叠层困不住它');
+  assert.equal(bubble.textContent, 'hotspotShowOriginal', '读译文时气泡报「查看原文」');
+  assert.equal(bubble.getAttribute('data-visible'), null, '还没悬停：气泡不显形');
 
-  const move = (target, clientX, clientY) =>
-    act(() => {
-      target.dispatchEvent(
-        new dom.window.MouseEvent('mousemove', { clientX, clientY, bubbles: true, cancelable: true })
-      );
-    });
-
-  // jsdom 里 rect 全是 0，所以换算后的坐标就等于鼠标坐标——断言的是「锚点跟到
-  // 光标处」这件事本身（真实换算是光标减带子矩形，见 placeHintAtCursor）。
-  move(strip, 240, 90);
-  assert.equal(hint.style.left, '240px', '鼠标在带上：锚点横坐标跟着光标');
-  assert.equal(hint.style.top, '90px', '鼠标在带上：锚点纵坐标跟着光标');
-
-  // 移到正文上：锚点不动。悬停提示只在鼠标真的停在透明带上时才出现。
-  const before = [hint.style.left, hint.style.top];
+  hintBox = { width: 70, height: 20 };
   move(block.querySelector('.md'), 700, 400);
-  assert.deepEqual([hint.style.left, hint.style.top], before, '鼠标在正文上时锚点不跟');
+  assert.equal(bubble.getAttribute('data-visible'), null, '鼠标在正文上：气泡不出现');
+  assert.equal(bubble.style.left, '', '鼠标在正文上：气泡位置不动');
+});
 
-  move(strip, 200, 200);
-  assert.equal(hint.style.left, '200px', '回到带上：继续跟');
-  assert.equal(hint.style.top, '200px');
+await test('悬停气泡贴着光标右边，并跟着光标在带子上走', () => {
+  const strip = containerA.querySelector('.dsh-ct-hotspot');
+  const bubble = document.body.querySelector('.dsh-ct-hint');
+  hintBox = { width: 70, height: 20 };
+
+  move(strip, 240, 90);
+  assert.equal(bubble.style.left, '252px', '气泡左边缘落在光标右边 12px');
+  assert.equal(bubble.style.top, '90px', '气泡与光标同高（自身上下居中于光标）');
+  assert.equal(bubble.getAttribute('data-side'), 'right', '默认落在光标右侧');
+  assert.equal(bubble.getAttribute('data-visible'), 'true', '悬停在带上：气泡显形');
+
+  move(strip, 300, 120);
+  assert.equal(bubble.style.left, '312px', '气泡跟着光标走');
+  assert.equal(bubble.style.top, '120px');
+
+  // 鼠标移进正文（离开这条带子）：气泡收起，位置也不再跟。
+  leaveTo(strip, containerA.querySelector('.md'));
+  assert.equal(bubble.getAttribute('data-visible'), null, '离开透明带就收起');
+  const parked = [bubble.style.left, bubble.style.top];
+  move(containerA.querySelector('.md'), 700, 400);
+  assert.deepEqual([bubble.style.left, bubble.style.top], parked, '鼠标在正文上：气泡不跟');
+});
+
+await test('悬停气泡贴边时让开：右边放不下翻到左边，上下贴边收回视口内', () => {
+  const strip = containerA.querySelector('.dsh-ct-hotspot');
+  const bubble = document.body.querySelector('.dsh-ct-hint');
+  hintBox = { width: 70, height: 20 };
+
+  // 视口宽 1024，留白 12：光标 980 时右边只剩 32px，放不下 70px 的气泡。
+  move(strip, 980, 400);
+  assert.equal(bubble.style.left, '968px', '右边放不下：翻到光标左边（980 - 12）');
+  assert.equal(bubble.getAttribute('data-side'), 'left', '样式层据此把气泡往左让开自身宽度');
+
+  // 视口高 768：气泡高 20，贴边时上下各留 12 + 半高 10。
+  move(strip, 240, 4);
+  assert.equal(bubble.style.top, '22px', '贴着上缘：气泡收回视口内');
+  move(strip, 240, 766);
+  assert.equal(bubble.style.top, '746px', '贴着下缘：同样收回视口内');
+  leaveTo(strip, containerA.querySelector('.md'));
 });
 
 await test('点正文（单击落字）不切换译文/原文', () => {
@@ -376,6 +437,10 @@ await test('键盘 Enter 在窄带上等效于点击（且只动作一次）', (
 
 act(() => rootA.unmount());
 
+await test('行卸载：气泡随 portal 一起撤走，body 下不留残骸', () => {
+  assert.equal(document.body.querySelector('.dsh-ct-hint'), null, '正文块卸载后气泡不应还挂在 body 下');
+});
+
 const containerB = document.createElement('div');
 document.body.appendChild(containerB);
 const rootB = renderRow('ax2', 'Broken block', containerB);
@@ -393,7 +458,7 @@ await test('失败块：一个真 ↻ 按钮、没有窄带，正文不响应点
     1,
     '失败块里只有 ↻ 一个可点物：没有窄带、也没有别的浮层'
   );
-  assert.equal(containerB.querySelector('.dsh-ct-hint'), null, '失败块里没有气泡锚点（没有带子就没有提示）');
+  assert.equal(document.body.querySelector('.dsh-ct-hint'), null, '失败块里没有气泡（没有带子就没有提示）');
   // 读屏用户不悬停：Tooltip 的气泡只在 openOnClick 时才挂 aria-describedby，
   // 所以败因必须进按钮自己的标签，否则他们永远听不到「超时 / 断流 / 空返回」。
   assert.match(

@@ -9,7 +9,8 @@
  * 交互压到两个东西上，都落在正文之外：
  * 1. 成功块的可点面是 `dsh-ct-hotspot`——正文左缘外侧那条透明窄带。它整条落在
  *    正文之外（不占正文一个像素），切换译文与原文都由它承载；鼠标停在它上面时
- *    出气泡，报出此刻能做的那个动作（读译文时「查看原文」，反之亦然）。
+ *    出气泡（`dsh-ct-hint`），报出此刻能做的那个动作（读译文时「查看原文」，
+ *    反之亦然）。气泡贴在光标的右边、跟着光标走，位置由渲染层算（hint-bubble.ts）。
  * 2. 失败块的可点面是 `dsh-ct-retry`——一个真的 button（小 ↻），浮在正文左缘
  *    外侧更远一点的位置；补跑在途时它原位转圈（`data-busy`），不重挂载。
  *
@@ -44,10 +45,17 @@ export const ASSISTANT_CSS = [
   '.dsh-ct-hotspot{position:absolute;left:-10px;top:0;bottom:0;width:10px;margin:0;padding:0;border:0;background:0 0;cursor:pointer;z-index:2;-webkit-appearance:none;appearance:none}',
   // 键盘可聚焦，但不加任何可见标记：没有 outline，也没有别的变化。
   '.dsh-ct-hotspot:focus-visible{outline:none}',
-  // ---- 气泡锚点：窄带里一个零尺寸元素，鼠标在带子上动一下，它就跟到光标处——
-  //      宿主的 Tooltip 按它定位（top 侧 = 锚点上缘再往上一个 gap），气泡因此贴着
-  //      光标出现。它不可见、不接指针事件，带子的点击目标始终是带子本身。 ----
-  '.dsh-ct-hint{position:absolute;width:0;height:0;pointer-events:none}',
+  // ---- 悬停气泡：贴在光标右边的一条提示（位置由渲染层算，见 hint-bubble.ts）。
+  //      外观取宿主 Tooltip 的同款令牌与尺寸（背景、字色、字号、行高、圆角、
+  //      内边距、最大宽度），所以它看起来就是宿主自己的气泡，只是位置跟着光标。
+  //      常挂不卸：没悬停时 `visibility:hidden` 留在布局里，量得到尺寸，悬停时
+  //      只挂上 `data-visible`（动画随之重跑一次）。投到 body 下（渲染层 portal），
+  //      因此不受正文块的裁剪与叠层影响；它不接指针事件——鼠标始终归那条窄带。 ----
+  '.dsh-ct-hint{position:fixed;z-index:1100;width:max-content;max-width:50vw;margin:0;padding:3px 7px;border:0;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-tooltip-bg);color:var(--dsw-static-neutral-bluish-00);font-size:13px;line-height:20px;white-space:pre-line;overflow-wrap:break-word;pointer-events:none;visibility:hidden;transform:translateY(-50%)}',
+  '.dsh-ct-hint[data-side=left]{transform:translate(-100%,-50%)}',
+  '.dsh-ct-hint[data-visible]{visibility:visible;animation:150ms var(--ds-ease-in-out) dsh-ct-hint-in}',
+  '@keyframes dsh-ct-hint-in{from{opacity:0}}',
+  '@media (prefers-reduced-motion:reduce){.dsh-ct-hint[data-visible]{animation:none}}',
 
   // ---- 失败块的 ↻：真按钮，常驻在正文左侧的空隙里（`left:-18px` + 16px 宽，
   //      右缘距正文 2px，覆盖不到任何文字）。它是失败段唯一的点击目标——失败
@@ -142,10 +150,11 @@ export function proseClassNames(mark: ProseMark): string | undefined {
 export const HOTSPOT_CLASS = 'dsh-ct-hotspot';
 
 /**
- * 提示锚点的类名：块里一个零尺寸元素，鼠标动一下就跟到光标处。气泡由它定位，
- * 所以提示出现在光标旁边；它自己不可见、不接指针事件。
+ * 悬停气泡的类名：一条贴在光标右边的提示，报出窄带此刻能做的动作。位置由渲染层
+ * 算（hint-bubble.ts），收起只摘 `data-visible`。它是纯装饰，读屏忽略它——
+ * 窄带自己的 aria-label 就是读屏唯一的通道。
  */
-export const HINT_ANCHOR_CLASS = 'dsh-ct-hint';
+export const HINT_BUBBLE_CLASS = 'dsh-ct-hint';
 
 /** 失败块的 ↻ 类名：一个真的 button，点它只重发这一块。 */
 export const RETRY_CLASS = 'dsh-ct-retry';

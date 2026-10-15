@@ -8,8 +8,9 @@
 // 3. 翻译池：同键同文本幂等、文本换代重请求、逐批落定逐批可见、落定后无任何
 //    自动重走、manual ensure 整行补跑且成功块结果保持、LRU 行数上限；
 // 4. 呈现策略：ui-chat 的 transcriptView 值（含 legacy 值）映射到策略表；
-// 5. 正文左缘没有任何线标：成功块的切换归一条 6px 透明窄带，失败块归一个真
-//    ↻ 按钮（补跑在途原位转圈）；样式表里不存在任何 border-left 与缩进。
+// 5. 正文左缘没有任何线标：成功块的切换归一条 10px 透明窄带，悬停时在光标右边
+//    出一条气泡；失败块归一个真 ↻ 按钮（补跑在途原位转圈）；样式表里不存在任何
+//    border-left 与缩进。
 import assert from 'node:assert/strict';
 
 let passed = 0;
@@ -37,6 +38,7 @@ const {
   proseAction,
   PROSE_BASE_CLASS,
   HOTSPOT_CLASS,
+  HINT_BUBBLE_CLASS,
   RETRY_CLASS,
   RETRY_BUSY_ATTR,
   RETRY_SPIN_CLASS,
@@ -788,12 +790,37 @@ await test('窄带的悬停文案单点：读译文报「查看原文」，读�
   // 「渲染器按显示源二选一」，并钉住这两个键在词典里的中文。
   assert.match(
     source,
-    /label: \(\) => \(showingOriginal \? copy\.hotspotShowTranslation : copy\.hotspotShowOriginal\)/,
-    '窄带的悬停提示必须跟着当前显示源翻面'
+    /createPortal\(\s*React\.createElement\(\s*'span',\s*\{[^}]*className: HINT_BUBBLE_CLASS[^}]*\},\s*showingOriginal \? copy\.hotspotShowTranslation : copy\.hotspotShowOriginal/,
+    '窄带的悬停气泡必须跟着当前显示源翻面'
   );
   const locales = await fs.readFile(path.join(here, '..', 'src', 'client', 'locales.ts'), 'utf-8');
   assert.match(locales, /hotspotShowOriginal: '查看原文'/);
   assert.match(locales, /hotspotShowTranslation: '查看译文'/);
+});
+
+await test('悬停气泡：投在 body 下的固定浮层，取宿主 Tooltip 的同款令牌', () => {
+  assert.equal(HINT_BUBBLE_CLASS, 'dsh-ct-hint');
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-hint\{position:fixed;z-index:1100;width:max-content;max-width:50vw;margin:0;padding:3px 7px;border:0;border-radius:var\(--dsw-radius-sm\);background:var\(--dsw-alias-tooltip-bg\);color:var\(--dsw-static-neutral-bluish-00\);font-size:13px;line-height:20px;white-space:pre-line;overflow-wrap:break-word;pointer-events:none;visibility:hidden;transform:translateY\(-50%\)\}/,
+    '气泡是固定定位的浮层：与宿主气泡同款尺寸与令牌，不接指针事件，默认收起'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-hint\[data-side=left\]\{transform:translate\(-100%,-50%\)\}/,
+    '右边放不下时翻到光标左边：往左让开自身宽度'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /\.dsh-ct-hint\[data-visible\]\{visibility:visible;animation:150ms var\(--ds-ease-in-out\) dsh-ct-hint-in\}/,
+    '悬停才显形，并按宿主气泡的时长与缓动淡入'
+  );
+  assert.match(
+    ASSISTANT_CSS,
+    /@media \(prefers-reduced-motion:reduce\)\{\.dsh-ct-hint\[data-visible\]\{animation:none\}\}/,
+    'reduced-motion：不淡入，气泡照常显形'
+  );
+  assert.ok(!/dsh-ct-hint\{[^}]*pointer-events:auto/.test(ASSISTANT_CSS), '气泡永不接指针：鼠标始终归那条窄带');
 });
 
 await test('防回归：自动重试面不存在——额度常量不得复活', () => {

@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-chat-translate",
-  "version": "3.5.2",
+  "version": "3.5.3",
   "description": "Assistant reply-body translation for the DeepSeek Harness Web UI (OpenAI-compatible channel)",
   "license": "MIT",
   "author": "lynn123411",
@@ -77,6 +77,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.5-alpha.2",
     "@deepseek-ai/dsh-client-connection": ">=0.2.1-alpha.3",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.1-alpha.3",
     "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-alpha.3",
     "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.1-alpha.3",
     "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1-alpha.3",
@@ -86,12 +87,12 @@
     "@eslint/js": "^9.30.0",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.3.0",
     "esbuild": "^0.25.0",
     "jsdom": "^26.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "typescript": "^6.0.0",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.1-alpha.3"
+    "typescript": "^6.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-alpha.3",
