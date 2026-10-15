@@ -724,25 +724,7 @@ await test('标记名单点：只有成功/失败两种，正文里不存在任�
   assert.match(proseClassNames('translated'), /dsh-ct-prose dsh-ct-prose-translated/);
   assert.match(proseClassNames('failed'), /dsh-ct-prose dsh-ct-prose-failed/);
   assert.equal(PROSE_BASE_CLASS, 'dsh-ct-prose', '每块都挂定位父级类');
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-toolbar\{position:absolute;bottom:100%[^}]*visibility:hidden/,
-    '悬浮工具条绝对定位在块上方、默认收起：不占正文位置，也不进排版流'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-prose:hover>\.dsh-ct-toolbar,\.dsh-ct-prose:focus-within>\.dsh-ct-toolbar\{visibility:visible/,
-    '鼠标进入正文或键盘焦点落进块里才现身；用 visibility 而不是 display:none，按钮才留在 Tab 序列里'
-  );
-  assert.ok(
-    !/\.dsh-ct-toolbar\{[^}]*display:none/.test(ASSISTANT_CSS),
-    '收起不能用 display:none——那样按钮既不可聚焦也进不了 Tab 序列，「键盘焦点落进来时出现」就成了空话'
-  );
-  assert.match(
-    ASSISTANT_CSS,
-    /\.dsh-ct-toolbar-button:focus-visible\{outline:/,
-    '工具条按钮给键盘一个看得见的焦点环（它是浮出的可见控件）'
-  );
+  assert.ok(!ASSISTANT_CSS.includes('dsh-ct-toolbar'), '悬浮工具条整体退场：正文之外只剩窄带与 ↻');
   assert.ok(!ASSISTANT_CSS.includes('border-left'), '样式表里一根竖线都不留');
   assert.ok(!ASSISTANT_CSS.includes('prose-indent'), '缩进规则整体退场');
   assert.ok(!ASSISTANT_CSS.includes('padding-left:12px'), '不再给正文补 12px');
@@ -756,11 +738,11 @@ await test('动作单点：mark 唯一决定 toggle / retry / 没有可点物', 
   assert.equal(proseAction(null), null, '没有结果：左缘没有任何可点物');
 });
 
-await test('窄带几何：只有 6px，整条落在正文左缘之外', () => {
+await test('窄带几何：宽 10px，整条落在正文左缘之外', () => {
   assert.match(
     ASSISTANT_CSS,
-    /\.dsh-ct-hotspot\{position:absolute;left:-6px;top:0;bottom:0;width:6px;margin:0;padding:0;border:0;background:0 0;cursor:pointer;z-index:2/,
-    '窄带从 -6px 起、宽 6px：正好贴住正文左缘外侧，一个字都不压'
+    /\.dsh-ct-hotspot\{position:absolute;left:-10px;top:0;bottom:0;width:10px;margin:0;padding:0;border:0;background:0 0;cursor:pointer;z-index:2/,
+    '窄带从 -10px 起、宽 10px：整条贴在正文左缘外侧，一个字都不压'
   );
   assert.match(
     ASSISTANT_CSS,
@@ -794,6 +776,24 @@ await test('↻ 是真按钮：常驻、可点、在途转圈且按下去无事�
     /@media \(prefers-reduced-motion:reduce\)\{\.dsh-ct-retry-spin\{animation:none\}\.dsh-ct-retry\[data-busy\]\{opacity:\.45\}\}/,
     'reduced-motion 降级：不转圈，但「按下去没用」仍看得见（静态变淡）'
   );
+});
+
+await test('窄带的悬停文案单点：读译文报「查看原文」，读原文报「查看译文」', async () => {
+  const fs = await import('node:fs/promises');
+  const url = await import('node:url');
+  const path = await import('node:path');
+  const here = path.dirname(url.fileURLToPath(import.meta.url));
+  const source = await fs.readFile(path.join(here, '..', 'src', 'client', 'chat', 'assistant-step.tsx'), 'utf-8');
+  // 悬停文案直接取自同一对本命名空间的文案键（与读屏标签同源），所以断言
+  // 「渲染器按显示源二选一」，并钉住这两个键在词典里的中文。
+  assert.match(
+    source,
+    /label: \(\) => \(showingOriginal \? copy\.hotspotShowTranslation : copy\.hotspotShowOriginal\)/,
+    '窄带的悬停提示必须跟着当前显示源翻面'
+  );
+  const locales = await fs.readFile(path.join(here, '..', 'src', 'client', 'locales.ts'), 'utf-8');
+  assert.match(locales, /hotspotShowOriginal: '查看原文'/);
+  assert.match(locales, /hotspotShowTranslation: '查看译文'/);
 });
 
 await test('防回归：自动重试面不存在——额度常量不得复活', () => {

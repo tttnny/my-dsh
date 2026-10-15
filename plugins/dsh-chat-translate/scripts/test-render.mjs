@@ -54,7 +54,9 @@ const { createRoot } = await import('react-dom/client');
 const primitives = new Proxy(
   {
     MarkdownText: ({ text }) => createElement('div', { className: 'md' }, text),
-    // Tooltip 的 hover/focus 通道由官方组件负责，这里只把锚点渲染出来。
+    // 真 Tooltip 保留锚点本身、把 hover/focus 处理器注入那个锚点（不套外壳），
+    // 所以替身也原样返回 children——DOM 形状与生产一致，悬停文案由
+    // test-chat-translate.mjs 的 rowCopy 断言覆盖。
     Tooltip: ({ children }) => children,
     IconRefreshOutlineRegular: () => createElement('span', { className: 'icon-refresh' }),
     DisclosureRow: ({ title, collapsedContent, children }) =>
@@ -251,7 +253,7 @@ const containerA = document.createElement('div');
 document.body.appendChild(containerA);
 const rootA = renderRow('ax1', 'Hello world', containerA);
 
-await test('成功块：正文无标记线、无缩进，左缘只有一条 6px 窄带', () => {
+await test('成功块：正文无标记线、无缩进，左缘只有一条 10px 窄带', () => {
   const blockEl = containerA.querySelector('.dsh-ct-prose');
   assert.ok(blockEl !== null, '正文块没有渲染');
   assert.match(blockEl.className, /dsh-ct-prose-translated/, '成功块挂语义状态类');
@@ -264,28 +266,18 @@ await test('成功块：正文无标记线、无缩进，左缘只有一条 6px 
   assert.equal(containerA.textContent.includes('【译】Hello world'), true, '应显示译文');
 });
 
-await test('悬浮工具条：块上方一颗按钮，文案是当前能做的动作，点它与点窄带等效', () => {
-  const toolbar = containerA.querySelector('.dsh-ct-toolbar');
-  assert.ok(toolbar !== null, '成功块上方应有悬浮工具条');
-  assert.ok(
-    containerA.querySelector('.dsh-ct-prose').contains(toolbar),
-    '工具条挂在正文块里（绝对定位在块上方），不是块外的另一行'
+await test('窄带仍是切换的唯一入口，块里没有别的可点物', () => {
+  const hotspot = containerA.querySelector('.dsh-ct-hotspot');
+  assert.ok(hotspot !== null, '成功块应有窄带');
+  assert.equal(hotspot.tagName, 'BUTTON', '窄带应是可聚焦的 button（Tooltip 不套外壳，锚点就是它）');
+  assert.equal(hotspot.parentElement.className.includes('dsh-ct-prose'), true, '窄带直接挂在正文块下');
+  const block = containerA.querySelector('.dsh-ct-prose');
+  assert.deepEqual(
+    [...block.children].map((child) => child.className),
+    ['dsh-ct-hotspot', 'md'],
+    '块下只有窄带与正文：没有工具条、没有别的浮层'
   );
-  const button = toolbar.querySelector('.dsh-ct-toolbar-button');
-  assert.ok(button !== null, '工具条上应有一颗按钮');
-  assert.equal(button.tagName, 'BUTTON', '工具条按钮应是真的 button（可聚焦）');
-  assert.equal(button.textContent, 'toolbarShowOriginal', '读译文时提示「查看原文」');
-  // 工具条是 CSS 悬停显隐的（jsdom 不算样式），所以这里只验证它在树上、可点、
-  // 且点它走的是同一个动作——显隐规则由下面的样式断言兜住。
-  clickAt(button);
-  assert.equal(containerA.textContent.includes('【译】Hello world'), false, '点工具条应切回原文');
-  assert.equal(
-    containerA.querySelector('.dsh-ct-toolbar-button').textContent,
-    'toolbarShowTranslation',
-    '读原文时按钮文案翻成「查看译文」'
-  );
-  clickAt(containerA.querySelector('.dsh-ct-toolbar-button'));
-  assert.equal(containerA.textContent.includes('【译】Hello world'), true, '再点应切回译文');
+  assert.equal(block.querySelectorAll('button').length, 1, '块里只有窄带一个可点物');
 });
 
 await test('点正文（单击落字）不切换译文/原文', () => {
@@ -366,9 +358,9 @@ await test('失败块：一个真 ↻ 按钮、没有窄带，正文不响应点
   assert.equal(retry.tagName, 'BUTTON', '↻ 应是真按钮（自己的点击目标）');
   assert.equal(retry.getAttribute('data-busy'), null, '落定的失败块：↻ 静止可点');
   assert.equal(
-    containerB.querySelector('.dsh-ct-toolbar'),
-    null,
-    '失败块没有译文/原文可切，也就不该有悬浮工具条'
+    containerB.querySelectorAll('button').length,
+    1,
+    '失败块里只有 ↻ 一个可点物：没有窄带、也没有别的浮层'
   );
   // 读屏用户不悬停：Tooltip 的气泡只在 openOnClick 时才挂 aria-describedby，
   // 所以败因必须进按钮自己的标签，否则他们永远听不到「超时 / 断流 / 空返回」。

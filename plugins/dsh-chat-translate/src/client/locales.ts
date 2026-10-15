@@ -64,8 +64,8 @@ export const zh = {
   retryBusyAriaUnconfigured: '正在重试，请等待',
   toggleToOriginalAria: '查看原文',
   toggleToTranslatedAria: '查看译文',
-  toolbarShowOriginal: '查看原文',
-  toolbarShowTranslation: '查看译文',
+  hotspotShowOriginal: '查看原文',
+  hotspotShowTranslation: '查看译文',
 } as const;
 
 /** Locale keys this plugin renders. */
@@ -129,8 +129,8 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   retryBusyAriaUnconfigured: 'Retrying, please wait',
   toggleToOriginalAria: 'Show the original',
   toggleToTranslatedAria: 'Show the translation',
-  toolbarShowOriginal: 'Show the original',
-  toolbarShowTranslation: 'Show the translation',
+  hotspotShowOriginal: 'Show the original',
+  hotspotShowTranslation: 'Show the translation',
 };
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -169,9 +169,9 @@ export function rowCopy(): {
   /** 窄带的读屏标签：读译文时提示可切回原文，反之亦然。 */
   toggleToOriginalAria: string;
   toggleToTranslatedAria: string;
-  /** 悬浮工具条上那颗按钮的文案：当前能做的那个动作。 */
-  toolbarShowOriginal: string;
-  toolbarShowTranslation: string;
+  /** 左缘窄带悬停时气泡里的文案：当前能做的那个动作。 */
+  hotspotShowOriginal: string;
+  hotspotShowTranslation: string;
   /** 失败块悬停文案：本地化标签（按失败类别）+ 服务端带来的技术一句。 */
   failTitle: (kind?: BlockFailKind | null, detail?: string | null) => string;
 } {
@@ -185,8 +185,8 @@ export function rowCopy(): {
       withDetail(rowT(unconfigured(kind) ? 'retryBusyAriaUnconfigured' : 'retryBusyAria'), detail),
     toggleToOriginalAria: rowT('toggleToOriginalAria'),
     toggleToTranslatedAria: rowT('toggleToTranslatedAria'),
-    toolbarShowOriginal: rowT('toolbarShowOriginal'),
-    toolbarShowTranslation: rowT('toolbarShowTranslation'),
+    hotspotShowOriginal: rowT('hotspotShowOriginal'),
+    hotspotShowTranslation: rowT('hotspotShowTranslation'),
     failTitle: (kind, detail) =>
       withDetail(rowT(unconfigured(kind) ? 'failTitleUnconfigured' : 'failTitle'), detail),
   };

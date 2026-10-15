@@ -10,7 +10,7 @@
  *    （包括模型认为原样最好的块）换成中文渲染，失败的块保持原文。
  *
  * 正文左缘不画任何东西，正文排版与宿主默认逐字一致。可点的只有左缘之外的两样：
- * 成功块的译文/原文切换归一条 6px 透明窄带（正文一个像素都不占），失败块的补跑
+ * 成功块的译文/原文切换归一条 10px 透明窄带（正文一个像素都不占），失败块的补跑
  * 归一个真的 ↻ 按钮（浮在正文左侧的空隙里）。正文整块不是点击目标，所以单击
  * 落字、拖选复制都不会误触。补跑在途时 ↻ 原位转圈、暂不可重复点。
  *
@@ -53,8 +53,6 @@ import {
   RETRY_CLASS,
   RETRY_SPIN_CLASS,
   RETRY_UNCONFIGURED_ATTR,
-  TOOLBAR_BUTTON_CLASS,
-  TOOLBAR_CLASS,
   proseAction,
   proseClassNames,
 } from './styles.ts';
@@ -343,13 +341,13 @@ interface ProseBlockProps {
  * 正文块的现状：正文排版与宿主默认逐字一致（无缩进、无线），左缘之外各有一段
  * 可点区域——
  *
- * - 成功块：一条 6px 透明窄带（`.dsh-ct-hotspot`），完全落在正文左侧，用来在
- *   译文与原文之间切换。用原生 `button` 而不是 ui-primitives 的 Button：它没有
- *   自己的外形（完全透明、无 hover 背景、无 focus 框），任何可见控件的外观都会
- *   破坏「正文排版原生、悬停不改视觉」这两条规则；`button` 只借用它的可聚焦与
- *   键盘语义。
- * - 失败块：一个真 ↻ 按钮（`.dsh-ct-retry`），浮在正文左侧的空隙里，点它整行
- *   补跑。失败段不放窄带——一段落只对应一个动作，避免两种点击目标叠在同一小片
+ * - 成功块：一条透明窄带（`.dsh-ct-hotspot`，宽 10px），完全落在正文左侧，用来
+ *   在译文与原文之间切换；鼠标停在它上面时出气泡报出此刻能做的那个动作。用原生
+ *   `button` 而不是 ui-primitives 的 Button：它没有自己的外形（完全透明、无 hover
+ *   背景、无 focus 框），任何可见控件的外观都会破坏「正文排版原生」这条规则；
+ *   `button` 只借用它的可聚焦与键盘语义。
+ * - 失败块：一个真 ↻ 按钮（`.dsh-ct-retry`），浮在正文左侧的空隙里，点它只重发
+ *   这一块。失败段不放窄带——一段落只对应一个动作，避免两种点击目标叠在同一小片
  *   地方。补跑在途时它原位转圈、光标不再承诺可点。
  *
  * 正文整块不是点击目标：单击落字、拖选复制都不会误触切换。
@@ -376,28 +374,11 @@ function ProseBlock({
 
   // 成功块才放窄带：没有结果的块（没送过模型、开关关闭、通道没配好、空白块、
   // 还在等结果的块）没有可切换的东西；失败块由 ↻ 承担唯一动作。
-  // 悬浮工具条：只在有东西可切时存在，块上方浮出，鼠标移开收回。文案就是此刻
-  // 能做的那个动作——读译文时提示「查看原文」，读原文时反过来。
-  const toolbar =
-    action !== 'toggle'
-      ? null
-      : React.createElement(
-          'div',
-          { className: TOOLBAR_CLASS },
-          React.createElement(
-            'button',
-            {
-              type: 'button',
-              className: TOOLBAR_BUTTON_CLASS,
-              onClick: () => {
-                onToggle();
-              },
-            },
-            showingOriginal ? copy.toolbarShowTranslation : copy.toolbarShowOriginal
-          )
-        );
-
-  const hotspot =
+  //
+  // 窄带既是点击目标也是提示锚点：鼠标停在它上面时气泡报出此刻能做的那个动作
+  // （读译文时「查看原文」，读原文时「查看译文」），这样一条看不见的带子也说得
+  // 清自己是什么。键盘可 Tab 到它，但没有可见标记——这是明说的取舍。
+  const hotspotButton =
     action !== 'toggle'
       ? null
       : React.createElement('button', {
@@ -423,6 +404,16 @@ function ProseBlock({
               onToggle();
             }
           },
+        });
+
+  const hotspot =
+    hotspotButton === null
+      ? null
+      : React.createElement(Tooltip, {
+          label: () => (showingOriginal ? copy.hotspotShowTranslation : copy.hotspotShowOriginal),
+          side: 'top',
+          portal: true,
+          children: hotspotButton as Parameters<typeof Tooltip>[0]['children'],
         });
 
   // ↻ 是真按钮：失败段唯一的点击目标，也可能被键盘聚焦。在途时它原位转圈并
@@ -475,7 +466,6 @@ function ProseBlock({
     'div',
     { className },
     retry,
-    toolbar,
     hotspot,
     React.createElement(MarkdownText, {
       text: source,
