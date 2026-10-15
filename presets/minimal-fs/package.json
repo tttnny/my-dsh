@@ -13,6 +13,9 @@
     "README.md"
   ],
   "license": "MIT",
+  "scripts": {
+    "check": "node ../../tools/preset-compose.mjs minimal-fs"
+  },
   "keywords": [
     "deepseek-harness",
     "dsh",

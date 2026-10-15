@@ -16,6 +16,9 @@
     "UPSTREAM.md"
   ],
   "license": "MIT",
+  "scripts": {
+    "check": "node check-upstream.mjs --verify"
+  },
   "keywords": [
     "deepseek-harness",
     "dsh",
