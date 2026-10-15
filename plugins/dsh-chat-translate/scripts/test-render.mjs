@@ -280,6 +280,37 @@ await test('窄带仍是切换的唯一入口，块里没有别的可点物', ()
   assert.equal(block.querySelectorAll('button').length, 1, '块里只有窄带一个可点物');
 });
 
+await test('悬停提示只在透明带上跟着光标：移到正文上不动它', () => {
+  const block = containerA.querySelector('.dsh-ct-prose');
+  const strip = containerA.querySelector('.dsh-ct-hotspot');
+  const hint = containerA.querySelector('.dsh-ct-hint');
+  assert.ok(hint !== null, '成功块里应有一个气泡锚点');
+  assert.equal(hint.getAttribute('aria-hidden'), 'true', '锚点只是定位用的装饰，读屏忽略');
+  assert.equal(hint.parentElement, strip, '锚点是透明带的孩子，坐标以带子为基准');
+
+  const move = (target, clientX, clientY) =>
+    act(() => {
+      target.dispatchEvent(
+        new dom.window.MouseEvent('mousemove', { clientX, clientY, bubbles: true, cancelable: true })
+      );
+    });
+
+  // jsdom 里 rect 全是 0，所以换算后的坐标就等于鼠标坐标——断言的是「锚点跟到
+  // 光标处」这件事本身（真实换算是光标减带子矩形，见 placeHintAtCursor）。
+  move(strip, 240, 90);
+  assert.equal(hint.style.left, '240px', '鼠标在带上：锚点横坐标跟着光标');
+  assert.equal(hint.style.top, '90px', '鼠标在带上：锚点纵坐标跟着光标');
+
+  // 移到正文上：锚点不动。悬停提示只在鼠标真的停在透明带上时才出现。
+  const before = [hint.style.left, hint.style.top];
+  move(block.querySelector('.md'), 700, 400);
+  assert.deepEqual([hint.style.left, hint.style.top], before, '鼠标在正文上时锚点不跟');
+
+  move(strip, 200, 200);
+  assert.equal(hint.style.left, '200px', '回到带上：继续跟');
+  assert.equal(hint.style.top, '200px');
+});
+
 await test('点正文（单击落字）不切换译文/原文', () => {
   const proseBody = containerA.querySelector('.md');
   clickAt(proseBody);
@@ -362,6 +393,7 @@ await test('失败块：一个真 ↻ 按钮、没有窄带，正文不响应点
     1,
     '失败块里只有 ↻ 一个可点物：没有窄带、也没有别的浮层'
   );
+  assert.equal(containerB.querySelector('.dsh-ct-hint'), null, '失败块里没有气泡锚点（没有带子就没有提示）');
   // 读屏用户不悬停：Tooltip 的气泡只在 openOnClick 时才挂 aria-describedby，
   // 所以败因必须进按钮自己的标签，否则他们永远听不到「超时 / 断流 / 空返回」。
   assert.match(

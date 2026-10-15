@@ -34,14 +34,20 @@ export const ASSISTANT_CSS = [
   // ---- 正文块：排版与宿主默认逐字一致（无 padding、无 border），只做两件事——
   //      当窄带与 ↻ 的定位父级，以及承载一个纯语义的状态类 ----
   '.dsh-ct-prose{position:relative}',
-  // ---- 左缘窄带：从正文左缘往外 10px 的一条透明带子，整条在正文之外。绝对定位
-  //      的偏移以 padding box 为基准，而正文从 padding box 左缘起排；`left:-10px`
-  //      + `width:10px` 于是恰好落在 [-10px,0)，一个字都不压，也不占排版。
+  // ---- 左缘窄带：从正文左缘往外 10px 的一条透明带子，整条在正文之外、随块高铺满。
+  //      绝对定位的偏移以 padding box 为基准，而正文从 padding box 左缘起排；
+  //      `left:-10px` + `width:10px` 于是恰好落在 [-10px,0)，一个字都不压，也不占
+  //      排版。带子**不动**：它必须始终停在光标底下，鼠标移进来才有一条带子可停，
+  //      跟鼠标走的是它里面那个定位锚点（见渲染层的 placeHintAtCursor）。
   //      z-index 压过宽表格的透明出血层（那条规则给 table 挂了 z-index:1）。
   //      宿主正文列左侧恒定有 32px（侧栏嵌入 24px）内边距，这条带子落在空白里。 ----
   '.dsh-ct-hotspot{position:absolute;left:-10px;top:0;bottom:0;width:10px;margin:0;padding:0;border:0;background:0 0;cursor:pointer;z-index:2;-webkit-appearance:none;appearance:none}',
   // 键盘可聚焦，但不加任何可见标记：没有 outline，也没有别的变化。
   '.dsh-ct-hotspot:focus-visible{outline:none}',
+  // ---- 气泡锚点：窄带里一个零尺寸元素，鼠标在带子上动一下，它就跟到光标处——
+  //      宿主的 Tooltip 按它定位（top 侧 = 锚点上缘再往上一个 gap），气泡因此贴着
+  //      光标出现。它不可见、不接指针事件，带子的点击目标始终是带子本身。 ----
+  '.dsh-ct-hint{position:absolute;width:0;height:0;pointer-events:none}',
 
   // ---- 失败块的 ↻：真按钮，常驻在正文左侧的空隙里（`left:-18px` + 16px 宽，
   //      右缘距正文 2px，覆盖不到任何文字）。它是失败段唯一的点击目标——失败
@@ -134,6 +140,12 @@ export function proseClassNames(mark: ProseMark): string | undefined {
 
 /** 成功块的可点窄带类名：左缘外一条透明带子，切换译文/原文。 */
 export const HOTSPOT_CLASS = 'dsh-ct-hotspot';
+
+/**
+ * 提示锚点的类名：块里一个零尺寸元素，鼠标动一下就跟到光标处。气泡由它定位，
+ * 所以提示出现在光标旁边；它自己不可见、不接指针事件。
+ */
+export const HINT_ANCHOR_CLASS = 'dsh-ct-hint';
 
 /** 失败块的 ↻ 类名：一个真的 button，点它只重发这一块。 */
 export const RETRY_CLASS = 'dsh-ct-retry';

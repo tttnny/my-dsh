@@ -22,7 +22,7 @@
  * 本渲染器抛错时按 keyed slot 的退位语义退出该 cell，宿主原渲染器回位。
  */
 import * as React from 'react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import {
   DisclosureRow,
@@ -47,6 +47,7 @@ import type { AssistantBlockLike } from './row-plan.ts';
 import type { ProseMark } from './styles.ts';
 import {
   ensureAssistantStyles,
+  HINT_ANCHOR_CLASS,
   HOTSPOT_CLASS,
   PROSE_BASE_CLASS,
   RETRY_BUSY_ATTR,
@@ -342,10 +343,10 @@ interface ProseBlockProps {
  * 可点区域——
  *
  * - 成功块：一条透明窄带（`.dsh-ct-hotspot`，宽 10px），完全落在正文左侧，用来
- *   在译文与原文之间切换；鼠标停在它上面时出气泡报出此刻能做的那个动作。用原生
- *   `button` 而不是 ui-primitives 的 Button：它没有自己的外形（完全透明、无 hover
- *   背景、无 focus 框），任何可见控件的外观都会破坏「正文排版原生」这条规则；
- *   `button` 只借用它的可聚焦与键盘语义。
+ *   在译文与原文之间切换；鼠标停在它上面时**在光标旁边**出气泡，报出此刻能做的
+ *   那个动作。用原生 `button` 而不是 ui-primitives 的 Button：它没有自己的外形
+ *   （完全透明、无 hover 背景、无 focus 框），任何可见控件的外观都会破坏「正文
+ *   排版原生」这条规则；`button` 只借用它的可聚焦与键盘语义。
  * - 失败块：一个真 ↻ 按钮（`.dsh-ct-retry`），浮在正文左侧的空隙里，点它只重发
  *   这一块。失败段不放窄带——一段落只对应一个动作，避免两种点击目标叠在同一小片
  *   地方。补跑在途时它原位转圈、光标不再承诺可点。
@@ -371,13 +372,45 @@ function ProseBlock({
   const source = mark === 'translated' && !showingOriginal ? (translated as string) : text;
   const copy = rowCopy();
   const className = proseClassNames(mark) ?? PROSE_BASE_CLASS;
+  const cursorRef = useRef<HTMLSpanElement | null>(null);
+  // 提示锚点的 id：它是键盘触碰不到的装饰，让读屏忽略它（气泡的正文由窄带自己的
+  // aria-label 承担）。
+  const hintAnchorId = useId();
+
+  /**
+   * 把气泡锚点挪到光标处——只在鼠标位于透明带**上**时生效（事件就挂在带上，
+   * 见 {@link hotspotButton}）。
+   *
+   * 宿主的 Tooltip 按锚点自身的矩形定位（top 侧 = 锚点上缘再往上一个 gap），所以
+   * 锚点跟到光标处，气泡就贴着光标出现，而不是钉在段落左缘的顶端。锚点是窄带的
+   * 孩子，坐标以窄带（= 块）为基准。
+   *
+   * @param event - 窄带上的鼠标事件；只读它的 clientX/clientY。
+   */
+  const placeHintAtCursor = (event: {
+    clientX: number;
+    clientY: number;
+    currentTarget: EventTarget & Element;
+  }): void => {
+    const anchor = cursorRef.current;
+    if (anchor === null) return;
+    // 基准取事件当前目标 = 窄带自己：锚点是它的孩子，两者同一个坐标系。
+    const rect = event.currentTarget.getBoundingClientRect();
+    anchor.style.left = `${event.clientX - rect.left}px`;
+    anchor.style.top = `${event.clientY - rect.top}px`;
+  };
 
   // 成功块才放窄带：没有结果的块（没送过模型、开关关闭、通道没配好、空白块、
   // 还在等结果的块）没有可切换的东西；失败块由 ↻ 承担唯一动作。
   //
-  // 窄带既是点击目标也是提示锚点：鼠标停在它上面时气泡报出此刻能做的那个动作
-  // （读译文时「查看原文」，读原文时「查看译文」），这样一条看不见的带子也说得
-  // 清自己是什么。键盘可 Tab 到它，但没有可见标记——这是明说的取舍。
+  // 窄带里的气泡锚点：零尺寸、aria-hidden，位置由鼠标在**带子上**的移动驱动。
+  const hintMark = React.createElement('span', {
+    ref: cursorRef,
+    id: hintAnchorId,
+    className: HINT_ANCHOR_CLASS,
+    'aria-hidden': true,
+  });
+
   const hotspotButton =
     action !== 'toggle'
       ? null
@@ -387,6 +420,11 @@ function ProseBlock({
           // 窄带是覆盖层，读屏只应听到它的动作，正文仍由 MarkdownText 读。
           'aria-label': showingOriginal ? copy.toggleToTranslatedAria : copy.toggleToOriginalAria,
           tabIndex: 0,
+          // 光标跟踪只挂在带上：鼠标移到正文上不动锚点，气泡也就不出现——悬停提示
+          // 只在鼠标真的停在这条透明带上时才出现。（Tooltip 不覆盖锚点自己的
+          // onMouseMove，所以这个处理器留得住。）
+          onMouseEnter: (event: React.MouseEvent<HTMLButtonElement>) => placeHintAtCursor(event),
+          onMouseMove: (event: React.MouseEvent<HTMLButtonElement>) => placeHintAtCursor(event),
           // button 自己会按 Enter/Space 合成 click，若不接管就会与这段键盘处理
           // 叠加成两次动作：这里两个键都走 keydown 并 preventDefault，合成被掐掉。
           onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -404,7 +442,9 @@ function ProseBlock({
               onToggle();
             }
           },
-        });
+        },
+        // 锚点是带子的孩子：它的 left/top 以带子为基准，坐标换算见 placeHintAtCursor。
+        hintMark);
 
   const hotspot =
     hotspotButton === null
@@ -412,6 +452,7 @@ function ProseBlock({
       : React.createElement(Tooltip, {
           label: () => (showingOriginal ? copy.hotspotShowTranslation : copy.hotspotShowOriginal),
           side: 'top',
+          gap: 10,
           portal: true,
           children: hotspotButton as Parameters<typeof Tooltip>[0]['children'],
         });
