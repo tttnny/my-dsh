@@ -43,7 +43,6 @@ function makeConfig(overrides = {}) {
     logEnabled: true,
     endpointUrl: 'http://judge.invalid/v1/systemone',
     judgeModel: 'jev-latest',
-    apiKeyRef: 'JEV_API_KEY',
     rows: [
       { description: '机械修改', provider: 'd1api', model: 'deepseek-v4.1-flash', effort: 'low' },
       { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
@@ -56,7 +55,6 @@ function makeConfig(overrides = {}) {
     logEnabled: ref('logEnabled'),
     endpointUrl: ref('endpointUrl'),
     judgeModel: ref('judgeModel'),
-    apiKeyRef: ref('apiKeyRef'),
     rows: ref('rows'),
   };
 }
@@ -124,7 +122,10 @@ function mount(configOverrides = {}, options = {}) {
     return original(name, listener);
   };
   ctx.credentials = {
-    resolve: async () => ({ value: 'test-key' }),
+    resolve: async (ref) => {
+      resolvedRefs.push(ref);
+      return { value: 'test-key' };
+    },
     describe: async () => ({ configured: true, writable: true }),
   };
   ctx.sessions = { get: (id) => (id === 'session-main' ? { header: {} } : undefined) };
@@ -132,6 +133,9 @@ function mount(configOverrides = {}, options = {}) {
   plugin.apply(ctx, makeConfig(configOverrides));
   return { ctx, handlers };
 }
+
+/** 凭据服务被问过哪些引用名；用来证明插件读的是自己那个固定引用。 */
+const resolvedRefs = [];
 
 /** Run one request through the captured waterfall with a stubbed judge endpoint. */
 async function judgeOnce(handlers, agent, resolved, fetchStub) {
@@ -156,6 +160,13 @@ const { handlers } = mount();
 await test('导出的行身份与包内 cordis.patch.yml 那条装配行同名', () => {
   assert.equal(plugin.name, 'dsh-subagent-judge-dispatch');
   assert.deepEqual(plugin.inject, ['credentials', 'sessions', 'sessionTitle']);
+});
+
+await test('判断密钥从插件自己那个固定引用读，不是从页面填的名字', async () => {
+  assert.equal(plugin.JUDGE_API_KEY_REF, 'SUBAGENT_JUDGE_API_KEY');
+  // 读的是哪个引用名，只有「问过哪个名字」能证明；替身对任何名字都回同一个值，
+  // 所以断言落在记账上，不落在读到的值上。
+  assert.deepEqual(resolvedRefs, ['SUBAGENT_JUDGE_API_KEY']);
 });
 
 await test('判断成功时三项一起写到这次调用上', async () => {

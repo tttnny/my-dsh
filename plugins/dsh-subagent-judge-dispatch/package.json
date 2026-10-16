@@ -36,7 +36,7 @@
     "build": "node build.mjs",
     "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node build.mjs && node scripts/smoke-host.mjs && node scripts/smoke-client.mjs && node scripts/test-decision.mjs",
+    "test": "node build.mjs && node scripts/smoke-host.mjs && node scripts/smoke-client.mjs && node scripts/test-decision.mjs && node scripts/test-card.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm assert:lib-untracked"
   },

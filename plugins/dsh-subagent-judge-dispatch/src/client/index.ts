@@ -9,12 +9,13 @@ import { apply as registerDictionaries, en, NS, zh } from './locales.ts';
 /**
  * 浏览器半边：把配置卡片挂到宿主的「插件」页上。
  *
- * `inject` 是 cordis 服务名；`package.json` 的 `dsh.client.inject` 是包名。
+ * `inject` 是 cordis 服务名（`remote.credentials` 是判断密钥的写入通道）；
+ * `package.json` 的 `dsh.client.inject` 是包名。
  * 两层都要声明，漏一层整条 loader entry 会静默变成 failed，页面上什么也看不见
  * （见 docs/rules/client-wiring.md）。
  */
 export const name = '@lynn123411/dsh-subagent-judge-dispatch';
-export const inject = ['slots', 'configForms', 'remote', 'remote.session', 'locale'];
+export const inject = ['slots', 'configForms', 'remote', 'remote.session', 'remote.credentials', 'locale'];
 
 /**
  * 插件本体：注册字典，再挂配置卡片。

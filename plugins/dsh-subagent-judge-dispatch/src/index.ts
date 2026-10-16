@@ -6,6 +6,7 @@ import {
   type PluginConfigRefs,
   type ResolvedConfig,
 } from './server/config.ts';
+import { JUDGE_API_KEY_REF, type CredentialsServiceLike } from './server/credentials.ts';
 import { applyDecision, decideRewrite, outcomeReason } from './server/dispatch.ts';
 import {
   isSubagent,
@@ -35,7 +36,8 @@ export const name = SETTINGS_NAMESPACE;
  */
 export const inject = ['credentials', 'sessions', 'sessionTitle'];
 
-export { Config, DEFAULT_API_KEY_REF, DEFAULT_ENDPOINT_URL, DEFAULT_JUDGE_MODEL } from './server/config.ts';
+export { Config, DEFAULT_ENDPOINT_URL, DEFAULT_JUDGE_MODEL } from './server/config.ts';
+export { JUDGE_API_KEY_REF } from './server/credentials.ts';
 
 /** Minimal structural shape of the `sessionTitle` service. */
 interface SessionTitleLike {
@@ -57,10 +59,7 @@ interface SettingsLike {
  * the exported `inject` table.
  */
 interface HostContext {
-  credentials: {
-    resolve(ref: string): Promise<{ value: string; source?: string } | undefined>;
-    describe(ref: string): Promise<{ configured: boolean; source?: string; writable: boolean }>;
-  };
+  credentials: CredentialsServiceLike;
   sessions: { get(id: string): unknown };
   sessionTitle: SessionTitleLike;
   settings: SettingsLike;
@@ -133,8 +132,7 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
   /** Re-read the judge key; a key set outside the page takes effect at once. */
   const refreshKey = async (): Promise<void> => {
     try {
-      const ref = resolvedConfig().apiKeyRef.trim();
-      apiKey = ref === '' ? '' : ((await ctx.credentials.resolve(ref))?.value ?? '').trim();
+      apiKey = ((await ctx.credentials.resolve(JUDGE_API_KEY_REF))?.value ?? '').trim();
     } catch {
       apiKey = '';
     }

@@ -124,6 +124,7 @@ const services = {
   },
   remote: tolerant,
   'remote.session': tolerant,
+  'remote.credentials': tolerant,
 };
 
 /**
@@ -192,6 +193,7 @@ check('卡片用自己的字典命名空间', card?.locale === 'subagentjudgedis
 
 check('卡片绑定了本插件自己的配置表单', formLookups.includes('dsh-subagent-judge-dispatch'));
 check('卡片读了宿主那份「子代理可选用哪些模型」设置', formLookups.includes('subagent-model-selection-settings'));
+check('卡片声明了凭据服务（判断密钥的写入通道）', (exported.inject ?? []).includes('remote.credentials'));
 check('卡片以「宿主在服务本插件条目」为挂载条件', JSON.stringify(servedWatches[0]) === '["dsh-subagent-judge-dispatch"]');
 check('store 订阅了共享配置表单', formSubscribes > 0);
 check('字典注册上了', locales.includes('subagentjudgedispatch'));
@@ -199,6 +201,20 @@ check('没有占用设置页', registrations.every((record) => record.name !== '
 
 check('样式表在 apply() 时追加一次，且带 id 便于判重', appendedStyles.length === 1 && appendedStyles[0].id === 'dsh-subagent-judge-dispatch-styles');
 check('样式表里没有写死色值（只从主题变量取）', !/#[0-9a-fA-F]{3,8}\b/.test(appendedStyles[0]?.textContent ?? ''));
+// 卡片区是设置卡片，弹窗是浮起面，两套材料不能混。这里断言的是「谁用了哪一套」，
+// 不是把 CSS 的值再抄一遍：设置卡片必须取 settings-card 那两个词元，且不许配阴影
+// （阴影是浮起面的第一层，配上就成了两条边叠着）。
+const cssText = appendedStyles[0]?.textContent ?? '';
+const sectionRule = /\.dsh-judge-section\s*\{([^}]*)\}/.exec(cssText)?.[1] ?? '';
+check('设置卡片取宿主的卡片词元，不写死颜色',
+  sectionRule.includes('--dsw-alias-settings-card-stroke')
+  && sectionRule.includes('--dsw-alias-settings-card-fill')
+  && !/#[0-9a-fA-F]{3,8}\b/.test(sectionRule));
+check('设置卡片不配阴影（阴影留给弹窗那类浮起面）', !sectionRule.includes('box-shadow'));
+// 反例：两套材料确实分得开，否则上面那条可能只是断言写歪了。
+check('弹窗那边没有跟着用设置卡片的词元（两套材料分得开）',
+  !/\.dsh-judge-modal\s*\{[^}]*settings-card/.test(cssText));
+check('排版字号取自主题角色，不逐条写死 px', !/font-size:\s*\d+px/.test(cssText));
 
 // 字典键集：英文是键集的唯一来源，中文逐一对齐，且每条非空。
 const dictionaries = exported.__dictionaries;

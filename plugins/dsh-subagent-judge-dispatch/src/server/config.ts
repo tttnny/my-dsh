@@ -25,9 +25,6 @@ import type { TypeRow } from './types.ts';
  */
 export const SETTINGS_NAMESPACE = 'dsh-subagent-judge-dispatch';
 
-/** Credentials ref the page suggests before the reader picks their own name. */
-export const DEFAULT_API_KEY_REF = 'JEV_API_KEY';
-
 /** Endpoint the page prefills: one System One example. */
 export const DEFAULT_ENDPOINT_URL = 'http://127.0.0.1:3425/v1/systemone';
 
@@ -56,8 +53,6 @@ export const Config: Schema = z.object({
   endpointUrl: z.string().default(DEFAULT_ENDPOINT_URL).volatile(),
   /** Judge model id. */
   judgeModel: z.string().default(DEFAULT_JUDGE_MODEL).volatile(),
-  /** Credentials ref name holding the judge key; the value never reaches the page. */
-  apiKeyRef: z.string().default(DEFAULT_API_KEY_REF).volatile(),
   /** The task-type list, in page order. */
   rows: z.array(TypeRowSchema).default([]).volatile(),
 });
@@ -68,7 +63,6 @@ export interface PluginConfigRefs {
   readonly logEnabled: Volatile<boolean>;
   readonly endpointUrl: Volatile<string>;
   readonly judgeModel: Volatile<string>;
-  readonly apiKeyRef: Volatile<string>;
   readonly rows: Volatile<StoredRow[]>;
 }
 
@@ -86,7 +80,6 @@ export interface ResolvedConfig {
   logEnabled: boolean;
   endpointUrl: string;
   judgeModel: string;
-  apiKeyRef: string;
   rows: TypeRow[];
 }
 
@@ -112,7 +105,6 @@ export function readPluginConfig(refs: PluginConfigRefs): ResolvedConfig {
     logEnabled: refs.logEnabled.get() !== false,
     endpointUrl: typeof refs.endpointUrl.get() === 'string' ? refs.endpointUrl.get() : DEFAULT_ENDPOINT_URL,
     judgeModel: typeof refs.judgeModel.get() === 'string' ? refs.judgeModel.get() : DEFAULT_JUDGE_MODEL,
-    apiKeyRef: typeof refs.apiKeyRef.get() === 'string' ? refs.apiKeyRef.get() : DEFAULT_API_KEY_REF,
     rows,
   };
 }

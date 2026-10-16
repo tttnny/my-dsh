@@ -306,7 +306,6 @@ await test('配置读取：编号按位置给，永远从 1 连着', () => {
     logEnabled: { get: () => true },
     endpointUrl: { get: () => 'http://judge.invalid' },
     judgeModel: { get: () => 'judge-x' },
-    apiKeyRef: { get: () => 'JEV_API_KEY' },
     rows: {
       get: () => [
         { description: 'a', provider: 'p', model: 'm1', effort: 'low' },
@@ -322,7 +321,7 @@ await test('配置读取：编号按位置给，永远从 1 连着', () => {
 await test('配置读取：判断可用要求开关开、端点与模型都在、且有一行填全', () => {
   const base = {
     enabled: true, logEnabled: true, endpointUrl: 'http://judge.invalid',
-    judgeModel: 'judge-x', apiKeyRef: 'K',
+    judgeModel: 'judge-x',
     rows: [row({ id: 1 })],
   };
   assert.equal(isJudgeUsable(base), true);

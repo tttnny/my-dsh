@@ -2,20 +2,29 @@
  * The configuration card's own state: what the Host serves, what the reader has
  * staged, and what a save would do.
  *
- * Two rules live here rather than in the component, because both are the kind
+ * Three rules live here rather than in the component, because each is the kind
  * of thing a render pass must not be trusted with:
  *
  * - A row's sequence number is positional (`1..n`) and is never stored. Duplicate
  *   numbers are therefore impossible by construction rather than by validation.
- * - A save is refused while any row's description is empty or two rows share one.
- *   The reader asked for a refusal, not a warning.
+ * - The two sections save separately. The judgement service and the task-type
+ *   list are edited at different times and fail differently, so one save for both
+ *   would let a half-finished description block a change to the endpoint.
+ * - A save that did not land is reported as such. The shared configuration form
+ *   answers `false` for a refusal, which is not a rejection: treating it as
+ *   success would show a saved page over a document the Host never accepted.
  *
  * The model and effort options come from the Host's own "models subagents may
  * choose" setting and the adapter catalogue, so the plugin never keeps a second
- * list that could drift from it.
+ * list that could drift from it. The judgement key is write-only over the DSH
+ * credentials service, which is why no key value is ever part of this state.
  */
 
 import { isSelectableRow } from '../../server/judge-prompt.ts';
+import { JUDGE_API_KEY_REF, type CredentialsRemoteLike } from '../../server/credentials.ts';
+
+export { JUDGE_API_KEY_REF };
+export type { CredentialsRemoteLike };
 
 /** One type row as the page edits it; `id` is derived, never stored. */
 export interface TypeRowDraft {
@@ -48,6 +57,31 @@ export interface LogRow {
   childLabel: string;
 }
 
+/** Which of the two sections a save writes. */
+export type Section = 'judge' | 'rows';
+
+/** What the page shows about the judgement key; never its value. */
+export interface KeyState {
+  /** Staged key text; blank until the reader types one. */
+  text: string;
+  /** Whether the Host reports a stored key under the reference. */
+  configured: boolean;
+  /** Whether the credentials document accepts writes. */
+  writable: boolean;
+  /**
+   * Whether this page has no credentials channel at all — a non-loopback page
+   * is served without the namespace, and a field that cannot be written should
+   * say so before the reader types into it.
+   */
+  unavailable: boolean;
+  saving: boolean;
+  failed: boolean;
+  /** The credentials service's own message for a refused write, or ''. */
+  error: string;
+  /** What the last landed key write did, or '' when none has landed. */
+  landed: '' | 'saved' | 'cleared';
+}
+
 /** The card's whole state. */
 export interface PageState {
   available: boolean;
@@ -58,7 +92,6 @@ export interface PageState {
   logEnabled: boolean;
   endpointUrl: string;
   judgeModel: string;
-  apiKeyRef: string;
   rows: TypeRowDraft[];
   /** Model options read from the Host's allowlist plus the adapter catalogue. */
   models: ModelOption[];
@@ -70,16 +103,24 @@ export interface PageState {
     logEnabled: boolean;
     endpointUrl: string;
     judgeModel: string;
-    apiKeyRef: string;
     rows: TypeRowDraft[];
   };
+  /** Whether the judgement service section holds edits a save would write. */
+  judgeDirty: boolean;
+  /** Whether the task-type list holds edits a save would write. */
+  rowsDirty: boolean;
+  /** Whether either section holds edits, for the preview's own notice. */
   dirty: boolean;
-  /** A reason the current drafts cannot be saved; '' when they can. */
-  invalid: string;
-  saving: boolean;
-  saveFailed: boolean;
+  /** A reason the task-type drafts cannot be saved; '' when they can. */
+  rowsInvalid: string;
+  /** Which section a save is crossing the wire for, or '' when none is. */
+  saving: Section | '';
+  /** Which section's last save did not land, or '' when none failed. */
+  saveFailed: Section | '';
   /** The Host's own message for the last refused write, or ''. */
   saveError: string;
+  /** The judgement key's write-only state. */
+  key: KeyState;
   /** Runtime log rows, newest first. */
   log: LogRow[];
   logLoaded: boolean;
@@ -89,7 +130,6 @@ export interface PageState {
 /** Defaults mirroring the Host schema, so an unserved page still renders. */
 export const DEFAULT_ENDPOINT_URL = 'http://127.0.0.1:3425/v1/systemone';
 export const DEFAULT_JUDGE_MODEL = 'future-jev/jev-latest';
-export const DEFAULT_API_KEY_REF = 'JEV_API_KEY';
 
 /** Profile entry id (== settings namespace). */
 export const SETTINGS_NAMESPACE = 'dsh-subagent-judge-dispatch';
@@ -111,7 +151,7 @@ export interface ConfigFormLike {
     revision?: number;
   };
   subscribe(listener: () => void): () => void;
-  mutate(ops: readonly SettingsPathOpLike[], expectedRevision?: number): Promise<unknown>;
+  mutate(ops: readonly SettingsPathOpLike[], expectedRevision?: number): Promise<boolean>;
 }
 
 /** The `remote.session` face the model catalogue is read through. */
@@ -140,10 +180,7 @@ export const LOG_ROUTE_PATH = '/api/dsh-subagent-judge-dispatch/log';
 export const PREVIEW_ROUTE_PATH = '/api/dsh-subagent-judge-dispatch/preview';
 export const PROBE_ROUTE_PATH = '/api/dsh-subagent-judge-dispatch/probe';
 
-/**
- * A catalogue that cannot be read leaves the allowlist-only options in place:
- * the rows stay editable, they just lose their effort choices.
- */
+/** Decode a response body, treating an unreadable one as absent. */
 async function readJson(response: Response): Promise<any> {
   try {
     return await response.json();
@@ -281,7 +318,7 @@ export function buildModelOptions(
 }
 
 /**
- * The reason the current drafts cannot be saved, or '' when they can.
+ * The reason the task-type drafts cannot be saved, or '' when they can.
  *
  * A duplicate description is refused because the description is the criterion
  * the judge reads: two identical criteria would make the answer ambiguous and
@@ -303,11 +340,20 @@ export function validateRows(rows: readonly TypeRowDraft[], t: (key: string) => 
   return '';
 }
 
+/** A key nothing is staged for and nothing is known about. */
+function emptyKey(): KeyState {
+  return {
+    text: '', configured: false, writable: false, unavailable: false,
+    saving: false, failed: false, error: '', landed: '',
+  };
+}
+
 /**
  * The read/write face of the Host document plus the runtime reads.
  *
- * Every control stages into this store and only {@link save} writes, so a
- * half-typed endpoint can never reach a delegation.
+ * Every control stages into this store and only a section's own save writes, so
+ * a half-typed endpoint can never reach a delegation, and a half-written type
+ * list can never be stored behind the reader's back.
  */
 export class DispatchCardStore {
   private state: PageState = {
@@ -317,7 +363,6 @@ export class DispatchCardStore {
     logEnabled: true,
     endpointUrl: DEFAULT_ENDPOINT_URL,
     judgeModel: DEFAULT_JUDGE_MODEL,
-    apiKeyRef: DEFAULT_API_KEY_REF,
     rows: [],
     models: [],
     catalogRead: false,
@@ -326,14 +371,16 @@ export class DispatchCardStore {
       logEnabled: true,
       endpointUrl: DEFAULT_ENDPOINT_URL,
       judgeModel: DEFAULT_JUDGE_MODEL,
-      apiKeyRef: DEFAULT_API_KEY_REF,
       rows: [],
     },
+    judgeDirty: false,
+    rowsDirty: false,
     dirty: false,
-    invalid: '',
-    saving: false,
-    saveFailed: false,
+    rowsInvalid: '',
+    saving: '',
+    saveFailed: '',
     saveError: '',
+    key: emptyKey(),
     log: [],
     logLoaded: false,
     logFailed: false,
@@ -344,6 +391,7 @@ export class DispatchCardStore {
   private allowedForm: ConfigFormLike | null = null;
   private session: SessionRemoteLike | null = null;
   private remote: DispatchRemoteLike | null = null;
+  private credentials: CredentialsRemoteLike | null = null;
   private offForm: (() => void) | null = null;
   private offAllowed: (() => void) | null = null;
   private translate: (key: string) => string = (key) => key;
@@ -354,6 +402,7 @@ export class DispatchCardStore {
     allowedForm: ConfigFormLike | null;
     session: SessionRemoteLike | null;
     remote: DispatchRemoteLike | null;
+    credentials: CredentialsRemoteLike | null;
     t: (key: string) => string;
   }): void {
     this.offForm?.();
@@ -362,7 +411,12 @@ export class DispatchCardStore {
     this.allowedForm = options.allowedForm;
     this.session = options.session;
     this.remote = options.remote;
+    this.credentials = options.credentials;
     this.translate = options.t;
+    this.state = {
+      ...this.state,
+      key: { ...this.state.key, unavailable: options.credentials === null },
+    };
     if (this.form !== null) {
       this.offForm = this.form.subscribe(() => this.deriveCommitted());
       this.deriveCommitted();
@@ -371,6 +425,7 @@ export class DispatchCardStore {
       this.offAllowed = this.allowedForm.subscribe(() => void this.loadModels());
       void this.loadModels();
     }
+    void this.refreshKeyStatus();
   }
 
   getState(): PageState {
@@ -412,7 +467,37 @@ export class DispatchCardStore {
     this.notify();
   }
 
-  /** Map the Host's resolved section into committed state and re-seed the drafts. */
+  /** Read the status-only view of the judgement key. */
+  async refreshKeyStatus(): Promise<void> {
+    if (this.credentials === null) return;
+    try {
+      const response = await this.credentials.describe([JUDGE_API_KEY_REF]);
+      if (!response.ok) return;
+      const info = response.value[JUDGE_API_KEY_REF];
+      this.state = {
+        ...this.state,
+        key: {
+          ...this.state.key,
+          configured: info?.configured === true,
+          writable: info?.writable === true,
+        },
+      };
+      this.notify();
+    } catch {
+      // The key stays "not configured": the status is an enrichment, and a
+      // failed read must not claim a key that may not be there.
+    }
+  }
+
+  /**
+   * Map the Host's resolved section into committed state and re-seed the drafts.
+   *
+   * Drafts are held FIELD BY FIELD, against the value this page last saw
+   * committed. Holding a whole section instead would make a save write back a
+   * field the reader never touched — reverting a change another page made to it —
+   * while holding nothing would discard input mid-typing every time the Host
+   * publishes.
+   */
   private deriveCommitted(): void {
     const snapshot = this.form?.getSnapshot();
     const value = snapshot?.value;
@@ -423,50 +508,60 @@ export class DispatchCardStore {
       logEnabled: typeof value.logEnabled === 'boolean' ? value.logEnabled : true,
       endpointUrl: typeof value.endpointUrl === 'string' ? value.endpointUrl : DEFAULT_ENDPOINT_URL,
       judgeModel: typeof value.judgeModel === 'string' ? value.judgeModel : DEFAULT_JUDGE_MODEL,
-      apiKeyRef: typeof value.apiKeyRef === 'string' ? value.apiKeyRef : DEFAULT_API_KEY_REF,
       rows,
     };
-    // A committed-value change re-seeds the drafts ONLY when the reader has
-    // nothing staged. Overwriting unconditionally would silently discard input
-    // the reader is in the middle of typing every time the Host publishes.
-    const keepDrafts = this.state.dirty;
+    /** Whether the reader's staged value still differs from what this page last saw committed. */
+    const staged = <T>(current: T, previously: T): boolean => current !== previously;
+    const before = this.state.committed;
     this.state = {
       ...this.state,
       available: snapshot?.status === 'ready',
       writable: snapshot?.writable ?? false,
       committed,
-      ...keepDrafts ? {} : committed,
+      enabled: staged(this.state.enabled, before.enabled) ? this.state.enabled : committed.enabled,
+      logEnabled: staged(this.state.logEnabled, before.logEnabled) ? this.state.logEnabled : committed.logEnabled,
+      endpointUrl: staged(this.state.endpointUrl, before.endpointUrl) ? this.state.endpointUrl : committed.endpointUrl,
+      judgeModel: staged(this.state.judgeModel, before.judgeModel) ? this.state.judgeModel : committed.judgeModel,
+      rows: JSON.stringify(this.state.rows) !== JSON.stringify(before.rows) ? this.state.rows : committed.rows,
     };
     this.recompute();
   }
 
-  /** Recompute dirtiness and the save gate against the committed values. */
+  /** Recompute per-section dirtiness and the row validation against committed values. */
   private recompute(): void {
     const committed = this.state.committed;
-    const dirty =
+    const judgeDirty =
       this.state.enabled !== committed.enabled ||
       this.state.logEnabled !== committed.logEnabled ||
       this.state.endpointUrl !== committed.endpointUrl ||
       this.state.judgeModel !== committed.judgeModel ||
-      this.state.apiKeyRef !== committed.apiKeyRef ||
-      JSON.stringify(this.state.rows) !== JSON.stringify(committed.rows);
+      this.state.key.text.trim() !== '';
+    const rowsDirty = JSON.stringify(this.state.rows) !== JSON.stringify(committed.rows);
     this.state = {
       ...this.state,
-      dirty,
-      invalid: validateRows(this.state.rows, this.translate),
+      judgeDirty,
+      rowsDirty,
+      dirty: judgeDirty || rowsDirty,
+      rowsInvalid: validateRows(this.state.rows, this.translate),
     };
     this.notify();
   }
 
   /** Stage one top-level field. */
-  field(key: 'endpointUrl' | 'judgeModel' | 'apiKeyRef', value: string): void {
-    this.state = { ...this.state, [key]: value, saveFailed: false };
+  field(key: 'endpointUrl' | 'judgeModel', value: string): void {
+    this.state = { ...this.state, [key]: value, saveFailed: '' };
     this.recompute();
   }
 
   /** Stage one switch. */
   toggle(key: 'enabled' | 'logEnabled', value: boolean): void {
-    this.state = { ...this.state, [key]: value, saveFailed: false };
+    this.state = { ...this.state, [key]: value, saveFailed: '' };
+    this.recompute();
+  }
+
+  /** Stage the judgement key. The value stays in this draft until a save. */
+  key(text: string): void {
+    this.state = { ...this.state, key: { ...this.state.key, text, failed: false, error: '', landed: '' } };
     this.recompute();
   }
 
@@ -478,7 +573,7 @@ export class DispatchCardStore {
     this.state = {
       ...this.state,
       rows: key === 'model' ? this.reconcileEffort(rows, index) : rows,
-      saveFailed: false,
+      saveFailed: '',
     };
     this.recompute();
   }
@@ -499,76 +594,192 @@ export class DispatchCardStore {
 
   /** Append an empty row. */
   addRow(): void {
-    this.state = { ...this.state, rows: [...this.state.rows, { description: '', provider: '', model: '', effort: '' }], saveFailed: false };
+    this.state = { ...this.state, rows: [...this.state.rows, { description: '', provider: '', model: '', effort: '' }], saveFailed: '' };
     this.recompute();
   }
 
   /** Append a ready-made entry; the effort hint is not filled in. */
   addPreset(description: string): void {
-    this.state = { ...this.state, rows: [...this.state.rows, { description, provider: '', model: '', effort: '' }], saveFailed: false };
+    this.state = { ...this.state, rows: [...this.state.rows, { description, provider: '', model: '', effort: '' }], saveFailed: '' };
     this.recompute();
   }
 
   /** Delete one row; the remaining rows renumber themselves. */
   removeRow(index: number): void {
-    this.state = { ...this.state, rows: this.state.rows.filter((_row, at) => at !== index), saveFailed: false };
+    this.state = { ...this.state, rows: this.state.rows.filter((_row, at) => at !== index), saveFailed: '' };
     this.recompute();
   }
 
-  /** Discard every draft back to the committed values. */
-  revert(): void {
+  /** Discard one section's drafts back to the committed values. */
+  revert(section: Section): void {
     const committed = this.state.committed;
-    this.state = { ...this.state, ...committed, saveFailed: false };
+    this.state = section === 'judge'
+      ? {
+        ...this.state,
+        enabled: committed.enabled,
+        logEnabled: committed.logEnabled,
+        endpointUrl: committed.endpointUrl,
+        judgeModel: committed.judgeModel,
+        // 只清掉「还没交出去的那段文本」。密钥已经存在凭据文件里，放弃这一节的
+        // 设置草稿不该让页面改口说「还没有密钥」——那是另一处的状态。
+        key: { ...this.state.key, text: '', failed: false, error: '', landed: '' },
+        saveFailed: '',
+      }
+      : { ...this.state, rows: committed.rows, saveFailed: '' };
     this.recompute();
   }
 
   /**
-   * Write every staged edit as one revision-fenced batch.
+   * Write one section's staged edits as one revision-fenced batch.
    *
-   * The rows are written whole rather than diffed: the array is one value, and a
-   * positional number is derived from it, so a partial write could momentarily
-   * renumber the list under a reader mid-save.
+   * The judgement section also writes a typed key, so naming the endpoint and
+   * giving it its credential is one gesture rather than two. The type rows are
+   * written whole rather than diffed: the array is one value, and a positional
+   * number is derived from it, so a partial write could momentarily renumber the
+   * list under a reader mid-save.
+   *
+   * @param section - which section's drafts to write.
    */
-  async save(): Promise<void> {
-    if (this.state.saving || this.state.invalid !== '') return;
+  async save(section: Section): Promise<void> {
+    if (this.state.saving !== '') return;
     const form = this.form;
     if (form === null || !this.state.writable) return;
-    if (!this.state.dirty) return;
+    if (section === 'rows' && (this.state.rowsInvalid !== '' || !this.state.rowsDirty)) return;
+    if (section === 'judge' && !this.state.judgeDirty) return;
 
     const ops: SettingsPathOpLike[] = [];
-    if (this.state.endpointUrl !== this.state.committed.endpointUrl) {
-      ops.push({ op: 'set', path: ['endpointUrl'], value: this.state.endpointUrl });
-    }
-    if (this.state.judgeModel !== this.state.committed.judgeModel) {
-      ops.push({ op: 'set', path: ['judgeModel'], value: this.state.judgeModel });
-    }
-    if (this.state.apiKeyRef !== this.state.committed.apiKeyRef) {
-      ops.push({ op: 'set', path: ['apiKeyRef'], value: this.state.apiKeyRef });
-    }
-    if (this.state.enabled !== this.state.committed.enabled) {
-      ops.push({ op: 'set', path: ['enabled'], value: this.state.enabled });
-    }
-    if (this.state.logEnabled !== this.state.committed.logEnabled) {
-      ops.push({ op: 'set', path: ['logEnabled'], value: this.state.logEnabled });
-    }
-    if (JSON.stringify(this.state.rows) !== JSON.stringify(this.state.committed.rows)) {
+    if (section === 'judge') {
+      if (this.state.endpointUrl !== this.state.committed.endpointUrl) {
+        ops.push({ op: 'set', path: ['endpointUrl'], value: this.state.endpointUrl });
+      }
+      if (this.state.judgeModel !== this.state.committed.judgeModel) {
+        ops.push({ op: 'set', path: ['judgeModel'], value: this.state.judgeModel });
+      }
+      if (this.state.enabled !== this.state.committed.enabled) {
+        ops.push({ op: 'set', path: ['enabled'], value: this.state.enabled });
+      }
+      if (this.state.logEnabled !== this.state.committed.logEnabled) {
+        ops.push({ op: 'set', path: ['logEnabled'], value: this.state.logEnabled });
+      }
+    } else if (JSON.stringify(this.state.rows) !== JSON.stringify(this.state.committed.rows)) {
       ops.push({ op: 'set', path: ['rows'], value: this.state.rows.map((row) => ({ ...row })) });
     }
-    if (ops.length === 0) return;
 
-    this.state = { ...this.state, saving: true, saveFailed: false, saveError: '' };
+    this.state = { ...this.state, saving: section, saveFailed: '', saveError: '' };
     this.notify();
+
+    // The key goes first: a document write the Host refuses leaves the key in
+    // place, while a key that landed with a refused endpoint is still a landed
+    // key. Either way the reader is told which part did not take.
+    const typedKey = section === 'judge' ? this.state.key.text.trim() : '';
     let failure = '';
-    try {
-      await form.mutate(ops, form.getSnapshot().revision);
-    } catch (error) {
-      // The Host's own words, not a generic phrase: a rejected write is the one
-      // place the reader needs to know WHAT the Host objected to.
-      failure = error instanceof Error && error.message !== '' ? error.message : this.translate('save.invalid');
+    let keyLanded: '' | 'saved' | 'cleared' = '';
+    if (typedKey !== '') {
+      const result = await this.writeKey(typedKey);
+      if (result.ok) keyLanded = 'saved';
+      else failure = result.error;
     }
-    this.state = { ...this.state, saving: false, saveFailed: failure !== '', saveError: failure };
+    if (failure === '' && ops.length > 0) {
+      try {
+        const landed = await form.mutate(ops, form.getSnapshot().revision);
+        // `false` is a refusal, not a rejection: the Host answered and did not
+        // accept, so reporting success here would show a saved page over a
+        // document that still holds the old value.
+        if (!landed) failure = this.translate('save.refused');
+      } catch (error) {
+        // The Host's own words, not a generic phrase: a rejected write is the one
+        // place the reader needs to know WHAT the Host objected to.
+        failure = error instanceof Error && error.message !== '' ? error.message : this.translate('save.invalid');
+      }
+    }
+    this.state = {
+      ...this.state,
+      saving: '',
+      saveFailed: failure === '' ? '' : section,
+      saveError: failure,
+      key: keyLanded === '' ? this.state.key : { ...this.state.key, text: '', landed: keyLanded },
+    };
     if (failure === '') this.deriveCommitted();
     else this.notify();
+  }
+
+  /**
+   * Write one judgement key through the credentials service.
+   *
+   * The service resolves with `{ ok: false }` rather than rejecting when it
+   * refuses a write, so that result decides the outcome. The key value is handed
+   * straight to the service and is never copied into the page state.
+   *
+   * @param value - the staged key text, already trimmed and known non-empty.
+   * @returns whether the write landed, and the message when it did not.
+   */
+  private async writeKey(value: string): Promise<{ ok: boolean; error: string }> {
+    const credentials = this.credentials;
+    if (credentials === null) return { ok: false, error: this.translate('key.unavailable') };
+    this.state = { ...this.state, key: { ...this.state.key, saving: true, failed: false, error: '' } };
+    this.notify();
+    try {
+      const response = await credentials.set(JUDGE_API_KEY_REF, value);
+      if (!response.ok) {
+        const error = response.error.message || this.translate('key.saveFailed');
+        this.state = { ...this.state, key: { ...this.state.key, saving: false, failed: true, error } };
+        return { ok: false, error };
+      }
+      this.state = { ...this.state, key: { ...this.state.key, saving: false, failed: false, error: '', configured: true } };
+      await this.refreshKeyStatus();
+      return { ok: true, error: '' };
+    } catch (error) {
+      const message = error instanceof Error && error.message !== '' ? error.message : this.translate('key.saveFailed');
+      this.state = { ...this.state, key: { ...this.state.key, saving: false, failed: true, error: message } };
+      return { ok: false, error: message };
+    }
+  }
+
+  /**
+   * Remove the stored judgement key.
+   *
+   * A separate control rather than "save an empty field": the shared
+   * configuration form's own rule is that a blank draft writes nothing, so an
+   * emptied input cannot mean removal without contradicting it.
+   *
+   * @returns settlement after the credentials read-back.
+   */
+  async clearKey(): Promise<void> {
+    const credentials = this.credentials;
+    if (credentials === null) return;
+    this.state = { ...this.state, key: { ...this.state.key, saving: true, failed: false, error: '' } };
+    this.notify();
+    try {
+      const response = await credentials.unset(JUDGE_API_KEY_REF);
+      if (!response.ok) {
+        this.state = {
+          ...this.state,
+          key: {
+            ...this.state.key,
+            saving: false,
+            failed: true,
+            error: response.error.message || this.translate('key.clearFailed'),
+          },
+        };
+      } else {
+        this.state = {
+          ...this.state,
+          key: { ...this.state.key, saving: false, text: '', failed: false, error: '', landed: 'cleared', configured: false },
+        };
+        await this.refreshKeyStatus();
+      }
+    } catch (error) {
+      this.state = {
+        ...this.state,
+        key: {
+          ...this.state.key,
+          saving: false,
+          failed: true,
+          error: error instanceof Error && error.message !== '' ? error.message : this.translate('key.clearFailed'),
+        },
+      };
+    }
+    this.notify();
   }
 
   /** Read the runtime log from the Host. */
