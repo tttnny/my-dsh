@@ -1,5 +1,5 @@
 # Agent preset plugin-upgrade-cordis: the shipped `cordis` row copied verbatim
-# from dsh 0.2.1-alpha.4 (`@deepseek-ai/dsh-web-app/presets/cordis.patch.yml`) —
+# from dsh 0.2.1-alpha.5 (`@deepseek-ai/dsh-web-app/presets/cordis.patch.yml`) —
 # same persona, same tool matrix, same sub-agent/compaction groups — plus the
 # 11 plugin-engineering skills vendored under ./skills/. See README.md.
 - insert:
