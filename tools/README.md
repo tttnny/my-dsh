@@ -10,7 +10,6 @@
 | 铺一个新插件的骨架（宿主 + 浏览器两半边，生成即 `pnpm check` 绿） | `node tools/new-plugin.mjs dsh-<name> [--host-only] [--link]` |
 | 内核升版后把全部包的版本声明改齐 | `node tools/dsh-baseline.mjs [--write] [--bump patch] [--check]` |
 | 两个已装内核之间到底改了什么（只比 `@deepseek-ai/*`） | `node tools/kernel-diff.mjs <旧版本> [新版本] [--only <包名>]` |
-| minimal-fs 的真装载探针（真 cordis / ToolRuntime / SystemPrompt / dsh-tool-fs） | `node tools/probes/minimal-fs.mjs [--kernel <内核树>]` |
 | 宿主半边能不能装载（不重启正在服务的实例） | `node tools/host-smoke.mjs [--compose-only]` |
 | preset 的组合解析（`--dump-config`） | `node tools/preset-compose.mjs <id \| --all>` |
 | 「页面真的换上新产物了吗」 | `node tools/verify-client.mjs <包> --needle '<新写的类名或文案>' [--build]` |
@@ -23,6 +22,5 @@
 - 判据只读本仓库与本机 DSH 的状态（`package.json`、`docs/rules/`、`$DSH_HOME`、已装内核与它自带的官方 preset），不联网。
   唯一联网的是 `presets/plugin-upgrade-cordis/check-upstream.mjs`（在线模式）与 `pnpm install`。
 - 中间产物一律落 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`。
-- `tools/probes/` 放按包定形、要真实现才能跑的探针；它们被对应包的 `check` 调起，也可以单独跑。
 - **工具与规则是一件事的两处**：`assert-ledger.mjs` 里的每条判据都在 `docs/rules/` 里有出处；改了那些约定就同步改它，不允许只改一边。
 - 判据要能变红：新增或翻转断言后，把被测行为改回旧写法跑一次，确认它真的 FAIL（见 `docs/rules/plugins.md`「证明断言有牙齿」）。

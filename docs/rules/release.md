@@ -41,9 +41,13 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'Accept: application/vnd.npm.install
 
 ## 退役（归档）
 
-不再维护的插件移到仓库根 `archive/plugins/dsh-<name>/`，目录名与包名不变、历史链接不失效。归档内容只作历史参考：不再发布、不再适配新内核；目录与插件自带 `README.md` 原样保留。
+不再维护的插件移到仓库根 `archive/plugins/dsh-<name>/`，不再维护的 preset 移到 `archive/presets/<id>/`；目录名与包名不变、历史链接不失效。归档内容只作历史参考：不再发布、不再适配新内核；目录与包自带 `README.md` 原样保留，包内指向本仓库 `tools/` 的命令随它的退役一起作废。
 
-移走之后登记当场同步：根 `README.md` 插件表——删该行并修正该功能域的 `rowspan` 合并数（版式见 [to-readme.md](./to-readme.md)）。
+移走之后登记当场同步：
+
+- 根 `README.md`——插件表删该行并修正该功能域的 `rowspan` 合并数，preset 表删该行（版式见 [to-readme.md](./to-readme.md)）。
+- [presets.md](./presets.md)「order 台账」——删该 preset 的行；`config.order` 取值以本表已占用最大值 +1 为准。
+- [presets.md](./presets.md) 的范例、[tools/lib/preset-copies.json](./../../tools/lib/preset-copies.json) 的抄本登记、`tools/probes/` 下该 preset 专用的探针，以及与它配套的 `check` 一起删掉；`plugins/`、`docs/rules/`、`tools/README.md` 里指向它的示例改指仍在维护的 preset。
 
 已发布过的包，用户下令后在同一轮把 registry 上**全部版本**标弃用——不传版本范围就是全量，消息指回归档路径与最后可用版本：
 

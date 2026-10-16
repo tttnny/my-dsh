@@ -8,7 +8,7 @@ preset 范围的前门。
 
 ## preset README
 
-与插件同一套四段（范例 `presets/minimal-fs/README.md`）：一级标题 `# <id> — <显示名>` + 一段话概括；`## 功能` 写它给模型 / 用户带来什么；`## 特性` 写身份来源、组件取舍、声明形态与硬边界；`## 安装` 给 `dsh plugin --profile web add @lynn123411/dsh-preset-<id>` 代码块，另一条开发副本命令（`./presets/<id>`）紧接其后。
+与插件同一套四段（范例 `presets/plugin-upgrade-cordis/README.md`）：一级标题 `# <id> — <显示名>` + 一段话概括；`## 功能` 写它给模型 / 用户带来什么；`## 特性` 写身份来源、组件取舍、声明形态与硬边界；`## 安装` 给 `dsh plugin --profile web add @lynn123411/dsh-preset-<id>` 代码块，另一条开发副本命令（`./presets/<id>`）紧接其后。
 
 四段之外**不加节**：与官方 preset 的逐项对照、组成、声明形态、安装步骤、验证流程、实测记录、已知边界、许可这些配置指南内容整体放同目录的 `DETAILS.md`，README 里留一句指针（npm 的 `files` 要带上它）。README 只写现状，`DETAILS.md` 才写版本走廊与实测记录。
 
@@ -48,7 +48,7 @@ preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle
 
 随包带**第三方内容**（vendored `skills/` 等）的 preset 另配一份 `upstream-lock.json`（钉住的 commit ＋ 逐目录树哈希）与检查脚本：离线查形态与完整性、在线查上游漂移，同步后 `--write` 重钉。范例与哈希配方见 `presets/plugin-upgrade-cordis/`。
 
-preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂上游那一条：`plugin-upgrade-cordis` 的 `check` 是「上游离线核对 + 组合解析」，`minimal-fs` 的 `check` 是「组合解析 + [真装载探针](../../tools/probes/minimal-fs.mjs)」。真装载要起第二个实例（`tools/host-smoke.mjs`）或跑真内核的探针，只在装了 DSH 的机器上有意义：本机验收要跑，CI（`node tools/check.mjs`）跑不了。
+preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂上游那一条：`plugin-upgrade-cordis` 的 `check` 是「上游离线核对 + 组合解析」。真装载要起第二个实例（`tools/host-smoke.mjs`），只在装了 DSH 的机器上有意义：本机验收要跑，CI（`node tools/check.mjs`）跑不了。
 
 ## 抄本基线
 
@@ -66,7 +66,6 @@ preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂
 | （官方）ptc | 2 |
 | （官方）minimal | 3 |
 | （官方）cordis | 4 |
-| minimal-fs | 5 |
 | plugin-upgrade-cordis | 6 |
 
 官方四条随 `@deepseek-ai/dsh-web-app` 的 `presets/*.patch.yml` 发布；自有 preset 排在它们之后，新取值取本表已占用最大值 +1。取值以各 preset 的 `<id>.patch.yml` 为准，增删 preset 或改 `config.order` 后同步本表。

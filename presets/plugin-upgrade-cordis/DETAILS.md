@@ -69,7 +69,7 @@ plugin-upgrade-cordis/
 
 一个 preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle.patch` 指向本目录的 `plugin-upgrade-cordis.patch.yml`，该 patch 往 profile 树里插一条 `@deepseek-ai/dsh-agent-preset` 行；preset 的组合行整体进这一行的 `config.plugins`，显示名与描述是 `config.name` / `config.description`，preset id 是 `config.id`。
 
-`order: 6`：官方四条占 1–4（`standard` 1、`ptc` 2、`minimal` 3、`cordis` 4），`minimal-fs` 占 5，本 preset 取已占用最大值 +1。台账在 [docs/rules/presets.md](../../docs/rules/presets.md)「order 台账」。
+`order: 6`：官方四条占 1–4（`standard` 1、`ptc` 2、`minimal` 3、`cordis` 4），本 preset 取已占用最大值 +1。台账在 [docs/rules/presets.md](../../docs/rules/presets.md)「order 台账」。
 
 ### 技能根为什么写成包名而不是相对路径
 

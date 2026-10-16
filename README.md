@@ -60,7 +60,6 @@
 
 | preset | 说明 | 安装 |
 | --- | --- | --- |
-| [minimal-fs](./presets/minimal-fs) | **极简-文件测试模式**：官方极简模式的身份，并入文件工具三件套 `read` / `write` / `edit`，整组不含 shell。 | `dsh plugin --profile web add @lynn123411/dsh-preset-minimal-fs` |
 | [plugin-upgrade-cordis](./presets/plugin-upgrade-cordis) | **插件升级创造模式**：官方创造模式逐字保留，并入 11 个插件工程技能。 | `dsh plugin --profile web add @lynn123411/dsh-preset-plugin-upgrade-cordis` |
 
 > `presets/` 下的 preset 都是可安装的 **bundle 包**（npm 名 `@lynn123411/dsh-preset-<id>`），安装命令与插件同一条：它把包写进 profile 的 `dependencies`、并把包名登记进 `dsh.profile.bundles`。装完**重启 DSH**，再在新建会话界面选择对应模式——preset 的挂载在进程内只装载一次，改 patch 或随包文件都不会热更。开发副本把包名换成仓库内路径：`dsh plugin --profile web add ./presets/<id>`（在仓库根执行，会记成 `link:`）。

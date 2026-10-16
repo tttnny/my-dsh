@@ -3,8 +3,7 @@
 #
 # 这一条 insert 行同时承载两个半边，`dsh plugin add` 一条命令即装即用：
 #   - 宿主半边：宿主模块在这条行下注册 `grilling_form` 工具。行在 root 层，所以落进全局层、
-#     profile 里每个 preset 的 agent 都看得见它（minimal-fs 靠自带的 tool-filter 把它移出模型
-#     可见目录）；preset 自己同名的行会盖过它，不需要幂等补丁。
+#     profile 里每个 preset 的 agent 都看得见它；preset 自己同名的行会盖过它，不需要幂等补丁。
 #   - 浏览器半边：这条行是 root loader entry（不是 preset 子树），而 client-modules 只对
 #     root loader 的 enabled entry 依据 dsh.client 声明服务浏览器半边（lib/client.js）。
 # 所以不需要额外的载体行，也不需要 profile 自己 patch 里再写一条工具行。

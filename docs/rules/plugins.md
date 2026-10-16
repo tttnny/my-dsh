@@ -60,7 +60,7 @@
 
 本机钩子的两道短板它都补上：钩子只看本次改动的包，且只有装了钩子的机器才有。`node tools/check.mjs` 在仓库根一次跑「台账 + 全部包的 `check`」；CI 在每个有依赖的包目录 `pnpm install --frozen-lockfile` 之后跑同一个脚本，所以「换台机器能不能过」有一份可复现的答案。
 
-两件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 与 `tools/probes/` 里要真内核的探针只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收。
+两件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 这类要真内核的检查只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收。
 
 ### 类型检查
 

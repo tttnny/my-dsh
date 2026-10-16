@@ -12,9 +12,9 @@
  * 那些 bundle 无关，判据不看它们。
  *
  * 用法：
- *   node tools/preset-compose.mjs minimal-fs             # 一个 preset
+ *   node tools/preset-compose.mjs plugin-upgrade-cordis  # 一个 preset
  *   node tools/preset-compose.mjs --all                  # presets/ 下全部
- *   node tools/preset-compose.mjs minimal-fs --profile web --json
+ *   node tools/preset-compose.mjs plugin-upgrade-cordis --profile web --json
  * 退出码：0 组合通过，1 组合不通过，2 跑不起来（本机没有 dsh 安装等）。
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
