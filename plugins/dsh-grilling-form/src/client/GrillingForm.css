@@ -21,16 +21,16 @@
   gap: 16px;
 }
 
-/* 冻结态顶上那两行小灰字（摘要行与本轮没作答的说明）共用一档字号与颜色。 */
+/* 冻结态顶上那行摘要与「已被取代」那行小灰字共用一档字号与颜色。 */
 .dsg-summary,
-.dsg-unanswered {
+.dsg-superseded {
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-tertiary);
 }
 
 /* 冻结之后顶上那行摘要：本轮几题、答了几题。它只是文字——不是折叠开关，没有箭头、不可点；
-   整块始终摊开，表就在它下面。 */
+   整块始终摊开，表就在它下面。后面那张表把它取代了时，这里换成一行「已被后面那张取代」。 */
 .dsg-summary {
   display: flex;
   align-items: center;
@@ -54,8 +54,8 @@
   height: calc(14px + var(--dsh-content-font-delta, 0px));
 }
 
-/* 本轮没有通过表单作答：冻结态顶上那行说明（字号与颜色跟摘要行共用上面那条）。 */
-.dsg-unanswered {
+/* 「已被后面那张取代」那一行：只剩这一行字，表不再画。 */
+.dsg-superseded {
   margin: 0;
 }
 
@@ -84,6 +84,14 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* 插件给每题画的题号（1. 2. …）：作答块里也只记这个号，所以它是题面的一部分。 */
+.dsg-number {
+  display: inline-block;
+  margin-right: 4px;
+  color: var(--dsw-alias-label-caption);
+  font-variant-numeric: tabular-nums;
+}
+
 .dsg-verdict {
   color: var(--dsw-alias-label-primary);
 }
@@ -95,18 +103,6 @@
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-state-error-primary);
-}
-
-.dsg-header {
-  display: block;
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  color: var(--dsw-alias-label-caption);
-}
-
-.dsg-detail {
-  margin: 2px 0 0;
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  color: var(--dsw-alias-label-secondary);
 }
 
 .dsg-options {
@@ -166,13 +162,6 @@
   flex: none;
 }
 
-.dsg-optionDescription {
-  margin: 0 0 0 24px;
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  line-height: calc(20px + var(--dsh-content-font-delta, 0px));
-  color: var(--dsw-alias-label-tertiary);
-}
-
 /* 多行自填：ui-primitives 没有多行输入控件，官方那张答题卡也是自己画的 textarea。 */
 .dsg-custom {
   box-sizing: border-box;
@@ -218,17 +207,6 @@
 .dsg-root[data-readonly='true'] .dsg-option:has(input:disabled) {
   opacity: 1;
   cursor: default;
-}
-
-.dsg-violations {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding-left: 20px;
-  font-size: var(--dsh-content-font-size, 14px);
-  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
-  color: var(--dsw-alias-state-error-primary);
 }
 
 .dsg-inspectButton {

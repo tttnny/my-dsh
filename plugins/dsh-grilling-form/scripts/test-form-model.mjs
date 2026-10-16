@@ -1,42 +1,47 @@
-// 共用纯模型的单测：题面取数、入参校验、导入文本与导入块、本轮那次调用的定位、只读判定与
-// 它交回的那条发言、按实发消息反解作答、冻结那份作答、会话持久化。
+// 共用纯模型的单测：题面取数、入参校验、作答块协议（身份记号、题号、空块）、本轮那次调用的定位、
+// 作答块到达的判定、被后面那张取代的判定、冻结那份作答、闸门折叠、会话持久化。
 //
 // 这里是纯函数，直接 import src/ 下的源码（storage 由假件传进去，不碰真 localStorage）。
-// 宿主半边走真内核的那一条链由 scripts/smoke-host.mjs 断言，视图由 scripts/test-render.mjs 断言。
+// 宿主半边走真内核与真会话投影的那一条链由 scripts/smoke-host.mjs 断言，视图由 scripts/test-render.mjs 断言。
 import assert from 'node:assert/strict';
 import {
-  IMPORT_BLOCK_END,
-  IMPORT_BLOCK_START,
+  FORM_GATE_UNIT,
+  GATE_KEY,
   TOOL_NAME,
-  answerLines,
-  answerParts,
+  answerItems,
   applyImport,
   applyRecommendedDefaults,
+  carryImport,
+  carryOverAnswers,
   draftHasBody,
+  drawsForm,
+  drawsNote,
+  foldFormGate,
+  formReplyAfter,
   formStorageKey,
   frozenFormAnswers,
+  importBlockBody,
+  importBlockStart,
   importBody,
+  initialFormGate,
   isBlank,
-  mergeNumberIntoHeader,
   messageText,
-  parseImportedAnswers,
   parseImportedAnswersResult,
-  parseImportedDraft,
+  pendingFormOf,
   readFormModel,
+  readQuestions,
   readStoredForm,
+  replacedForm,
+  replacesEarlier,
   roundCall,
-  titleOf,
-  userReplyAfter,
+  shortFormId,
+  supersededAfter,
   validateRound,
   writeStoredForm,
 } from '../src/form-model.js';
 
 /**
- * 逐条跑、末尾汇总：**一条失败不打断后面的**。
- *
- * 之前这里 catch 里直接 throw，一条红了后面的就都不跑——改完一处只能看见一条错，
- * 于是「改一次 → 跑一次」被逼成串行，一轮里跑十几遍测试成了常态。一次把所有红的
- * 都报出来，一轮修完。退出码在文件末尾按失败数给。
+ * 逐条跑、末尾汇总：**一条失败不打断后面的**，一次把所有红的都报出来（退出码在文件末尾按失败数给）。
  */
 let passed = 0;
 const failures = [];
@@ -52,10 +57,10 @@ function test(name, fn) {
 }
 
 const args = (questions) => JSON.stringify({ questions });
-const pending = JSON.stringify({ pending: true, message: 'form shown' });
-/** 一题的入参。**缺省是自由题**（题干 + 没有选项，也就是最小的一轮有效入参）：题型是必填的，
- * 这个默认值只是让不关心题型的用例少写一个字段；要选项的题在用例里写明 type: 'single' / 'multi'。 */
-const call = (overrides = {}) => ({ id: 'a', question: '选哪个？', type: 'free', ...overrides });
+const shown = JSON.stringify({ ok: true, message: 'form shown' });
+const hidden = JSON.stringify({ ok: false, message: 'no form' });
+/** 一题的入参。缺省没有题型：那正是「漏写题型」那条兜底要盖住的形状。 */
+const call = (overrides = {}) => ({ question: '选哪个？', ...overrides });
 
 /** 只有 getItem/setItem 的假存储。 */
 function fakeStorage(initial = {}) {
@@ -69,484 +74,419 @@ function fakeStorage(initial = {}) {
 
 // --- 共用契约 ---
 
-test('题号并入标题：两者都给拼成 "Q2 · Deadline"', () => {
-  assert.equal(mergeNumberIntoHeader('Q2', 'Deadline'), 'Q2 · Deadline');
-});
-
-test('题号并入标题：标题已带该题号时不重复前缀', () => {
-  assert.equal(mergeNumberIntoHeader('Q2', 'Q2 · Deadline'), 'Q2 · Deadline');
-});
-
-test('题号并入标题：只给一个就是那一个，都不给是空串', () => {
-  assert.equal(mergeNumberIntoHeader('Q3', undefined), 'Q3');
-  assert.equal(mergeNumberIntoHeader(undefined, 'Confirm'), 'Confirm');
-  assert.equal(mergeNumberIntoHeader(undefined, undefined), '');
-  assert.equal(mergeNumberIntoHeader('Q3', '   '), 'Q3');
-});
-
 test('空白判定：非字符串、空串、纯空白都算空', () => {
   for (const value of [undefined, null, 42, '', '  \n']) assert.equal(isBlank(value), true, String(value));
   assert.equal(isBlank('x'), false);
 });
 
-test('一题的标题：题号并入的标题优先，其次题干，最后 id', () => {
-  assert.equal(titleOf({ id: 'a', header: 'Q2 · Deadline', question: '选哪个？' }), 'Q2 · Deadline');
-  assert.equal(titleOf({ id: 'a', header: '', question: '选哪个？' }), '选哪个？');
-  assert.equal(titleOf({ id: 'a', header: '', question: '' }), 'a');
+test('身份记号：调用 id 里的 4 位小写字母数字，同一个 id 每次都给同一个记号', () => {
+  const mark = shortFormId('call_AbC12345');
+  assert.match(mark, /^[0-9a-z]{4}$/);
+  assert.equal(shortFormId('call_AbC12345'), mark);
+  assert.notEqual(shortFormId('call-aaaa'), shortFormId('call-bbbb'));
+  assert.match(shortFormId(undefined), /^[0-9a-z]{4}$/, 'id 读不出来也要给得出一个记号');
+});
+
+test('作答块的起止行：开头那行带这张表的身份记号，收尾行就是它自己', () => {
+  assert.equal(importBlockStart('k3f9'), '【拷问作答 k3f9】');
 });
 
 // --- 取数 ---
 
-test('结果还没落库：状态是运行中，题面已能从 argsRaw 读出来', () => {
-  const model = readFormModel({ argsRaw: args([call({ number: 'Q2', header: 'Deadline' })]) });
-  assert.equal(model.state, 'running');
-  assert.equal(model.questions.length, 1);
-  assert.equal(model.questions[0].header, 'Q2 · Deadline');
-  assert.equal(model.questions[0].question, '选哪个？');
+test('题面取数：题号由题序生成（从 1 起），题干、题型、选项都在', () => {
+  const questions = readQuestions(args([
+    call({ type: 'single', question: '继续吗？', options: [{ label: '继续' }] }),
+    call({ question: '还有别的吗？' }),
+  ]));
+  assert.deepEqual(questions.map((question) => question.number), [1, 2]);
+  assert.deepEqual(questions.map((question) => question.id), ['1', '2']);
+  assert.deepEqual(questions.map((question) => question.question), ['继续吗？', '还有别的吗？']);
+  assert.equal(questions[0].type, 'single');
 });
 
-test('结果还没落库：argsRaw 是半截 JSON 时不给题目（界面退回原始文本）', () => {
-  const model = readFormModel({ argsRaw: '{"questions":[{"id":"a","quest' });
-  assert.equal(model.state, 'running');
-  assert.deepEqual(model.questions, []);
+test('题型漏写：有选项按多选、没选项按自由（模型漏一个字段不该整轮被拒）', () => {
+  assert.equal(readQuestions(args([call({ options: [{ label: '甲' }] })]))[0].type, 'multi');
+  assert.equal(readQuestions(args([call()]))[0].type, 'free');
+  assert.equal(readQuestions(args([call({ type: 'single', options: [{ label: '甲' }] })]))[0].type, 'single');
+  // 认不出的题型值也走同一条兜底，不留一题画不出来
+  assert.equal(readQuestions(args([call({ type: 'checkbox', options: [{ label: '甲' }] })]))[0].type, 'multi');
 });
 
-test('pending 结果：状态是表单，题面完整（表单已投出、本轮已结束）', () => {
-  const model = readFormModel({ argsRaw: args([call()]), resultText: pending });
-  assert.equal(model.state, 'form');
-  assert.equal(model.questions.length, 1);
-  assert.deepEqual(model.violations, []);
-});
-
-test('被拒结果：状态是被拒，带违规清单与总说明', () => {
-  const model = readFormModel({
-    argsRaw: args([call()]),
-    resultText: JSON.stringify({ rejected: true, violations: ['Question 1 有问题'], error: '1 violation(s)' }),
-  });
-  assert.equal(model.state, 'rejected');
-  assert.deepEqual(model.violations, ['Question 1 有问题']);
-  assert.equal(model.error, '1 violation(s)');
-});
-
-test('结果形状不认识：状态是调用失败，题面还在', () => {
-  assert.equal(readFormModel({ argsRaw: args([call()]), resultText: 'boom' }).state, 'error');
-  assert.equal(readFormModel({ argsRaw: args([call()]), resultText: JSON.stringify({ answers: [] }) }).state, 'error');
-  assert.equal(readFormModel({ argsRaw: args([call()]), resultText: '', failed: true }).state, 'error');
-});
-
-test('detail 与选项：detail 空白即省略，选项归一化成展示文字与推荐标记', () => {
-  const model = readFormModel({
-    argsRaw: args([call({
-      type: 'multi',
-      detail: '第一段。\n\n第二段。',
-      options: [
-        { label: 'A：移走', description: '只留一个；推荐' },
-        { label: 'B：都留' },
-        { label: 'C：先观察', recommended: true },
-        { label: '  ' },
-      ],
-    })]),
-  });
-  const [question] = model.questions;
-  assert.equal(question.detail, '第一段。\n\n第二段。');
-  assert.equal(question.options[0].label, 'A：移走（推荐）');
-  assert.equal(question.options[0].displayLabel, 'A：移走');
-  assert.equal(question.options[0].description, '只留一个');
+test('选项：推荐标记剥掉之后就是选项身份，推荐另记一个布尔', () => {
+  const [question] = readQuestions(args([call({
+    options: [{ label: 'A：移走（推荐）' }, { label: 'B：都留' }, { label: '  ' }],
+  })]));
+  assert.equal(question.options[0].label, 'A：移走');
   assert.equal(question.options[0].recommended, true);
   assert.equal(question.options[1].label, 'B：都留');
   assert.equal(question.options[1].recommended, false);
-  assert.equal(question.options[2].displayLabel, 'C：先观察');
-  // 空白 label 在这里不是特例：它是宿主的入参校验拦下的（validateRound），界面拿不到这种轮次
-  assert.equal(question.options[3].label, '  ');
-  assert.equal(readFormModel({ argsRaw: args([call({ detail: '   ' })]) }).questions[0].detail, undefined);
+  // 空白 label 在这里不是特例：它是入参校验拦下的（validateRound），界面拿不到这种轮次
+  assert.equal(question.options[2].label, '  ');
 });
 
-test('同一轮里 id 重复：题面整体作废（界面按 id 配对，重复即无从配对）', () => {
-  const model = readFormModel({ argsRaw: args([call(), call()]) });
-  assert.deepEqual(model.questions, []);
+test('选项上多带的字段不进模型：recommended 与 description 都只当没写', () => {
+  const [question] = readQuestions(args([call({
+    options: [{ label: '甲', recommended: true, description: '说明' }],
+  })]));
+  assert.deepEqual(question.options, [{ label: '甲', recommended: false }]);
+});
+
+test('题面读不出来：半截 JSON、没有 questions、空数组、某题不是对象都当没有这一轮', () => {
+  assert.deepEqual(readQuestions('{"questions":[{"quest'), []);
+  assert.deepEqual(readQuestions('{}'), []);
+  assert.deepEqual(readQuestions(args([])), []);
+  assert.deepEqual(readQuestions(args([call(), null])), [], '一题坏了整轮不画，而不是把它当成一道空题');
+  assert.deepEqual(readQuestions(undefined), []);
+});
+
+test('replace 标记读得出，缺省是不取代', () => {
+  assert.equal(replacesEarlier(JSON.stringify({ questions: [call()], replace: true })), true);
+  assert.equal(replacesEarlier(args([call()])), false);
+  assert.equal(replacesEarlier(JSON.stringify({ questions: [call()], replace: 'yes' })), false);
 });
 
 // --- 入参校验 ---
 
 test('入参校验：干净的一轮没有违规', () => {
-  assert.deepEqual(validateRound([call({ type: 'multi', options: [{ label: 'A' }, { label: 'B' }] })]), []);
+  assert.deepEqual(validateRound([call({ options: [{ label: 'A' }, { label: 'B' }] })]), []);
   assert.deepEqual(validateRound([call()]), []);
+  assert.deepEqual(validateRound([call({ options: [] })]), []);
 });
 
-test('入参校验：没写题型被拒——题型是必填的', () => {
-  const violations = validateRound([{ id: 'a', question: '选哪个？' }]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /must declare type/);
-});
-
-test('入参校验：题型写了别的值被拒，且说明里带上那三个取值', () => {
-  for (const type of ['checkbox', 'SINGLE', 42, '', null]) {
-    const violations = validateRound([call({ type, options: [{ label: 'A' }] })]);
-    assert.equal(violations.length, 1, JSON.stringify(type));
-    assert.match(violations[0], /one of single, multi, free/, JSON.stringify(type));
-  }
-});
-
-test('入参校验：老开关 multi_select 被拒——题型是必填的 type，一个字段说一件事', () => {
-  const violations = validateRound([{ id: 'a', question: '选哪个？', multi_select: false }]);
-  assert.equal(violations.length, 1, '两处说的是同一件事，只报一条');
-  assert.match(violations[0], /multi_select/);
-  assert.match(violations[0], /type: single, multi or free/);
-});
-
-test('入参校验：题型写对了也带着老开关——照样被拒（并存时两处随时会自相矛盾）', () => {
-  // 老开关说单选、新题型说多选：绝不能按多选画却不吭声
-  const violations = validateRound([call({ type: 'multi', multi_select: false, options: [{ label: '甲' }] })]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /multi_select/);
-  // 原生那套 camelCase 写法也不认
-  assert.equal(validateRound([call({ type: 'multi', multiSelect: false, options: [{ label: '甲' }] })]).length, 1);
-});
-
-test('入参校验：单选、多选至少要有一个选项（没有选项就没得选）', () => {
-  for (const type of ['single', 'multi']) {
-    const violations = validateRound([call({ type })]);
-    assert.equal(violations.length, 1, type);
-    assert.match(violations[0], /gives no options/);
-  }
-});
-
-test('入参校验：自由题不许给选项——它只有一个自己打字的框', () => {
-  const violations = validateRound([call({ type: 'free', options: [{ label: 'A' }] })]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /free question/);
-});
-
-test('入参校验：自由题给一个空数组不算给选项', () => {
-  assert.deepEqual(validateRound([call({ type: 'free', options: [] })]), []);
-});
-
-test('入参校验：重复 id 被拒', () => {
-  const violations = validateRound([call(), call()]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /repeats an id/);
-});
-
-test('入参校验：空题干被拒', () => {
+test('入参校验：空题干被拒（schema 只保证字段存在，不保证有内容）', () => {
   const violations = validateRound([call({ question: '   ' })]);
   assert.equal(violations.length, 1);
   assert.match(violations[0], /empty question text/);
 });
 
-test('入参校验：空 label 被拒', () => {
-  const violations = validateRound([call({ type: 'multi', options: [{ label: ' ' }] })]);
+test('入参校验：空选项文字被拒', () => {
+  const violations = validateRound([call({ options: [{ label: ' ' }] })]);
   assert.equal(violations.length, 1);
   assert.match(violations[0], /option 1 has an empty label/);
 });
 
-test('入参校验：同题两个选项归一化后同名被拒（界面按 label 认选项）', () => {
-  const violations = validateRound([call({ type: 'multi', options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] })]);
+test('入参校验：同一题里两段只差推荐标记的文字被拒（界面上看着一样，选的是哪一项就分不出来了）', () => {
+  const violations = validateRound([call({ options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] })]);
   assert.equal(violations.length, 1);
-  assert.match(violations[0], /same label "A：移走（推荐）"/);
+  assert.match(violations[0], /same label "A：移走"/);
 });
 
-test('入参校验：不再有保留前缀这条规则，__grill_ 前缀的 id 是普通 id', () => {
-  assert.deepEqual(validateRound([call({ id: '__grill_whatever__' })]), []);
+test('入参校验：漏写题型、老开关、题型与选项不搭、重复 id 都不再是拒收项', () => {
+  assert.deepEqual(validateRound([{ question: '？' }]), []);
+  assert.deepEqual(validateRound([call({ multi_select: false })]), []);
+  assert.deepEqual(validateRound([call({ type: 'free', options: [{ label: '甲' }] })]), []);
+  assert.deepEqual(validateRound([call({ type: 'single' })]), []);
+  assert.deepEqual(validateRound([{ id: 'a', question: '甲？' }, { id: 'a', question: '乙？' }]), []);
 });
 
-test('入参校验：questions 不是数组时给出可读的违规，而不是抛异常', () => {
-  const missing = validateRound(undefined);
-  assert.equal(missing.length, 1);
-  assert.match(missing[0], /questions must be an array/);
-  assert.equal(validateRound('x').length, 1);
+test('入参校验：questions 不是数组、某题不是对象时交给宿主，这里不抛也不报违规', () => {
+  for (const bad of [undefined, 'x', 42, {}, [null, 42]]) assert.deepEqual(validateRound(bad), [], JSON.stringify(bad));
 });
 
-test('入参校验：题不是对象时交回一条违规，而不是读字段抛异常', () => {
-  for (const bad of [null, undefined, 'x', 42, []]) {
-    const violations = validateRound([bad]);
-    assert.equal(violations.length, 1, JSON.stringify(bad));
-    assert.match(violations[0], /Question 1 is not an object/, JSON.stringify(bad));
+test('入参校验：选项名里的标点都照常投出（顿号、冒号、换行）', () => {
+  assert.deepEqual(validateRound([call({ options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] })]), []);
+  assert.deepEqual(validateRound([call({ options: [{ label: '两行\n的选项名' }] })]), []);
+});
+
+// --- 结果 ---
+
+test('画什么：投出去了才画表；没投出与失败画一行说明；其余状态两样都不画', () => {
+  assert.equal(drawsForm(readFormModel({ argsRaw: args([call()]), resultText: shown })), true);
+  assert.equal(drawsForm(readFormModel({ argsRaw: args([]), resultText: shown })), false, '题面读不出来就没有表可画');
+  assert.equal(drawsForm(readFormModel({ argsRaw: args([call()]), resultText: hidden })), false);
+  assert.equal(drawsForm(readFormModel({ argsRaw: args([call()]), resultText: 'boom', failed: true })), false);
+  assert.equal(drawsNote(readFormModel({ argsRaw: args([call()]), resultText: hidden })), true);
+  assert.equal(drawsNote(readFormModel({ argsRaw: args([call()]), resultText: 'boom', failed: true })), true);
+  assert.equal(drawsNote(readFormModel({ argsRaw: args([call()]) })), false, '还没落库');
+  assert.equal(drawsNote(readFormModel({ argsRaw: args([call()]), resultText: JSON.stringify({ pending: true }) })), false, '结果形状不认识');
+});
+
+test('结果 ok: true：这一轮投出去了', () => {
+  const model = readFormModel({ argsRaw: args([call()]), resultText: shown });
+  assert.equal(model.state, 'form');
+  assert.equal(model.questions.length, 1);
+});
+
+test('结果 ok: false：这一轮没投出，并把那句话交回给视图与模型', () => {
+  const model = readFormModel({ argsRaw: args([call()]), resultText: hidden });
+  assert.equal(model.state, 'notShown');
+  assert.equal(model.message, 'no form');
+});
+
+test('结果还没落库：状态是运行中，题面已能从 argsRaw 读出来', () => {
+  const model = readFormModel({ argsRaw: args([call()]) });
+  assert.equal(model.state, 'running');
+  assert.equal(model.questions.length, 1);
+});
+
+test('调用失败：状态是失败，说明另有去处', () => {
+  assert.equal(readFormModel({ argsRaw: args([call()]), resultText: 'boom', failed: true }).state, 'error');
+});
+
+test('结果形状不认识（rejected / pending）：两个注册项都不画，轮次里没有可画的表', () => {
+  const legacyArgs = JSON.stringify({ questions: [{ id: 'a', question: '选哪个？', multi_select: false, options: [{ label: '甲' }] }] });
+  for (const text of [JSON.stringify({ pending: true, message: 'old' }), JSON.stringify({ rejected: true, violations: ['x'], error: 'y' })]) {
+    const model = readFormModel({ argsRaw: legacyArgs, resultText: text });
+    assert.equal(model.state, 'unknown', text);
+    assert.equal(model.message, undefined);
   }
-  // 同一轮里后面还有合法题时，坏的照报、好的照旧，不因一题坏了就整轮静默通过
-  const mixed = validateRound([null, call()]);
-  assert.equal(mixed.length, 1);
-  assert.match(mixed[0], /Question 1 is not an object/);
 });
 
-test('入参校验：选项名里的标点不再是问题——顿号、冒号、换行都照常投出', () => {
-  assert.deepEqual(validateRound([call({ type: 'multi', options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }] })]), []);
-  assert.deepEqual(validateRound([call({ type: 'multi', options: [{ label: '选项里带：冒号，和、顿号' }] })]), []);
-  assert.deepEqual(validateRound([call({ type: 'multi', options: [{ label: '两行\n的选项名' }] })]), []);
+// --- 导入正文与块 ---
+
+const questions = [
+  { id: '1', number: 1, question: '落点放哪？', type: 'multi', options: [{ label: 'A：详情页', recommended: false }, { label: 'B：列表里', recommended: false }] },
+  { id: '2', number: 2, question: '范围呢？', type: 'free', options: [] },
+  { id: '3', number: 3, question: '没答的题', type: 'free', options: [] },
+];
+
+test('导入正文：有作答的题各占一段——题号一行、每项一行且行首带记号；没作答的题不出现', () => {
+  const body = importBody(questions, {
+    1: { selected: ['A：详情页'], custom: '' },
+    2: { selected: [], custom: '两句都不够，我自己说' },
+    3: { selected: [], custom: '   ' },
+  });
+  assert.equal(body, '1.\n- A：详情页\n2.\n- 两句都不够，我自己说');
 });
 
-test('入参校验：展开正文里把选项又列了一遍被拒（截图里「一遍不带选择器、一遍带」的那种）', () => {
-  const violations = validateRound([call({
-    type: 'multi',
-    detail: [
-      '先交代一个会左右选法的事实：这一版本来就是这么设计的。',
-      '',
-      '- **甲**·详情页里的「配置」入口：进去是一整页',
-      '- **乙**·列表里直接多一张卡片：点开就是一整页',
-      '- 丙·直接铺在详情页上：不用再点',
-    ].join('\n'),
-    options: [
-      { label: '甲：插件详情页里的「配置」入口，进去是一整页' },
-      { label: '乙：插件页列表里直接一张卡片，点开就是一整页' },
-      { label: '丙：配置直接铺在插件详情页上，不再分页' },
-    ],
-  })]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /restates its options in detail/);
+test('导入正文：一项作答都没有时是空串（空作答是另一种情况，由块自己表达）', () => {
+  assert.equal(importBody(questions, {}), '');
+  assert.equal(importBody(questions, { 1: { selected: [], custom: '   ' } }), '');
 });
 
-test('入参校验：展开正文只写各选项共用的背景时不算违规', () => {
-  assert.deepEqual(validateRound([call({
-    type: 'multi',
-    detail: '这一版本来就是这么设计的：自带配置的插件把配置渲染在插件页。\n\n三个落点都已经预留在插件页。',
-    options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接多一张卡片' }],
-  })]), []);
+test('导入正文：选项名里带顿号、冒号都照原样写出去', () => {
+  const one = [{ id: '1', number: 1, question: '？', type: 'multi', options: [{ label: '甲、乙都行', recommended: false }, { label: '丙：另起一行', recommended: false }] }];
+  assert.equal(importBody(one, { 1: { selected: ['甲、乙都行', '丙：另起一行'], custom: '' } }), '1.\n- 甲、乙都行\n- 丙：另起一行');
 });
 
-test('入参校验：单个字母的选项标签不因英文正文的同形开头被误拒', () => {
-  assert.deepEqual(validateRound([call({
-    type: 'multi',
-    detail: 'A note about how the panel opens today, and why that matters.',
-    options: [{ label: 'A：扩展 /archive/guardCheck' }, { label: 'B：新建一层' }],
-  })]), []);
+test('首次导入：块放在最前面，用户原有的文字整段接在后面', () => {
+  const body = importBody(questions, { 1: { selected: [], custom: '选 A' } });
+  assert.equal(
+    applyImport('我另外想说一句。', body, 'k3f9'),
+    '【拷问作答 k3f9】\n1.\n- 选 A\n【/拷问作答】\n\n我另外想说一句。',
+  );
 });
 
-test('入参校验：整行就是那个标签（没有后续解释）也算重述', () => {
-  const violations = validateRound([call({
-    type: 'multi',
-    detail: '两个方向：\n- 甲\n- 乙',
-    options: [{ label: '甲：搬家' }, { label: '乙：不搬' }],
-  })]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /restates its options in detail/);
+test('空作答照导：导出的块只有起止行，什么说明文字都不加', () => {
+  assert.equal(applyImport('', '', 'k3f9'), '【拷问作答 k3f9】\n【/拷问作答】');
+  assert.equal(applyImport('我另外想说一句。', '', 'k3f9'), '【拷问作答 k3f9】\n【/拷问作答】\n\n我另外想说一句。');
 });
 
-test('入参校验：选项名与解释之间空了一格也算重述', () => {
-  const violations = validateRound([call({
-    type: 'multi',
-    detail: '- 甲 · 详情页里的「配置」入口\n- 乙 · 列表里直接多一张卡片',
-    options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
-  })]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /restates its options in detail/);
+test('重复导入：原地替换这张表的块本身，块外手打的内容一个不动', () => {
+  const first = applyImport('前面的话。', importBody(questions, { 1: { selected: [], custom: '选 A' } }), 'k3f9');
+  const second = applyImport(first, importBody(questions, { 1: { selected: [], custom: '改选 B' } }), 'k3f9');
+  assert.match(second, /1\.\n- 改选 B/);
+  assert.doesNotMatch(second, /选 A/);
+  assert.equal(second.slice(-'前面的话。'.length), '前面的话。');
+  assert.equal((second.match(/【拷问作答 k3f9】/g) ?? []).length, 1, '同一张表只有一块');
 });
 
-test('入参校验：正文里顺口提到选项名不算重述，只有「以选项名开头的条目」才算', () => {
-  assert.deepEqual(validateRound([call({
-    type: 'multi',
-    detail: '甲、乙两种做法各有代价，我倾向甲。\n\n选甲：也不用现在就定。',
-    options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
-  })]), []);
+test('导入：别的表的块一个不动，这张表的块另起一块', () => {
+  const other = applyImport('', importBody(questions, { 1: { selected: [], custom: '别的表' } }), 'zzzz');
+  const mine = applyImport(other, importBody(questions, { 2: { selected: [], custom: '我这张' } }), 'k3f9');
+  assert.match(mine, /【拷问作答 zzzz】\n1\.\n- 别的表\n【\/拷问作答】/);
+  assert.match(mine, /【拷问作答 k3f9】\n2\.\n- 我这张\n【\/拷问作答】/);
 });
 
-test('入参校验：别名后面跟的是字而不是分隔符时不算重述', () => {
-  assert.deepEqual(validateRound([call({
-    type: 'multi',
-    detail: '保留现状的代价是每轮都要多看一眼。',
-    options: [{ label: '保留现状' }, { label: '换个做法' }],
-  })]), []);
+test('导入：草稿不是字符串时按空草稿算', () => {
+  assert.equal(applyImport(undefined, '', 'k3f9'), '【拷问作答 k3f9】\n【/拷问作答】');
 });
 
-test('入参校验：序号列表（全角括号）里的重述也认', () => {
-  const violations = validateRound([call({
-    type: 'multi',
-    detail: '1）甲：详情页里的配置入口\n2）乙：列表里直接一张卡片',
-    options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
-  })]);
-  assert.equal(violations.length, 1);
+test('草稿一致性：草稿里那张块正是当前作答时为真，旧了、手改过、没块都为假', () => {
+  const body = importBody(questions, { 1: { selected: [], custom: '选 A' } });
+  const draft = applyImport('我另外想说一句。', body, 'k3f9');
+  assert.equal(draftHasBody(draft, body, 'k3f9'), true);
+  assert.equal(draftHasBody(applyImport('', importBody(questions, { 1: { selected: [], custom: '改选 B' } }), 'k3f9'), body, 'k3f9'), false, '草稿里是旧那份');
+  assert.equal(draftHasBody(draft.replace('选 A', '我自己乱改的'), body, 'k3f9'), false, '手改过的块算不一致');
+  assert.equal(draftHasBody('只有我自己的话。', body, 'k3f9'), false, '没有块');
+  assert.equal(draftHasBody(undefined, body, 'k3f9'), false);
+  assert.equal(draftHasBody(draft, body, 'zzzz'), false, '别的表的块不算');
+  // 空作答的块也是一份作答：导出去之后按键就该说「已导入」，而不是一直催他「更新输入框」
+  assert.equal(draftHasBody(applyImport('', '', 'k3f9'), '', 'k3f9'), true);
+  assert.equal(draftHasBody(draft, '', 'k3f9'), false, '草稿里那份不是空的');
 });
 
-test('入参校验：没有选项的题，正文随便写', () => {
-  assert.deepEqual(validateRound([call({ detail: '- 甲：随便写\n- 乙：也随便' })]), []);
+test('草稿里那张块的内容读得出来；没有块、起止行不配对时读不出来', () => {
+  assert.equal(importBlockBody(applyImport('', '1.\n- A', 'k3f9'), 'k3f9'), '1.\n- A');
+  assert.equal(importBlockBody(applyImport('', '', 'k3f9'), 'k3f9'), '');
+  assert.equal(importBlockBody('我自己的话。', 'k3f9'), undefined);
+  assert.equal(importBlockBody('【拷问作答 k3f9】\n1.\n- A', 'k3f9'), undefined);
+  assert.equal(importBlockBody(applyImport('', '1.\n- A', 'zzzz'), 'k3f9'), undefined);
 });
 
-// --- 推荐项默认勾上 ---
+// --- 反解 ---
+
+/** 一块作答块：身份记号由这个调用 id 推出来（这正是「谁的块」的判据）。 */
+const blockOf = (body, callId = 'k3f9') => applyImport('', body, callId);
+
+test('反解：按题号认题——题干一模一样的两道题也不会串台', () => {
+  const twins = [
+    { id: '1', number: 1, question: '同一句话？', type: 'free', options: [] },
+    { id: '2', number: 2, question: '同一句话？', type: 'free', options: [] },
+  ];
+  const parsed = parseImportedAnswersResult(blockOf('2.\n- 第二题的作答'), twins, 'k3f9');
+  assert.equal(parsed.kind, 'parsed');
+  assert.deepEqual(parsed.answers, {
+    1: { selected: [], custom: '' },
+    2: { selected: [], custom: '第二题的作答' },
+  });
+});
+
+test('反解：题干被改写也不影响回填（认的是题号，不是题干）', () => {
+  const asked = [{ id: '1', number: 1, question: '原来的题干', type: 'free', options: [] }];
+  const parsed = parseImportedAnswersResult(blockOf('1.\n- 答'), asked, 'k3f9');
+  assert.deepEqual(parsed.answers['1'], { selected: [], custom: '答' });
+});
+
+test('反解：选项名对得上的算选中，对不上的并进自填；对不上选项名字的单选项也算自填', () => {
+  const parsed = parseImportedAnswersResult(blockOf('1.\n- A：详情页\n- 两句都不够'), questions, 'k3f9');
+  assert.deepEqual(parsed.answers['1'], { selected: ['A：详情页'], custom: '两句都不够' });
+});
+
+test('反解：多行自填按行写成多个项行，读回来拼成同一段文字', () => {
+  const parsed = parseImportedAnswersResult(blockOf('2.\n- 第一行\n- 第二行\n- 第三行'), questions, 'k3f9');
+  assert.deepEqual(parsed.answers['2'], { selected: [], custom: '第一行\n第二行\n第三行' });
+  // 写出去的那一份自己读得回来：空行也照样一来一回
+  const body = importBody(questions, { 2: { selected: [], custom: '第一行\n\n第三行' } });
+  assert.equal(parseImportedAnswersResult(blockOf(body), questions, 'k3f9').answers['2'].custom, '第一行\n\n第三行');
+});
+
+test('反解：块里出现既不是题号也不是项的行：整块判成坏了，退回本地那份', () => {
+  const parsed = parseImportedAnswersResult(blockOf('1.\n- A：详情页\n（这句是我随手加的）'), questions, 'k3f9');
+  assert.equal(parsed.kind, 'malformed');
+});
+
+test('反解：块里没出现的题显式记成没作答（推荐默认因此不会被勾回来）', () => {
+  const parsed = parseImportedAnswersResult(blockOf('1.\n- A：详情页'), [questions[0], questions[2]], 'k3f9');
+  assert.deepEqual(parsed.answers['3'], { selected: [], custom: '' });
+});
+
+test('反解：空块就是「已答、全空」', () => {
+  const parsed = parseImportedAnswersResult(blockOf(''), questions, 'k3f9');
+  assert.equal(parsed.kind, 'parsed');
+  assert.deepEqual(Object.values(parsed.answers), [
+    { selected: [], custom: '' }, { selected: [], custom: '' }, { selected: [], custom: '' },
+  ]);
+});
+
+test('反解：CRLF 换行也认（手打草稿可能是 CRLF）', () => {
+  const text = blockOf('1.\n- A：详情页').replace(/\n/g, '\r\n');
+  assert.deepEqual(parseImportedAnswersResult(text, questions, 'k3f9').answers['1'], { selected: ['A：详情页'], custom: '' });
+});
+
+test('反解：只认这张表自己的块——别的表的块、不带记号的那种块都不算', () => {
+  assert.equal(parseImportedAnswersResult(blockOf('1.\n- A：详情页', 'zzzz'), questions, 'k3f9').kind, 'none');
+  assert.equal(parseImportedAnswersResult('【拷问作答】\n1.\n- A：详情页\n【/拷问作答】', questions, 'k3f9').kind, 'none');
+  assert.equal(parseImportedAnswersResult('我另外想说一句。', questions, 'k3f9').kind, 'none');
+  assert.equal(parseImportedAnswersResult(undefined, questions, 'k3f9').kind, 'none');
+  assert.equal(parseImportedAnswersResult('【拷问作答 k3f9】\n1.\n- A', questions, 'k3f9').kind, 'none', '起止行不配对：当没有块');
+});
+
+test('反解：块在但一条题号都认不出来时是 malformed（调用方退回本地那份）', () => {
+  assert.equal(parseImportedAnswersResult(blockOf('- A：详情页'), questions, 'k3f9').kind, 'malformed');
+  assert.equal(parseImportedAnswersResult(blockOf('随便写点什么'), questions, 'k3f9').kind, 'malformed');
+});
+
+test('反解：题号越界的那几行不产物条目；全是越界题号时也算 malformed', () => {
+  const parsed = parseImportedAnswersResult(blockOf('1.\n- A：详情页\n7.\n- 越界'), questions, 'k3f9');
+  assert.deepEqual(parsed.answers['1'], { selected: ['A：详情页'], custom: '' });
+  assert.equal(parseImportedAnswersResult(blockOf('7.\n- 越界'), questions, 'k3f9').kind, 'malformed');
+});
+
+// --- 冻结那份作答 ---
+
+test('冻结：块在就以块为准重画——本地那份不许插嘴，块里没有的题就是没作答', () => {
+  const stored = { 1: { selected: ['B：列表里'], custom: '本地改过' }, 2: { selected: [], custom: '本地自填' } };
+  const frozen = frozenFormAnswers(questions, stored, blockOf('2.\n- 只改插件'), 'k3f9');
+  assert.equal(frozen.fallback, false);
+  assert.deepEqual(frozen.answers['1'], { selected: [], custom: '' });
+  assert.deepEqual(frozen.answers['2'], { selected: [], custom: '只改插件' });
+});
+
+test('冻结：块坏了才退回本地那份（内容不凭空消失），并标出这是退回的一份', () => {
+  const stored = { 2: { selected: [], custom: '本地自填' } };
+  const frozen = frozenFormAnswers(questions, stored, blockOf('跟哪道题都对不上：随便'), 'k3f9');
+  assert.equal(frozen.fallback, true);
+  assert.deepEqual(frozen.answers['2'], { selected: [], custom: '本地自填' });
+});
+
+test('冻结：块里单选题写了两行选项，重画时也只留一项', () => {
+  const single = [{ id: '1', number: 1, question: '继续吗？', type: 'single', options: [{ label: '继续', recommended: false }, { label: '停一下', recommended: false }] }];
+  const frozen = frozenFormAnswers(single, {}, blockOf('1.\n- 继续\n- 停一下'), 'k3f9');
+  assert.deepEqual(frozen.answers['1'], { selected: ['继续'], custom: '' });
+});
+
+// --- 推荐默认 ---
 
 const recommended = (id, ...options) => ({
   id,
-  options: options.map(([label, isRecommended]) => ({ label, displayLabel: label, recommended: isRecommended })),
+  number: Number(id),
+  options: options.map(([label, isRecommended]) => ({ label, recommended: isRecommended })),
 });
 
-test('默认勾选：标了推荐的选项，用户没动过这题时就是选中态', () => {
-  const questions = [recommended('a', ['A：移走（推荐）', true], ['B：都留', false])];
-  assert.deepEqual(applyRecommendedDefaults(questions, {}), { a: { selected: ['A：移走（推荐）'], custom: '' } });
+test('推荐默认：标了推荐的选项，用户没动过这题时就是选中态；取消过的不勾回来', () => {
+  const list = [recommended('1', ['A：移走', true], ['B：都留', false])];
+  assert.deepEqual(applyRecommendedDefaults(list, {}), { 1: { selected: ['A：移走'], custom: '' } });
+  assert.deepEqual(applyRecommendedDefaults(list, { 1: { selected: [], custom: '' } }), { 1: { selected: [], custom: '' } });
+  assert.deepEqual(applyRecommendedDefaults(list, { 1: { selected: ['B：都留'], custom: '我写' } }), { 1: { selected: ['B：都留'], custom: '我写' } });
 });
 
-test('默认勾选：多个推荐项一起勾上', () => {
-  const questions = [recommended('a', ['A（推荐）', true], ['B（推荐）', true], ['C', false])];
-  assert.deepEqual(applyRecommendedDefaults(questions, {}), { a: { selected: ['A（推荐）', 'B（推荐）'], custom: '' } });
+test('推荐默认：没有推荐的题不会凭空多出作答；题面还没读出来时原样返回', () => {
+  assert.deepEqual(applyRecommendedDefaults([recommended('1', ['A', false])], {}), {});
+  assert.deepEqual(applyRecommendedDefaults([], { 1: { selected: ['A'], custom: '' } }), { 1: { selected: ['A'], custom: '' } });
 });
 
-test('默认勾选：用户动过这题就以他的为准，取消掉默认项也不许勾回来', () => {
-  const questions = [recommended('a', ['A（推荐）', true], ['B', false])];
-  assert.deepEqual(applyRecommendedDefaults(questions, { a: { selected: [], custom: '' } }), { a: { selected: [], custom: '' } });
-  assert.deepEqual(applyRecommendedDefaults(questions, { a: { selected: ['B'], custom: '我自己写' } }), { a: { selected: ['B'], custom: '我自己写' } });
+test('推荐默认：单选题只留一项——推荐默认、用户勾的、反解出来的都收敛', () => {
+  const single = [{ id: '1', number: 1, type: 'single', options: [{ label: 'A', recommended: true }, { label: 'B', recommended: true }] }];
+  assert.deepEqual(applyRecommendedDefaults(single, {}), { 1: { selected: ['A'], custom: '' } });
+  assert.deepEqual(applyRecommendedDefaults(single, { 1: { selected: ['A', 'B'], custom: '自填留着' } }), { 1: { selected: ['A'], custom: '自填留着' } });
 });
 
-test('默认勾选：没有推荐的题不会凭空多出作答', () => {
-  const questions = [recommended('a', ['A', false]), { id: 'b', options: [] }];
-  assert.deepEqual(applyRecommendedDefaults(questions, {}), {});
+test('作答逐项：选中的项在前、自填整段算一项（自填里的回车不拆项）', () => {
+  assert.deepEqual(answerItems({ selected: ['A：xxx', 'B：yyy'], custom: ' 补\n一句 ' }), [
+    { kind: 'option', text: 'A：xxx' },
+    { kind: 'option', text: 'B：yyy' },
+    { kind: 'custom', text: '补\n一句' },
+  ]);
+  assert.deepEqual(answerItems(undefined), []);
+  assert.deepEqual(answerItems({ selected: [], custom: '   ' }), []);
 });
 
-test('默认勾选：单选题上推荐项也只默认一项（多标了推荐仍留第一项）', () => {
-  const questions = [
-    { id: 'a', type: 'single', options: [{ label: 'A（推荐）', displayLabel: 'A', recommended: true }, { label: 'B（推荐）', displayLabel: 'B', recommended: true }] },
-  ];
-  assert.deepEqual(applyRecommendedDefaults(questions, {}), { a: { selected: ['A（推荐）'], custom: '' } });
+// --- 作答块到达：这张表被答了没 ---
+
+const replyNode = (text, seq = 9, kind = 'user') => ({ kind, seq, content: [{ type: 'text', text }] });
+const callNode = (seq = 5, callId = 'call-1') => ({ kind: 'tool-result', callId, seq });
+/** 这张表（callNode 用的那个调用 id）那块作答块：记号由 id 推出来，两边对得上才认。 */
+const answerOf = (body) => applyImport('', body, 'call-1');
+
+test('作答块到达：交回那条带着这张表记号的发言本身（反解要读它的文字）', () => {
+  const answer = replyNode(answerOf('2.\n- 只改插件'));
+  assert.equal(formReplyAfter([callNode(), answer], 'call-1'), answer);
 });
 
-test('默认勾选：单选题把哪来的作答都收敛到一项——用户勾了两项也只剩第一项', () => {
-  const questions = [{ id: 'a', type: 'single', options: [{ label: 'A', displayLabel: 'A' }, { label: 'B', displayLabel: 'B' }] }];
-  const stored = { a: { selected: ['A', 'B'], custom: '自填留着' } };
-  assert.deepEqual(applyRecommendedDefaults(questions, stored), { a: { selected: ['A'], custom: '自填留着' } });
-  // 多选题照旧不收敛
-  const multi = [{ id: 'a', type: 'multi', options: [] }];
-  assert.deepEqual(applyRecommendedDefaults(multi, stored), stored);
+test('作答块到达：转向消息、聊别的事、答别的表都不算——表还在等作答', () => {
+  const nodes = [callNode()];
+  assert.equal(formReplyAfter([...nodes, replyNode('边跑边补一句', 7, 'steering')], 'call-1'), undefined);
+  assert.equal(formReplyAfter([...nodes, replyNode('我另外想说一句')], 'call-1'), undefined);
+  assert.equal(formReplyAfter([...nodes, replyNode(blockOf('1.\n- A：详情页', 'zzzz'))], 'call-1'), undefined);
 });
 
-test('默认勾选：题面还没读出来（或不是本插件的形状）时原样返回用户自己的作答', () => {
-  assert.deepEqual(applyRecommendedDefaults([], { a: { selected: ['A'], custom: '' } }), { a: { selected: ['A'], custom: '' } });
+test('作答块到达：只有开头那行、收尾行没来（起止行不配对）不算作答，表照旧可填', () => {
+  const half = replyNode(`${importBlockStart('call-1')}\n2.\n- 只改插件`);
+  assert.equal(formReplyAfter([callNode(), half], 'call-1'), undefined);
 });
 
-test('题面取数：题号并入标题之外，还照原样把题型读出来（三种都读得出）', () => {
-  const model = readFormModel({
-    argsRaw: args([
-      call({ id: 'a', type: 'single', options: [{ label: 'A' }] }),
-      call({ id: 'b', type: 'multi', options: [{ label: 'A' }] }),
-      call({ id: 'c', type: 'free' }),
-    ]),
-  });
-  assert.deepEqual(model.questions.map((question) => question.type), ['single', 'multi', 'free']);
+test('作答块到达：认的是最早的那条（更晚的属于后面的轮次）；调用之前的不算', () => {
+  const first = replyNode(answerOf('2.\n- 先答的'), 9);
+  const later = replyNode(answerOf('2.\n- 后答的'), 20);
+  assert.equal(formReplyAfter([callNode(), first, later], 'call-1'), first);
+  assert.equal(formReplyAfter([replyNode(answerOf('2.\n- 早的'), 3), callNode()], 'call-1'), undefined);
 });
 
-test('题面取数：没写题型的轮次没有题面——老轮次（升级前写的是 multi_select）的表因此不再画出来', () => {
-  assert.deepEqual(readFormModel({ argsRaw: args([{ id: 'a', question: '？', multi_select: false }]) }).questions, []);
-  assert.deepEqual(readFormModel({ argsRaw: args([{ id: 'a', question: '？' }]) }).questions, []);
-  // 同一轮里只要有一题缺题型，整轮作废（不是只丢那一题）
-  assert.deepEqual(readFormModel({ argsRaw: args([call(), { id: 'b', question: '？' }]) }).questions, []);
-});
-
-// --- 导入文本 ---
-
-test('导入文本：有作答的题各占一段——标题一行、每项一行且行首带记号', () => {
-  const questions = [
-    { id: 'a', header: 'Q2 · Deadline', question: '选哪个？', options: [{ label: 'A：移走（推荐）', displayLabel: 'A：移走' }, { label: 'B：都留', displayLabel: 'B：都留' }] },
-    { id: 'b', header: '', question: '范围？', options: [] },
-    { id: 'c', header: '', question: '没答的题', options: [] },
-  ];
-  const answers = {
-    a: { selected: ['A：移走（推荐）'], custom: '' },
-    b: { selected: [], custom: ' 两句都不够，我自己说：只改插件 ' },
-    c: { selected: [], custom: '   ' },
-  };
-  assert.equal(
-    importBody(questions, answers),
-    'Q2 · Deadline：\n- A：移走\n范围？：\n- 两句都不够，我自己说：只改插件',
-  );
-});
-
-test('导入文本：选项名里带顿号、冒号都照原样写出去（不再有分项的限制）', () => {
-  const questions = [{
-    id: 'a',
-    header: 'Q1',
-    question: '？',
-    options: [{ label: '甲、乙都行（推荐）', displayLabel: '甲、乙都行' }, { label: '丙：另起一行', displayLabel: '丙：另起一行' }],
-  }];
-  const answers = { a: { selected: ['甲、乙都行（推荐）', '丙：另起一行'], custom: '' } };
-  assert.equal(importBody(questions, answers), 'Q1：\n- 甲、乙都行\n- 丙：另起一行');
-});
-
-test('导入文本：一行都没有时是空串；只有空白的自填也不算一项', () => {
-  const questions = [{ id: 'a', header: '', question: '？', options: [] }];
-  assert.equal(importBody(questions, {}), '');
-  assert.equal(importBody(questions, { a: { selected: [], custom: '   ' } }), '');
-});
-
-// --- 导入块 ---
-
-const questions = [{ id: 'a', header: 'Q2 · Deadline', question: '选哪个？', options: [] }];
-const bodyOf = (custom) => importBody(questions, { a: { selected: [], custom } });
-
-test('首次导入：块放在最前面（标题一行、项各一行），用户原有的文字整段接在后面', () => {
-  const draft = applyImport('我另外想说一句。', bodyOf('选 A'));
-  assert.equal(
-    draft,
-    `${IMPORT_BLOCK_START}\nQ2 · Deadline：\n- 选 A\n${IMPORT_BLOCK_END}\n\n我另外想说一句。`,
-  );
-});
-
-test('空草稿：只有一个块，没有多余空行', () => {
-  assert.equal(applyImport('', bodyOf('选 A')), `${IMPORT_BLOCK_START}\nQ2 · Deadline：\n- 选 A\n${IMPORT_BLOCK_END}`);
-});
-
-test('重复导入：原地替换块本身，块外手打的内容一个不动', () => {
-  const first = applyImport('前面的话。', bodyOf('选 A'));
-  const second = applyImport(first, bodyOf('改选 B'));
-  assert.equal(second, applyImport('前面的话。', bodyOf('改选 B')));
-  assert.match(second, /^【拷问作答】/);
-  assert.match(second, /Q2 · Deadline：\n- 改选 B/);
-  assert.doesNotMatch(second, /选 A/);
-  assert.equal(second.slice(-'前面的话。'.length), '前面的话。');
-});
-
-test('用户手改过块内的字：以表单为准覆盖', () => {
-  const first = applyImport('', bodyOf('选 A'));
-  const edited = first.replace('选 A', '我自己乱改的');
-  assert.equal(applyImport(edited, bodyOf('选 A')), first);
-});
-
-test('导入：作答题为空时原样返回草稿', () => {
-  assert.equal(applyImport('原样', ''), '原样');
-});
-
-test('草稿一致性：草稿里那段正是当前作答时为真，旧了、手改过、没块都为假', () => {
-  const body = bodyOf('选 A');
-  const draft = applyImport('我另外想说一句。', body);
-  assert.equal(draftHasBody(draft, body), true);
-  assert.equal(draftHasBody(applyImport('', bodyOf('改选 B')), body), false, '草稿里是旧那份');
-  assert.equal(draftHasBody(draft.replace('选 A', '我自己乱改的'), body), false, '手改过的块算不一致');
-  assert.equal(draftHasBody('只有我自己的话。', body), false, '没有块');
-  assert.equal(draftHasBody(undefined, body), false);
-  assert.equal(draftHasBody(draft, ''), false, '没有作答可导时谈不上一致');
-});
-
-test('草稿反解：草稿里那段导入块逐题回到作答表；没块、块里认不出题时为 undefined', () => {
-  const questions = [call({ type: 'multi', options: [{ label: 'A：这样', displayLabel: 'A：这样' }] })];
-  const draft = applyImport('', importBody(questions, { a: { selected: ['A：这样'], custom: '补一句' } }));
-  assert.deepEqual(parseImportedDraft(draft, questions), [{ question: questions[0], selected: ['A：这样'], custom: '补一句' }]);
-  assert.equal(parseImportedDraft('我自己的话。', questions), undefined);
-  assert.equal(parseImportedDraft(`${IMPORT_BLOCK_START}\n跟哪道题都对不上：随便\n${IMPORT_BLOCK_END}`, questions), undefined);
-  assert.equal(parseImportedDraft(undefined, questions), undefined);
-});
-
-test('只认新标记：升级前那段【盘问作答】的块不算作答块，导入时也不替换它', () => {
-  const questions = [call({ type: 'multi', options: [{ label: 'A：这样', displayLabel: 'A：这样' }] })];
-  const legacy = '【盘问作答】\nQ2 · Deadline：\n- 选 A\n【/盘问作答】';
-  assert.equal(parseImportedAnswersResult(legacy, questions).kind, 'none', '老轮次的那段不再当作答块');
-  assert.equal(parseImportedDraft(legacy, questions), undefined);
-  // 写出去只写新标记；草稿里那段旧的留在原地（不换成新的，也不被它当成已有块替换）
-  const written = applyImport(legacy, bodyOf('选 A'));
-  assert.match(written, /^【拷问作答】/, '写出去的是新标记');
-  assert.match(written, /【盘问作答】\nQ2 · Deadline：\n- 选 A\n【\/盘问作答】$/, '旧段原样留在后面');
-});
-
-// --- 只读判定：交回把本轮带过去的那条用户发言 ---
-
-test('只读判定：这条调用之后出现用户发言（user 或 steering）才算本轮过去，并把那条发言交回来', () => {
-  const user = { kind: 'user', seq: 9, content: [{ type: 'text', text: '作答' }] };
-  const later = { kind: 'user', seq: 12, content: [{ type: 'text', text: '下一轮的话' }] };
-  const nodes = [{ kind: 'tool-result', callId: 'call-1', seq: 5 }, user];
-  assert.equal(userReplyAfter(nodes, 'call-1'), user, '交回来的必须是那条发言本身（反解要读它的文字）');
-  assert.equal(userReplyAfter([...nodes, later], 'call-1'), user, '紧接着的那条说了算：更晚的属于后面的轮次');
-  const steering = { kind: 'steering', seq: 7, content: [{ type: 'text', text: '边跑边补' }] };
-  assert.equal(userReplyAfter([steering, ...nodes], 'call-1'), steering, '调用之后最早的那条说了算（steering 也算）');
-  assert.equal(userReplyAfter([{ kind: 'user', seq: 3 }, { kind: 'tool-result', callId: 'call-1', seq: 5 }], 'call-1'), undefined);
-  assert.equal(userReplyAfter([{ kind: 'assistant', seq: 7 }, { kind: 'tool-result', callId: 'call-1', seq: 5 }], 'call-1'), undefined);
-});
-
-test('只读判定：认不出这条调用、或还拿不到记录时一律当作还没过去', () => {
-  assert.equal(userReplyAfter([{ kind: 'user', seq: 9 }], 'call-1'), undefined);
-  assert.equal(userReplyAfter(undefined, 'call-1'), undefined);
-  assert.equal(userReplyAfter([{ kind: 'tool-result', callId: 'call-1', seq: 5 }], undefined), undefined);
+test('作答块到达：认不出这条调用、或还拿不到记录时按「还没答」算（表照旧可填）', () => {
+  assert.equal(formReplyAfter([replyNode(answerOf('1.\n- A'))], 'call-1'), undefined);
+  assert.equal(formReplyAfter(undefined, 'call-1'), undefined);
+  assert.equal(formReplyAfter([callNode()], undefined), undefined);
 });
 
 test('发言文字：把内容块里的文本段接起来，别的段忽略', () => {
@@ -558,173 +498,215 @@ test('发言文字：把内容块里的文本段接起来，别的段忽略', ()
 
 // --- 轮次定位：本轮里那次 grilling_form 调用 ---
 
-/** 假 chat 快照：只做位置索引 + 按 key 取节点这两件事，形状与 ChatSnapshot 一致。 */
-function fakeChat(nodes) {
-  const byKey = new Map(nodes.map((node, index) => [`k${String(index)}`, node]));
+/** 假 chat 快照：按轮次给节点键，再按 key 取节点。 */
+function fakeChat(turns) {
+  const byKey = new Map();
+  for (const [turn, blocks] of Object.entries(turns)) {
+    blocks.forEach((block, index) => byKey.set(`${turn}:${index}`, { kind: 'tool-call', data: { root: block } }));
+  }
   return {
-    locations: { getTurn: () => [...byKey.keys()] },
+    locations: { getTurn: (turn) => (turns[turn] === undefined ? [] : turns[turn].map((_, index) => `${turn}:${index}`)) },
     nodes: { get: (key) => byKey.get(key) },
   };
 }
-const chatNode = (root, extra = {}) => ({ kind: 'tool-call', data: { root }, ...extra });
 const settledRoot = (overrides = {}) => ({
   kind: 'tool-result',
   callId: 'call-1',
   seq: 5,
   call: { name: TOOL_NAME, argsRaw: args([call()]) },
-  content: [{ type: 'text', text: pending }],
+  content: [{ type: 'text', text: shown }],
   isError: false,
   ...overrides,
 });
 
 test('轮次定位：本轮里那条 grilling_form 调用连工具名与调用 id 一起交出来', () => {
-  const chat = fakeChat([{ kind: 'user', data: {} }, chatNode(settledRoot())]);
+  const chat = fakeChat({ 3: [{ kind: 'user' }, settledRoot()] });
   assert.deepEqual(roundCall(chat, 3), { block: settledRoot(), toolName: TOOL_NAME, callId: 'call-1' });
-  assert.equal(roundCall(fakeChat([{ kind: 'user', data: {} }]), 3), undefined, '本轮没有这张表就什么都不画');
+  assert.equal(roundCall(fakeChat({ 3: [{ kind: 'user' }] }), 3), undefined, '本轮没有这张表就什么都不画');
   assert.equal(roundCall(undefined, 3), undefined);
 });
 
 test('轮次定位：还没落结果的那次调用（工具名在 name 上）也认得出', () => {
   const runningRoot = { phase: 'start', callId: 'call-9', name: TOOL_NAME, argsRaw: '{}' };
-  assert.deepEqual(roundCall(fakeChat([chatNode(runningRoot)]), 1), { block: runningRoot, toolName: TOOL_NAME, callId: 'call-9' });
+  assert.deepEqual(roundCall(fakeChat({ 1: [runningRoot] }), 1), { block: runningRoot, toolName: TOOL_NAME, callId: 'call-9' });
 });
 
-test('轮次定位：本轮里别的工具不是这张表；被拒之后又投出的那次才算', () => {
-  const other = chatNode({ ...settledRoot(), call: { name: 'bash', argsRaw: '{}' } });
-  const rejected = chatNode(settledRoot({ seq: 4, content: [{ type: 'text', text: JSON.stringify({ rejected: true, violations: ['x'] }) }] }));
-  const accepted = chatNode(settledRoot({ seq: 6 }));
-  assert.equal(roundCall(fakeChat([other]), 1), undefined);
-  assert.equal(roundCall(fakeChat([rejected, accepted]), 1).block.seq, 6, '被接受的那次是最后一次');
+test('轮次定位：本轮里别的工具不是这张表；被拦下之后又投出的那次才算', () => {
+  const other = { ...settledRoot(), call: { name: 'bash', argsRaw: '{}' } };
+  const blocked = settledRoot({ seq: 4, content: [{ type: 'text', text: hidden }] });
+  const accepted = settledRoot({ seq: 6 });
+  assert.equal(roundCall(fakeChat({ 1: [other] }), 1), undefined);
+  assert.equal(roundCall(fakeChat({ 1: [blocked, accepted] }), 1).block.seq, 6, '投出去的那次是最后一次');
 });
 
-// --- 反解：按实发消息重画表单 ---
+// --- 被后面那张取代 ---
 
-const reverseQuestions = [
-  { id: 'h1', type: 'multi', header: 'Q2 · Host 权威层', question: 'Host 权威层怎么改？', options: [{ label: 'A：扩展（推荐）', displayLabel: 'A：扩展', recommended: true }, { label: 'B：新建一层', displayLabel: 'B：新建一层', recommended: false }] },
-  { id: 'h2', type: 'multi', header: '', question: '范围呢？', options: [{ label: '甲：只改插件', displayLabel: '甲：只改插件' }] },
-  { id: 'h3', type: 'free', header: '', question: '没答的题', options: [] },
-];
-const replyText = (body) => `${IMPORT_BLOCK_START}\n${body}\n${IMPORT_BLOCK_END}`;
+const replacing = (overrides = {}) => settledRoot({
+  callId: 'call-2',
+  seq: 12,
+  call: { name: TOOL_NAME, argsRaw: JSON.stringify({ questions: [call()], replace: true }) },
+  ...overrides,
+});
 
-test('反解（新格式）：标题一行、每项一行，选中的项记回归一化后的 label，自填并进自填', () => {
-  const answers = parseImportedAnswers(
-    replyText('Q2 · Host 权威层：\n- A：扩展\n- 自填的一句\n范围呢？：\n- 甲：只改插件'),
-    reverseQuestions,
-  );
-  assert.deepEqual(answers, {
-    h1: { selected: ['A：扩展（推荐）'], custom: '自填的一句' },
-    h2: { selected: ['甲：只改插件'], custom: '' },
-    h3: { selected: [], custom: '' },
+test('被取代：后面某一轮投出一张带 replace: true 的表就算', () => {
+  assert.equal(supersededAfter(fakeChat({ 4: [settledRoot()], 5: [replacing()] }), 4), true);
+});
+
+test('被取代：后面那张没带 replace、或它自己没投出去，都不算', () => {
+  assert.equal(supersededAfter(fakeChat({ 4: [settledRoot()], 5: [settledRoot({ callId: 'call-2', seq: 12 })] }), 4), false);
+  const blocked = replacing({ content: [{ type: 'text', text: hidden }] });
+  assert.equal(supersededAfter(fakeChat({ 4: [settledRoot()], 5: [blocked] }), 4), false);
+});
+
+test('被取代：中间隔着别的轮次也照样往后找；后面没有轮次了就停', () => {
+  assert.equal(supersededAfter(fakeChat({ 4: [settledRoot()], 5: [{ kind: 'user' }], 6: [replacing()] }), 4), true);
+  assert.equal(supersededAfter(fakeChat({ 4: [settledRoot()] }), 4), false);
+  assert.equal(supersededAfter(undefined, 4), false);
+});
+
+
+// --- 取代时搬的两件：勾选与草稿里的块 ---
+
+const replaceArgs = (list) => JSON.stringify({ questions: list, replace: true });
+const replacingRound = (callId, seq = 12) => settledRoot({ callId, seq, call: { name: TOOL_NAME, argsRaw: replaceArgs([call()]) } });
+
+test('被取代的是哪张：往前找最近一张投出去过、自己的作答块还没到的表', () => {
+  const chat = fakeChat({ 4: [settledRoot()], 5: [replacingRound('call-2')] });
+  assert.deepEqual(replacedForm(chat, 5), { callId: 'call-1', questions: readQuestions(args([call()])) });
+  assert.equal(replacedForm(chat, 4), undefined, '没点名取代的那一轮没有被取代者');
+  assert.equal(replacedForm(fakeChat({ 5: [replacingRound('call-2')] }), 5), undefined, '前面没有表');
+  assert.equal(replacedForm(undefined, 5), undefined);
+});
+
+test('被取代的判定：前面那张自己的作答块已经到了就不算被取代（它是已答的那张）', () => {
+  const chat = fakeChat({ 4: [settledRoot()], 5: [replacingRound('call-2')] });
+  chat.legacy = { nodes: [callNode(), replyNode(answerOf('1.\n- 答了'), 9)] };
+  assert.equal(replacedForm(chat, 5), undefined);
+});
+
+test('搬运勾选：题干原文一模一样的题才搬，勾选只留新表还认得的那几项', () => {
+  const oldQuestions = [
+    { id: '1', number: 1, question: '落点放哪？', type: 'multi', options: [{ label: 'A：详情页', recommended: false }, { label: 'B：列表里', recommended: false }] },
+    { id: '2', number: 2, question: '范围呢？', type: 'free', options: [] },
+  ];
+  const newQuestions = [
+    { id: '1', number: 1, question: '落点放哪？', type: 'multi', options: [{ label: 'A：详情页', recommended: false }, { label: 'C：另起一层', recommended: false }] },
+    { id: '2', number: 2, question: '范围呢', type: 'free', options: [] },
+  ];
+  const carried = carryOverAnswers(oldQuestions, newQuestions, {
+    1: { selected: ['A：详情页', 'B：列表里'], custom: '补一句' },
+    2: { selected: [], custom: '整段搬过去' },
   });
+  assert.deepEqual(carried, { 1: { selected: ['A：详情页'], custom: '补一句' } }, '第二题题干差一个字：不搬');
 });
 
-test('反解（新格式）：块里没出现的题就是没作答——连推荐默认也不会被勾回来', () => {
-  const answers = parseImportedAnswers(replyText('范围呢？：\n- 甲：只改插件'), reverseQuestions);
-  assert.deepEqual(answers.h1, { selected: [], custom: '' });
-  assert.deepEqual(answers.h3, { selected: [], custom: '' });
+test('搬运勾选：旧表上「用户把这题清空了」那条记录也照搬——新表的推荐默认不许替他勾回来', () => {
+  assert.deepEqual(carryOverAnswers(questions, questions, { 1: { selected: [], custom: '' } }), { 1: { selected: [], custom: '' } });
+  assert.deepEqual(carryOverAnswers(questions, questions, {}), {}, '旧表上没动过的题不搬，让新表自己叠推荐默认');
 });
 
-test('反解（新格式）：选项名里带顿号、冒号、换行都读得回来——顿号不再被当分隔符', () => {
-  const questions = [{
-    id: 'a',
-    header: 'Q1',
-    question: '？',
-    options: [
-      { label: '甲、乙都行', displayLabel: '甲、乙都行' },
-      { label: '丙：另起一行', displayLabel: '丙：另起一行' },
-    ],
-  }];
-  assert.deepEqual(
-    parseImportedAnswers(replyText('Q1：\n- 甲、乙都行\n- 丙：另起一行\n- 两行\n  的自填'), questions),
-    { a: { selected: ['甲、乙都行', '丙：另起一行'], custom: '两行\n  的自填' } },
+test('取代时搬草稿：旧表那块整段拿掉，新表那块放在它原来的位置，别处的字一个不动', () => {
+  const draft = `前面的话。\n\n${applyImport('', '1.\n- 旧勾选', 'call-1')}\n\n后面的话。`;
+  const next = carryImport(draft, 'call-1', '1.\n- 新勾选', 'call-2');
+  assert.equal(next, `前面的话。\n\n${applyImport('', '1.\n- 新勾选', 'call-2')}\n\n后面的话。`);
+  assert.doesNotMatch(next, /旧勾选/);
+});
+
+test('取代时搬草稿：旧块不在草稿里就等价于一次普通导入；新表那块已经在草稿里就原地换', () => {
+  assert.equal(
+    carryImport('我另外想说一句。', 'call-1', '1.\n- 新勾选', 'call-2'),
+    applyImport('我另外想说一句。', '1.\n- 新勾选', 'call-2'),
   );
+  const withNew = `${applyImport('', '1.\n- 旧一点的', 'call-2')}\n\n我另外想说一句。`;
+  const next = carryImport(withNew, 'call-1', '1.\n- 新勾选', 'call-2');
+  assert.match(next, /1\.\n- 新勾选/);
+  assert.doesNotMatch(next, /旧一点的/);
+  assert.equal(next.slice(-'我另外想说一句。'.length), '我另外想说一句。');
 });
 
-test('反解（新格式）：标题行带不带冒号都认；块里一题都没出现时不算数', () => {
-  const questions = [{ id: 'a', header: 'Q1', question: '？', options: [{ label: '甲', displayLabel: '甲' }] }];
-  assert.deepEqual(parseImportedAnswers(replyText('Q1：\n- 甲'), questions).a.selected, ['甲']);
-  assert.deepEqual(parseImportedAnswers(replyText('Q1\n- 甲'), questions).a.selected, ['甲'], '手打时漏了冒号也认');
+
+// --- 闸门折叠 ---
+
+const callEvent = (callId, argsRaw, seq) => ({ type: 'tool/call', seq, data: { name: TOOL_NAME, callId, arguments: argsRaw } });
+const resultEvent = (callId, value, seq) => ({
+  type: 'tool/result',
+  seq,
+  data: { message: { toolCallId: callId, content: [{ type: 'text', text: JSON.stringify(value) }] } },
+});
+const userEvent = (text, seq) => ({ type: 'user/message', seq, data: { content: [{ type: 'text', text }] } });
+
+/** 走一遍「调用 → 结果 ok → 待答」这三步。 */
+function pend(state, callId = 'call-1', argsRaw = args([call()])) {
+  return foldFormGate(foldFormGate(state, callEvent(callId, argsRaw, 1)), resultEvent(callId, { ok: true, message: 'x' }, 2));
+}
+
+test('闸门：调用事件先把这次调用记成候选，结果说投出去了才算有一张待答的表', () => {
+  const afterCall = foldFormGate(initialFormGate(), callEvent('call-abc1234', args([call({ question: '继续吗？' })]), 3));
+  assert.equal(afterCall.call.callId, 'call-abc1234');
+  assert.deepEqual(afterCall.call.questions, ['继续吗？']);
+  assert.equal(afterCall.call.seq, 3);
+  assert.equal(pendingFormOf(afterCall), null, '结果还没落库，还算不上待答');
+  const afterResult = foldFormGate(afterCall, resultEvent('call-abc1234', { ok: true, message: 'x' }, 4));
+  assert.equal(pendingFormOf(afterResult).callId, 'call-abc1234');
+  assert.equal(afterResult.call, null, '结果落库之后候选槽位空了');
 });
 
-test('反解（旧格式）：老会话里那条「标题：项、项」照样认，标题认不出时退回题干、再退回 id', () => {
-  assert.deepEqual(
-    parseImportedAnswers(replyText('Q2 · Host 权威层：A：扩展、自填的一句\n范围呢？：甲：只改插件'), reverseQuestions),
-    {
-      h1: { selected: ['A：扩展（推荐）'], custom: '自填的一句' },
-      h2: { selected: ['甲：只改插件'], custom: '' },
-      h3: { selected: [], custom: '' },
-    },
+test('闸门：结果说没投出（入参被拒、被拦下）时，前面那张待答的表一个不动', () => {
+  const withPending = pend(initialFormGate(), 'call-1');
+  const blocked = foldFormGate(foldFormGate(withPending, callEvent('call-2', args([call()]), 5)), resultEvent('call-2', { ok: false, message: 'no' }, 6));
+  assert.equal(pendingFormOf(blocked).callId, 'call-1');
+});
+
+test('闸门：用户发言里带着这张表的记号就清空；转向消息、聊别的事、答别的表都不清', () => {
+  const withPending = pend(initialFormGate(), 'call-1');
+  const mark = importBlockStart('call-1');
+  assert.equal(pendingFormOf(foldFormGate(withPending, userEvent(mark + '\n1.\n- A\n【/拷问作答】', 7))), null);
+  assert.equal(
+    pendingFormOf(foldFormGate(withPending, userEvent(mark, 7))).callId,
+    'call-1',
+    '只有开头那行、收尾行没来：什么都没答，闸门照旧关着',
   );
-  assert.deepEqual(parseImportedAnswers(replyText('Host 权威层怎么改？：A：扩展'), reverseQuestions).h1.selected, ['A：扩展（推荐）']);
-  assert.deepEqual(parseImportedAnswers(replyText('h2：甲：只改插件'), reverseQuestions).h2.selected, ['甲：只改插件']);
+  assert.equal(pendingFormOf(foldFormGate(withPending, userEvent('边跑边补一句', 7))).callId, 'call-1');
+  assert.equal(pendingFormOf(foldFormGate(withPending, userEvent('我另外想说一句', 7))).callId, 'call-1');
+  assert.equal(pendingFormOf(foldFormGate(withPending, userEvent(importBlockStart('call-9') + '\n【/拷问作答】', 7))).callId, 'call-1');
 });
 
-test('反解（旧格式）：选项名对不上的项并进自填（含「、」的自填被拆开又拼回去）', () => {
-  const questions = [{ id: 'a', header: 'Q1', question: '？', options: [{ label: 'A：这样', displayLabel: 'A：这样' }] }];
-  assert.deepEqual(
-    parseImportedAnswers(replyText('Q1：A：这样、两句都不够、我自己说：只改插件'), questions),
-    { a: { selected: ['A：这样'], custom: '两句都不够、我自己说：只改插件' } },
+test('闸门：不关本插件的事件原样返回同一个引用（投影按引用判有没有变）', () => {
+  const state = pend(initialFormGate(), 'call-1');
+  for (const event of [
+    { type: 'tool/call', seq: 9, data: { name: 'bash', callId: 'c', arguments: '{}' } },
+    { type: 'tool/result', seq: 9, data: { message: { toolCallId: 'other', content: [{ type: 'text', text: shown }] } } },
+    { type: 'assistant/message', seq: 9, data: {} },
+    { type: 'tool/call', seq: 9, data: { name: TOOL_NAME, callId: 'c', arguments: '不是 JSON' } },
+    {},
+  ]) {
+    assert.equal(foldFormGate(state, event), state, JSON.stringify(event));
+  }
+});
+
+test('闸门：结果形状不认识的那次调用进不了待答（闸门不会被它卡死）', () => {
+  const legacyArgs = JSON.stringify({ questions: [{ id: 'a', question: '？', multi_select: true, options: [{ label: '甲' }] }] });
+  const state = foldFormGate(
+    foldFormGate(initialFormGate(), callEvent('call-old', legacyArgs, 3)),
+    resultEvent('call-old', { pending: true, message: '旧形状' }, 4),
   );
+  assert.equal(pendingFormOf(state), null);
 });
 
-test('反解（旧格式）：标题本身含「：」时，按认得出的那个分隔符切', () => {
-  const questions = [{ id: 'a', header: '落点：插件页', question: '？', options: [{ label: '甲：铺在详情页', displayLabel: '甲：铺在详情页' }] }];
+test('闸门：投影单元的形状与收口——键、版本、初值、schema 把脏状态收回初值', () => {
+  assert.equal(FORM_GATE_UNIT.key, GATE_KEY);
+  assert.equal(typeof FORM_GATE_UNIT.stateVersion, 'number');
+  assert.deepEqual(FORM_GATE_UNIT.init(), initialFormGate());
   assert.deepEqual(
-    parseImportedAnswers(replyText('落点：插件页：甲：铺在详情页'), questions),
-    { a: { selected: ['甲：铺在详情页'], custom: '' } },
+    FORM_GATE_UNIT.apply(initialFormGate(), callEvent('call-1', args([call()]), 1)),
+    foldFormGate(initialFormGate(), callEvent('call-1', args([call()]), 1)),
+    '单元折叠的就是这份实现',
   );
-});
-
-test('反解：两种格式混在一个块里时，每一项记号行各归它上面那个标题，旧格式的行不再另起一题', () => {
-  const text = replyText(['Q2 · Host 权威层：', '- A：扩展', '范围呢？：甲：只改插件'].join('\n'));
-  const answers = parseImportedAnswers(text, reverseQuestions);
-  assert.deepEqual(answers.h1, { selected: ['A：扩展（推荐）'], custom: '范围呢？：甲：只改插件' });
-  assert.deepEqual(answers.h2, { selected: [], custom: '' }, '块里一旦有项记号行，旧格式那行就只是上一题的续行');
-});
-
-test('反解：块里的项记号行都归最近那个认得出的标题（题与题之间不串台）', () => {
-  const answers = parseImportedAnswers(replyText('范围呢？：\n- 甲：只改插件\nQ2 · Host 权威层：\n- A：扩展'), reverseQuestions);
-  assert.deepEqual(answers.h1, { selected: ['A：扩展（推荐）'], custom: '' });
-  assert.deepEqual(answers.h2, { selected: ['甲：只改插件'], custom: '' });
-});
-
-test('反解：块前后的用户原话不影响反解；CRLF 换行也认（行尾的 \\r 不算内容）', () => {
-  const text = `我另外想说一句。\n\n${replyText('Q2 · Host 权威层：\n- A：扩展')}\n\n还有一句。`;
-  assert.deepEqual(parseImportedAnswers(text, reverseQuestions).h1.selected, ['A：扩展（推荐）']);
-  const crlf = replyText('Q2 · Host 权威层：\r\n- A：扩展').replace(/\n/g, '\r\n');
-  assert.deepEqual(parseImportedAnswers(crlf, reverseQuestions).h1.selected, ['A：扩展（推荐）'], '手打草稿可能是 CRLF');
-});
-
-test('反解结果分三种：没有块是没作答、块坏了是 malformed、有块才是 parsed', () => {
-  assert.deepEqual(parseImportedAnswersResult('我另外想说一句。', reverseQuestions), { kind: 'none', answers: undefined });
-  assert.equal(parseImportedAnswersResult(undefined, reverseQuestions).kind, 'none');
-  assert.equal(parseImportedAnswersResult(`${IMPORT_BLOCK_START}\nQ2 · Host 权威层：\n- A：扩展`, reverseQuestions).kind, 'none', '起止行不配对：当没有块');
-  assert.equal(parseImportedAnswersResult(replyText('跟哪道题都对不上：随便'), reverseQuestions).kind, 'malformed', '一条都认不出来');
-  const parsed = parseImportedAnswersResult(replyText('范围呢？：\n- 甲：只改插件'), reverseQuestions);
-  assert.equal(parsed.kind, 'parsed');
-  assert.deepEqual(parsed.answers.h1, { selected: [], custom: '' }, '块里没有的题显式记成没作答');
-  assert.equal(parseImportedAnswersResult(replyText('   '), reverseQuestions).kind, 'parsed', '空块只是没有作答');
-});
-
-test('冻结：块在就以块为准，块坏了退回本地那份，根本没有块就是没作答（推荐默认不许冒充）', () => {
-  const stored = { h1: { selected: ['B：新建一层'], custom: '本地改过' }, h2: { selected: [], custom: '本地自填' } };
-  const parsed = frozenFormAnswers(reverseQuestions, stored, replyText('范围呢？：\n- 甲：只改插件'));
-  assert.deepEqual(parsed.answers.h1, { selected: [], custom: '' }, '实发消息里没有这题就是没作答，本地那份不许插嘴');
-  assert.equal(parsed.unanswered, false);
-  const broken = frozenFormAnswers(reverseQuestions, stored, replyText('跟哪道题都对不上：随便'));
-  assert.deepEqual(broken.answers.h2, { selected: [], custom: '本地自填' }, '块坏了才退回本地那份');
-  assert.equal(broken.fallback, true);
-  const silent = frozenFormAnswers(reverseQuestions, stored, '我另外想说一句，没导入。');
-  assert.equal(silent.unanswered, true, '用户没走表单：这就是没作答，不是「本地那份」');
-  assert.deepEqual(silent.answers.h1, { selected: [], custom: '' });
-  assert.deepEqual(silent.answers.h2, { selected: [], custom: '' });
-  assert.equal(silent.fallback, false);
-});
-
-test('冻结：实发块里单选题写了两行选项，重画时也只留一项', () => {
-  const questions = [{ id: 's', type: 'single', header: 'Q9', question: '继续吗？', options: [{ label: '继续', displayLabel: '继续' }, { label: '停一下', displayLabel: '停一下' }] }];
-  const parsed = frozenFormAnswers(questions, {}, replyText('Q9：\n- 继续\n- 停一下'));
-  assert.deepEqual(parsed.answers.s, { selected: ['继续'], custom: '' });
+  const valid = pend(initialFormGate(), 'call-1');
+  assert.deepEqual(FORM_GATE_UNIT.stateSchema.parse(valid), valid);
+  for (const garbage of [undefined, null, 'x', 42, { call: 1, pending: 'y' }, { pending: { callId: 'c' } }]) {
+    assert.deepEqual(FORM_GATE_UNIT.stateSchema.parse(garbage), initialFormGate(), JSON.stringify(garbage));
+  }
 });
 
 // --- 持久化 ---
@@ -737,58 +719,38 @@ test('会话键：按会话分一份', () => {
 test('持久化：写进去读得回来，同一个会话里别的轮次互不影响', () => {
   const storage = fakeStorage();
   const key = formStorageKey('sess-1');
-  writeStoredForm(storage, key, 'call-1', { a: { selected: ['A（推荐）'], custom: '自填' } });
-  writeStoredForm(storage, key, 'call-2', { b: { selected: [], custom: '只自填' } });
-  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { a: { selected: ['A（推荐）'], custom: '自填' } });
-  assert.deepEqual(readStoredForm(storage, key, 'call-2'), { b: { selected: [], custom: '只自填' } });
+  writeStoredForm(storage, key, 'call-1', { 1: { selected: ['A'], custom: '自填' } });
+  writeStoredForm(storage, key, 'call-2', { 2: { selected: [], custom: '只自填' } });
+  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { 1: { selected: ['A'], custom: '自填' } });
+  assert.deepEqual(readStoredForm(storage, key, 'call-2'), { 2: { selected: [], custom: '只自填' } });
   assert.deepEqual(readStoredForm(storage, formStorageKey('sess-2'), 'call-1'), {});
 });
 
 test('持久化：读回来的脏数据被清掉，坏 JSON 与缺存储都只是「什么都没选」', () => {
   const key = formStorageKey('sess-1');
-  const storage = fakeStorage({ [key]: JSON.stringify({ 'call-1': { a: { selected: [1, 'A'], custom: 7 }, b: 'x', c: { selected: [], custom: '' } } }) });
-  // c 是「用户把这题清空了」，不是脏数据：默认勾选靠它才不会被勾回来
-  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { a: { selected: ['A'], custom: '' }, c: { selected: [], custom: '' } });
+  const storage = fakeStorage({ [key]: JSON.stringify({ 'call-1': { 1: { selected: [1, 'A'], custom: 7 }, 2: 'x', 3: { selected: [], custom: '' } } }) });
+  // 3 是「用户把这题清空了」，不是脏数据：默认勾选靠它才不会被勾回来
+  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { 1: { selected: ['A'], custom: '' }, 3: { selected: [], custom: '' } });
   assert.deepEqual(readStoredForm(fakeStorage({ [key]: '{ 坏 JSON' }), key, 'call-1'), {});
   assert.deepEqual(readStoredForm(undefined, key, 'call-1'), {});
 });
 
 test('持久化：形状不对的记录被丢掉——它不该冒充「用户清空过」而吃掉默认勾选', () => {
   const key = formStorageKey('sess-1');
-  const storage = fakeStorage({
-    [key]: JSON.stringify({ 'call-1': { a: { selected: 'garbage' }, b: { selected: [], custom: '' } } }),
-  });
-  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { b: { selected: [], custom: '' } });
+  const storage = fakeStorage({ [key]: JSON.stringify({ 'call-1': { 1: { selected: 'garbage' }, 2: { selected: [], custom: '' } } }) });
+  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { 2: { selected: [], custom: '' } });
 });
 
 test('持久化：取消掉默认勾选这件事存得住——重新读回来仍是「清空过」而不是「没作答」', () => {
   const storage = fakeStorage();
   const key = formStorageKey('sess-1');
-  writeStoredForm(storage, key, 'call-1', { a: { selected: [], custom: '' } });
-  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { a: { selected: [], custom: '' } });
+  writeStoredForm(storage, key, 'call-1', { 1: { selected: [], custom: '' } });
+  assert.deepEqual(readStoredForm(storage, key, 'call-1'), { 1: { selected: [], custom: '' } });
 });
 
 test('持久化：storage 写不进去（配额/隐私模式）时不抛', () => {
   const storage = { getItem: () => null, setItem: () => { throw new Error('quota'); } };
-  writeStoredForm(storage, formStorageKey('s'), 'call-1', { a: { selected: ['A'], custom: '' } });
-});
-
-test('作答展示：选中的项换回不带后缀的文字', () => {
-  const question = { id: 'a', options: [{ label: 'A：xxx（推荐）', displayLabel: 'A：xxx' }] };
-  assert.deepEqual(answerParts(question, { selected: ['A：xxx（推荐）'], custom: ' 自填 ' }), { selected: ['A：xxx'], custom: '自填' });
-  assert.deepEqual(answerParts(question, undefined), { selected: [], custom: '' });
-});
-
-test('作答逐行展开：选中的项在前、自填的字在后，只读展示按行看的就是这一份', () => {
-  const question = { id: 'a', options: [{ label: 'A：xxx（推荐）', displayLabel: 'A：xxx' }, { label: 'B：yyy', displayLabel: 'B：yyy' }] };
-  assert.deepEqual(answerLines(question, { selected: ['A：xxx（推荐）', 'B：yyy'], custom: ' 补一句 ' }), ['A：xxx', 'B：yyy', '补一句']);
-  assert.deepEqual(answerLines(question, { selected: [], custom: '   ' }), []);
-  assert.deepEqual(answerLines(question, undefined), []);
-  // 导入文本按项写：一样的取舍，一项一行
-  assert.equal(
-    importBody([{ ...question, header: 'Q1', question: '？' }], { a: { selected: ['B：yyy'], custom: '补一句' } }),
-    'Q1：\n- B：yyy\n- 补一句',
-  );
+  writeStoredForm(storage, formStorageKey('s'), 'call-1', { 1: { selected: ['A'], custom: '' } });
 });
 
 console.log(`${passed}/${passed + failures.length} passed`);

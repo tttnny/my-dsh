@@ -1,12 +1,12 @@
 /**
- * 宿主半边自检：**真实的 0.2.1-alpha.4 内核服务**，断言这个工具「投出表单就结束本轮」的每一步。
- *
- * 承重点全在真货上：真 cordis `Context`、真 `ctx.tools`（ToolRuntime：工具经它注册、再经它取回）。
- * 唯一假的是**执行上下文**——真 DSH 里 `exec.concludeTurn()` 把本轮标记为结束，这里换成假件记录
- * 「喊没喊过」。工具不再等任何答案，所以这条链上没有假应答者：它必须自己立即返回。
+ * 宿主半边自检：**真实的 0.2.1-alpha.4 内核服务**，断言这个工具「投出表单就结束本轮」的每一步，
+ * 以及闸门那三分支。承重点全在真货上：真 cordis Context、真 ctx.tools（ToolRuntime：工具经它
+ * 注册、再经它取回）、真会话投影（SessionProjectionRegistry：闸门就是挂在它上面的一个单元）。
+ * 假的只有两处：**执行上下文**（真 DSH 里 exec.concludeTurn() 把本轮标记为结束，这里换成假件
+ * 记录「喊没喊过」）与**会话**（只给投影读得到的那些成员：事件序列、按 seq 取事件、按序读全量）。
  *
  * 内核包是本插件的 devDependencies（与 engines.dsh 同版本）：自检不指向任何 DSH 安装副本，
- * `pnpm install` 后即可离线跑（见 docs/rules/dev-copy.md）。
+ * pnpm install 后即可离线跑（见 docs/rules/dev-copy.md）。
  *
  * 跑法：pnpm test / node scripts/smoke-host.mjs
  */
@@ -18,8 +18,10 @@ import { fileURLToPath } from 'node:url';
 import { Context } from '@deepseek-ai/cordis';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
+import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection';
 
 import * as plugin from '../lib/index.js';
+import { GATE_KEY, TOOL_NAME, importBlockStart } from '../src/form-model.js';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 /** 包名：与包内 cordis.patch.yml 那条装配行的 name 比对，两边各自独立，不共用字面量。 */
@@ -36,39 +38,81 @@ function test(name, fn) {
 }
 
 /**
- * 起一个真内核 Context：装工具表与它写工具 schema 用的提示词服务。这一版不再需要提问服务——
- * 工具把它整条 seam 让给了原生 `ask_user_question`，自己既不投递也不等待。
- * @returns {Context} 装配好工具表的根上下文。
+ * 起一个真内核 Context：装工具表与它写工具 schema 用的提示词服务，再挂真的会话投影服务。
+ * @param {{ projections?: boolean }} [options] - projections 为 false 时故意不挂投影服务。
+ * @returns {Context} 装配好的根上下文。
  */
-function host() {
+function host(options = {}) {
   const ctx = new Context();
   new SystemPrompt(ctx, {});
   new ToolRuntime(ctx);
+  if (options.projections !== false) new SessionProjectionRegistry(ctx);
   return ctx;
 }
 
 /**
  * 装配一次插件并从真工具表取回工具。
  * @param {object} [config] - loader 交给插件行的 config（正常装配不写 config）。
+ * @param {{ projections?: boolean }} [options] - 是否挂会话投影服务。
  * @returns {Promise<{ctx: Context, tool: object|undefined}>} 上下文与取回的工具。
  */
-async function assemble(config) {
-  const ctx = host();
+async function assemble(config, options) {
+  const ctx = host(options);
   plugin.apply(ctx, config);
   return { ctx, tool: ctx.tools.get('grilling_form') };
 }
 
-/** 假执行上下文：真 DSH 的执行上下文带着 concludeTurn，这里只记录它被喊了几次。 */
-function makeExec() {
+/**
+ * 只给投影读的那几个成员的假会话：事件按 seq 排（seq 就是下标），全量读与按位置读各一个。
+ * header / inheritedEventCount 是投影初始化单元时要的两件元数据。
+ * @param {object[]} [events] - 初始事件。
+ * @returns {{events: object[], append: (event: object) => void, session: object}} 假会话与追加事件的口。
+ */
+function makeSession(events = []) {
+  const log = [...events];
+  const session = {
+    id: 'sess-1',
+    header: {},
+    inheritedEventCount: 0,
+    get seq() { return log.length; },
+    snapshotEvents: () => log,
+    eventAt: (seq) => log[seq],
+  };
+  return {
+    events: log,
+    session,
+    append: (event) => { log.push({ ...event, seq: log.length }); },
+  };
+}
+
+/** 真 DSH 里这一步由 agent 循环做：调用事件与结果事件先后落进会话。 */
+function recordRound({ append }, { callId, argsRaw, result }) {
+  append({ type: 'tool/call', data: { turn: 1, step: 1, callId, name: TOOL_NAME, arguments: argsRaw } });
+  append({
+    type: 'tool/result',
+    data: { turn: 1, step: 1, message: { toolCallId: callId, content: [{ type: 'text', text: JSON.stringify(result) }] } },
+  });
+}
+
+/** 真 DSH 里用户那条发言也是一个事件。 */
+function recordUserMessage({ append }, text) {
+  append({ type: 'user/message', data: { role: 'user', content: [{ type: 'text', text }] } });
+}
+
+/** 假执行上下文：真 DSH 的执行上下文带着 concludeTurn 与会话，这里只记录它被喊了几次。 */
+function makeExec(session) {
   const concluded = [];
   return {
     concluded,
     exec: {
       signal: new AbortController().signal,
       concludeTurn: () => { concluded.push('concludeTurn'); },
+      ...(session === undefined ? {} : { agent: { session } }),
     },
   };
 }
+
+const args = (questions) => JSON.stringify({ questions });
 
 // --- 装配形状 ---
 const shape = await assemble();
@@ -84,243 +128,262 @@ await test('不再需要提问服务：这个上下文里根本没有 userQuesti
   assert.ok(shape.tool !== undefined);
 });
 
-await test('自我介绍按新行为重写：本轮唯一且最后的调用、发完即结束', async () => {
+await test('自我介绍：本轮唯一且最后的调用、发完即结束', async () => {
   const description = shape.tool.description;
-  assert.match(description, /only and final tool call of the round/);
+  assert.match(description, /only tool call/);
   assert.match(description, /end your turn/);
-  assert.match(description, /their own composer/);
 });
 
-await test('题型：schema 里是必填的 type，取值只有三种，描述里讲清各自长什么样、与选项怎么搭', async () => {
-  const properties = shape.tool.parameters.properties.questions.items.properties;
-  assert.equal('multi_select' in properties, false, '老开关已经从 schema 里删掉');
-  assert.equal(properties.type.type, 'string');
-  assert.deepEqual(shape.tool.parameters.properties.questions.items.required, ['id', 'question', 'type'], '题型是必填的（required 收进上级对象的 required 数组）');
-  assert.deepEqual(properties.type.enum, ['single', 'multi', 'free']);
-  assert.match(properties.type.description, /single = one-choice rows/);
-  assert.match(properties.type.description, /free = no options at all/);
-  // 「与选项怎么搭」这条规则只写在 options 的参数说明里，题型的说明不重复它（同一件事只说一次）
-  assert.doesNotMatch(properties.type.description, /at least one option/);
-  assert.match(properties.options.description, /Required for type single and multi/);
-  assert.match(properties.options.description, /forbidden for type free/);
+await test('工具面只剩六个字段：questions / question / type / options / label / replace', async () => {
+  const parameters = shape.tool.parameters;
+  assert.deepEqual(Object.keys(parameters.properties).sort(), ['questions', 'replace']);
+  const question = parameters.properties.questions.items;
+  assert.deepEqual(Object.keys(question.properties).sort(), ['options', 'question', 'type']);
+  assert.deepEqual(question.required, ['question'], '只有题干必填');
+  assert.equal('required' in question.properties.type, false, '题型不必填：缺省由插件按有没有选项兜底');
+  assert.deepEqual(question.properties.type.enum, ['single', 'multi', 'free']);
+  assert.deepEqual(question.properties.options.items.required, ['label']);
+  // 工具面上不该再有别的字段
+  for (const gone of ['id', 'header', 'number', 'detail', 'multi_select', 'recommended', 'description']) {
+    assert.equal(gone in question.properties, false, gone);
+    assert.equal(gone in question.properties.options.items.properties, false, gone);
+  }
 });
 
-await test('题型必填：缺 type 由 defineTool 的入参校验拦住，不进本插件的 violations', async () => {
-  const { tool } = await assemble();
-  const { exec, concluded } = makeExec();
-  await assert.rejects(
-    () => tool.execute({ questions: [{ id: 'a', question: '？' }] }, exec),
-    /missing required property "questions\[0\]\.type"/,
-  );
-  assert.deepEqual(concluded, [], '被 schema 拦下的调用绝不能结束本轮');
+await test('描述只写「填什么」：默认值、兜底、校验规则都不进描述', async () => {
+  const question = shape.tool.parameters.properties.questions.items;
+  const texts = [
+    shape.tool.description,
+    shape.tool.parameters.properties.questions.description,
+    shape.tool.parameters.properties.replace.description,
+    question.properties.question.description,
+    question.properties.type.description,
+    question.properties.options.description,
+    question.properties.options.items.properties.label.description,
+    shape.tool.output.schema.properties.ok.description,
+    shape.tool.output.schema.properties.message.description,
+  ];
+  assert.equal(texts.length, 9, '字段描述就到这九条');
+  assert.match(shape.tool.parameters.properties.questions.items.properties.options.description, /（推荐）/, '推荐约定挂在 options 上');
+  for (const text of texts) {
+    assert.doesNotMatch(text, /default|falls back|fallback|Required for type/i, text);
+  }
 });
 
-await test('题型越界：写了 enum 之外的值由 defineTool 拦住', async () => {
-  const { tool } = await assemble();
-  const { exec } = makeExec();
-  await assert.rejects(
-    () => tool.execute({ questions: [{ id: 'a', type: 'checkbox', question: '？' }] }, exec),
-    /must be one of \["single","multi","free"\]/,
-  );
-});
-
-await test('题型与选项的搭配：单选、多选没给选项、自由题给了选项，都被拒且不结束本轮', async () => {
-  const { tool } = await assemble();
-  const missing = makeExec();
-  const withoutOptions = await tool.execute({ questions: [{ id: 'a', type: 'single', question: '？' }] }, missing.exec);
-  assert.equal(withoutOptions.rejected, true);
-  assert.match(withoutOptions.violations[0], /gives no options/);
-  assert.deepEqual(missing.concluded, [], '被拒的轮次没有表单可展示，不能就此结束');
-  const extra = makeExec();
-  const withOptions = await tool.execute({ questions: [{ id: 'a', type: 'free', question: '？', options: [{ label: '甲' }] }] }, extra.exec);
-  assert.equal(withOptions.rejected, true);
-  assert.match(withOptions.violations[0], /free question/);
-  assert.deepEqual(extra.concluded, []);
-});
-
-await test('老开关 multi_select 出现在入参里就被拒（schema 收得下它，但这一轮得退回让它删掉）', async () => {
-  const { tool } = await assemble();
-  const { exec, concluded } = makeExec();
-  const result = await tool.execute({
-    questions: [{ id: 'a', type: 'multi', multi_select: false, question: '？', options: [{ label: '甲' }] }],
-  }, exec);
-  assert.equal(result.rejected, true);
-  assert.match(result.violations[0], /multi_select/);
-  assert.deepEqual(concluded, []);
-});
-
-await test('输出 schema 是 pending 声明，不再有等答案那套 answers/callId', async () => {
-  const properties = shape.tool.output.schema.properties;
-  assert.deepEqual(
-    Object.keys(properties).sort(),
-    ['error', 'message', 'pending', 'rejected', 'violations'],
-  );
-  assert.equal('callId' in properties, false);
-  assert.equal('answers' in properties, false);
+await test('输出 schema 只有 ok 与 message', async () => {
+  assert.deepEqual(Object.keys(shape.tool.output.schema.properties).sort(), ['message', 'ok']);
 });
 
 // --- 投出表单 ---
 
-await test('执行立即返回 pending 声明：不携带 callId，message 讲清「表单已展示、答案会晚到」', async () => {
+await test('执行立即返回 ok: true 与那条说明，并标记本轮结束', async () => {
   const { tool } = await assemble();
   const { exec, concluded } = makeExec();
-  const result = await tool.execute({ questions: [{ id: 'a', type: 'free', question: '选哪个？' }] }, exec);
-  assert.equal(result.pending, true);
+  const result = await tool.execute({ questions: [{ question: '选哪个？' }] }, exec);
+  assert.equal(result.ok, true);
   assert.equal(typeof result.message, 'string');
-  assert.ok(result.message.length > 0);
-  assert.equal('callId' in result, false, '下游没有任何东西会回传 callId，带上只会让模型误以为会收到被标记的回答');
-  assert.equal('answers' in result, false);
+  assert.match(result.message, /this turn has ended/);
   assert.deepEqual(concluded, ['concludeTurn'], '发完表单必须标记本轮结束');
+});
+
+await test('说明里的作答格式与块里的行形一致（题号独占一行、每项一行带记号）', async () => {
+  const { tool } = await assemble();
+  const { exec } = makeExec();
+  const result = await tool.execute({ questions: [{ question: '选哪个？' }] }, exec);
+  assert.match(result.message, /"1\."/);
+  assert.match(result.message, /"- " line per chosen option or typed text/);
+});
+
+await test('render 给出模型读到的那段 JSON（message 就在里面）', async () => {
+  const { tool } = await assemble();
+  const { exec } = makeExec();
+  const result = await tool.execute({ questions: [{ question: '？' }] }, exec);
+  const blocks = tool.output.render({ questions: [] }, result);
+  assert.deepEqual(blocks, [{ type: 'text', text: JSON.stringify(result) }]);
 });
 
 await test('同一个执行上下文只标记一次；两次调用各自标记各自的那一次', async () => {
   const { tool } = await assemble();
   const first = makeExec();
   const second = makeExec();
-  await tool.execute({ questions: [{ id: 'a', type: 'free', question: '？' }] }, first.exec);
-  await tool.execute({ questions: [{ id: 'b', type: 'free', question: '？' }] }, first.exec);
-  await tool.execute({ questions: [{ id: 'c', type: 'free', question: '？' }] }, second.exec);
+  await tool.execute({ questions: [{ question: '？' }] }, first.exec);
+  await tool.execute({ questions: [{ question: '？' }] }, first.exec);
+  await tool.execute({ questions: [{ question: '？' }] }, second.exec);
   assert.equal(first.concluded.length, 2);
   assert.equal(second.concluded.length, 1);
 });
 
-await test('render 给出模型读到的那段 JSON（message 就在里面）', async () => {
+// --- 入参校验：留下的三条 ---
+
+await test('漏写题型不再被拒：有选项按多选、没选项按自由，照常投出', async () => {
   const { tool } = await assemble();
-  const { exec } = makeExec();
-  const result = await tool.execute({ questions: [{ id: 'a', type: 'free', question: '？' }] }, exec);
-  const blocks = tool.output.render({ questions: [] }, result);
-  assert.deepEqual(blocks, [{ type: 'text', text: JSON.stringify(result) }]);
+  const { exec, concluded } = makeExec();
+  const result = await tool.execute({ questions: [{ question: '？', options: [{ label: '甲' }] }, { question: '？' }] }, exec);
+  assert.equal(result.ok, true);
+  assert.deepEqual(concluded, ['concludeTurn']);
 });
 
-// --- 拒绝：可修复，且不能标记结束 ---
+await test('老开关 multi_select、题型与选项不搭都不再是拒收项', async () => {
+  const { tool } = await assemble();
+  const { exec } = makeExec();
+  const result = await tool.execute({
+    questions: [{ question: '？', type: 'free', multi_select: false, options: [{ label: '甲' }] }],
+  }, exec);
+  assert.equal(result.ok, true);
+});
 
-const rejected = async (questions) => {
+/** 被本插件拒掉的一轮：ok:false、不结束本轮，把那段说明交回来。 */
+async function notShown(questions) {
   const { tool } = await assemble();
   const { exec, concluded } = makeExec();
   const result = await tool.execute({ questions }, exec);
-  assert.equal(result.rejected, true);
-  assert.equal('pending' in result, false);
-  assert.deepEqual(concluded, [], '被拒的轮次没有表单可展示，绝不能让本轮就此结束');
-  return result.violations;
-};
-
-await test('重复的 id 被拒', async () => {
-  const violations = await rejected([{ id: 'dup', type: 'free', question: '甲？' }, { id: 'dup', type: 'free', question: '乙？' }]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /repeats an id/);
-});
+  assert.equal(result.ok, false);
+  assert.deepEqual(concluded, [], '没投出的轮次绝不能让本轮就此结束');
+  return result.message;
+}
 
 await test('空题干被拒（schema 只保证字段存在，不保证有内容）', async () => {
-  const violations = await rejected([{ id: 'a', type: 'free', question: '   ' }]);
-  assert.match(violations[0], /empty question text/);
+  assert.match(await notShown([{ question: '   ' }]), /empty question text/);
 });
 
-await test('空 label 被拒', async () => {
-  const violations = await rejected([{ id: 'a', type: 'multi', question: '？', options: [{ label: ' ' }] }]);
-  assert.match(violations[0], /option 1 has an empty label/);
+await test('空选项文字被拒', async () => {
+  assert.match(await notShown([{ question: '？', options: [{ label: ' ' }] }]), /option 1 has an empty label/);
 });
 
-await test('同题两个选项归一化后同名：被拒（界面按 label 认选项）', async () => {
-  const violations = await rejected([
-    { id: 'a', type: 'multi', question: '？', options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] },
-  ]);
-  assert.match(violations[0], /same label "A：移走（推荐）"/);
+await test('同一题里两段只差推荐标记的文字被拒（界面看着一模一样，选的是哪一项就分不出来了）', async () => {
+  const message = await notShown([{ question: '？', options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] }]);
+  assert.match(message, /same label "A：移走"/);
 });
 
-await test('选项名里的标点不再是拒收项：顿号、冒号、换行都照常投出', async () => {
-  const { tool } = await assemble();
-  const { exec, concluded } = makeExec();
-  const result = await tool.execute({
-    questions: [{
-      id: 'a',
-      type: 'multi',
-      question: '？',
-      options: [{ label: '甲、乙两种做法' }, { label: '丙：另起一行' }, { label: '两行\n的选项名' }],
-    }],
-  }, exec);
-  assert.equal(result.pending, true);
-  assert.deepEqual(concluded, ['concludeTurn']);
+await test('多条违规一条一行地交回去，不另写一份规则清单', async () => {
+  const message = await notShown([{ question: '  ' }, { question: '？', options: [{ label: ' ' }] }]);
+  assert.equal(message.split('\n').length, 2);
 });
 
-await test('questions 不是数组：由 defineTool 的入参校验拦住，不进本插件的 violations', async () => {
+await test('缺题干、缺 label、questions 不是数组、题型越界都由 defineTool 的入参校验拦住', async () => {
   const { tool } = await assemble();
   const { exec } = makeExec();
   await assert.rejects(
-    () => tool.execute({ questions: 'not an array' }, exec),
-    /"questions" must be an array/,
+    () => tool.execute({ questions: [{ options: [{ label: '甲' }] }] }, exec),
+    /missing required property "questions\[0\]\.question"/,
   );
-});
-
-await test('总说明不再手写规则清单：只报数量，规则由逐条违规自己说', async () => {
-  const { tool } = await assemble();
-  const { exec } = makeExec();
-  const result = await tool.execute({
-    questions: [{ id: 'a', type: 'free', question: '   ' }, { id: 'b', type: 'multi', question: '？', options: [{ label: ' ' }] }],
-  }, exec);
-  assert.equal(result.rejected, true);
-  assert.equal(result.violations.length, 2);
-  assert.match(result.error, /^2 violation\(s\) in this round/);
-  assert.doesNotMatch(result.error, /ids must be unique|must not share a label/, '摘要里再抄一份清单，就会在加规则时漂');
-});
-
-await test('投出表单后那句话里的作答格式与真实格式一致（标题以全角冒号收尾、每项一行带记号）', async () => {
-  const { tool } = await assemble();
-  const { exec } = makeExec();
-  const result = await tool.execute({ questions: [{ id: 'a', type: 'free', question: '？' }] }, exec);
-  assert.match(result.message, /"<title>："/);
-  assert.match(result.message, /"- " line per chosen option or typed text/);
-});
-
-await test('保留前缀这条规则已随轮末补充题删除：__grill_ 前缀的 id 可以正常投出', async () => {
-  const { tool } = await assemble();
-  const { exec, concluded } = makeExec();
-  const result = await tool.execute({ questions: [{ id: '__grill_round_supplement__', type: 'free', question: '？' }] }, exec);
-  assert.equal(result.pending, true);
-  assert.deepEqual(concluded, ['concludeTurn']);
-});
-
-await test('展开正文里把选项又列了一遍：被拒（页面上会出现两遍选项）', async () => {
-  const violations = await rejected([{
-    id: 'a',
-    type: 'multi',
-    question: '配置入口放哪？',
-    detail: '先交代一个会左右选法的事实。\n\n- **甲**·详情页里的「配置」入口\n- **乙**·列表里直接多一张卡片',
-    options: [{ label: '甲：详情页里的配置入口，进去是一整页' }, { label: '乙：列表里直接一张卡片' }],
-  }]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /restates its options in detail/);
-});
-
-await test('展开正文只写各选项共用的背景：照常投出', async () => {
-  const { tool } = await assemble();
-  const { exec, concluded } = makeExec();
-  const result = await tool.execute({
-    questions: [{
-      id: 'a',
-      type: 'multi',
-      question: '配置入口放哪？',
-      detail: '这一版本来就是这么设计的：三个落点都已经预留在插件页。',
-      options: [{ label: '甲：详情页里的配置入口' }, { label: '乙：列表里直接一张卡片' }],
-    }],
-  }, exec);
-  assert.equal(result.pending, true);
-  assert.deepEqual(concluded, ['concludeTurn']);
-});
-
-await test('字段说明把三条规则讲给模型：展开正文只写共用的、推荐项默认勾上、标记里禁用顿号', async () => {
-  const properties = shape.tool.parameters.properties.questions.items.properties;
-  assert.match(properties.detail.description, /only for what all the options share/);
-  assert.match(properties.options.items.properties.recommended.description, /checked by default/);
-  assert.match(properties.options.items.properties.label.description, /Any punctuation is fine/);
-});
-
-await test('缺 label 由 defineTool 的入参校验拦住，不进本插件的 violations', async () => {
-  const { tool } = await assemble();
-  const { exec } = makeExec();
   await assert.rejects(
-    () => tool.execute({ questions: [{ id: 'a', type: 'multi', question: '？', options: [{ description: 'x' }] }] }, exec),
+    () => tool.execute({ questions: [{ question: '？', options: [{ description: 'x' }] }] }, exec),
     /missing required property "questions\[0\]\.options\[0\]\.label"/,
   );
+  await assert.rejects(() => tool.execute({ questions: 'not an array' }, exec), /"questions" must be an array/);
+  await assert.rejects(
+    () => tool.execute({ questions: [{ question: '？', type: 'checkbox' }] }, exec),
+    /must be one of \["single","multi","free"\]/,
+  );
+});
+
+// --- 闸门 ---
+
+await test('投影单元真的注册在投影表里：键读得出状态', async () => {
+  const { ctx, tool } = await assemble();
+  const world = makeSession();
+  const { exec } = makeExec(world.session);
+  await tool.execute({ questions: [{ question: '？' }] }, exec);
+  recordRound(world, { callId: 'call-1', argsRaw: args([{ question: '？' }]), result: { ok: true, message: 'x' } });
+  const state = ctx.sessionProjections.stateOf(world.session, GATE_KEY);
+  assert.equal(state.pending.callId, 'call-1');
+  assert.deepEqual(state.pending.questions, ['？']);
+});
+
+await test('闸门：有一张待答的表时再调被拦下——不投出、不结束本轮，说明里带着旧表问了什么', async () => {
+  const { tool } = await assemble();
+  const world = makeSession();
+  const first = makeExec(world.session);
+  await tool.execute({ questions: [{ question: '第一张问的？' }] }, first.exec);
+  recordRound(world, { callId: 'call-1', argsRaw: args([{ question: '第一张问的？' }]), result: { ok: true, message: 'x' } });
+
+  const second = makeExec(world.session);
+  const result = await tool.execute({ questions: [{ question: '第二张问的？' }] }, second.exec);
+  assert.equal(result.ok, false);
+  assert.deepEqual(second.concluded, [], '拦下的这一轮不能结束本轮');
+  assert.match(result.message, /still waiting for the user's answer/);
+  assert.match(result.message, /It asked: 1\. 第一张问的？/);
+  assert.match(result.message, /replace: true/);
+  assert.doesNotMatch(result.message, /第二张问的？/);
+});
+
+await test('闸门：带 replace: true 重调就投出，旧表退场、新表接上', async () => {
+  const { ctx, tool } = await assemble();
+  const world = makeSession();
+  const first = makeExec(world.session);
+  await tool.execute({ questions: [{ question: '第一张问的？' }] }, first.exec);
+  recordRound(world, { callId: 'call-1', argsRaw: args([{ question: '第一张问的？' }]), result: { ok: true, message: 'x' } });
+
+  const second = makeExec(world.session);
+  const result = await tool.execute({ questions: [{ question: '更新的？' }], replace: true }, second.exec);
+  assert.equal(result.ok, true);
+  assert.deepEqual(second.concluded, ['concludeTurn']);
+  recordRound(world, { callId: 'call-2', argsRaw: JSON.stringify({ questions: [{ question: '更新的？' }], replace: true }), result });
+  const state = ctx.sessionProjections.stateOf(world.session, GATE_KEY);
+  assert.equal(state.pending.callId, 'call-2');
+});
+
+await test('闸门：用户带着那张表的记号作答之后，下一轮照常投出', async () => {
+  const { ctx, tool } = await assemble();
+  const world = makeSession();
+  const first = makeExec(world.session);
+  await tool.execute({ questions: [{ question: '？' }] }, first.exec);
+  recordRound(world, { callId: 'call-abc123', argsRaw: args([{ question: '？' }]), result: { ok: true, message: 'x' } });
+  const mark = importBlockStart('call-abc123');
+  recordUserMessage(world, `${mark}\n1.\n- 甲\n【/拷问作答】`);
+
+  const second = makeExec(world.session);
+  const result = await tool.execute({ questions: [{ question: '新的？' }] }, second.exec);
+  assert.equal(result.ok, true);
+  assert.equal(ctx.sessionProjections.stateOf(world.session, GATE_KEY).pending, null);
+});
+
+await test('闸门：转向消息、聊别的事、答别的表都不解闸', async () => {
+  const { tool } = await assemble();
+  const world = makeSession();
+  await tool.execute({ questions: [{ question: '？' }] }, makeExec(world.session).exec);
+  recordRound(world, { callId: 'call-1', argsRaw: args([{ question: '？' }]), result: { ok: true, message: 'x' } });
+  recordUserMessage(world, '边跑边补一句');
+  recordUserMessage(world, `${importBlockStart('zzzz')}\n1.\n- 另一张表的作答\n【/拷问作答】`);
+
+  const blocked = await tool.execute({ questions: [{ question: '新的？' }] }, makeExec(world.session).exec);
+  assert.equal(blocked.ok, false, '没答这张表之前，闸门一直关着');
+});
+
+await test('闸门：只有开头那行、收尾行没来，不算这张表被答了', async () => {
+  const { tool } = await assemble();
+  const world = makeSession();
+  await tool.execute({ questions: [{ question: '？' }] }, makeExec(world.session).exec);
+  recordRound(world, { callId: 'call-1', argsRaw: args([{ question: '？' }]), result: { ok: true, message: 'x' } });
+  recordUserMessage(world, importBlockStart('call-1'));
+
+  const blocked = await tool.execute({ questions: [{ question: '新的？' }] }, makeExec(world.session).exec);
+  assert.equal(blocked.ok, false, '起止行不配对的半截块什么都没答，闸门照旧关着');
+});
+
+await test('闸门：没挂投影服务的组合里退化成不拦，工具照常注册、照常投出', async () => {
+  const { ctx, tool } = await assemble(undefined, { projections: false });
+  assert.equal(ctx.get('sessionProjections'), undefined);
+  const { exec, concluded } = makeExec(makeSession().session);
+  const result = await tool.execute({ questions: [{ question: '？' }] }, exec);
+  assert.equal(result.ok, true);
+  assert.deepEqual(concluded, ['concludeTurn']);
+});
+
+await test('闸门：投影服务比这个插件晚挂上也接得上（单元在服务出现的那一刻注册）', async () => {
+  const { ctx, tool } = await assemble(undefined, { projections: false });
+  const world = makeSession();
+  new SessionProjectionRegistry(ctx);
+  await Promise.resolve();
+
+  await tool.execute({ questions: [{ question: '第一张问的？' }] }, makeExec(world.session).exec);
+  recordRound(world, { callId: 'call-1', argsRaw: args([{ question: '第一张问的？' }]), result: { ok: true, message: 'x' } });
+  assert.equal(ctx.sessionProjections.stateOf(world.session, GATE_KEY).pending.callId, 'call-1');
+
+  const blocked = await tool.execute({ questions: [{ question: '第二张问的？' }] }, makeExec(world.session).exec);
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.message, /It asked: 1. 第一张问的？/);
 });
 
 // --- 一条行的形状：bundle 行既注册工具，又承载浏览器半边 ---
@@ -339,7 +402,7 @@ await test('这一行不接受 config：写任何键当场抛，不静默接受�
 });
 
 await test('包内 cordis.patch.yml 就是那条装配行：id 与宿主导出名同名、且不带 config', async () => {
-  // 先剥掉注释：整行注释与行尾注释都算。注释里出现 `config` 字样是合法文档（本文件开头就写了它
+  // 先剥掉注释：整行注释与行尾注释都算。注释里出现 config 字样是合法文档（本文件开头就写了它
   // 不写 config），不该让这条断言误报红；断言只该盯配置本身。
   const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
     .split('\n')

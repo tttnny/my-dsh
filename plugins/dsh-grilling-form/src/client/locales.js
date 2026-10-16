@@ -6,9 +6,8 @@ export const NS = 'grillingForm';
 /** 简体中文（键集的事实来源）。 */
 export const zh = {
   'row.frozenSummary': '本轮已过 · {total} 题 · 已填 {answered}',
-  'row.unanswered': '本轮没有通过表单作答',
-  'row.rejected': '入参被拒绝',
-  'row.violations': '校验失败',
+  'row.superseded': '已被后面那张取代',
+  'row.notShown': '这一轮没有投出表单',
   'row.failed': '调用失败',
   'row.recommended': '推荐',
   'row.customLabel': '自填',
@@ -16,21 +15,16 @@ export const zh = {
   'row.import': '导入输入框',
   'row.imported': '已导入',
   'row.updateImport': '更新输入框',
-  'row.importDisabled': '先在上面勾选或自填',
   'row.fork': '从这里分叉',
   'row.forkFailed': '分叉失败，请重试',
   'row.inspect': '查看',
-  'copy': '复制',
-  'copied': '已复制',
-  'markdown.footnotes': '脚注',
 };
 
 /** 英文，键集与中文逐条对齐。 */
 export const en = {
   'row.frozenSummary': 'Round over · {total} question(s) · {answered} answered',
-  'row.unanswered': 'This round was answered without the form',
-  'row.rejected': 'Rejected before showing',
-  'row.violations': 'Rejected input',
+  'row.superseded': 'A later form replaced this one',
+  'row.notShown': 'This round was not shown',
   'row.failed': 'Tool call failed',
   'row.recommended': 'Recommended',
   'row.customLabel': 'Your own answer',
@@ -38,11 +32,7 @@ export const en = {
   'row.import': 'Import to composer',
   'row.imported': 'Imported',
   'row.updateImport': 'Update composer',
-  'row.importDisabled': 'Pick or write an answer above first',
   'row.fork': 'Branch from here',
   'row.forkFailed': 'Branch failed; try again',
   'row.inspect': 'Inspect',
-  'copy': 'Copy',
-  'copied': 'Copied',
-  'markdown.footnotes': 'Footnotes',
 };
