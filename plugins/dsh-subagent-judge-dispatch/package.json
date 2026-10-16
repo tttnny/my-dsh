@@ -1,0 +1,89 @@
+{
+  "name": "@lynn123411/dsh-subagent-judge-dispatch",
+  "version": "0.1.0",
+  "description": "用一个判断模型从你写的任务类型清单里挑一个编号，据此改写子代理使用的模型与思考强度。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "DETAILS.md",
+    "locale",
+    "assets"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tttnny/my-dsh.git",
+    "directory": "plugins/dsh-subagent-judge-dispatch"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node build.mjs && node scripts/smoke-host.mjs && node scripts/smoke-client.mjs && node scripts/test-decision.mjs",
+    "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
+    "check": "pnpm typecheck && pnpm test && pnpm assert:lib-untracked"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.5-alpha.2",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.1-alpha.4"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.5-alpha.2",
+    "@deepseek-ai/schemastery": "^3.18.5-alpha.2",
+    "@deepseek-ai/dsh-agent": ">=0.2.1-alpha.4",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.1-alpha.4",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.1-alpha.4",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.1-alpha.4",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-alpha.4",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.1-alpha.4",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1-alpha.4",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.1-alpha.4",
+    "@types/node": "^22.20.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.25.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^6.0.0"
+  },
+  "engines": {
+    "dsh": ">=0.2.1-alpha.4",
+    "node": "^22.19 || >=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "icon": "./assets/icon.svg"
+}

@@ -1,0 +1,3 @@
+# pnpm 11 blocks dependency build scripts until they are explicitly approved here.
+allowBuilds:
+  esbuild: true

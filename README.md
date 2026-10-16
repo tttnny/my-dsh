@@ -35,10 +35,15 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-model-submenu</code></td>
     </tr>
     <tr>
-      <td><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 profile 生效</i></td>
+      <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 profile 生效</i></td>
       <td><a href="./plugins/dsh-grilling-form"><code>@lynn123411/dsh-grilling-form</code></a></td>
       <td><b>盘问表单</b><br>把 grilling 轮的问题作为一张可交互表单投在对话流轮次尾部，投出即结束本轮，作答由用户导入输入框后自行发送。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-grilling-form</code></td>
+    </tr>
+    <tr>
+      <td><a href="./plugins/dsh-subagent-judge-dispatch"><code>@lynn123411/dsh-subagent-judge-dispatch</code></a></td>
+      <td><b>判断式子代理指派</b><br>派工时把任务文字交给一个判断模型，让它在你自己写的任务类型清单里挑一个编号，据此改写这个子代理使用的模型与思考强度。</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-subagent-judge-dispatch</code></td>
     </tr>
     <tr>
       <td><b>📱 设备访问</b><br><i>跨设备与本机外部应用接入</i></td>

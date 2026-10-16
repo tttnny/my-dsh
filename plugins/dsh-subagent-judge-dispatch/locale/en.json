@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Judge-based Subagent Dispatch",
+    "description": "Judge each delegation with a small model, let it pick one of your own task types, and rewrite that subagent’s model and reasoning effort."
+  }
+}

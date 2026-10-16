@@ -1,0 +1,165 @@
+/**
+ * Reading one subagent's identity, from the child Agent alone.
+ *
+ * Inside `agent/request` the plugin holds a child Agent and nothing else: no
+ * delegation record, no parent handle. Everything the log needs — what the child
+ * was asked to do, and which conversation asked for it — has to be read back out
+ * of the child's own durable session facts.
+ */
+
+/**
+ * The read surface of a Session this module needs; kept structural for tests.
+ *
+ * `ownEvents` (or `snapshotEvents(inheritedEventCount)`) is the child-owned tail
+ * of the log. It matters: a forked child's log opens with the parent's finished
+ * turns, so reading from the start would hand the judge the ANCESTOR's
+ * descriptor label and the parent conversation's first message.
+ */
+export interface SessionLike {
+  readonly header: { readonly parentSession?: string; readonly delegationDepth?: number };
+  readonly inheritedEventCount?: number;
+  ownEvents?(): readonly SessionEventLike[];
+  snapshotEvents(from?: number): readonly SessionEventLike[];
+}
+
+/** One session event as this module reads it. */
+export interface SessionEventLike {
+  readonly type: string;
+  readonly data?: unknown;
+}
+
+/** The read surface of an Agent this module needs. */
+export interface AgentLike {
+  readonly id: string;
+  readonly options: { readonly subagentDepth?: number };
+  readonly session: SessionLike;
+}
+
+/**
+ * Read only the events this child itself produced.
+ *
+ * A forked child inherits the parent's completed prefix, and the inherited part
+ * carries an ancestor's descriptor and the parent's own messages. Everything
+ * this module reads must come from the child-owned tail, or the judge is told
+ * about a different agent's job. Three shapes are accepted because the session
+ * type is structural here: `ownEvents()`, `snapshotEvents(from)` with the
+ * inherited count, and a plain full read as the last resort.
+ *
+ * @param session - the child's session.
+ * @returns the child-owned events, in log order.
+ */
+export function ownEventsOf(session: SessionLike): readonly SessionEventLike[] {
+  if (typeof session.ownEvents === 'function') return session.ownEvents();
+  const inherited = session.inheritedEventCount;
+  if (typeof inherited === 'number' && Number.isSafeInteger(inherited) && inherited > 0) {
+    return session.snapshotEvents(inherited);
+  }
+  return session.snapshotEvents();
+}
+
+/**
+ * Whether one agent is a subagent, rather than a top-level conversation.
+ *
+ * Two sources are consulted because neither alone is complete: the durable
+ * header is authoritative and monotone (a resumed child keeps its depth), while
+ * `options.subagentDepth` is stamped onto the live options and may deepen the
+ * count but never lower it. Absence in both means a top-level agent.
+ *
+ * @param agent - the agent making the request.
+ * @returns whether this is a subagent.
+ */
+export function isSubagent(agent: AgentLike): boolean {
+  const fromHeader = agent.session.header.delegationDepth;
+  const fromOptions = agent.options.subagentDepth;
+  const depth = Math.max(
+    typeof fromHeader === 'number' && Number.isSafeInteger(fromHeader) ? fromHeader : 0,
+    typeof fromOptions === 'number' && Number.isSafeInteger(fromOptions) ? fromOptions : 0,
+  );
+  return depth >= 1;
+}
+
+/**
+ * Read the child's delegation description.
+ *
+ * The subagent tool passes the model's `description` as the activation label,
+ * and the child's durable descriptor keeps it — which is why it is readable here
+ * without the parent's tool call. Only the child's OWN events are read, and the
+ * LAST descriptor wins: a resumed or re-activated child appends a fresh one, and
+ * the newest is the delegation actually running. A child whose descriptor
+ * carries no label (a one-shot delegation that omitted one) falls back to the
+ * opening of the task text.
+ *
+ * @param agent - the subagent.
+ * @returns the description, or the task text's opening when there is none.
+ */
+export function readChildLabel(agent: AgentLike): string {
+  let found = '';
+  for (const event of ownEventsOf(agent.session)) {
+    if (event.type !== 'subagent/descriptor') continue;
+    const data = event.data;
+    if (typeof data !== 'object' || data === null) continue;
+    const label = (data as { label?: unknown }).label;
+    if (typeof label === 'string' && label.trim() !== '') found = label.trim();
+  }
+  return found !== '' ? found : readTaskText(agent);
+}
+
+/**
+ * Read the child's opening task text.
+ *
+ * It is the first user message of the child's OWN log — the prompt the parent
+ * delegated. Used as the judge's subject when no description exists.
+ *
+ * @param agent - the subagent.
+ * @returns the text, or '' when the log carries none.
+ */
+export function readTaskText(agent: AgentLike): string {
+  for (const event of ownEventsOf(agent.session)) {
+    if (event.type !== 'user/message') continue;
+    const text = textOf(event.data);
+    if (text !== '') return text;
+  }
+  return '';
+}
+
+/** Pull the concatenated text blocks out of a message payload. */
+function textOf(data: unknown): string {
+  if (typeof data !== 'object' || data === null) return '';
+  const content = (data as { content?: unknown }).content;
+  if (!Array.isArray(content)) return '';
+  const parts: string[] = [];
+  for (const block of content) {
+    if (typeof block !== 'object' || block === null) continue;
+    const record = block as { type?: unknown; text?: unknown };
+    if (record.type === 'text' && typeof record.text === 'string') parts.push(record.text);
+  }
+  return parts.join('\n').trim();
+}
+
+/**
+ * Walk up a child's lineage to the top-level conversation that started it.
+ *
+ * A nested subagent's direct parent is another subagent, and the log's job is to
+ * name the conversation the reader recognises — so the walk continues until a
+ * session names no parent. The walk is bounded, because a resumed or forged
+ * lineage must not be able to spin this loop.
+ *
+ * @param startId - the child's direct parent session id.
+ * @param lookup - resolves a session id to its live session.
+ * @returns the top-level session id, or the starting id when the walk stops.
+ */
+export function resolveRootSessionId(
+  startId: string,
+  lookup: (id: string) => SessionLike | undefined,
+): string {
+  const seen = new Set<string>([startId]);
+  let current = startId;
+  for (let hop = 0; hop < 32; hop += 1) {
+    const session = lookup(current);
+    const parent = session?.header.parentSession;
+    if (typeof parent !== 'string' || parent === '' || seen.has(parent)) return current;
+    seen.add(parent);
+    current = parent;
+  }
+  return current;
+}
