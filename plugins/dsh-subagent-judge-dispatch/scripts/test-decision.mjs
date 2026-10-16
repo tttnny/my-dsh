@@ -20,13 +20,15 @@ import {
 import {
   buildJudgeRequest,
   buildPreview,
+  buildProbeRequest,
   readChoice,
   readJudgeAnswer,
   selectableRows,
 } from '../src/server/judge-prompt.ts';
-import { judgeTaskType } from '../src/server/judge-client.ts';
+import { judgeTaskType, probeJudge } from '../src/server/judge-client.ts';
 import { LogStore, LOG_LIMIT } from '../src/server/log-store.ts';
 import { readPluginConfig, isJudgeUsable } from '../src/server/config.ts';
+import { createFetchRoutes, PROBE_ROUTE_PATH, PREVIEW_ROUTE_PATH } from '../src/server/router.ts';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 
@@ -330,6 +332,134 @@ await test('配置读取：判断可用要求开关开、端点与模型都在�
   assert.equal(isJudgeUsable({ ...base, judgeModel: '' }), false);
   assert.equal(isJudgeUsable({ ...base, rows: [row({ id: 1, model: '' })] }), false);
   assert.equal(isJudgeUsable({ ...base, rows: [] }), false);
+});
+
+// 连通性检查问的是「这个地址与模型能不能答」，不是「能不能在你写的清单里挑一行」，
+// 所以这几条断言都拿空清单来试：清单还没写的时候就该测得出来。
+await test('连通性检查：一条类型都没有，照样能测出这个模型可用', async () => {
+  const seen = [];
+  const outcome = await probeJudge(
+    { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
+    async (url, init) => {
+      seen.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ answers: { task_type: { choice: '1' } } }), { status: 200 });
+    },
+  );
+  assert.equal(outcome.ok, true, '端点答得出就该算通');
+  // 它自己带一个选项，不用读者的清单——这就是这条检查能脱离清单的原因。
+  const criteria = seen[0].questions.task_type.criteria;
+  assert.deepEqual(Object.keys(criteria), ['1']);
+});
+
+await test('连通性检查：端点答非 200 时给出 unreachable', async () => {
+  const outcome = await probeJudge(
+    { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
+    async () => new Response('nope', { status: 502 }),
+  );
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.reason, 'unreachable');
+});
+
+await test('连通性检查：连不上时给出 unreachable，而不是抛出去', async () => {
+  const outcome = await probeJudge(
+    { url: 'http://127.0.0.1:1/v1/systemone', model: 'judge-x', apiKey: '' },
+    async () => {
+      throw new Error('connection refused');
+    },
+  );
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.reason, 'unreachable');
+});
+
+await test('连通性检查：地址或模型没填时给出 unconfigured', async () => {
+  let called = false;
+  const outcome = await probeJudge(
+    { url: '  ', model: 'judge-x', apiKey: '' },
+    async () => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    },
+  );
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.reason, 'unconfigured');
+  assert.equal(called, false, '没填地址就不该发请求');
+});
+
+await test('连通性检查：答复的编号对不上时给出 unmatched', async () => {
+  const outcome = await probeJudge(
+    { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
+    async () => new Response(JSON.stringify({ answers: { task_type: { choice: '7' } } }), { status: 200 }),
+  );
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.reason, 'unmatched');
+});
+
+await test('连通性检查的请求体：只带模型，任务正文是那一段固定说明', () => {
+  const body = buildProbeRequest('judge-x');
+  assert.equal(body.model, 'judge-x');
+  assert.equal(body.questions.task_type.type, 'choice');
+  assert.match(body.state.message, /连接测试/);
+});
+
+// 路由层是页面真正按下去的那一层。之前这一层一条测试都没有，于是「探测要先把类型
+// 填全」这种设计错误一路到了页面上。
+await test('探测路由：一条类型都没有也照样去测端点', async () => {
+  const route = createFetchRoutes({
+    config: () => ({
+      enabled: true, logEnabled: true,
+      endpointUrl: 'http://judge.invalid', judgeModel: 'judge-x',
+      rows: [],
+    }),
+    log: () => [],
+    apiKey: () => '',
+  }).find((candidate) => candidate.path === PROBE_ROUTE_PATH);
+  assert.ok(route, '探测路由注册上了');
+  const response = await route.fetch(new Request('http://host/api/probe', { method: 'POST' }), {});
+  const body = await response.json();
+  // 空清单不该再出现「还没有一条填全的类型」这种事：那不是端点的问题。
+  assert.notEqual(body.reason, 'no_rows');
+  assert.equal(body.ok, false, '这个域名连不上，所以是失败——但原因是连通性，不是清单');
+  assert.equal(body.reason, 'unreachable');
+});
+
+await test('探测路由：地址与模型都在、端点答得出时算通（清单仍是空的）', async () => {
+  const route = createFetchRoutes({
+    config: () => ({
+      enabled: true, logEnabled: true,
+      endpointUrl: 'http://judge.invalid', judgeModel: 'judge-x',
+      rows: [],
+    }),
+    log: () => [],
+    apiKey: () => '',
+  }).find((candidate) => candidate.path === PROBE_ROUTE_PATH);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({ answers: { task_type: { choice: '1' } } }),
+    { status: 200 },
+  );
+  try {
+    const response = await route.fetch(new Request('http://host/api/probe', { method: 'POST' }), {});
+    const body = await response.json();
+    assert.equal(body.ok, true, '端点答得出就该算通，跟类型清单无关');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+await test('预览路由：清单为空时也答得出（预览的是将要发出去的那段）', async () => {
+  const route = createFetchRoutes({
+    config: () => ({
+      enabled: true, logEnabled: true,
+      endpointUrl: 'http://judge.invalid', judgeModel: 'judge-x',
+      rows: [],
+    }),
+    log: () => [],
+    apiKey: () => '',
+  }).find((candidate) => candidate.path === PREVIEW_ROUTE_PATH);
+  const response = await route.fetch(new Request('http://host/api/preview'), {});
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.match(body.preview, /judge-x/);
 });
 
 console.log(`${passed}/${total} passed`);

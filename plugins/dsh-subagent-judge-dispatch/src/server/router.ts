@@ -11,7 +11,7 @@
 
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection';
 import { buildPreview, selectableRows } from './judge-prompt.ts';
-import { judgeTaskType } from './judge-client.ts';
+import { probeJudge } from './judge-client.ts';
 import type { ResolvedConfig } from './config.ts';
 import type { LogEntry } from './types.ts';
 
@@ -92,24 +92,14 @@ export function createFetchRoutes(face: DispatchRouteFace): ConnectionFetchRoute
     fetch: async () => {
       try {
         const config = face.config();
-        const rows = selectableRows(config.rows);
-        if (config.endpointUrl.trim() === '' || config.judgeModel.trim() === '') {
-          return sendJson(200, { ok: false, latencyMs: 0, reason: 'unconfigured' } satisfies ProbeResult);
-        }
-        if (rows.length === 0) {
-          return sendJson(200, { ok: false, latencyMs: 0, reason: 'no_rows' } satisfies ProbeResult);
-        }
-        // A real judgement against the committed settings: the point of the
-        // button is to find out whether this configuration works, so a shape
-        // the judge can actually answer is the only honest probe.
-        const outcome = await judgeTaskType(
-          { url: config.endpointUrl, model: config.judgeModel, apiKey: face.apiKey() },
-          rows,
-          '连接测试：这是一次判断服务的连通性检查。',
-        );
-        return sendJson(200, outcome.kind === 'matched'
-          ? { ok: true, latencyMs: outcome.latencyMs } satisfies ProbeResult
-          : { ok: false, latencyMs: outcome.latencyMs, reason: outcome.reason } satisfies ProbeResult);
+        // 只问「这个地址与模型答不答得上来」，所以不问类型清单：清单是判断时才
+        // 需要的输入，拿它当作能不能测的前提，会让空清单的读者以为服务坏了。
+        const outcome = await probeJudge({
+          url: config.endpointUrl,
+          model: config.judgeModel,
+          apiKey: face.apiKey(),
+        });
+        return sendJson(200, { ...outcome } satisfies ProbeResult);
       } catch (err) {
         return sendJson(500, { ok: false, error: describe(err) });
       }

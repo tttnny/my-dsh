@@ -215,6 +215,15 @@ check('设置卡片不配阴影（阴影留给弹窗那类浮起面）', !sectio
 check('弹窗那边没有跟着用设置卡片的词元（两套材料分得开）',
   !/\.dsh-judge-modal\s*\{[^}]*settings-card/.test(cssText));
 check('排版字号取自主题角色，不逐条写死 px', !/font-size:\s*\d+px/.test(cssText));
+// 宿主没有全局 border-box，所以凡是按百分比定宽的盒子都必须自己声明 border-box：
+// 少一条，输入框就会把内边距算在外面，撑得比格子还宽、压到相邻格上。
+{
+  const offenders = [...cssText.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter(([, , body]) => /width:\s*100%/.test(body) && !/box-sizing:\s*border-box/.test(body))
+    .map(([, selector]) => selector.trim().split('\n').pop().trim());
+  check('按百分比定宽的盒子都声明了 border-box（宿主没有全局重置）',
+    offenders.length === 0, `缺少 box-sizing 的规则：${offenders.join(', ')}`);
+}
 
 // 字典键集：英文是键集的唯一来源，中文逐一对齐，且每条非空。
 const dictionaries = exported.__dictionaries;

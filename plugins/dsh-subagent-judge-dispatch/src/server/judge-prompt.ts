@@ -33,6 +33,25 @@ export const QUESTION_INSTRUCTIONS =
   + 'Weigh what the job actually requires, not how it is phrased. '
   + 'Answer with the number of exactly one listed type.';
 
+/** The option id the connectivity check offers: the only one it offers. */
+export const PROBE_OPTION_ID = '1';
+
+/** The task text the connectivity check sends. */
+export const PROBE_TASK_TEXT = '连接测试：这是一次判断服务的连通性检查。';
+
+/**
+ * The connectivity check's instructions.
+ *
+ * It asks for the one option that exists, so an endpoint that understands the
+ * protocol at all can answer it: answering it wrong is a failure of the
+ * protocol, not of the reader's task list.
+ */
+export const PROBE_INSTRUCTIONS =
+  'Answer with the number of the one option listed below.';
+
+/** The single criterion the connectivity check offers. */
+export const PROBE_CRITERION = '确认这次调用可以完成。';
+
 /** One option of the judge's question. */
 export interface JudgeChoice {
   type: 'choice';
@@ -99,6 +118,32 @@ export function buildJudgeRequest(
         type: 'choice',
         instructions: QUESTION_INSTRUCTIONS,
         criteria,
+      },
+    },
+  };
+}
+
+/**
+ * Build the body the connectivity check sends.
+ *
+ * It carries its own single option rather than the reader's task types: the
+ * question the button answers is "does this endpoint and model work", and that
+ * question has an answer before any type list exists. Requiring a finished list
+ * first would make the check unable to tell a reader with an empty list from a
+ * reader whose endpoint is down.
+ *
+ * @param model - the judge model id.
+ * @returns the request body.
+ */
+export function buildProbeRequest(model: string): JudgeRequest {
+  return {
+    model,
+    state: { message: PROBE_TASK_TEXT },
+    questions: {
+      [QUESTION_KEY]: {
+        type: 'choice',
+        instructions: PROBE_INSTRUCTIONS,
+        criteria: { [PROBE_OPTION_ID]: PROBE_CRITERION },
       },
     },
   };

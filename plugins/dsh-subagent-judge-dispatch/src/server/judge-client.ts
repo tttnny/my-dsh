@@ -8,8 +8,8 @@
  * must never fail because the judge was unavailable.
  */
 
-import { buildJudgeRequest, readJudgeAnswer } from './judge-prompt.ts';
-import type { FallbackReason, JudgeOutcome, TypeRow } from './types.ts';
+import { PROBE_OPTION_ID, buildJudgeRequest, buildProbeRequest, readJudgeAnswer } from './judge-prompt.ts';
+import type { FallbackReason, JudgeOutcome, ProbeOutcome, TypeRow } from './types.ts';
 
 /** How long a judgement may take before it is abandoned. */
 export const JUDGE_TIMEOUT_MS = 5000;
@@ -26,6 +26,68 @@ export interface JudgeEndpoint {
 
 /** Structural `fetch` so tests can supply their own. */
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
+
+/**
+ * Ask the judge whether this endpoint and model can answer at all.
+ *
+ * This is a different question from a judgement, so it sends its own request
+ * with its own single option: the reader uses the button to find out whether
+ * the endpoint and model work, which is answerable before any task type has
+ * been written. It never throws for the same reason a judgement never does —
+ * the page reports the reason, it does not handle an exception.
+ *
+ * @param endpoint - where and how to call the judge.
+ * @param fetchImpl - the fetch to call; defaults to the global one.
+ * @returns whether the endpoint answered, and how long it took.
+ */
+export async function probeJudge(
+  endpoint: JudgeEndpoint,
+  fetchImpl: FetchLike = fetch,
+): Promise<ProbeOutcome> {
+  const startedAt = Date.now();
+  const elapsed = (): number => Date.now() - startedAt;
+  if (endpoint.url.trim() === '' || endpoint.model.trim() === '') {
+    return { ok: false, latencyMs: elapsed(), reason: 'unconfigured' };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), JUDGE_TIMEOUT_MS);
+  let timedOut = false;
+  const onTimeout = (): void => {
+    timedOut = true;
+  };
+  controller.signal.addEventListener('abort', onTimeout);
+
+  try {
+    const response = await fetchImpl(endpoint.url.trim(), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...endpoint.apiKey.trim() === '' ? {} : { authorization: `Bearer ${endpoint.apiKey.trim()}` },
+      },
+      body: JSON.stringify(buildProbeRequest(endpoint.model.trim())),
+      signal: controller.signal,
+    });
+    if (!response.ok) return { ok: false, latencyMs: elapsed(), reason: 'unreachable' };
+    const payload: unknown = await response.json();
+    // The check asked for the one option it offered: any answer that names a
+    // different option means the endpoint did not read the request it was sent.
+    return readJudgeAnswer(payload, [{
+      id: Number(PROBE_OPTION_ID),
+      description: '',
+      provider: '',
+      model: '',
+      effort: '',
+    }]).kind === 'row'
+      ? { ok: true, latencyMs: elapsed() }
+      : { ok: false, latencyMs: elapsed(), reason: 'unmatched' };
+  } catch {
+    return { ok: false, latencyMs: elapsed(), reason: timedOut ? 'timeout' : 'unreachable' };
+  } finally {
+    clearTimeout(timer);
+    controller.signal.removeEventListener('abort', onTimeout);
+  }
+}
 
 /**
  * Ask the judge which type one delegated job is.

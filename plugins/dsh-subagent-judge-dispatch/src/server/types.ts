@@ -50,6 +50,16 @@ export type JudgeOutcome =
     latencyMs: number;
   };
 
+/** What one connectivity check found. */
+export type ProbeOutcome =
+  | { ok: true; latencyMs: number }
+  | {
+    ok: false;
+    latencyMs: number;
+    /** Why it failed. `unconfigured` means the address or model is missing. */
+    reason: 'unconfigured' | 'unreachable' | 'timeout' | 'unmatched';
+  };
+
 /**
  * One row of the plugin's own log.
  *

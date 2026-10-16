@@ -66,7 +66,7 @@ function withSamples(text: string, samples: Record<string, string>): React.React
  * plus a shadow.
  */
 const CARD_CSS = `
-.dsh-judge-card { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 760px; color: var(--dsw-alias-label-primary); }
+.dsh-judge-card { display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; width: 100%; max-width: 760px; color: var(--dsw-alias-label-primary); }
 .dsh-judge-panel { display: flex; flex-direction: column; gap: 16px; }
 .dsh-judge-section {
   display: flex;
@@ -86,19 +86,21 @@ const CARD_CSS = `
 .dsh-judge-row-info { flex: 1; min-width: 0; }
 .dsh-judge-row-title { font: var(--dsw-font-xs-strong-13); }
 .dsh-judge-row-hint { margin-top: 2px; color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); }
-.dsh-judge-row-field { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; width: 360px; max-width: 100%; }
+.dsh-judge-row-field { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; box-sizing: border-box; width: 360px; max-width: 100%; }
 /* 宿主的 Input 把输入框包在一层 inline-flex 的 span 里，类名落在那层 span 上，
    所以要撑的是它，只给 input 写宽度没用。 */
-.dsh-judge-field { display: flex; width: 100%; }
-.dsh-judge-field input { width: 100%; }
-.dsh-judge-key-line { display: flex; align-items: center; gap: 8px; width: 100%; }
-.dsh-judge-off { display: block; color: var(--dsw-alias-state-warn-label); font: var(--dsw-font-xxxs-11); }
+.dsh-judge-field { display: flex; box-sizing: border-box; width: 100%; min-width: 0; }
+.dsh-judge-field input { box-sizing: border-box; width: 100%; min-width: 0; }
+.dsh-judge-key-line { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; }
+.dsh-judge-off { display: block; color: var(--dsw-alias-state-warn-label); font: var(--dsw-font-xxxs-11); white-space: nowrap; }
 .dsh-judge-head-actions { display: flex; align-items: center; gap: 8px; }
 .dsh-judge-actions { display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding-top: 12px; border-top: 0.5px solid var(--dsw-alias-border-l3); }
 .dsh-judge-hint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); }
 .dsh-judge-note-ok { color: var(--dsw-alias-state-success-primary); font: var(--dsw-font-xxs-12); }
 .dsh-judge-note-bad { color: var(--dsw-alias-state-error-primary); font: var(--dsw-font-xxs-12); }
-.dsh-judge-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.dsh-judge-field-wrap { display: flex; box-sizing: border-box; width: 100%; min-width: 0; }
+.dsh-judge-table { box-sizing: border-box; width: 100%; border-collapse: collapse; table-layout: fixed; }
+.dsh-judge-table th, .dsh-judge-table td { box-sizing: border-box; }
 .dsh-judge-table th {
   padding: 0 8px 6px 0;
   color: var(--dsw-alias-label-tertiary);
@@ -108,10 +110,10 @@ const CARD_CSS = `
 .dsh-judge-table td { padding: 6px 8px 6px 0; vertical-align: middle; }
 .dsh-judge-table tbody tr + tr td { border-top: 0.5px solid var(--dsw-alias-border-l3); }
 .dsh-judge-table td:last-child, .dsh-judge-table th:last-child { padding-right: 0; }
-.dsh-judge-col-no { width: 40px; }
-.dsh-judge-col-model { width: 220px; }
-.dsh-judge-col-effort { width: 140px; }
-.dsh-judge-col-actions { width: 156px; }
+.dsh-judge-col-no { width: 52px; }
+.dsh-judge-col-model { width: 188px; }
+.dsh-judge-col-effort { width: 124px; }
+.dsh-judge-col-actions { width: 148px; }
 .dsh-judge-no { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); font-variant-numeric: tabular-nums; }
 .dsh-judge-row-off .dsh-judge-field { opacity: 0.6; }
 .dsh-judge-cell-actions { display: flex; gap: 6px; }
@@ -301,6 +303,7 @@ export function JudgeDispatchPanel(
               setOpenMenu(null);
             }}
             onClose={() => setOpenMenu(null)}
+            className="dsh-judge-field-wrap"
             portal
           />
         </td>
@@ -332,6 +335,7 @@ export function JudgeDispatchPanel(
                 setOpenMenu(null);
               }}
               onClose={() => setOpenMenu(null)}
+              className="dsh-judge-field-wrap"
               portal
             />
           ) : (
