@@ -46,7 +46,7 @@ cd ~/.dsh/profiles/web && pnpm add "link:<my-dsh 绝对路径>/plugins/dsh-web-a
 cd plugins/dsh-web-auth-url && pnpm check
 ```
 
-`check` 就是 `scripts/smoke-host.mjs`。它把两个承重点放在**真实的 0.2.1-alpha.4 内核服务**上，而不是桩件：
+`check` 就是 `scripts/smoke-host.mjs`。它把两个承重点放在**真实的 0.2.1-alpha.5 内核服务**上，而不是桩件：
 
 - **托管环境变量**：真实 `ctx.shellEnv`（`@deepseek-ai/dsh-shell-env`）的 `collect()` 每次调用都重新执行本插件的 `resolve`，因此 token 轮换后下一次 shell 调用拿到新地址。
 - **段落锚点**：真实 `ctx.systemPrompt`（`@deepseek-ai/dsh-system-prompt`）里 `app:web-auth-url` 必须紧跟 `app:web-surface`；锚点漂了本插件算出的 order 会成 `NaN`，真实 `section()` 直接抛错。
