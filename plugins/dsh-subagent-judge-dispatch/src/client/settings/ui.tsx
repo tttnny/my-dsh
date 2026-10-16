@@ -123,7 +123,7 @@ const CARD_CSS = `
 .dsh-judge-preset-title { font: var(--dsw-font-xs-13); }
 .dsh-judge-preset-hint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxxs-11); }
 .dsh-judge-log { display: flex; flex-direction: column; gap: 4px; font: var(--dsw-font-xxs-12); }
-.dsh-judge-log-row { display: grid; grid-template-columns: 40px 150px 70px 1fr 92px 72px 160px 1fr; gap: 8px; align-items: center; text-align: left; border: 0; background: none; padding: 6px 4px; border-radius: var(--dsw-radius-sm); cursor: pointer; color: inherit; }
+.dsh-judge-log-row { display: grid; grid-template-columns: 130px minmax(0, 1fr) 80px 92px 84px; gap: 8px; align-items: center; text-align: left; border: 0; background: none; padding: 6px 4px; border-radius: var(--dsw-radius-sm); cursor: pointer; color: inherit; }
 .dsh-judge-cell-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dsh-judge-log-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .dsh-judge-log-head { font-weight: 600; color: var(--dsw-alias-label-tertiary); cursor: default; }
@@ -596,14 +596,11 @@ export function JudgeDispatchPanel(
         {state.log.length > 0 && (
           <div className="dsh-judge-log">
             <div className="dsh-judge-log-row dsh-judge-log-head">
-              <span>{t('log.colType')}</span>
+              <span>{t('log.colProvider')}</span>
               <span>{t('log.colModel')}</span>
               <span>{t('log.colEffort')}</span>
-              <span>{t('log.colSource')}</span>
               <span>{t('log.colTime')}</span>
               <span>{t('log.colLatency')}</span>
-              <span>{t('log.colParent')}</span>
-              <span>{t('log.colChild')}</span>
             </div>
             {state.log.map((entry, index) => (
               <button
@@ -612,18 +609,11 @@ export function JudgeDispatchPanel(
                 className="dsh-judge-log-row"
                 onClick={() => setDetail(entry)}
               >
-                <span>{entry.typeId ?? '—'}</span>
-                <span>{entry.model || '—'}</span>
+                <span className="dsh-judge-cell-clip" title={entry.provider}>{entry.provider || '—'}</span>
+                <span className="dsh-judge-cell-clip" title={entry.model}>{entry.model || '—'}</span>
                 <span>{entry.effort || '—'}</span>
-                <span>
-                  {entry.source === 'judged'
-                    ? t('log.sourceJudged').replace('{id}', String(entry.typeId ?? ''))
-                    : t('log.sourceInherited').replace('{reason}', reasonText(entry.reason))}
-                </span>
                 <span>{new Date(entry.at).toLocaleTimeString()}</span>
                 <span>{t('ms').replace('{value}', String(entry.latencyMs))}</span>
-                <span className="dsh-judge-cell-clip" title={entry.parentTitle}>{entry.parentTitle || '—'}</span>
-                <span className="dsh-judge-cell-clip" title={entry.childLabel}>{entry.childLabel || '—'}</span>
               </button>
             ))}
           </div>
@@ -684,14 +674,18 @@ export function JudgeDispatchPanel(
       >
         {detail !== null && (
           <div className="dsh-judge-detail">
-            <span>{t('log.detailType')}</span>
-            <span>{detail.typeId ?? '—'}</span>
             <span>{t('log.detailSource')}</span>
             <span>
               {detail.source === 'judged'
                 ? t('log.sourceJudged').replace('{id}', String(detail.typeId ?? ''))
                 : t('log.sourceInherited').replace('{reason}', reasonText(detail.reason))}
             </span>
+            <span>{t('log.detailProvider')}</span>
+            <span>{detail.provider || '—'}</span>
+            <span>{t('log.detailModel')}</span>
+            <span>{detail.model || '—'}</span>
+            <span>{t('log.detailEffort')}</span>
+            <span>{detail.effort || '—'}</span>
             <span>{t('log.detailReason')}</span>
             <span>{detail.reason === undefined ? '—' : reasonText(detail.reason)}</span>
             <span>{t('log.detailLatency')}</span>

@@ -282,7 +282,7 @@ await test('日志：留最近 20 条，新的在前', () => {
   const store = new LogStore();
   for (let i = 1; i <= LOG_LIMIT + 5; i += 1) {
     store.append({
-      typeId: i, model: 'm', effort: 'low', source: 'judged', at: i,
+      typeId: i, provider: 'p', model: 'm', effort: 'low', source: 'judged', at: i,
       latencyMs: 1, parentTitle: 'p', childLabel: 'c',
     });
   }
@@ -295,7 +295,7 @@ await test('日志：留最近 20 条，新的在前', () => {
 await test('日志：读出来的副本改不动内部记录', () => {
   const store = new LogStore();
   store.append({
-    typeId: 1, model: 'm', effort: 'low', source: 'judged', at: 1,
+    typeId: 1, provider: 'p', model: 'm', effort: 'low', source: 'judged', at: 1,
     latencyMs: 1, parentTitle: 'p', childLabel: 'c',
   });
   store.list()[0].model = 'tampered';

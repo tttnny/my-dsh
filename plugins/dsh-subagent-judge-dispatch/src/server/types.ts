@@ -69,6 +69,8 @@ export type ProbeOutcome =
 export interface LogEntry {
   /** Type number the judgement returned, or null when none matched. */
   typeId: number | null;
+  /** Provider route the child was given, or the one it kept on a fallback. */
+  provider: string;
   /** Model the child was given, or the model it kept on a fallback. */
   model: string;
   /** Effort the child was given, or the effort it kept on a fallback. */

@@ -223,6 +223,7 @@ function buildEntry(
   const reason = outcomeReason(outcome, decision);
   return {
     typeId: matched && outcome.kind === 'matched' ? outcome.row.id : null,
+    provider: matched ? decision.rewrite.provider : resolved.provider,
     model: matched ? decision.rewrite.model : resolved.model,
     effort: matched
       ? decision.rewrite.reasoningEffort

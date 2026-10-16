@@ -47,6 +47,7 @@ export interface ModelOption {
 /** One log row as the Host serves it. */
 export interface LogRow {
   typeId: number | null;
+  provider: string;
   model: string;
   effort: string;
   source: 'judged' | 'inherited';
