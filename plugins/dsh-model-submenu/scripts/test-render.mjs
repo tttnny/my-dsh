@@ -371,6 +371,53 @@ await test('小菜单里点实心星等于点这一行', async () => {
   assert.equal(menu(), null)
 })
 
+await test('切走再切回来，记得住那个模型调过的档位', async () => {
+  globalThis.localStorage.removeItem('dsh-model-submenu.efforts')
+  setState(snapshot())
+  unmount()
+  mount()
+  // 在 A 上调到 Max
+  openMenu()
+  click(segment('Max'))
+  clickOutside()
+  await flush()
+  // 切到 B（B 有 low/medium/xhigh，没有 max）
+  openMenu()
+  click(rows().find((row) => row.getAttribute('title') === 'Model B'))
+  await flush()
+  // 在 B 上调到 Low
+  openMenu()
+  click(segment('Low'))
+  clickOutside()
+  await flush()
+  // 切回 A：应当还是 Max
+  openMenu()
+  click(rows().find((row) => row.getAttribute('title') === 'Model A'))
+  await flush()
+  const trigger = container.querySelector('button[aria-haspopup="menu"]')
+  assert.match(trigger.getAttribute('aria-label'), /思考等级 Max/, trigger.getAttribute('aria-label'))
+  openMenu()
+  assert.equal(segment('Max').getAttribute('aria-checked'), 'true')
+  clickOutside()
+  await flush()
+  // 再切回 B：应当还是 Low
+  openMenu()
+  click(rows().find((row) => row.getAttribute('title') === 'Model B'))
+  await flush()
+  const trigger2 = container.querySelector('button[aria-haspopup="menu"]')
+  assert.match(trigger2.getAttribute('aria-label'), /思考等级 Low/, trigger2.getAttribute('aria-label'))
+  clickOutside()
+  await flush()
+})
+
+await test('模型不声明思考等级时触发器写默认', async () => {
+  setState(snapshot({ current: { provider: 'magpie', model: 'c' } }))
+  await flush()
+  const trigger = container.querySelector('button[aria-haspopup="menu"]')
+  assert.match(trigger.getAttribute('aria-label'), /思考等级 默认/, trigger.getAttribute('aria-label'))
+  assert.match(trigger.textContent, /默认/)
+})
+
 await test('目录里消失的收藏不影响列表', async () => {
   globalThis.localStorage.setItem('dsh-model-submenu.favorites', JSON.stringify([{ provider: 'gone', model: 'x' }]))
   unmount()
@@ -381,6 +428,8 @@ await test('目录里消失的收藏不影响列表', async () => {
 
 await test('写入失败时留在小菜单并弹出提示', async () => {
   globalThis.localStorage.clear()
+  setState(snapshot())
+  await flush()
   outcomes.push({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
   openMenu()
   const before = selections.length

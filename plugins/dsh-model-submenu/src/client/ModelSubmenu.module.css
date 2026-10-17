@@ -84,8 +84,11 @@
 .menu {
   z-index: 1100;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
-  width: min(400px, calc(100vw - 32px));
-  min-width: min(340px, calc(100vw - 32px));
+  /* The card matches the trigger's own width, so opening the menu does not
+   * change the control's footprint; long names ellipsize instead of widening it. */
+  box-sizing: border-box;
+  width: var(--dsh-model-menu-width, min(340px, calc(100vw - 32px)));
+  max-width: min(420px, calc(100vw - 32px));
   max-height: min(70vh, calc(100vh - 96px));
   box-shadow: var(--dsw-elevation-prominent);
   color: var(--dsw-alias-label-primary);
@@ -104,10 +107,10 @@
 .providerName {
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-height: 26px;
+  min-height: 24px;
   color: var(--dsw-alias-label-tertiary);
   align-items: center;
-  padding: 4px 10px;
+  padding: 3px 8px;
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
@@ -130,7 +133,7 @@
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
-  min-height: 38px;
+  min-height: 34px;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -139,7 +142,7 @@
   border-radius: 10px;
   outline: none;
   align-items: center;
-  padding: 6px 8px;
+  padding: 5px 7px;
   display: flex;
 }
 
@@ -164,9 +167,9 @@
   color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 20px;
+  line-height: 18px;
   overflow: hidden;
 }
 
@@ -257,15 +260,15 @@
 
 .effortRow {
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px 4px 10px;
+  gap: 6px;
+  padding: 3px 6px;
   display: flex;
 }
 
 .effortHeading {
   color: var(--dsw-alias-label-primary);
   flex: none;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 18px;
 }
 
@@ -275,7 +278,7 @@
   background: var(--dsw-alias-interactive-bg-hover);
   border-radius: 999px;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
   margin-left: auto;
   padding: 2px;
@@ -296,8 +299,8 @@
   border-radius: 999px;
   outline: none;
   flex: none;
-  padding: 3px 10px;
-  font-size: 12px;
+  padding: 2px 7px;
+  font-size: 11px;
   line-height: 16px;
 }
 
@@ -325,9 +328,9 @@
 .hint {
   color: var(--dsw-alias-label-tertiary);
   margin: 0;
-  padding: 8px 10px;
-  font-size: 12px;
-  line-height: 18px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .moreRow {
@@ -338,10 +341,10 @@
   border-radius: 10px;
   outline: none;
   align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 6px 10px;
-  font-size: 13px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 12px;
   line-height: 18px;
   display: flex;
 }

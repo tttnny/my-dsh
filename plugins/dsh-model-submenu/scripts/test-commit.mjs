@@ -119,6 +119,27 @@ await test('clicking another model that has no reasoning drops the marked level'
   ), { provider: 'magpie', model: 'c' })
 })
 
+await test('without a marked level, a model click restores what that model last used', () => {
+  assert.deepEqual(planModelCommit(
+    { provider: 'magpie', model: 'a', reasoningEffort: 'high' },
+    'magpie', 'b', null, (provider, model) => models[`${provider}/${model}`], 'medium',
+  ), { provider: 'magpie', model: 'b', reasoningEffort: 'medium' })
+})
+
+await test('a remembered level the target model does not advertise is dropped', () => {
+  assert.deepEqual(planModelCommit(
+    { provider: 'magpie', model: 'a', reasoningEffort: 'high' },
+    'magpie', 'b', null, (provider, model) => models[`${provider}/${model}`], 'max',
+  ), { provider: 'magpie', model: 'b' })
+})
+
+await test('a remembered level never outranks a level the user just marked', () => {
+  assert.deepEqual(planModelCommit(
+    { provider: 'magpie', model: 'a', reasoningEffort: 'high' },
+    'magpie', 'b', { effort: 'low' }, (provider, model) => models[`${provider}/${model}`], 'medium',
+  ), { provider: 'magpie', model: 'b', reasoningEffort: 'low' })
+})
+
 await test('a first selection with no live model still carries the marked level', () => {
   assert.deepEqual(planModelCommit(null, 'magpie', 'b', { effort: 'medium' }, (provider, model) => models[`${provider}/${model}`]), {
     provider: 'magpie', model: 'b', reasoningEffort: 'medium',

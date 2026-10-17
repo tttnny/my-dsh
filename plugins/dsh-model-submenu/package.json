@@ -60,7 +60,7 @@
     "smoke": "node scripts/smoke-client.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
     "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm test && pnpm assert:lib-untracked",
-    "test": "node scripts/test-favorites.mjs && node scripts/test-facts.mjs && node scripts/test-commit.mjs && node scripts/test-rows.mjs && node scripts/test-render.mjs"
+    "test": "node scripts/test-favorites.mjs && node scripts/test-facts.mjs && node scripts/test-commit.mjs && node scripts/test-rows.mjs && node scripts/test-effort-memory.mjs && node scripts/test-render.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.5",

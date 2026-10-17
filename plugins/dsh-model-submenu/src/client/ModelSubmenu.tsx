@@ -20,6 +20,7 @@ import {
   type FavoriteModel,
   type FavoritesStorage,
 } from './favorites.ts'
+import { effortFor, readEfforts, rememberEffort, type RememberedEffort } from './effort-memory.ts'
 import type { EffortChoice, EffortMark, Selection } from './selection.ts'
 import { reasoningOf } from './rows.ts'
 import { effortChoices, planEffortCommit, planModelCommit } from './selection.ts'
@@ -59,6 +60,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
   const [pickerOpen, setPickerOpen] = useState(false)
   const [mark, setMark] = useState<EffortMark | null>(null)
   const [favorites, setFavorites] = useState<readonly FavoriteModel[]>(() => readFavorites(storageOf()))
+  const [memory, setMemory] = useState<readonly RememberedEffort[]>(() => readEfforts(storageOf()))
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
   const toastSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -73,11 +75,14 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
   const currentModel = currentGroup?.models.find((model) => model.id === current?.model)
   const reasoning = currentModel?.reasoning
   const effectiveEffort = current?.reasoningEffort ?? reasoning?.defaultEffort
-  const effortLabel = reasoning === undefined
-    ? undefined
-    : effectiveEffort === undefined
-      ? t('effort.providerDefault')
-      : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort
+  /**
+   * The trigger's caption. A model that advertises no levels still says so in
+   * the same place: the blue caption beside the name reads 默认 rather than
+   * disappearing, so the shape of the control never changes with the model.
+   */
+  const effortLabel = reasoning === undefined || effectiveEffort === undefined
+    ? t('effort.providerDefault')
+    : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort
   const choices = useMemo(() => effortChoices(reasoning, t('effort.providerDefault')), [reasoning, t])
   /** The segments show the marked level while one is marked, the live one otherwise. */
   const shownEffort = mark === null ? effectiveEffort : mark.effort
@@ -101,6 +106,8 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
   const submit = (selection: Selection, onDone: (() => void) | null, onRejected?: () => void) => {
     select(selection).then((result) => {
       if (result === undefined || result.ok) {
+        // The Host accepted it, so this is now the level this model uses.
+        remember(selection.provider, selection.model, selection.reasoningEffort)
         onDone?.()
         return
       }
@@ -154,8 +161,13 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
       const rect = triggerRef.current?.getBoundingClientRect()
       if (rect === undefined) return
       const MARGIN = 12
+      // The card takes the trigger's width, clamped so a very wide trigger on a
+      // narrow screen still leaves the viewport margin intact.
+      const wanted = Math.min(rect.width, window.innerWidth - MARGIN * 2)
+      menuRef.current?.style.setProperty('--dsh-model-menu-width', `${String(wanted)}px`)
       const lw = menuRef.current?.offsetWidth ?? 0
       const lh = menuRef.current?.offsetHeight ?? 0
+      // Right edges align, so the card grows leftward from the trigger's corner.
       let x = rect.right - lw
       let y = rect.top - 8 - lh
       if (lw > 0) x = Math.min(Math.max(x, MARGIN), window.innerWidth - lw - MARGIN)
@@ -195,8 +207,12 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
       setPickerOpen(true)
     })
   }
+  /** Record one model's level, so switching away and back restores it. */
+  const remember = (provider: string, model: string, effort: string | undefined) => {
+    setMemory(rememberEffort(storageOf(), provider, model, effort))
+  }
   const chooseModel = (provider: string, model: CatalogModel) => {
-    const picked = planModelCommit(live, provider, model.id, mark, reason)
+    const picked = planModelCommit(live, provider, model.id, mark, reason, effortFor(memory, provider, model.id))
     if (picked === null) {
       setOpen(false)
       setMark(null)

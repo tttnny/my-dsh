@@ -77,6 +77,7 @@ export function planEffortCommit(live: Selection, marked: EffortMark | null): Se
  * @param model - the clicked model id.
  * @param marked - the level marked in the menu; null when nothing was marked.
  * @param reasoningOf - the catalog's reasoning metadata for one provider and model.
+ * @param remembered - the level this browser last used for the target model, if any.
  * @returns the selection to submit, or null when the click changes nothing.
  */
 export function planModelCommit(
@@ -85,18 +86,21 @@ export function planModelCommit(
   model: string,
   marked: EffortMark | null,
   reasoningOf: (provider: string, model: string) => ModelReasoning | undefined,
+  remembered?: string | undefined,
 ): Selection | null {
   const effortChanged = marked !== null && !sameEffort(live?.reasoningEffort, marked.effort)
   if (live !== null && sameModel(live, provider, model) && !effortChanged) return null
-  const offered = marked === null ? undefined : reasoningOf(provider, model)
+  const offered = reasoningOf(provider, model)
+  // A level the user just marked wins; otherwise the target model's own memory
+  // is restored, so switching away and back never silently resets the effort.
+  const wanted = marked === null ? remembered : marked.effort
   const carried = offered !== undefined
-    && marked !== null
-    && marked.effort !== undefined
-    && offered.efforts.some((level) => level.id === marked.effort)
+    && wanted !== undefined
+    && offered.efforts.some((level) => level.id === wanted)
   return {
     provider,
     model,
-    ...carried ? { reasoningEffort: marked?.effort } : {},
+    ...carried ? { reasoningEffort: wanted } : {},
   }
 }
 
