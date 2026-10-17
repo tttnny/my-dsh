@@ -6,11 +6,10 @@ export const NS = 'grillingForm';
 /** 简体中文（键集的事实来源）。 */
 export const zh = {
   'row.frozenSummary': '本轮已过 · {total} 题 · 已填 {answered}',
-  'row.superseded': '已被后面那张取代',
+  'row.superseded': '提问表单已被后面那张取代',
   'row.notShown': '这一轮没有投出表单',
   'row.failed': '调用失败',
   'row.recommended': '推荐',
-  'row.customLabel': '自填',
   'row.customPlaceholder': '选项不够用的话，在这里自己写一段',
   'row.import': '导入输入框',
   'row.imported': '已导入',
@@ -18,16 +17,18 @@ export const zh = {
   'row.fork': '从这里分叉',
   'row.forkFailed': '分叉失败，请重试',
   'row.inspect': '查看',
+  'row.copyCode': '复制',
+  'row.copiedCode': '已复制',
+  'row.footnotes': '脚注',
 };
 
 /** 英文，键集与中文逐条对齐。 */
 export const en = {
   'row.frozenSummary': 'Round over · {total} question(s) · {answered} answered',
-  'row.superseded': 'A later form replaced this one',
+  'row.superseded': 'The question form was replaced by a later one',
   'row.notShown': 'This round was not shown',
   'row.failed': 'Tool call failed',
   'row.recommended': 'Recommended',
-  'row.customLabel': 'Your own answer',
   'row.customPlaceholder': 'Write your own answer here if the options do not cover it',
   'row.import': 'Import to composer',
   'row.imported': 'Imported',
@@ -35,4 +36,7 @@ export const en = {
   'row.fork': 'Branch from here',
   'row.forkFailed': 'Branch failed; try again',
   'row.inspect': 'Inspect',
+  'row.copyCode': 'Copy',
+  'row.copiedCode': 'Copied',
+  'row.footnotes': 'Footnotes',
 };

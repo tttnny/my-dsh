@@ -1,12 +1,16 @@
 /* grilling_form 的表单：住在对话流的轮次尾部（conversation.chat.turnTail）。
  *
- * 故意**没有卡片**：不画折叠行，也不套边框、背景、内边距与内部滚动——题目、选项、按钮跟
- * 上下文同处一层，整轮的进度缩成顶上的一行小灰字。所以这里除了那条小灰字与自填框的输入框，
- * 没有任何容器级的线或底色；字号、行高、颜色照抄官方 @deepseek-ai/dsh-client-ui-tool 的
- * ToolRow / AskQuestionCard，避免同一页出现两套视觉。
+ * 故意**没有卡片壳**：不画折叠行，也不给整张表套边框、背景、内边距与内部滚动——题目、按钮跟
+ * 上下文同处一层，整轮的进度缩成顶上的一行小灰字。有框的只有选项：每个选项是一块整行可点的
+ * 0.5px 描边的圆角行，勾选框、选项文字、推荐徽标与它的补充说明都在那块框里。
  *
- * 冻结（只读）不换一套样式，也不折叠：控件还是那些控件、位置还是那些位置，只是锁住——「长得和
- * 可填时一模一样」是这一版明确要的样子；顶上那行摘要只是加了一行字，不是开关。 */
+ * 字号、行高、颜色照抄官方 @deepseek-ai/dsh-client-ui-tool 的 ToolRow / AskQuestionCard，
+ * 避免同一页出现两套视觉。题干、选项文字与两处补充说明都由宿主的 MarkdownText 渲染，
+ * 这里只把它那几个块级元素之间的默认间距收成适合表单行内的高度。
+ *
+ * 冻结（只读）不换一套样式，也不折叠：控件还是那些控件、位置还是那些位置，只是锁住，并把
+ * 选项区（选项文字、选项的补充说明、推荐徽标、自填框）整体压到 0.5 透明；圈与方框不压，
+ * 回看时仍然一眼看得出勾了什么。 */
 
 .dsg-root {
   display: flex;
@@ -21,16 +25,17 @@
   gap: 16px;
 }
 
-/* 冻结态顶上那行摘要与「已被取代」那行小灰字共用一档字号与颜色。 */
+/* 冻结态顶上那行摘要与「提问表单已被后面那张取代」那行小灰字共用一档字号与颜色。
+   13px 档的行高配它自己的 delta（--dsh-content-font-delta-secondary），字号放大时才不会跟正文那档跑偏。 */
 .dsg-summary,
 .dsg-superseded {
   font-size: var(--dsh-content-font-size-secondary, 13px);
-  line-height: calc(20px + var(--dsh-content-font-delta, 0px));
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
   color: var(--dsw-alias-label-tertiary);
 }
 
 /* 冻结之后顶上那行摘要：本轮几题、答了几题。它只是文字——不是折叠开关，没有箭头、不可点；
-   整块始终摊开，表就在它下面。后面那张表把它取代了时，这里换成一行「已被后面那张取代」。 */
+   整块始终摊开，表就在它下面。后面那张表把它取代了时，这里换成一行「提问表单已被后面那张取代」。 */
 .dsg-summary {
   display: flex;
   align-items: center;
@@ -39,7 +44,7 @@
   min-width: 0;
 }
 
-/* 图标跟摘要同一行、同一个盒；只作点缀（图标自身已 aria-hidden）。 */
+/* 图标跟摘要同一行、同一个盒；只是点缀，不承载任何信息。 */
 .dsg-summaryIcon {
   display: inline-flex;
   flex: none;
@@ -54,7 +59,7 @@
   height: calc(14px + var(--dsh-content-font-delta, 0px));
 }
 
-/* 「已被后面那张取代」那一行：只剩这一行字，表不再画。 */
+/* 「提问表单已被后面那张取代」那一行：只剩这一行字，表不再画。 */
 .dsg-superseded {
   margin: 0;
 }
@@ -72,27 +77,47 @@
   min-width: 0;
 }
 
-.dsg-question,
-.dsg-verdict {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+/* 题干：题号一列（固定宽度、顶端对齐），题干那个 markdown 块一列。 */
+.dsg-question {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 4px;
+  min-width: 0;
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-primary);
 }
 
-.dsg-question {
-  color: var(--dsw-alias-label-primary);
+.dsg-questionText {
+  min-width: 0;
 }
 
 /* 插件给每题画的题号（1. 2. …）：作答块里也只记这个号，所以它是题面的一部分。 */
 .dsg-number {
-  display: inline-block;
-  margin-right: 4px;
   color: var(--dsw-alias-label-caption);
   font-variant-numeric: tabular-nums;
 }
 
+/* 两处补充说明共用这一档长相：小一号的灰字，行高配次级字号那档 delta。 */
+.dsg-questionDetail,
+.dsg-optionDetail {
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 题目的补充说明：题干下方单独一行，从行首开始（与题号左对齐）。 */
+.dsg-questionDetail {
+  margin: 0;
+}
+
 .dsg-verdict {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-primary);
 }
 
@@ -108,58 +133,142 @@
 .dsg-options {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin-top: 4px;
 }
 
-.dsg-optionRow {
+/* 一个选项：整块是一行可点的框。藏起来的原生勾选框 + 画的圈或方框 + 文字与补充说明。 */
+.dsg-option {
+  position: relative;
   display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dsg-option:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 选中的那一行：边框换成品牌色。文字颜色与底色不跟着变——勾没勾只看圈里那个点与方框里的勾。 */
+.dsg-option:has(.dsg-optionInput:checked) {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+/* 原生勾选框视觉上藏起来，但仍在页面里：开关状态、label 的点击、禁用都由它决定。
+   不用 display: none 或 visibility: hidden——那些会让它拿不到焦点、也不再是 label 的开关。 */
+.dsg-optionInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 画出来的勾选框：16×16，跟文字第一行的行高对齐。多选是方框，单选挂 dsg-optionSingle 画成圈。 */
+.dsg-optionControl {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  /* 文字行高 20px、控件 16px：(20 - 16) / 2 = 2px，勾选框就落在第一行的垂直中间。 */
+  margin-top: 2px;
+  border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 4px;
+  background-color: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+.dsg-option:has(.dsg-optionInput:checked) .dsg-optionControl {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+/* 多选：选中时方框填品牌色，里面的勾用宿主的勾图标画（只有选中才画），颜色取反白。 */
+.dsg-option:has(.dsg-optionInput:checked):not(.dsg-optionSingle) .dsg-optionControl {
+  background-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+/* 单选那题的选择器画成圈。它底下仍是那个藏起来的原生勾选框，行为一个字不改；圈只是个画法。
+   corner-shape: round 是仓库约定：完整圆形要跟 border-radius: 50% 成对出现（见 ui-theme 的
+   corner-shape 规范），否则 superellipse 会把这个圈揉成方圆形。 */
+.dsg-optionSingle .dsg-optionControl {
+  border-radius: 50%;
+  corner-shape: round;
+}
+
+/* 单选选中：圈里一个实心点，颜色与方框的选中色同一个 token。 */
+.dsg-optionSingle:has(.dsg-optionInput:checked) .dsg-optionControl {
+  border-color: var(--dsw-alias-brand-primary);
+  background-image: radial-gradient(circle, var(--dsw-alias-brand-primary) 0 42%, transparent 47%);
+}
+
+.dsg-optionBody {
+  display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.dsg-optionMain {
+.dsg-optionLine {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   min-width: 0;
 }
 
-.dsg-option {
+.dsg-optionText {
   min-width: 0;
   font-size: var(--dsh-content-font-size, 14px);
-  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  line-height: calc(20px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-primary);
-}
-
-/* 单选那题的选择器画成圈。多选题的方框保持系统默认外观（这里一个字不动它），所以只有挂着
-   dsg-optionSingle 的单选选择器覆盖原生画法：大小 16×16、线宽 1px、选中色品牌色——都跟方框看齐。
-   它底下仍是 ui-primitives 的勾选框控件（.checkbox input 那套 focus/disabled 规则照旧生效），
-   勾选、取消、一题至多一项的行为一个字不改；圈只是个画法。
-   corner-shape: round 是仓库约定：完整圆形要跟 border-radius: 50% 成对出现（见 ui-theme 的
-   corner-shape 规范），否则 superellipse 会把这个圆揉成方圆形。 */
-.dsg-optionSingle input[type='checkbox'] {
-  box-sizing: border-box;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  border: 1px solid var(--dsw-alias-border-l4);
-  border-radius: 50%;
-  corner-shape: round;
-  background-color: var(--dsw-alias-bg-base);
-  cursor: inherit;
-}
-
-/* 选中：圈里一个实心点，颜色与方框的选中色同一个 token。 */
-.dsg-optionSingle input[type='checkbox']:checked {
-  border-color: var(--dsw-alias-brand-primary);
-  background-image: radial-gradient(circle, var(--dsw-alias-brand-primary) 0 42%, transparent 47%);
 }
 
 .dsg-badge {
   flex: none;
+}
+
+/* 选项的补充说明：缩进到选项文字下方（位置由选项行那一列决定）。 */
+.dsg-optionDetail {
+  min-width: 0;
+}
+
+/* MarkdownText 的 compact 版自带 13px 与 tertiary 颜色（那是给次要内容用的）。题干与选项文字
+   是正文，字号与颜色由外面这两层给（14px、label-primary），所以把渲染器自己那两档退回去；
+   两处补充说明保持 compact 原样——它们本来就是小灰字。 */
+.dsg-questionText > div,
+.dsg-optionText > div {
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+/* 宿主的 MarkdownText 是给整段文档用的：段落上下各留 16px、标题更大。表单里它是行内的一段，
+   所以把块级元素之间的间距收掉，让它在题干、选项与两处补充说明里都只占自己那一行。 */
+.dsg-questionText > div > :first-child,
+.dsg-optionText > div > :first-child,
+.dsg-questionDetail > div > :first-child,
+.dsg-optionDetail > div > :first-child {
+  margin-top: 0;
+}
+
+.dsg-questionText > div > :last-child,
+.dsg-optionText > div > :last-child,
+.dsg-questionDetail > div > :last-child,
+.dsg-optionDetail > div > :last-child {
+  margin-bottom: 0;
 }
 
 /* 多行自填：ui-primitives 没有多行输入控件，官方那张答题卡也是自己画的 textarea。 */
@@ -183,11 +292,6 @@
   color: var(--dsw-alias-label-caption);
 }
 
-.dsg-custom:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 1px;
-}
-
 .dsg-footer {
   display: flex;
   flex-direction: row;
@@ -202,11 +306,22 @@
   flex: none;
 }
 
-/* 冻结不换长相：勾选框 disabled 时 ui-primitives 会给它压到 0.5 透明、光标也从 pointer 变了，
-   这里按回原样——控件锁住了，但长相与可填时一致（要选中复制的正是这些文字）。 */
-.dsg-root[data-readonly='true'] .dsg-option:has(input:disabled) {
-  opacity: 1;
+/* 冻结：选项区整体压暗（选项文字、选项的补充说明、推荐徽标、自填框），圈与方框不压——
+   勾了什么仍然一眼看得出来。选中那一行的品牌色边框也不压，它是这行的框、不是选项区的内容。 */
+.dsg-root[data-readonly='true'] .dsg-optionText,
+.dsg-root[data-readonly='true'] .dsg-optionDetail,
+.dsg-root[data-readonly='true'] .dsg-badge,
+.dsg-root[data-readonly='true'] .dsg-custom {
+  opacity: 0.5;
+}
+
+/* 冻结之后没有任何东西可改：整行的光标退回默认，悬停也不再给底色。 */
+.dsg-root[data-readonly='true'] .dsg-option {
   cursor: default;
+}
+
+.dsg-root[data-readonly='true'] .dsg-option:hover {
+  background: transparent;
 }
 
 .dsg-inspectButton {
@@ -227,8 +342,7 @@
   transition: opacity 100ms ease;
 }
 
-.dsg-root:hover .dsg-inspectButton,
-.dsg-inspectButton:focus-visible {
+.dsg-root:hover .dsg-inspectButton {
   opacity: 1;
 }
 

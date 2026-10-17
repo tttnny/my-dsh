@@ -134,17 +134,24 @@ await test('自我介绍：本轮唯一且最后的调用、发完即结束', as
   assert.match(description, /end your turn/);
 });
 
-await test('工具面只剩六个字段：questions / question / type / options / label / replace', async () => {
+await test('工具面是八个字段：questions / question / detail / type / options / label / detail / replace', async () => {
   const parameters = shape.tool.parameters;
   assert.deepEqual(Object.keys(parameters.properties).sort(), ['questions', 'replace']);
   const question = parameters.properties.questions.items;
-  assert.deepEqual(Object.keys(question.properties).sort(), ['options', 'question', 'type']);
+  assert.deepEqual(Object.keys(question.properties).sort(), ['detail', 'options', 'question', 'type']);
   assert.deepEqual(question.required, ['question'], '只有题干必填');
+  assert.equal('required' in question.properties.detail, false, '题目说明不必填');
   assert.equal('required' in question.properties.type, false, '题型不必填：缺省由插件按有没有选项兜底');
   assert.deepEqual(question.properties.type.enum, ['single', 'multi', 'free']);
+  assert.deepEqual(
+    Object.keys(question.properties.options.items.properties).sort(),
+    ['detail', 'label'],
+    '选项上是 label 与它的说明这两个',
+  );
   assert.deepEqual(question.properties.options.items.required, ['label']);
+  assert.equal('required' in question.properties.options.items.properties.detail, false, '选项说明不必填');
   // 工具面上不该再有别的字段
-  for (const gone of ['id', 'header', 'number', 'detail', 'multi_select', 'recommended', 'description']) {
+  for (const gone of ['id', 'header', 'number', 'multi_select', 'recommended', 'description']) {
     assert.equal(gone in question.properties, false, gone);
     assert.equal(gone in question.properties.options.items.properties, false, gone);
   }
@@ -160,10 +167,12 @@ await test('描述只写「填什么」：默认值、兜底、校验规则都�
     question.properties.type.description,
     question.properties.options.description,
     question.properties.options.items.properties.label.description,
+    question.properties.detail.description,
+    question.properties.options.items.properties.detail.description,
     shape.tool.output.schema.properties.ok.description,
     shape.tool.output.schema.properties.message.description,
   ];
-  assert.equal(texts.length, 9, '字段描述就到这九条');
+  assert.equal(texts.length, 11, '字段描述就到这十一条');
   assert.match(shape.tool.parameters.properties.questions.items.properties.options.description, /（推荐）/, '推荐约定挂在 options 上');
   for (const text of texts) {
     assert.doesNotMatch(text, /default|falls back|fallback|Required for type/i, text);

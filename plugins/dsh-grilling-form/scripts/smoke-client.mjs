@@ -215,26 +215,40 @@ test('CSS 里的 class 名都在 JSX 里用到（没有死样式）', () => {
   assert.deepEqual(dead, []);
 });
 
-// 单选那题的选择器要"看着像圈"：方框是多选、保持系统默认外观，只有单选的 input 自己画。
-// 这几条断言钉住"圈"的四个组成：覆盖原生外观、圆形、选中一个点、颜色与方框同一个品牌色。
-const singleRule = /\.dsg-optionSingle input\[type='checkbox'\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
-const singleCheckedRule = /\.dsg-optionSingle input\[type='checkbox'\]:checked\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
-test('单选选择器：盖掉原生外观并画成圆（圆是完整圆形，按仓库约定配 corner-shape: round）', () => {
-  assert.notEqual(singleRule, '', '找不到单选选择器的规则');
-  assert.match(singleRule, /appearance:\s*none/);
+// 圈与方框都是本插件画的：原生勾选框视觉上藏起来（仍决定开关状态），画出来的那个是 .dsg-optionControl。
+// 这几条断言钉住两种画法的分派：单选是圆（含选中的实心点），多选是方框（选中填品牌色 + 画勾），
+// 且原生 input 只被藏起来、没有被删掉或改成别的控件。
+const controlRule = /\.dsg-optionControl\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+const inputRule = /\.dsg-optionInput\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+const singleRule = /\.dsg-optionSingle \.dsg-optionControl\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+const singleCheckedRule = /\.dsg-optionSingle:has\(\.dsg-optionInput:checked\) \.dsg-optionControl\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+const multiCheckedRule = /\.dsg-option:has\(\.dsg-optionInput:checked\):not\(\.dsg-optionSingle\) \.dsg-optionControl\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+test('画出来的控件：16×16 的方框，位置跟文字第一行对齐', () => {
+  assert.notEqual(controlRule, '', '找不到画出来的控件那条规则');
+  assert.match(controlRule, /width:\s*16px/);
+  assert.match(controlRule, /height:\s*16px/);
+  assert.match(controlRule, /margin-top:\s*2px/);
+  assert.match(controlRule, /border-radius:\s*4px/, '多选的默认画法是方框');
+});
+test('原生勾选框只是藏起来，没有被删掉（开关状态与 label 的点击都靠它）', () => {
+  assert.notEqual(inputRule, '', '找不到原生勾选框那条规则');
+  assert.match(inputRule, /opacity:\s*0/);
+  assert.doesNotMatch(inputRule, /display:\s*none|visibility:\s*hidden/, '藏法不能让它拿不到焦点');
+});
+test('单选：圈是完整圆形，按仓库约定配 corner-shape: round', () => {
+  assert.notEqual(singleRule, '', '找不到单选那条规则');
   assert.match(singleRule, /border-radius:\s*50%/);
   assert.match(singleRule, /corner-shape:\s*round/);
-  assert.match(singleRule, /width:\s*16px/);
-  assert.match(singleRule, /height:\s*16px/);
 });
 test('单选选中态：圈里一个实心点，颜色用与方框同一个 --dsw-alias-brand-primary', () => {
   assert.notEqual(singleCheckedRule, '', '找不到单选选中态的规则');
   assert.match(singleCheckedRule, /--dsw-alias-brand-primary/);
   assert.match(singleCheckedRule, /radial-gradient/);
 });
-test('多选那题不挂单选标记：方框仍是系统默认外观', () => {
-  const whole = css.match(/\.dsg-option input/g) ?? [];
-  assert.deepEqual(whole, [], '不许对 .dsg-option 的 input 整体改外观（那会把方框也改掉）');
+test('多选选中态：方框填品牌色，勾是图标画的（不是圆圈那个点）', () => {
+  assert.notEqual(multiCheckedRule, '', '找不到多选选中态的规则');
+  assert.match(multiCheckedRule, /--dsw-alias-brand-primary/);
+  assert.doesNotMatch(multiCheckedRule, /radial-gradient/, '方框里不画点');
 });
 
 // ui-primitives 的导出名核对：安装副本入口的导出表就是浏览器模块表会给的键，

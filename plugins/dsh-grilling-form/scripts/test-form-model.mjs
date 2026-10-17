@@ -131,6 +131,28 @@ test('选项上多带的字段不进模型：recommended 与 description 都只�
   assert.deepEqual(question.options, [{ label: '甲', recommended: false }]);
 });
 
+test('题目 detail：去掉首尾空白；没写、空白、不是字符串时没有这个键', () => {
+  const [question] = readQuestions(args([call({ detail: '  这句话解释这题问什么  ' })]));
+  assert.equal(question.detail, '这句话解释这题问什么');
+  for (const detail of [undefined, '', '   ', 5, {}, ['x']]) {
+    const [one] = readQuestions(args([call({ detail })]));
+    assert.equal('detail' in one, false, JSON.stringify(detail));
+  }
+});
+
+test('题目 detail 不参与身份：取代时题干一字不差但 detail 改了照样搬勾选', () => {
+  const old = [{ id: '1', number: 1, question: '同一句话？', detail: '旧说明', type: 'multi', options: [] }];
+  const next = [{ id: '1', number: 1, question: '同一句话？', detail: '新说明', type: 'multi', options: [] }];
+  const carried = carryOverAnswers(old, next, { 1: { selected: [], custom: '旧表填的' } });
+  assert.equal(carried['1']?.custom, '旧表填的');
+});
+
+test('detail 为空不影响入参校验：只有题干与选项文字那三条会拒', () => {
+  assert.deepEqual(validateRound([{ question: '问？', detail: '   ', options: [{ label: '甲', detail: '' }] }]), []);
+  assert.equal(validateRound([{ question: '问？', options: [{ label: '甲' }, { label: '甲', detail: '不一样' }] }]).length, 1,
+    '同文选项照旧被拒：detail 不参与身份');
+});
+
 test('题面读不出来：半截 JSON、没有 questions、空数组、某题不是对象都当没有这一轮', () => {
   assert.deepEqual(readQuestions('{"questions":[{"quest'), []);
   assert.deepEqual(readQuestions('{}'), []);

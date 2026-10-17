@@ -81,5 +81,24 @@ test('label 不是字符串：不抛，收成空 label（由入参校验拒掉�
   }
 });
 
+
+test('选项 detail：去掉首尾空白，空白就是没写（不留一个空的说明行）', () => {
+  assert.equal(normalizeOption({ label: '甲', detail: '  一句补充  ' }).detail, '一句补充');
+  assert.equal(normalizeOption({ label: '甲', detail: '   ' }).detail, undefined);
+  assert.equal(normalizeOption({ label: '甲', detail: '' }).detail, undefined);
+  assert.equal('detail' in normalizeOption({ label: '甲', detail: '   ' }), false, '没写时不该有那个键');
+});
+
+test('选项 detail：不是字符串就当没写，不抛也不混进形状', () => {
+  for (const detail of [5, {}, null, ['x'], true]) {
+    const out = normalizeOption({ label: '甲', detail });
+    assert.equal(out.detail, undefined, JSON.stringify(detail));
+  }
+});
+
+test('选项 detail：不参与身份——同一 label 带不带 detail 都是同一个选项', () => {
+  assert.equal(normalizeOption({ label: '甲', detail: '说明' }).label, normalizeOption({ label: '甲' }).label);
+});
+
 console.log(`${passed}/${passed + failures.length} passed`);
 if (failures.length > 0) process.exitCode = 1;

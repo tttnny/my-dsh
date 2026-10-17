@@ -125,6 +125,10 @@ function apply(ctx, config) {
               required: true,
               description: 'The question text.',
             },
+            detail: {
+              type: 'string',
+              description: 'Longer explanation of the question.',
+            },
             type: {
               type: 'string',
               enum: [...QUESTION_TYPES],
@@ -141,6 +145,10 @@ function apply(ctx, config) {
                     type: 'string',
                     required: true,
                     description: 'The option text.',
+                  },
+                  detail: {
+                    type: 'string',
+                    description: 'Longer explanation of the option.',
                   },
                 },
               },

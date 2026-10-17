@@ -7,7 +7,7 @@
 //
 // 纯函数：不碰 React、不读时钟、不读会话。localStorage 由调用方传进来（见文件末尾那组以 storage 为参数的函数）。
 
-import { normalizeOption } from './recommendation.js';
+import { normalizeOption, readDetail } from './recommendation.js';
 
 // 本包的类型词汇表。纯 JS 包的类型信息只有 JSDoc 这一处，所以这几个 typedef 是整个包的
 // 契约：宿主半边（src/index.js）、内壳（src/form-session.js）与浏览器半边
@@ -22,6 +22,8 @@ import { normalizeOption } from './recommendation.js';
  * @typedef {object} QuestionOption
  * @property {string} label 选项身份，也是给用户看的文字：界面照它渲染与存勾选，导入文本照它写回。
  * @property {boolean} recommended 是否推荐；界面据此另画徽标并默认勾上。
+ * @property {string} [detail] 这个选项的补充说明（去掉首尾空白）；没写时没有这个键。
+ *   只负责显示：它不参与选项身份，也不进作答块。
  */
 
 /**
@@ -33,8 +35,9 @@ import { normalizeOption } from './recommendation.js';
  * 一道题的模型（readQuestions 的产物）。
  * @typedef {object} Question
  * @property {string} id 题目身份，就是题号的字符串形式；作答表按它取用。
- * @property {number} number 题号：页面画在题干上方，作答块里只写它。
+ * @property {number} number 题号：页面画在题干同一行（`1.`），作答块里只写它。
  * @property {string} question 题干。
+ * @property {string} [detail] 题目的补充说明（去掉首尾空白）；没写时没有这个键。只负责显示。
  * @property {QuestionType} type 题型。
  * @property {QuestionOption[]} options 选项；自由题没有。
  */
@@ -239,10 +242,12 @@ function readRound(argsRaw) {
   for (const [index, question] of parsed.questions.entries()) {
     if (!isRecord(question)) return { questions: [], replace: false };
     const options = readOptions(question.options);
+    const detail = readDetail(question.detail);
     questions.push({
       id: String(index + 1),
       number: index + 1,
       question: typeof question.question === 'string' ? question.question : '',
+      ...detail === undefined ? {} : { detail },
       type: readQuestionType(question) ?? (options.length > 0 ? 'multi' : 'free'),
       options,
     });

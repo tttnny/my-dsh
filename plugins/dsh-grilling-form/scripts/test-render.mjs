@@ -2,7 +2,7 @@
  * 视图自检：用真 react 跑一遍浏览器半边的那两个注册项，断言它们在各状态下确实画出该有的东西。
  *
  * - **轮次尾部**（conversation.chat.turnTail）：表单住在这里——题号、题干、选项、导入键、分叉键，
- *   以及冻结与「已被后面那张取代」两态；
+ *   以及冻结与「提问表单已被后面那张取代」两态；
  * - **工具行**（tool.call.toolview）：投出去的轮次什么都不画，没投出画那句说明、失败画失败说明。
  *
  * @deepseek-ai/dsh-client-ui-primitives 是替身：真组件是浏览器里的 ESM、带 .css 导入，
@@ -15,6 +15,7 @@
  * 运行：node scripts/test-render.mjs
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -43,13 +44,16 @@ const primitives = {
   IconInspectOutlineRegular: () => null,
   IconDownloadOutlineRegular: () => null,
   IconBranchOutlineRegular: () => null,
-  // 导入键在「已是当前那份」时换成它（打勾图标）：替身要给得出，否则「已导入」那半边是空的。
+  // 导入键在「已是当前那份」时换成它（打勾图标），多选选中时方框里画它。
   IconCheckOutlineRegular: () => createElement('span', { 'data-icon': 'check' }),
-  Checkbox: ({ checked, label, disabled, className }) => createElement(
-    'label',
-    { 'data-checked': String(checked), 'data-disabled': String(disabled === true), 'data-class': String(className) },
-    label,
+  // 真 MarkdownText 是宿主那个 markdown 渲染器；这里只需要它把源文本原样摊成一段 HTML，
+  // 所以替身保留「是不是 markdown、用哪一版（body / compact）」这两个可断言的事实。
+  MarkdownText: ({ text, variant }) => createElement(
+    'div',
+    { 'data-markdown': String(variant ?? 'body') },
+    text,
   ),
+  MarkdownDelegateProvider: ({ children }) => createElement('div', { 'data-markdown-delegate': 'yes' }, children),
   Button: (props) => {
     buttons.push(props);
     // icon 也要渲染出来：真 Button 把它画在文案前，替身丢掉它就等于图标那半边从没被测过。
@@ -109,6 +113,9 @@ function translate(key, params) {
     return String(params[name]);
   });
 }
+
+/** 页脚那一段（导入键与分叉键）；多选项的方框里也画着勾，断言图标时只该看这一段。 */
+const footerOf = (markup) => /<div class="dsg-footer">.*?<\/div><\/div>/.exec(markup)?.[0] ?? '';
 
 /** 把替身渲染进 HTML 里被转义的实体还原回来（摘要行断言按它比原文）。 */
 function decodeEntities(text) {
@@ -260,10 +267,9 @@ test('刚投出：题号、题干、选项、推荐徽标、自填框、导入�
   assert.doesNotMatch(markup, /已填/);
 });
 
-test('摊开、不折叠：可填时页面上没有折叠行，也没有任何展开/收起控件或卡片壳', () => {
+test('摊开、不折叠：可填时页面上没有折叠行，也没有卡片壳', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = html();
-  assert.doesNotMatch(markup, /aria-expanded/);
   assert.doesNotMatch(markup, /dsg-row/);
   assert.doesNotMatch(markup, /dsg-card/);
 });
@@ -329,9 +335,10 @@ test('导入键：还没导入时是「导入输入框」，草稿里已经是�
   const imported = html({ draft: blockOf('1.\n- B：新建一层') });
   assert.match(imported.markup, /已导入/);
   assert.doesNotMatch(imported.markup, />导入输入框</);
-  // 「已导入」那份的图标与「还没导入」那份不同：一个打勾、一个下载（图标是 undefined 时两边都空）
-  assert.match(imported.markup, /data-icon="check"/);
-  assert.doesNotMatch(fresh.markup, /data-icon="check"/);
+  // 「已导入」那份的图标与「还没导入」那份不同：一个打勾、一个下载（图标是 undefined 时两边都空）。
+  // 只看页脚：多选项的方框里也画着一个勾，整段匹配会把它算进来。
+  assert.match(footerOf(imported.markup), /data-icon="check"/);
+  assert.doesNotMatch(footerOf(fresh.markup), /data-icon="check"/);
 });
 
 test('导入键：表单改过之后草稿里那份就旧了——按键变「更新输入框」，草稿再点一次才追上', () => {
@@ -398,8 +405,7 @@ test('冻结：整块不可折叠、始终摊开——摘要行留着但不可�
   });
   const { markup } = html({ nodes: [settled(shown), replyNode(blockOf('1.\n- B：新建一层\n2.\n- 自填的补充'))] });
   assert.match(markup, /data-readonly="true"/);
-  // 没有任何折叠控件：折叠行、箭头、aria-expanded、展开/收起键都不许有
-  assert.doesNotMatch(markup, /aria-expanded/, '不再是折叠行');
+  // 没有任何折叠控件：折叠行、箭头、展开/收起键都不许有
   assert.doesNotMatch(markup, /class="dsg-frozen[" ]/, '不再用折叠行承载');
   // 摘要留着，且与表同处一层：摘要、题干、勾选框、自填框全都在
   assert.match(summaryText(markup), /^本轮已过 · 2 题 · 已填 2$/);
@@ -407,9 +413,9 @@ test('冻结：整块不可折叠、始终摊开——摘要行留着但不可�
   assert.match(markup, /Host 权威层怎么改？/);
   assert.match(markup, /范围呢？/);
   assert.match(markup, /data-checked="true"/);
-  assert.match(markup, /data-disabled="true"/);
+  assert.match(markup, /<input class="dsg-optionInput" type="checkbox"[^>]*disabled=""/);
   assert.match(markup, /自填的补充/);
-  assert.match(markup, /readonly/);
+  assert.match(markup, /<textarea[^>]*readonly=""/);
   // 不是「一行行答案」，也不再有导入键
   assert.doesNotMatch(markup, /dsg-answer/);
   assert.doesNotMatch(markup, /导入输入框/);
@@ -482,7 +488,7 @@ test('冻结时不再有任何导入入口：只剩分叉键', () => {
   assert.equal(buttons.length, 1, '冻结时只剩一个分叉键');
 });
 
-// --- 已被后面那张取代 ---
+// --- 提问表单已被后面那张取代 ---
 
 const replacing = (overrides = {}) => settled(shown, {
   callId: 'call-2',
@@ -495,7 +501,7 @@ test('被取代：后面那一轮带 replace: true 投出过，这张表只剩�
   globalThis.localStorage = fakeStorage();
   const { markup } = html({ later: replacing() });
   assert.match(markup, /data-superseded="true"/);
-  assert.match(markup, /已被后面那张取代/);
+  assert.match(markup, /提问表单已被后面那张取代/);
   assert.doesNotMatch(markup, /Host 权威层怎么改？/);
   assert.doesNotMatch(markup, /范围呢？/);
   assert.doesNotMatch(markup, /<textarea/);
@@ -506,15 +512,15 @@ test('被取代：后面那一轮带 replace: true 投出过，这张表只剩�
 test('被取代：后面那张没投出去、或没带 replace: true 时，这张表照旧可填', () => {
   globalThis.localStorage = fakeStorage();
   const blocked = replacing({ content: [{ type: 'text', text: hidden }] });
-  assert.doesNotMatch(html({ later: blocked }).markup, /已被后面那张取代/);
+  assert.doesNotMatch(html({ later: blocked }).markup, /提问表单已被后面那张取代/);
   const plain = settled(shown, { callId: 'call-2', seq: 12 });
-  assert.doesNotMatch(html({ later: plain }).markup, /已被后面那张取代/);
+  assert.doesNotMatch(html({ later: plain }).markup, /提问表单已被后面那张取代/);
 });
 
 test('被取代：自己那份作答块已经到了的表不显示「被取代」——它是已答的那张', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = html({ later: replacing(), nodes: [settled(shown), replyNode(blockOf('2.\n- 答了'))] });
-  assert.doesNotMatch(markup, /已被后面那张取代/);
+  assert.doesNotMatch(markup, /提问表单已被后面那张取代/);
   assert.match(markup, /data-readonly="true"/);
 });
 
@@ -587,16 +593,16 @@ test('单选题：勾选框上再点别的项就换掉上一个（一题至多�
   assert.notEqual(importButton, undefined);
 });
 
-test('单选题的元素上标了「这一题是单选」，多选不标——圆圈外观靠这个标记挂钩', () => {
+test('单选题的选项行挂单选标记，多选不挂——画的圈与方框靠这个标记分派', () => {
   globalThis.localStorage = fakeStorage();
   const single = JSON.stringify({
     questions: [{ type: 'single', question: '继续吗？', options: [{ label: '继续' }] }],
   });
   const singleMarkup = html({ call: settled(shown, { argsRaw: single }) }).markup;
-  assert.match(singleMarkup, /data-class="[^"]*\bdsg-optionSingle\b/, '单选那题的元素带单选标记');
-  // 多选题不标，方框保持系统默认外观
+  assert.match(singleMarkup, /<div class="dsg-option dsg-optionSingle"/, '单选那题的选项行带单选标记');
+  // 多选题不标：选中时方框里画勾，圈那套样式一条都不挂
   const multiMarkup = html().markup;
-  assert.match(multiMarkup, /data-class="dsg-option"/);
+  assert.match(multiMarkup, /<div class="dsg-option"/);
   assert.doesNotMatch(multiMarkup, /dsg-optionSingle/);
 });
 
@@ -607,13 +613,157 @@ test('自由题：只有一个打字框——没有选择器、没有提示语�
   assert.match(markup, /范围呢？/);
   const boxes = [...markup.matchAll(/<textarea[^>]*>/g)].map((match) => match[0]);
   assert.equal(boxes.length, 2, '每题一个打字框');
-  assert.equal([...markup.matchAll(/<label data-checked=/g)].length, 2, '自由题没有选择器');
+  assert.equal([...markup.matchAll(/<div class="dsg-option(?: |")/g)].length, 2, '自由题没有选择器');
   // 多选那题：矮一点，框里有提示语
   assert.match(boxes[0], /rows="2"/);
   assert.match(boxes[0], /placeholder="选项不够用的话，在这里自己写一段"/);
   // 自由题：高一点，空着不写提示语（它只有这一个框，没什么可指的）
   assert.match(boxes[1], /rows="4"/);
   assert.doesNotMatch(boxes[1], /placeholder/);
+});
+
+test('三种题型每题都有那个补充框：单选、多选、自由各数一个，谁也不缺', () => {
+  globalThis.localStorage = fakeStorage();
+  const allTypes = JSON.stringify({
+    questions: [
+      { type: 'single', question: '单选那题', options: [{ label: '甲' }, { label: '乙' }] },
+      { type: 'multi', question: '多选那题', options: [{ label: '丙' }, { label: '丁' }] },
+      { type: 'free', question: '自由那题' },
+    ],
+  });
+  const { markup } = html({ call: settled(shown, { argsRaw: allTypes }) });
+  assert.equal([...markup.matchAll(/<textarea/g)].length, 3, '三题各一个补充框');
+  assert.equal([...markup.matchAll(/class="dsg-item"/g)].length, 3, '三题都在');
+});
+
+// --- 补充说明（detail）与压暗 ---
+
+const detailArgsRaw = JSON.stringify({
+  questions: [
+    {
+      question: '压到多淡？',
+      detail: '只作用在选项区，圈和方框不压。',
+      type: 'single',
+      options: [
+        { label: '0.5（推荐）', detail: '跟宿主 disabled 观感一致。' },
+        { label: '0.65', detail: '淡一些但更清楚。' },
+        { label: '换灰色' },
+      ],
+    },
+    { type: 'free', question: '还有吗？', detail: '随便写。' },
+  ],
+});
+const detailForm = () => html({ call: settled(shown, { argsRaw: detailArgsRaw }) });
+
+test('题目 detail：题干下方单独一行，与后面那个选项区并排存在', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = detailForm();
+  assert.match(markup, /class="dsg-questionDetail"><div data-markdown="compact">只作用在选项区，圈和方框不压。<\/div>/);
+  assert.match(markup, /class="dsg-questionDetail"><div data-markdown="compact">随便写。<\/div>/);
+});
+
+test('选项 detail：画在它自己那一项里，缩进到选项文字下面', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = detailForm();
+  const withDetail = /<div class="dsg-option dsg-optionSingle" data-checked="true">.*?<\/div><\/div><\/div>/.exec(markup)?.[0] ?? '';
+  assert.match(withDetail, /class="dsg-optionDetail"><div data-markdown="compact">跟宿主 disabled 观感一致。<\/div>/);
+  // 没写 detail 的那一项不画空行：三条选项里只有前两条写了 detail，画出来正好两行
+  assert.equal([...markup.matchAll(/class="dsg-optionDetail"/g)].length, 2, '写了两条 detail，只画两行');
+  // 那一行从它自己的开标签起、到下一个选项行（或自填框）为止；比它前面那两行里都没有第三行
+  const rowsWithText = [...markup.matchAll(/<div class="dsg-option(?: dsg-optionSingle)?"[^>]*>/g)]
+    .map((match) => match.index ?? 0);
+  assert.equal(rowsWithText.length, 3, '这一题三个选项');
+  const endsAt = [...rowsWithText.slice(1), markup.indexOf('<textarea', rowsWithText[2])];
+  const slices = rowsWithText.map((start, index) => markup.slice(start, endsAt[index]));
+  assert.equal(slices.length, 3, '三个选项各切一段');
+  assert.match(slices[2], /换灰色/, '第三段就是没写 detail 的那一项');
+  assert.doesNotMatch(slices[2], /dsg-optionDetail/, '那一项里没有说明那一行');
+  assert.match(slices[0], /dsg-optionDetail/, '写了 detail 的那行照样有那一行');
+});
+
+test('没写 detail 时一处都不画（不留空行、不留空 div）', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html();
+  assert.doesNotMatch(markup, /dsg-questionDetail/);
+  assert.doesNotMatch(markup, /dsg-optionDetail/);
+});
+
+test('题干、选项、两处 detail 都交给 markdown 渲染器，用的是 compact 版', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = detailForm();
+  const marks = [...markup.matchAll(/data-markdown="(\w+)"/g)].map((match) => match[1]);
+  assert.ok(marks.length >= 4, '四处文字各有一个 markdown 块');
+  assert.deepEqual([...new Set(marks)], ['compact'], '表单里的 markdown 一律用 compact 版');
+  // 题干与选项也在其中：只给 detail 上 markdown 的话这两处断言会落到 0
+  assert.match(markup, /data-markdown="compact">压到多淡？/);
+  assert.match(markup, /data-markdown="compact">0.5/);
+});
+
+test('markdown 链接代理包在表单外面：槽位给的 openFile 传下去了', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html();
+  assert.match(markup, /^<div data-markdown-delegate="yes">/, '整张表都在代理范围内');
+});
+
+test('每个选项行都是一块可点的框：里面是藏起来的原生勾选框、画的控件、文字与说明', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html();
+  const rows = [...markup.matchAll(/<div class="dsg-option(?: dsg-optionSingle)?" data-checked="[^"]*">/g)];
+  assert.equal(rows.length, 2, '这一轮两个选项各一行');
+  const first = /<div class="dsg-option" data-checked="[^"]*">(.*?)<textarea/.exec(markup)?.[1] ?? '';
+  assert.match(first, /<input class="dsg-optionInput" type="checkbox"\/>/, '原生勾选框在这一行里');
+  assert.match(first, /class="dsg-optionControl"/, '画出来的控件也在');
+  assert.match(first, /class="dsg-optionBody"/, '文字与说明归在一个体里');
+  // 整行可点：行上挂的是点击动作，勾选框自己那份 onChange 保留（键盘仍改得动）
+  assert.doesNotMatch(first, /<label/, '选项行不再用 label 包块级内容');
+});
+
+test('多选选中时方框里画勾，单选不画（圈里那个点由样式画）', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html();
+  // 这一轮第 1 题是多选、推荐项默认勾上：它的控件里有一个勾图标
+  const multiRow = /<div class="dsg-option" data-checked="true">.*?<\/div><\/div><\/div>/.exec(markup)?.[0] ?? '';
+  assert.match(multiRow, /class="dsg-optionControl"><span data-icon="check"><\/span>/);
+  const singleArgs = JSON.stringify({
+    questions: [{ type: 'single', question: '继续吗？', options: [{ label: '继续（推荐）' }] }],
+  });
+  const singleMarkup = html({ call: settled(shown, { argsRaw: singleArgs }) }).markup;
+  const singleRow = /<div class="dsg-option dsg-optionSingle" data-checked="true">.*?<\/div><\/div><\/div>/.exec(singleMarkup)?.[0] ?? '';
+  assert.doesNotMatch(singleRow, /data-icon="check"/, '单选的选中态是圈里一个点，不画勾');
+});
+
+test('冻结时选项区压暗由 data-readonly 加选项区那几个类名挂样式（不是把整张表压掉）', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html({ nodes: [settled(shown), replyNode(blockOf('2.\n- 只改插件'))] });
+  assert.match(markup, /data-readonly="true"/);
+  // 压暗靠的是根上的标记 + 那几个类名，所以它们必须都在
+  for (const name of ['dsg-optionText', 'dsg-optionDetail', 'dsg-badge', 'dsg-custom']) {
+    const css = readFileSync(join(root, 'src', 'client', 'GrillingForm.css'), 'utf8');
+    assert.match(
+      css,
+      new RegExp(`\\.dsg-root\\[data-readonly='true'\\][^{]*\\.${name}`),
+      `${name} 要在冻结时分到压暗那一条`,
+    );
+  }
+  // 题干、题号与画出来的控件不在压暗名单里：回看时题目要照样读得清，勾了哪项也看得出。
+  const css = readFileSync(join(root, 'src', 'client', 'GrillingForm.css'), 'utf8');
+  const dimRule = /\.dsg-root\[data-readonly='true'\][^{]*\{[^}]*\}/.exec(css)?.[0] ?? '';
+  assert.notEqual(dimRule, '', '找不到冻结时压暗的那一条规则');
+  assert.match(dimRule, /opacity:\s*0\.5/, '那一条确实是压到 0.5');
+  const dimSelector = dimRule.slice(0, dimRule.indexOf('{'));
+  assert.match(dimSelector, /dsg-optionText/, '压暗名单里要有选项文字');
+  assert.doesNotMatch(dimSelector, /dsg-question\b/, '题干不压');
+  assert.doesNotMatch(dimSelector, /dsg-number/, '题号不压');
+  assert.doesNotMatch(dimSelector, /dsg-optionControl/, '圈与方框不压');
+});
+
+
+test('页面上没有任何 aria 属性', () => {
+  globalThis.localStorage = fakeStorage();
+  const markup = html().markup;
+  assert.doesNotMatch(markup, /aria-/);
+  assert.doesNotMatch(rowHtml(settled(hidden)).markup, /aria-/);
+  assert.doesNotMatch(rowHtml(settled(hidden), { inspect: () => {} }).markup, /aria-/);
 });
 
 // --- 工具行：表搬走之后只剩没投出与失败 ---
