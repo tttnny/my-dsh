@@ -85,6 +85,7 @@ export function ModelPicker({
     setQuery('')
     setTab('*')
     setHighlight(0)
+    if (listRef.current !== null) listRef.current.scrollTop = 0
     const frame = requestAnimationFrame(() => { searchRef.current?.focus() })
     return () => { cancelAnimationFrame(frame) }
   }, [open])
@@ -249,7 +250,9 @@ export function ModelPicker({
                 ? t('picker.unfavorite', { model: row.entry.name })
                 : t('picker.favorite', { model: row.entry.name })}
               starTabStop={index === highlight}
+              rowTabIndex={-1}
               onPick={() => { pick(row) }}
+              onFocusRow={() => { setHighlight(index) }}
               onToggleFavorite={() => { onToggleFavorite(row.provider, row.model) }}
             />
           </div>
