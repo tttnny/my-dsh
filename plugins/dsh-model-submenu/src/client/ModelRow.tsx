@@ -51,10 +51,15 @@ export interface ModelRowProps {
  * @returns the row element.
  */
 export function ModelRow({
-  name, selected, busy, star, favorited, meta, starLabel, starTabStop = false, rowTabIndex, onPick, onFocusRow, onToggleFavorite, children,
+  name, selected, busy, star, favorited, meta, starLabel,
+  starTabStop = false, rowTabIndex, onPick, onFocusRow, onToggleFavorite, children,
 }: ModelRowProps) {
   return (
-    <div className={css.row} data-selected={selected ? '' : undefined} data-favorited={favorited ? '' : undefined}>
+    <div
+      className={css.row}
+      data-selected={selected ? '' : undefined}
+      data-favorited={favorited ? '' : undefined}
+    >
       <button
         type="button"
         role="menuitemradio"
