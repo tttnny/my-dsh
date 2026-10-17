@@ -7,7 +7,7 @@
  * `&rev=` 写成了 `&amp;rev=`，照抄进 curl 就白跑一次。这里把这些坑都封在工具里。
  *
  * 用法：
- *   node tools/verify-client.mjs dsh-a6api --needle 'dsh-a6-sidebar-modal'
+ *   node tools/verify-client.mjs dsh-model-submenu --needle '模型与思考等级'
  *   node tools/verify-client.mjs @lynn123411/dsh-chat-translate --build --needle '译'
  *   node tools/verify-client.mjs dsh-model-submenu --json
  * 退出码：0 断言通过（没给 --needle 时＝取到了 bundle），1 不通过，2 跑不起来。

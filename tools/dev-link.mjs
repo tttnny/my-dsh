@@ -14,7 +14,7 @@
  *   node tools/dev-link.mjs                        # 查全部 profile（只读）
  *   node tools/dev-link.mjs --profile web
  *   node tools/dev-link.mjs --write                # 有问题的重连回仓库
- *   node tools/dev-link.mjs --write --package dsh-a6api
+ *   node tools/dev-link.mjs --write --package dsh-model-submenu
  *   node tools/dev-link.mjs --json
  *   node tools/dev-link.mjs --home tmp/host-smoke/home   # 查另一份 DSH 主目录
  * 退出码：0 全部健康（或 --write 之后已健康），1 有问题（未写模式），2 跑不起来。

@@ -223,11 +223,11 @@ check('page gated on the Host serving this plugin entry', JSON.stringify(servedW
 check('store bound to the shared configuration form', formSubscribes > 0)
 
 // 输入框下方那一行的翻译开关：经 slots.inject 注册进 ui-conversation 声明的
-// conversation.composer.dock，order -2 排在 dsh-a6api 胶囊（-1）的左侧。
+// conversation.composer.dock，order -2 排在官方统计胶囊（0）的左侧。
 const dock = registrations.find(r => r.name === 'conversation.composer.dock')
 check('composer dock toggle registered', dock !== undefined)
 check('dock entry keyed by its own id', dock?.id === 'dsh-chat-translate-toggle')
-check('dock entry sits left of the a6api pill', dock?.order === -2)
+check('dock entry sits left of the official pill', dock?.order === -2)
 check('dock entry uses this plugin locale namespace', dock?.locale === 'settings.chatTranslate')
 check('dock entry exposes a component', typeof dock?.component === 'function')
 check('dock contributed through slots.inject', injects.includes('slot:conversation.composer.dock'))

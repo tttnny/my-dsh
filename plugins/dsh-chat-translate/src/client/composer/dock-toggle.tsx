@@ -9,8 +9,8 @@ import { NS } from '../locales.ts';
 /**
  * `t` 由注册项的 `locale: NS` 注入，类型走共享的 `PropsLocale`。owner props
  * （`PropsRuntime<'conversation.composer.dock'>`）的类型随
- * `@deepseek-ai/dsh-client-ui-conversation` 声明，本包不依赖它（与 dsh-a6api
- * 同法），组件也不读那些 prop。
+ * `@deepseek-ai/dsh-client-ui-conversation` 声明，本包不依赖它，组件也不读
+ * 那些 prop。
  */
 export type DockToggleProps = PropsLocale<typeof NS>;
 
@@ -60,7 +60,7 @@ export function setupComposerToggle(ctx: any): () => void {
       {
         name: 'conversation.composer.dock',
         id: 'dsh-chat-translate-toggle',
-        // -2 排在 dsh-a6api 胶囊（-1）的左侧，整行最左；官方统计胶囊是 0。
+        // -2 是整行最左；官方统计胶囊是 0。
         order: -2,
         locale: NS,
       },

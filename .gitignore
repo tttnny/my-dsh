@@ -22,4 +22,3 @@ secrets.yaml
 *.key
 *.p12
 *.pfx
-dsh-a6api-config.json

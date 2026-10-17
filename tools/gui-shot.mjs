@@ -4,8 +4,8 @@
  * 高度上限、滚动归属、遮挡、sticky 只有真浏览器能证明。
  *
  * 用法：
- *   node tools/gui-shot.mjs --wait 'button[aria-label="A6api"]' \
- *     --click 'button[aria-label="A6api"]' --eval '<读几何的 JS>' --shot tmp/ui.png
+ *   node tools/gui-shot.mjs --wait 'button[aria-haspopup="menu"]' \
+ *     --click 'button[aria-haspopup="menu"]' --eval '<读几何的 JS>' --shot tmp/ui.png
  *
  * 登录靠 $DSH_WEB_URL / $DSH_WEB_AUTH_URL（先访问 auth URL 拿会话 cookie，再进应用）。
  * 细节与坑见 docs/rules/plugin-ui.md「看一眼界面」。

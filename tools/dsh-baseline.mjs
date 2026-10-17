@@ -15,7 +15,7 @@
  *   node tools/dsh-baseline.mjs --dsh <版本>
  *   node tools/dsh-baseline.mjs --write                # 落盘 + 在改动的包里跑 pnpm install
  *   node tools/dsh-baseline.mjs --write --bump patch   # 顺带把版本号加一位
- *   node tools/dsh-baseline.mjs --only dsh-a6api       # 只动一个包
+ *   node tools/dsh-baseline.mjs --only dsh-chat-translate  # 只动一个包
  *   node tools/dsh-baseline.mjs --check                # 门禁：全部对齐才回 0（不落盘）
  * 退出码：0 已对齐或改写成功，1 有包改写失败或有包没跟上，2 跑不起来。
  */

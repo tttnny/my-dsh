@@ -46,7 +46,7 @@
 
 两条会让变异测试骗到自己的坑，都是本仓库实测过的：
 
-- **先确认断言脚本打的是 `src/` 还是构建产物**：`dsh-a6api` 的 `scripts/test-*.mjs` 一律 `import('../lib/index.js')`（`smoke-client.mjs` 读 `lib/client.js`），改完 `src/` 必须先 `pnpm build` 再跑，否则测的还是旧产物——变异后忘了重建，会得到一条假的「断言没抓住」。`dsh-grilling-form` 用 `pnpm test` 自己先构建一次来消除这个前提；`dsh-chat-translate` 有一半脚本直接打 `src/`。照抄邻居前先看它 `import` 的是哪一边。
+- **先确认断言脚本打的是 `src/` 还是构建产物**：`dsh-chat-translate` 的 `scripts/test-client-wiring.mjs` 读 `lib/client.js`，改完 `src/` 必须先 `pnpm build` 再跑，否则测的还是旧产物——变异后忘了重建，会得到一条假的「断言没抓住」。`dsh-grilling-form` 用 `pnpm test` 自己先构建一次来消除这个前提；`dsh-chat-translate` 的其余脚本与 `dsh-subagent-judge-dispatch` 的决策测试直接打 `src/`。照抄邻居前先看它 `import` 的是哪一边。
 - **未提交的文件也能变异**：`node tools/mutate.mjs` 对干净文件用 `git checkout --` 还原，对未提交、甚至未被 git 跟踪的文件改用内存里的那份原文写回并逐字节核对。所以改完直接跑变异，不必先做一次 `wip` 提交再 `git reset`。
 - **还原用 `git checkout -- <file>`，别手工备份**：`cp src/x.ts /tmp/x.bak` 这类备份失败是静默的（`||` 兜底只在前一条命令失败时才生效，而它常常成功了），变异会留在源码里而你以为已经还原。要么在改动前 `git stash`，要么直接 `git checkout -- <file>`——后者失败会报错，不会静默。机械动作交给 `node tools/mutate.mjs`：它要求文件干净、`--from` 恰好命中一处，命令跑完（无论成败）在收尾还原并核对 `git status --short`。
 - **探针的锚点要唯一**：往源码里塞临时探针时，别拿 `str.replace(x, y, 1)` 打在「文件里第一个 `  return (`」这类到处都有的形状上——它会插进另一个函数，报出来的还是 `Invalid hook call` 这种看不懂的错。锚点带上上下文，或改用 `git apply` 的补丁。

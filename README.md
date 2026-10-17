@@ -23,12 +23,6 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>
-      <td><b>🔌 模型接入</b><br><i>把外部网关变成 DSH 原生提供商</i></td>
-      <td><a href="./plugins/dsh-a6api"><code>@lynn123411/dsh-a6api</code></a></td>
-      <td><b>A6API 接入</b><br>把 A6API 聚合网关注册成 DSH 原生提供商，模型一键同步，另有一套商户卡片界面挑线路、看余额、比价格。</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-a6api</code></td>
-    </tr>
-    <tr>
       <td><b>🎛️ 模型选择</b><br><i>输入框里模型选择器的形态</i></td>
       <td><a href="./plugins/dsh-model-submenu"><code>@lynn123411/dsh-model-submenu</code></a></td>
       <td><b>模型选择</b><br>把输入框旁的模型选择器换成两层：一层列当前供应商的模型与思考等级，一层弹窗列出所有供应商的模型，可搜可收藏。</td>

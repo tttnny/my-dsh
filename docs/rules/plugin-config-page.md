@@ -37,14 +37,14 @@ ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
 - **卡片拿到 `view: 'page'`**，没有 `summary` 分支要写（`summary` 是 `plugins.item` 卡片与行兜底描述用的）。
 - **`bundle.config` 不传 `props.form`**（宿主只对 `plugins.item` 与 `plugins.row.config` 注入 owner form）：配置一律由卡片自己经 `ctx.configForms.get(<命名空间>)` 取。
 - **页面自己画标题、图标与面包屑**，卡片不要再画一遍插件名；卡片保留自己的分区、控件与顺序。
-- 本插件**有** Host 配置命名空间（导出 `Config` schema）时，用 `ctx.configForms.whileServed([<命名空间>], …)` 把注册整块包起来；配置全在**别人的**命名空间里、自己没有 `Config` 的（`dsh-a6api`）保持无条件注册。
+- 本插件**有** Host 配置命名空间（导出 `Config` schema）时，用 `ctx.configForms.whileServed([<命名空间>], …)` 把注册整块包起来；配置全在**别人的**命名空间里、自己没有 `Config` 的保持无条件注册。
 
 ## 每个插件各持一份接线模块
 
 `plugin-page.ts`（`BUNDLE_NAME` + `BUNDLE_CONFIG_SLOT` + `BUNDLE_CONFIG_KEY` + `setupPluginPage`）在两个包内各有一份，逻辑必须同源，改一处就改全部；只有 `BUNDLE_NAME` 与注释可以不同：
 
-- `plugins/dsh-a6api/src/client/settings/plugin-page.ts`
 - `plugins/dsh-chat-translate/src/client/settings/plugin-page.ts`
+- `plugins/dsh-subagent-judge-dispatch/src/client/settings/plugin-page.ts`
 
 没有构建门禁拦跨插件值导入（`dsh-client-bundle-purity` 只存在于 `dsh-model-submenu` 与 `dsh-grilling-form`），这条靠约定。
 
