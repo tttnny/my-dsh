@@ -181,6 +181,13 @@
   overflow: hidden;
 }
 
+/* The menu's names carry the weight: at this size a regular face reads thin
+ * against the card. The picker's rows keep theirs regular — there the metadata
+ * line already separates the rows. */
+.menu .rowName {
+  font-weight: 600;
+}
+
 .rowMeta {
   color: var(--dsw-alias-label-tertiary);
   text-overflow: ellipsis;
