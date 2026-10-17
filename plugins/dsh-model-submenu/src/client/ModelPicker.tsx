@@ -195,7 +195,7 @@ export function ModelPicker({
             id={`${id}-tab-${entry.id}`}
             aria-selected={entry.id === tab}
             aria-controls={`${id}-list`}
-            tabIndex={0}
+            tabIndex={entry.id === tab ? 0 : -1}
             className={css.pickerTab}
             onClick={() => {
               setTab(entry.id)
