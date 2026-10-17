@@ -3,6 +3,7 @@
   "version": "0.2.5",
   "description": "给输入框的模型选择器加上供应商层级：先选供应商，再选它下面的模型。",
   "license": "MIT",
+  "packageManager": "pnpm@11.7.0",
   "publishConfig": {
     "access": "public"
   },

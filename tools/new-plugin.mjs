@@ -117,6 +117,7 @@ const pkg = {
     typescript: '^6.0.0',
   },
   engines: { dsh: dshRange, node: '^22.19 || >=24' },
+  packageManager: 'pnpm@11.7.0',
   publishConfig: { access: 'public' },
   icon: './assets/icon.svg',
 };
@@ -132,7 +133,12 @@ const files = {
     '',
   ].join('\n'),
   'pnpm-workspace.yaml': [
-    '# pnpm 11 blocks dependency build scripts until they are explicitly approved here.',
+    '# pnpm 11 的两条默认策略在干净环境会拦住内核的 alpha 版本：',
+    '# 它默认拒绝发布不满 24 小时的包（24 小时内随内核升版就装不上），',
+    '# 并且默认拒绝执行未登记的依赖构建脚本（esbuild 不跑就没法构建）。',
+    '# `@deepseek-ai/*` 是本仓刻意跟随的版本线，这里按包名放行；CI 与本机共用这一份。',
+    'minimumReleaseAgeExclude:',
+    '  - "@deepseek-ai/*"',
     'allowBuilds:',
     '  esbuild: true',
     '',

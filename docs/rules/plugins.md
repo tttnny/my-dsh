@@ -62,6 +62,23 @@
 
 两件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 这类要真内核的检查只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收。
 
+**每个包的 `pnpm-workspace.yaml` 是安装契约的一部分，别当本机偏好**。pnpm 11 起有两条默认安全策略，干净环境（CI 就是这样）一定生效：拒绝安装发布不满 24 小时的包，并拒绝执行未登记的依赖构建脚本。本仓库刻意跟随内核的 alpha 版本线——升版当天就要装——所以这两条一定撞上，表现是 CI 的 `install` 一步红、而本机全绿。两处各治一半，缺一不可：
+
+```yaml
+minimumReleaseAgeExclude:
+  - "@deepseek-ai/*"
+allowBuilds:
+  esbuild: true
+```
+
+前半条按包名放行内核版本线（写成别的 scope 不生效）；后半条给构建链（`esbuild`，有 `lightningcss` / `tsdown` 的包照加）放行构建脚本。`packageManager` 一并写进 `package.json` 钉住 pnpm 版本，否则 corepack 会在没钉的包里解析到另一个版本，同一份策略又要重踩一遍。`tools/new-plugin.mjs` 生成的骨架已带这两处。
+
+**本机绿不等于 CI 绿**：pnpm 的用户级配置（macOS 上是 `~/Library/Preferences/pnpm/config.yaml`）若把 `minimumReleaseAge` 设成 0、或开了 `dangerouslyAllowAllBuilds`，本机就绕过了这两条策略，复现 CI 必须换一份干净 home：
+
+```bash
+HOME=./tmp/ci-home COREPACK_HOME=./tmp/ci-home/corepack corepack pnpm install --frozen-lockfile
+```
+
 ### 类型检查
 
 包带不带 `typecheck` 由它自己决定，带上就进 `check`。**带 `build` + `src/` 的包默认带上**：源码在那里被构建，类型信息可查；`tsc` 在包的 `devDependencies` 里。**判断依据是源码形态，不是包的新旧**——拿新旧当判据是错的（`dsh-model-submenu` 就是后补上的老包）。脚本具体怎么写由各包自己定：单份源码是一句 `tsc -p tsconfig.json --noEmit`，两半边各一份配置就分两条 `tsc`，差别只在 `--pretty false` 这类开关。

@@ -50,6 +50,8 @@ preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle
 
 preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂上游那一条：`plugin-upgrade-cordis` 的 `check` 是「上游离线核对 + 组合解析」。真装载要起第二个实例（`tools/host-smoke.mjs`），只在装了 DSH 的机器上有意义：本机验收要跑，CI（`node tools/check.mjs`）跑不了。
 
+**组合解析同样要本机已装内核**（`--dump-config` 走的是宿主二进制），所以它在 CI 上也跑不了：`tools/preset-compose.mjs` 找不到内核时打一行 `跳过` 并以 0 退出，与 `assert-ledger.mjs` 的抄本比对同一处置。这意味着 **preset 的 `check` 在 CI 上只覆盖上游那一条**——组合解析要在装了 DSH 的机器上跑，别把 CI 的绿读成「组合没问题」。
+
 ## 抄本基线
 
 抄自官方 `@deepseek-ai/dsh-web-app/presets/<官方 id>.patch.yml` 的 `<id>.patch.yml`，必须与**已装内核**里那一份同版本：官方每一版都会动，抄本落后不报错、只静默与官方不一致，唯一会当场炸的是引用了已被删掉的提示词变量（如 `0.2.0-rc.2` 删掉的 `{{cwd}}`：变量严格解析，抛错即整轮请求失败）。官方动了就按该 preset 的 `UPSTREAM.md` 重抄。
