@@ -1,0 +1,86 @@
+# 内核升版（一次跟完）
+
+运行中的 DSH 升了一版，本仓库按固定顺序跟一遍：**先看宿主变了什么，再改 preset，再改 plugins，最后按 CI 重跑**。命令的参数细节在 [tools/README.md](../../tools/README.md)，这里写顺序、判断点与完成判据。
+
+上一版号就是仓库里现在的 `engines.dsh`（每个包的 `package.json` 都写着，也是上一次跟到的版本）；新版本号看下一步的 `dsh-env`。
+
+## 1. 认目标版本与上一版
+
+```bash
+node tools/dsh-env.mjs
+```
+
+看 `内核` 与 `官方 preset` 两行；`DSH 源码` 一行给出源码 checkout。后面按 `dsh-v<版本>` tag 比差异。
+
+**完成判据**：知道新版本号与上一版号。
+
+## 2. 看宿主这一版改了什么
+
+```bash
+node tools/kernel-diff.mjs <上一版> --from-source --declared
+node tools/kernel-diff.mjs <上一版> --from-source --presets
+```
+
+第一条只看本仓包声明过的宿主包，第二条只看四份官方 preset。`--from-source` 用源码 tag，**不需要旧内核还装着**；两版都装着时去掉它，比安装产物。
+
+**完成判据**：能说出「我们依赖的包里哪几个动了、动了哪些文件」与「官方 preset 动没动」。官方 preset 动了就进第 3 步重抄；一字未动就只跟版本号。
+
+## 3. 跟 preset
+
+```bash
+cd presets/plugin-upgrade-cordis
+node ../../tools/preset-copy.mjs plugin-upgrade-cordis --official-diff
+# 官方动了：
+node ../../tools/preset-copy.mjs plugin-upgrade-cordis --recopy
+# 改 package.json 的 engines.dsh 与 version，再：
+pnpm check
+```
+
+`--official-diff` 打印两版官方的逐行差异；`--recopy` 把官方这一版的改动三方合并进抄本（base 是抄本顶部 `# from dsh <版本>` 记的那一版），三处自定义行保留：顶部注释、行 id / 显示名 / order、`skill-filesystem` 的 custom root。合并后核对这三处，再跑 `--diff` 应无差异。
+
+**完成判据**：`pnpm check` 通过（上游离线核对、组合解析、提示词变量、随包技能真装载）；`node ../../tools/preset-copy.mjs plugin-upgrade-cordis --diff` 无差异。
+
+## 4. 跟 plugins
+
+```bash
+node tools/dsh-baseline.mjs --write --bump patch
+node tools/assert-ledger.mjs
+```
+
+第二条会列出所有还没跟齐的手写字面量（自检断言、注释、README、patch 头部），逐个改到新版本。然后各包在自己目录跑 `pnpm check`。
+
+**完成判据**：`tools/assert-ledger.mjs` 通过；每个包的 `pnpm check` 通过。
+
+## 5. 宿主与浏览器
+
+```bash
+node tools/check.mjs
+node tools/host-smoke.mjs
+```
+
+`check.mjs` 跑一致性检查与全部包的 `check`；`host-smoke.mjs` 起第二个实例判装载。界面要在真浏览器里点一遍：逐插件的判据在 `plugin-fleet-sweep` 技能里，取图与量几何用 `tools/gui-shot.mjs`。
+
+**完成判据**：`host-smoke` PASS；已装插件的入口、样式标签与交互面在页面上都在，页面零报错。
+
+## 6. 提交前按 CI 重跑一次
+
+```bash
+node tools/ci-check.mjs
+```
+
+它把工作区复制到 `tmp/ci-check/repo`，用干净 HOME 与钉住的 pnpm 逐包 `pnpm install --frozen-lockfile`，再跑 `node tools/check.mjs`。本机的 pnpm 用户配置可能把安全策略关掉，所以**本机绿不等于 CI 绿**；这一步要联网。
+
+**完成判据**：`ci-check: ok`。然后提交，走 `.githooks/pre-commit`。
+
+## 什么时候用哪条命令
+
+| 想知道 | 命令 |
+| --- | --- |
+| 两版之间宿主包改了什么 | `node tools/kernel-diff.mjs <旧> --from-source [--declared]` |
+| 官方 preset 动没动 | `node tools/kernel-diff.mjs <旧> --from-source --presets` |
+| 官方 preset 动在哪几行 | `node tools/preset-copy.mjs <id> --official-diff` |
+| 抄本与已装官方是否一致 | `node tools/preset-copy.mjs <id> --diff` |
+| 把官方改动合并回抄本 | `node tools/preset-copy.mjs <id> --recopy` |
+| 提示词变量是否还都注册着 | `node tools/preset-copy.mjs <id> --variables` |
+| 随包技能能不能被真装载 | `node tools/probes/preset-skills.mjs --preset <id>` |
+| 换台机器（CI）能不能过 | `node tools/ci-check.mjs` |

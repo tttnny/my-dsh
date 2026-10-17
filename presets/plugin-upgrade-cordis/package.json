@@ -18,7 +18,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "check": "node check-upstream.mjs --verify && node ../../tools/preset-compose.mjs plugin-upgrade-cordis"
+    "check": "node check-upstream.mjs --verify && node ../../tools/preset-compose.mjs plugin-upgrade-cordis && node ../../tools/preset-copy.mjs plugin-upgrade-cordis --variables && node ../../tools/probes/preset-skills.mjs --preset plugin-upgrade-cordis"
   },
   "keywords": [
     "deepseek-harness",

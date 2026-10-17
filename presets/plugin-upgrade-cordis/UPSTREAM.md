@@ -72,7 +72,7 @@ node presets/$ID/check-upstream.mjs --verify
 1. `check-upstream.mjs --verify` PASS（= 11 个技能的树哈希与锁逐一对上，`skills/` 根无散 `.md`，每个 `SKILL.md` 的 `name` 等于目录名）；
 2. `diff -rq <上游>/skills/<n> presets/<id>/skills/<n>`（外加 `LICENSE`）逐目录全绿——第 1 条只证明「和锁一致」，这一条才证明「和上游一致」；
 3. `check-upstream.mjs` 在线模式报 `identical`（钉的提交就是当前上游该路径的状态）；
-4. **真实发现**：按 [DETAILS.md](./DETAILS.md)「验证」第二条（真实 `FileSystemSkillProvider` + `customSkillDirs=[skills/]`）跑一遍，报 11 个候选、0 条警告；
+4. **真实发现**：`node tools/probes/preset-skills.mjs --preset plugin-upgrade-cordis` 报 11 个候选、0 条警告（真内核的 `FileSystemSkillProvider`，见 [DETAILS.md](./DETAILS.md)「验证」）；
 5. **组合仍能解析**：`--dump-config` exit 0 且出现 `preset-plugin-upgrade-cordis` 行；
 6. **真装载**：隔离 `DSH_HOME` boot 后在 `/` 菜单「技能」段看到 11 个技能（步骤见 [DETAILS.md](./DETAILS.md)「验证」）。
 
@@ -80,21 +80,29 @@ node presets/$ID/check-upstream.mjs --verify
 
 ## 再抄官方 preset
 
-`plugin-upgrade-cordis.patch.yml` 是官方 `presets/cordis.patch.yml` 的抄本，**抄的版本必须等于运行中的 DSH**。升级 DSH 后按下面重抄（本包只改三处，别多改）：
+`plugin-upgrade-cordis.patch.yml` 是官方 `presets/cordis.patch.yml` 的抄本，**抄的版本必须等于运行中的 DSH**。抄本顶部那行 `# from dsh <版本>` 记着基线版本，工具按它取三方合并的 base。
 
-```
-BASE=<DSH 安装>/node_modules/.pnpm/@deepseek-ai+dsh-web-app@<版本>_*/node_modules/@deepseek-ai/dsh-web-app/presets/cordis.patch.yml
+```bash
+# 官方这一版动没动、动在哪几行
+node tools/preset-copy.mjs plugin-upgrade-cordis --official-diff
+# 动了就合并回抄本（保留下面三处自定义）
+node tools/preset-copy.mjs plugin-upgrade-cordis --recopy
+# 归一后应当没有差异
+node tools/preset-copy.mjs plugin-upgrade-cordis --diff
 ```
 
-1. 把 `$BASE` 整份内容抄成 `plugin-upgrade-cordis.patch.yml`；
-2. 只改三处：
-   - 顶部注释块（换成指向本 preset 与本文件）；
-   - `- id: preset-cordis` → `- id: preset-plugin-upgrade-cordis`，`config.id` → `plugin-upgrade-cordis`，加 `config.name` / `config.description`，`config.order` → 台账值（见 [docs/rules/presets.md](../../docs/rules/presets.md)「order 台账」）；
-   - `skill-filesystem` 行的 `customSkillDirs`：在官方那条**之前**插本包的根（`createRequire(baseUrl).resolve('@lynn123411/dsh-preset-plugin-upgrade-cordis/package.json')` + `join(dir, 'skills')`），并保留说明注释。**顺序即优先级**；
-3. `diff -u "$BASE" plugin-upgrade-cordis.patch.yml` 复核：除上述三处外应当**没有别的差异**——这是唯一能证明「逐字保留」的检查；
-4. 扫一遍提示词变量：`grep -oE '\{\{[a-zA-Z_]+\}\}' plugin-upgrade-cordis.patch.yml | sort -u`，结果必须落在该版 `agent-loop` 注册的变量里（0.2.1-alpha.5 只有 `model` 与 `provider`）。引用了不存在的变量 → 每次请求都抛 `unknown prompt variable`，而 preset 照样可选；
-5. `--dump-config` exit 0，且组合树里出现 `preset-plugin-upgrade-cordis` 行；
-6. 更新 `package.json` 的 `engines.dsh` 与 `version`（加一位），更新 [DETAILS.md](./DETAILS.md) 的「与官方创造模式的异同」与实测记录。
+重抄后核对本包只改的三处，别多改：
+
+1. 顶部注释块（指向本 preset 与本文件；`--recopy` 会把 `# from dsh <旧版本>` 改成新版本）；
+2. `- id: preset-cordis` → `- id: preset-plugin-upgrade-cordis`，`config.id` → `plugin-upgrade-cordis`，`config.name` / `config.description`，`config.order` → order 值（见 [docs/rules/presets.md](../../docs/rules/presets.md)「order 台账」）；
+3. `skill-filesystem` 行的 `customSkillDirs`：在官方那条**之前**插本包的根（`createRequire(baseUrl).resolve('@lynn123411/dsh-preset-plugin-upgrade-cordis/package.json')` + `join(dir, 'skills')`），并保留说明注释。**顺序即优先级**。
+
+再跑两条判据：
+
+1. `node tools/preset-copy.mjs plugin-upgrade-cordis --diff`：归一后与已装官方没有差异（与 `assert-ledger.mjs` 判据 11 同一套规则）；
+2. `cd presets/plugin-upgrade-cordis && pnpm check`：上游离线核对、提示词变量（`--variables`）、组合解析、随包技能真装载全部通过。提示词变量必须落在该版 `agent-loop` 注册的变量里；引用了不存在的变量，每次请求都抛 `unknown prompt variable`，而 preset 照样可选。
+
+最后更新 `package.json` 的 `engines.dsh` 与 `version`（加一位），更新 [DETAILS.md](./DETAILS.md) 的「与官方创造模式的异同」与实测记录。
 
 `check-upstream.mjs` **不覆盖这一步**：它只管 `skills/`，与官方 preset 无关。
 

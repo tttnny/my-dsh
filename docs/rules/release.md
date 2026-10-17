@@ -4,7 +4,7 @@
 
 用户下令发布到 npm 后，把该发的包（插件、preset 一视同仁）`npm publish` 发完就结束：**不跑发布后验证**——不装一遍、不解包 tarball、不 boot 加载、不查 registry 传播；也不回头确认、不追问别的包要不要一起发。答复里报包名、版本、`dist-tags.latest` 就够；发布成功的凭据是 `npm publish` 打出的 `+ pkg@ver`。
 
-发布前的门禁照跑：各包自己的 `check`（见 [plugins.md](./plugins.md)「验证」）、`node tools/assert-ledger.mjs`（清单与目录的一致性）与 `npm pack --dry-run` 清单。`git push` 同样只在用户下令后执行。
+发布前的门禁照跑：各包自己的 `check`（见 [plugins.md](./plugins.md)「验证」）、`node tools/assert-ledger.mjs`（清单与目录的一致性）与 `npm pack --dry-run` 清单。本机绿不等于 CI 绿，发布前再跑一次 `node tools/ci-check.mjs`（干净 HOME 按 CI 的脚本重跑安装与 check，要联网）。`git push` 同样只在用户下令后执行。
 
 ## 发布不回装
 

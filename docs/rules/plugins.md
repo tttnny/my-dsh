@@ -24,8 +24,9 @@
 - 所有 `@deepseek-ai/dsh-*` 的 `peerDependencies` / `devDependencies` 与 `engines.dsh` 写**同一个**范围字符串；改完跑 `pnpm install --lockfile-only` 同步 lock 的 importers 段。
 - `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 是独立基线，照各自现值声明，不参与上面这条。
 - **内核升版后的批量跟随**：`node tools/dsh-baseline.mjs --write` 一次改齐全部包的上面三处（目标值从已装内核读；有依赖声明的包改完跑 `pnpm install`，没有依赖的包跳过安装并删掉空 lock）；`--bump patch` 顺带升版本号。哪一处漂了由 `node tools/assert-ledger.mjs` 抓，落盘前可以先跑一次 `dsh-baseline.mjs --check` 看齐没齐。
-- **手工写死的内核版本也要跟**：自检脚本的断言与注释、`README.md`、`<id>.patch.yml` 里写到的内核版本，必须与本包 `engines.dsh` 同串。只查这几个「规则面」——`DETAILS.md` 的历史实测记录与 `skills/`、`upstream/` 的 vendored 内容不查，它们记的是当时的版本，改它们等于篡改证据。
+- **手工写死的内核版本也要跟**：自检脚本的断言与注释、`README.md` 与其他非 `DETAILS.md` 的文档、`<id>.patch.yml` 里写到的内核版本，必须与本包 `engines.dsh` 同串。只查这几个「规则面」——`DETAILS.md` 的历史实测记录与 `skills/`、`upstream/` 的 vendored 内容不查，它们记的是当时的版本，改它们等于篡改证据。
 - 兄弟 preset 的同一规则见 [presets.md](./presets.md)「版本与依赖」。
+- **一次完整跟随**（先看宿主变动、再 preset、再 plugins、最后按 CI 重跑）见 [kernel-upgrade.md](./kernel-upgrade.md)；这一节只写声明怎么改。
 
 ## 配置界面
 
@@ -46,7 +47,7 @@
 两条会让变异测试骗到自己的坑，都是本仓库实测过的：
 
 - **先确认断言脚本打的是 `src/` 还是构建产物**：`dsh-a6api` 的 `scripts/test-*.mjs` 一律 `import('../lib/index.js')`（`smoke-client.mjs` 读 `lib/client.js`），改完 `src/` 必须先 `pnpm build` 再跑，否则测的还是旧产物——变异后忘了重建，会得到一条假的「断言没抓住」。`dsh-grilling-form` 用 `pnpm test` 自己先构建一次来消除这个前提；`dsh-chat-translate` 有一半脚本直接打 `src/`。照抄邻居前先看它 `import` 的是哪一边。
-- **还原用 `git checkout -- <file>`，别手工备份**：`cp src/x.ts /tmp/x.bak` 这类备份失败是静默的（`||` 兜底只在前一条命令失败时才生效，而它常常成功了），变异会留在源码里而你以为已经还原。要么在改动前 `git stash`，要么直接 `git checkout -- <file>`——后者失败会报错，不会静默。
+- **还原用 `git checkout -- <file>`，别手工备份**：`cp src/x.ts /tmp/x.bak` 这类备份失败是静默的（`||` 兜底只在前一条命令失败时才生效，而它常常成功了），变异会留在源码里而你以为已经还原。要么在改动前 `git stash`，要么直接 `git checkout -- <file>`——后者失败会报错，不会静默。机械动作交给 `node tools/mutate.mjs`：它要求文件干净、`--from` 恰好命中一处，命令跑完（无论成败）在收尾还原并核对 `git status --short`。
 - **探针的锚点要唯一**：往源码里塞临时探针时，别拿 `str.replace(x, y, 1)` 打在「文件里第一个 `  return (`」这类到处都有的形状上——它会插进另一个函数，报出来的还是 `Invalid hook call` 这种看不懂的错。锚点带上上下文，或改用 `git apply` 的补丁。
 - **收尾核对 `git status --short`**：除你本来要改的文件外不该有别的。变异留下的痕迹、顺手做的别的改动、被打乱的工作区（比如多余的 `git stash`），只有在这里才看得见——变异测试的完成判据就是这一行干净。
 
@@ -78,6 +79,8 @@ allowBuilds:
 ```bash
 HOME=./tmp/ci-home COREPACK_HOME=./tmp/ci-home/corepack corepack pnpm install --frozen-lockfile
 ```
+
+整段流程（干净 HOME、corepack 钉版本、逐包 install、仓库级 check）由 `node tools/ci-check.mjs` 一次跑完；发布或推送前跑它，它要联网。这条安装约定由 `assert-ledger.mjs` 判据 12 守着：有依赖的包缺 `packageManager`，或 `pnpm-workspace.yaml` 缺放行项，提交时就会红。
 
 ### 类型检查
 

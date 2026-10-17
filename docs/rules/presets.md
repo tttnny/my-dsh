@@ -48,15 +48,17 @@ preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle
 
 随包带**第三方内容**（vendored `skills/` 等）的 preset 另配一份 `upstream-lock.json`（钉住的 commit ＋ 逐目录树哈希）与检查脚本：离线查形态与完整性、在线查上游漂移，同步后 `--write` 重钉。范例与哈希配方见 `presets/plugin-upgrade-cordis/`。
 
-preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂上游那一条：`plugin-upgrade-cordis` 的 `check` 是「上游离线核对 + 组合解析」。真装载要起第二个实例（`tools/host-smoke.mjs`），只在装了 DSH 的机器上有意义：本机验收要跑，CI（`node tools/check.mjs`）跑不了。
+preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂上游那一条：`plugin-upgrade-cordis` 的 `check` 是「上游离线核对 + 组合解析 + 提示词变量 + 随包技能真装载」。整机真装载要起第二个实例（`tools/host-smoke.mjs`）；随包技能发现用 `tools/probes/preset-skills.mjs`，只装载内核的 skill provider，不需要第二实例。两者都要本机已装内核：本机验收要跑，CI（`node tools/check.mjs`）上明说跳过。
 
 **组合解析同样要本机已装内核**（`--dump-config` 走的是宿主二进制），所以它在 CI 上也跑不了：`tools/preset-compose.mjs` 找不到内核时打一行 `跳过` 并以 0 退出，与 `assert-ledger.mjs` 的抄本比对同一处置。这意味着 **preset 的 `check` 在 CI 上只覆盖上游那一条**——组合解析要在装了 DSH 的机器上跑，别把 CI 的绿读成「组合没问题」。
 
 ## 抄本基线
 
-抄自官方 `@deepseek-ai/dsh-web-app/presets/<官方 id>.patch.yml` 的 `<id>.patch.yml`，必须与**已装内核**里那一份同版本：官方每一版都会动，抄本落后不报错、只静默与官方不一致，唯一会当场炸的是引用了已被删掉的提示词变量（如 `0.2.0-rc.2` 删掉的 `{{cwd}}`：变量严格解析，抛错即整轮请求失败）。官方动了就按该 preset 的 `UPSTREAM.md` 重抄。
+抄自官方 `@deepseek-ai/dsh-web-app/presets/<官方 id>.patch.yml` 的 `<id>.patch.yml`，必须与**已装内核**里那一份同版本：官方可能动，也可能一字未动；抄本落后不报错、只静默与官方不一致，唯一会当场炸的是引用了已被删掉的提示词变量（如 `0.2.0-rc.2` 删掉的 `{{cwd}}`：变量严格解析，抛错即整轮请求失败）。官方动了就按该 preset 的 `UPSTREAM.md` 重抄。
 
-「抄的是哪一个、保留哪些差异」登记在 `tools/lib/preset-copies.json`。没登记会红；已登记的差异之外还有一行不一致，也红。比对的对象是已装内核自带的官方文件，所以它跟着内核走——官方目录在哪由 `node tools/dsh-env.mjs` 打出。自己写的、不抄官方的 preset，`official` 写 `null`，只登记「为什么不算抄本」。
+三件事各有命令：`node tools/preset-copy.mjs <id> --official-diff` 看两版官方动了哪几行；`--recopy` 把官方改动三方合并回抄本并保留登记的差异（base 是抄本顶部 `# from dsh <版本>` 记的那一版）；`--diff` 按登记表的归一规则查抄本与已装官方是否一致（与 `assert-ledger.mjs` 判据 11 同一套规则）。
+
+「抄的是哪一个、保留哪些差异」登记在 `tools/lib/preset-copies.json`。没登记会红；已登记的差异之外还有一行不一致，也红。归一规则由 `tools/lib/preset-copies.mjs` 提供，`assert-ledger.mjs` 与 `tools/preset-copy.mjs` 共用一份。比对的对象是已装内核自带的官方文件，所以它跟着内核走——官方目录在哪由 `node tools/dsh-env.mjs` 打出。自己写的、不抄官方的 preset，`official` 写 `null`，只登记「为什么不算抄本」。
 
 ## order 台账
 

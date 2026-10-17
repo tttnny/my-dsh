@@ -18,4 +18,14 @@
 
 `dsh-client-modules` 按「该 Loader 行解析到的最近 `package.json` 是否声明 `dsh.client`」逐行判定，`exactPackageSpecifier` 判据**拒掉子路径说明符**（`@scope/pkg/sub`）：子路径行拿不到浏览器半边，只有**裸包名那一行**承载它。同一个包被两条 active 行解析到会直接抛 `resolves from multiple active Loader sources`。
 
+## 接管座位与子座位
+
+插件可以用更低的 `priority` 顶掉座位的内置占用者（`dsh-model-submenu` 以 `priority: -100` 接管 `conversation.input.model`）。座位后来长出的**子座位**（0.2.1-alpha.5 的 `conversation.input.model.label`）的声明归**声明它的那条注册项**，不归座位名：
+
+- 接管方不声明 children 时，子座位仍由内置占用者的注册项声明；第三方照样能往子座位注册。
+- 接管方自己再声明同一个子座位会抛「已被声明」——要接管子座位，得先让内置那条注册项退出。
+- 内置占用者一卸载（插件重载），它的子座位连同别人的贡献被递归收掉。第三方依赖这个子座位时，要让**自己的注册项**声明它，或者接受重载后重新注册。
+
+`plugins/dsh-model-submenu/scripts/smoke-client.mjs` 用真 `SlotCore` 钉住这三条：接管后第三方仍能注册，接管方重声明会抛，内置项卸载后子座位与贡献一起消失、接管项留下。
+
 插件配置页的静默失败（注册项 key 写歪、卡片没有入口、标题退回包名）在 [plugin-config-page.md](./plugin-config-page.md)「静默失败」。

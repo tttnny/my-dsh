@@ -97,7 +97,7 @@ dsh plugin --profile web add ./presets/plugin-upgrade-cordis
 
 ## 验证
 
-`pnpm check` 一次跑两道门禁：随包技能的完整性与形态（离线）、本 patch 的组合解析。跨文件的第三道——**抄本与已装内核的官方 `cordis.patch.yml` 逐行一致**——由 `node tools/assert-ledger.mjs` 判据 11 查（登记表在 `tools/lib/preset-copies.json`，只放行顶部注释、行 id 与显示名、`order`、`skill-filesystem` 多一条自定义技能根这四处），官方动了它就红，不必再手工 `diff`。
+`pnpm check` 一次跑四道门禁：随包技能的完整性与形态（离线）、提示词变量（`preset-copy --variables`）、本 patch 的组合解析、随包技能的真装载（`preset-skills`）。跨文件的**另一道**——**抄本与已装内核的官方 `cordis.patch.yml` 逐行一致**——由 `node tools/assert-ledger.mjs` 判据 11 查（登记表在 `tools/lib/preset-copies.json`，只放行顶部注释、行 id 与显示名、`order`、`skill-filesystem` 多一条自定义技能根这四处），官方动了它就红，不必再手工 `diff`。
 
 **组合解析**——把本目录的 patch 叠到 web profile 上：
 
@@ -124,7 +124,7 @@ node presets/plugin-upgrade-cordis/check-upstream.mjs
 # identical 或只列出 skills/ 下的变更；exit 1=该同步，exit 2=问不到（网络 / 限流，可设 GITHUB_TOKEN）
 ```
 
-`--verify` 只查形态与完整性，**不查技能发现**。要查发现，用真实的 `@deepseek-ai/dsh-skill-filesystem`：`FileSystemSkillProvider` 以 `customSkillDirs=[<本目录>/skills]`、`includeDefaultRoots: false`、`watch: false` 构造，`list({ cwd })` 应给 11 个 `source=custom` 候选、0 条 `logger.warn`，逐个 `get()` 都能取到正文——这正是 preset 那一行在宿主里跑的同一条代码路径。
+`--verify` 只查形态与完整性，**不查技能发现**。要查发现跑 `node tools/probes/preset-skills.mjs --preset plugin-upgrade-cordis`：它用真实的 `@deepseek-ai/dsh-skill-filesystem`，以 `customSkillDirs=[<本目录>/skills]`、`includeDefaultRoots: false`、`watch: false` 构造 `FileSystemSkillProvider`，`list({ cwd })` 应给 11 个 `source=custom` 候选、0 条 `logger.warn`，逐个 `get()` 都能取到正文——这正是 preset 那一行在宿主里跑的同一条代码路径。
 
 **真装载**——隔离 `DSH_HOME` 的 profile 里 `dsh plugin add` 本目录后 boot（`--port 0 --no-open`），在新会话里选中本 preset，打开 `/` 菜单的「技能」段：应与官方 4 个技能同时在列。实测记录见下。
 

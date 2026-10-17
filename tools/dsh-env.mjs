@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * 一条命令打出这台机器上「跑 DSH」要用到的全部路径与版本：DSH 主目录、profile、已装内核、
- * `dsh` 二进制、内核对齐目标、启动器目录、运行中实例的地址与实例日志。
+ * `dsh` 二进制、内核对齐目标、启动器目录、运行中实例的地址与实例日志，以及 DSH 源码
+ * checkout（内核升版时按它的 `dsh-v<版本>` tag 比两版之间的差异）。
  *
  * 文档里此前写的是 `<DSH 安装>` 这类占位——每个 agent 都要自己去 Application Support 里翻一遍。
  * 这里把它变成一次查询。
@@ -14,6 +15,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { dshSourceDir } from './lib/dsh-source.mjs';
 import {
   currentKernel,
   dshHome,
@@ -46,6 +48,7 @@ const launcher = launcherDir();
 const activeProfile = process.env.DSH_PROFILE ?? 'web';
 const profile = profiles(home).find((entry) => entry.name === activeProfile);
 const running = runningInstances().filter((instance) => instance.profile === activeProfile);
+const sourceDir = dshSourceDir(root);
 
 const report = {
   repo: root,
@@ -63,6 +66,7 @@ const report = {
   dshBinExists: existsSync(kernel.bin),
   baselines,
   launcherDir: launcher ?? null,
+  sourceDir: sourceDir ?? null,
   running: running.map((instance) => ({ url: instance.url, log: instance.logPath })),
 };
 
@@ -80,6 +84,7 @@ if (args.json === true) {
     ['dsh 二进制', `${report.dshBin}${report.dshBinExists ? '' : '（不存在）'}`],
     ['内核对齐目标', `engines.dsh >=${report.baselines.dsh} · cordis ${report.baselines.cordis ?? '（内核未声明）'} · schemastery ${report.baselines.schemastery ?? '（内核未声明）'}`],
     ['启动器', report.launcherDir ?? '（找不到）'],
+    ['DSH 源码', report.sourceDir ?? '（找不到：默认找仓库同级的 ../other/deepseek-harness，或设 DSH_SOURCE）'],
   ];
   for (const instance of report.running) {
     lines.push(['运行中实例', `${instance.url}\n${' '.repeat(16)}实例日志 ${instance.log}`]);

@@ -182,5 +182,35 @@ check('an unavailable session resolves no selection', await addressed?.select({ 
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 
+// ── 座位接管的宿主契约（真 SlotCore，不是桩件） ─────────────────────────────
+// 0.2.1-alpha.5 给 conversation.input.model 加了子座位 conversation.input.model.label。
+// 子座位的声明归声明它的那条注册项，不归座位名：接管方不声明 children 时，第三方仍能
+// 注册进子座位；接管方自己再声明会抛「已被声明」；内置项一卸载，子座位连同别人的贡献被
+// 递归收掉。这三条是本插件接管座位时依赖的宿主行为，宿主一变就红。
+const { SlotCore } = await import('@deepseek-ai/dsh-client-ui-slots')
+const core = new SlotCore()
+const disposeComposer = core.register({ name: 'root', children: { 'conversation.input.model': { kind: 'single', scope: 'session' } } }, () => null)
+const disposeBuiltin = core.register({ name: 'conversation.input.model', children: { 'conversation.input.model.label': { kind: 'single', scope: 'session', inline: true } } }, () => null)
+const disposeTakeOver = core.register({ name: 'conversation.input.model', priority: -100 }, () => null)
+const winners = core.entriesOfSlot('conversation.input.model')
+check('takeover wins the seat from the built-in occupant', winners.length === 1 && winners[0].options.priority === -100)
+check('the built-in occupant still declares the label child', core.specDynamic('conversation.input.model.label') !== undefined)
+const disposeThird = core.register({ name: 'conversation.input.model.label' }, () => null)
+check('a third party can still register into the label child', core.entries('conversation.input.model.label').length === 1)
+let redeclared = false
+try {
+  // 换一个 priority 才绕过座位本身的格子冲突，撞到的是子座位的声明归属。
+  core.register({ name: 'conversation.input.model', priority: -200, children: { 'conversation.input.model.label': { kind: 'single', scope: 'session', inline: true } } }, () => null)
+} catch (error) {
+  redeclared = /already declared/.test(error?.message ?? '')
+}
+check('the takeover entry cannot re-declare the label child', redeclared)
+disposeThird()
+disposeBuiltin()
+check('unloading the built-in occupant reaps the label child', core.specDynamic('conversation.input.model.label') === undefined && core.entries('conversation.input.model.label').length === 0)
+check('the takeover occupant stays after the built-in unloads', core.entriesOfSlot('conversation.input.model').length === 1)
+disposeTakeOver()
+disposeComposer()
+
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`)
 process.exit(failures.length === 0 ? 0 : 1)

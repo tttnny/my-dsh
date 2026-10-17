@@ -15,6 +15,7 @@
  *  10. 规则面（`README.md`、DETAILS 以外的 `.md`、`.patch.yml`、`.mjs` / `.js` / `.ts`）里的内核
  *      版本字面量与本包 `engines.dsh` 同串；历史实测记录（`DETAILS.md`）与 vendored 内容不查
  *  11. 抄自官方 preset 的 `<id>.patch.yml` 与已装内核的官方同名文件逐行一致，只放行已登记的差异
+ *  12. 每个包钉住 pnpm 版本；有依赖的包另有 `pnpm-workspace.yaml` 放行内核 alpha 版本与构建脚本
  *
  * 判据来自 docs/rules/plugins.md、release.md、presets.md、to-readme.md 与 AGENTS.md；
  * 改了那些约定就同步改这里，两边是同一件事的两个位置，不允许只改一边。
@@ -25,6 +26,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { firstDifference, loadCopies, normalize } from './lib/preset-copies.mjs';
 import {
   currentKernel,
   declaredRanges,
@@ -46,16 +48,6 @@ function parseArgs(argv) {
     out[key.slice(2)] = next === undefined || next.startsWith('--') ? true : ((i += 1), next);
   }
   return out;
-}
-
-/** 把一段文本按行归一，逐行比对；返回两边都还有内容的第一处差异。 */
-function firstDifference(a, b) {
-  const linesA = a.split('\n');
-  const linesB = b.split('\n');
-  for (let i = 0; i < Math.max(linesA.length, linesB.length); i += 1) {
-    if (linesA[i] !== linesB[i]) return { line: i + 1, expected: linesA[i] ?? '（文件在这里结束）', actual: linesB[i] ?? '（文件在这里结束）' };
-  }
-  return undefined;
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -297,10 +289,14 @@ for (const profile of localProfiles) {
 // 查的是「规则面」：README、非 DETAILS 的 .md、.patch.yml 与脚本；历史实测记录与 vendored
 // 内容天然记着当时的版本号，不查（范围与理由见 docs/rules/plugins.md「版本与依赖」）。
 //
-// 两条收窄，避免把无关的版本号当漂移：一行里要有「内核 / dsh / engines」这类语境词，版本号
-// 前面不能紧跟字母与 `.-/:`（排除 `127.0.0.1`、`1e0.1.7`、`transform 1.21.21-1.79` 这类）。
+// 两条收窄，避免把无关的版本号当漂移：脚本里一行要有「内核 / dsh / engines」这类语境词
+// （脚本的版本号可能是工具链或历史注释，如 tsdown.config.ts 的 0.1.7-rc.2），版本号前面不能
+// 紧跟字母与 `.-/:`（排除 `127.0.0.1`、`1e0.1.7`、`transform 1.21.21-1.79` 这类）。
+// 文档与 patch 是「现状说明」，不套行内语境词：一行只写「agent-loop 注册了哪些变量」也可能
+// 带着内核版本（UPSTREAM.md 的提示词变量扫描就是这样），漏查一次就静默落后一版。
 const NUMBER_LITERAL = /(^|[^\w./:-])(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/g;
 const KERNEL_CONTEXT = /内核|[dD][sS][hH]|engines/;
+const PROSE_FACE = /\.(md|yml|yaml)$/;
 const LITERAL_IGNORED_DIRS = new Set(['.git', 'node_modules', 'lib', 'dist', 'tmp', 'skills', 'upstream']);
 const LITERAL_IGNORED_FILES = new Set(['pnpm-lock.yaml', 'upstream-lock.json']);
 /** 展示命令行形状的英文注释：那里写的是「怎么调这个工具」，不是「现在是什么版本」。 */
@@ -330,7 +326,7 @@ for (const entry of packages) {
     const repoPath = rel(path);
     if (literalExempt.has(repoPath)) continue;
     for (const [index, line] of readFileSync(path, 'utf8').split('\n').entries()) {
-      if (!KERNEL_CONTEXT.test(line)) continue;
+      if (!PROSE_FACE.test(path) && !KERNEL_CONTEXT.test(line)) continue;
       for (const match of line.matchAll(NUMBER_LITERAL)) {
         if (match[2] === expected) continue;
         fail(
@@ -343,14 +339,15 @@ for (const entry of packages) {
 }
 
 // ── 11. 抄自官方 preset 的抄本与内核同版本 ────────────────────────────────────
-// 官方 `presets/*.patch.yml` 每一版都会动，抄本落后不报错、只静默与官方不一致（见
-// docs/rules/presets.md「版本与依赖」）。这里把它变成提交时就要过的门禁：逐行比对，
+// 官方 `presets/*.patch.yml` 可能动，也可能一字未动；抄本落后不报错、只静默与官方不一致
+// （见 docs/rules/presets.md「抄本基线」）。这里把它变成提交时就要过的门禁：逐行比对，
 // 只放行登记在 lib/preset-copies.json 里的那几处。
-const copiesPath = join(root, 'tools/lib/preset-copies.json');
+const registry = loadCopies(root);
+const copiesPath = registry.path;
 if (!existsSync(copiesPath)) {
   fail('tools/lib/preset-copies.json', '缺这份抄本登记表：每个抄自官方 preset 的 <id>.patch.yml 都要登记');
 } else {
-  const copies = JSON.parse(readFileSync(copiesPath, 'utf8')).copies ?? [];
+  const copies = registry.copies;
   const known = new Set(copies.map((copy) => copy.id));
   for (const entry of presetPackages) {
     const id = entry.rel.split('/')[1];
@@ -382,28 +379,66 @@ if (!existsSync(copiesPath)) {
         fail(`presets/${copy.id}`, `登记表里有这个抄本，但 ${copy.id}.patch.yml 不在目录里`);
         continue;
       }
-      const normalize = (text, renames) => text
-        .split('\n')
-        .filter((line) => line.trim() !== '' && !/^\s*#/.test(line) && !copy.dropLines.some((pattern) => new RegExp(pattern).test(line)))
-        .map((line) => renames.reduce((out, [pattern, replacement]) => out.replace(new RegExp(pattern), replacement), line))
-        .filter((line) => line.trim() !== '' && !/^\s*#/.test(line))
-        .join('\n')
-        .trim();
-      const official = normalize(readFileSync(officialPath, 'utf8'), []);
-      const local = normalize(readFileSync(localPath, 'utf8'), copy.renames.map(({ pattern, replacement }) => [pattern, replacement]));
+      const official = normalize(readFileSync(officialPath, 'utf8'), copy, false);
+      const local = normalize(readFileSync(localPath, 'utf8'), copy);
       const diff = firstDifference(official, local);
       if (diff !== undefined) {
         fail(
           `presets/${copy.id}/${copy.id}.patch.yml`,
-          `与内核 ${kernel.version} 的官方 ${copy.official}.patch.yml 不一致（归一后第 ${diff.line} 行）\n      官方：${diff.expected}\n      抄本：${diff.actual}\n      官方动了就重抄；确实要保留的差异登记到 tools/lib/preset-copies.json`,
+          `与内核 ${kernel.version} 的官方 ${copy.official}.patch.yml 不一致（归一后第 ${diff.line} 行）\n      官方：${diff.expected}\n      抄本：${diff.actual}\n      官方动了就重抄（node tools/preset-copy.mjs ${copy.id} --recopy）；确实要保留的差异登记到 tools/lib/preset-copies.json`,
         );
       }
     }
   }
 }
 
+// ── 12. 安装约定 ─────────────────────────────────────────────────────────────
+// 见 docs/rules/plugins.md「仓库级 check 与 CI」：本机的 pnpm 用户配置可能把两条默认策略
+// 关掉，干净环境（CI）一定生效，所以它们必须写进仓库。这里保证它们不会悄悄丢掉。
+const PNPM_PIN = /^pnpm@\d+\.\d+\.\d+$/;
+const hasDependencies = (pkg) => ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
+  .some((field) => Object.keys(pkg[field] ?? {}).length > 0);
+const pins = new Set();
+for (const entry of packages) {
+  const pin = entry.pkg.packageManager;
+  if (typeof pin !== 'string' || !PNPM_PIN.test(pin)) {
+    fail(
+      `${entry.rel}/package.json`,
+      '缺 packageManager（写成 pnpm@<版本>）——corepack 在没钉的包里会解析到另一个 pnpm 版本，安装时按那个版本重算策略；见 docs/rules/plugins.md「仓库级 check 与 CI」',
+    );
+  } else {
+    pins.add(pin);
+  }
+  if (!hasDependencies(entry.pkg)) continue;
+  const workspacePath = join(entry.dir, 'pnpm-workspace.yaml');
+  if (!existsSync(workspacePath)) {
+    fail(
+      `${entry.rel}/pnpm-workspace.yaml`,
+      '缺这份文件：pnpm 11 的两条默认策略在干净环境会拦住内核的 alpha 版本；照 docs/rules/plugins.md「仓库级 check 与 CI」给的段落补上',
+    );
+    continue;
+  }
+  const text = readFileSync(workspacePath, 'utf8');
+  if (!/^minimumReleaseAgeExclude:\s*$/m.test(text) || !/^\s*-\s*["']?@deepseek-ai\/\*["']?\s*$/m.test(text)) {
+    fail(
+      `${entry.rel}/pnpm-workspace.yaml`,
+      'minimumReleaseAgeExclude 下要有一行 - "@deepseek-ai/*"：升版当天就要装内核的 alpha 版本，24 小时最低发布年龄会拦住它',
+    );
+  }
+  const declared = { ...entry.pkg.dependencies, ...entry.pkg.devDependencies };
+  if (declared.esbuild !== undefined && (!/^allowBuilds:\s*$/m.test(text) || !/^\s+esbuild:\s*true\s*$/m.test(text))) {
+    fail(
+      `${entry.rel}/pnpm-workspace.yaml`,
+      '声明了 esbuild，allowBuilds 里要写 esbuild: true——未登记的构建脚本在干净环境不会执行',
+    );
+  }
+}
+if (pins.size > 1) {
+  fail('package.json', `packageManager 各包不一致（${[...pins].sort().join('、')}）：全仓钉同一个 pnpm 版本`);
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────────
-const checks = 11;
+const checks = 12;
 if (findings.length === 0) {
   if (!quiet) {
     console.log(`assert-ledger: ok（${packages.length} 个包，${checks} 项判据；开发副本 ${localProfiles.length} 个 profile）`);
@@ -415,5 +450,5 @@ for (const finding of findings) {
   console.error(`  ${finding.file}`);
   for (const line of finding.message.split('\n')) console.error(`    ${line}`);
 }
-console.error('\n判据见 docs/rules/plugins.md（版本与依赖、许可、README）、release.md（产物与清单）、presets.md（order 台账）、to-readme.md。');
+console.error('\n判据见 docs/rules/plugins.md（版本与依赖、安装约定、许可、README）、release.md（产物与清单）、presets.md（order 台账、抄本基线）、to-readme.md。');
 process.exit(1);
