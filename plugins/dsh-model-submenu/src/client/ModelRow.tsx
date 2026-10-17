@@ -12,8 +12,8 @@ import { IconCheckOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { StarIcon } from './icons.tsx'
 import css from './ModelSubmenu.module.css'
 
-/** How one row shows its favorite mark. */
-export type StarMode = 'static' | 'interactive' | 'none'
+/** How one row shows its favorite mark: a static mark, or a button the picker owns. */
+export type StarMode = 'static' | 'interactive'
 
 /** Props shared by both row shapes. */
 export interface ModelRowProps {

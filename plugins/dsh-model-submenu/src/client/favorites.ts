@@ -9,11 +9,10 @@
  * leaves the catalog are kept, so restoring the provider restores the star.
  */
 
+import type { ModelRef } from './rows.ts'
+
 /** One favorited model, identified the way the catalog identifies it. */
-export interface FavoriteModel {
-  readonly provider: string
-  readonly model: string
-}
+export type FavoriteModel = ModelRef
 
 /** The single browser-wide storage key holding the whole table. */
 export const FAVORITES_KEY = 'dsh-model-submenu.favorites'

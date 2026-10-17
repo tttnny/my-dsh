@@ -22,7 +22,16 @@ import { ModelRow } from './ModelRow.tsx'
 import { isFavorite, orderWithFavorites } from './favorites.ts'
 import type { ModelFacts } from './model-facts.ts'
 import { metaSegments } from './model-facts.ts'
-import { pickerTabs, rowsForTab, type ModelRow as CatalogRow } from './rows.ts'
+import {
+  ALL_TAB,
+  flattenGroups,
+  pickerTabs,
+  reasoningOf,
+  rowsForTab,
+  searchRows,
+  type ModelRow as CatalogRow,
+  type PickerTab,
+} from './rows.ts'
 import type { ModelFactsLookup } from './facts-source.ts'
 import type { Selection } from './selection.ts'
 import { planModelCommit } from './selection.ts'
@@ -64,26 +73,22 @@ export function ModelPicker({
   const searchRef = useRef<HTMLInputElement | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const [query, setQuery] = useState('')
-  const [tab, setTab] = useState('*')
+  const [tab, setTab] = useState(ALL_TAB)
   const [highlight, setHighlight] = useState(0)
   const tabRefs = useRef(new Map<string, HTMLButtonElement>())
 
   const tabs = useMemo(() => pickerTabs(state.groups, t('picker.all')), [state.groups, t])
+  const reason = useMemo(() => reasoningOf(state.groups), [state.groups])
   const rows = useMemo(() => orderWithFavorites(
-    rowsForTab(state.groups.flatMap((group) => group.models.map((model) => ({
-      provider: group.id,
-      providerName: group.name,
-      model: model.id,
-      entry: model,
-    }))), tab),
+    rowsForTab(flattenGroups(state.groups), tab),
     (row) => isFavorite(favorites, row.provider, row.model),
   ), [state.groups, tab, favorites])
-  const visible = useMemo(() => searchRowsWith(rows, query), [rows, query])
+  const visible = useMemo(() => searchRows(rows, query, rankByName), [rows, query])
 
   useEffect(() => {
     if (!open) return
     setQuery('')
-    setTab('*')
+    setTab(ALL_TAB)
     setHighlight(0)
     if (listRef.current !== null) listRef.current.scrollTop = 0
     const frame = requestAnimationFrame(() => { searchRef.current?.focus() })
@@ -119,42 +124,37 @@ export function ModelPicker({
     }
   }
   const pick = (row: CatalogRow) => {
-    const selection = planModelCommit(live, row.provider, row.model, null, (provider, model) => {
-      const group = state.groups.find((candidate) => candidate.id === provider)
-      return group?.models.find((candidate) => candidate.id === model)?.reasoning
-    })
+    const selection = planModelCommit(live, row.provider, row.model, null, reason)
     if (selection === null) {
       onClose()
       return
     }
     onPick(selection)
   }
-  const moveTab = (offset: 1 | -1) => {
-    const index = tabs.findIndex((candidate) => candidate.id === tab)
-    const next = tabs[(index + offset + tabs.length) % tabs.length]
-    if (next === undefined) return
+  /** Move to another tab and hand it the keyboard, in one step. */
+  const goTab = (next: PickerTab | undefined) => {
+    if (next === undefined || next.id === tab) return
     setTab(next.id)
+    setHighlight(0)
     tabRefs.current.get(next.id)?.focus()
   }
-  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, tabId: string) => {
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const index = tabs.findIndex((candidate) => candidate.id === tab)
     if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       event.preventDefault()
-      setTab(tabId)
-      moveTab(event.key === 'ArrowRight' ? 1 : -1)
+      const step = event.key === 'ArrowRight' ? 1 : -1
+      goTab(tabs[((index === -1 ? 0 : index) + step + tabs.length) % tabs.length])
+      return
     }
     if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault()
-      const first = tabs[event.key === 'Home' ? 0 : tabs.length - 1]
-      if (first !== undefined) {
-        setTab(first.id)
-        tabRefs.current.get(first.id)?.focus()
-      }
+      goTab(tabs[event.key === 'Home' ? 0 : tabs.length - 1])
     }
   }
 
-  const failures = state.failures.filter((failure) => tab === '*' || failure.id === tab)
+  const failures = state.failures.filter((failure) => tab === ALL_TAB || failure.id === tab)
   const failed = state.error !== null && state.status === 'error'
-  const showStatus = failed || state.status === 'loading'
+  const loading = state.status === 'loading'
   return (
     <Modal
       open={open}
@@ -201,7 +201,7 @@ export function ModelPicker({
               setTab(entry.id)
               setHighlight(0)
             }}
-            onKeyDown={(event) => { onTabKeyDown(event, entry.id) }}
+            onKeyDown={onTabKeyDown}
           >
             {entry.label}
           </button>
@@ -214,7 +214,7 @@ export function ModelPicker({
         role="tabpanel"
         aria-labelledby={`${id}-tab-${tab}`}
       >
-        {showStatus && state.status === 'loading' && <div className={css.notice}>{t('status.loading')}</div>}
+        {loading && <div className={css.notice}>{t('status.loading')}</div>}
         {failed && (
           <div className={css.notice}>
             <span>{t('status.failed', { message: state.error ?? '' })}</span>
@@ -227,7 +227,7 @@ export function ModelPicker({
             <button type="button" className={css.retry} onClick={onReload}>{t('action.reload')}</button>
           </div>
         ))}
-        {visible.length === 0 && !showStatus && (
+        {visible.length === 0 && !loading && !failed && (
           <div className={css.notice}>{state.groups.length === 0 ? t('status.empty') : t('picker.searchEmpty')}</div>
         )}
         {visible.map((row, index) => (
@@ -272,17 +272,6 @@ export function ModelPicker({
       </div>
     </Modal>
   )
-}
-
-function searchRowsWith(rows: readonly CatalogRow[], query: string): readonly CatalogRow[] {
-  const trimmed = query.trim()
-  if (trimmed === '') return rows
-  const ranked = rankByName(rows.map((row) => ({
-    name: row.entry.name,
-    label: row.providerName,
-    row,
-  })), trimmed)
-  return ranked.map((match) => match.row)
 }
 
 function metaLine(input: {

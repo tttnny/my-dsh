@@ -71,8 +71,6 @@ const providerDirectory = {
   ],
 }
 
-/** The settings face a live configForms service hands to cross-namespace readers. */
-const factsSources = []
 
 const registrations = []
 const injects = []
@@ -167,8 +165,9 @@ const clientBundle = await readFile(join(root, 'lib/client.js'), 'utf8')
 check('menu renders through the shared MenuSurface', clientBundle.includes('MenuSurface'))
 check('the picker renders through the shared Modal', clientBundle.includes('Modal'))
 check('neither surface paints its own fill', !clientBundle.includes('--dsw-specific-menu'))
-// The picker must stay a surface this plugin opens on demand, never the seat itself.
-check('the picker door is asked for by the menu', clientBundle.includes('More models') || clientBundle.includes('更多模型'))
+// 交互顺序与无障碍状态由 scripts/test-render.mjs 用真 react 守：先落库档位再换成弹窗、
+// 星标的 aria-pressed、点已选中的模型不提交。产物级这里只钉两件东西：浮层来自共享库，
+// 以及本插件不自己画浮层填充。
 
 // The guard must have teeth, or every case below is vacuous.
 try {

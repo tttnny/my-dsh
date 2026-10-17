@@ -29,8 +29,6 @@ export type ModelSubmenuLocaleKey =
   | 'picker.all'
   | 'picker.favorite'
   | 'picker.unfavorite'
-  | 'picker.favoriteGroup'
-  | 'picker.favoriteGroupAria'
   | 'picker.hintNavigate'
   | 'picker.hintSelect'
   | 'picker.hintClose'
@@ -70,8 +68,6 @@ export const zh: Record<ModelSubmenuLocaleKey, string> = {
   'picker.all': '全部',
   'picker.favorite': '收藏 {model}',
   'picker.unfavorite': '取消收藏 {model}',
-  'picker.favoriteGroup': '已收藏',
-  'picker.favoriteGroupAria': '已收藏的模型',
   'picker.hintNavigate': '导航',
   'picker.hintSelect': '选择',
   'picker.hintClose': '关闭',
@@ -105,8 +101,6 @@ export const en: Record<ModelSubmenuLocaleKey, string> = {
   'picker.all': 'All',
   'picker.favorite': 'Favorite {model}',
   'picker.unfavorite': 'Remove {model} from favorites',
-  'picker.favoriteGroup': 'Favorites',
-  'picker.favoriteGroupAria': 'Favorited models',
   'picker.hintNavigate': 'navigate',
   'picker.hintSelect': 'select',
   'picker.hintClose': 'close',

@@ -17,13 +17,18 @@ export type ProviderGroup = ModelDirectoryState['groups'][number]
 export type CatalogModel = ProviderGroup['models'][number]
 
 /** One flat catalog row, carrying the provider identity beside the model. */
-export interface ModelRow {
-  readonly provider: string
+export interface ModelRow extends ModelRef {
   readonly providerName: string
   /** The model id inside its provider, the other half of a selection. */
   readonly model: string
   /** The catalog entry itself, for name and reasoning metadata. */
   readonly entry: CatalogModel
+}
+
+/** A provider and one of its models: the pair every selection and favorite names. */
+export interface ModelRef {
+  readonly provider: string
+  readonly model: string
 }
 
 /** One picker tab. */
@@ -86,6 +91,20 @@ export interface SearchCandidate {
  */
 export function searchCandidates(rows: readonly ModelRow[]): readonly SearchCandidate[] {
   return rows.map((row) => ({ name: row.entry.name, label: row.providerName, row }))
+}
+
+/**
+ * Read the reasoning metadata the catalog advertises for one model.
+ * @param groups - the shared directory's provider groups.
+ * @returns the metadata, or undefined when that model advertises none.
+ */
+export function reasoningOf(
+  groups: readonly ProviderGroup[],
+): (provider: string, model: string) => CatalogModel['reasoning'] {
+  return (provider, model) => groups
+    .find((group) => group.id === provider)
+    ?.models.find((candidate) => candidate.id === model)
+    ?.reasoning
 }
 
 /**

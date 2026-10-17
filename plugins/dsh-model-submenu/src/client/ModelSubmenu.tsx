@@ -21,6 +21,7 @@ import {
   type FavoritesStorage,
 } from './favorites.ts'
 import type { EffortChoice, EffortMark, Selection } from './selection.ts'
+import { reasoningOf } from './rows.ts'
 import { effortChoices, planEffortCommit, planModelCommit } from './selection.ts'
 import css from './ModelSubmenu.module.css'
 
@@ -82,6 +83,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
   const shownEffort = mark === null ? effectiveEffort : mark.effort
   const busy = state.status === 'selecting'
   const live = useMemo(() => selectionOf(state), [state])
+  const reason = useMemo(() => reasoningOf(groups), [groups])
   const facts = useSyncExternalStore((fn) => factsSource.subscribe(fn), () => factsSource.getSnapshot())
 
   const menuRows = useMemo(() => currentGroup === undefined ? [] : orderWithFavorites(
@@ -116,7 +118,6 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
     if (pending !== null) submit(pending, null)
     // submit reads only the stable seat props and the toast setter.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, mark])
 
   useEffect(() => {
@@ -192,9 +193,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
     })
   }
   const chooseModel = (provider: string, model: CatalogModel) => {
-    const picked = planModelCommit(live, provider, model.id, mark, (providerId, modelId) => (
-      groups.find((group) => group.id === providerId)?.models.find((candidate) => candidate.id === modelId)?.reasoning
-    ))
+    const picked = planModelCommit(live, provider, model.id, mark, reason)
     if (picked === null) {
       setOpen(false)
       setMark(null)

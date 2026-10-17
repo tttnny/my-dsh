@@ -443,6 +443,21 @@ await test('思考等级写入成功后换成弹窗', async () => {
   assert.equal(menu(), null)
 })
 
+await test('弹窗顶部标签页用方向键换页', async () => {
+  const dialog = document.querySelector('[role="dialog"]')
+  const tabs = [...dialog.querySelectorAll('[role="tab"]')]
+  const all = tabs.find((tabItem) => tabItem.textContent === '全部')
+  assert.equal(all.getAttribute('aria-selected'), 'true')
+  act(() => { all.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
+  await flush()
+  const afterRight = [...document.querySelectorAll('[role="tab"]')].find((tabItem) => tabItem.getAttribute('aria-selected') === 'true')
+  assert.equal(afterRight.textContent, 'Magpie')
+  act(() => { afterRight.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
+  await flush()
+  const afterLeft = [...document.querySelectorAll('[role="tab"]')].find((tabItem) => tabItem.getAttribute('aria-selected') === 'true')
+  assert.equal(afterLeft.textContent, '全部')
+})
+
 await test('弹窗列出全部供应商的模型', () => {
   const names = [...document.querySelectorAll('[role="dialog"] [role="menuitemradio"]')].map((row) => row.getAttribute('title'))
   assert.ok(names.includes('Model A'))

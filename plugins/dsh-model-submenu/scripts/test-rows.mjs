@@ -17,6 +17,7 @@ import {
   ALL_TAB,
   flattenGroups,
   pickerTabs,
+  reasoningOf,
   rowsForTab,
   searchCandidates,
   searchRows,
@@ -124,6 +125,14 @@ await test('a query with no match returns nothing', () => {
 
 await test('candidates are built in row order', () => {
   assert.deepEqual(searchCandidates(rows).map((candidate) => candidate.row.model), rows.map((row) => row.model))
+})
+
+await test('the reasoning lookup answers per provider and model', () => {
+  const groups = [{ id: 'm', name: 'M', models: [{ id: 'a', name: 'A', reasoning: { efforts: [{ id: 'high', name: 'High' }] } }, { id: 'b', name: 'B' }] }]
+  const reason = reasoningOf(groups)
+  assert.equal(reason('m', 'a')?.efforts.length, 1)
+  assert.equal(reason('m', 'b'), undefined)
+  assert.equal(reason('gone', 'a'), undefined)
 })
 
 await test('each row carries its catalog entry for name and reasoning', () => {
