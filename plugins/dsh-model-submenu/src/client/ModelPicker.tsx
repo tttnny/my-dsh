@@ -241,7 +241,7 @@ export function ModelPicker({
               meta={metaLine({
                 row,
                 facts: facts(row.provider, row.model),
-                providerName: tab === '*' ? row.providerName : undefined,
+                providerName: tab === ALL_TAB ? row.providerName : undefined,
                 thinks: row.entry.reasoning !== undefined,
                 effortLabel: t('meta.effort'),
                 imageLabel: t('meta.images'),
