@@ -130,7 +130,7 @@ export function ModelPicker({
     }
   }
   const pick = (row: CatalogRow) => {
-    const selection = planModelCommit(live, row.provider, row.model, null, reason)
+    const selection = planModelCommit(live, row.provider, row.model, reason)
     if (selection === null) {
       onClose()
       return

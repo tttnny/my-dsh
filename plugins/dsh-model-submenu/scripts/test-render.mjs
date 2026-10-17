@@ -314,31 +314,46 @@ await test('点已经选中的模型不提交', async () => {
   assert.equal(menu(), null)
 })
 
-await test('改思考等级只改选中态，不立刻提交', async () => {
+await test('点思考等级立即提交，菜单保持打开', async () => {
+  setState(snapshot())
   openMenu()
   selections.length = 0
   click(segment('Max'))
   await flush()
+  assert.deepEqual(selections, [{ provider: 'magpie', model: 'a', reasoningEffort: 'max' }])
+  assert.notEqual(menu(), null)
+})
+
+await test('提交成功后分段立刻跟着变', async () => {
   assert.equal(segment('Max').getAttribute('aria-checked'), 'true')
   assert.equal(segment('High').getAttribute('aria-checked'), 'false')
+})
+
+await test('点已在生效的那一档不重复提交', async () => {
+  selections.length = 0
+  click(segment('Max'))
+  await flush()
   assert.deepEqual(selections, [])
 })
 
-await test('关闭菜单那一刻才写入思考等级', async () => {
+await test('关闭菜单不写任何东西', async () => {
   selections.length = 0
   clickOutside()
   await flush()
-  assert.deepEqual(selections, [{ provider: 'magpie', model: 'b', reasoningEffort: 'max' }])
+  assert.deepEqual(selections, [])
   assert.equal(menu(), null)
 })
 
-await test('没改过思考等级时关闭不提交', async () => {
+await test('改档位失败时弹气泡，分段停在原档', async () => {
+  outcomes.push({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
+  setState(snapshot())
   openMenu()
+  click(segment('Low'))
   await flush()
-  selections.length = 0
+  assert.equal(document.querySelector('[role="status"]')?.textContent, '会话被占用')
+  assert.equal(segment('High').getAttribute('aria-checked'), 'true')
   clickOutside()
   await flush()
-  assert.deepEqual(selections, [])
 })
 
 await test('收藏过的模型排在小菜单前面并带星标', async () => {
@@ -356,18 +371,22 @@ await test('小菜单里的星标不是独立控件', () => {
   assert.deepEqual(stars, [])
 })
 
-await test('小菜单里点实心星等于点这一行', async () => {
+await test('实心星在行按钮里面，点它等于点这一行', async () => {
   globalThis.localStorage.setItem('dsh-model-submenu.favorites', JSON.stringify([{ provider: 'magpie', model: 'b' }]))
   setState(snapshot())
   unmount()
   mount()
   openMenu()
   selections.length = 0
-  const mark = [...menu().querySelectorAll('button')].find((button) => (button.className || '').includes('starStatic'))
-  assert.notEqual(mark, undefined, `收藏的模型应当带实心星；当前行：${[...menu().querySelectorAll('button')].map((b) => b.className).join(',')}`)
-  click(mark)
+  const rows = [...menu().querySelectorAll('[role="menuitemradio"]')]
+  const favored = rows.find((row) => (row.getAttribute('title') || '').includes('Model B'))
+  assert.notEqual(favored, undefined)
+  const mark = favored.querySelector('[class*="starStatic"]')
+  assert.notEqual(mark, null, '收藏的模型应当带实心星')
+  assert.equal(mark.closest('[role="menuitemradio"]'), favored, '星标必须在行按钮里')
+  click(favored)
   await flush()
-  assert.equal(selections.length, 1)
+  assert.deepEqual(selections, [{ provider: 'magpie', model: 'b' }])
   assert.equal(menu(), null)
 })
 
@@ -426,7 +445,7 @@ await test('目录里消失的收藏不影响列表', async () => {
   assert.deepEqual(rows().map((row) => row.getAttribute('title')), ['Model A', 'Model B', 'Model C'])
 })
 
-await test('写入失败时留在小菜单并弹出提示', async () => {
+await test('档位写入失败时留在小菜单并弹出提示', async () => {
   globalThis.localStorage.clear()
   setState(snapshot())
   await flush()
@@ -434,12 +453,11 @@ await test('写入失败时留在小菜单并弹出提示', async () => {
   openMenu()
   const before = selections.length
   click(segment('Low'))
-  click(moreRow())
   await flush()
   assert.equal(selections.length, before + 1)
   assert.equal(document.querySelector('[role="status"]')?.textContent, '会话被占用')
-  assert.equal(document.querySelector('[role="dialog"]'), null)
-  assert.notEqual(menu(), null)
+  clickOutside()
+  await flush()
 })
 
 await test('加载中在小菜单里写一行文字', async () => {
@@ -497,12 +515,14 @@ await test('点模型被拒时小菜单重新打开', async () => {
   await flush()
 })
 
-await test('思考等级写入成功后换成弹窗', async () => {
+await test('点更多模型直接换成弹窗，不额外提交', async () => {
+  setState(snapshot())
   openMenu()
   await flush()
-  click(segment('Max'))
+  const before = selections.length
   click(moreRow())
   await flush()
+  assert.equal(selections.length, before)
   assert.notEqual(document.querySelector('[role="dialog"]'), null)
   assert.equal(menu(), null)
 })

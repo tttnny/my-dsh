@@ -84,11 +84,10 @@
 .menu {
   z-index: 1100;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
-  /* The card matches the trigger's own width, so opening the menu does not
-   * change the control's footprint; long names ellipsize instead of widening it. */
+  /* A fixed width keeps the card independent of the trigger's text length, so
+   * opening the menu never reflows the composer. */
   box-sizing: border-box;
-  width: var(--dsh-model-menu-width, min(340px, calc(100vw - 32px)));
-  max-width: min(420px, calc(100vw - 32px));
+  width: min(240px, calc(100vw - 24px));
   max-height: min(70vh, calc(100vh - 96px));
   box-shadow: var(--dsw-elevation-prominent);
   color: var(--dsw-alias-label-primary);
@@ -142,6 +141,7 @@
   border-radius: 10px;
   outline: none;
   align-items: center;
+  gap: 4px;
   padding: 5px 7px;
   display: flex;
 }
@@ -189,25 +189,14 @@
   display: grid;
 }
 
-/* A favorite the menu only reports: gold when the model is starred, absent
- * otherwise. It is a button so a click on the mark picks the row, but it takes
- * no Tab stop and carries no name of its own. */
+/* The menu's favorite mark: it lives inside the row button, so hovering it
+ * highlights the row and clicking it picks the model — no separate hit area. */
 .starStatic {
   color: var(--dsw-alias-state-warn-primary);
-  cursor: pointer;
-  background: 0 0;
-  border: none;
-  outline: none;
   flex: none;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
+  width: 16px;
   display: grid;
-}
-
-.starStatic:disabled {
-  cursor: default;
 }
 
 /* The picker's star is a real control: outline until hover or focus, solid and

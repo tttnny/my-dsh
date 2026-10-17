@@ -21,7 +21,7 @@ import {
   type FavoritesStorage,
 } from './favorites.ts'
 import { effortFor, readEfforts, rememberEffort, type RememberedEffort } from './effort-memory.ts'
-import type { EffortChoice, EffortMark, Selection } from './selection.ts'
+import type { EffortChoice, Selection } from './selection.ts'
 import { reasoningOf } from './rows.ts'
 import { effortChoices, planEffortCommit, planModelCommit } from './selection.ts'
 import css from './ModelSubmenu.module.css'
@@ -49,16 +49,14 @@ const cls = (...parts: readonly (string | false | undefined)[]): string => parts
  * the reasoning row as segments, the cache warning, and the door to the picker
  * that lists every provider.
  *
- * A model click commits at once. A reasoning mark commits when the menu closes,
- * whether the close came from a click outside, Escape, a model click, or the
- * picker door — the picker opens only after the marked level has landed, so its
- * "current" reading is never stale.
+ * Every click commits at once: a model, a reasoning level, or the picker door.
+ * Closing the menu never writes anything, and the picker reads the level the
+ * Host already accepted, so its "current" reading is never stale.
  */
 export function ModelSubmenu({ locked, available, directory, load, select, t, factsSource }: ModelSubmenuProps) {
   const state = useSyncExternalStore((fn) => directory.subscribe(fn), () => directory.getSnapshot())
   const [open, setOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [mark, setMark] = useState<EffortMark | null>(null)
   const [favorites, setFavorites] = useState<readonly FavoriteModel[]>(() => readFavorites(storageOf()))
   const [memory, setMemory] = useState<readonly RememberedEffort[]>(() => readEfforts(storageOf()))
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
@@ -84,8 +82,6 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
     ? t('effort.providerDefault')
     : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort
   const choices = useMemo(() => effortChoices(reasoning, t('effort.providerDefault')), [reasoning, t])
-  /** The segments show the marked level while one is marked, the live one otherwise. */
-  const shownEffort = mark === null ? effectiveEffort : mark.effort
   const busy = state.status === 'selecting'
   const live = useMemo(() => selectionOf(state), [state])
   const reason = useMemo(() => reasoningOf(groups), [groups])
@@ -117,15 +113,11 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
         : t('error.action', { message: `${result.error.code}: ${result.error.message}` }))
     })
   }
-  /** Close the menu, writing the marked level when it differs from the live one. */
+  /** Close the menu. Closing writes nothing: every choice already committed on click. */
   const closeMenu = useCallback((restoreFocus: boolean) => {
-    const pending = live === null ? null : planEffortCommit(live, mark)
     setOpen(false)
-    setMark(null)
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
-    if (pending !== null) submit(pending, null)
-    // submit reads only the stable seat props and the toast setter.
-  }, [live, mark])
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -161,10 +153,6 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
       const rect = triggerRef.current?.getBoundingClientRect()
       if (rect === undefined) return
       const MARGIN = 12
-      // The card takes the trigger's width, clamped so a very wide trigger on a
-      // narrow screen still leaves the viewport margin intact.
-      const wanted = Math.min(rect.width, window.innerWidth - MARGIN * 2)
-      menuRef.current?.style.setProperty('--dsh-model-menu-width', `${String(wanted)}px`)
       const lw = menuRef.current?.offsetWidth ?? 0
       const lh = menuRef.current?.offsetHeight ?? 0
       // Right edges align, so the card grows leftward from the trigger's corner.
@@ -186,43 +174,28 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
   if (!available) return null
 
   const show = () => {
-    setMark(null)
     setOpen(true)
     reload()
   }
-  /** The picker door: land the marked level first, then swap surfaces. */
+  /** The picker door: the level already landed on click, so only the surface changes. */
   const openPicker = () => {
-    const pending = live === null ? null : planEffortCommit(live, mark)
-    if (pending === null) {
-      setMark(null)
-      setOpen(false)
-      setPickerOpen(true)
-      return
-    }
-    // The mark stays until the Host accepts it; a rejection leaves the menu and
-    // its mark in place so the door can be tried again.
-    submit(pending, () => {
-      setMark(null)
-      setOpen(false)
-      setPickerOpen(true)
-    })
+    setOpen(false)
+    setPickerOpen(true)
   }
   /** Record one model's level, so switching away and back restores it. */
   const remember = (provider: string, model: string, effort: string | undefined) => {
     setMemory(rememberEffort(storageOf(), provider, model, effort))
   }
   const chooseModel = (provider: string, model: CatalogModel) => {
-    const picked = planModelCommit(live, provider, model.id, mark, reason, effortFor(memory, provider, model.id))
+    const picked = planModelCommit(live, provider, model.id, reason, effortFor(memory, provider, model.id))
     if (picked === null) {
       setOpen(false)
-      setMark(null)
       queueMicrotask(() => { triggerRef.current?.focus() })
       return
     }
     // A model click is the decision: close at once, and keep the menu open when
     // the host rejects it so the user can try another model.
     setOpen(false)
-    setMark(null)
     submit(picked, () => { queueMicrotask(() => { triggerRef.current?.focus() }) }, () => {
       // The host refused it: put the menu back so the user can pick another.
       setOpen(true)
@@ -237,12 +210,14 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
   }
   const onEffortKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-    if (choices.length === 0) return
+    if (choices.length === 0 || live === null) return
     event.preventDefault()
-    const index = choices.findIndex((choice) => choice.effort === shownEffort)
+    const index = choices.findIndex((choice) => choice.effort === effectiveEffort)
     const step = event.key === 'ArrowRight' ? 1 : -1
     const next = choices[((index === -1 ? 0 : index) + step + choices.length) % choices.length]
-    if (next !== undefined) setMark({ effort: next.effort })
+    if (next === undefined) return
+    const pending = planEffortCommit(live, next.effort)
+    if (pending !== null) submit(pending, null)
   }
   const onRootKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Escape' && open) {
@@ -286,7 +261,6 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
     if (event.relatedTarget instanceof Node
       && (rootRef.current?.contains(event.relatedTarget) === true || menuRef.current?.contains(event.relatedTarget) === true)) return
     setOpen(false)
-    setMark(null)
   }
   const toggleFavoriteOf = (provider: string, model: string) => {
     setFavorites(toggleFavorite(storageOf(), provider, model))
@@ -382,10 +356,15 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
                       key={choice.key}
                       type="button"
                       role="radio"
-                      aria-checked={choice.effort === shownEffort}
+                      aria-checked={choice.effort === effectiveEffort}
                       className={css.effortSegment}
                       disabled={busy}
-                      onClick={() => { setMark({ effort: choice.effort }) }}
+                      onClick={() => {
+                      if (live !== null) {
+                        const pending = planEffortCommit(live, choice.effort)
+                        if (pending !== null) submit(pending, null)
+                      }
+                    }}
                     >
                       {choice.label}
                     </button>

@@ -121,6 +121,26 @@ await test('a provider the settings document never lists answers unknown on both
   assert.deepEqual(facts('kimi-coding', 'kimi-k3'), { contextWindow: undefined, images: 'unknown' })
 })
 
+await test('an account provider falls back to the DeepSeek family defaults', () => {
+  assert.deepEqual(facts('deepseek-account', 'deepseek-flash'), { contextWindow: 1000000, images: 'yes' })
+  assert.deepEqual(facts('deepseek-account', 'deepseek-v4-pro'), { contextWindow: 1000000, images: 'no' })
+})
+
+await test('a model the family defaults do not name still answers unknown', () => {
+  assert.deepEqual(facts('deepseek-account', 'some-future-model'), { contextWindow: undefined, images: 'unknown' })
+})
+
+await test('an account model override wins over the family default', () => {
+  const withOverride = buildModelFacts(providers, [
+    ...namespaces,
+    {
+      ns: 'llm-deepseek-account',
+      value: { modelOverrides: { 'deepseek-v4-pro': { contextWindow: 2000000, inputModalities: ['text', 'image'] } } },
+    },
+  ])
+  assert.deepEqual(withOverride('deepseek-account', 'deepseek-v4-pro'), { contextWindow: 2000000, images: 'yes' })
+})
+
 await test('a model missing from a configured provider answers unknown', () => {
   assert.deepEqual(facts('magpie', 'not-in-catalog'), { contextWindow: undefined, images: 'unknown' })
 })

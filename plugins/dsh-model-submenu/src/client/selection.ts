@@ -1,10 +1,11 @@
 /**
- * When the composer menu writes a selection, and when it stays quiet.
+ * When the composer menu writes a selection.
  *
- * Two gestures share one rule: a click on a model is a decision and commits at
- * once, while a reasoning level is only marked and commits when the menu
- * closes. This module decides what the click and the close each submit, so the
- * component only has to call `select` with the answer and react to it.
+ * Both gestures are immediate: clicking a level submits it, clicking a model
+ * submits it. The only quiet path is clicking the model already in use — that
+ * closes the menu without a write. A model click also restores the level this
+ * browser last used for that model, so switching away and back never silently
+ * resets the effort.
  */
 
 import type { ModelReasoning } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -14,15 +15,6 @@ export interface Selection {
   readonly provider: string
   readonly model: string
   readonly reasoningEffort?: string
-}
-
-/**
- * A marked reasoning level. The wrapper is what distinguishes "the user marked
- * the provider default" from "the user marked nothing": both carry no level id,
- * and only the wrapper says which of them happened.
- */
-export interface EffortMark {
-  readonly effort: string | undefined
 }
 
 /** One segment of the reasoning row. */
@@ -56,17 +48,17 @@ export function effortChoices(
 }
 
 /**
- * The selection a menu close submits for a marked reasoning level.
+ * The selection a level click submits.
  * @param live - the selection in force right now.
- * @param marked - the level marked in the menu; null when nothing was marked.
- * @returns the selection to submit, or null when nothing changed.
+ * @param effort - the clicked level, undefined meaning the provider default.
+ * @returns the selection to submit, or null when the level already is the live one.
  */
-export function planEffortCommit(live: Selection, marked: EffortMark | null): Selection | null {
-  if (marked === null || sameEffort(live.reasoningEffort, marked.effort)) return null
+export function planEffortCommit(live: Selection, effort: string | undefined): Selection | null {
+  if (sameEffort(live.reasoningEffort, effort)) return null
   return {
     provider: live.provider,
     model: live.model,
-    ...marked.effort === undefined ? {} : { reasoningEffort: marked.effort },
+    ...effort === undefined ? {} : { reasoningEffort: effort },
   }
 }
 
@@ -75,7 +67,6 @@ export function planEffortCommit(live: Selection, marked: EffortMark | null): Se
  * @param live - the selection in force right now, null before a first selection resolves.
  * @param provider - the clicked model's provider.
  * @param model - the clicked model id.
- * @param marked - the level marked in the menu; null when nothing was marked.
  * @param reasoningOf - the catalog's reasoning metadata for one provider and model.
  * @param remembered - the level this browser last used for the target model, if any.
  * @returns the selection to submit, or null when the click changes nothing.
@@ -84,23 +75,20 @@ export function planModelCommit(
   live: Selection | null,
   provider: string,
   model: string,
-  marked: EffortMark | null,
   reasoningOf: (provider: string, model: string) => ModelReasoning | undefined,
   remembered?: string | undefined,
 ): Selection | null {
-  const effortChanged = marked !== null && !sameEffort(live?.reasoningEffort, marked.effort)
-  if (live !== null && sameModel(live, provider, model) && !effortChanged) return null
+  if (live !== null && sameModel(live, provider, model)) return null
   const offered = reasoningOf(provider, model)
-  // A level the user just marked wins; otherwise the target model's own memory
-  // is restored, so switching away and back never silently resets the effort.
-  const wanted = marked === null ? remembered : marked.effort
+  // The target model's own memory is restored, so switching away and back never
+  // silently resets the effort.
   const carried = offered !== undefined
-    && wanted !== undefined
-    && offered.efforts.some((level) => level.id === wanted)
+    && remembered !== undefined
+    && offered.efforts.some((level) => level.id === remembered)
   return {
     provider,
     model,
-    ...carried ? { reasoningEffort: wanted } : {},
+    ...carried ? { reasoningEffort: remembered } : {},
   }
 }
 
@@ -116,9 +104,9 @@ export function sameModel(live: Selection, provider: string, model: string): boo
 
 /**
  * @param liveEffort - the level in force, undefined meaning the provider default.
- * @param marked - the level in question.
+ * @param effort - the level in question.
  * @returns whether they name the same level.
  */
-export function sameEffort(liveEffort: string | undefined, marked: string | undefined): boolean {
-  return liveEffort === marked
+export function sameEffort(liveEffort: string | undefined, effort: string | undefined): boolean {
+  return liveEffort === effort
 }

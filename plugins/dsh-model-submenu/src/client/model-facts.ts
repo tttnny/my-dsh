@@ -17,6 +17,26 @@
 /** Accepted-modality answer for one model. */
 export type ImageAnswer = 'yes' | 'no' | 'unknown'
 
+/**
+ * The model knowledge a shipped adapter carries for its own account route.
+ *
+ * The account route has no `models` list on purpose: the account listing
+ * supplies the catalog and settings only carry per-model overrides. The same
+ * adapter family ships a default catalog for its API-key route, and the account
+ * route serves the same models, so those entries answer what the account
+ * profile cannot. Ids and facts mirror the adapter's own table.
+ */
+const FAMILY_DEFAULTS: Readonly<Record<string, readonly {
+  readonly id: string
+  readonly contextWindow: number
+  readonly images: boolean
+}[]>> = {
+  'deepseek-account': [
+    { id: 'deepseek-flash', contextWindow: 1_000_000, images: true },
+    { id: 'deepseek-v4-pro', contextWindow: 1_000_000, images: false },
+  ],
+}
+
 /** The metadata the settings document can answer for one model. */
 export interface ModelFacts {
   /** Exact advertised capacity, or undefined when the model declares none. */
@@ -69,11 +89,28 @@ export function buildModelFacts(
     const entry = profile?.models === undefined
       ? undefined
       : profile.models.find((candidate) => candidate.id === model)
-    if (profile === undefined || entry === undefined) return { contextWindow: undefined, images: 'unknown' }
-    const window = typeof entry.contextWindow === 'number' && entry.contextWindow > 0
-      ? entry.contextWindow
-      : undefined
-    return { contextWindow: window, images: imageAnswer(entry, profile) }
+    if (profile !== undefined && entry !== undefined) {
+      const window = typeof entry.contextWindow === 'number' && entry.contextWindow > 0
+        ? entry.contextWindow
+        : undefined
+      return { contextWindow: window, images: imageAnswer(entry, profile) }
+    }
+    // A route with no model list of its own (the account route) still serves its
+    // adapter family's models; a declared override there wins over the default.
+    const override = readOverride(profile, model)
+    if (override !== undefined) {
+      const window = typeof override.contextWindow === 'number' && override.contextWindow > 0
+        ? override.contextWindow
+        : undefined
+      return {
+        contextWindow: window,
+        images: Array.isArray(override.inputModalities) ? containsImage(override.inputModalities) : 'unknown',
+      }
+    }
+    const family = FAMILY_DEFAULTS[provider]?.find((candidate) => candidate.id === model)
+    return family === undefined
+      ? { contextWindow: undefined, images: 'unknown' }
+      : { contextWindow: family.contextWindow, images: family.images ? 'yes' : 'no' }
   }
 }
 
@@ -93,6 +130,14 @@ function imageAnswer(entry: Record_, profile: ProfileView): ImageAnswer {
     return defaultInput === undefined ? 'unknown' : containsImage(defaultInput)
   }
   return defaultInput === undefined ? 'no' : containsImage(defaultInput)
+}
+
+/** One model's declared override, when the route keeps a `modelOverrides` table. */
+function readOverride(profile: ProfileView | undefined, model: string): Record_ | undefined {
+  const overrides = (profile as Record_ | undefined)?.modelOverrides
+  if (!isRecord(overrides)) return undefined
+  const entry = overrides[model]
+  return isRecord(entry) ? entry : undefined
 }
 
 function containsImage(modalities: readonly unknown[]): ImageAnswer {
