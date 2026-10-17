@@ -3,7 +3,7 @@
  * 仓库台账的一致性门禁：把 `docs/rules/*.md` 里那些**固定形状**的约定变成确定性检查。
  *
  * 查的都是「改了 A 忘了改 B」这类漂移，判据一条比一条机械：
- *   1. 包名与目录名对应（`plugins/dsh-x/` ↔ `@lynn123411/dsh-x`；`presets/id/` ↔ `@lynn123411/dsh-preset-id`）
+ *   1. 包名与目录名对应（`plugins/dsh-<name>/` ↔ `@lynn123411/dsh-<name>`；`presets/<id>/` ↔ `@lynn123411/dsh-preset-<id>`）
  *   2. `engines.dsh` 是 `>=<版本>`，且本包全部 `@deepseek-ai/dsh-*`（peer 与 dev）与它同串
  *   3. `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 写区间（不是精确版本），同包内与跨包同串
  *   4. 许可只由 `package.json` 的 `license` 声明，各层目录不附带许可文书
@@ -16,6 +16,8 @@
  *      版本字面量与本包 `engines.dsh` 同串；历史实测记录（`DETAILS.md`）与 vendored 内容不查
  *  11. 抄自官方 preset 的 `<id>.patch.yml` 与已装内核的官方同名文件逐行一致，只放行已登记的差异
  *  12. 每个包钉住 pnpm 版本；有依赖的包另有 `pnpm-workspace.yaml` 放行内核 alpha 版本与构建脚本
+ *  13. 归档的包只在 `archive/` 下被提到：除 `archive/`、`tmp/`、构建产物与随包 vendored 内容外，
+ *      规则文档、工具脚本、根 README 与各包源码里都不出现它的包名或目录名，`plugins/<dir>` 也必须是活目录
  *
  * 判据来自 docs/rules/plugins.md、release.md、presets.md、to-readme.md 与 AGENTS.md；
  * 改了那些约定就同步改这里，两边是同一件事的两个位置，不允许只改一边。
@@ -35,6 +37,7 @@ import {
   kernelPresetsDir,
   listPackages,
   profiles,
+  readJson,
   repoRoot,
 } from './lib/repo.mjs';
 
@@ -338,6 +341,99 @@ for (const entry of packages) {
   }
 }
 
+// ── 13. 归档的包不再被活文件提到 ──────────────────────────────────────────────
+// 归档只搬目录，引用不会自己消失。查两件事，都是「改了 A 忘了改 B」：
+//   a. 归档包的包名与目录名出现在 archive/ 之外的规则面、工具脚本与包里——归档目录是它
+//      唯一该出现的地方（见 docs/rules/release.md「退役（归档）」）。
+//   b. 文档与脚本里点名的 `plugins/<dir>` / `presets/<id>` 必须真的存在。`<name>` 这类
+//      占位符（含尖括号或星号）不是路径，跳过。
+// 查的是全仓的活文件，不是某个包的目录：这类引用散在 docs/rules/、tools/ 与邻居包的注释里，
+// 归档时最容易漏的就是它们（docs/rules/plugins.md「证明断言有牙齿」那条经验）。
+const REFERENCE_SCANNED_DIRS = new Set(['node_modules', 'lib', 'dist', 'tmp', '.git', 'skills', 'upstream', 'archive']);
+const REFERENCE_FILES = /\.(md|mjs|js|ts|tsx|jsx|json|ya?ml)$/;
+/**
+ * 匹配后面紧跟的字符决定它是不是一个真实路径：`plugins/dsh-<name>` 的段是 `dsh-`（被尖括号截断），
+ * `presets/cordis.patch.yml` 说的是内核自带的官方 preset 文件——两者都不是本仓库的目录引用。
+ */
+const notAPath = (line, end) => /[<>*{}./]/.test(line[end] ?? ' ');
+
+/** 收集活文件：规则文档、仓库级工具、各包的源码与脚本，加上根 README / AGENTS / .gitignore。 */
+function referenceFiles() {
+  const out = [];
+  const walk = (dir, depth) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.') && entry.name !== '.gitignore') continue;
+      if (REFERENCE_SCANNED_DIRS.has(entry.name)) continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < 6) walk(path, depth + 1);
+        continue;
+      }
+      if (REFERENCE_FILES.test(entry.name) || entry.name === '.gitignore') out.push(path);
+    }
+  };
+  for (const top of ['docs', 'tools', 'plugins', 'presets']) {
+    if (existsSync(join(root, top))) walk(join(root, top), 0);
+  }
+  for (const file of ['README.md', 'AGENTS.md', '.gitignore']) {
+    if (existsSync(join(root, file))) out.push(join(root, file));
+  }
+  return out;
+}
+
+/** 归档目录里的包名，映射到它归档后的相对路径（找不到 package.json 时退回目录名）。 */
+const archivedNames = new Map();
+for (const top of ['archive/plugins', 'archive/presets']) {
+  const base = join(root, top);
+  if (!existsSync(base)) continue;
+  for (const entry of readdirSync(base, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const pkgPath = join(base, entry.name, 'package.json');
+    const name = existsSync(pkgPath) ? readJson(pkgPath).name : null;
+    if (typeof name === 'string') archivedNames.set(name, `${top}/${entry.name}`);
+    archivedNames.set(entry.name, `${top}/${entry.name}`);
+  }
+}
+/** 归档名的命中：长的先占位，落在已占区间里的短名让位（包名本身含目录名，会命中两次）。 */
+function nameHits(line) {
+  const taken = [];
+  const out = [];
+  for (const [name, archivedAt] of [...archivedNames].sort((a, b) => b[0].length - a[0].length)) {
+    let from = 0;
+    for (;;) {
+      const at = line.indexOf(name, from);
+      if (at === -1) break;
+      from = at + name.length;
+      const before = line[at - 1] ?? '';
+      const after = line[at + name.length] ?? '';
+      if (/[\w-]/.test(before) || /[\w-]/.test(after)) continue;
+      if (taken.some(([start, end]) => at < end && at + name.length > start)) continue;
+      taken.push([at, at + name.length]);
+      out.push({ name, archivedAt });
+    }
+  }
+  return out;
+}
+if (archivedNames.size > 0) {
+  for (const path of referenceFiles()) {
+    const repoPath = rel(path);
+    for (const [index, line] of readFileSync(path, 'utf8').split('\n').entries()) {
+      for (const hit of nameHits(line)) {
+        fail(
+          `${repoPath}:${index + 1}`,
+          `提到已归档的 ${hit.name}（现在在 ${hit.archivedAt}）；这里改指仍在维护的包，或删掉这句话`,
+        );
+      }
+      for (const match of line.matchAll(/(?<![\w./-])(plugins|presets)\/([a-z0-9][a-z0-9-]*)/g)) {
+        if (notAPath(line, match.index + match[0].length)) continue;
+        if (!existsSync(join(root, match[1], match[2]))) {
+          fail(`${repoPath}:${index + 1}`, `指向的 ${match[1]}/${match[2]} 不存在（归档了就把示例改指仍在维护的包）`);
+        }
+      }
+    }
+  }
+}
+
 // ── 11. 抄自官方 preset 的抄本与内核同版本 ────────────────────────────────────
 // 官方 `presets/*.patch.yml` 可能动，也可能一字未动；抄本落后不报错、只静默与官方不一致
 // （见 docs/rules/presets.md「抄本基线」）。这里把它变成提交时就要过的门禁：逐行比对，
@@ -438,7 +534,7 @@ if (pins.size > 1) {
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────────
-const checks = 12;
+const checks = 13;
 if (findings.length === 0) {
   if (!quiet) {
     console.log(`assert-ledger: ok（${packages.length} 个包，${checks} 项判据；开发副本 ${localProfiles.length} 个 profile）`);
@@ -450,5 +546,5 @@ for (const finding of findings) {
   console.error(`  ${finding.file}`);
   for (const line of finding.message.split('\n')) console.error(`    ${line}`);
 }
-console.error('\n判据见 docs/rules/plugins.md（版本与依赖、安装约定、许可、README）、release.md（产物与清单）、presets.md（order 台账、抄本基线）、to-readme.md。');
+console.error('\n判据见 docs/rules/plugins.md（版本与依赖、安装约定、许可、README）、release.md（产物与清单、退役归档）、presets.md（order 台账、抄本基线）、to-readme.md。');
 process.exit(1);

@@ -18,12 +18,13 @@
 | preset 的组合解析（`--dump-config`） | `node tools/preset-compose.mjs <id \| --all>` |
 | 「页面真的换上新产物了吗」 | `node tools/verify-client.mjs <包> --needle '<新写的类名或文案>' [--build]` |
 | 看一眼界面：点一下、量几何、拍图（会改会话状态，默认拦下并报警） | `node tools/gui-shot.mjs --click '<选择器>' --shot tmp/ui.png [--allow-mutation]` |
-| 开发副本还是不是软链、客户端半边有没有登记进 bundles | `node tools/dev-link.mjs [--write]` |
+| 开发副本还是不是软链、客户端半边有没有登记进 bundles、有没有指向归档目录的孤儿软链（`--write` 删掉孤儿） | `node tools/dev-link.mjs [--write]` |
 | 一个会话（连同它派出去的子会话）改过哪些文件、提交过什么 | `node tools/session-changes.mjs [<会话 id>] [--json] [--since <毫秒>]` |
 
 ## 约定
 
 - 参数写成 `--k v`；`--json` 给机器读；退出码 `0` 通过、`1` 不通过、`2` 跑不起来。
+- 找引用先用 `grep -l` 取文件清单再逐文件读：`grep -rn '<包名>' --exclude-dir={node_modules,lib,tmp,archive}` 会把匹配行所在的整行打出来，而 `lib/` 的声明文件里一行注释可能就有几千字，一次输出几十 KB 只为了几条结果。
 - 判据只读本仓库与本机 DSH 的状态（`package.json`、`docs/rules/`、`$DSH_HOME`、已装内核与它自带的官方 preset、`DSH_SOURCE` 指向的源码 checkout），不联网。
   唯一联网的是 `presets/plugin-upgrade-cordis/check-upstream.mjs`（在线模式）、`pnpm install` 与 `tools/ci-check.mjs`。
 - 中间产物一律落 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`。

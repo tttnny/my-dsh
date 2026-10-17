@@ -4,7 +4,7 @@ profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就�
 
 ## 建立与校验
 
-`node tools/dev-link.mjs` 一次查全部 profile × 全部自有包：软链还在不在、指得对不对、读到的版本号对不对、被市场顶掉的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包（客户端半边因此不会被服务）。`--write` 把有问题的连回仓库。
+`node tools/dev-link.mjs` 一次查全部 profile × 全部自有包：软链还在不在、指得对不对、读到的版本号对不对、被市场顶掉的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包（客户端半边因此不会被服务）。它另外扫 `node_modules/@lynn123411/` 下的软链本体，把断了和指向 `archive/` 的孤儿软链报出来——归档只搬目录，那条链接不在 `dependencies` 里了，`pnpm install` 不会清理它。`--write` 把有问题的连回仓库，并删掉孤儿软链。
 
 它跑的就是手工那一条：`cd ~/.dsh/profiles/web && pnpm add "link:<my-dsh 绝对路径>/plugins/dsh-<name>" --offline`（包不在目录根部时链接实际包目录）；建成后 `pnpm install` 幂等，可随时重跑。
 

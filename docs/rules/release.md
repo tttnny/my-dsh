@@ -43,11 +43,13 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'Accept: application/vnd.npm.install
 
 不再维护的插件移到仓库根 `archive/plugins/dsh-<name>/`，不再维护的 preset 移到 `archive/presets/<id>/`；目录名与包名不变、历史链接不失效。归档内容只作历史参考：不再发布、不再适配新内核；目录与包自带 `README.md` 原样保留，包内指向本仓库 `tools/` 的命令随它的退役一起作废。
 
-移走之后登记当场同步：
+按顺序做，每一步都有可以判定的完成状态：
 
-- 根 `README.md`——插件表删该行并修正该功能域的 `rowspan` 合并数，preset 表删该行（版式见 [to-readme.md](./to-readme.md)）。
-- [presets.md](./presets.md)「order 台账」——删该 preset 的行；`config.order` 取值以本表已占用最大值 +1 为准。
-- [presets.md](./presets.md) 的范例、[tools/lib/preset-copies.json](./../../tools/lib/preset-copies.json) 的抄本登记、`tools/probes/` 下该 preset 专用的探针，以及与它配套的 `check` 一起删掉；`plugins/`、`docs/rules/`、`tools/README.md` 里指向它的示例改指仍在维护的 preset。
+1. **搬目录**：`git mv plugins/dsh-<name> archive/plugins/dsh-<name>`。完成判据：`git status --short` 里全是 `R`（重命名），没有一个文件显示成删除加新增。
+2. **删根 README 的行**：插件表删该行并修正该功能域的 `rowspan` 合并数（该域只剩一行时连 `rowspan` 一起去掉）；preset 表删该行。完成判据：`node tools/assert-ledger.mjs` 判据 7 通过（它查根 README 与包目录互相覆盖）。
+3. **清引用**：`docs/rules/`、`tools/*.mjs` 头部示例、`tools/README.md`、根 `.gitignore`（该包的遗留配置文件名），以及邻居包的注释与断言里点到它的地方，全部改指仍在维护的包或改成不指名的写法。完成判据：`node tools/assert-ledger.mjs` 判据 13 通过——它扫全仓活文件，残留一处就报。preset 另有 [presets.md](./presets.md)「order 台账」删行、[tools/lib/preset-copies.json](./../../tools/lib/preset-copies.json) 删登记、`tools/probes/` 删该 preset 专用的探针与配套 `check`。
+4. **清开发副本**：`node tools/dev-link.mjs --write` 删掉各 profile 里指向归档目录的孤儿软链。完成判据：`node tools/dev-link.mjs` 报 `孤儿软链 0 个` 且退出码 0。
+5. **跑门禁**：`node tools/check.mjs`（台账 + 全部包的 `check`）。完成判据：`check: n/n 通过`，且 `git grep -n '<包名>'` 只回 `archive/` 下的结果。
 
 已发布过的包，用户下令后在同一轮把 registry 上**全部版本**标弃用——不传版本范围就是全量，消息指回归档路径与最后可用版本：
 
