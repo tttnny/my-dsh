@@ -46,7 +46,7 @@ cd plugins/dsh-model-submenu && pnpm check
 `check` = `typecheck` + `build`（tsdown）+ `smoke` + `test` + `assert:lib-untracked`。
 
 - `scripts/smoke-client.mjs` 按 Web shell 的方式装载构建产物 `lib/client.js`（`window.__ModuleLoader__.load` 桩件），喂假 cordis 服务，断言导出身份、`inject` 表逐字相等、产物里走的是共享的 `MenuSurface` 与 `Modal`、以 `priority: -100` 接管 `conversation.input.model` 座位、字典键集中英对齐、元信息取数确实问过设置镜像与供应商目录，以及「设置没答案时答未知而不猜」。末尾那段用真 `SlotCore` 钉住宿主的子座位契约，测的是宿主行为。
-- `scripts/test-favorites.mjs`：收藏表的键名、读写、坏值降级、跨供应商靠前排序。`scripts/test-facts.mjs`：设置值到上下文窗口与图片输入的映射、两类适配器的字段差异、缺字段整段略去。`scripts/test-commit.mjs`：点模型立即提交、思考等级关菜单才提交、已选中的模型不重复提交。`scripts/test-rows.mjs`：目录拍平、标签页派生、搜索的两把钥匙。
+- `scripts/test-favorites.mjs`：收藏表的键名、读写、坏值降级、跨供应商靠前排序。`scripts/test-facts.mjs`：设置值到上下文窗口与图片输入的映射、两类适配器的字段差异、缺字段整段略去。`scripts/test-commit.mjs`：点模型立即提交、思考等级关菜单才提交、已选中的模型不重复提交。`scripts/test-rows.mjs`：目录拍平、标签页派生、搜索的两把钥匙。`scripts/test-render.mjs`：用真 react 把菜单与弹窗画进 jsdom，锁住点模型立即提交、思考等级关菜单才提交、收藏靠前、星标不可点只做标记、加载与失败各占一行、写入失败留在菜单或弹窗。
 - `lib/` 是构建镜像，`assert:lib-untracked` 判它没被 git 跟踪。
 
 要肉眼确认页面上的形态，用仓库的 `node tools/verify-client.mjs dsh-model-submenu --needle '<你新写的类名或文案>'`。
