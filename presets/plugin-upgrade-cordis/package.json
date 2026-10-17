@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-preset-plugin-upgrade-cordis",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "插件升级创造模式：官方 cordis 组合（persona、工具矩阵、计划 / 压缩 / 子代理编排、动态插件工具）逐字保留，另并入 dsh-plugin-upgrade-skill 的 11 个插件工程技能（升级迁移、编写、测试、发布、运行时排障、整队巡检、重依赖接入、DSH 版本兼容审计、benchmark 考题提取、通用迁移方法、生命周期编排）。",
   "type": "module",
   "exports": {
@@ -34,7 +34,7 @@
     "directory": "presets/plugin-upgrade-cordis"
   },
   "engines": {
-    "dsh": ">=0.2.1-rc.1",
+    "dsh": ">=0.2.1-rc.2",
     "node": "^22.19 || >=24"
   },
   "packageManager": "pnpm@11.7.0",
