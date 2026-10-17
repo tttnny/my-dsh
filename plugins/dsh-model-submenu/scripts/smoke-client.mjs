@@ -52,6 +52,28 @@ const directory = {
   select: async (selection) => { directoryCalls.push(`select:${selection.provider}/${selection.model}`); return { ok: true, value: undefined } },
 }
 
+/** The settings mirror face the metadata line reads; the answer stays empty here. */
+const describeCalls = []
+const describeFace = {
+  getSnapshot: () => ({ status: 'idle', view: undefined, error: null }),
+  subscribe: () => () => {},
+  ensure: async () => {},
+  acceptView: () => {},
+}
+
+/** The LLM provider directory that says which settings namespace holds each profile. */
+const providerDirectoryCalls = []
+const providerDirectory = {
+  ok: true,
+  value: [
+    { provider: 'magpie', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'magpie'] },
+    { provider: 'deepseek-official', settingsNs: 'llm-deepseek', settingsPath: [] },
+  ],
+}
+
+/** The settings face a live configForms service hands to cross-namespace readers. */
+const factsSources = []
+
 const registrations = []
 const injects = []
 const locales = []
@@ -82,6 +104,20 @@ const services = () => ({
   },
   modelDirectories: { directoryFor: (sessionId) => { directoryCalls.push(`directoryFor:${sessionId}`); return directory } },
   sessions: { subagentAddress: (sessionId) => sessionId === 'subagent' ? { agent: 'a' } : undefined },
+  configForms: {
+    describe: () => {
+      describeCalls.push('describe')
+      return describeFace
+    },
+  },
+  remote: {
+    llm: {
+      listConfigurableProviders: async () => {
+        providerDirectoryCalls.push('listConfigurableProviders')
+        return providerDirectory
+      },
+    },
+  },
 })
 
 /**
@@ -122,14 +158,17 @@ await import(`${join(root, 'lib/client.js')}?smoke=${Date.now()}`)
 
 check('bundle registers under its package id', requires[0] === '@lynn123411/dsh-model-submenu')
 check('apply/inject exported', typeof exported?.apply === 'function' && Array.isArray(exported?.inject))
-check('declares exactly the services its halves read', JSON.stringify(exported?.inject) === '["locale","modelDirectories","remote","remote.session","sessions","slots"]')
+check('declares exactly the services its halves read', JSON.stringify(exported?.inject) === '["configForms","locale","modelDirectories","remote","remote.llm","remote.session","sessions","slots"]')
 
 // The panel's fill, blur, radius and macOS backing live in the primitives'
 // MenuSurface, so the bundle must keep rendering through it and must not paint
 // the surface itself — the regressed build was a bare div with its own fill.
 const clientBundle = await readFile(join(root, 'lib/client.js'), 'utf8')
 check('menu renders through the shared MenuSurface', clientBundle.includes('MenuSurface'))
-check('menu does not paint its own surface', !clientBundle.includes('--dsw-specific-menu'))
+check('the picker renders through the shared Modal', clientBundle.includes('Modal'))
+check('neither surface paints its own fill', !clientBundle.includes('--dsw-specific-menu'))
+// The picker must stay a surface this plugin opens on demand, never the seat itself.
+check('the picker door is asked for by the menu', clientBundle.includes('More models') || clientBundle.includes('更多模型'))
 
 // The guard must have teeth, or every case below is vacuous.
 try {
@@ -163,9 +202,13 @@ const enKeys = Object.keys(dictionaries?.en ?? {}).sort()
 check('zh/en key sets match', zhKeys.length > 0 && JSON.stringify(zhKeys) === JSON.stringify(enKeys))
 check('every string is non-empty', enKeys.every((key) => typeof dictionaries.en[key] === 'string' && dictionaries.en[key].length > 0))
 
-// The seat's injected face is what the component reads its catalog from.
+// The seat's injected face is what the component reads its catalog and its
+// metadata from.
 const face = typeof seat?.inject === 'function' ? seat.inject('session-1') : undefined
 check('inject face carries the shared directory store', face?.directory === directoryStore)
+check('inject face carries the live metadata source', typeof face?.factsSource?.getSnapshot === 'function')
+check('the metadata source subscribes and rebuilds', typeof face?.factsSource?.subscribe === 'function')
+check('the settings mirror is the metadata source', describeCalls.length > 0)
 check('a plain session may select', face?.available === true)
 face?.load()
 check('load() reaches the shared directory', directoryCalls.includes('load'))
@@ -178,6 +221,14 @@ directoryCalls.length = 0
 addressed?.load()
 check('an unavailable session does not load the catalog', directoryCalls.length === 0)
 check('an unavailable session resolves no selection', await addressed?.select({ provider: 'aliyun', model: 'deepseek-v4.1-flash' }) === undefined)
+
+// The metadata join must actually reach both host answers, or the picker's
+// line silently shows nothing for every model.
+await new Promise((resolve) => setTimeout(resolve, 0))
+check('the provider directory is asked which settings namespace holds each profile', providerDirectoryCalls.length > 0)
+const facts = face?.factsSource?.getSnapshot()
+check('the metadata lookup answers per model', typeof facts === 'function')
+check('an unanswered settings document answers unknown instead of guessing', JSON.stringify(facts?.('magpie', 'any')) === JSON.stringify({ contextWindow: undefined, images: 'unknown' }))
 
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)

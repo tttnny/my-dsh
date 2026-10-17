@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Model submenu",
-    "description": "Adds a provider level to the composer's model picker: choose a provider first, then one of its models."
+    "title": "Model picker",
+    "description": "The composer's model picker: one menu for the current provider's models and effort, one dialog for every provider's models with search and favorites."
   }
 }

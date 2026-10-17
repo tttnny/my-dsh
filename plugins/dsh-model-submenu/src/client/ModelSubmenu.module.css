@@ -1,14 +1,19 @@
 /*
- * The composer model seat's shape, values, and tokens follow the seat this
- * plugin takes over. The menu surface renders through the primitives'
- * MenuSurface, which owns the fill, the backdrop blur, the radius, and the
- * macOS backing — so nothing below paints the panel itself.
+ * The composer model seat and the picker it opens. The menu surface renders
+ * through the primitives' MenuSurface and the dialog through Modal, so neither
+ * this file paints a floating fill — it only places content on the surfaces
+ * those two own.
  */
+
 .root {
   min-width: 0;
   position: relative;
+  display: flex;
 }
 
+/* The Models glyph replaces the text when the composer row cannot fit it; the
+ * row owns both variables, so this plugin follows the same compact contract as
+ * the built-in occupant. */
 .trigger {
   min-width: 0;
   max-width: min(360px, 45cqw);
@@ -46,31 +51,24 @@
   white-space: nowrap;
   min-width: 0;
   overflow: hidden;
+  display: var(--dsh-composer-model-text-display, block);
 }
 
+/* The effort caption is the accent the reference UI uses to say "this is the
+ * thinking level in force"; it carries no extra meaning of its own. */
 .triggerEffort {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-state-business-primary);
   flex-shrink: 1000;
   overflow: hidden;
+  display: var(--dsh-composer-model-text-display, block);
 }
 
 .triggerIcon {
-  flex: none;
-  display: none;
-}
-
-@container (width <= 360px) {
-  .triggerIcon {
-    display: block;
-  }
-
-  .triggerLabel,
-  .triggerEffort {
-    display: none;
-  }
+  flex: 0 0 auto;
+  display: var(--dsh-composer-model-icon-display, none);
 }
 
 .chevron {
@@ -86,10 +84,9 @@
 .menu {
   z-index: 1100;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
-  width: max-content;
-  min-width: min(240px, 100vw - 32px);
-  max-width: min(420px, 100vw - 32px);
-  max-height: min(360px, 100vh - 96px);
+  width: min(400px, calc(100vw - 32px));
+  min-width: min(340px, calc(100vw - 32px));
+  max-height: min(70vh, calc(100vh - 96px));
   box-shadow: var(--dsw-elevation-prominent);
   color: var(--dsw-alias-label-primary);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
@@ -102,32 +99,262 @@
   overflow: hidden;
 }
 
-.status,
-.empty {
+/* The provider name is a heading, not a control: it says which provider's
+ * models the list below belongs to. */
+.providerName {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-height: 26px;
   color: var(--dsw-alias-label-tertiary);
-  padding: 10px;
-  font-size: 13px;
-  line-height: 20px;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  overflow: hidden;
+  display: flex;
 }
 
-.error,
-.warning {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-  color: var(--dsw-alias-state-error-primary);
-  border-radius: 8px;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 4px;
-  padding: 7px 8px;
+.groups {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.row {
+  align-items: center;
+  gap: 2px;
+  display: flex;
+}
+
+.rowPick {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: 10px;
+  outline: none;
+  align-items: center;
+  padding: 6px 8px;
+  display: flex;
+}
+
+.rowPick:hover:not(:disabled),
+.rowPick:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowPick:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.rowCopy {
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.rowName {
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  overflow: hidden;
+}
+
+.rowMeta {
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+}
+
+.check {
+  color: var(--dsw-alias-label-primary);
+  flex: 0 0 18px;
+  place-items: center;
+  display: grid;
+}
+
+/* A favorite the menu only reports: gold when the model is starred, absent
+ * otherwise. The solid mark is the whole signal, so it never asks for a click. */
+.starStatic {
+  color: var(--dsw-alias-state-warn-primary);
+  flex: none;
+  place-items: center;
+  width: 20px;
+  display: grid;
+}
+
+/* The picker's star is a real control: outline until hover or focus, solid and
+ * gold once favorited, and visible without hover on touch screens. */
+.starButton {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: 8px;
+  outline: none;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  opacity: 0;
+}
+
+.starButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l3);
+}
+
+.row:hover .starButton,
+.row:focus-within .starButton {
+  opacity: 1;
+}
+
+.starButton[aria-pressed='true'] {
+  color: var(--dsw-alias-state-warn-primary);
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .starButton {
+    opacity: 1;
+  }
+}
+
+.star {
+  flex: none;
+}
+
+.divider {
+  height: .5px;
+  background: var(--dsw-alias-border-l2);
+  flex: none;
+  margin: 3px 2px;
+}
+
+.effortRow {
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 10px;
+  display: flex;
+}
+
+.effortHeading {
+  color: var(--dsw-alias-label-primary);
+  flex: none;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* The segments scroll sideways rather than wrap, so the row keeps one height
+ * however many levels a model advertises. */
+.effortTrack {
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-radius: 999px;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: auto;
+  padding: 2px;
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.effortTrack::-webkit-scrollbar {
+  display: none;
+}
+
+.effortSegment {
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: 999px;
+  outline: none;
+  flex: none;
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.effortSegment:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.effortSegment[aria-checked='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-soft);
+  font-weight: 600;
+}
+
+.effortSegment:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.effortSegment:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l3);
+  outline-offset: -2px;
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary);
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.moreRow {
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: 10px;
+  outline: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
   line-height: 18px;
   display: flex;
 }
 
-.warning {
-  background: var(--dsw-alias-bg-module-platform);
-  color: var(--dsw-alias-state-warn-label);
+.moreRow:hover,
+.moreRow:focus-visible {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.moreIcon {
+  color: var(--dsw-alias-label-tertiary);
+  flex: none;
+}
+
+.notice {
+  color: var(--dsw-alias-label-tertiary);
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  display: flex;
 }
 
 .retry {
@@ -139,108 +366,104 @@
   flex: none;
   padding: 0;
   font-weight: 600;
+  text-decoration: underline;
 }
 
-.groups {
+/* ── the picker dialog ───────────────────────────────────────────────────── */
+
+.pickerDialog {
+  width: min(680px, 100%);
+  height: min(640px, 80vh);
+  gap: 0;
+  padding: 0;
+}
+
+.pickerContent {
   min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Modal wraps children in a body row of its own; that row — the content
+ * region's last child — is what has to carry the column and give the list its
+ * remaining height, so the footer stays put while the list scrolls. */
+.pickerContent > :last-child {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.pickerSearch {
+  padding: 0 20px 12px;
+}
+
+.pickerSearchInput {
+  width: 100%;
+}
+
+.pickerTabs {
+  border-bottom: .5px solid var(--dsw-alias-border-l2);
+  gap: 2px;
+  padding: 0 16px;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.pickerTab {
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: 8px;
+  outline: none;
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.pickerTab:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pickerTab[aria-selected='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  font-weight: 600;
+}
+
+.pickerTab:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l3);
+}
+
+.pickerList {
+  min-height: 0;
+  flex: 1;
+  padding: 8px 12px;
   overflow-y: auto;
 }
 
-.option {
-  box-sizing: border-box;
-  width: auto;
-  min-width: 100%;
-  min-height: 38px;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  background: 0 0;
-  border: none;
-  border-radius: 10px;
-  outline: none;
+.pickerFooter {
+  border-top: .5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 6px;
+  padding: 10px 20px;
+  font-size: 12px;
+  line-height: 18px;
   display: flex;
 }
 
-.option:hover:not(:disabled),
-.option:focus-visible {
-  background: var(--dsw-alias-interactive-bg-hover);
+.footerHint {
+  align-items: center;
+  gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
 }
 
-.selected {
-  background: 0 0;
-}
-
-.option:disabled {
+.footerDot {
   color: var(--dsw-alias-label-dimmed);
-  cursor: default;
-}
-
-.optionCopy {
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-}
-
-.modelName {
-  color: inherit;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  overflow: hidden;
-}
-
-.check {
-  color: var(--dsw-alias-label-primary);
-  flex: 0 0 18px;
-  place-items: center;
-  display: grid;
-}
-
-.cell {
-  box-sizing: border-box;
-  width: auto;
-  min-width: 100%;
-  height: 40px;
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
-  text-align: left;
-  background: 0 0;
-  border: none;
-  border-radius: 10px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  font-size: 14px;
-  line-height: 22px;
-  display: flex;
-}
-
-.cell:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.cellLabel {
-  white-space: nowrap;
-  flex: none;
-}
-
-.cellValue {
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
-  min-width: 0;
-  color: var(--dsw-alias-label-tertiary);
-  flex: auto;
-  overflow: hidden;
-}
-
-.cellChevron {
-  color: var(--dsw-alias-label-tertiary);
-  flex: none;
 }

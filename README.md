@@ -31,7 +31,7 @@
     <tr>
       <td><b>🎛️ 模型选择</b><br><i>输入框里模型选择器的形态</i></td>
       <td><a href="./plugins/dsh-model-submenu"><code>@lynn123411/dsh-model-submenu</code></a></td>
-      <td><b>模型二级菜单</b><br>给输入框的模型选择器加上供应商层级：先挑供应商，再挑它的模型。</td>
+      <td><b>模型选择</b><br>把输入框旁的模型选择器换成两层：一层列当前供应商的模型与思考等级，一层弹窗列出所有供应商的模型，可搜可收藏。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-model-submenu</code></td>
     </tr>
     <tr>
