@@ -87,7 +87,7 @@
   /* A fixed width keeps the card independent of the trigger's text length, so
    * opening the menu never reflows the composer. */
   box-sizing: border-box;
-  width: min(240px, calc(100vw - 24px));
+  width: min(252px, calc(100vw - 24px));
   max-height: min(70vh, calc(100vh - 96px));
   box-shadow: var(--dsw-elevation-prominent);
   color: var(--dsw-alias-label-primary);
@@ -130,6 +130,14 @@
 
 .rowPick {
   box-sizing: border-box;
+  /* A slightly tighter side padding buys the name a few more characters, which
+   * is what keeps a long provider suffix readable inside a narrow card. */
+  padding-inline: 6px;
+  /* The scroll list is a block container, so a flex item's `flex: 1` does
+   * nothing here: the row must claim the full width or a long model name pushes
+   * the favorite mark and the check past the card's edge, where overflow clips
+   * them. */
+  width: 100%;
   flex: 1;
   min-width: 0;
   min-height: 34px;
@@ -167,9 +175,9 @@
   color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 18px;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 17px;
   overflow: hidden;
 }
 
@@ -184,7 +192,7 @@
 
 .check {
   color: var(--dsw-alias-label-primary);
-  flex: 0 0 18px;
+  flex: 0 0 15px;
   place-items: center;
   display: grid;
 }
@@ -195,7 +203,7 @@
   color: var(--dsw-alias-state-warn-primary);
   flex: none;
   place-items: center;
-  width: 16px;
+  width: 14px;
   display: grid;
 }
 
