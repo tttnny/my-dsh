@@ -19,6 +19,7 @@ import {
   readCallModel,
   replacedForm,
   roundCall,
+  selectsOnClick,
   supersededAfter,
 } from '../form-model.js';
 import { carriedAnswers, createFormSession, initialFormAnswers } from '../form-session.js';
@@ -473,8 +474,8 @@ function OptionList({ question, answer, locked, t, markdownLabels, onToggleOptio
  * 或方框（多选），以及选项文字与它自己的补充说明，推荐徽标跟在文字后同一行。
  *
  * 整行可点由这一层自己做，不用 `<label>` 包：`<label>` 的内容模型是行内内容，而选项文字
- * 与补充说明都是 markdown 渲染器给的块级元素。点在链接或按钮上时**不**切换勾选——那是一次
- * 跳转，不是选这一项。
+ * 与补充说明都是 markdown 渲染器给的块级元素。哪些点击不切勾选由 form-model 的
+ * selectsOnClick 判（点在链接或按钮上、以及整行锁着时）。
  * @param {{
  *   question: import('../form-model.js').Question,
  *   option: import('../form-model.js').QuestionOption,
@@ -491,9 +492,7 @@ function OptionRow({ question, option, checked, locked, t, markdownLabels, onTog
   /** 整行点击：落在链接或按钮上的那次不切勾选（那是跳转，不是选这一项）。
    * @param {import('react').MouseEvent<HTMLElement>} event - 这次点击。 */
   const select = (event) => {
-    if (locked) return;
-    const target = /** @type {Element|null} */ (event.target);
-    if (target !== null && target.closest('a, button') !== null) return;
+    if (!selectsOnClick(locked, event.target)) return;
     onToggleOption(question, option.label);
   };
   return (

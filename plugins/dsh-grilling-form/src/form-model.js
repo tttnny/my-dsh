@@ -431,6 +431,22 @@ export function readCallModel(block) {
 }
 
 /**
+ * 这一下点击算不算「选这一项」。两件不算：整行锁着的时候（冻结之后改不了了），以及点落在
+ * 链接或按钮上（那是一次跳转，不是选这一项）。
+ *
+ * 放在这里而不是视图里，是为了能直接测：这是整行可点这个交互里唯一一条判断。
+ * @param {boolean} locked - 这一行锁着没有。
+ * @param {unknown} target - 点击落到的那个元素（拿不到时按普通点击算）。
+ * @returns {boolean} 该切换勾选时为 true。
+ */
+export function selectsOnClick(locked, target) {
+  if (locked) return false;
+  const element = /** @type {{ closest?: (selector: string) => unknown }|null} */ (target);
+  if (element === null || typeof element?.closest !== 'function') return true;
+  return element.closest('a, button') === null;
+}
+
+/**
  * 归一化 localStorage 里读回来的作答：只认 `{[id]: {selected, custom}}` 这个形状。
  *
  * **形状对得上的空作答也留着**：一条「selected 是数组、且与 custom 都空」的记录不是脏数据，

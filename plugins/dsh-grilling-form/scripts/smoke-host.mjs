@@ -174,6 +174,12 @@ await test('描述只写「填什么」：默认值、兜底、校验规则都�
   ];
   assert.equal(texts.length, 11, '字段描述就到这十一条');
   assert.match(shape.tool.parameters.properties.questions.items.properties.options.description, /（推荐）/, '推荐约定挂在 options 上');
+  // 两处补充说明的描述就是这两句：模型靠它们决定写不写、以及写什么。
+  assert.equal(question.properties.detail.description, 'Longer explanation of the question.');
+  assert.equal(
+    question.properties.options.items.properties.detail.description,
+    'Longer explanation of the option.',
+  );
   for (const text of texts) {
     assert.doesNotMatch(text, /default|falls back|fallback|Required for type/i, text);
   }

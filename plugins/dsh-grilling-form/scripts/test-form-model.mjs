@@ -36,6 +36,7 @@ import {
   roundCall,
   shortFormId,
   supersededAfter,
+  selectsOnClick,
   validateRound,
   writeStoredForm,
 } from '../src/form-model.js';
@@ -252,6 +253,18 @@ test('结果形状不认识（rejected / pending）：两个注册项都不画�
     assert.equal(model.state, 'unknown', text);
     assert.equal(model.message, undefined);
   }
+});
+
+// --- 整行点击 ---
+
+test('整行点击的判据：普通点击切勾选，点链接与按钮不切，锁着时一律不切', () => {
+  const plain = { closest: () => null };
+  const link = { closest: (selector) => (selector === 'a, button' ? {} : null) };
+  assert.equal(selectsOnClick(false, plain), true, '普通点击切勾选');
+  assert.equal(selectsOnClick(false, link), false, '点链接/按钮是跳转，不切勾选');
+  assert.equal(selectsOnClick(true, plain), false, '冻结之后改不了');
+  assert.equal(selectsOnClick(false, null), true, '目标拿不到时按普通点击算');
+  assert.equal(selectsOnClick(false, undefined), true, '同上');
 });
 
 // --- 导入正文与块 ---
