@@ -79,9 +79,8 @@ if (relative(root, target).startsWith('..')) stop(`文件在仓库外：${target
 const repoPath = relative(root, target);
 
 const tracked = git(['ls-files', '--error-unmatch', '--', repoPath]);
-if (tracked.status !== 0) stop(`${repoPath} 不是 git 跟踪的文件——git checkout -- 还原不了，先提交它`);
 const dirty = git(['status', '--porcelain', '--', repoPath]);
-if (dirty.stdout.trim() !== '') stop(`${repoPath} 当前不干净：先提交或还原（git checkout -- ${repoPath}），变异只能在干净文件上做`);
+const clean = tracked.status === 0 && dirty.stdout.trim() === '';
 
 const before = readFileSync(target, 'utf8');
 const occurrences = before.split(args.from).length - 1;
@@ -90,7 +89,15 @@ if (occurrences > 1) stop(`${repoPath} 里命中 ${occurrences} 处；--from 要
 
 if (dryRun) {
   console.log(`mutate: ${repoPath} 命中 1 处；--dry-run 不改文件`);
+  if (!clean) console.log('mutate: 这个文件现在不干净，实跑时会用一份临时副本兜底还原');
   process.exit(0);
+}
+
+// 不干净的文件（未提交、甚至未被 git 跟踪）也能变异：跑之前把原文留一份在内存里，
+// 还原时优先用 `git checkout`，它管不着（未跟踪）或不适用（本来就脏）就写回原文。
+// 这样「先做一个 wip 提交、跑完再 reset」那套弯弯绕就不必了。
+if (!clean) {
+  console.log(`mutate: ${repoPath} 现在不干净，还原靠内存里的原文兜底`);
 }
 
 const mutated = before.replace(args.from, args.to);
@@ -119,7 +126,17 @@ try {
   }
 } finally {
   if (args.keep === true) {
-    console.log(`mutate: --keep，${repoPath} 保持变异；还原：git checkout -- ${repoPath}`);
+    console.log(`mutate: --keep，${repoPath} 保持变异；还原：用编辑器改回原文（这份文件没有可用的 git 还原点）`);
+  } else if (!clean) {
+    // 文件本来就脏（或根本没入库），git 那头没有「变异之前」的版本可退回，只能
+    // 按内存里那份原文写回去；写完再读一遍核对，写失败会在这里当场看见。
+    writeFileSync(target, before);
+    const after = readFileSync(target, 'utf8');
+    if (after !== before) {
+      console.error(`mutate: 还原后内容与原来不一致：${repoPath}`);
+      process.exit(2);
+    }
+    console.log(`mutate: 已按原文写回 ${repoPath}（命令退出码 ${commandStatus}）`);
   } else {
     const restored = git(['checkout', '--', repoPath]);
     if (restored.status !== 0) {

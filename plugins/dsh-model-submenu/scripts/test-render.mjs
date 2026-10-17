@@ -14,76 +14,40 @@
  * 运行：node scripts/test-render.mjs
  */
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { JSDOM } from 'jsdom'
+import { installDom, loadClientBundle, primitivesStub } from '../../../tools/lib/dom-harness.mjs'
 
-const require = createRequire(import.meta.url)
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
-
-const dom = new JSDOM('<!doctype html><html><body></body></html>', {
-  url: 'http://127.0.0.1:3080/',
-  pretendToBeVisual: true,
-})
-globalThis.window = dom.window
-globalThis.document = dom.window.document
-Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true })
-globalThis.HTMLElement = dom.window.HTMLElement
-globalThis.Element = dom.window.Element
-globalThis.Node = dom.window.Node
-globalThis.Event = dom.window.Event
-globalThis.MouseEvent = dom.window.MouseEvent
-globalThis.KeyboardEvent = dom.window.KeyboardEvent
-globalThis.MutationObserver = dom.window.MutationObserver
-globalThis.localStorage = dom.window.localStorage
-globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0)
-globalThis.cancelAnimationFrame = (id) => clearTimeout(id)
-globalThis.HTMLElement.prototype.scrollIntoView = () => {}
-
+const dom = installDom(JSDOM, { storage: true, raf: true })
 const { createElement, act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 
 /** ui-primitives 替身：只还原本测试关心的渲染结果。 */
-const primitives = new Proxy(
-  {
-    MenuSurface: ({ children, ...rest }) => createElement('div', rest, children),
-    Modal: ({ open, onClose, closeLabel, children }) => open
-      ? createElement('div', { role: 'dialog' },
-        createElement('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, '×'),
-        children)
-      : null,
-    Input: ({ icon, className, ...rest }) => createElement('input', { ...rest, className }),
-    ShortcutKeys: ({ keys }) => createElement('span', null, keys.join('')),
-    Toast: ({ text }) => createElement('div', { role: 'status' }, text),
-    IconCheckOutlineRegular: () => createElement('span', { className: 'check' }),
-    IconChevronDownOutlineRegular: () => createElement('span', null),
-    IconFlatListOutlineRegular: () => createElement('span', null),
-    IconWarningOutlineRegular: () => createElement('span', null),
-    IconSearchOutlineRegular: () => createElement('span', null),
-    rankByName: (items, query) => {
-      const needle = query.toLowerCase()
-      return items.filter((item) => item.name.toLowerCase().includes(needle) || item.label.toLowerCase().includes(needle))
-    },
+const primitives = primitivesStub({
+  MenuSurface: ({ children, ...rest }) => createElement('div', rest, children),
+  Modal: ({ open, onClose, closeLabel, children }) => open
+    ? createElement('div', { role: 'dialog' },
+      createElement('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, '×'),
+      children)
+    : null,
+  Input: ({ icon, className, ...rest }) => createElement('input', { ...rest, className }),
+  ShortcutKeys: ({ keys }) => createElement('span', null, keys.join('')),
+  Toast: ({ text }) => createElement('div', { role: 'status' }, text),
+  IconCheckOutlineRegular: () => createElement('span', { className: 'check' }),
+  IconChevronDownOutlineRegular: () => createElement('span', null),
+  IconFlatListOutlineRegular: () => createElement('span', null),
+  IconWarningOutlineRegular: () => createElement('span', null),
+  IconSearchOutlineRegular: () => createElement('span', null),
+  rankByName: (items, query) => {
+    const needle = query.toLowerCase()
+    return items.filter((item) => item.name.toLowerCase().includes(needle) || item.label.toLowerCase().includes(needle))
   },
-  { get: (target, key) => (key in target ? target[key] : () => null) },
-)
+})
 
-let exported
-globalThis.window.__ModuleLoader__ = {
-  load: ({ factory }) => {
-    exported = factory((spec) => {
-      if (spec === 'react') return require('react')
-      if (spec === 'react/jsx-runtime') return require('react/jsx-runtime')
-      if (spec === 'react-dom') return require('react-dom')
-      if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitives
-      throw new Error(`module table miss: ${spec}`)
-    })
-  },
-}
-await import(`${pathToFileURL(join(root, 'lib', 'client.js')).href}?render=${String(Date.now())}`)
+const exported = await loadClientBundle({ root, primitives })
 
 /** 座位注册项：本测试直接拿它的组件来画。 */
 const registrations = []

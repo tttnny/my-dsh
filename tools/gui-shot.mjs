@@ -9,6 +9,16 @@
  *
  * 登录靠 $DSH_WEB_URL / $DSH_WEB_AUTH_URL（先访问 auth URL 拿会话 cookie，再进应用）。
  * 细节与坑见 docs/rules/plugin-ui.md「看一眼界面」。
+ *
+ * ── 它会改真东西 ──────────────────────────────────────────────────────────────
+ * 这浏览器连的是**正在服务的那个实例**，所以 `--click` 与 `--eval` 里的一次点击
+ * 就是一次真实操作：点模型会换掉这个会话正在用的模型、点收藏会写进 localStorage。
+ * 验证完忘了改回去，下一个 agent 看到的就是被改过的状态（本仓库发生过：一次界面
+ * 验证把会话切到一个不可用的模型上，连带把后续跑起来的子会话弄断）。
+ *
+ * 因此：**进入任何交互之前先记一份会话状态，跑完再记一份，两边不同就报警并以
+ * 退出码 1 结束**，除非显式 `--allow-mutation`（确定这次就是要改状态）。报警会
+ * 把「改动前 → 改动后」逐条打出来，照它改回去即可。
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -152,6 +162,25 @@ if (args.wait) {
   if (!seen) console.log('页面文字前 300 字：', await evaluate('document.body.innerText.slice(0, 300)'))
 }
 
+/**
+ * The session state a click can change, read straight off the page.
+ *
+ * The composer's model trigger carries the whole selection in its accessible
+ * name, and the two storage keys are the plugin state a click can write. Reading
+ * only these keeps the snapshot cheap enough to take before and after every run.
+ */
+const SNAPSHOT = `(() => {
+  const trigger = document.querySelector('[data-composer-card] button[aria-haspopup="menu"]')
+  const read = (key) => { try { return globalThis.localStorage.getItem(key) } catch { return null } }
+  return {
+    model: trigger ? trigger.getAttribute('aria-label') : null,
+    favorites: read('dsh-model-submenu.favorites'),
+    efforts: read('dsh-model-submenu.efforts'),
+  }
+})()`
+
+const before = await evaluate(SNAPSHOT)
+
 if (args.click) {
   const clicked = await evaluate(`(() => {
     const el = document.querySelector(${JSON.stringify(String(args.click))})
@@ -168,6 +197,8 @@ if (args.eval) {
   console.log('eval:', typeof value === 'string' ? value : JSON.stringify(value, null, 2))
 }
 
+const after = await evaluate(SNAPSHOT)
+
 const shot = await cdp.send('Page.captureScreenshot', { format: 'png' }, sessionId)
 mkdirSync(shotPath.replace(/\/[^/]*$/, '') || '.', { recursive: true })
 writeFileSync(shotPath, Buffer.from(shot.data, 'base64'))
@@ -176,6 +207,21 @@ console.log('screenshot:', shotPath)
 // 浏览器 console 在 agent 这侧看不见，页面错误只能这样收。
 const errors = await evaluate('window.__errors ?? []')
 console.log('page errors:', errors.length ? JSON.stringify(errors) : '(none)')
+
+// The run changed the session it was looking at: name what changed so it can be
+// put back, and fail unless the caller said the mutation was the point.
+const changed = Object.keys(after).filter((key) => before[key] !== after[key])
+if (changed.length > 0 && !args['allow-mutation']) {
+  console.log('')
+  console.log('gui-shot: 这次运行改掉了会话状态（真浏览器里的一次点击就是一次真实操作）：')
+  for (const key of changed) {
+    console.log(`  ${key}: ${JSON.stringify(before[key])}  ->  ${JSON.stringify(after[key])}`)
+  }
+  console.log('照上面的「改动前」改回去；如果这次就是要改状态，加 --allow-mutation 再跑。')
+  ws.close()
+  try { spawn('pkill', ['-f', `remote-debugging-port=${port}`], { stdio: 'ignore' }) } catch {}
+  finish(1)
+}
 
 ws.close()
 try { spawn('pkill', ['-f', `remote-debugging-port=${port}`], { stdio: 'ignore' }) } catch {}

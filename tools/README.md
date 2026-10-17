@@ -13,12 +13,13 @@
 | 抄本与官方 preset：差异 / 两版官方差异 / 重抄 / 提示词变量 | `node tools/preset-copy.mjs <id> [--diff \| --official-diff \| --recopy \| --variables]` |
 | preset 随包技能的真装载（只装载内核的 skill provider，不起第二实例） | `node tools/probes/preset-skills.mjs --preset <id>` |
 | 按 CI 的方式重跑安装与 check（干净 HOME、钉住的 pnpm；要联网） | `node tools/ci-check.mjs [--keep]` |
-| 变异测试：改一处、跑一条命令、一定还原 | `node tools/mutate.mjs --file <f> --from <旧> --to <新> -- <命令>` |
+| 变异测试：改一处、跑一条命令、一定还原（未提交的文件也能用） | `node tools/mutate.mjs --file <f> --from <旧> --to <新> -- <命令>` |
 | 宿主半边能不能装载（不重启正在服务的实例） | `node tools/host-smoke.mjs [--compose-only]` |
 | preset 的组合解析（`--dump-config`） | `node tools/preset-compose.mjs <id \| --all>` |
 | 「页面真的换上新产物了吗」 | `node tools/verify-client.mjs <包> --needle '<新写的类名或文案>' [--build]` |
-| 看一眼界面：点一下、量几何、拍图 | `node tools/gui-shot.mjs --click '<选择器>' --shot tmp/ui.png` |
+| 看一眼界面：点一下、量几何、拍图（会改会话状态，默认拦下并报警） | `node tools/gui-shot.mjs --click '<选择器>' --shot tmp/ui.png [--allow-mutation]` |
 | 开发副本还是不是软链、客户端半边有没有登记进 bundles | `node tools/dev-link.mjs [--write]` |
+| 一个会话（连同它派出去的子会话）改过哪些文件、提交过什么 | `node tools/session-changes.mjs [<会话 id>] [--json] [--since <毫秒>]` |
 
 ## 约定
 
@@ -27,4 +28,4 @@
   唯一联网的是 `presets/plugin-upgrade-cordis/check-upstream.mjs`（在线模式）、`pnpm install` 与 `tools/ci-check.mjs`。
 - 中间产物一律落 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`。
 - **工具与规则是一件事的两处**：`assert-ledger.mjs` 里的每条判据都在 `docs/rules/` 里有出处；改了那些约定就同步改它，不允许只改一边。
-- 判据要能变红：新增或翻转断言后，把被测行为改回旧写法跑一次，确认它真的 FAIL（见 `docs/rules/plugins.md`「证明断言有牙齿」）。这条机械动作交给 `tools/mutate.mjs`：它要求文件干净、`--from` 恰好命中一处，命令跑完无论成败都还原。
+- 判据要能变红：新增或翻转断言后，把被测行为改回旧写法跑一次，确认它真的 FAIL（见 `docs/rules/plugins.md`「证明断言有牙齿」）。这条机械动作交给 `tools/mutate.mjs`：它要求 `--from` 恰好命中一处，命令跑完无论成败都还原（干净文件走 `git checkout`，未提交的文件按原文写回）。

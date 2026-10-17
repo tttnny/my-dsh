@@ -6,7 +6,7 @@
 
 一个插件一个目录：目录名 `dsh-<name>`，npm 包名 `@lynn123411/dsh-<name>`，目录内含 `README.md`。发布形态是 **bundle 包**：`package.json` 声明 `dsh.bundle.patch`，安装时包名自动登记进 profile 的 `dsh.profile.bundles`；形态标在根 `README.md` 的「说明」列。
 
-新建插件用 `node tools/new-plugin.mjs dsh-<name>`（`--host-only` 只铺宿主半边）：它按当前内核基线生成 package.json、tsconfig、build.mjs、`cordis.patch.yml`、两半边的自检骨架、README 三段、locale 与图标，生成即 `pnpm check` 绿；收尾只有两步（根 README 加一行、改 `src/` 里的 TODO），它会把这两步打出来。
+新建插件用 `node tools/new-plugin.mjs dsh-<name>`（`--host-only` 只铺宿主半边）：它按当前内核基线生成 package.json、tsconfig、build.mjs、`cordis.patch.yml`、两半边的自检骨架、README 四段、locale 与图标，生成即 `pnpm check` 绿；收尾只有两步（根 README 加一行、改 `src/` 里的 TODO），它会把这两步打出来。
 
 ## 许可
 
@@ -47,6 +47,7 @@
 两条会让变异测试骗到自己的坑，都是本仓库实测过的：
 
 - **先确认断言脚本打的是 `src/` 还是构建产物**：`dsh-a6api` 的 `scripts/test-*.mjs` 一律 `import('../lib/index.js')`（`smoke-client.mjs` 读 `lib/client.js`），改完 `src/` 必须先 `pnpm build` 再跑，否则测的还是旧产物——变异后忘了重建，会得到一条假的「断言没抓住」。`dsh-grilling-form` 用 `pnpm test` 自己先构建一次来消除这个前提；`dsh-chat-translate` 有一半脚本直接打 `src/`。照抄邻居前先看它 `import` 的是哪一边。
+- **未提交的文件也能变异**：`node tools/mutate.mjs` 对干净文件用 `git checkout --` 还原，对未提交、甚至未被 git 跟踪的文件改用内存里的那份原文写回并逐字节核对。所以改完直接跑变异，不必先做一次 `wip` 提交再 `git reset`。
 - **还原用 `git checkout -- <file>`，别手工备份**：`cp src/x.ts /tmp/x.bak` 这类备份失败是静默的（`||` 兜底只在前一条命令失败时才生效，而它常常成功了），变异会留在源码里而你以为已经还原。要么在改动前 `git stash`，要么直接 `git checkout -- <file>`——后者失败会报错，不会静默。机械动作交给 `node tools/mutate.mjs`：它要求文件干净、`--from` 恰好命中一处，命令跑完（无论成败）在收尾还原并核对 `git status --short`。
 - **探针的锚点要唯一**：往源码里塞临时探针时，别拿 `str.replace(x, y, 1)` 打在「文件里第一个 `  return (`」这类到处都有的形状上——它会插进另一个函数，报出来的还是 `Invalid hook call` 这种看不懂的错。锚点带上上下文，或改用 `git apply` 的补丁。
 - **收尾核对 `git status --short`**：除你本来要改的文件外不该有别的。变异留下的痕迹、顺手做的别的改动、被打乱的工作区（比如多余的 `git stash`），只有在这里才看得见——变异测试的完成判据就是这一行干净。

@@ -20,66 +20,27 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { JSDOM } from 'jsdom';
+import { installDom, loadClientBundle, primitivesStub } from '../../../tools/lib/dom-harness.mjs';
 
-const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-
-const dom = new JSDOM('<!doctype html><html><body></body></html>', {
-  url: 'http://127.0.0.1:3080/',
-  pretendToBeVisual: true,
-});
-globalThis.window = dom.window;
-globalThis.document = dom.window.document;
-// Node 24 把 globalThis.navigator 定义成 getter-only，直接赋值会抛；jsdom 的
-// 那份其实已经在 window 上，React 读的是 window.navigator。
-Object.defineProperty(globalThis, 'navigator', {
-  value: dom.window.navigator,
-  configurable: true,
-});
-globalThis.HTMLElement = dom.window.HTMLElement;
-globalThis.Element = dom.window.Element;
-globalThis.Node = dom.window.Node;
-globalThis.Event = dom.window.Event;
-globalThis.MouseEvent = dom.window.MouseEvent;
-globalThis.KeyboardEvent = dom.window.KeyboardEvent;
-globalThis.MutationObserver = dom.window.MutationObserver;
-// 视口在场判定：没有 IntersectionObserver 时组件按「已在视口」处理，首跑照发。
-globalThis.IntersectionObserver = undefined;
-
+const dom = installDom(JSDOM);
 const { createElement, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 
 /** ui-primitives 替身：只还原本测试关心的渲染结果与锚点关系。 */
-const primitives = new Proxy(
-  {
-    MarkdownText: ({ text }) => createElement('div', { className: 'md' }, text),
-    // 真 Tooltip 保留锚点本身、把 hover/focus 处理器注入那个锚点（不套外壳），
-    // 所以替身也原样返回 children——DOM 形状与生产一致，悬停文案由
-    // test-chat-translate.mjs 的 rowCopy 断言覆盖。
-    Tooltip: ({ children }) => children,
-    IconRefreshOutlineRegular: () => createElement('span', { className: 'icon-refresh' }),
-    DisclosureRow: ({ title, collapsedContent, children }) =>
-      createElement('div', null, title, collapsedContent, children),
-  },
-  { get: (target, key) => (key in target ? target[key] : () => null) }
-);
+const primitives = primitivesStub({
+  MarkdownText: ({ text }) => createElement('div', { className: 'md' }, text),
+  // 真 Tooltip 保留锚点本身、把 hover/focus 处理器注入那个锚点（不套外壳），
+  // 所以替身也原样返回 children——DOM 形状与生产一致，悬停文案由
+  // test-chat-translate.mjs 的 rowCopy 断言覆盖。
+  Tooltip: ({ children }) => children,
+  IconRefreshOutlineRegular: () => createElement('span', { className: 'icon-refresh' }),
+  DisclosureRow: ({ title, collapsedContent, children }) =>
+    createElement('div', null, title, collapsedContent, children),
+});
 
-/** 走真实的 bundle 入口（与 shell 同一条 __ModuleLoader__ 路径）。 */
-let exported;
-globalThis.window.__ModuleLoader__ = {
-  load: ({ factory }) => {
-    exported = factory((spec) => {
-      if (spec === 'react') return require('react');
-      if (spec === 'react/jsx-runtime') return require('react/jsx-runtime');
-      if (spec === 'react-dom') return require('react-dom');
-      if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
-      throw new Error(`module table miss: ${spec}`);
-    });
-  },
-};
-await import(`${pathToFileURL(join(root, 'lib', 'client.js')).href}?render=${String(Date.now())}`);
+const exported = await loadClientBundle({ root, primitives });
 
 /** 捕获助手行渲染器的注册项——本测试直接拿它来画。 */
 const registrations = [];
