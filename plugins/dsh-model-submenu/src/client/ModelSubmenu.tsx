@@ -181,13 +181,16 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
   /** The picker door: land the marked level first, then swap surfaces. */
   const openPicker = () => {
     const pending = live === null ? null : planEffortCommit(live, mark)
-    setMark(null)
     if (pending === null) {
+      setMark(null)
       setOpen(false)
       setPickerOpen(true)
       return
     }
+    // The mark stays until the Host accepts it; a rejection leaves the menu and
+    // its mark in place so the door can be tried again.
     submit(pending, () => {
+      setMark(null)
       setOpen(false)
       setPickerOpen(true)
     })
@@ -256,11 +259,18 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
       moveFocus(event.key === 'ArrowDown' ? 1 : -1)
     }
   }
+  /**
+   * The keyboard leaving the seat closes the menu — but that is not one of the
+   * four closing gestures that write a mark, so it closes without committing.
+   * Otherwise clicking the notice text or a divider inside the menu, which moves
+   * focus without unmounting it, would land a level nobody asked to commit.
+   */
   const onBlur = (event: React.FocusEvent) => {
     if (pickerOpen) return
     if (event.relatedTarget instanceof Node
       && (rootRef.current?.contains(event.relatedTarget) === true || menuRef.current?.contains(event.relatedTarget) === true)) return
-    closeMenu(false)
+    setOpen(false)
+    setMark(null)
   }
   const toggleFavoriteOf = (provider: string, model: string) => {
     setFavorites(toggleFavorite(storageOf(), provider, model))
@@ -345,28 +355,30 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
               <div className={css.notice}>{t('status.empty')}</div>
             )}
           </div>
-          <div className={css.divider} />
-          <div className={css.effortRow}>
-            <span className={css.effortHeading}>{t('menu.effort')}</span>
-            {choices.length > 0 && (
-              <div className={css.effortTrack} role="radiogroup" aria-label={t('menu.effort')} onKeyDown={onEffortKeyDown}>
-                {choices.map((choice: EffortChoice) => (
-                  <button
-                    key={choice.key}
-                    type="button"
-                    role="radio"
-                    aria-checked={choice.effort === shownEffort}
-                    className={css.effortSegment}
-                    disabled={busy}
-                    onClick={() => { setMark({ effort: choice.effort }) }}
-                  >
-                    {choice.label}
-                  </button>
-                ))}
+          {choices.length > 0 && (
+            <>
+              <div className={css.divider} />
+              <div className={css.effortRow}>
+                <span className={css.effortHeading}>{t('menu.effort')}</span>
+                <div className={css.effortTrack} role="radiogroup" aria-label={t('menu.effort')} onKeyDown={onEffortKeyDown}>
+                  {choices.map((choice: EffortChoice) => (
+                    <button
+                      key={choice.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={choice.effort === shownEffort}
+                      className={css.effortSegment}
+                      disabled={busy}
+                      onClick={() => { setMark({ effort: choice.effort }) }}
+                    >
+                      {choice.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
-          <div className={css.divider} />
+              <div className={css.divider} />
+            </>
+          )}
           <p className={css.hint}>{t('menu.hint')}</p>
           <div className={css.divider} />
           <button type="button" role="menuitem" className={css.moreRow} onClick={openPicker}>

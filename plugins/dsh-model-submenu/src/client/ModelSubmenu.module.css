@@ -187,13 +187,24 @@
 }
 
 /* A favorite the menu only reports: gold when the model is starred, absent
- * otherwise. The solid mark is the whole signal, so it never asks for a click. */
+ * otherwise. It is a button so a click on the mark picks the row, but it takes
+ * no Tab stop and carries no name of its own. */
 .starStatic {
   color: var(--dsw-alias-state-warn-primary);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  outline: none;
   flex: none;
   place-items: center;
-  width: 20px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   display: grid;
+}
+
+.starStatic:disabled {
+  cursor: default;
 }
 
 /* The picker's star is a real control: outline until hover or focus, solid and

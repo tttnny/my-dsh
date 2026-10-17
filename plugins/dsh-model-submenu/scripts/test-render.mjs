@@ -350,10 +350,25 @@ await test('收藏过的模型排在小菜单前面并带星标', async () => {
   assert.ok(menu().querySelectorAll('svg').length >= 1)
 })
 
-await test('小菜单里的星标不可点', () => {
+await test('小菜单里的星标不是独立控件', () => {
   clickOutside()
   const stars = [...menu()?.querySelectorAll('button[aria-pressed]') ?? []]
   assert.deepEqual(stars, [])
+})
+
+await test('小菜单里点实心星等于点这一行', async () => {
+  globalThis.localStorage.setItem('dsh-model-submenu.favorites', JSON.stringify([{ provider: 'magpie', model: 'b' }]))
+  setState(snapshot())
+  unmount()
+  mount()
+  openMenu()
+  selections.length = 0
+  const mark = [...menu().querySelectorAll('button')].find((button) => (button.className || '').includes('starStatic'))
+  assert.notEqual(mark, undefined, `收藏的模型应当带实心星；当前行：${[...menu().querySelectorAll('button')].map((b) => b.className).join(',')}`)
+  click(mark)
+  await flush()
+  assert.equal(selections.length, 1)
+  assert.equal(menu(), null)
 })
 
 await test('目录里消失的收藏不影响列表', async () => {
@@ -458,7 +473,42 @@ await test('弹窗顶部标签页用方向键换页', async () => {
   assert.equal(afterLeft.textContent, '全部')
 })
 
-await test('弹窗列出全部供应商的模型', () => {
+await test('弹窗列表的角色是菜单，标签页都能被 Tab 走到', () => {
+  const dialog = document.querySelector('[role="dialog"]')
+  assert.notEqual(dialog.querySelector('[role="menu"]'), null)
+  const tabStops = [...dialog.querySelectorAll('[role="tab"]')].filter((tabItem) => tabItem.tabIndex === 0)
+  assert.equal(tabStops.length, dialog.querySelectorAll('[role="tab"]').length)
+})
+
+await test('搜索不会把未收藏的模型顶到收藏之前', async () => {
+  clickOutside()
+  await flush()
+  setState(snapshot())
+  globalThis.localStorage.setItem('dsh-model-submenu.favorites', JSON.stringify([{ provider: 'magpie', model: 'c' }]))
+  unmount()
+  mount()
+  openMenu()
+  click(moreRow())
+  await flush()
+  const search = document.querySelector('[role="dialog"] input[role="searchbox"]')
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
+    setter.call(search, 'Model')
+    search.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  })
+  await flush()
+  const names = [...document.querySelectorAll('[role="dialog"] [role="menuitemradio"]')].map((row) => row.getAttribute('title'))
+  assert.equal(names[0], 'Model C', `搜索后第一行应是收藏的 Model C，实际：${names.join(',')}`)
+})
+
+await test('弹窗列出全部供应商的模型', async () => {
+  const search = document.querySelector('[role="dialog"] input[role="searchbox"]')
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
+    setter.call(search, '')
+    search.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  })
+  await flush()
   const names = [...document.querySelectorAll('[role="dialog"] [role="menuitemradio"]')].map((row) => row.getAttribute('title'))
   assert.ok(names.includes('Model A'))
   assert.ok(names.includes('Kimi K3'))
@@ -480,13 +530,16 @@ await test('弹窗里的星标只切换收藏，不选中也不关弹窗', async
   click(moreRow())
   await flush()
   const before = selections.length
+  const countBefore = (JSON.parse(globalThis.localStorage.getItem('dsh-model-submenu.favorites')) ?? []).length
   const star = document.querySelector('[role="dialog"] button[aria-pressed]')
   assert.notEqual(star, null)
+  const pressedBefore = star.getAttribute('aria-pressed')
   click(star)
   await flush()
   assert.equal(selections.length, before)
   assert.notEqual(document.querySelector('[role="dialog"]'), null)
-  assert.equal(JSON.parse(globalThis.localStorage.getItem('dsh-model-submenu.favorites')).length, 1)
+  const countAfter = JSON.parse(globalThis.localStorage.getItem('dsh-model-submenu.favorites')).length
+  assert.equal(countAfter, pressedBefore === 'true' ? countBefore - 1 : countBefore + 1)
 })
 
 await test('弹窗提交被拒时弹窗保持打开', async () => {

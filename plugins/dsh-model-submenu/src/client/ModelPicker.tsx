@@ -83,7 +83,13 @@ export function ModelPicker({
     rowsForTab(flattenGroups(state.groups), tab),
     (row) => isFavorite(favorites, row.provider, row.model),
   ), [state.groups, tab, favorites])
-  const visible = useMemo(() => searchRows(rows, query, rankByName), [rows, query])
+  // Search runs inside the favorite partition, never across it: a query must not
+  // pull an unstarred model above a starred one, because favorites lead the list
+  // whether or not a query is typed.
+  const visible = useMemo(() => orderWithFavorites(
+    searchRows(rows, query, rankByName),
+    (row) => isFavorite(favorites, row.provider, row.model),
+  ), [rows, query, favorites])
 
   useEffect(() => {
     if (!open) return
@@ -195,13 +201,19 @@ export function ModelPicker({
             id={`${id}-tab-${entry.id}`}
             aria-selected={entry.id === tab}
             aria-controls={`${id}-list`}
-            tabIndex={entry.id === tab ? 0 : -1}
+            tabIndex={0}
             className={css.pickerTab}
             onClick={() => {
               setTab(entry.id)
               setHighlight(0)
             }}
             onKeyDown={onTabKeyDown}
+            onFocus={() => {
+              if (entry.id !== tab) {
+                setTab(entry.id)
+                setHighlight(0)
+              }
+            }}
           >
             {entry.label}
           </button>
@@ -211,8 +223,8 @@ export function ModelPicker({
         ref={listRef}
         id={`${id}-list`}
         className={css.pickerList}
-        role="tabpanel"
-        aria-labelledby={`${id}-tab-${tab}`}
+        role="menu"
+        aria-label={t('picker.title')}
       >
         {loading && <div className={css.notice}>{t('status.loading')}</div>}
         {failed && (

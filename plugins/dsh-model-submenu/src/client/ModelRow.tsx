@@ -90,7 +90,20 @@ export function ModelRow({
         </button>
       )}
       {star === 'static' && favorited && (
-        <span className={css.starStatic} aria-hidden="true"><StarIcon filled className={css.star} /></span>
+        // The mark sits outside the pick button so the name keeps its full width,
+        // but it is only a mark: a click there must pick the row like its name
+        // does, so the whole row's remaining width stays one target.
+        <button
+          type="button"
+          className={css.starStatic}
+          tabIndex={-1}
+          aria-hidden="true"
+          disabled={busy}
+          title={name}
+          onClick={onPick}
+        >
+          <StarIcon filled className={css.star} />
+        </button>
       )}
       <span className={css.check} aria-hidden={!selected}>{selected ? <IconCheckOutlineRegular /> : null}</span>
       {children}
