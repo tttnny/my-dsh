@@ -2,7 +2,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { FORM_GATE_UNIT, GATE_KEY, QUESTION_TYPES, pendingFormOf, validateRound } from './form-model.js';
 
 /**
- * @lynn123411/dsh-grilling-form — grilling 轮的逐题盘问工具。
+ * @lynn123411/dsh-grilling-form — grilling 轮的逐题拷问工具。
  *
  * grilling_form 与原生 ask_user_question（@deepseek-ai/dsh-tool-ask-user）是两件事，
  * 分工写在自我介绍里：原生那条走 ctx.userQuestions seam、在输入框上方接管作答面板、

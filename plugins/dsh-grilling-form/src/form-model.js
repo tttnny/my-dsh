@@ -55,7 +55,7 @@ import { normalizeOption, readDetail } from './recommendation.js';
  */
 
 /**
- * 导入块里一条认出来的作答条目（splitImportedBody 的产物）。
+ * 拷问作答块里一条认出来的作答条目（splitImportedBody 的产物）。
  * @typedef {object} AnswerEntry
  * @property {Question} question 命中这一条的题。
  * @property {string[]} selected 命中的选项身份。
@@ -139,7 +139,7 @@ export const GATE_KEY = 'grillingFormPending';
  *   2. 写死这些字面量的自检：`scripts/test-form-model.mjs`、`scripts/test-form-session.mjs`、
  *      `scripts/test-render.mjs`、`scripts/smoke-host.mjs`；
  *   3. 本包 `README.md`、`DETAILS.md` 与仓库根 `README.md` 的插件表；
- *   4. 仓库根 `GLOSSARY.md` 的「导入块」词条；
+ *   4. 仓库根 `GLOSSARY.md` 的「拷问作答块」词条；
  *   5. matt-skills-dsh 的 grilling 技能正文：工具改名时正文里那句工具名要跟着改。它不随本包发布、
  *      也没有任何测试看得见它，漂移只会以模型行为静默表现出来。
  * 新增任何写死这些字面量的测试或文档，都要补进这份清单。 */
@@ -485,7 +485,7 @@ export function answerParts(answer) {
 }
 
 /**
- * 一道题的**项**：选中的选项各一项、自填整段算一项。导入块按这个逐项写行，冻结摘要按它数
+ * 一道题的**项**：选中的选项各一项、自填整段算一项。拷问作答块按这个逐项写行，冻结摘要按它数
  * 「答了几题」；自填里的回车属于同一项，不拆。
  * @param {unknown} answer - 该题的作答。
  * @returns {{kind: 'option'|'custom', text: string}[]} 逐项；没作答时为空数组。
@@ -556,7 +556,7 @@ function selectOne(existing) {
  * 项与项之间不靠任何字符分拆，所以选项名或自填里出现顿号、冒号、换行都读得回来。
  * @param {Question[]} questions - 题目模型。
  * @param {AnswerTable} answers - 作答表。
- * @returns {string} 正文（不含导入块的起止行）。
+ * @returns {string} 正文（不含拷问作答块的起止行）。
  */
 export function importBody(questions, answers) {
   /** @type {string[]} */
@@ -584,7 +584,7 @@ function findImportBlock(draft, callId) {
 }
 
 /**
- * 一整个导入块（起止行都带上）。空作答也成块：两行起止行之间什么都没有。
+ * 一整个拷问作答块（起止行都带上）。空作答也成块：两行起止行之间什么都没有。
  * @param {string} body - 块内正文。
  * @param {unknown} callId - 这张表那次调用的 id。
  * @returns {string} 含起止行的块文本。
@@ -642,7 +642,7 @@ const QUESTION_LINE = /^(\d+)\.$/;
 const ANSWER_ITEM_LINE = /^[ \t]*- /;
 
 /**
- * 把导入块里的各行拆成逐题的作答。
+ * 把拷问作答块里的各行拆成逐题的作答。
  *
  * 块里只认两种行：题号行（`1.`）起一题，项记号行（`- 项`）归上面那一题（匹配不上选项文字的并进自填，
  * 相邻的几行用换行拼回去）；空行不算内容。除了这两种行以外还有别的话、或一条题号都认不出来，

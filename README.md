@@ -31,7 +31,7 @@
     <tr>
       <td rowspan="2"><b>🧠 Agent 工作流</b><br><i>面向模型与流程，随 profile 生效</i></td>
       <td><a href="./plugins/dsh-grilling-form"><code>@lynn123411/dsh-grilling-form</code></a></td>
-      <td><b>盘问表单</b><br>把 grilling 轮的问题作为一张可交互表单投在对话流轮次尾部，投出即结束本轮，作答由用户导入输入框后自行发送。</td>
+      <td><b>拷问表单</b><br>把 grilling 轮的问题作为一张可交互表单投在对话流轮次尾部，投出即结束本轮，作答由用户导入输入框后自行发送。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-grilling-form</code></td>
     </tr>
     <tr>

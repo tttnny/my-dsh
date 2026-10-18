@@ -1,4 +1,4 @@
-// 表单会话（内壳）：一轮表单从投出到冻结的全部**组合规则**只有这一个 owner。
+// 表单作答过程（内壳）：一轮表单从投出到冻结的全部**组合规则**只有这一个 owner。
 //
 // 低层纯函数都在 form-model.js（取数、校验、作答块协议、持久化），它们各自直接可测；这个模块
 // 把它们的组合方式固定下来，视图组件只持 state 并照着渲染：
@@ -82,7 +82,7 @@ export function carriedAnswers({ sessionId, storage, replaced, questions }) {
 }
 
 /**
- * 组装这一轮的表单会话：显示那份作答、导入门禁与草稿状态，以及几个写操作。
+ * 组装这一轮的表单作答过程：显示那份作答、导入门禁与草稿状态，以及几个写操作。
  * 每次渲染重新组装一份即可（纯函数），state 仍由调用方持有。
  * @param {{
  *   questions: import('./form-model.js').Question[],
@@ -102,7 +102,7 @@ export function carriedAnswers({ sessionId, storage, replaced, questions }) {
  *   toggle: (id: string, label: string) => import('./form-model.js').AnswerTable,
  *   setCustom: (id: string, custom: string) => import('./form-model.js').AnswerTable,
  *   importInto: (draft: unknown) => string,
- * }} 表单会话。
+ * }} 表单作答过程。
  */
 export function createFormSession({ questions, sessionId, callId, replacedCallId, replyText, superseded, storedAnswers, storage, draft }) {
   // 被取代的表只剩一行说明，跟冻结一样不可填、不可导。
