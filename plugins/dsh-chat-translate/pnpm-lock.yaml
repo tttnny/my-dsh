@@ -35,9 +35,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.5
         version: 3.18.5
-      '@eslint/js':
-        specifier: ^9.30.0
-        version: 9.39.5
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
@@ -330,10 +327,6 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
-
-  '@eslint/js@9.39.5':
-    resolution: {integrity: sha512-QywQuszQh77pIXCsq998c8hbhSTI/azTty1Z6N53dmAudKHhy573j3yvRLsX2BSp8YpLtoCEG8E9DJe+8zUh4A==}
-    engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -709,8 +702,6 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.12':
     optional: true
-
-  '@eslint/js@9.39.5': {}
 
   '@standard-schema/spec@1.1.0': {}
 

@@ -33,6 +33,33 @@
 
 自检管不了布局：居中、高度上限、滚动归属、遮挡、`sticky` 都只有真浏览器能证明。改完界面真跑一次：量居中误差、量高度上限、滚一段再看标题栏有没有跟着走、收页面报错。
 
+## 只想看一个组件的长相
+
+`gui-shot` 要有一个真的轮次把那块界面渲染出来，代价是一次模型调用。做界面时更常用的是
+`node tools/ui-preview.mjs`：它把**插件自己的真组件**打进一个独立页面去拍图，不连正在服务的
+实例，也不改任何会话状态。
+
+```bash
+node tools/ui-preview.mjs --pkg plugins/dsh-grilling-form \
+  --entry src/client/GrillingForm.jsx --mount GrillingFormTail \
+  --props tmp/ui-preview-props.mjs --shot tmp/form.png
+```
+
+props 走一个 `.mjs` 模块（default 导出那个对象）：组件的 props 常常带函数（取词、订阅、动作），
+JSON 表达不了。产物落 `tmp/ui-preview/`，HTML 留着，想看交互就自己开。
+
+两件它会替你做、但要知道为什么的事：
+
+- **ui-primitives 用薄壳替身**（`tools/ui-preview/primitives.jsx`）。真包在自己 bundle 里塞了
+  shiki、simple-icons、katex，本仓装不下来。替身只顶掉组件本身；样式取它安装副本里的真实 CSS，
+  所以 markdown 段落间距、Tag、Button 的长相都是宿主那一份。**插件新引一个 ui-primitives 名字，
+  就要在那个替身里补一个**，否则那一处是 `undefined`，React 只打一行 warning、预览页上静默少一块。
+- **主题变量取宿主 checkout 里的真表**（`design-platform.css` 与 `gradient-shadow-text.css`，
+  路径随 `DSH_SOURCE`）。所以深浅色、字号档位都跟着宿主走，不在这里另抄一份。
+
+它验的是「这块界面长什么样」；布局在真实对话流里会不会被挤、滚动归属、遮挡，仍然要
+`gui-shot` 在真实例上看。
+
 **它会改真东西**：这个浏览器连的是正在服务的那个实例，`--click` 与 `--eval` 里的一次点击就是一次真实操作——点模型会换掉这个会话正在用的模型，点收藏会写进 localStorage。工具自己在进入交互前后各记一份会话状态（模型选择、两个存储键），两边不同就逐条打出「改动前 → 改动后」并以退出码 1 结束；确认这次就是要改状态才加 `--allow-mutation`。看到报警就照「改动前」那列改回去。
 
 本机工具：`node tools/gui-shot.mjs --click 'button[aria-haspopup="menu"]' --shot tmp/ui.png`（已入库，索引见 `tools/README.md`）。它把跑着的 GUI 拉进无头浏览器：`--wait '<选择器>'` 轮询到插件挂上为止（插件是启动后台预热的，别用固定 sleep 赌）、`--eval` 带一段 JS 直接读 `getBoundingClientRect()` 回传（比截图更硬）、`--shot` 落一张图、页面报错用 `window.addEventListener('error', …)` 收（浏览器 console 在这一侧看不见）。想验「内容变高时会不会被裁」，往滚动容器里塞一个 `height: 2000px; flex: none` 的方块再看——`flex: none` 不能省，否则它自己会被压扁，量出来的是假的。其余非显然的常量与坑写在 `tools/gui-shot.mjs` 头部。

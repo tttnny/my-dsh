@@ -3,8 +3,10 @@
  * 仓库级 check：把 `.githooks/pre-commit` 对本次改动做的事，对**全部包**跑一遍。
  *
  * 提交闸门只看改动的包，且只在这台装了钩子的机器上生效；CI 或换台机器想一次跑齐时用它。
- * 顺序是：先台账（`assert-ledger.mjs`，含内核版本字面量与 preset 抄本比对），再每个包在
- * 自己目录跑它 `scripts` 里的 `check`。
+ * 顺序是：先台账（`assert-ledger.mjs`，含内核版本字面量与 preset 抄本比对），再每个包在自己
+ * 目录跑它 `scripts` 里的 `check`，最后一道是产物新鲜度（`assert-artifacts.mjs`：`lib/` 不能比
+ * `src/` 旧）。它放最后是因为多数包的 `check` 自带构建，跑完就修好了；留在这里抓的是「check
+ * 跑完产物还旧」——那说明这个包的 check 不构建、而自检里有读 `lib/` 的脚本。
  *
  * 包的依赖要先装好：`docs/rules/plugins.md`「验证」里那条约定（仓库根不放依赖）没有变——
  * 这个脚本不替你 install，缺 node_modules 就报出来。CI 的装法见 `.github/workflows/check.yml`。
@@ -91,6 +93,13 @@ if (!ledgerOnly) {
     results.push({ name: label, command: 'pnpm check', ...result });
   }
 }
+
+// 产物新鲜度放在各包的 check **之后**：绝大多数包的 check 里带构建，跑完它自己就修好了；
+// 这里要抓的是「check 跑完了，产物还是比源码旧」——那说明这个包的 check 不构建，而它的自检
+// 里有读 lib/ 的脚本。放在最前面只会对「本来就打算构建」的包误报。
+const artifacts = run(['node', join(root, 'tools/assert-artifacts.mjs')], root, !json);
+results.push({ name: '（产物新鲜度）', command: 'node tools/assert-artifacts.mjs', ...artifacts });
+if (!json) console.log(artifacts.status === 0 ? 'check: 产物新鲜' : 'check: 产物比源码旧（有包的 check 不构建，却读 lib/）');
 
 const failed = results.filter((result) => result.status !== 0);
 if (json) {

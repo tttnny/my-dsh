@@ -120,7 +120,6 @@ export interface AssistantStepProps {
 
 // 图标在渲染时创建，模块顶层不触碰运行时组件。
 const thinkIcon = (): ReactElement => React.createElement(IconThinkOutlineRegular, { size: 14 });
-const NOOP = (): void => {};
 
 function markdownLabels(t: (key: string, params?: Record<string, unknown>) => string): MarkdownLabels {
   return {

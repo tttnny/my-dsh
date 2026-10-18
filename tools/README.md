@@ -18,6 +18,7 @@
 | preset 的组合解析（`--dump-config`） | `node tools/preset-compose.mjs <id \| --all>` |
 | 「页面真的换上新产物了吗」 | `node tools/verify-client.mjs <包> --needle '<新写的类名或文案>' [--build]` |
 | 看一眼界面：点一下、量几何、拍图（会改会话状态，默认拦下并报警） | `node tools/gui-shot.mjs --click '<选择器>' --shot tmp/ui.png [--allow-mutation]` |
+| 不碰正在服务的实例，把**真的**插件组件单独渲染出来拍图（ui-primitives 用薄壳替身、样式取宿主真表） | `node tools/ui-preview.mjs --pkg <plugins/dsh-xxx> --entry src/client/X.jsx --mount Xxx --props tmp/p.mjs --shot tmp/x.png` |
 | 开发副本还是不是软链、客户端半边有没有登记进 bundles、有没有指向归档目录的孤儿软链（`--write` 删掉孤儿） | `node tools/dev-link.mjs [--write]` |
 | 一个会话（连同它派出去的子会话）改过哪些文件、提交过什么 | `node tools/session-changes.mjs [<会话 id>] [--json] [--since <毫秒>]` |
 
@@ -27,6 +28,6 @@
 - 找引用先用 `grep -l` 取文件清单再逐文件读：`grep -rn '<包名>' --exclude-dir={node_modules,lib,tmp,archive}` 会把匹配行所在的整行打出来，而 `lib/` 的声明文件里一行注释可能就有几千字，一次输出几十 KB 只为了几条结果。
 - 判据只读本仓库与本机 DSH 的状态（`package.json`、`docs/rules/`、`$DSH_HOME`、已装内核与它自带的官方 preset、`DSH_SOURCE` 指向的源码 checkout），不联网。
   唯一联网的是 `presets/plugin-upgrade-cordis/check-upstream.mjs`（在线模式）、`pnpm install` 与 `tools/ci-check.mjs`。
-- 中间产物一律落 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`。
+- 中间产物一律落 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`、`tmp/ui-preview/`。
 - **工具与规则是一件事的两处**：`assert-ledger.mjs` 里的每条判据都在 `docs/rules/` 里有出处；改了那些约定就同步改它，不允许只改一边。
 - 判据要能变红：新增或翻转断言后，把被测行为改回旧写法跑一次，确认它真的 FAIL（见 `docs/rules/plugins.md`「证明断言有牙齿」）。这条机械动作交给 `tools/mutate.mjs`：它要求 `--from` 恰好命中一处，命令跑完无论成败都还原（干净文件走 `git checkout`，未提交的文件按原文写回）。

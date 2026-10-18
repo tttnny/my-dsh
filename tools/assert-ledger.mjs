@@ -16,6 +16,7 @@
  *      版本字面量与本包 `engines.dsh` 同串；历史实测记录（`DETAILS.md`）与 vendored 内容不查
  *  11. 抄自官方 preset 的 `<id>.patch.yml` 与已装内核的官方同名文件逐行一致，只放行已登记的差异
  *  12. 每个包钉住 pnpm 版本；有依赖的包另有 `pnpm-workspace.yaml` 放行内核 alpha 版本与构建脚本
+ *  14. 插件 README/DETAILS 里写死的「N 个字段、M 条描述」与构建产物里实际注册的工具面一致
  *  13. 归档的包只在 `archive/` 下被提到：除 `archive/`、`tmp/`、构建产物与随包 vendored 内容外，
  *      规则文档、工具脚本、根 README 与各包源码里都不出现它的包名或目录名，`plugins/<dir>` 也必须是活目录
  *
@@ -40,6 +41,122 @@ import {
   readJson,
   repoRoot,
 } from './lib/repo.mjs';
+
+/**
+ * 把文档里写的中文或阿拉伯数字读成整数。只认一到九十，够用：工具面的字段不会更多。
+ * @param {string} text - 例如「八」「11」「十一」。
+ * @returns {number|undefined} 数字；认不出时 undefined（调用方跳过这条声明）。
+ */
+function cnNumber(text) {
+  const digits = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  if (/^\d+$/.test(text)) return Number(text);
+  if (text === '十') return 10;
+  if (text.startsWith('十')) return 10 + (digits[text.slice(1)] ?? 0);
+  if (text.endsWith('十')) return (digits[text.slice(0, -1)] ?? 0) * 10;
+  if (text.includes('十')) {
+    const [tens, ones] = text.split('十');
+    return (digits[tens] ?? 0) * 10 + (digits[ones] ?? 0);
+  }
+  return digits[text];
+}
+
+/**
+ * 一个插件注册的工具面有多大：顶层参数里的字段数，加上各处 description 的条数。
+ *
+ * 从构建产物里数，因为那里是工具真正注册的形状；读不出来（没构建、工具不是 grilling_form
+ * 那种 defineTool 写法）时返回 undefined，调用方跳过这条声明而不是报假错。
+ * @param {{ dir: string, rel: string }} entry - 包。
+ * @returns {{ fields: number, descriptions: number }|undefined} 字段数与描述条数。
+ */
+function toolShapeOf(entry) {
+  const bundle = join(entry.dir, 'lib', 'index.js');
+  if (!existsSync(bundle)) return undefined;
+  let source;
+  try {
+    source = readFileSync(bundle, 'utf8');
+  } catch {
+    return undefined;
+  }
+  // 只认 defineTool 那一段：同一个包里别的注册项不算工具面。
+  const defineAt = source.indexOf('defineTool(');
+  if (defineAt === -1) return undefined;
+  const toolSource = source.slice(defineAt);
+  // 只数入参：`parameters: {` 起、到配平为止；`output` 之后是结果 schema，不是模型要填的字段。
+  const parametersAt = toolSource.indexOf('parameters: {');
+  if (parametersAt === -1) return undefined;
+  const body = toolSource.slice(parametersAt + 'parameters: {'.length);
+  const parameters = body.slice(0, balancedAt(body));
+
+  // 字段 = 入参对象第一层的键（questions、replace）+ 每个 properties 块第一层的键
+  // （questions[] 的四个、options[] 的两个）。这正是文档里「八个字段」数的那些。
+  let fields = topLevelKeys(parameters).length;
+  for (const match of parameters.matchAll(/\bproperties:\s*\{/g)) {
+    const blockBody = parameters.slice(match.index + match[0].length);
+    fields += topLevelKeys(blockBody.slice(0, balancedAt(blockBody))).length;
+  }
+  const descriptions = (toolSource.match(/\bdescription\s*:/g) ?? []).length;
+  return fields === 0 ? undefined : { fields, descriptions };
+}
+
+/**
+ * 从开括号之后的位置起，找到与它配对的收尾括号的下标。
+ * @param {string} body - 从 `{` 之后开始的文本。
+ * @returns {number} 配对 `}` 的下标；没配上时给整段长度。
+ */
+function balancedAt(body) {
+  let depth = 1;
+  let index = 0;
+  while (index < body.length) {
+    const char = body[index];
+    if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return index;
+    } else if (char === '"' || char === "'") {
+      const quote = char;
+      index += 1;
+      while (index < body.length && body[index] !== quote) index += body[index] === '\\' ? 2 : 1;
+    }
+    index += 1;
+  }
+  return body.length;
+}
+
+/**
+ * 一个对象字面量第一层的键：按花括号配平走，只收深度 0 处的 `key:`。
+ *
+ * 不按缩进数：构建产物会把行内对象压成一行，缩进不可靠；按配平后的深度数才稳。
+ * @param {string} body - 从开括号之后开始的文本。
+ * @returns {string[]} 第一层的键。
+ */
+function topLevelKeys(body) {
+  const keys = [];
+  let depth = 0;
+  let index = 0;
+  while (index < body.length) {
+    const char = body[index];
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      if (depth === 0) return keys;
+      depth -= 1;
+    } else if (char === '"' || char === "'") {
+      // 跳过字符串字面量：里面的花括号与冒号都不算结构。
+      const quote = char;
+      index += 1;
+      while (index < body.length && body[index] !== quote) index += body[index] === '\\' ? 2 : 1;
+    } else if (depth === 0 && /[A-Za-z_$]/.test(char)) {
+      const match = /^([A-Za-z_$][\w$]*)\s*:/.exec(body.slice(index));
+      if (match !== null) {
+        keys.push(match[1]);
+        index += match[0].length;
+        continue;
+      }
+    }
+    index += 1;
+  }
+  return keys;
+}
 
 /** 逐个解析 `--k v` 与 `--flag`。 */
 function parseArgs(argv) {
@@ -488,6 +605,33 @@ if (!existsSync(copiesPath)) {
   }
 }
 
+// ── 14. 文档里写死的工具面数字与实际 schema 一致 ──────────────────────────────
+// 插件 README/DETAILS 里会写「几个字段、几条描述」这类数字给模型看的事实。它是从源码数出来的，
+// 不是独立的一份约定；加一个字段时忘了改它，读文档的人（模型）就会照错的形状调用工具。
+// 这里直接读构建产物里注册的工具定义来数，两边只能一致。
+for (const entry of pluginPackages) {
+  const claimed = [];
+  for (const name of ['README.md', 'DETAILS.md']) {
+    const path = join(entry.dir, name);
+    if (!existsSync(path)) continue;
+    const text = readFileSync(path, 'utf8');
+    for (const match of text.matchAll(/([一二三四五六七八九十\d]+)个字段[、，]\s*([一二三四五六七八九十\d]+)条描述/g)) {
+      claimed.push({ name, raw: match[0], fields: cnNumber(match[1]), descriptions: cnNumber(match[2]) });
+    }
+  }
+  if (claimed.length === 0) continue;
+  const shape = toolShapeOf(entry);
+  if (shape === undefined) continue;
+  for (const claim of claimed) {
+    if (claim.fields !== shape.fields || claim.descriptions !== shape.descriptions) {
+      fail(
+        `${entry.rel}/${claim.name}`,
+        `写的「${claim.raw}」与工具面不符：实际是 ${shape.fields} 个字段、${shape.descriptions} 条描述（数字从源码数出来，改了 schema 就同步改这句）`,
+      );
+    }
+  }
+}
+
 // ── 12. 安装约定 ─────────────────────────────────────────────────────────────
 // 见 docs/rules/plugins.md「仓库级 check 与 CI」：本机的 pnpm 用户配置可能把两条默认策略
 // 关掉，干净环境（CI）一定生效，所以它们必须写进仓库。这里保证它们不会悄悄丢掉。
@@ -534,7 +678,7 @@ if (pins.size > 1) {
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────────
-const checks = 13;
+const checks = 14;
 if (findings.length === 0) {
   if (!quiet) {
     console.log(`assert-ledger: ok（${packages.length} 个包，${checks} 项判据；开发副本 ${localProfiles.length} 个 profile）`);

@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client';
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
 import { injectCardStyles, setupSettingsUi } from './settings/ui.tsx';
-import { apply as registerDictionaries, en, NS, zh } from './locales.ts';
+import { apply as registerDictionaries, en, zh } from './locales.ts';
 
 /**
  * 浏览器半边：把配置卡片挂到宿主的「插件」页上。

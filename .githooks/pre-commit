@@ -8,6 +8,8 @@
 # 两道闸门：
 #   1. 台账：改到 plugins/、presets/、根 README.md、docs/rules/ 或 tools/ 时跑
 #      `node tools/assert-ledger.mjs`（判据见该文件头部）。零依赖、纯读文件，很快。
+#   3. 产物新鲜度：`node tools/assert-artifacts.mjs`——`lib/` 比 `src/` 旧时拦下。
+#      放在包检查之后：多数包的 check 自带构建，各自修好了才轮到这道。
 #   2. 包：改到的每个包在它自己目录跑 `pnpm check`。**有 check 就跑**——没有 node_modules
 #      也照跑（preset 的 check 本来就不需要依赖），跑不过就拦，不静默少跑一道闸门。
 #
@@ -73,6 +75,16 @@ for pkg in $pkgs; do
     failed="$failed $pkg"
   fi
 done
+
+# ── 3. 产物新鲜度 ────────────────────────────────────────────────────────────
+# 放在各包的 check 之后：多数包的 check 自带构建，跑完自己就修好了。这里抓的是「check 跑完
+# 产物还是比 src/ 旧」——那说明这个包的 check 不构建、而它的自检里有读 lib/ 的脚本。
+echo "pre-commit: 产物新鲜度 -> node tools/assert-artifacts.mjs"
+if ! out=$(node tools/assert-artifacts.mjs 2>&1); then
+  echo "pre-commit: 构建产物比源码旧："
+  printf '%s\n' "$out" | tail -n 20
+  failed="$failed 产物新鲜度"
+fi
 
 if [ -n "$failed" ]; then
   echo ""

@@ -1,4 +1,3 @@
-import * as React from 'react';
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
