@@ -78,7 +78,6 @@ await testAsync('AI configured -> translated from the channel, not the cache', a
   const results = await dispatcher.translateReplyBlocks(['TT1: List files here']);
   assert.equal(calls.length, 1);
   assert.equal(results[0].ok, true);
-  assert.equal(results[0].cached, false);
   assert.equal(results[0].translated, '[openai]TT1: List files here');
   assert.equal(results[0].detail, undefined, '成功块不带失败细节');
 });
@@ -199,32 +198,27 @@ await testAsync('a repeat of the same text is answered from the cache', async ()
   const first = await dispatcher.translateReplyBlocks(['Identical task text']);
   const second = await dispatcher.translateReplyBlocks(['Identical task text']);
   assert.equal(calls.length, 1, 'the cache must answer the second request');
-  assert.equal(first[0].cached, false);
-  assert.equal(second[0].cached, true);
-  assert.equal(second[0].translated, first[0].translated);
+  assert.equal(second[0].translated, first[0].translated, '命中缓存：两次译文一致');
 });
 
 console.log('\n=== Suite C: CredentialsReader over the DSH credentials service ===');
 
-await testAsync('init loads the stored key; setApiKey stores and refreshes the cache', async () => {
+await testAsync('init loads the stored key', async () => {
   const service = createFakeCredentials('sk-old');
   const reader = new CredentialsReader(service);
   await reader.init();
   assert.equal(reader.getApiKey(), 'sk-old', 'init must load the stored key');
-
-  await reader.setApiKey('sk-new');
-  assert.equal(reader.getApiKey(), 'sk-new', 'cache must reflect the new value immediately');
-  assert.equal((await reader.describe()).configured, true);
-  assert.equal((await reader.describe()).writable, true);
 });
 
-await testAsync('setApiKey with empty value clears the ref', async () => {
+await testAsync('refresh adopts a key written by another surface', async () => {
+  // 写入走浏览器侧的 credentials Remote API；宿主侧只读，靠 refresh 跟上。
   const service = createFakeCredentials('sk-old');
   const reader = new CredentialsReader(service);
   await reader.init();
-  await reader.setApiKey('   ');
-  assert.equal(reader.getApiKey(), '', 'cleared key reads back empty');
-  assert.equal((await reader.describe()).configured, false);
+  const stored = new Map([['TRANSLATE_API_KEY', 'sk-new']]);
+  service.resolve = async (ref) => ({ value: stored.get(ref) ?? '' });
+  await reader.refresh();
+  assert.equal(reader.getApiKey(), 'sk-new', 'cache must reflect the externally written value');
 });
 
 await testAsync('refresh picks up external changes and a missing key reads empty', async () => {

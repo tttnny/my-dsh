@@ -2,46 +2,47 @@
  * 助手行渲染所需的「工作细节」呈现策略。
  *
  * 宿主把这一策略派生自 `ui-chat` 配置条目的 `transcriptView` 字段；本插件接管
- * 助手行渲染后，经 `ctx.configForms.get('ui-chat')` 读同一个字段，映射到与宿主
- * 同形、同值的策略表。策略对象按模式常驻（同一模式恒等返回同一实例），
- * 选择器订阅看到的是稳定引用。
+ * 助手行渲染后，经 `ctx.configForms.get('ui-chat')` 读同一个字段。渲染层只用到
+ * 其中一个能力：落定的思考行要不要在 Think 标题旁预览首行
+ * （{@link ChatPresentationPolicy.settledReasoningPreview}），所以这里只镜像那一个
+ * 字段，而不是把宿主的整张策略表搬过来。快照对象按取值常驻（同一取值恒等返回
+ * 同一实例），选择器订阅看到的是稳定引用。
  */
 
-/** 与宿主 ChatPresentationPolicy 同形的结构性镜像。 */
+/** 与宿主 ChatPresentationPolicy 同形的结构性镜像（只保留本插件读取的那个能力）。 */
 export interface ChatPresentationPolicy {
-  readonly mode: string;
-  readonly foldCompletedTurns: boolean;
-  readonly stepGrouping: 'collapsed' | 'history' | 'none';
-  readonly liveProcessDetail: boolean;
   readonly settledReasoningPreview: boolean;
 }
 
-function policy(
-  mode: string,
-  foldCompletedTurns: boolean,
-  stepGrouping: ChatPresentationPolicy['stepGrouping'],
-  liveProcessDetail: boolean,
-  settledReasoningPreview: boolean
-): ChatPresentationPolicy {
-  return Object.freeze({ mode, foldCompletedTurns, stepGrouping, liveProcessDetail, settledReasoningPreview });
-}
-
 /**
- * 模式 → 策略常量表，逐行对齐宿主 ui-chat 的实现（含两代 legacy 存储值：
- * `normal` 按 standard 读、`expanded` 按 detailed 读，从不写回）。
- * 渲染器只选择单个字段，不按 mode 分支。
+ * 会预览首行的模式：compact 之外都预览。两代 legacy 存储值一并认——
+ * `normal` 按 standard 读、`expanded` 按 detailed 读，两者都预览且从不写回。
  */
-export const POLICY_BY_MODE: Readonly<Record<string, ChatPresentationPolicy>> = Object.freeze({
-  compact: policy('compact', true, 'collapsed', false, false),
-  standard: policy('standard', true, 'collapsed', true, true),
-  detailed: policy('detailed', true, 'history', true, true),
-  verbose: policy('verbose', false, 'none', false, true),
-  normal: policy('standard', true, 'collapsed', true, true),
-  expanded: policy('detailed', true, 'history', true, true),
-});
+const PREVIEW_MODES: ReadonlySet<string> = new Set([
+  'standard',
+  'detailed',
+  'verbose',
+  'normal',
+  'expanded',
+]);
 
 /** 宿主在用户没有显式选择时使用的模式。 */
 export const DEFAULT_MODE = 'standard';
+
+/** 两个常驻快照：同一取值返回同一实例，订阅判等才稳定。 */
+const WITH_PREVIEW: ChatPresentationPolicy = Object.freeze({ settledReasoningPreview: true });
+const WITHOUT_PREVIEW: ChatPresentationPolicy = Object.freeze({ settledReasoningPreview: false });
+
+/**
+ * 存储值 → 策略快照。未识别的值按宿主默认（standard）读。
+ *
+ * @param mode - `transcriptView` 的原样字符串。
+ * @returns 该模式的常驻快照。
+ */
+export function policyForMode(mode: string): ChatPresentationPolicy {
+  const effective = PREVIEW_MODES.has(mode) || mode === 'compact' ? mode : DEFAULT_MODE;
+  return effective === 'compact' ? WITHOUT_PREVIEW : WITH_PREVIEW;
+}
 
 /** 本模块只用到配置面的这一小片形状（结构性镜像，值边不跨包）。 */
 interface ModeFormLike {
@@ -54,7 +55,7 @@ interface ModeFormLike {
  * （宿主半边未服务该条目、内存模式）时停在 standard，不发订阅。
  */
 export class ChatPresentation {
-  private policy: ChatPresentationPolicy = POLICY_BY_MODE[DEFAULT_MODE];
+  private policy: ChatPresentationPolicy = policyForMode(DEFAULT_MODE);
   private listeners = new Set<() => void>();
   private form: ModeFormLike | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -62,7 +63,7 @@ export class ChatPresentation {
   attach(form: ModeFormLike | null | undefined): void {
     this.detach();
     if (!form) {
-      this.policy = POLICY_BY_MODE[DEFAULT_MODE];
+      this.policy = policyForMode(DEFAULT_MODE);
       return;
     }
     this.form = form;
@@ -96,7 +97,7 @@ export class ChatPresentation {
       value = undefined;
     }
     const raw = typeof value?.transcriptView === 'string' ? value.transcriptView : '';
-    const next = POLICY_BY_MODE[raw] ?? POLICY_BY_MODE[DEFAULT_MODE];
+    const next = policyForMode(raw);
     if (next !== this.policy) {
       this.policy = next;
       for (const listener of [...this.listeners]) {

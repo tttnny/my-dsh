@@ -133,13 +133,6 @@ export class ChatTranslateStore {
   private fetch: ReplyFetcher;
   /** 已送达的译文，按原文内容寻址：跨行、跨代复用同一段文本的结果。 */
   private translated = new Map<string, string>();
-  /** 每行写定到哪个下标为止；null（缺席）= 还没有登记过。 */
-  private settled = new Map<string, number>();
-  /**
-   * 每行在途的那一轮请求，登记的是**这一轮认领的那份文本数组**。登记换代时旧
-   * 一轮的写入按它丢弃：`live.texts` 与它不再同一个数组就说明行已经换代。
-   */
-  private active = new Map<string, { texts: readonly string[] }>();
   /**
    * 每行**在飞的块**：下标 → 那一轮请求认领的原文。流式期间新代接手它们的结果位
    * 而不重发，等结果回来按当时登记的原文落账（文本没变才算同一块）。
@@ -172,11 +165,6 @@ export class ChatTranslateStore {
     return state;
   }
 
-  /** 按原文内容查已送达的译文；null = 还没有结果。 */
-  lookup(text: string): string | null {
-    return this.translated.get(cacheKey(text)) ?? null;
-  }
-
   /**
    * 确保该行按当前文本被翻译。
    * @param rowKey - 行键（会话内锚点）。
@@ -190,7 +178,7 @@ export class ChatTranslateStore {
     const retries = normalizeRetries(options.retries);
 
     const current = this.rows.get(rowKey);
-    const settledThrough = this.settled.get(rowKey) ?? 0;
+    const settledThrough = current?.settledThrough ?? 0;
     let seed: (BlockOutcome | null)[] | null = null;
     let previousFrozen = 0;
 
@@ -222,15 +210,14 @@ export class ChatTranslateStore {
       status: work || (inflight !== undefined && inflight.texts.size > 0) ? 'pending' : 'settled',
       texts: next,
       outcomes: plan.outcomes,
-      settledThrough: frozen,
+      // 单调不减：正文只往后追加，写定数只进不退；补跑把小 frozen 递进来时不能倒退。
+      settledThrough: Math.max(settledThrough, frozen),
       retrying: work ? plan.retrying : [],
     });
-    this.settled.set(rowKey, Math.max(settledThrough, frozen));
     this.prune();
     this.bump();
 
     if (!work) return false;
-    this.active.set(rowKey, { texts: next });
     void this.run(rowKey, next, frozen, plan.indexes, plan.sending);
     return true;
   }
@@ -381,7 +368,6 @@ export class ChatTranslateStore {
     const retrying = finish ? [] : indexes.filter((index) => inflight.texts.has(index));
     const done = finish && inflight.texts.size === 0;
     if (done) this.pending.delete(rowKey);
-    if (done) this.active.delete(rowKey);
     this.rows.set(rowKey, {
       status: done ? 'settled' : 'pending',
       texts: live.texts,
@@ -397,7 +383,6 @@ export class ChatTranslateStore {
       const oldest = this.rows.keys().next().value;
       if (oldest === undefined) break;
       this.rows.delete(oldest);
-      this.settled.delete(oldest);
     }
   }
 

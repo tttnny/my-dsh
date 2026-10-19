@@ -43,10 +43,8 @@ export type TranslateFailureKind = 'channel' | 'not-configured';
  * carries the technical one-liner for the hover text.
  */
 export interface ReplyBlockResult {
-  original: string;
   translated: string;
   ok: boolean;
-  cached: boolean;
   /**
    * Present only when `ok` is false: the technical one-liner behind the
    * localized label (e.g. `channel timed out after 20000ms` or the expanded

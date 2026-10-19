@@ -37,9 +37,7 @@ export type RowPlanEntry =
    * 成功时非 null；showingOriginal 是同一份成功结果上的显示源选择（成功块的
    * 译文/原文切换）；fail 仅在 mark==='failed' 时非 null——服务端的技术一句，
    * 供悬停报因；failKind 是同一失败的分类（悬停与读屏据此报哪一类原因）；
-   * retryBusy 仅在这一块被手点补跑时为 true——↻ 原地转圈、暂不可重复点；
-   * frozen = 这一块的内容已经写完（流式中只有正在长的尾块为 false，它不带
-   * 任何左缘动作，也没有任何结果位）。
+   * retryBusy 仅在这一块被手点补跑时为 true——↻ 原地转圈、暂不可重复点。
    */
   | {
       type: 'prose';
@@ -51,7 +49,6 @@ export type RowPlanEntry =
       fail: string | null;
       failKind: BlockFailKind | null;
       retryBusy: boolean;
-      frozen: boolean;
     }
   | { type: 'images'; key: number; attachments: readonly unknown[] }
   | { type: 'unknown'; key: number; block: unknown }
@@ -231,7 +228,6 @@ export function planAssistantRow(input: RowPlanInput): RowPlan {
           fail,
           failKind,
           retryBusy,
-          frozen: settled,
         });
         break;
       }

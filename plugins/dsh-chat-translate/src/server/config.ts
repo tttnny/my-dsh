@@ -106,16 +106,6 @@ export class ConfigManager {
     return this.source.get();
   }
 
-  /** Whether the AI channel has every required piece: baseUrl, model and key. */
-  isAiConfigured(): boolean {
-    const config = this.getConfig();
-    return Boolean(
-      config.baseUrl.trim() &&
-        config.model.trim() &&
-        this.credentials.getApiKey()
-    );
-  }
-
   /**
    * Name every missing piece of the AI channel, as the reply path reports a
    * setup failure. This travels to the hover bubble and the screen reader, so

@@ -24,6 +24,7 @@ import {
   repairShape,
   restoreLinkTargets,
   splitMarkdownSegments,
+  type ShapeRepair,
 } from './pipeline/segments.ts';
 
 /**
@@ -83,7 +84,10 @@ function recordLedgerFailure(
   }
 }
 
-/** 块败因：取第一个说得出话的缺失片段。 */
+/**
+ * 块败因：取第一个说得出话的缺失片段。让片段缺席的每条路径都先写过账本
+ * （整批失败摊到批内每一片、单片失败只记该片），所以这里一定取得到。
+ */
 function blockFailure(
   ledger: FailureLedger,
   block: number,
@@ -148,10 +152,8 @@ export class TranslationDispatcher {
    */
   async translateReplyBlocks(blocks: string[]): Promise<ReplyBlockResult[]> {
     const results: ReplyBlockResult[] = blocks.map((original) => ({
-      original,
       translated: original,
       ok: false,
-      cached: false,
     }));
 
     const config = this.configManager.getConfig();
@@ -170,16 +172,6 @@ export class TranslationDispatcher {
       }));
     }
 
-    return this.serveReplyBlocks(blocks, results, adapter, config);
-  }
-
-  /** 通道可用之后的正文执行段：切段、打包、请求、拼装。 */
-  private async serveReplyBlocks(
-    blocks: string[],
-    results: ReplyBlockResult[],
-    adapter: ITranslationAdapter,
-    config: PluginConfig
-  ): Promise<ReplyBlockResult[]> {
     const pieces: ReplyPiece[] = [];
     const partsByBlock = new Map<number, BlockPart[]>();
 
@@ -188,7 +180,7 @@ export class TranslationDispatcher {
       if (raw.trim() === '') continue;
       const cached = this.cache.get(raw.trim().toLowerCase());
       if (cached) {
-        results[block] = { original: raw, translated: cached, ok: true, cached: true };
+        results[block] = { translated: cached, ok: true };
         continue;
       }
       const parts: BlockPart[] = [];
@@ -249,12 +241,7 @@ export class TranslationDispatcher {
       const original = blocks[block]!;
       const finalText = parts.join('');
       this.cache.set(original.trim().toLowerCase(), finalText);
-      results[block] = {
-        original,
-        translated: finalText,
-        ok: true,
-        cached: false,
-      };
+      results[block] = { translated: finalText, ok: true };
     }
 
     return results;
@@ -298,25 +285,26 @@ export class TranslationDispatcher {
     for (const piece of stragglers) {
       const key = replyPieceKey(piece);
       if (out.has(key)) continue;
-      let answer: string | null = null;
       // 修不好的形状自动重掷一次：弱模型的漂移是随机的，再问一次常常就齐了。
       // 通道伤不重掷——断了就断了，重试只是白烧流量，救活归用户的点击。
+      // 每次答案与它的修形结果一起留下：循环结束后直接取，不再重算一遍。
+      let answer: string | null = null;
+      let repair: ShapeRepair | null = null;
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           answer = (await this.fetchReplyAnswers(adapter, [piece], config))[0] ?? '';
         } catch (err) {
-          if (answer === null) {
-            recordLedgerFailure(ledger, [key], classifyError(err));
-            console.warn(
-              `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
-            );
-          }
+          recordLedgerFailure(ledger, [key], classifyError(err));
+          console.warn(
+            `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
+          );
+          answer = null;
           break;
         }
-        if (repairShape(piece.text, answer).text !== null) break;
+        repair = repairShape(piece.text, answer);
+        if (repair.text !== null) break;
       }
-      if (answer === null) continue;
-      const repair = repairShape(piece.text, answer);
+      if (answer === null || repair === null) continue;
       if (repair.text !== null) {
         out.set(key, this.assemble(piece, repair.text, true));
         continue;

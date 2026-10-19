@@ -22,7 +22,7 @@ DeepSeek Harness Web 界面的**助手回答正文翻译**插件。它接管助�
 - **上游重试按块作废**：唯一让已写定的块作废的是上游模型自己重试（整次尝试清空从零重来）；那时按块判断，内容一字未变的块其中文留在原地，真变了的块才重翻。
 - **单通道：OpenAI 兼容协议**：对接任意 OpenAI 兼容的 `chat/completions` 服务（OpenAI、DeepSeek、通义、Ollama、本地 vLLM 等）。Key / Base URL / 模型三者齐备才翻译，缺任何一项保持原文并如实报「设置没配好」，不做降级兜底。API Key 经 DSH 凭据服务读写 `~/.dsh/.credentials.yaml` 的 `TRANSLATE_API_KEY`。
 - **串行与超时**：同时最多一个在途请求，单次超时 `aiTimeoutMs`（默认 600000 毫秒，范围 500–900000）；每行首跑与每次手点都等到真实结果。
-- **缓存按提示词修订号整体作废**：磁盘池 `~/.dsh/dsh-chat-translate/cache.json`（7 天 TTL、1000 条 LRU）在文档里登记 `rev`，换提示词语义后旧译文不会串代。
+- **缓存按提示词修订号整体作废**：磁盘池 `~/.dsh/dsh-chat-translate/cache.json`（1000 条 LRU）在文档里登记 `rev`，换提示词语义后旧译文不会串代；除此之外不设过期时间，同一段原文不会因为闲置而重译。
 - **跟随宿主显示设置**：Think 行的折叠摘要预览跟随「工作细节」模式（读 `ui-chat` 配置的 `transcriptView`，含旧取值映射），设置缺席时按 standard。
 - **DSH 原生配置接入**：配置就是本插件在 profile 里的插件配置——配置页经 `ctx.configForms` 读写 `dsh-chat-translate` 条目的 `config`，用户层落在当前 profile 的 patch；无任何自研配置文件，译文从不写回会话上下文。
 - **改完点保存才生效**：Base URL、模型、超时与 API Key 都是草稿——打字期间一个字都不写盘，点一次「保存」才作为一批提交上去；提交成功后自动探一次通道，把结果报在页面上（探不通不改保存结果）。空着保存等于清除该项，超时草稿不合法时保存被拦住。唯一即时生效的是总开关。

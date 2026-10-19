@@ -2,9 +2,9 @@
  * API-key access through the DSH `ctx.credentials` service.
  *
  * The service owns ~/.dsh/.credentials.yaml (refs section, 0600 perms, env
- * shadowing, cross-process locking): reads go through `resolve`, writes through
- * `set`/`unset`, and the host's `credentials/reference-updated` event keeps
- * the sync cache warm.
+ * shadowing, cross-process locking). This plugin only reads: writes go
+ * through the browser's `credentials` Remote API, and the host's
+ * `credentials/reference-updated` event keeps the sync cache warm.
  */
 
 /** Refs key that holds the translation API key. */
@@ -15,16 +15,10 @@ export interface KeyReader {
   getApiKey(): string;
 }
 
-/** Minimal structural shape of the DSH `ctx.credentials` service. */
+/** Minimal structural shape of the DSH `ctx.credentials` service: the read face. */
 export interface CredentialsServiceLike {
   /** Resolve a ref to its stored/inherited value; undefined when absent. */
   resolve(ref: string): Promise<{ value: string; source?: string } | undefined>;
-  /** Status-only view — never returns the plaintext value. */
-  describe(ref: string): Promise<{ configured: boolean; source?: string; writable: boolean }>;
-  /** Store a non-empty value under the ref. */
-  set(ref: string, value: string): Promise<void>;
-  /** Remove the ref from the document. */
-  unset(ref: string): Promise<void>;
 }
 
 export class CredentialsReader implements KeyReader {
@@ -64,36 +58,5 @@ export class CredentialsReader implements KeyReader {
   /** Synchronous cached read — the hot translation path stays sync. */
   getApiKey(): string {
     return this.cachedKey;
-  }
-
-  /**
-   * Status-only view of the ref (plaintext never crosses the wire).
-   *
-   * @internal Test-only. The settings UI reads key status through the
-   * `credentials` Remote API with its own client-side shape, so nothing in
-   * `src/` calls this host-side method; only `scripts/test-*.mjs` do.
-   */
-  async describe(): Promise<{ configured: boolean; writable: boolean }> {
-    try {
-      const info = await this.service.describe(TRANSLATE_API_KEY_REF);
-      return { configured: info.configured, writable: info.writable };
-    } catch {
-      return { configured: false, writable: false };
-    }
-  }
-
-  /** Write (or clear) the ref through the DSH credentials service. */
-  async setApiKey(apiKey: string): Promise<void> {
-    const normalized = apiKey.trim();
-    if (normalized) {
-      await this.service.set(TRANSLATE_API_KEY_REF, normalized);
-    } else {
-      await this.service.unset(TRANSLATE_API_KEY_REF);
-    }
-    // The write committed: set the cache synchronously so the hot path never
-    // reads a stale key even if a concurrent refresh() is still in flight,
-    // then confirm from the service (which also fans reference-updated).
-    this.cachedKey = normalized;
-    await this.refresh();
   }
 }

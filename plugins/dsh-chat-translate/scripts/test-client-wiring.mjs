@@ -247,7 +247,8 @@ const injected = takeover?.entryInject?.()
 check('takeover injects the live presentation hook',
   typeof injected?.hooks?.presentation?.getSnapshot === 'function' &&
   typeof injected?.hooks?.presentation?.subscribe === 'function')
-check('presentation defaults to standard policy', injected?.hooks?.presentation?.getSnapshot().mode === 'standard')
+check('presentation defaults to the standard policy (previews the settled reasoning line)',
+  injected?.hooks?.presentation?.getSnapshot().settledReasoningPreview === true)
 
 // 「工作细节」模式跟随宿主：apply 读 ui-chat 的配置面。
 check('chat presentation reads the ui-chat config form', formLookups.includes('ui-chat'))

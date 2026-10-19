@@ -114,11 +114,6 @@ function lineSignature(line: string): string {
   return `${indent}|${cls}|${pipes}|${links}`;
 }
 
-/** 形状核对的只读错误视图：repairShape 的 error 侧。null = 可成立。 */
-export function shapeMismatch(original: string, translated: string): string | null {
-  return repairShape(original, translated).error;
-}
-
 export interface ShapeRepair {
   /** 修好的文本：原文骨架（空行布局 + 行首前缀）+ 译文正文；null = 修不了。 */
   text: string | null;
@@ -316,10 +311,3 @@ export function linkCountsMatch(a: string, b: string): boolean {
   return blockLinks(a.split('\n')) === blockLinks(b.split('\n'));
 }
 
-/**
- * 只修形不核对的旧口：转手 repairShape——行首前缀修回与空行重排都在那里。
- * 修不了时原样返回（调用方自己先看 repairShape 的 error）。
- */
-export function restoreLineShapes(original: string, translated: string): string {
-  return repairShape(original, translated).text ?? translated;
-}

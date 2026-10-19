@@ -95,7 +95,7 @@ export function apply(ctx: ClientContext): void {
 export { AssistantStepView } from './chat/assistant-step.tsx';
 export { planAssistantRow } from './chat/row-plan.ts';
 export { chatTranslate, createTranslateStore } from './chat/translate-store.ts';
-export { chatPresentation, createChatPresentation, POLICY_BY_MODE } from './chat/presentation.ts';
+export { chatPresentation, createChatPresentation, policyForMode } from './chat/presentation.ts';
 export { ensureAssistantStyles } from './chat/styles.ts';
 export { setupSettingsUi } from './settings/ui.tsx';
 export { setupComposerToggle, ComposerTranslateToggle } from './composer/dock-toggle.tsx';

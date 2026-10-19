@@ -31,7 +31,7 @@ const { planAssistantRow } = await import('../src/client/chat/row-plan.ts');
 const storeModule = await import('../src/client/chat/translate-store.ts');
 const { createTranslateStore, chunkTexts } = storeModule;
 const { isCleanHotspotClick } = await import('../src/client/chat/click-guard.ts');
-const { createChatPresentation, POLICY_BY_MODE } = await import('../src/client/chat/presentation.ts');
+const { createChatPresentation, policyForMode } = await import('../src/client/chat/presentation.ts');
 const stylesModule = await import('../src/client/chat/styles.ts');
 const {
   proseClassNames,
@@ -172,10 +172,9 @@ await test('译文呈现：成功即挂载；原样回同样挂载；失败只�
   // 流式：已经写定的块（frozen=1）照常出译文，正在长的尾块保持原文、不挂任何标记。
   const streaming = planAssistantRow({ blocks, streaming: true, interrupted: false, channel: 'ready', outcomes, frozen: 1 });
   assert.equal(streaming.entries[0].translated, '这是一段已经很自然的中文。', '写定的块流式期间就出中文');
-  assert.equal(streaming.entries[0].frozen, true);
+  assert.equal(streaming.entries[0].mark, 'translated', '写定的成功块带译文标记');
   assert.equal(streaming.entries[1].translated, null, '还在长的尾块保持原文');
   assert.equal(streaming.entries[1].mark, null, '还有结果位的失败块在尾块位置上也不挂标记');
-  assert.equal(streaming.entries[1].frozen, false);
   const settledStreaming = planAssistantRow({ blocks, streaming: true, interrupted: false, channel: 'ready', outcomes, frozen: 2 });
   assert.equal(settledStreaming.entries[1].mark, 'failed', '全部写定后（例如中断的行）失败标记照常挂');
   assert.equal(settledStreaming.entries[1].failKind, 'channel', '类别进计划层，供悬停与读屏换文案');
@@ -688,13 +687,14 @@ await test('行数 LRU 上限：超出后淘汰最久未读的行', () => {
 // 4. 呈现策略
 // ---------------------------------------------------------------
 
-await test('策略表与宿主一致：四模式 + legacy 值映射', () => {
-  assert.equal(POLICY_BY_MODE.standard.settledReasoningPreview, true);
-  assert.equal(POLICY_BY_MODE.compact.settledReasoningPreview, false);
-  assert.equal(POLICY_BY_MODE.detailed.stepGrouping, 'history');
-  assert.equal(POLICY_BY_MODE.verbose.foldCompletedTurns, false);
-  assert.equal(POLICY_BY_MODE.normal.settledReasoningPreview, true, 'legacy normal 按 standard 读');
-  assert.equal(POLICY_BY_MODE.expanded.stepGrouping, 'history', 'legacy expanded 按 detailed 读');
+await test('策略映射与宿主一致：compact 不预览，其余模式与 legacy 值都预览', () => {
+  assert.equal(policyForMode('compact').settledReasoningPreview, false, 'compact 不预览首行');
+  assert.equal(policyForMode('standard').settledReasoningPreview, true);
+  assert.equal(policyForMode('detailed').settledReasoningPreview, true);
+  assert.equal(policyForMode('verbose').settledReasoningPreview, true);
+  assert.equal(policyForMode('normal').settledReasoningPreview, true, 'legacy normal 按 standard 读');
+  assert.equal(policyForMode('expanded').settledReasoningPreview, true, 'legacy expanded 按 detailed 读');
+  assert.equal(policyForMode('unrecognized').settledReasoningPreview, true, '未识别的值按 standard 读');
 });
 
 await test('配置面可用时跟随 transcriptView；缺省时按 standard', async () => {
@@ -713,7 +713,7 @@ await test('配置面可用时跟随 transcriptView；缺省时按 standard', as
 
   const fallback = createChatPresentation();
   fallback.attach(null);
-  assert.equal(fallback.getSnapshot(), POLICY_BY_MODE.standard);
+  assert.equal(fallback.getSnapshot(), policyForMode('standard'));
 });
 
 // ---------------------------------------------------------------

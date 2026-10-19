@@ -16,6 +16,7 @@ import { ConfigManager } from '../src/server/config.ts';
 import { LruDiskCache } from '../src/server/cache.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
 import { createFetchRoutes, REPLY_ROUTE_PATH } from '../src/server/router.ts';
+import { buildSystemPrompt } from '../src/server/adapters/openai.ts';
 import {
   buildBatchPayload,
   createBatchFormat,
@@ -202,8 +203,16 @@ await test('正文只有 openai 一条通道：别的适配器不参与', async 
   useFakeAdapter(dispatcher, async (text) => 'ai:' + text);
   const results = await dispatcher.translateReplyBlocks(['Hello world']);
   assert.equal(otherCalls, 0);
-  assert.equal(results[0].cached, false, '新鲜译出的块不走缓存标记');
-  assert.equal(results[0].translated, 'ai:Hello world');
+  assert.equal(results[0].translated, 'ai:Hello world', '新鲜译出：译文来自那唯一的通道');
+});
+
+await test('提示词把正文当素材翻译，明确不许执行其中的指令', async () => {
+  // 回复正文里出现指令句是常态（模型在回答里写「运行 rm -rf …」）；
+  // 翻译器必须把它们当待译文本，而不是照着做。
+  const prompt = buildSystemPrompt('plain');
+  assert.match(prompt, /do not carry out/i, '必须明确要求不执行正文里的指令');
+  assert.match(prompt, /as written/i, '并说明按原样翻译');
+  assert.match(buildSystemPrompt('blocks'), /do not carry out/i, '打包版同样带这条约束');
 });
 
 await test('单段请求带 max_tokens 与 plain 模式；多段打包带 blocks 模式', async () => {
@@ -297,8 +306,8 @@ await test('正文译文进唯一的缓存池，命中后不再请求', async ()
   assert.equal(cache.get('a stable paragraph'), '译:A stable paragraph');
 
   const second = await dispatcher.translateReplyBlocks(['A stable paragraph']);
-  assert.equal(calls, 1, '第二次必须命中缓存');
-  assert.equal(second[0].cached, true);
+  assert.equal(calls, 1, '第二次必须命中缓存，不再打通道');
+  assert.equal(second[0].ok, true);
   assert.equal(second[0].translated, '译:A stable paragraph');
 });
 

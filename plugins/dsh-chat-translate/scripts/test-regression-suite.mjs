@@ -19,7 +19,7 @@ await fs.mkdir(TMP_ROOT, { recursive: true });
 const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'suite-'));
 process.env.DSH_HOME = TMP_HOME;
 
-import { splitMarkdownSegments, shapeMismatch, restoreLinkTargets, restoreLineShapes } from '../src/server/pipeline/segments.ts';
+import { splitMarkdownSegments, repairShape, restoreLinkTargets } from '../src/server/pipeline/segments.ts';
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { ConfigManager, createLiveConfigSource, DEFAULT_CONFIG } from '../src/server/config.ts';
 import { apply as applyHost, Config as HostConfig, inject as hostInject } from '../src/index.ts';
@@ -118,53 +118,53 @@ test('CRLF prose still recognizes closing fences', () => {
   assert.equal(segments.map((s) => s.text).join(''), text);
 });
 
-test('shapeMismatch accepts a pure content rewrite and flags structural edits', () => {
+test('repairShape accepts a pure content rewrite and flags structural edits', () => {
   const original = '| a | b |\n| --- | --- |\n| `x` | [t](u) |';
   const good = '| 甲 | 乙 |\n| --- | --- |\n| `x 的译文` | [标题](u) |';
-  assert.equal(shapeMismatch(original, good), null, '逐字改内容、结构不动 = 通过');
-  assert.ok(shapeMismatch(original, '| 甲 | 乙 |\n| --- |'), '行数变了');
-  assert.ok(shapeMismatch(original, '| a |\n| --- |\n| x | y |'), '竖线数变了');
-  assert.equal(shapeMismatch(original, '| a | b |\n| --- | --- |\n| x | [t](u) |'), null, '反引号丢了不拦：行内代码是样式不是骨架');
-  assert.equal(shapeMismatch(original, '| a | b |\n| --- | --- |\n| `x` | [t](u) `多出来的` |'), null, '反引号多了也不拦');
-  assert.ok(shapeMismatch(original, '| a | b |\n| --- | --- |\n| `x` | [t](u) [v](w) |'), '链接个数变了');
-  assert.equal(shapeMismatch('- item', '* item'), null, '列表记号换字符不拦——前缀由构造修回');
-  assert.ok(shapeMismatch('## Head', 'Head'), '标题记号整个丢了仍拦');
-  assert.equal(shapeMismatch('  plain', 'plain'), null, '散文行缩进漂移不拦：软换行渲染无感');
-  assert.ok(shapeMismatch('plain', '    indented'), '散文行缩进超 3 格变代码块仍拦');
-  assert.ok(shapeMismatch('> quote', 'quote'), '引用记号整个丢了仍拦');
+  assert.equal(repairShape(original, good).error, null, '逐字改内容、结构不动 = 通过');
+  assert.ok(repairShape(original, '| 甲 | 乙 |\n| --- |').error, '行数变了');
+  assert.ok(repairShape(original, '| a |\n| --- |\n| x | y |').error, '竖线数变了');
+  assert.equal(repairShape(original, '| a | b |\n| --- | --- |\n| x | [t](u) |').error, null, '反引号丢了不拦：行内代码是样式不是骨架');
+  assert.equal(repairShape(original, '| a | b |\n| --- | --- |\n| `x` | [t](u) `多出来的` |').error, null, '反引号多了也不拦');
+  assert.ok(repairShape(original, '| a | b |\n| --- | --- |\n| `x` | [t](u) [v](w) |').error, '链接个数变了');
+  assert.equal(repairShape('- item', '* item').error, null, '列表记号换字符不拦——前缀由构造修回');
+  assert.ok(repairShape('## Head', 'Head').error, '标题记号整个丢了仍拦');
+  assert.equal(repairShape('  plain', 'plain').error, null, '散文行缩进漂移不拦：软换行渲染无感');
+  assert.ok(repairShape('plain', '    indented').error, '散文行缩进超 3 格变代码块仍拦');
+  assert.ok(repairShape('> quote', 'quote').error, '引用记号整个丢了仍拦');
 });
 
 test('prose re-wrap and blank-line drift are repaired, block merges are rejected', () => {
   // 弱模型把硬折行的英文段落译成一整行中文——行数变了，渲染没变。
   const wrapped = 'the quick brown fox\njumps over the lazy dog';
-  assert.equal(shapeMismatch(wrapped, '敏捷的棕狐跳过懒狗'), null, '散文并成一行不拦');
+  assert.equal(repairShape(wrapped, '敏捷的棕狐跳过懒狗').error, null, '散文并成一行不拦');
   assert.equal(
-    restoreLineShapes(wrapped, '敏捷的棕狐\n跳过懒狗\n还多拆了一行'),
+    repairShape(wrapped, '敏捷的棕狐\n跳过懒狗\n还多拆了一行').text,
     '敏捷的棕狐\n跳过懒狗\n还多拆了一行',
     '散文自由重排'
   );
   // 吞空行：非空行签名对得上，按原文空行布局重排。
   const twoPara = 'alpha\n\nbeta';
-  assert.equal(shapeMismatch(twoPara, '甲\n乙'), null, '吞掉的空行按原文补回');
-  assert.equal(restoreLineShapes(twoPara, '甲\n乙'), '甲\n\n乙', '段落分隔复原');
+  assert.equal(repairShape(twoPara, '甲\n乙').error, null, '吞掉的空行按原文补回');
+  assert.equal(repairShape(twoPara, '甲\n乙').text, '甲\n\n乙', '段落分隔复原');
   // 真并段：两段并成一段且非空行数也变了——骨架破了，拦。
-  assert.ok(shapeMismatch('alpha\n\nbeta', 'alpha beta merged'), '两段并一段仍拦（非空行数对不上）');
+  assert.ok(repairShape('alpha\n\nbeta', 'alpha beta merged').error, '两段并一段仍拦（非空行数对不上）');
   // 列表项合并：一个块里记号数变了，拦。
-  assert.ok(shapeMismatch('- one\n- two', '- one and two merged'), '两条列表并一条仍拦');
+  assert.ok(repairShape('- one\n- two', '- one and two merged').error, '两条列表并一条仍拦');
 });
 
 test('marker-level drift is repaired to the original shape, never rejected', () => {
   // 真实频发的败因：长回答里模型把 ## 写成 ###、把 - 写成 *、把 2. 重排成 1.
   // ——渲染等价的样式漂移，一票否决整块是浪费，逐行修回前缀才是正解。
-  assert.equal(shapeMismatch('## Head', '### 标题'), null, '标题层级漂移是样式，不是破损');
-  assert.equal(restoreLineShapes('## Head', '### 标题'), '## 标题', '层级修回原文');
-  assert.equal(restoreLineShapes('- item', '* 项目'), '- 项目', '列表符号修回');
-  assert.equal(restoreLineShapes('1. a\n2. b', '1. 甲\n1. 甲'), '1. 甲\n2. 甲', '序号修回、正文不动');
-  assert.equal(restoreLineShapes('> q', '>> 引'), '> 引', '引用深度修回');
-  assert.equal(shapeMismatch('  - a', '- b'), null, '记号行的缩进漂移不拦');
-  assert.equal(restoreLineShapes('  - a', '- b'), '  - b', '列表缩进随前缀修回');
-  assert.equal(restoreLineShapes('plain text', '平常文字'), '平常文字', '无记号行不动手');
-  assert.ok(shapeMismatch('# One', 'Two'), '记号整个丢了仍拦');
+  assert.equal(repairShape('## Head', '### 标题').error, null, '标题层级漂移是样式，不是破损');
+  assert.equal(repairShape('## Head', '### 标题').text, '## 标题', '层级修回原文');
+  assert.equal(repairShape('- item', '* 项目').text, '- 项目', '列表符号修回');
+  assert.equal(repairShape('1. a\n2. b', '1. 甲\n1. 甲').text, '1. 甲\n2. 甲', '序号修回、正文不动');
+  assert.equal(repairShape('> q', '>> 引').text, '> 引', '引用深度修回');
+  assert.equal(repairShape('  - a', '- b').error, null, '记号行的缩进漂移不拦');
+  assert.equal(repairShape('  - a', '- b').text, '  - b', '列表缩进随前缀修回');
+  assert.equal(repairShape('plain text', '平常文字').text, '平常文字', '无记号行不动手');
+  assert.ok(repairShape('# One', 'Two').error, '记号整个丢了仍拦');
 });
 
 test('restoreLinkTargets keeps translated text and copies urls back verbatim', () => {
@@ -183,7 +183,7 @@ test('restoreLinkTargets keeps translated text and copies urls back verbatim', (
     '[甲][1]\n\n[1]: https://x.com'
   );
   assert.ok(
-    shapeMismatch('[a][1]\n\n[1]: https://x.com', '[甲][1]\n\n[1]: 被改的 带 空格') !== null,
+    repairShape('[a][1]\n\n[1]: https://x.com', '[甲][1]\n\n[1]: 被改的 带 空格').error !== null,
     '定义目标被改成带空格 → 不再是定义行，签名拦下'
   );
 });
@@ -201,7 +201,7 @@ await testAsync('A repeated reply block is answered from the cache, not the adap
   const second = await dispatcher.translateReplyBlocks(['Identical task text']);
   assert.equal(calls.length, 1, 'the cache must answer the second request, not the adapter');
   assert.equal(first[0].translated, 'translated:Identical task text');
-  assert.equal(second[0].cached, true);
+  assert.equal(second[0].translated, 'translated:Identical task text', '命中缓存：译文与首次一致');
 });
 
 await testAsync('A transport failure stays transport; the next call may pass freely', async () => {
@@ -304,11 +304,11 @@ await testAsync('Code fences never reach the channel and splice back verbatim', 
 });
 
 // -------------------------------------------------------------
-// Suite 3: LRU Cache Semantics & TTL
+// Suite 3: LRU Cache Semantics
 // -------------------------------------------------------------
-console.log('\n--- Suite 3: LRU Cache Semantics & TTL ---');
+console.log('\n--- Suite 3: LRU Cache Semantics ---');
 
-await testAsync('LruDiskCache handles TTL expiration and LRU eviction', async () => {
+await testAsync('LruDiskCache evicts the least recently used entry', async () => {
   const cache = new LruDiskCache(3);
   cache.cache.clear();
 
@@ -329,17 +329,16 @@ await testAsync('LruDiskCache handles TTL expiration and LRU eviction', async ()
 
 await testAsync('LruDiskCache drops malformed entries while loading from disk', async () => {
   const cachePath = path.join(TMP_HOME, 'dsh-chat-translate', 'cache.json');
-  const now = Date.now();
   await fs.mkdir(path.dirname(cachePath), { recursive: true });
   await fs.writeFile(
     cachePath,
     JSON.stringify({
       rev: PROMPT_REVISION,
       entries: {
-        ok: { t: now, v: '正常译文' },
-        // 无时间戳 / 非字符串译文：陌生形态，读取时被丢掉。
-        noTime: { v: '没有时间戳' },
-        notString: { t: now, v: 42 },
+        ok: { v: '正常译文' },
+        // 非字符串译文与不成形的条目：陌生形态，读取时被丢掉。
+        notString: { v: 42 },
+        notObject: '裸字符串',
       },
     }),
     'utf-8'
@@ -348,8 +347,8 @@ await testAsync('LruDiskCache drops malformed entries while loading from disk', 
   const cache = new LruDiskCache();
   await cache.init();
   assert.equal(cache.get('ok'), '正常译文');
-  assert.equal(cache.get('noTime'), undefined, 'entry without a timestamp must be dropped');
   assert.equal(cache.get('notString'), undefined, 'entry with a non-string value must be dropped');
+  assert.equal(cache.get('notObject'), undefined, 'entry that is not an object must be dropped');
 
   // Leave no cache file behind: other tests in this suite start from an empty
   // plugin cache directory.

@@ -71,8 +71,6 @@ export interface SettingsPageState {
   saveFailed: boolean;
   /** Probe from the last save; undefined until a save ran. */
   probe?: ProbeState;
-  /** Localized one-liner for the last save ('' when nothing to say). */
-  message?: string;
 }
 
 /** Profile entry id (== settings namespace) + credentials ref. */
@@ -177,7 +175,6 @@ class SettingsStore {
   private credentials: CredentialsRemoteLike | null = null;
   private unsubscribeForm: (() => void) | null = null;
   private keyConfigured = false;
-  private probeFn: (() => Promise<{ ok: boolean; latencyMs: number; error?: string }>) | null = null;
 
   /**
    * Bind the DSH services. Called once from the settings UI setup; re-binding
@@ -195,11 +192,6 @@ class SettingsStore {
       this.deriveCommitted();
     }
     void this.refreshKeyStatus();
-  }
-
-  /** Inject the probe the settings page's save runs (the translate route). */
-  useProbe(fn: (() => Promise<{ ok: boolean; latencyMs: number; error?: string }>) | null): void {
-    this.probeFn = fn;
   }
 
   getState(): SettingsPageState {
@@ -364,7 +356,7 @@ class SettingsStore {
       ops.push({ op: 'set', path: ['aiTimeoutMs'], value: timeout });
     }
 
-    this.state = { ...this.state, saving: true, saveFailed: false, message: undefined, probe: undefined };
+    this.state = { ...this.state, saving: true, saveFailed: false, probe: undefined };
     this.notify();
 
     let landed = true;
@@ -392,10 +384,10 @@ class SettingsStore {
       probe: { running: true },
     };
     this.notify();
-    const probe = this.probeFn ? await this.probeFn() : null;
+    const probe = await testServerChannel('openai');
     this.state = {
       ...this.state,
-      probe: probe === null ? undefined : { running: false, ok: probe.ok, message: probe.error },
+      probe: { running: false, ok: probe.ok, message: probe.error },
     };
     this.deriveDrafts();
   }
@@ -412,11 +404,6 @@ class SettingsStore {
     } catch {
       // Credentials surface unavailable — keep the last known status.
     }
-  }
-
-  /** Probe the translation channel; the settings page's test button. */
-  async testChannel(channel: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
-    return testServerChannel(channel);
   }
 
   /**
@@ -454,7 +441,6 @@ class SettingsStore {
     }
     this.form = null;
     this.credentials = null;
-    this.probeFn = null;
     this.listeners.clear();
   }
 

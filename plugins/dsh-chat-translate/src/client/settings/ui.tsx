@@ -264,8 +264,6 @@ export function setupSettingsUi(ctx: any): void {
   const remoteCredentials = ctx.remote?.credentials ?? null;
   try {
     settingsStore.attach(configForms.get(SETTINGS_NAMESPACE), remoteCredentials);
-    // 保存之后自动探一次通道：探的就是刚刚写进去的那套设置。
-    settingsStore.useProbe(() => testServerChannel('openai'));
   } catch (err) {
     console.warn('[dsh-chat-translate] Failed to bind the configuration form:', err);
   }

@@ -7,12 +7,7 @@ import type { ReplyBlockResult } from '../../server/types.ts';
  */
 export async function requestTranslateReply(blocks: string[]): Promise<ReplyBlockResult[]> {
   const fallback = (): ReplyBlockResult[] =>
-    blocks.map((block) => ({
-      original: block,
-      translated: block,
-      ok: false,
-      cached: false,
-    }));
+    blocks.map((block) => ({ translated: block, ok: false }));
 
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   try {

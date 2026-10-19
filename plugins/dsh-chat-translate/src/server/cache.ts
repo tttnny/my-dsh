@@ -3,11 +3,14 @@ import * as path from 'node:path';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
 import { PROMPT_REVISION } from './prompt-revision.ts';
 
-/** Entries older than this are treated as expired. */
-const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-
+/**
+ * 池里的一个条目。
+ *
+ * 没有时间字段，也没有 TTL：缓存真正需要作废的唯一情形是「提示词换了语义」，
+ * 那由文档级 `rev` 整库作废（见 {@link CacheDocument}）。再叠一层按时间过期，
+ * 只会让同一段原文在闲置几天后白白重译一次。
+ */
 interface CacheEntry {
-  t: number; // epoch ms, written at set()
   v: string;
 }
 
@@ -64,15 +67,9 @@ export class LruDiskCache {
   private loadEntries(raw: Record<string, unknown>): void {
     for (const [k, entry] of Object.entries(raw)) {
       const value = entry as CacheEntry | undefined;
-      // The document on disk outlives the process: only well-formed entries
-      // (a finite timestamp and a string translation) are served again.
-      if (
-        value &&
-        typeof value === 'object' &&
-        typeof value.v === 'string' &&
-        typeof value.t === 'number' &&
-        Number.isFinite(value.t)
-      ) {
+      // The document on disk outlives the process: only entries carrying a
+      // string translation are served again.
+      if (value && typeof value === 'object' && typeof value.v === 'string') {
         this.cache.set(k, value);
       }
     }
@@ -81,10 +78,6 @@ export class LruDiskCache {
   get(key: string): string | undefined {
     const entry = this.cache.get(key);
     if (entry === undefined) return undefined;
-    if (Date.now() - entry.t > TTL_MS) {
-      this.cache.delete(key);
-      return undefined;
-    }
     // Refresh key in LRU order (re-insert at the end)
     this.cache.delete(key);
     this.cache.set(key, entry);
@@ -101,7 +94,7 @@ export class LruDiskCache {
         this.cache.delete(oldestKey);
       }
     }
-    this.cache.set(key, { t: Date.now(), v: value });
+    this.cache.set(key, { v: value });
     this.dirty = true;
     this.scheduleSave();
   }
