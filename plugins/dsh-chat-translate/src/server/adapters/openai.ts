@@ -36,16 +36,45 @@ import type { KeyReader } from '../credentials.ts';
  * Inline code is styling, not structure: its contents may be translated and
  * the backticks may drift without veto.
  *
+ * The two clauses below are load-bearing for the reply path and each covers
+ * what the rest of this instruction does not: terminology keeps names,
+ * identifiers, paths, commands and terms in their original form, and its scope
+ * sentence ("those items alone, never the sentences around them") is what
+ * stops the model from reading the clause as licence to preserve the source
+ * wording around them; register asks for the voice of one colleague writing to
+ * another, which is what keeps the rewriting from turning into report prose.
+ *
  * Prompt semantics are registered in `prompt-revision.ts`; changing what this
  * prompt asks the model to do means bumping that revision with it.
  */
 const TARGET_LANGUAGE = 'Simplified Chinese';
+
+/**
+ * Names, identifiers, paths, commands and terms come through untouched. The
+ * scope sentence is what keeps the model from reading the clause as "preserve
+ * the source wording" and dropping the polish around it.
+ */
+const TERMINOLOGY_CLAUSE =
+  `Names, identifiers, file paths, commands and technical terms come through ` +
+  `in their original form (PR, CI, API stay PR, CI, API); this applies to ` +
+  `those items alone, never to the sentences around them. `;
+
+/**
+ * Register clause: address the reader as a colleague, not as a report. It
+ * states what to do rather than banning words, because a banned-word list
+ * leaks into the output and does not reduce jargon.
+ */
+const REGISTER_CLAUSE =
+  `Write the way a person writes to a colleague: concrete verbs, sentences ` +
+  `of varied length, no report-style padding and no slogan phrasing. `;
 
 function buildSystemPrompt(mode: 'plain' | 'blocks'): string {
   const base =
     `You are a professional translator and editor. ` +
     `Rewrite the user's message as natural, idiomatic ${TARGET_LANGUAGE} the way a ` +
     `native writer would produce it. ` +
+    TERMINOLOGY_CLAUSE +
+    REGISTER_CLAUSE +
     `This applies to every passage, including passages already written in ` +
     `${TARGET_LANGUAGE}: smooth out stiff or machine-translated phrasing while ` +
     `keeping the meaning, tone, proper names, numbers and technical terms ` +
