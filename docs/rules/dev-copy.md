@@ -4,7 +4,7 @@ profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就�
 
 ## 建立与校验
 
-`node tools/dev-link.mjs` 一次查全部 profile × 全部自有包：软链还在不在、指得对不对、读到的版本号对不对、被市场顶掉的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包（客户端半边因此不会被服务）。它另外扫 `node_modules/@lynn123411/` 下的软链本体，把断了和指向 `archive/` 的孤儿软链报出来——归档只搬目录，那条链接不在 `dependencies` 里了，`pnpm install` 不会清理它。`--write` 把有问题的连回仓库，并删掉孤儿软链。
+`node tools/dev-link.mjs` 一次查全部 profile × 全部自有包：软链还在不在、指得对不对、读到的版本号对不对、被市场顶掉的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包（客户端半边因此不会被服务）。它另外扫 `node_modules/@lynn123411/` 下的软链本体，把断了和指向 `archive/` 的孤儿软链报出来——归档只搬仓库目录，profile 的 `dependencies` 与 `dsh.profile.bundles` 仍留着那个包名：软链因此是孤儿（`--write` 会删掉），而 registry 装的那份会被下一次 profile 同步按清单物化回来。要连清单一起清掉，得在每个装过它的 profile 里卸载：`dsh plugin --profile <name> remove <包名>`（见 [release.md](./release.md)「退役（归档）」）。`--write` 把有问题的连回仓库，并删掉孤儿软链。
 
 它跑的就是手工那一条：`cd ~/.dsh/profiles/web && pnpm add "link:<my-dsh 绝对路径>/plugins/dsh-<name>" --offline`（包不在目录根部时链接实际包目录）；建成后 `pnpm install` 幂等，可随时重跑。
 
@@ -17,7 +17,7 @@ profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就�
 ## 生效时机
 
 - **自带构建的插件（`src/` → `lib/`）先 `pnpm build`**：链接过去的是构建产物，编辑 `src/` 不 build 等于没改。
-- **客户端半边**：刷新页面即生效（bundle 按 `rev` 下发并带长期缓存，HMR 重新哈希后才换 `rev`，必要时硬刷新 `Cmd+Shift+R`）。想确认这一次到底拿到哪份产物：`node tools/verify-client.mjs <包> --needle '<你新写的类名或文案>'`（`--build` 连构建一起做）——它抄首页上那条带 `rev` 的地址、带 cookie 取回 bundle、在产物里找那段新东西，找不到就 FAIL。
+- **客户端半边**：刷新页面即生效（bundle 按 `rev` 下发并带长期缓存；`rev` 是产物文件 `mtime`、`ctime`、`size` 三样的哈希，不含内容，所以文件被重写而统计值没变时不换 `rev`，必要时硬刷新 `Cmd+Shift+R`）。想确认这一次到底拿到哪份产物：`node tools/verify-client.mjs <包> --needle '<你新写的类名或文案>'`（`--build` 连构建一起做）——它抄首页上那条带 `rev` 的地址、带 cookie 取回 bundle、在产物里找那段新东西，找不到就 FAIL。这条命令要两个环境变量 `DSH_WEB_URL` 与 `DSH_WEB_AUTH_URL`（在 DSH 会话里跑就有，也可用 `--url` / `--auth` 给），缺一个就以 2 退出；它读的是**正在跑那个实例**的首页清单，所以先让那个实例重新组合、浏览器刷新拿到新地址，再跑它——否则判的是旧 `rev` 那一份。
 - **宿主半边**：loader 不监听文件，改 `lib/` 之后要**触发一次 profile 重新组合**才会换上新代码。带 `hmr` 行的 profile（Web 就是：base bundle 在 `profileContext` 存在时启用它）不用重启进程，两种做法都行——在插件页或 `plugin_manager` 里把插件关一次再开一次；或者改存 profile 的 `cordis.patch.yml`（HMR 盯着它）。这次重新组合会把已装载模块与磁盘逐一比对身份（inode、大小、修改时间），变了的模块先逐出、再由 Loader 重新 `import`，所以拿到的是磁盘上最新的文件；`link:` 包的目标目录同样在比对范围内。
 - **没有 `hmr` 的 profile**（headless、SDK、ACP 在 YAML 里把它关了）仍旧重启才生效。
 - **这几种情况必须重启**：操作结果是 `restart-required`，`restartReason` 说明理由——`no-hmr`（没有 HMR）、`package-moved`（某个安装映射换了目录）、`module-comparison`（模块缓存无法与磁盘比对），以及待处理模块标着 `host-module` / `unmanaged-plugin`（进程入口静态图里的模块，比如把 DSH 自己的包软链进 profile）。
@@ -32,7 +32,9 @@ profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就�
 
 | 插件如何被引用 | 何时挂 | 报错长相 |
 | --- | --- | --- |
-| bundle 层（列在 profile `dsh.profile.bundles` 里） | profile 启动即挂 | `dsh: plugin tree failed to load … Cannot find package '…'`——整个 web profile exit 1，启动器转入 diagnose |
-| 只被 preset 的工具行引用（**不在** bundles 里） | DSH 正常启动，切换该 preset 时失败 | `failed to import loader entry <id> (<包名>): Cannot find package '…'`，末尾带失败那条行的 id 与包名 |
+| bundle 层（列在 profile `dsh.profile.bundles` 里） | profile 启动时 | `dsh: skipping profile bundle "<包名>": Error: dsh: cannot resolve profile bundle "<包名>" …`——这一层被跳过，实例照常起来（所以「页面里东西少了」不会报错） |
+| 该行必须激活（根 include，以及内核写死的那几行：`agent-loop`、`webserver`、`web-runtime`、`modules`、`connection`、`headless-runner`、`acp`、`sdk-jsonrpc-server`），而它 import 不到 | profile 启动即失败 | `dsh: plugin tree failed to load: …` 后跟 `Failed plugins (N):` 与 `<id>` / `Package: <包名>` / `failed to import: Error [ERR_MODULE_NOT_FOUND]: Cannot find package '<包名>' imported from <profile 目录>`——进程以 1 退出，启动器转入 diagnose |
+| 普通行（不必激活的行）import 不到 | DSH 正常启动 | 启动日志一行 `<id> (<包名>): failed to import: Error [ERR_MODULE_NOT_FOUND]: Cannot find package '<包名>' imported from <baseUrl>`，这一行不挂、其余照常 |
+| 只被 preset 的工具行引用（**不在** bundles 里） | DSH 正常启动，切换该 preset 时失败 | `<id> (<包名>): never started`——preset 的审计只按「fiber 建没建起来」判，缺包连 fiber 都没有；整份 preset 因此挂载失败 |
 
 诊断时记两条：`Cannot find package` 的解析失败被 Node **缓存在进程内**，同进程重试仍是同一条错，要换新进程复现；客户端半边的 `@deepseek-ai/*` 由浏览器侧模块表供给、不参与 Node 解析，缺包只在宿主日志里现形。

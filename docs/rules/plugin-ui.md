@@ -7,27 +7,31 @@
 宿主 checkout（路径见根 `AGENTS.md`）里有两份清单，动手前先读：
 
 - `packages/client/ui-primitives/README.md` 的组件目录：**弹窗用 `Modal`**（居中、遮罩、Esc、点遮罩关闭、关闭按钮、`useModalLayer` 的顶层 Tab/Esc 归属与焦点回收都在它里面；打开后焦点落在关闭按钮上，想换成别的控件就给它 `data-modal-autofocus`，别用 React 的 `autoFocus`——那会让焦点回收失效），下拉用 `Menu` / `MenuSurface`，气泡用 `Tooltip`。本地化文案一律由调用方传：该包没有语言兜底，缺 label 直接类型报错。
-- `docs/web-styling.md`：样式归属与组件规则（下面两条就是它的原文）。
+- `docs/web-styling.md`：样式归属与组件规则（下面三条是它的原文加上本仓的取用口径）。
 
 自绘一个浮层，等于把上面那一串自己实现一遍、再逐个踩它们的坑：位置与高度上限自己算，resize / scroll 各自重算，Esc 与外部点击各自挂一遍，还要处理和宿主其它浮层的遮挡与焦点。仓库里还留着的自绘件是判断题，不是可以照抄的样板。
 
-## 两条样式规则
+## 三条样式规则
 
-- **浮起来的面（弹窗、菜单、卡片、浮层按钮）写 `border: 0` + `box-shadow: var(--dsw-elevation-prominent | panel | soft)`**。中性描边那根 0.5px 发丝线是阴影的第一层替你画的，再自己写一根 `border: 1px solid var(--dsw-alias-border-*)` 就成了两条边叠着（宿主 `docs/web-styling.md`「Component rules」明写这对搭配不允许）。
+- **浮起来的面（弹窗、菜单、浮层、面板、浮层按钮、输入区）写 `border: 0` + `box-shadow: var(--dsw-elevation-prominent | panel | soft)`**。中性描边那根 0.5px 发丝线是阴影的第一层替你画的，再自己写一根 `border: 1px solid var(--dsw-alias-border-*)` 就成了两条边叠着（宿主 `docs/web-styling.md`「Component rules」明写这对搭配不允许）。卡片不在浮起面之列：它用 `--dsw-alias-settings-card-fill` 填充加 0.5px `--dsw-alias-settings-card-stroke` 描边分层，也不要给它加阴影来跟标签页区分（宿主 `docs/ui-radius.md`「Settings card materials」）。
 - **颜色只从 `var(--dsw-alias-*)` 取，不写死色值**：`#ffffff`、`rgba(0, 0, 0, 0.16)` 这类在换深浅主题时会露馅。`var(--dsw-alias-bg-layer-2, #ffffff)` 这种「兜底」同样不必写——宿主的主题层永远在，取不到的那天不会来，写了只让人以为它有用。
+- **圆角只取 `--dsw-radius-*` token；整圆与药丸必须同一条规则里配 `corner-shape: round`**。token 是 `--dsw-radius-xs/sm/md/lg/xl/panel`，值 4/8/12/16/20/28（宿主 `packages/client/ui-theme/src/styles/base.css`），按控件角色选，角色表见 `docs/ui-radius.md`；`10px`、`24px` 这类字面值换主题时不跟着走。`50%`、`100%`、`999px` 要配 `corner-shape: round`：主题的 superellipse 曲线伸到每个元素，不配就把圈与药丸揉成方圆形，而且只在支持 superellipse 的引擎上才看得见。宿主的两道 spec（`packages/client/ui-theme/tests/radius-styles.client.spec.ts`、`corner-shape-styles.client.spec.ts`）只扫 `packages/` 下的样式表，插件目录与插件里手写的 CSS 字符串不在扫描范围——违反不会变红，是静默的一类。
 
 ## 覆盖宿主控件的样式
 
-插件 CSS 由 `injectStyles()` 在 `apply()` 时追加进 `<head>`，而宿主的样式表是页面加载时的 `<link>`——**同优先级下插件后写的规则生效**。所以放宽 `Modal` 的卡片宽度，只要给它一个自己的类：
+宿主的样式表是页面加载时的 `<link>`，插件之后追加进 `<head>` 的 `<style>` **在同优先级下后者赢**。所以放宽 `Modal` 的卡片宽度，只要给它一个自己的类：
 
 ```css
 .dsh-picker-dialog { width: min(680px, 100%); height: min(640px, 80vh); }
 ```
 
-两条注意：
+三条注意：
 
 - 只赢「同优先级」：宿主用元素选择器或更高优先级的地方，单类选择器赢不了。
 - 宿主的内部类名是 CSS Modules 的哈希串（`_body_o6lrb_115`），别照抄。用它给的钩子（`className` / `contentClassName` / 组件自己的语义类）或结构选择器（如 `.dsh-picker-content > :last-child`——`Modal` 的正文行是 `.content` 的最后一个子元素，让它自己滚，标题栏就钉住了）。
+- **样式在 `apply()`（或模块工厂）里注入，标签写全两个归属键**：卸载与换代码时，client-modules 按 `style[data-plugin=<包名>]` 把标签全部删掉（宿主 `packages/client/modules/src/client/entry-lifecycle.ts` 的 `removeOwnedStyles`），归属键就是那条清除的唯一依据。所以标签写成 `<style data-plugin="<包名>" data-plugin-css="<包名>/<文件名>">`，用 `data-plugin-css` 查重做幂等。没打 `data-plugin` 的标签还有一次被认领的机会：物化这个包的工厂期间新冒出来的，会被自动打上包名（`system.ts` 的 `claimStyles`）；**渲染期**注入的标签已经错过这个窗口，没打键就永远归不了档，插件重载后旧表还叠在页面上。宿主自己的构建期注入器就按这个形状生成（宿主 `packages/client/tsdown.client.ts` 的 `styleInjectionModule`），本仓照做的是 `plugins/dsh-grilling-form/src/client/index.js` 的 `injectStyles()`。
+
+反例是 `plugins/dsh-chat-translate/src/client/settings/ui.tsx`：`ensureSettingsStyles()` 在卡片组件体内（渲染期）才调用，标签只打了一个自定义属性 `data-tidy-settings`、没有 `data-plugin`，所以那份设置卡片样式不参与卸载清理。
 
 ## 看一眼界面
 

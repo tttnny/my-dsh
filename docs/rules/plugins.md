@@ -6,7 +6,7 @@
 
 一个插件一个目录：目录名 `dsh-<name>`，npm 包名 `@lynn123411/dsh-<name>`，目录内含 `README.md`。发布形态是 **bundle 包**：`package.json` 声明 `dsh.bundle.patch`，安装时包名自动登记进 profile 的 `dsh.profile.bundles`；形态标在根 `README.md` 的「说明」列。
 
-新建插件用 `node tools/new-plugin.mjs dsh-<name>`（`--host-only` 只铺宿主半边）：它按当前内核基线生成 package.json、tsconfig、build.mjs、`cordis.patch.yml`、两半边的自检骨架、README 四段、locale 与图标，生成即 `pnpm check` 绿；收尾只有两步（根 README 加一行、改 `src/` 里的 TODO），它会把这两步打出来。
+新建插件用 `node tools/new-plugin.mjs dsh-<name>`（`--host-only` 只铺宿主半边）：它按当前内核基线生成 package.json、tsconfig、build.mjs、`cordis.patch.yml`、两半边的自检骨架、README（三节：`## 功能` / `## 特性` / `## 安装`）、locale 与图标，生成即 `pnpm check` 绿；收尾只有两步（根 README 加一行、改 `src/` 里的 TODO），它会把这两步打出来。
 
 ## 许可
 
@@ -14,7 +14,7 @@
 
 ## 插件 README
 
-固定四段（范例 `plugins/dsh-model-submenu/README.md`）：一级标题 `# @lynn123411/dsh-<name>` + 一段话概括这个插件是什么；`## 功能` 用 `- **功能名**：说明` 列表，只写用户能做什么；`## 特性` 用同一种列表，写实现形态、分工边界与硬保证；`## 安装` 给 `dsh plugin --profile web add @lynn123411/dsh-<name>` 代码块。四段之外**不加节**：装配形态、配置说明、开发副本、验证清单这类长篇内容放同目录的 `DETAILS.md`，README 里留一句指针（npm 的 `files` 要带上它）。
+正文固定三节（范例 `plugins/dsh-model-submenu/README.md`），顺序与名称都不改：一级标题 `# @lynn123411/dsh-<name>` 下面先用一段话概括这个插件是什么，然后依次是 `## 功能`——用 `- **功能名**：说明` 列表，只写用户能做什么；`## 特性`——用同一种列表，写实现形态、分工边界与硬保证；`## 安装`——给 `dsh plugin --profile web add @lynn123411/dsh-<name>` 代码块。这三节之外**不再加节**：装配形态、配置说明、开发副本、验证清单这类长篇内容放同目录的 `DETAILS.md`，README 里留一句指针（npm 的 `files` 要带上它）。
 
 只写现状：每条都是当前行为，不写版本号、变更叙事、上游来源（形态标在根 `README.md` 表格）。要写验证记录（实测日期、对照实验）就写进 `DETAILS.md`，README 只留验证怎么做、结果在哪。
 
@@ -34,36 +34,36 @@
 
 ## 验证
 
-改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。漏了 `check` 的包以它自己 `scripts` 里的那几条为准。
+改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。漏了 `check` 的包以它自己 `scripts` 里的那几条为准。新克隆的仓库先在该包目录 `pnpm install`（仓库根从不装依赖）：缺 `node_modules` 时 `check.mjs` 回退出码 2，那是「没跑起来」，不是「检查不通过」。`package.json` 里带 `prepack` 的包（`dsh-grilling-form`、`dsh-subagent-judge-dispatch`）在 `npm publish` / `npm pack` 时会再构建一次 `lib/`，发布打的不一定是你刚 check 过的那份产物。
 
-跨文件的台账（包名与目录名、`engines.dsh` 与全部 `dsh-*` 同串、cordis / schemastery 基线、手工写死的内核版本字面量、许可声明位、`files` 与 bundle patch 指得到、插件 README 三段、根 README 与目录互相覆盖、preset order 台账、开发副本还是不是软链、preset 抄本与内核同版本）由 `node tools/assert-ledger.mjs` 一次查完——`check` 只管包内，看不见这些。
+跨文件的台账（14 项判据，逐条见 `node tools/assert-ledger.mjs` 头部：包名与目录名、`engines.dsh` 与全部 `dsh-*` 同串、cordis / schemastery 基线、许可只由 `license` 声明、`files` 与 bundle patch 指得到、插件 README 的三节（`## 功能` / `## 特性` / `## 安装`）、根 README 与目录互相覆盖、preset order 台账、开发副本还是不是软链、手工写死的内核版本字面量、preset 抄本与内核同版本、安装约定、归档包名不再出现在活文件里、README 写死的工具面数字与产物一致）由 `node tools/assert-ledger.mjs` 一次查完——`check` 只管包内，看不见这些。判据 14 的数字出处是插件 README 自己的那句硬声明，不是另一份独立约定：改了工具 schema 就同步改 README 里那句话。
 
-**仓库级一次跑齐**：`node tools/check.mjs` 跑「台账 + 每个包自己的 `check`」，CI（[.github/workflows/check.yml](../../.github/workflows/check.yml)）跑的就是它。它不替你在包的目录里 `pnpm install`——缺依赖会明说并回退出码 2，别把「没跑」当成「通过」。
+**仓库级一次跑齐**：`node tools/check.mjs` 跑「台账 + 每个包自己的 `check` + 产物新鲜度（`assert-artifacts`，放在最后）」，CI（[.github/workflows/check.yml](../../.github/workflows/check.yml)）跑的就是它。它不替你在包的目录里 `pnpm install`——缺依赖会明说并回退出码 2，别把「没跑」当成「通过」。
 
 ### 证明断言有牙齿（变异测试）
 
 新增或翻转断言后，把被测行为**改回旧写法**再跑一次，确认那条断言真的 FAIL。默认写的断言很容易恒为真，绿灯不等于守着东西。
 
-两条会让变异测试骗到自己的坑，都是本仓库实测过的：
+几条会让变异测试骗到自己的坑，都是本仓库实测过的：
 
-- **先确认断言脚本打的是 `src/` 还是构建产物**：`dsh-chat-translate` 的 `scripts/test-client-wiring.mjs` 读 `lib/client.js`，改完 `src/` 必须先 `pnpm build` 再跑，否则测的还是旧产物——变异后忘了重建，会得到一条假的「断言没抓住」。`dsh-grilling-form` 用 `pnpm test` 自己先构建一次来消除这个前提；`dsh-chat-translate` 的其余脚本与 `dsh-subagent-judge-dispatch` 的决策测试直接打 `src/`。照抄邻居前先看它 `import` 的是哪一边。
-  「跑的时候 `lib/` 是不是新的」不再靠记：`node tools/assert-artifacts.mjs` 比 `src/` 与 `lib/` 的修改时间，旧了就以退出码 1 报出来，`.githooks/pre-commit`、`node tools/check.mjs` 与 CI 都会先跑它。**只跑单个脚本**（比如只跑 `scripts/smoke-client.mjs`）时它不在链上，所以改完 `src/` 直接跑那个脚本之前，先自己 `pnpm build` 一次。
+- **先确认断言脚本打的是 `src/` 还是构建产物**：`dsh-chat-translate` 的 `scripts/test-client-wiring.mjs` 与 `scripts/test-render.mjs`（后者经 `tools/lib/dom-harness.mjs`）读 `lib/client.js`，改完 `src/` 必须先 `pnpm build` 再跑，否则测的还是旧产物——变异后忘了重建，会得到一条假的「断言没抓住」。`dsh-grilling-form` 用 `pnpm test` 自己先构建一次来消除这个前提；`dsh-chat-translate` 的其余脚本与 `dsh-subagent-judge-dispatch` 的决策测试直接打 `src/`。照抄邻居前先看它 `import` 的是哪一边。
+  「跑的时候 `lib/` 是不是新的」不再靠记：`node tools/assert-artifacts.mjs` 比 `src/` 与 `lib/` 的修改时间，旧了就以退出码 1 报出来。它在 `.githooks/pre-commit` 与 `node tools/check.mjs` 里都是**最后一道**（各包的 `check` 自带构建，跑完才验新鲜度）。**只跑单个脚本**（比如只跑 `scripts/smoke-client.mjs`）时它不在链上，所以改完 `src/` 直接跑那个脚本之前，先自己 `pnpm build` 一次。
 - **未提交的文件也能变异**：`node tools/mutate.mjs` 对干净文件用 `git checkout --` 还原，对未提交、甚至未被 git 跟踪的文件改用内存里的那份原文写回并逐字节核对。所以改完直接跑变异，不必先做一次 `wip` 提交再 `git reset`。
 - **还原用 `git checkout -- <file>`，别手工备份**：`cp src/x.ts /tmp/x.bak` 这类备份失败是静默的（`||` 兜底只在前一条命令失败时才生效，而它常常成功了），变异会留在源码里而你以为已经还原。要么在改动前 `git stash`，要么直接 `git checkout -- <file>`——后者失败会报错，不会静默。机械动作交给 `node tools/mutate.mjs`：它要求文件干净、`--from` 恰好命中一处，命令跑完（无论成败）在收尾还原并核对 `git status --short`。
 - **探针的锚点要唯一**：往源码里塞临时探针时，别拿 `str.replace(x, y, 1)` 打在「文件里第一个 `  return (`」这类到处都有的形状上——它会插进另一个函数，报出来的还是 `Invalid hook call` 这种看不懂的错。锚点带上上下文，或改用 `git apply` 的补丁。
-- **收尾核对 `git status --short`**：除你本来要改的文件外不该有别的。变异留下的痕迹、顺手做的别的改动、被打乱的工作区（比如多余的 `git stash`），只有在这里才看得见——变异测试的完成判据就是这一行干净。
+- **收尾核对 `git status --short`**：除你本来要改的文件外不该有别的。变异留下的痕迹、顺手做的别的改动、被打乱的工作区（比如多余的 `git stash`），只有在这里才看得见——变异测试的完成判据就是这一行干净。跑 `pnpm check` 会重写 `lib/`（多数包的 `check` 里带构建），这属预期：`lib/` 被各包自己的 `.gitignore` 挡住，不进 `git status`；那里出现别的文件才是问题。
 
 ### 提交闸门（`.githooks/pre-commit`）
 
-改完就跑有闸门兜着：`.githooks/pre-commit` 只看本次改动的包，逐个在包目录跑它自己的 `check`（没有 `check` 脚本的包会明说并跳过），另外只要改到 `plugins/`、`presets/`、根 `README.md`、`docs/rules/` 或 `tools/` 就跑一遍 `tools/assert-ledger.mjs`。装法（`git config core.hooksPath .githooks`）、跳法（`SKIP_CHECK=1 git commit`）与成功 / 失败各打什么，都写在该文件头部。
+改完就跑有闸门兜着：`.githooks/pre-commit` 只看本次改动的包，逐个在包目录跑它自己的 `check`（没有 `check` 脚本的包会明说并跳过，不算失败——新包忘了写 `check` 会在这里静默放过），另外只要改到 `plugins/`、`presets/`、根 `README.md`、`docs/rules/` 或 `tools/` 就跑一遍 `tools/assert-ledger.mjs`，最后无论改了什么路径都再跑一道产物新鲜度（`tools/assert-artifacts.mjs`）。装法（`git config core.hooksPath .githooks`）、跳法（`SKIP_CHECK=1 git commit`）与成功 / 失败各打什么，都写在该文件头部。
 
 闸门自己坏了代价最大，改完必须验收一次：走一次**真实提交**，成功路径打出 `pre-commit: 通过（<包名>）`；再确认它真的装着——`git config --get core.hooksPath` 应回 `.githooks`（这条配置不进版本库，新克隆默认没有闸门）。`SKIP_CHECK=1` 只在确实跑不了时用；「检查全过的提交反而被钩子拦住」是钩子自己的 bug，去修钩子。
 
 ### 仓库级 check 与 CI（`tools/check.mjs`、`.github/workflows/check.yml`）
 
-本机钩子的两道短板它都补上：钩子只看本次改动的包，且只有装了钩子的机器才有。`node tools/check.mjs` 在仓库根一次跑「台账 + 全部包的 `check`」；CI 在每个有依赖的包目录 `pnpm install --frozen-lockfile` 之后跑同一个脚本，所以「换台机器能不能过」有一份可复现的答案。
+本机钩子的两道短板它都补上：钩子只看本次改动的包，且只有装了钩子的机器才有。`node tools/check.mjs` 在仓库根一次跑「台账 + 全部包的 `check` + 产物新鲜度」；CI 在每个有依赖的包目录 `pnpm install --frozen-lockfile` 之后跑同一个脚本，所以「换台机器能不能过」有一份可复现的答案。
 
-两件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 这类要真内核的检查只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收。
+三件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 这类要真内核的检查只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收；`assert-ledger.mjs` 的判据 9（开发副本是不是软链）与判据 11（preset 抄本与已装内核比对）都读本机的 `$DSH_HOME` 与已装内核，没装就跳过且退出码仍为 0，这两条不能靠 CI 兜底。
 
 **每个包的 `pnpm-workspace.yaml` 是安装契约的一部分，别当本机偏好**。pnpm 11 起有两条默认安全策略，干净环境（CI 就是这样）一定生效：拒绝安装发布不满 24 小时的包，并拒绝执行未登记的依赖构建脚本。本仓库刻意跟随内核的 alpha 版本线——升版当天就要装——所以这两条一定撞上，表现是 CI 的 `install` 一步红、而本机全绿。两处各治一半，缺一不可：
 
@@ -74,7 +74,7 @@ allowBuilds:
   esbuild: true
 ```
 
-前半条按包名放行内核版本线（写成别的 scope 不生效）；后半条给构建链（`esbuild`，有 `lightningcss` / `tsdown` 的包照加）放行构建脚本。`packageManager` 一并写进 `package.json` 钉住 pnpm 版本，否则 corepack 会在没钉的包里解析到另一个版本，同一份策略又要重踩一遍。`tools/new-plugin.mjs` 生成的骨架已带这两处。
+前半条按包名放行内核版本线（写成别的 scope 不生效）；后半条给构建链（`esbuild`，有 `lightningcss` / `tsdown` 的包照加）放行构建脚本。`packageManager` 一并写进 `package.json` 钉住 pnpm 版本，否则 corepack 会在没钉的包里解析到另一个版本，同一份策略又要重踩一遍。`tools/new-plugin.mjs` 生成的骨架已带这两处。适用范围按包的依赖声明判定：有依赖的包必须有这份文件；没有声明 `esbuild` 的包不写 `allowBuilds`（`dsh-web-auth-url` 就只有前一条）；零依赖的包不建这份文件（`dsh-baseline.mjs` 对它们连 `pnpm install` 都跳过）。
 
 **本机绿不等于 CI 绿**：pnpm 的用户级配置（macOS 上是 `~/Library/Preferences/pnpm/config.yaml`）若把 `minimumReleaseAge` 设成 0、或开了 `dangerouslyAllowAllBuilds`，本机就绕过了这两条策略，复现 CI 必须换一份干净 home：
 
@@ -82,7 +82,7 @@ allowBuilds:
 HOME=./tmp/ci-home COREPACK_HOME=./tmp/ci-home/corepack corepack pnpm install --frozen-lockfile
 ```
 
-整段流程（干净 HOME、corepack 钉版本、逐包 install、仓库级 check）由 `node tools/ci-check.mjs` 一次跑完；发布或推送前跑它，它要联网。这条安装约定由 `assert-ledger.mjs` 判据 12 守着：有依赖的包缺 `packageManager`，或 `pnpm-workspace.yaml` 缺放行项，提交时就会红。
+整段流程（干净 HOME、corepack 钉版本、逐包 install、仓库级 check）由 `node tools/ci-check.mjs` 一次跑完；发布或推送前跑它，它要联网。这条安装约定由 `assert-ledger.mjs` 判据 12 守着：任何包缺 `packageManager`，或有依赖的包缺 `pnpm-workspace.yaml` 的放行项，提交时就会红。
 
 ### 类型检查
 

@@ -8,7 +8,7 @@
  *   3. `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 写区间（不是精确版本），同包内与跨包同串
  *   4. 许可只由 `package.json` 的 `license` 声明，各层目录不附带许可文书
  *   5. `files` 与 `dsh.bundle.patch` 指的条目在目录里存在
- *   6. 插件与 preset README 的四段固定形状，`## 安装` 里给的是本包名，README 指的 .md 都在目录里
+ *   6. 插件与 preset README 的三节固定形状（`## 功能` / `## 特性` / `## 安装`），`## 安装` 里给的是本包名，README 指的 .md 都在目录里
  *   7. 根 `README.md` 与包目录互相覆盖（都指向对方，且没有指向不存在目录的链接）
  *   8. `docs/rules/presets.md` 的 order 台账与各 preset 的 `<id>.patch.yml` 一致
  *   9. 本机开发副本是软链、指向本仓库、版本号与仓库一致（没装开发副本的机器跳过这一项）
@@ -16,9 +16,9 @@
  *      版本字面量与本包 `engines.dsh` 同串；历史实测记录（`DETAILS.md`）与 vendored 内容不查
  *  11. 抄自官方 preset 的 `<id>.patch.yml` 与已装内核的官方同名文件逐行一致，只放行已登记的差异
  *  12. 每个包钉住 pnpm 版本；有依赖的包另有 `pnpm-workspace.yaml` 放行内核 alpha 版本与构建脚本
- *  14. 插件 README/DETAILS 里写死的「N 个字段、M 条描述」与构建产物里实际注册的工具面一致
  *  13. 归档的包只在 `archive/` 下被提到：除 `archive/`、`tmp/`、构建产物与随包 vendored 内容外，
  *      规则文档、工具脚本、根 README 与各包源码里都不出现它的包名或目录名，`plugins/<dir>` 也必须是活目录
+ *  14. 插件 README/DETAILS 里写死的「N 个字段、M 条描述」与构建产物里实际注册的工具面一致
  *
  * 判据来自 docs/rules/plugins.md、release.md、presets.md、to-readme.md 与 AGENTS.md；
  * 改了那些约定就同步改这里，两边是同一件事的两个位置，不允许只改一边。
@@ -297,7 +297,7 @@ for (const entry of packages) {
   }
 }
 
-// ── 6. README 四段（插件与 preset 同形） ──────────────────────────────────────
+// ── 6. README 三节（插件与 preset 同形：一级标题 + 功能 / 特性 / 安装） ────────
 for (const entry of packages) {
   const path = join(entry.dir, 'README.md');
   if (!existsSync(path)) {
@@ -313,7 +313,7 @@ for (const entry of packages) {
     fail(`${entry.rel}/README.md`, `一级标题要以 ${expected} 开头（现为 ${JSON.stringify(heading ?? '')}）`);
   }
   for (const section of ['## 功能', '## 特性', '## 安装']) {
-    if (!text.includes(section)) fail(`${entry.rel}/README.md`, `缺「${section}」一节（README 是固定四段）`);
+    if (!text.includes(section)) fail(`${entry.rel}/README.md`, `缺「${section}」一节（README 正文是固定三节：功能 / 特性 / 安装）`);
   }
   const install = text.slice(text.indexOf('## 安装'));
   if (!install.includes(`add ${entry.name}`)) {

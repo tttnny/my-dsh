@@ -6,10 +6,10 @@
 
 ## 当场减掉缓存
 
-provider 把缓存折进一个 prompt 总数时（`prompt_tokens`、`usageMetadata.promptTokenCount`）**必须在适配器里当场减掉**、负数夹到 0——漏减不报错，只静默夸大未命中量、稀释命中率。参照实现：`@deepseek-ai/dsh-llm-deepseek` 的 `mapUsage`。
+provider 把缓存折进一个 prompt 总数时（`prompt_tokens`、`usageMetadata.promptTokenCount`）**必须在适配器里当场减掉**、负数夹到 0——漏减不报错，只静默夸大未命中量、稀释命中率。参照实现：`@deepseek-ai/dsh-llm-deepseek` 的 `src/translate.ts` —— `updateUsage()` 把 wire 上的 `input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens` 逐字段映射成四个互不重叠的计数（Messages 协议本就分项给出，所以这一份不需要减）；`@deepseek-ai/dsh-llm-pi-ai` 的 `src/stream.ts` 的 `mapUsage` 是另一种写法：计数本来就不重叠，只把非零的缓存字段带上。
 
-`totalTokens` 只照抄 provider 给的权威总数，给不出就省略；provider 不单独计缓存写入费时，不填 `cacheWriteTokens` 即正确状态。
+`totalTokens` 优先照抄 provider 给的权威总数；provider 只给分项计数时，按四个不相交计数求和得出（`dsh-llm-deepseek` 的 `translate.ts` 在流结束处就是这么算的：`inputTokens + outputTokens + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0)`）；给不出或不自洽就省略。provider 不单独计缓存写入费时，不填 `cacheWriteTokens` 即正确状态。
 
 ## 断言判据
 
-usage 断言样例的判别力来自缓存字段：只给 prompt / candidates 的样例解不出漏减，跑绿也测不到东西。范例：`@deepseek-ai/dsh-llm-deepseek` 的 `tests/stream.spec.ts`「emits first-seen blocks, raw tool JSON and cumulative disjoint usage before finish」那条——缓存折进 prompt 总数时，`inputTokens` 与 `cacheReadTokens` / `cacheWriteTokens` 三个字段互不重叠，`totalTokens` 另照抄 provider 给的权威值。
+usage 断言样例的判别力来自缓存字段：只给 prompt / candidates 的样例解不出漏减，跑绿也测不到东西。范例：`@deepseek-ai/dsh-llm-deepseek` 的 `tests/stream.spec.ts`「emits first-seen blocks, raw tool JSON and cumulative disjoint usage before finish」那条——样例把缓存单列在 `cacheReadTokens` / `cacheWriteTokens` 而不折进 `inputTokens`，三个字段互不重叠，`totalTokens` 是四者之和（`12 + 5 + 30 + 7 = 54`），不是照抄来的。

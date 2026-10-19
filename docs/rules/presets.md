@@ -8,16 +8,18 @@ preset 范围的前门。
 
 ## preset README
 
-与插件同一套四段（范例 `presets/plugin-upgrade-cordis/README.md`）：一级标题 `# <id> — <显示名>` + 一段话概括；`## 功能` 写它给模型 / 用户带来什么；`## 特性` 写身份来源、组件取舍、声明形态与硬边界；`## 安装` 给 `dsh plugin --profile web add @lynn123411/dsh-preset-<id>` 代码块，另一条开发副本命令（`./presets/<id>`）紧接其后。
+与插件同一套三节（范例 `presets/plugin-upgrade-cordis/README.md`）：一级标题 `# <id> — <显示名>` 下面先用一段话概括；之后依次是 `## 功能`——写它给模型 / 用户带来什么；`## 特性`——写身份来源、组件取舍、声明形态与硬边界；`## 安装`——给 `dsh plugin --profile web add @lynn123411/dsh-preset-<id>` 代码块，另一条开发副本命令（`./presets/<id>`）紧接其后。
 
-四段之外**不加节**：与官方 preset 的逐项对照、组成、声明形态、安装步骤、验证流程、实测记录、已知边界、许可这些配置指南内容整体放同目录的 `DETAILS.md`，README 里留一句指针（npm 的 `files` 要带上它）。README 只写现状，`DETAILS.md` 才写版本走廊与实测记录。
+这三节之外**不再加节**：与官方 preset 的逐项对照、组成、声明形态、安装步骤、验证流程、实测记录、已知边界、许可这些配置指南内容整体放同目录的 `DETAILS.md`，README 里留一句指针（npm 的 `files` 要带上它）。README 只写现状，`DETAILS.md` 才写版本走廊与实测记录。
 
 ## 声明形态
 
 preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle.patch`（string 或有序数组）指向本目录的 `<id>.patch.yml`。
 
 - 该 patch 往 profile 树里 `- insert` 一条 `@deepseek-ai/dsh-agent-preset` 行，`config` 字段：`id`（preset id）、`name` / `description`（会话选择器上的显示名与说明）、`order`（排序，台账见下）、`plugins`（必需——preset 的全部组合行）。
-- `config.plugins` 里引用的**仓库外插件**必须在本包 `dependencies` 里声明：preset 行按 `name` 从声明它的那棵树解析，包不在 profile 里那一行就 `never started`、整份 preset 带上诊断且不可选。
+- **`config.id` 在整个 profile 内唯一**：同名 preset 注册第二次直接抛 `Duplicate agent preset: <id>`，后注册的那份整份不生效。最容易撞的两种情形是官方 `cordis` 与抄本 `plugin-upgrade-cordis` 写成同一个 `config.id`，以及同一个 preset 既从 registry 装一份、又 `link:` 装一份。判定办法：两侧各看一眼——`grep -n 'id:' presets/*/*.patch.yml` 与官方四份（`standard` / `ptc` / `minimal` / `cordis`）比，确认本仓的 `config.id` 不撞；再用 `dsh plugin --profile <name> why <包名>` 确认该 profile 里这个包只有一个副本。
+- `config.plugins` 里引用的**仓库外插件**必须在本包 `dependencies` 里声明：preset 行按 `name` 从声明它的那棵树解析，包不在 profile 里时那一行 import 失败、连 fiber 都没建起来，审计报的正是 `<id> (<包名>): never started`，整份 preset 因此挂载失败、带上诊断且不可选。判定办法：`node tools/preset-compose.mjs <id>` 通过只说明组合得出来（它不求值 `!!js`、不装载），缺包要在装了内核的机器上真装载才现形。
+- **提供服务的行必须套 `isolate`**：preset 挂载后会审「有没有把服务泄漏到根领域」，命中即整份挂载失败并抛 `Preset services require isolate realms: <服务名列表>`。给 preset 加自己的 provider（自定义 skill provider、工具注册表等）时，把那一行放进带 `isolate: { <服务名>: true }` 的分组，或用 `isolate` 字段逐个点名；判定办法是真装载一次（`node tools/host-smoke.mjs`），抛错会把泄漏的服务名直接列出来。
 
 ## 版本与依赖
 
@@ -28,14 +30,14 @@ preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle
 
 - preset 行按**声明它那棵树**的 `baseUrl` 导入；bundle patch 的行合入 profile 的根 include，所以这个 `baseUrl` 是 **profile 目录**，不是本 preset 目录（实测 `file:///<DSH_HOME>/profiles/web/`）。相对写法（`./plugins/<file>.js`）因此必然 `never started`。
 - 随包代码 / 资源要写成能解析的名字：本包的 `exports` 子路径（`name: '@lynn123411/dsh-preset-<id>/<export>'`），或在 `config` 里用 `!!js` 算绝对路径（`createRequire(baseUrl).resolve('<本包>/package.json')` + `join(dir, 'skills')`）。`!!js` 的求值作用域里 `baseUrl`、`ctx` 与 `process` 都可用。
-- `createRequire(baseUrl)` 只在**本包已经装进该 profile** 时成立：裸 `node` 里从 profile 目录 `createRequire('<本包>/package.json')` 是 `MODULE_NOT_FOUND`。
+- `createRequire(baseUrl)` 只在**本包已经装进该 profile** 时成立：它查的就是 profile 的 `node_modules`，装过就解析得到（开发副本是软链，同样解析得到）；没装进该 profile 时解析不到，抛 `MODULE_NOT_FOUND`。所以写这行之前先给该 profile 装一次本包。
 - 裸包名（`@deepseek-ai/…`）走 profile 树自己的解析基准，照常用。
 
 ## 安装与启用
 
 - `dsh plugin --profile <name> add <包名 | 本仓库目录路径>`：写进该 profile 的 `dependencies`（本地目录记 `link:`），识别到 `dsh.bundle` 就把包名追加进 `dsh.profile.bundles`。目录路径按**调用目录**解析，所以从仓库根写 `./presets/<id>` 即装本目录。
 - 行消费的仓库外插件要在同一条命令里**一并点名**：`dsh.profile.bundles` 只按 profile 的**直接依赖**登记，preset 的传递依赖装得下、行也解析得到，但进不了 bundle 层——插件自带客户端半边时，缺了它卡片退回原始 JSON。`link:` 开发副本连 `dependencies` 也不物化，开发副本命令同样要点名（`dsh plugin --profile web add ./presets/<id> <它消费的仓库内插件目录>`）。
-- **改完 preset 声明之后谁生效**：`<id>.patch.yml` 属于 bundle 层，HMR 不监听它，改完不会自己重新组合；触发一次重新组合即可（插件页或 `plugin_manager` 里开关任一插件、改存 profile 的 `cordis.patch.yml`、增删 `dsh.profile.bundles`），不必重启进程。新声明注册成新一代 revision：**之后新建的会话**用它，已经跑起来的会话继续用绑定的旧那份；空白会话重新选择时会拿到当前 revision（保留规则见 `@deepseek-ai/dsh-agent-preset-registry` 的 README）。没有 `hmr` 的 profile 仍要重启。
+- **改完 preset 声明之后谁生效**：`<id>.patch.yml` 属于 bundle 层，HMR 不监听它，改完不会自己重新组合；触发一次重新组合即可（插件页或 `plugin_manager` 里开关任一插件、改存 profile 的 `cordis.patch.yml`、增删 `dsh.profile.bundles`），不必重启进程。新声明注册成新一代 revision：**之后新建的会话**用它，已经跑起来的会话继续用绑定的旧那份；空白会话重新选择时会拿到当前 revision。**例外是 Web 编辑器存下来的 override**：在插件配置界面改过某个 preset 行的 `config.plugins` 之后，profile 的 `cordis.patch.yml` 里就存着一份完整的子行清单，它整体替换内置清单、不会与之后对 `<id>.patch.yml` 的改动合并（见 `@deepseek-ai/dsh-agent-preset-registry` 的 README「Known Limitations」）——所以再改 `<id>.patch.yml` 并触发重组也不生效，要撤掉那份 override（在编辑器里改回、或从 profile 的 `cordis.patch.yml` 删掉该 `id` 的 `config`）才会跟到新声明。没有 `hmr` 的 profile 仍要重启。
 - **装完 / 启用 bundle 同理**：包名进 `dsh.profile.bundles` 会触发重新组合，新行随之启动；只有重新组合报 `restart-required`（如 `package-moved`）才要重启。
 - **随包技能文件不需要重新组合**：`skills/` 由 preset 里那行 `skill-filesystem` 直接读盘，`watch` 默认开、`customSkillDirs` 也在监听范围内，改完下一次读取就是新内容。
 - 给人敲的逐步指令由根 `README.md` 的 preset 表与各 preset 的 `README.md` 给；逐项细则（与官方的异同、order、验证步骤与实测记录）在各自的 `DETAILS.md`。
