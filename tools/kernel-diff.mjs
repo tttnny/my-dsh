@@ -12,7 +12,7 @@
  *   node tools/kernel-diff.mjs <旧版本> --from-source        # 与当前已装内核比源码 tag
  *   node tools/kernel-diff.mjs <旧版本> --from-source <新版本>
  *   node tools/kernel-diff.mjs <旧版本> --from-source --declared   # 只看本仓声明过的包
- *   node tools/kernel-diff.mjs <旧版本> --from-source --presets    # 只看四份官方 preset
+ *   node tools/kernel-diff.mjs <旧版本> --from-source --presets    # 包差异之后附加一节官方 preset
  *   node tools/kernel-diff.mjs <旧版本> --only dsh-tool-fs --only dsh-persona
  *   node tools/kernel-diff.mjs <旧版本> --all               # 连 package.json 的差异一起列
  *   node tools/kernel-diff.mjs --list                        # 只列这台机器装了哪些内核
@@ -25,6 +25,9 @@ import { join } from 'node:path';
 import { dshSourceDir, git, sourceTag, sourceTags } from './lib/dsh-source.mjs';
 import { currentKernel, declaredRanges, installedKernels, listPackages, repoRoot } from './lib/repo.mjs';
 
+/** 只出现、不带值的开关。它们后面那个词是位置参数，不能被吃掉。 */
+const FLAGS = new Set(['--from-source', '--declared', '--presets', '--all', '--all-paths', '--list']);
+
 /** 逐个解析 `--k v` 与 `--flag`；`--only` 可重复。 */
 function parseArgs(argv) {
   const out = { _: [], only: [] };
@@ -35,7 +38,9 @@ function parseArgs(argv) {
       continue;
     }
     const next = argv[i + 1];
-    const value = next === undefined || next.startsWith('--') ? true : ((i += 1), next);
+    // 开关一律当 flag：只有取值参数才吃掉后一个词。否则「<旧版本> --from-source <新版本>」
+    // 会把新版本当成 --from-source 的值，命令静默退回「比已装内核」。
+    const value = next === undefined || next.startsWith('--') || FLAGS.has(key) ? true : ((i += 1), next);
     if (key === '--only') out.only.push(value);
     else out[key.slice(2)] = value;
   }

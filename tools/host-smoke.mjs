@@ -229,7 +229,7 @@ try {
   const patterns = [
     /Cannot find package/,
     /plugin tree failed to load/,
-    /failed to import loader entry/,
+    /failed to import:/,
     /never started/,
     /skipping profile bundle "@lynn123411\//,
   ];
