@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "GUI login",
-    "description": "Gives the model one web_gui_login tool that exchanges this process's launch token for a browser session cookie and writes a curl cookie jar, so the token never enters the prompt, a tool result, or the session log."
+    "description": "Gives the model one web_gui_login tool that returns this process's launch-token GUI URL; the model exchanges it once for a browser session cookie and then uses DSH_WEB_URL. Also publishes DSH_WEB_AUTH_URL."
   }
 }

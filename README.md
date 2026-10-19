@@ -42,7 +42,7 @@
     <tr>
       <td><b>📱 设备访问</b><br><i>跨设备与本机外部应用接入</i></td>
       <td><a href="./plugins/dsh-web-auth-url"><code>@lynn123411/dsh-web-auth-url</code></a></td>
-      <td><b>GUI 登录</b><br>模型调用一次工具就能登录这个 GUI：工具换出会话 cookie 并写成 curl 可用的文件，token 不进提示词、不进工具结果、不进会话记录。</td>
+      <td><b>GUI 登录</b><br>模型调用一次工具就拿到这个 GUI 带 token 的地址：用它换一次会话 cookie，之后照常访问干净地址。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-web-auth-url</code></td>
     </tr>
   </tbody>

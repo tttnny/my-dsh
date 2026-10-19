@@ -2,11 +2,10 @@
  * 宿主半边自检：把承重点放在 **真实的 0.2.1-rc.2 内核服务** 上跑，而不是桩件——
  * 每条断言的全部意义就是「DSH 换了实现，本插件立刻挂」：
  *
- * 1. 登录工具真的注册进真 `ctx.tools`（@deepseek-ai/dsh-tools 的 ToolRuntime），
- *    并且一次真实 HTTP 往返就把 cookie 换成 curl 能直接读的 jar：本文件起一个
- *    本地 `node:http` 假服，回 303 + `Set-Cookie`，断言 jar 的内容、权限与过期。
- * 2. token 不外泄：工具返回的规范值、`render` 出来的文本、抛出的错误文本里都不
- *    出现 token。错误里带上 url 是最容易犯的那种泄漏，所以专门验一条失败分支。
+ * 1. 「登录地址」工具真的注册进真 `ctx.tools`（@deepseek-ai/dsh-tools 的 ToolRuntime），
+ *    并把 connection 为公布根加过 token 的地址原样交给模型。
+ * 2. 地址取对外公布的那个根：配了 `publicUrl` 时与 `DSH_WEB_URL` 同源，模型拿它
+ *    换 cookie 时命中的就是 `$DSH_WEB_URL` 那一份。
  * 3. 托管环境变量：真 `ctx.shellEnv` 的 `collect()` 每次调用都重新执行本插件的
  *    `resolve`，token 轮换后下一次 shell 调用拿到新地址。
  * 4. 不碰提示词：插件只注册工具与托管变量，导出面里没有 Config，也不注册任何段落——
@@ -21,10 +20,8 @@
 
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
-import { createServer } from 'node:http';
-import { homedir, tmpdir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Context } from '@deepseek-ai/cordis';
@@ -34,17 +31,14 @@ import ToolRuntime from '@deepseek-ai/dsh-tools';
 
 const require = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
-const packageDir = realpathSync(join(here, '..'));
+const packageDir = join(here, '..');
 const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
 const plugin = await import('../lib/index.js');
-const { inject, name, selfDir } = plugin;
+const { inject, name } = plugin;
 
 const TOKEN = 'launch-token-example';
-const COOKIE_NAME = 'dsh-auth-smoke';
-const COOKIE_VALUE = 'v1.smoke.cookie';
+const ORIGIN = 'http://127.0.0.1:3080';
 
-/** 0.2.1-rc.2 `SECTION_ORDERS.WEB_SURFACE` 的实际取值，锚点漂了必须当场失败。 */
-const ANCHOR_ORDER = 10100;
 /** 模型看到的工具名。 */
 const TOOL_NAME = 'web_gui_login';
 
@@ -72,61 +66,23 @@ function installedVersion(pkg) {
 }
 
 /**
- * 起一个假 Web GUI：`GET /` 回 303 与一条 `Set-Cookie`，其余路径回 200。
- * 它只模仿 connection 对根请求做的事，够验「换 cookie 并落 jar」这一段。
- * @param {{ status?: number, cookie?: boolean }} [options] - 故意跑偏的分支。
- * @returns {Promise<{ origin: string, close: () => Promise<void> }>} 根地址与收尾。
- */
-async function fakeGui(options = {}) {
-  const status = options.status ?? 303;
-  const withCookie = options.cookie ?? true;
-  const sessionOnly = options.sessionOnly ?? false;
-  const delayMs = options.delayMs ?? 0;
-  const server = createServer((request, response) => {
-    // token 地址是 `/?token=…`：按 pathname 判根，否则这条分支永远走不到。
-    const { pathname } = new URL(request.url ?? '/', 'http://placeholder');
-    if (pathname === '/') {
-      setTimeout(() => {
-        /** @type {Record<string, string>} */
-        const headers = { location: './' };
-        if (withCookie) {
-          const lifetime = sessionOnly ? '' : 'Max-Age=2592000; ';
-          headers['set-cookie'] = `${COOKIE_NAME}=${COOKIE_VALUE}; ${lifetime}Path=/; HttpOnly; SameSite=Strict`;
-        }
-        response.writeHead(status, headers);
-        response.end();
-      }, delayMs);
-      return;
-    }
-    response.writeHead(200, { 'content-type': 'text/plain' });
-    response.end('ok');
-  });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = /** @type {{ port: number }} */ (server.address());
-  return {
-    origin: `http://127.0.0.1:${String(port)}`,
-    close: () => new Promise((resolve) => server.close(() => resolve())),
-  };
-}
-
-/**
  * 装配一套真实的宿主树：真 systemPrompt + 真 shellEnv + 真 ToolRuntime。
  * web 侧只桩「监听器自己报根」「对外公布的根」与「给根加 token」三个面——它们是
  * webServer、webApp 与 connection 的公开契约，dsh-web-app 读的也是这三个。
- * @param {{ token?: string, web?: boolean, gui?: string, advertised?: string, originFails?: boolean }} [options] - 装配参数。
+ * @param {{ token?: string, web?: boolean, origin?: string, advertised?: string, originFails?: boolean }} options - 装配参数。
  * @returns {Promise<{ ctx: object, state: { token: string } }>} 上下文与可轮换的 token。
  */
-async function host({ token = TOKEN, web = true, gui, advertised, originFails = false } = {}) {
+async function host({ token = TOKEN, web = true, origin = ORIGIN, advertised, originFails = false } = {}) {
   const ctx = new Context();
   await ctx.plugin(SystemPrompt, {});
-  await ctx.plugin(ShellEnv, { dshHome: join(tmpdir(), 'dsh-web-auth-url-smoke') });
+  await ctx.plugin(ShellEnv, {});
   await ctx.plugin(ToolRuntime);
   const state = { token };
   if (web) {
     ctx.provide('webServer', {
       getOrigin: () => {
         if (originFails) throw new Error('webserver: origin read before the listener bound a port');
-        return gui ?? 'http://127.0.0.1:3080';
+        return origin;
       },
     });
     if (advertised !== undefined) ctx.provide('webApp', { getAdvertisedUrl: () => advertised });
@@ -139,17 +95,13 @@ async function host({ token = TOKEN, web = true, gui, advertised, originFails = 
  * 把本插件装进上下文。依赖齐备时 `apply` 同步执行；这里仍 await 一次 fiber，
  * 是为了让「将来改成异步注册」变成失败而不是静默漏断言。
  * @param {object} ctx - 已装配的上下文。
- * @param {object} [config] - loader 交给插件行的 config。
  * @returns {Promise<object>} 同一个上下文。
  */
-async function mount(ctx, config) {
-  await ctx.plugin(plugin, config);
+async function mount(ctx) {
+  await ctx.plugin(plugin, {});
   await ctx.fiber.await();
   return ctx;
 }
-
-/** 一次工具调用的执行上下文：真 DSH 里还会带 agent 与会话，这里只给取消信号。 */
-const exec = () => ({ signal: new AbortController().signal });
 
 // --- 插件身份与清单口径 ---------------------------------------------------
 await test('插件名与硬依赖：工具、连接、监听器三者缺一就不该激活', () => {
@@ -159,17 +111,7 @@ await test('插件名与硬依赖：工具、连接、监听器三者缺一就�
 
 await test('本插件不贡献提示词：导出里没有 Config，也没有段落相关的东西', () => {
   assert.equal(plugin.Config, undefined, '没有配置面：用法全部由工具描述承担');
-  assert.deepEqual(Object.keys(plugin).sort(), ['apply', 'inject', 'name', 'selfDir']);
-});
-
-// --- selfDir：本插件自身安装目录（预留工具） ------------------------------
-// 钉「realpath 后的落点 = 本包目录」：开发副本下包名会被解析到 profiles 里的
-// 链接路径，只有 realpath 之后才回到仓库。不 realpath 的实现在开发副本当场挂。
-await test('selfDir 解析回本包目录，且已是 realpath', () => {
-  assert.equal(selfDir(), packageDir, 'selfDir 必须 realpath 回本包目录');
-  assert.equal(realpathSync(selfDir()), selfDir(), 'selfDir 必须已经是 realpath');
-  assert.equal(existsSync(join(selfDir(), manifest.main)), true, 'selfDir 必须能拼出真实入口文件');
-  assert.equal(existsSync(join(selfDir(), 'cordis.patch.yml')), true, 'selfDir 必须能拼出随包文件');
+  assert.deepEqual(Object.keys(plugin).sort(), ['apply', 'inject', 'name']);
 });
 
 await test('内核基线声明齐整（engines / peer / dev 同串）', () => {
@@ -186,214 +128,89 @@ await test('内核基线声明齐整（engines / peer / dev 同串）', () => {
   }
 });
 
-// --- 承重点一：真 ToolRuntime + 一次真实 HTTP 往返 --------------------------
+// --- 承重点一：真 ToolRuntime 里拿出一把能用的地址 ------------------------
 {
-  const gui = await fakeGui();
-  const dshHome = mkdtempSync(join(tmpdir(), 'dsh-web-auth-url-home-'));
-  const previousHome = process.env.DSH_HOME;
-  process.env.DSH_HOME = dshHome;
-  try {
-    const { ctx } = await host({ gui: gui.origin });
-    await mount(ctx, {});
-    const tool = ctx.tools.get(TOOL_NAME);
+  const { ctx } = await host();
+  await mount(ctx);
+  const tool = ctx.tools.get(TOOL_NAME);
 
-    await test('工具注册进真工具表，参数面为空、输出面两个字段', () => {
-      assert.ok(tool !== undefined, '工具没注册上');
-      assert.equal(tool.name, TOOL_NAME);
-      assert.deepEqual(tool.parameters.properties, {}, '参数面必须为空：登录不需要模型给任何东西');
-      // 成功路径只可能是 303（其余状态在 execute 里已抛错），状态码放进结果就是一条恒定的废话。
-      assert.deepEqual(Object.keys(tool.output.schema.properties).sort(), ['expiresAt', 'jar']);
-      assert.equal(tool.output.schema.additionalProperties, false, '输出面必须封闭');
-      assert.ok(tool.timeoutMs > 0, '必须声明协作式超时预算');
-    });
+  await test('工具注册进真工具表，参数面为空、输出面只有一个 url 字段', () => {
+    assert.ok(tool !== undefined, '工具没注册上');
+    assert.equal(tool.name, TOOL_NAME);
+    assert.deepEqual(tool.parameters.properties, {}, '参数面必须为空：取地址不需要模型给任何东西');
+    assert.deepEqual(Object.keys(tool.output.schema.properties), ['url'], '结果里只有模型要用的那一件东西');
+    assert.equal(tool.output.schema.additionalProperties, false, '输出面必须封闭');
+  });
 
-    const value = await tool.execute({}, exec());
+  const value = await tool.execute({}, {});
 
-    await test('303 + Set-Cookie 被换成 jar：路径在 $DSH_HOME/cache 下，内容是可读的 Netscape 表', () => {
-      assert.deepEqual(Object.keys(value).sort(), ['expiresAt', 'jar'], '结果里只有模型要用的两件东西');
-      assert.ok(value.jar.startsWith(join(dshHome, 'cache')), `jar 必须落在 $DSH_HOME/cache 下，实为 ${value.jar}`);
-      assert.equal(existsSync(value.jar), true, 'jar 文件必须真的写出来');
-      const lines = readFileSync(value.jar, 'utf8').split('\n');
-      assert.equal(lines[0], '# Netscape HTTP Cookie File', 'curl 靠这行认格式');
-      const row = lines.find((line) => line.includes(COOKIE_NAME));
-      assert.ok(row !== undefined, 'cookie 行必须写进 jar');
-      const fields = row.split('\t');
-      assert.equal(fields.length, 7, 'cookie 行必须是 Netscape 的七段');
-      assert.equal(fields[0], '#HttpOnly_127.0.0.1', 'HttpOnly cookie 要带 curl 认的前缀，域取监听器自己的 host');
-      assert.equal(fields[2], '/');
-      assert.equal(fields[3], 'FALSE', 'HTTP 监听器下 cookie 不是 Secure');
-      assert.equal(fields[5], COOKIE_NAME);
-      assert.equal(fields[6], COOKIE_VALUE, 'cookie 值必须原样落盘');
-      assert.ok(Number(fields[4]) > Math.floor(Date.now() / 1000), 'Max-Age 必须换算成未来的绝对时间');
-    });
+  await test('返回值就是公布根加进程 token：地址与 shell 里的 DSH_WEB_AUTH_URL 同一条', () => {
+    assert.deepEqual(Object.keys(value), ['url'], '结果只有地址');
+    assert.equal(value.url, `${ORIGIN}/?token=${TOKEN}`);
+  });
 
-    await test('过期时间：取 jar 里最早的 cookie 过期，写成 ISO', () => {
-      assert.match(String(value.expiresAt), /^\d{4}-\d{2}-\d{2}T/u);
-      assert.ok(Date.parse(value.expiresAt) > Date.now(), '过期时间必须在未来');
-    });
-
-    await test('jar 权限是 0600，目录是 0700', () => {
-      assert.equal(statSync(value.jar).mode & 0o777, 0o600, 'cookie jar 只许本人读写');
-      assert.equal(statSync(dirname(value.jar)).mode & 0o777, 0o700, 'jar 所在目录只许本人进入');
-    });
-
-    await test('token 不进工具结果：规范值与 render 文本里都没有它', () => {
-      const rendered = tool.output.render({}, value).map((block) => block.text).join('\n');
-      for (const text of [JSON.stringify(value), rendered]) {
-        assert.equal(text.includes('token='), false, '工具结果里不能出现 token');
-        assert.equal(text.includes(TOKEN), false, '工具结果里不能出现 launch token');
-      }
-      assert.ok(rendered.includes(value.jar), 'render 必须把 jar 路径交给模型');
-      assert.ok(rendered.includes('$DSH_WEB_URL'), '示例命令要挂到干净地址上，而不是带 token 的地址');
-    });
-
-  } finally {
-    if (previousHome === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = previousHome;
-    rmSync(dshHome, { recursive: true, force: true });
-    await gui.close();
-  }
+  await test('render 把地址与两条 curl 交出来：先用它换 cookie，再用 jar 访问 $DSH_WEB_URL', () => {
+    const rendered = tool.output.render({}, value).map((block) => block.text).join('\n');
+    assert.ok(rendered.includes(value.url), '地址必须出现在 render 里，否则模型读不到它');
+    assert.ok(rendered.includes('curl -s -c "$JAR"'), '要给出换 cookie 的命令');
+    assert.ok(rendered.includes('curl -s -b "$JAR" "$DSH_WEB_URL/"'), '后续请求要挂到干净地址上');
+  });
 }
 
-// --- 承重点一之二：会话 cookie、并发、取消、未 bind、跨域 ------------------
+// --- 承重点二：公布根优先，地址随 token 轮换 ------------------------------
 {
-  await test('只有会话 cookie 时 expiresAt 是 null，字段照样在', async () => {
-    const gui = await fakeGui({ sessionOnly: true });
-    const home = mkdtempSync(join(tmpdir(), 'dsh-web-auth-url-session-'));
-    const previous = process.env.DSH_HOME;
-    process.env.DSH_HOME = home;
-    try {
-      const { ctx } = await host({ gui: gui.origin });
-      await mount(ctx, {});
-      const value = await ctx.tools.get(TOOL_NAME).execute({}, exec());
-      assert.equal('expiresAt' in value, true, '输出面声明了 expiresAt，就不能有时在有时不在');
-      assert.equal(value.expiresAt, null);
-      assert.equal(readFileSync(value.jar, 'utf8').includes(`\t0\t${COOKIE_NAME}\t`), true, '会话 cookie 的过期为 0');
-    } finally {
-      if (previous === undefined) delete process.env.DSH_HOME;
-      else process.env.DSH_HOME = previous;
-      rmSync(home, { recursive: true, force: true });
-      await gui.close();
-    }
+  const { ctx, state } = await host({ advertised: 'http://localhost:3080' });
+  await mount(ctx);
+  const tool = ctx.tools.get(TOOL_NAME);
+
+  await test('公布根与监听根不同时跟公布根走：模型拿它换 cookie，命中的就是 $DSH_WEB_URL 那一份', async () => {
+    const value = await tool.execute({}, {});
+    assert.equal(value.url, `http://localhost:3080/?token=${TOKEN}`);
   });
 
-  await test('取消信号真的到达请求：abort 后调用以 AbortError 结束', async () => {
-    const gui = await fakeGui({ delayMs: 2_000 });
-    const { ctx } = await host({ gui: gui.origin });
-    await mount(ctx, {});
-    const controller = new AbortController();
-    const pending = ctx.tools.get(TOOL_NAME).execute({}, { signal: controller.signal });
-    controller.abort();
-    const error = await pending.then(
-      () => assert.fail('取消之后不该成功'),
-      (reason) => reason,
-    );
-    assert.equal(error.name, 'AbortError');
-    await gui.close();
+  await test('token 轮换后重调一次就拿到新地址，不做缓存', async () => {
+    state.token = 'rotated-token';
+    const value = await tool.execute({}, {});
+    assert.equal(value.url, 'http://localhost:3080/?token=rotated-token');
   });
+}
 
-  await test('监听器未 bind：给出可 grep 的 NOT_READY 错误，而不是内核原话', async () => {
-    const { ctx } = await host({ originFails: true });
-    await mount(ctx, {});
-    const error = await ctx.tools.get(TOOL_NAME).execute({}, exec()).then(
+// --- 监听器未 bind：可 grep 的错误码，而不是内核原话 --------------------
+{
+  const { ctx } = await host({ originFails: true });
+  await mount(ctx);
+  await test('监听器未 bind 时抛 WEB_GUI_LOGIN_NOT_READY，并说明等实例服务后重调', async () => {
+    const error = await ctx.tools.get(TOOL_NAME).execute({}, {}).then(
       () => assert.fail('这个分支必须失败'),
       (reason) => reason,
     );
     assert.match(error.message, /WEB_GUI_LOGIN_NOT_READY/u);
     assert.equal(error.message.includes('listener bound a port'), false, '不要把内核的原始异常原样抛给模型');
   });
-
-  await test('DSH_HOME 以 ~ 开头时按内核的规则展开，不落到当前目录', async () => {
-    const gui = await fakeGui();
-    const previous = process.env.DSH_HOME;
-    process.env.DSH_HOME = '~/dsh-web-auth-url-tilde';
-    try {
-      const { ctx } = await host({ gui: gui.origin });
-      await mount(ctx, {});
-      const value = await ctx.tools.get(TOOL_NAME).execute({}, exec());
-      assert.equal(
-        value.jar.startsWith(join(homedir(), 'dsh-web-auth-url-tilde', 'cache')),
-        true,
-        `~ 必须展开成用户主目录（内核 resolveDshHome 同款），实为 ${value.jar}`,
-      );
-      assert.equal(value.jar.includes(`${sep}~${sep}`), false, '不能在当前目录下造一个叫 ~ 的目录');
-    } finally {
-      if (previous === undefined) delete process.env.DSH_HOME;
-      else process.env.DSH_HOME = previous;
-      rmSync(join(homedir(), 'dsh-web-auth-url-tilde'), { recursive: true, force: true });
-      // 不展开 ~ 的实现会把目录造在当前目录下：无论断言成败都清掉，别让工作区留垃圾。
-      rmSync(join(packageDir, '~'), { recursive: true, force: true });
-      await gui.close();
-    }
-  });
-
-  await test('公布根与监听根不同时，jar 名与 cookie 域都跟公布根走（jar 才发得出去）', async () => {
-    const gui = await fakeGui();
-    const home = mkdtempSync(join(tmpdir(), 'dsh-web-auth-url-advertised-'));
-    const previous = process.env.DSH_HOME;
-    process.env.DSH_HOME = home;
-    try {
-      // 同一个监听器，两个写法都指向它：监听根写 127.0.0.1，公布根写 localhost。
-      const { port } = new URL(gui.origin);
-      const advertised = `http://localhost:${port}`;
-      const { ctx } = await host({ gui: gui.origin, advertised });
-      await mount(ctx, {});
-      const value = await ctx.tools.get(TOOL_NAME).execute({}, exec());
-      assert.equal(value.jar.includes(`localhost-${port}.jar`), true, 'jar 按公布根命名，与模型要访问的地址一致');
-      const row = readFileSync(value.jar, 'utf8').split('\n').find((line) => line.includes(COOKIE_NAME));
-      assert.equal(row.split('\t')[0], '#HttpOnly_localhost', 'cookie 域取自公布根');
-    } finally {
-      if (previous === undefined) delete process.env.DSH_HOME;
-      else process.env.DSH_HOME = previous;
-      rmSync(home, { recursive: true, force: true });
-      await gui.close();
-    }
-  });
-}
-
-// --- 承重点二：失败分支也不泄漏 token -------------------------------------
-for (const [label, options] of [
-  ['没有 Set-Cookie', { cookie: false }],
-  ['状态不是 303', { status: 500 }],
-]) {
-  const gui = await fakeGui(options);
-  const { ctx } = await host({ gui: gui.origin });
-  await mount(ctx, {});
-  const tool = ctx.tools.get(TOOL_NAME);
-  await test(`${label}：抛出可修复的错误，且错误文本里没有 token`, async () => {
-    const value = await tool.execute({}, exec()).then(
-      () => assert.fail('这个分支必须失败'),
-      (error) => error,
-    );
-    assert.match(value.message, /web_gui_login/u);
-    assert.match(value.message, /303/u, '错误要交代期望的状态码');
-    assert.equal(value.message.includes(TOKEN), false, '错误文本会落进会话记录，不能带 token');
-    assert.equal(value.message.includes('token='), false, '错误文本不能带带 token 的地址');
-  });
-  await gui.close();
 }
 
 // --- 承重点三：真 shellEnv，每次 collect 即时解析 --------------------------
 {
   const { ctx, state } = await host();
-  await mount(ctx, {});
+  await mount(ctx);
 
   await test('真实 shellEnv.collect 每次调用即时解析，token 轮换后跟着变', () => {
     const first = ctx.shellEnv.collect({});
-    assert.equal(first.DSH_WEB_AUTH_URL, `http://127.0.0.1:3080/?token=${TOKEN}`, '必须给出带 token 的当前地址');
+    assert.equal(first.DSH_WEB_AUTH_URL, `${ORIGIN}/?token=${TOKEN}`, '必须给出带 token 的当前地址');
 
     state.token = 'rotated-token';
     const second = ctx.shellEnv.collect({});
-    assert.equal(
-      second.DSH_WEB_AUTH_URL,
-      'http://127.0.0.1:3080/?token=rotated-token',
-      'token 轮换后下一次 collect 必须重新解析',
-    );
+    assert.equal(second.DSH_WEB_AUTH_URL, `${ORIGIN}/?token=rotated-token`, 'token 轮换后下一次 collect 必须重新解析');
 
     const declared = ctx.shellEnv.list().find((variable) => variable.key === 'DSH_WEB_AUTH_URL');
     assert.equal(declared?.contributor, 'dsh-web-auth-url', '变量必须以本插件名登记');
     assert.ok(declared.description.trim().length > 0, '登记的变量必须有描述（真实注册表会拒绝空描述）');
-    assert.match(declared.description, /web_gui_login/u, '变量描述必须把模型指向工具，而不是让它自己拼 curl');
+    assert.match(declared.description, /web_gui_login/u, '变量描述必须把模型指向工具，而不是让它自己拼地址');
+  });
+
+  await test('工具与变量给出的是同一条地址：两边各解析一次，口径不能分叉', async () => {
+    const value = await ctx.tools.get(TOOL_NAME).execute({}, {});
+    assert.equal(value.url, ctx.shellEnv.collect({}).DSH_WEB_AUTH_URL);
   });
 }
 
@@ -405,7 +222,7 @@ for (const [label, options] of [
   const without = await bare.systemPrompt.assemble({});
 
   const { ctx } = await host();
-  await mount(ctx, {});
+  await mount(ctx);
   const withPlugin = await ctx.systemPrompt.assemble({});
 
   await test('装上本插件不改变系统提示词：段落、上下文、变量都与不装时相同', () => {
@@ -426,7 +243,7 @@ for (const [label, options] of [
 // --- 没有 web 部署：整条插件不激活 ----------------------------------------
 {
   const { ctx } = await host({ web: false });
-  await mount(ctx, {});
+  await mount(ctx);
 
   await test('缺 connection / webServer 时 apply 不跑：工具与变量都不出现', async () => {
     assert.equal(ctx.tools.get(TOOL_NAME), undefined, '没有 web 部署就不该有登录工具');
@@ -437,7 +254,7 @@ for (const [label, options] of [
 // --- 守卫反例：cordis 真的拒绝未声明服务的属性读取 ------------------------
 {
   const ctx = new Context();
-  await ctx.plugin(ShellEnv, { dshHome: join(tmpdir(), 'dsh-web-auth-url-smoke') });
+  await ctx.plugin(ShellEnv, {});
   await test('未声明服务必须抛错，否则上面用 inject 取服务就不是必需的', async () => {
     await assert.rejects(
       async () => {

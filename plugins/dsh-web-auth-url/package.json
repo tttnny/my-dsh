@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-web-auth-url",
-  "version": "0.4.0",
-  "description": "给模型一个 web_gui_login 工具：自己用进程 launch token 换浏览器会话 cookie，落成 curl 可直接用的 jar，只回 jar 路径——token 不进提示词、不进工具结果、不进会话记录。同时托管 DSH_WEB_AUTH_URL。",
+  "version": "0.5.0",
+  "description": "给模型一个 web_gui_login 工具：每次调用即时解析出本进程带 launch token 的 GUI 地址，模型用它换一次浏览器会话 cookie，之后走 DSH_WEB_URL。同时托管 DSH_WEB_AUTH_URL。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
