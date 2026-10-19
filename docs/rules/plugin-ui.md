@@ -64,4 +64,8 @@ JSON 表达不了。产物落 `tmp/ui-preview/`，HTML 留着，想看交互就�
 
 本机工具：`node tools/gui-shot.mjs --click 'button[aria-haspopup="menu"]' --shot tmp/ui.png`（已入库，索引见 `tools/README.md`）。它把跑着的 GUI 拉进无头浏览器：`--wait '<选择器>'` 轮询到插件挂上为止（插件是启动后台预热的，别用固定 sleep 赌）、`--eval` 带一段 JS 直接读 `getBoundingClientRect()` 回传（比截图更硬）、`--shot` 落一张图、页面报错用 `window.addEventListener('error', …)` 收（浏览器 console 在这一侧看不见）。想验「内容变高时会不会被裁」，往滚动容器里塞一个 `height: 2000px; flex: none` 的方块再看——`flex: none` 不能省，否则它自己会被压扁，量出来的是假的。其余非显然的常量与坑写在 `tools/gui-shot.mjs` 头部。
 
+**等不到、点不到都是失败**：`--wait` 没等到选择器、`--click` 找不到元素、`--eval` 抛异常、页面报了错，都以退出码 1 结束并照样落图——图留着看清当时页面上有什么，但别把这一趟当成验过的证据。同一个参数写两次直接以退出码 2 结束。
+
+**要拍某个会话的页面，用 `--session session-<id>`**：会话页没有 URL 路由，首页是「新会话草稿」，侧栏里那个会话还要先展开它所在的工作区组。这个参数把展开、点行、等 `aria-selected` 转 true 与输入框挂上一起做了。会话状态的前后快照也因此取自同一个会话的页面：草稿与各个会话各带自己的模型选择，在首页与会话之间比较会把模型标签的变化读成改动。
+
 改完 `lib/` 想确认页面真的换上了新 bundle（「刷新即生效」的查法）见 [dev-copy.md](./dev-copy.md)「生效时机」。

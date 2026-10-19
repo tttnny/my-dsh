@@ -17,7 +17,8 @@
 | 宿主半边能不能装载（不重启正在服务的实例） | `node tools/host-smoke.mjs [--compose-only]` |
 | preset 的组合解析（`--dump-config`） | `node tools/preset-compose.mjs <id \| --all>` |
 | 「页面真的换上新产物了吗」 | `node tools/verify-client.mjs <包> --needle '<新写的类名或文案>' [--build]` |
-| 看一眼界面：点一下、量几何、拍图（会改会话状态，默认拦下并报警） | `node tools/gui-shot.mjs --click '<选择器>' --shot tmp/ui.png [--allow-mutation]` |
+| 看一眼界面：点一下、量几何、拍图（会改会话状态，默认拦下并报警；等不到、点不到、页面报错一律退出码 1） | `node tools/gui-shot.mjs --click '<选择器>' --shot tmp/ui.png [--allow-mutation]` |
+| 直接拍某个会话的页面（会话页没有 URL 路由，它替你展开侧栏组再点进去） | `node tools/gui-shot.mjs --session session-<id> --shot tmp/session.png` |
 | 不碰正在服务的实例，把**真的**插件组件单独渲染出来拍图（ui-primitives 用薄壳替身、样式取宿主真表） | `node tools/ui-preview.mjs --pkg <plugins/dsh-xxx> --entry src/client/X.jsx --mount Xxx --props tmp/p.mjs --shot tmp/x.png` |
 | 开发副本还是不是软链、客户端半边有没有登记进 bundles、有没有指向归档目录的孤儿软链（`--write` 删掉孤儿） | `node tools/dev-link.mjs [--write]` |
 | 一个会话（连同它派出去的子会话）改过哪些文件、提交过什么 | `node tools/session-changes.mjs [<会话 id>] [--json] [--since <毫秒>]` |

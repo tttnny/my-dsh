@@ -6,9 +6,27 @@
  * 用法：
  *   node tools/gui-shot.mjs --wait 'button[aria-haspopup="menu"]' \
  *     --click 'button[aria-haspopup="menu"]' --eval '<读几何的 JS>' --shot tmp/ui.png
+ *   node tools/gui-shot.mjs --session session-<id> --shot tmp/session.png
  *
  * 登录靠 $DSH_WEB_URL / $DSH_WEB_AUTH_URL（先访问 auth URL 拿会话 cookie，再进应用）。
  * 细节与坑见 docs/rules/plugin-ui.md「看一眼界面」。
+ *
+ * ── 等不到、点不到都是失败 ─────────────────────────────────────────────────────
+ * `--wait` 没等到选择器、`--click` 找不到元素、页面报了错，这三件都以退出码 1
+ * 结束并照样落图：图留着方便看清当时页面上是什么，但调用方不该把它当成一次
+ * 成功的验证。`--eval` 抛异常同理（异常原文打出来）。
+ *
+ * 同一个参数只给一次：`parseArgs` 是覆盖式的，写两次 `--eval` 只有后一次生效，
+ * 而前一次的表达式会静默消失。重复即报错，不猜调用方想要哪一次。
+ *
+ * ── 直接拍到某个会话 ─────────────────────────────────────────────────────────
+ * 会话页没有 URL 路由，进会话只能点：首页是「新会话草稿」，侧栏里那个会话要先
+ * 展开它所在的工作区组才点得到。`--session` 把这两步做了，顺序是先展开所有折叠
+ * 的组、再点 `[data-row-key="session:<id>"]`、再等输入框挂上。会话自己的行带着
+ * `aria-selected="true"` 就算到位。
+ *
+ * 它同时让会话状态的前后快照取自同一个会话的页面：首页草稿与各个会话各带自己的
+ * 模型选择，在两者之间比较会把模型标签的变化读成一次改动。
  *
  * ── 它会改真东西 ──────────────────────────────────────────────────────────────
  * 这浏览器连的是**正在服务的那个实例**，所以 `--click` 与 `--eval` 里的一次点击
@@ -27,13 +45,14 @@ import { join } from 'node:path'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/** 逐个解析 `--k v` 形式的参数。 */
+/** 逐个解析 `--k v` 形式的参数；同名给两次直接报错（后者会静默吞掉前者）。 */
 function parseArgs(argv) {
   const out = {}
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i]
     if (!key.startsWith('--')) continue
     const name = key.slice(2)
+    if (name in out) throw new Error(`参数 --${name} 给了两次；同一参数只认一次`)
     const next = argv[i + 1]
     out[name] = next === undefined || next.startsWith('--') ? true : (i++, next)
   }
@@ -82,19 +101,49 @@ class Cdp {
   }
 }
 
-const args = parseArgs(process.argv.slice(2))
+/**
+ * 参数或环境不对时以退出码 2 结束（与 `tools/README.md` 的约定一致：0 通过、
+ * 1 没做成、2 跑不起来）。抛异常的写法会打一屏栈，调用方读不出是哪一条。
+ */
+const refuse = (message) => {
+  console.error(`gui-shot: ${message}`)
+  process.exit(2)
+}
+
+let args
+try {
+  args = parseArgs(process.argv.slice(2))
+} catch (error) {
+  refuse(error.message)
+}
+/** 认不得的参数：静默忽略会让人以为写了就生效（`--sessoin` 这种手滑最贵）。 */
+const KNOWN = new Set([
+  'port', 'shot', 'size', 'wait', 'click', 'eval', 'session',
+  'auth-wait', 'after-click-wait', 'allow-mutation',
+])
+for (const key of Object.keys(args)) {
+  if (!KNOWN.has(key)) refuse(`认不得的参数 --${key}`)
+}
+
 const port = Number(args.port ?? 9223)
 const profile = 'tmp/chrome-profile'
 const shotPath = String(args.shot ?? 'tmp/ui.png')
 const authUrl = process.env.DSH_WEB_AUTH_URL
 const webUrl = process.env.DSH_WEB_URL
-if (!authUrl || !webUrl) throw new Error('DSH_WEB_URL / DSH_WEB_AUTH_URL 没设：这两条是登录用的')
+if (!authUrl || !webUrl) refuse('DSH_WEB_URL / DSH_WEB_AUTH_URL 没设：这两条是登录用的')
 
 mkdirSync('tmp', { recursive: true })
 rmSync(profile, { recursive: true, force: true })
 mkdirSync(profile, { recursive: true })
 
-const chrome = spawn(findChrome(), [
+let chromeBin
+try {
+  chromeBin = findChrome()
+} catch (error) {
+  refuse(error.message)
+}
+
+const chrome = spawn(chromeBin, [
   '--headless=new',
   `--remote-debugging-port=${port}`,
   `--user-data-dir=${profile}`,
@@ -152,6 +201,9 @@ await sleep(Number(args['auth-wait'] ?? 1200))
 await cdp.send('Page.navigate', { url: webUrl }, sessionId)
 await evaluate(`window.__errors = []; window.addEventListener('error', e => window.__errors.push(String(e.message)))`)
 
+/** 这一趟没做成的事。都不中止：照样落图，最后一起以退出码 1 报出来。 */
+const failures = []
+
 if (args.wait) {
   let seen = false
   for (let i = 0; i < 120 && !seen; i++) {
@@ -159,7 +211,46 @@ if (args.wait) {
     if (!seen) await sleep(500)
   }
   console.log(`wait ${args.wait}: ${seen ? 'ok' : '没等到'}`)
-  if (!seen) console.log('页面文字前 300 字：', await evaluate('document.body.innerText.slice(0, 300)'))
+  if (!seen) {
+    failures.push(`--wait 没等到 ${args.wait}（等了 60 秒）`)
+    console.log('页面文字前 300 字：', await evaluate('document.body.innerText.slice(0, 300)'))
+  }
+}
+
+/**
+ * 拍到某个会话：会话页没有 URL 路由，只能点进侧栏那一条。
+ *
+ * 两步缺一不可——折叠的工作区组里没有会话行，所以先展开；点行之后会话自己的
+ * `aria-selected` 转成 true 才算切过去（点了没反应也常发生，比如点到行上的
+ * 其它按钮）。首页是「新会话草稿」，不点这一下拍到的永远是欢迎页。
+ */
+if (args.session) {
+  const id = String(args.session)
+  const opened = await evaluate(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const rowSelector = '[data-row-key="session:' + ${JSON.stringify(id)} + '"]'
+    // 展开与会话行都可能在好几秒后才出现：侧栏自己是渲染出来的，组里的会话是
+    // 展开时去取的。所以「展开 → 找行」一起轮询，而不是先展开再干等。
+    let row = null
+    for (let i = 0; i < 40 && row === null; i++) {
+      for (const group of document.querySelectorAll('[data-row-key^="workspace:"]')) {
+        if (group.getAttribute('aria-expanded') === 'false') group.click()
+      }
+      await sleep(500)
+      row = document.querySelector(rowSelector)
+    }
+    if (row === null) return { ok: false, reason: '侧栏里没有这个会话的行（id 写错了？这个工作区没在侧栏？）' }
+    row.click()
+    for (let i = 0; i < 40; i++) {
+      const now = document.querySelector(rowSelector)
+      if (now && now.getAttribute('aria-selected') === 'true'
+        && document.querySelector('[data-composer-card]')) return { ok: true }
+      await sleep(250)
+    }
+    return { ok: false, reason: '点了行，但会话没切过去（aria-selected 没变 true）' }
+  })()`)
+  console.log(`session ${id}: ${opened.ok ? 'ok' : opened.reason}`)
+  if (!opened.ok) failures.push(`--session ${id}: ${opened.reason}`)
 }
 
 /**
@@ -179,6 +270,19 @@ const SNAPSHOT = `(() => {
   }
 })()`
 
+/**
+ * 快照要等输入框挂上再拍。
+ *
+ * 拍早了 `model` 是 null，等页面渲染完它变成真正的标签，两边一比就成了「状态
+ * 变了」——把这当成改动会把一次只读的截图误报成失败。等不到（比如正在看的页面
+ * 本来就没有输入框）就照样拍，比较时跳过 null 那一侧：不知道改动前是什么，
+ * 就不能断言是它变了。
+ */
+for (let i = 0; i < 40; i++) {
+  if (await evaluate(`!!document.querySelector('[data-composer-card] button[aria-haspopup="menu"]')`)) break
+  await sleep(250)
+}
+
 const before = await evaluate(SNAPSHOT)
 
 if (args.click) {
@@ -189,12 +293,17 @@ if (args.click) {
     return true
   })()`)
   console.log(`click ${args.click}: ${clicked ? 'ok' : '找不到'}`)
+  if (!clicked) failures.push(`--click 找不到 ${args.click}`)
   await sleep(Number(args['after-click-wait'] ?? 900))
 }
 
 if (args.eval) {
-  const value = await evaluate(String(args.eval))
-  console.log('eval:', typeof value === 'string' ? value : JSON.stringify(value, null, 2))
+  try {
+    const value = await evaluate(String(args.eval))
+    console.log('eval:', typeof value === 'string' ? value : JSON.stringify(value, null, 2))
+  } catch (error) {
+    failures.push(`--eval 抛异常：${error.message}`)
+  }
 }
 
 const after = await evaluate(SNAPSHOT)
@@ -207,10 +316,11 @@ console.log('screenshot:', shotPath)
 // 浏览器 console 在 agent 这侧看不见，页面错误只能这样收。
 const errors = await evaluate('window.__errors ?? []')
 console.log('page errors:', errors.length ? JSON.stringify(errors) : '(none)')
+if (errors.length) failures.push(`页面报了 ${errors.length} 个错`)
 
 // The run changed the session it was looking at: name what changed so it can be
 // put back, and fail unless the caller said the mutation was the point.
-const changed = Object.keys(after).filter((key) => before[key] !== after[key])
+const changed = Object.keys(after).filter((key) => before[key] !== null && before[key] !== after[key])
 if (changed.length > 0 && !args['allow-mutation']) {
   console.log('')
   console.log('gui-shot: 这次运行改掉了会话状态（真浏览器里的一次点击就是一次真实操作）：')
@@ -218,6 +328,14 @@ if (changed.length > 0 && !args['allow-mutation']) {
     console.log(`  ${key}: ${JSON.stringify(before[key])}  ->  ${JSON.stringify(after[key])}`)
   }
   console.log('照上面的「改动前」改回去；如果这次就是要改状态，加 --allow-mutation 再跑。')
+  failures.push(`会话状态变了：${changed.join('、')}`)
+}
+
+if (failures.length > 0) {
+  console.log('')
+  console.log('gui-shot: 这次没做成：')
+  for (const failure of failures) console.log(`  - ${failure}`)
+  console.log('图已经落下去了，用它看清当时页面上是什么；别把这一趟当成验过的证据。')
   ws.close()
   try { spawn('pkill', ['-f', `remote-debugging-port=${port}`], { stdio: 'ignore' }) } catch {}
   finish(1)
