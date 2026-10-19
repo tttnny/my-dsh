@@ -84,10 +84,7 @@ function recordLedgerFailure(
   }
 }
 
-/**
- * 块败因：取第一个说得出话的缺失片段。让片段缺席的每条路径都先写过账本
- * （整批失败摊到批内每一片、单片失败只记该片），所以这里一定取得到。
- */
+/** 块败因：取第一个说得出话的缺失片段；都没记账时归为通道伤。 */
 function blockFailure(
   ledger: FailureLedger,
   block: number,
@@ -287,24 +284,27 @@ export class TranslationDispatcher {
       if (out.has(key)) continue;
       // 修不好的形状自动重掷一次：弱模型的漂移是随机的，再问一次常常就齐了。
       // 通道伤不重掷——断了就断了，重试只是白烧流量，救活归用户的点击。
-      // 每次答案与它的修形结果一起留下：循环结束后直接取，不再重算一遍。
-      let answer: string | null = null;
-      let repair: ShapeRepair | null = null;
+      // 答案与它的修形结果成对留在 accepted 里：循环结束后直接取，不再重算。
+      // 重掷失手不能没收已有答案——第一份译文即便形状不齐也仍可读，照收。
+      let accepted: { answer: string; repair: ShapeRepair } | null = null;
       for (let attempt = 0; attempt < 2; attempt++) {
+        let answer: string;
         try {
           answer = (await this.fetchReplyAnswers(adapter, [piece], config))[0] ?? '';
         } catch (err) {
-          recordLedgerFailure(ledger, [key], classifyError(err));
-          console.warn(
-            `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
-          );
-          answer = null;
+          if (accepted === null) {
+            recordLedgerFailure(ledger, [key], classifyError(err));
+            console.warn(
+              `[dsh-chat-translate] reply block ${piece.block} #${piece.index} failed, keeping the original: ${describeError(err)}`
+            );
+          }
           break;
         }
-        repair = repairShape(piece.text, answer);
-        if (repair.text !== null) break;
+        accepted = { answer, repair: repairShape(piece.text, answer) };
+        if (accepted.repair.text !== null) break;
       }
-      if (answer === null || repair === null) continue;
+      if (accepted === null) continue;
+      const { answer, repair } = accepted;
       if (repair.text !== null) {
         out.set(key, this.assemble(piece, repair.text, true));
         continue;

@@ -16,13 +16,25 @@ global.MutationObserver = dom.window.MutationObserver;
 global.HTMLElement = dom.window.HTMLElement;
 
 // 保存之后的通道探测走真实的 testServerChannel，它的唯一出口是 fetch。
-// 这里装一个可控的 fetch：默认回 ok，个别用例换成失败体。
-let probeResponse = { ok: true, latencyMs: 12 };
+// 每个用例自己装、自己拆，避免拼次的假 fetch 把状态带到下一个用例。
 let probeCalls = 0;
-global.fetch = async () => {
-  probeCalls++;
-  return { ok: true, json: async () => probeResponse };
-};
+
+/**
+ * 装一个只服务本次探测的 fetch 桩。
+ *
+ * @param response - 探测接口要回的那份 JSON。
+ * @returns 拆掉这个桩的函数。
+ */
+function stubProbe(response) {
+  const original = global.fetch;
+  global.fetch = async () => {
+    probeCalls++;
+    return { ok: true, json: async () => response };
+  };
+  return () => {
+    global.fetch = original;
+  };
+}
 
 const { settingsStore, TRANSLATE_API_KEY_REF, parseTimeout, AI_TIMEOUT_MIN, AI_TIMEOUT_MAX } =
   await import('../src/client/settings/store.ts');
@@ -232,10 +244,14 @@ await testAsync('保存后自动探一次通道，结果留在页面上', async 
   const form = makeForm({ baseUrl: 'http://old', model: 'm' });
   settingsStore.attach(form, makeRemote());
   await sleep(10);
-  probeResponse = { ok: true, latencyMs: 12 };
   probeCalls = 0;
-  settingsStore.draft('baseUrl', 'http://new');
-  await settingsStore.save();
+  const restore = stubProbe({ ok: true, latencyMs: 12 });
+  try {
+    settingsStore.draft('baseUrl', 'http://new');
+    await settingsStore.save();
+  } finally {
+    restore();
+  }
   assert.equal(probeCalls, 1, '一次保存探一次，不多探');
   assert.equal(settingsStore.getState().probe?.running, false);
   assert.equal(settingsStore.getState().probe?.ok, true);
@@ -245,9 +261,13 @@ await testAsync('探测失败不改保存结果：设置仍然落盘，失败原
   const form = makeForm({ baseUrl: 'http://old', model: 'm' });
   settingsStore.attach(form, makeRemote());
   await sleep(10);
-  probeResponse = { ok: false, latencyMs: 5, error: 'HTTP 401' };
-  settingsStore.draft('baseUrl', 'http://new');
-  await settingsStore.save();
+  const restore = stubProbe({ ok: false, latencyMs: 5, error: 'HTTP 401' });
+  try {
+    settingsStore.draft('baseUrl', 'http://new');
+    await settingsStore.save();
+  } finally {
+    restore();
+  }
   assert.equal(settingsStore.getState().committed.baseUrl, 'http://new', '保存本身是成功的');
   assert.equal(settingsStore.getState().saveFailed, false);
   assert.equal(settingsStore.getState().probe?.ok, false);

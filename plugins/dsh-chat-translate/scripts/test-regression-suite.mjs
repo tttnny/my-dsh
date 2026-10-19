@@ -3,7 +3,7 @@
 // 1. Structural reassembly: fence segmentation, per-line shape check, link-target restore
 // 2. All reply blocks dispatched regardless of language (no skipping; Chinese is rewritten too)
 // 3. Serial request queue & failure-reason classification (user-initiated retries)
-// 4. LruDiskCache revision gating, LRU eviction and TTL handling
+// 4. LruDiskCache revision gating and LRU eviction
 // 5. ConfigManager live-config reads and change notification
 // 6. Connection exact Fetch routes and endpoint handling
 

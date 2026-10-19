@@ -53,10 +53,8 @@ interface HostContext {
     configure(presentation: { auto?: boolean }, owner?: unknown): () => void;
   };
   credentials: {
+    /** The one face this plugin reads; writes go through the browser's Remote API. */
     resolve(ref: string): Promise<{ value: string; source?: string } | undefined>;
-    describe(ref: string): Promise<{ configured: boolean; source?: string; writable: boolean }>;
-    set(ref: string, value: string): Promise<void>;
-    unset(ref: string): Promise<void>;
   };
   on(event: string, listener: (...args: any[]) => void): () => void;
   effect(factory: () => void | (() => void), label?: string): unknown;

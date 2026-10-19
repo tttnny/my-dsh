@@ -3,13 +3,7 @@ import * as path from 'node:path';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
 import { PROMPT_REVISION } from './prompt-revision.ts';
 
-/**
- * 池里的一个条目。
- *
- * 没有时间字段，也没有 TTL：缓存真正需要作废的唯一情形是「提示词换了语义」，
- * 那由文档级 `rev` 整库作废（见 {@link CacheDocument}）。再叠一层按时间过期，
- * 只会让同一段原文在闲置几天后白白重译一次。
- */
+/** 池里的一个条目：原文对应的译文。 */
 interface CacheEntry {
   v: string;
 }

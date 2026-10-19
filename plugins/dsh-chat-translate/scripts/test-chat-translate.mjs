@@ -343,7 +343,7 @@ await test('同键同文本幂等：只请求一次；结果按下标对齐', as
   let calls = 0;
   const store = createTranslateStore(async (texts) => {
     calls++;
-    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
+    return texts.map((t) => ({ translated: '译:' + t, ok: true }));
   });
   store.ensure('a1', ['one', 'two']);
   store.ensure('a1', ['one', 'two']);
@@ -359,7 +359,7 @@ await test('流式增量：新增写定的块立刻送译，已出的块不重�
   const sent = [];
   const store = createTranslateStore(async (texts) => {
     sent.push([...texts]);
-    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
+    return texts.map((t) => ({ translated: '译:' + t, ok: true }));
   });
   // 第一片：整行还在生成，只有第 0 块写完。
   store.ensure('a1', ['first'], { frozen: 1 });
@@ -381,7 +381,7 @@ await test('流式增量：正在长的块内容变了不重发，同一个块�
   const sent = [];
   const store = createTranslateStore(async (texts) => {
     sent.push([...texts]);
-    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
+    return texts.map((t) => ({ translated: '译:' + t, ok: true }));
   });
   store.ensure('a1', ['growing'], { frozen: 0 });
   await flush();
@@ -403,8 +403,8 @@ await test('流式期间失败块照常落账，不挡住后面写定的块', as
     sent.push([...texts]);
     return texts.map((t) =>
       t === 'bad'
-        ? { original: t, translated: t, ok: false, cached: false, detail: 'channel timed out', reason: 'channel' }
-        : { original: t, translated: '译:' + t, ok: true, cached: false }
+        ? { translated: t, ok: false, detail: 'channel timed out', reason: 'channel' }
+        : { translated: '译:' + t, ok: true }
     );
   });
   store.ensure('a1', ['bad'], { frozen: 1 });
@@ -423,7 +423,7 @@ await test('文本换代：同键不同文本整行重新请求', async () => {
   const seen = [];
   const store = createTranslateStore(async (texts) => {
     seen.push(texts.join('|'));
-    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
+    return texts.map((t) => ({ translated: '译:' + t, ok: true }));
   });
   store.ensure('a1', ['one']);
   await new Promise((r) => setTimeout(r, 0));
@@ -435,9 +435,9 @@ await test('文本换代：同键不同文本整行重新请求', async () => {
 
 await test('失败结果归一：!ok 与空译文各按原文落账；服务端 detail 原样带过', async () => {
   const store = createTranslateStore(async (texts) => [
-    { original: texts[0], translated: '坏的', ok: false, cached: false, detail: 'channel timed out after 600000ms' },
-    { original: texts[1], translated: '   ', ok: true, cached: false },
-    { original: texts[2], translated: 'x', ok: false, cached: false },
+    { translated: '坏的', ok: false, detail: 'channel timed out after 600000ms' },
+    { translated: '   ', ok: true },
+    { translated: 'x', ok: false },
   ]);
   store.ensure('a1', ['bad', 'blank', 'no-detail']);
   await flush();
@@ -456,9 +456,9 @@ await test('行往后追加（新块写定）时，在途那一块的迟到结�
     if (first) {
       first = false;
       await gate.promise;
-      return texts.map((t) => ({ original: t, translated: '旧代:' + t, ok: true, cached: false }));
+      return texts.map((t) => ({ translated: '旧代:' + t, ok: true }));
     }
-    return texts.map((t) => ({ original: t, translated: '新代:' + t, ok: true, cached: false }));
+    return texts.map((t) => ({ translated: '新代:' + t, ok: true }));
   });
   store.ensure('a1', ['one']);
   store.ensure('a1', ['one', 'two']); // 第 1 块写定，第 0 块还在飞
@@ -481,7 +481,7 @@ await test('内容寻址：同一段原文在另一行出现直接复用，不�
   const sent = [];
   const store = createTranslateStore(async (texts) => {
     sent.push([...texts]);
-    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
+    return texts.map((t) => ({ translated: '译:' + t, ok: true }));
   });
   store.ensure('a1', ['same', 'other']);
   await flush();
@@ -498,8 +498,8 @@ await test('按块补跑：只重发点名那一块，别的块连通道都不�
     sent.push([...texts]);
     return texts.map((t) =>
       failFirst && t === 'x'
-        ? { original: t, translated: t, ok: false, cached: false, detail: 'channel timed out' }
-        : { original: t, translated: '译:' + t, ok: true, cached: false }
+        ? { translated: t, ok: false, detail: 'channel timed out' }
+        : { translated: '译:' + t, ok: true }
     );
   });
   store.ensure('a1', ['x', 'y']);
@@ -526,7 +526,7 @@ await test('交接失败：每一块各自带原因落账，互不覆盖', async
     c: { ok: false, detail: 'OPENAI_API_KEY missing', reason: 'not-configured' },
   };
   const store = createTranslateStore(async (texts) =>
-    texts.map((t) => ({ original: t, translated: t, cached: false, ...results[t] }))
+    texts.map((t) => ({ translated: t, ...results[t] }))
   );
   store.ensure('a1', ['a', 'b', 'c']);
   await flush();
@@ -555,8 +555,8 @@ await test('落定行自动 ensure 短路；手点 ↻ 只重发失败块，成�
     calls++;
     return texts.map((t, i) =>
       failSecond && i === 1
-        ? { original: t, translated: t, ok: false, cached: false, detail: 'channel timed out' }
-        : { original: t, translated: '译:' + t, ok: true, cached: false }
+        ? { translated: t, ok: false, detail: 'channel timed out' }
+        : { translated: '译:' + t, ok: true }
     );
   });
   store.ensure('a1', ['x', 'y']);
@@ -586,7 +586,7 @@ await test('手点补跑无限次：落定→补跑→再落定→再补跑，�
   let calls = 0;
   const store = createTranslateStore(async (texts) => {
     calls++;
-    return texts.map((t) => ({ original: t, translated: t, ok: false, cached: false }));
+    return texts.map((t) => ({ translated: t, ok: false }));
   });
   store.ensure('a1', ['x']);
   await flush();
@@ -608,7 +608,7 @@ await test('在途时再点（含 ↻）是空操作：↻ 转着圈就是「已
   const store = createTranslateStore(async (texts) => {
     calls++;
     await gate.promise;
-    return texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
+    return texts.map((t) => ({ translated: '译:' + t, ok: true }));
   });
   store.ensure('a1', ['x']);
   assert.equal(store.ensure('a1', ['x'], { retries: [0] }), false, '在途的块连手点都不重发');
@@ -625,7 +625,7 @@ await test('逐批落定：先回的段先可见，不等最后一批', async ()
   const store = createTranslateStore(async (texts) => {
     const gate = gates[batch++];
     await gate.promise;
-    return texts.map((t) => ({ original: t, translated: '译:' + t.slice(0, 8), ok: true, cached: false }));
+    return texts.map((t) => ({ translated: '译:' + t.slice(0, 8), ok: true }));
   });
   store.ensure('a1', ['first', big]);
   await new Promise((r) => setTimeout(r, 0));
@@ -656,7 +656,7 @@ await test('批间隔离：一批失败只败这一批，其余批译文照常�
   const big = '汉'.repeat(6000);
   const store = createTranslateStore(async (batch) => {
     if (batch.includes('bad')) throw new Error('this batch dies');
-    return batch.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }));
+    return batch.map((t) => ({ translated: '译:' + t, ok: true }));
   });
   store.ensure('a1', ['good1', big, 'bad', 'good2']);
   await flush();
@@ -676,7 +676,7 @@ await test('批间隔离：一批失败只败这一批，其余批译文照常�
 
 await test('行数 LRU 上限：超出后淘汰最久未读的行', () => {
   const store = createTranslateStore(async (texts) =>
-    texts.map((t) => ({ original: t, translated: '译:' + t, ok: true, cached: false }))
+    texts.map((t) => ({ translated: '译:' + t, ok: true }))
   );
   for (let i = 0; i < 260; i++) store.ensure('row' + i, ['t' + i]);
   assert.equal(store.getState('row0'), undefined, '最早登记的行应被淘汰');

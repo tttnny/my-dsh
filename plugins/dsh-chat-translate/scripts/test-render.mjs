@@ -114,7 +114,7 @@ globalThis.fetch = async (url, init) => {
           status: 200,
           json: async () => ({
             ok: true,
-            results: blocks.map((block) => ({ original: block, translated: `【译】${block}`, ok: true, cached: false })),
+            results: blocks.map((block) => ({ translated: `【译】${block}`, ok: true })),
           }),
         });
     });
@@ -126,8 +126,8 @@ globalThis.fetch = async (url, init) => {
       ok: true,
       results: blocks.map((block) =>
         block.startsWith('Broken block')
-          ? { original: block, translated: block, ok: false, cached: false, detail: 'channel timed out after 20000ms' }
-          : { original: block, translated: `【译】${block}`, ok: true, cached: false }
+          ? { translated: block, ok: false, detail: 'channel timed out after 20000ms' }
+          : { translated: `【译】${block}`, ok: true }
       ),
     }),
   };
@@ -438,10 +438,8 @@ await test('设置没配好：↻ 换成「去配置页」的读屏文案，按�
   // 一个只服务这一行的独立池：座次可注入，所以不必先让单例池产出这个结果。
   const store = createTranslateStore(async (blocks) =>
     blocks.map((block) => ({
-      original: block,
       translated: block,
       ok: false,
-      cached: false,
       detail: 'TRANSLATE_API_KEY is not configured',
       reason: 'not-configured',
     }))

@@ -210,8 +210,7 @@ export class ChatTranslateStore {
       status: work || (inflight !== undefined && inflight.texts.size > 0) ? 'pending' : 'settled',
       texts: next,
       outcomes: plan.outcomes,
-      // 单调不减：正文只往后追加，写定数只进不退；补跑把小 frozen 递进来时不能倒退。
-      settledThrough: Math.max(settledThrough, frozen),
+      settledThrough: settleThrough(settledThrough, frozen),
       retrying: work ? plan.retrying : [],
     });
     this.prune();
@@ -372,7 +371,7 @@ export class ChatTranslateStore {
       status: done ? 'settled' : 'pending',
       texts: live.texts,
       outcomes,
-      settledThrough: Math.max(live.settledThrough, frozen),
+      settledThrough: settleThrough(live.settledThrough, frozen),
       retrying,
     });
     this.bump();
@@ -401,6 +400,18 @@ export class ChatTranslateStore {
 /** 内容池的键：与宿主磁盘池同口径（trim 后小写），只有空白差异的块算同一段。 */
 function cacheKey(text: string): string {
   return text.trim().toLowerCase();
+}
+
+/**
+ * 写定数单点推进：单调不减。正文只往后追加，所以已经写定的块数只进不退；
+ * 手点补跑会把当时较小的 frozen 递回来，不能让它把进度退回去。
+ *
+ * @param current - 行上已记录的写定数。
+ * @param frozen - 本次调用带来的写定数。
+ * @returns 两者中较大者。
+ */
+function settleThrough(current: number, frozen: number): number {
+  return Math.max(current, frozen);
 }
 
 /** 冻结数收进 [0, length]：调用方给多了不算数。 */

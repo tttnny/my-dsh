@@ -15,16 +15,11 @@ export interface ChatPresentationPolicy {
 }
 
 /**
- * 会预览首行的模式：compact 之外都预览。两代 legacy 存储值一并认——
- * `normal` 按 standard 读、`expanded` 按 detailed 读，两者都预览且从不写回。
+ * 与宿主一致的唯一判据：compact 不预览，其余一律预览。两代 legacy 存储值
+ * （`normal`、`expanded`）与任何未识别的值都落在「预览」这一侧——宿主对它们
+ * 的读法就是 standard/detailed，而这两者都预览。
  */
-const PREVIEW_MODES: ReadonlySet<string> = new Set([
-  'standard',
-  'detailed',
-  'verbose',
-  'normal',
-  'expanded',
-]);
+const NO_PREVIEW_MODE = 'compact';
 
 /** 宿主在用户没有显式选择时使用的模式。 */
 export const DEFAULT_MODE = 'standard';
@@ -34,14 +29,13 @@ const WITH_PREVIEW: ChatPresentationPolicy = Object.freeze({ settledReasoningPre
 const WITHOUT_PREVIEW: ChatPresentationPolicy = Object.freeze({ settledReasoningPreview: false });
 
 /**
- * 存储值 → 策略快照。未识别的值按宿主默认（standard）读。
+ * 存储值 → 策略快照。
  *
  * @param mode - `transcriptView` 的原样字符串。
  * @returns 该模式的常驻快照。
  */
 export function policyForMode(mode: string): ChatPresentationPolicy {
-  const effective = PREVIEW_MODES.has(mode) || mode === 'compact' ? mode : DEFAULT_MODE;
-  return effective === 'compact' ? WITHOUT_PREVIEW : WITH_PREVIEW;
+  return mode === NO_PREVIEW_MODE ? WITHOUT_PREVIEW : WITH_PREVIEW;
 }
 
 /** 本模块只用到配置面的这一小片形状（结构性镜像，值边不跨包）。 */
