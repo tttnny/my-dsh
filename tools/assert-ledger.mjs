@@ -94,7 +94,13 @@ function toolShapeOf(entry) {
     const blockBody = parameters.slice(match.index + match[0].length);
     fields += topLevelKeys(blockBody.slice(0, balancedAt(blockBody))).length;
   }
-  const descriptions = (toolSource.match(/\bdescription\s*:/g) ?? []).length;
+  // 只数「描述」的值，不数恰好叫 description 的字段：字段的值是花括号（properties 里的一项），
+  // 描述的值是字符串或其他表达式。所以逐个看冒号后面跟的是什么，是花括号的跳过。
+  let descriptions = 0;
+  for (const match of toolSource.matchAll(/\bdescription\s*:/g)) {
+    const rest = toolSource.slice(match.index + match[0].length).replace(/^\s+/, '');
+    if (!rest.startsWith('{')) descriptions += 1;
+  }
   return fields === 0 ? undefined : { fields, descriptions };
 }
 

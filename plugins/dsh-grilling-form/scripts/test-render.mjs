@@ -636,7 +636,7 @@ test('三种题型每题都有那个补充框：单选、多选、自由各数�
   assert.equal([...markup.matchAll(/class="dsg-item"/g)].length, 3, '三题都在');
 });
 
-// --- 补充说明（detail）与压暗 ---
+// --- 两处补充说明（题目 detail、选项 description）与压暗 ---
 
 const detailArgsRaw = JSON.stringify({
   questions: [
@@ -645,8 +645,8 @@ const detailArgsRaw = JSON.stringify({
       detail: '只作用在选项区，圈和方框不压。',
       type: 'single',
       options: [
-        { label: '0.5（推荐）', detail: '跟宿主 disabled 观感一致。' },
-        { label: '0.65', detail: '淡一些但更清楚。' },
+        { label: '0.5（推荐）', description: '跟宿主 disabled 观感一致。' },
+        { label: '0.65', description: '淡一些但更清楚。' },
         { label: '换灰色' },
       ],
     },
@@ -662,13 +662,13 @@ test('题目 detail：题干下方单独一行，与后面那个选项区并排�
   assert.match(markup, /class="dsg-questionDetail"><div data-markdown="compact">随便写。<\/div>/);
 });
 
-test('选项 detail：画在它自己那一项里，缩进到选项文字下面', () => {
+test('选项的补充说明：画在它自己那一项里，缩进到选项文字下面', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = detailForm();
   const withDetail = /<div class="dsg-option dsg-optionSingle" data-checked="true">.*?<\/div><\/div><\/div>/.exec(markup)?.[0] ?? '';
-  assert.match(withDetail, /class="dsg-optionDetail"><div data-markdown="compact">跟宿主 disabled 观感一致。<\/div>/);
-  // 没写 detail 的那一项不画空行：三条选项里只有前两条写了 detail，画出来正好两行
-  assert.equal([...markup.matchAll(/class="dsg-optionDetail"/g)].length, 2, '写了两条 detail，只画两行');
+  assert.match(withDetail, /class="dsg-optionDescription"><div data-markdown="compact">跟宿主 disabled 观感一致。<\/div>/);
+  // 没写 description 的那一项不画空行：三条选项里只有前两条写了 description，画出来正好两行
+  assert.equal([...markup.matchAll(/class="dsg-optionDescription"/g)].length, 2, '写了两条补充说明，只画两行');
   // 那一行从它自己的开标签起、到下一个选项行（或自填框）为止；比它前面那两行里都没有第三行
   const rowsWithText = [...markup.matchAll(/<div class="dsg-option(?: dsg-optionSingle)?"[^>]*>/g)]
     .map((match) => match.index ?? 0);
@@ -676,25 +676,25 @@ test('选项 detail：画在它自己那一项里，缩进到选项文字下面'
   const endsAt = [...rowsWithText.slice(1), markup.indexOf('<textarea', rowsWithText[2])];
   const slices = rowsWithText.map((start, index) => markup.slice(start, endsAt[index]));
   assert.equal(slices.length, 3, '三个选项各切一段');
-  assert.match(slices[2], /换灰色/, '第三段就是没写 detail 的那一项');
-  assert.doesNotMatch(slices[2], /dsg-optionDetail/, '那一项里没有说明那一行');
-  assert.match(slices[0], /dsg-optionDetail/, '写了 detail 的那行照样有那一行');
+  assert.match(slices[2], /换灰色/, '第三段就是没写补充说明的那一项');
+  assert.doesNotMatch(slices[2], /dsg-optionDescription/, '那一项里没有说明那一行');
+  assert.match(slices[0], /dsg-optionDescription/, '写了补充说明的那行照样有那一行');
 });
 
-test('没写 detail 时一处都不画（不留空行、不留空 div）', () => {
+test('没写补充说明时一处都不画（不留空行、不留空 div）', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = html();
   assert.doesNotMatch(markup, /dsg-questionDetail/);
-  assert.doesNotMatch(markup, /dsg-optionDetail/);
+  assert.doesNotMatch(markup, /dsg-optionDescription/);
 });
 
-test('题干、选项、两处 detail 都交给 markdown 渲染器，用的是 compact 版', () => {
+test('题干、选项、两处补充说明都交给 markdown 渲染器，用的是 compact 版', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = detailForm();
   const marks = [...markup.matchAll(/data-markdown="(\w+)"/g)].map((match) => match[1]);
   assert.ok(marks.length >= 4, '四处文字各有一个 markdown 块');
   assert.deepEqual([...new Set(marks)], ['compact'], '表单里的 markdown 一律用 compact 版');
-  // 题干与选项也在其中：只给 detail 上 markdown 的话这两处断言会落到 0
+  // 题干与选项也在其中：只给补充说明上 markdown 的话这两处断言会落到 0
   assert.match(markup, /data-markdown="compact">压到多淡？/);
   assert.match(markup, /data-markdown="compact">0.5/);
 });
@@ -737,7 +737,7 @@ test('冻结时选项区压暗由 data-readonly 加选项区那几个类名挂�
   const { markup } = html({ nodes: [settled(shown), replyNode(blockOf('2.\n- 只改插件'))] });
   assert.match(markup, /data-readonly="true"/);
   // 压暗靠的是根上的标记 + 那几个类名，所以它们必须都在
-  for (const name of ['dsg-optionText', 'dsg-optionDetail', 'dsg-badge', 'dsg-custom']) {
+  for (const name of ['dsg-optionText', 'dsg-optionDescription', 'dsg-badge', 'dsg-custom']) {
     const css = readFileSync(join(root, 'src', 'client', 'GrillingForm.css'), 'utf8');
     assert.match(
       css,

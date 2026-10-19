@@ -23,7 +23,7 @@ const BARE_SUFFIX = new RegExp(`[\\s]*[${SEPARATOR}]\\s*(?:${MARKER})[${TRAILING
  * @returns {{ label: string, recommended: boolean }} label 是选项身份也是展示文字（标记已剥掉）；
  *   recommended 为 true 时界面另画徽标并默认勾上。label 不是字符串时给空串——它在本包的唯一
  *   后果是「空 label」，由入参校验拒掉，不会变成 undefined 混进别的形状里。
- *   detail 是给这个选项的一句补充说明，去掉首尾空白；没写、空白、不是字符串时**没有这个键**
+ *   description 是给这个选项的一句补充说明，去掉首尾空白；没写、空白、不是字符串时**没有这个键**
  *   （界面据此决定画不画那一行）。
  */
 export function normalizeOption(option) {
@@ -31,20 +31,20 @@ export function normalizeOption(option) {
     ? /** @type {Record<string, unknown>} */ (option)
     : {};
   const label = stripRecommendationMarker(record.label);
-  const detail = readDetail(record.detail);
+  const description = readExplanation(record.description);
   return {
     label: typeof label.text === 'string' ? label.text : '',
     recommended: label.found,
-    ...detail === undefined ? {} : { detail },
+    ...description === undefined ? {} : { description },
   };
 }
 
 /**
- * 归一化一段说明文字：去掉首尾空白，空白或不是字符串都算没写。
- * @param {unknown} value - 模型写的 detail。
+ * 归一化一段补充说明：去掉首尾空白，空白或不是字符串都算没写。
+ * @param {unknown} value - 模型写的补充说明文字。
  * @returns {string|undefined} 去掉首尾空白之后的那段文字；没写时 undefined。
  */
-export function readDetail(value) {
+export function readExplanation(value) {
   if (typeof value !== 'string') return undefined;
   const text = value.trim();
   return text === '' ? undefined : text;

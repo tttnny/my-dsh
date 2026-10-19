@@ -123,11 +123,11 @@ function apply(ctx, config) {
             question: {
               type: 'string',
               required: true,
-              description: 'The question text.',
+              description: 'The specific question to ask the user.',
             },
             detail: {
               type: 'string',
-              description: 'Longer explanation of the question.',
+              description: 'Explain the background of the question.',
             },
             type: {
               type: 'string',
@@ -136,7 +136,7 @@ function apply(ctx, config) {
             },
             options: {
               type: 'array',
-              description: 'The choices. If you recommend one, put it first and end its label with （推荐）.',
+              description: 'Optional choices to show the user. If you recommend one, put it first and append "(Recommended)" to that label.',
               items: {
                 type: 'object',
                 additionalProperties: true,
@@ -144,11 +144,11 @@ function apply(ctx, config) {
                   label: {
                     type: 'string',
                     required: true,
-                    description: 'The option text.',
+                    description: 'Short user-facing option label.',
                   },
-                  detail: {
+                  description: {
                     type: 'string',
-                    description: 'Longer explanation of the option.',
+                    description: 'Explaining the tradeoff or impact.',
                   },
                 },
               },

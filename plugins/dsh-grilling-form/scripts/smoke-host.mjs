@@ -134,7 +134,7 @@ await test('自我介绍：本轮唯一且最后的调用、发完即结束', as
   assert.match(description, /end your turn/);
 });
 
-await test('工具面是八个字段：questions / question / detail / type / options / label / detail / replace', async () => {
+await test('工具面是八个字段：questions / question / detail / type / options / label / description / replace', async () => {
   const parameters = shape.tool.parameters;
   assert.deepEqual(Object.keys(parameters.properties).sort(), ['questions', 'replace']);
   const question = parameters.properties.questions.items;
@@ -145,13 +145,13 @@ await test('工具面是八个字段：questions / question / detail / type / op
   assert.deepEqual(question.properties.type.enum, ['single', 'multi', 'free']);
   assert.deepEqual(
     Object.keys(question.properties.options.items.properties).sort(),
-    ['detail', 'label'],
+    ['description', 'label'],
     '选项上是 label 与它的说明这两个',
   );
   assert.deepEqual(question.properties.options.items.required, ['label']);
-  assert.equal('required' in question.properties.options.items.properties.detail, false, '选项说明不必填');
+  assert.equal('required' in question.properties.options.items.properties.description, false, '选项说明不必填');
   // 工具面上不该再有别的字段
-  for (const gone of ['id', 'header', 'number', 'multi_select', 'recommended', 'description']) {
+  for (const gone of ['id', 'header', 'number', 'multi_select', 'recommended']) {
     assert.equal(gone in question.properties, false, gone);
     assert.equal(gone in question.properties.options.items.properties, false, gone);
   }
@@ -168,17 +168,21 @@ await test('描述只写「填什么」：默认值、兜底、校验规则都�
     question.properties.options.description,
     question.properties.options.items.properties.label.description,
     question.properties.detail.description,
-    question.properties.options.items.properties.detail.description,
+    question.properties.options.items.properties.description.description,
     shape.tool.output.schema.properties.ok.description,
     shape.tool.output.schema.properties.message.description,
   ];
   assert.equal(texts.length, 11, '字段描述就到这十一条');
-  assert.match(shape.tool.parameters.properties.questions.items.properties.options.description, /（推荐）/, '推荐约定挂在 options 上');
+  assert.match(
+    shape.tool.parameters.properties.questions.items.properties.options.description,
+    /"\(Recommended\)"/,
+    '推荐约定挂在 options 上',
+  );
   // 两处补充说明的描述就是这两句：模型靠它们决定写不写、以及写什么。
-  assert.equal(question.properties.detail.description, 'Longer explanation of the question.');
+  assert.equal(question.properties.detail.description, 'Explain the background of the question.');
   assert.equal(
-    question.properties.options.items.properties.detail.description,
-    'Longer explanation of the option.',
+    question.properties.options.items.properties.description.description,
+    'Explaining the tradeoff or impact.',
   );
   for (const text of texts) {
     assert.doesNotMatch(text, /default|falls back|fallback|Required for type/i, text);

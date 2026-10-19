@@ -101,7 +101,7 @@
 
 /* 两处补充说明共用这一档长相：小一号的灰字，行高配次级字号那档 delta。 */
 .dsg-questionDetail,
-.dsg-optionDetail {
+.dsg-optionDescription {
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
   color: var(--dsw-alias-label-tertiary);
@@ -241,7 +241,7 @@
 }
 
 /* 选项的补充说明：缩进到选项文字下方（位置由选项行那一列决定）。 */
-.dsg-optionDetail {
+.dsg-optionDescription {
   min-width: 0;
 }
 
@@ -260,14 +260,14 @@
 .dsg-questionText > div > :first-child,
 .dsg-optionText > div > :first-child,
 .dsg-questionDetail > div > :first-child,
-.dsg-optionDetail > div > :first-child {
+.dsg-optionDescription > div > :first-child {
   margin-top: 0;
 }
 
 .dsg-questionText > div > :last-child,
 .dsg-optionText > div > :last-child,
 .dsg-questionDetail > div > :last-child,
-.dsg-optionDetail > div > :last-child {
+.dsg-optionDescription > div > :last-child {
   margin-bottom: 0;
 }
 
@@ -309,7 +309,7 @@
 /* 冻结：选项区整体压暗（选项文字、选项的补充说明、推荐徽标、自填框），圈与方框不压——
    勾了什么仍然一眼看得出来。选中那一行的品牌色边框也不压，它是这行的框、不是选项区的内容。 */
 .dsg-root[data-readonly='true'] .dsg-optionText,
-.dsg-root[data-readonly='true'] .dsg-optionDetail,
+.dsg-root[data-readonly='true'] .dsg-optionDescription,
 .dsg-root[data-readonly='true'] .dsg-badge,
 .dsg-root[data-readonly='true'] .dsg-custom {
   opacity: 0.5;

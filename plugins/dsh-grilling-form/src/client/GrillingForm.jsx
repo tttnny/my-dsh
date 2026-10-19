@@ -518,9 +518,9 @@ function OptionRow({ question, option, checked, locked, t, markdownLabels, onTog
           </div>
           {option.recommended ? <Tag tone="info" className="dsg-badge">{t('row.recommended')}</Tag> : null}
         </div>
-        {option.detail === undefined ? null : (
-          <div className="dsg-optionDetail">
-            <MarkdownText text={option.detail} labels={markdownLabels} variant="compact" />
+        {option.description === undefined ? null : (
+          <div className="dsg-optionDescription">
+            <MarkdownText text={option.description} labels={markdownLabels} variant="compact" />
           </div>
         )}
       </div>

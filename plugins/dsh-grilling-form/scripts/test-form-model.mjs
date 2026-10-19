@@ -125,11 +125,14 @@ test('选项：推荐标记剥掉之后就是选项身份，推荐另记一个�
   assert.equal(question.options[2].label, '  ');
 });
 
-test('选项上多带的字段不进模型：recommended 与 description 都只当没写', () => {
+test('选项上多带的字段不进模型：recommended 与旧的 detail 都只当没写', () => {
   const [question] = readQuestions(args([call({
-    options: [{ label: '甲', recommended: true, description: '说明' }],
+    options: [{ label: '甲', recommended: true }, { label: '乙', detail: '旧写法，已经不吃这个键' }],
   })]));
-  assert.deepEqual(question.options, [{ label: '甲', recommended: false }]);
+  assert.deepEqual(question.options, [
+    { label: '甲', recommended: false },
+    { label: '乙', recommended: false },
+  ]);
 });
 
 test('题目 detail：去掉首尾空白；没写、空白、不是字符串时没有这个键', () => {
@@ -148,10 +151,16 @@ test('题目 detail 不参与身份：取代时题干一字不差但 detail 改�
   assert.equal(carried['1']?.custom, '旧表填的');
 });
 
-test('detail 为空不影响入参校验：只有题干与选项文字那三条会拒', () => {
-  assert.deepEqual(validateRound([{ question: '问？', detail: '   ', options: [{ label: '甲', detail: '' }] }]), []);
-  assert.equal(validateRound([{ question: '问？', options: [{ label: '甲' }, { label: '甲', detail: '不一样' }] }]).length, 1,
-    '同文选项照旧被拒：detail 不参与身份');
+test('补充说明为空不影响入参校验：只有题干与选项文字那三条会拒', () => {
+  assert.deepEqual(
+    validateRound([{ question: '问？', detail: '   ', options: [{ label: '甲', description: '' }] }]),
+    [],
+  );
+  assert.equal(
+    validateRound([{ question: '问？', options: [{ label: '甲' }, { label: '甲', description: '不一样' }] }]).length,
+    1,
+    '同文选项照旧被拒：选项的补充说明不参与身份',
+  );
 });
 
 test('题面读不出来：半截 JSON、没有 questions、空数组、某题不是对象都当没有这一轮', () => {
