@@ -1,9 +1,5 @@
-import type {
-  ITranslationAdapter,
-  PluginConfig,
-  TranslateAdapterOptions,
-} from './base.ts';
 import { TranslationFailure } from '../types.ts';
+import type { ITranslationAdapter, PluginConfig, TranslateAdapterOptions } from '../types.ts';
 import { TRANSLATE_API_KEY_REF } from '../credentials.ts';
 import type { KeyReader } from '../credentials.ts';
 
