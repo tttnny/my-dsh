@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "GUI 鉴权地址",
-    "description": "把当前 Web 实例带 token 的访问地址交给模型与 shell，而凭据不进提示词。"
+    "title": "GUI 登录",
+    "description": "给模型一个 web_gui_login 工具：用本进程的 launch token 换浏览器会话 cookie 并落成 curl 可用的 jar，token 不进提示词、不进工具结果、不进会话记录。"
   }
 }

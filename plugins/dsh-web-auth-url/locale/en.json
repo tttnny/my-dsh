@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "GUI auth URL",
-    "description": "Hands the current Web instance's token-bearing URL to the model and the shell, without putting the secret into the prompt."
+    "title": "GUI login",
+    "description": "Gives the model one web_gui_login tool that exchanges this process's launch token for a browser session cookie and writes a curl cookie jar, so the token never enters the prompt, a tool result, or the session log."
   }
 }

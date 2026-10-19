@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-web-auth-url",
-  "version": "0.2.8",
-  "description": "把当前 Web 实例的带 token 访问地址交给模型与 shell：托管 DSH_WEB_AUTH_URL（每次 shell 调用即时解析，跟随重启后的 token 轮换），并贡献一段紧随 web-surface 的提示词说明 cookie jar 用法，secret 不进提示词与 transcript。",
+  "version": "0.4.0",
+  "description": "给模型一个 web_gui_login 工具：自己用进程 launch token 换浏览器会话 cookie，落成 curl 可直接用的 jar，只回 jar 路径——token 不进提示词、不进工具结果、不进会话记录。同时托管 DSH_WEB_AUTH_URL。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -38,11 +38,9 @@
     "test": "node scripts/smoke-host.mjs",
     "check": "node scripts/smoke-host.mjs"
   },
-  "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.5"
-  },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.5"
+    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -52,7 +50,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.5",
     "@deepseek-ai/dsh-shell-env": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-system-prompt": ">=0.2.1-rc.2"
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2"
   },
   "engines": {
     "dsh": ">=0.2.1-rc.2",

@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: ^3.18.5
-        version: 3.18.5
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.5
@@ -21,6 +17,9 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: '>=0.2.1-rc.2'
         version: 0.2.1-rc.2(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.2(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.2(@deepseek-ai/cordis@4.0.5))
+      '@deepseek-ai/dsh-tools':
+        specifier: '>=0.2.1-rc.2'
+        version: 0.2.1-rc.2(53871834bb50b7f532ec7289e680bbda)
 
 packages:
 
