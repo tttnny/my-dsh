@@ -35,7 +35,9 @@ preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle
 
 - `dsh plugin --profile <name> add <包名 | 本仓库目录路径>`：写进该 profile 的 `dependencies`（本地目录记 `link:`），识别到 `dsh.bundle` 就把包名追加进 `dsh.profile.bundles`。目录路径按**调用目录**解析，所以从仓库根写 `./presets/<id>` 即装本目录。
 - 行消费的仓库外插件要在同一条命令里**一并点名**：`dsh.profile.bundles` 只按 profile 的**直接依赖**登记，preset 的传递依赖装得下、行也解析得到，但进不了 bundle 层——插件自带客户端半边时，缺了它卡片退回原始 JSON。`link:` 开发副本连 `dependencies` 也不物化，开发副本命令同样要点名（`dsh plugin --profile web add ./presets/<id> <它消费的仓库内插件目录>`）。
-- preset 的挂载在进程内只装载一次：改 patch 或随包文件后**重启 DSH**，不会热更已挂载的那一份。
+- **改完 preset 声明之后谁生效**：`<id>.patch.yml` 属于 bundle 层，HMR 不监听它，改完不会自己重新组合；触发一次重新组合即可（插件页或 `plugin_manager` 里开关任一插件、改存 profile 的 `cordis.patch.yml`、增删 `dsh.profile.bundles`），不必重启进程。新声明注册成新一代 revision：**之后新建的会话**用它，已经跑起来的会话继续用绑定的旧那份；空白会话重新选择时会拿到当前 revision（保留规则见 `@deepseek-ai/dsh-agent-preset-registry` 的 README）。没有 `hmr` 的 profile 仍要重启。
+- **装完 / 启用 bundle 同理**：包名进 `dsh.profile.bundles` 会触发重新组合，新行随之启动；只有重新组合报 `restart-required`（如 `package-moved`）才要重启。
+- **随包技能文件不需要重新组合**：`skills/` 由 preset 里那行 `skill-filesystem` 直接读盘，`watch` 默认开、`customSkillDirs` 也在监听范围内，改完下一次读取就是新内容。
 - 给人敲的逐步指令由根 `README.md` 的 preset 表与各 preset 的 `README.md` 给；逐项细则（与官方的异同、order、验证步骤与实测记录）在各自的 `DETAILS.md`。
 
 ## 验证

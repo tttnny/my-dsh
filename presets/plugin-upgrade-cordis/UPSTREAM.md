@@ -65,7 +65,7 @@ node presets/$ID/check-upstream.mjs --write --commit "$NEW"
 node presets/$ID/check-upstream.mjs --verify
 ```
 
-因为 web profile 里是 `link:` 开发副本，**不需要重新安装**；改完重启 DSH 即可。
+因为 web profile 里是 `link:` 开发副本，**不需要重新安装**：`skills/` 由 `skill-filesystem` 直接读盘，改完下一次读取就是新内容，不必重启。
 
 ## 同步判据
 

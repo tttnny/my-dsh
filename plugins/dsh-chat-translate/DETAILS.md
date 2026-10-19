@@ -109,7 +109,7 @@ cd ~/.dsh/profiles/web && pnpm add "link:<my-dsh 绝对路径>/plugins/dsh-chat-
 cd <my-dsh 绝对路径>/plugins/dsh-chat-translate && pnpm install && pnpm build
 ```
 
-宿主半边要重启 DSH 实例才生效；客户端半边由 `dsh-client-hmr` 轮询到改动后热换，页面自行重载，必要时硬刷新一次。
+宿主半边改完要触发一次 profile 重新组合才会换上新代码——在插件页或 `plugin_manager` 里把本插件关一次再开一次，不必重启进程；客户端半边由 `dsh-client-hmr` 轮询到改动后热换，页面自行重载，必要时硬刷新一次。
 
 ## 验证
 

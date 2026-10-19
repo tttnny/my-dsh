@@ -93,7 +93,7 @@ dsh plugin --profile web add @lynn123411/dsh-preset-plugin-upgrade-cordis
 dsh plugin --profile web add ./presets/plugin-upgrade-cordis
 ```
 
-装完**重启 DSH**，在新建会话界面选择「插件升级创造模式」。preset 的挂载在进程内只装载一次：改 `plugin-upgrade-cordis.patch.yml` 或 `skills/` 后要重启，不会热更已挂载的那一份。
+装完直接在新建会话界面选择「插件升级创造模式」，不必重启。改 `plugin-upgrade-cordis.patch.yml` 之后要触发一次 profile 重新组合才会换上新声明——在插件页或 `plugin_manager` 里开关任一插件即可，之后新建的会话用新那份；`skills/` 由 `skill-filesystem` 直接读盘，改完下一次读取就是新内容（细则见仓库 `docs/rules/presets.md`「安装与启用」）。
 
 ## 验证
 

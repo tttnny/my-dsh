@@ -56,7 +56,7 @@
 | --- | --- | --- |
 | [plugin-upgrade-cordis](./presets/plugin-upgrade-cordis) | **插件升级创造模式**：官方创造模式逐字保留，并入 11 个插件工程技能。 | `dsh plugin --profile web add @lynn123411/dsh-preset-plugin-upgrade-cordis` |
 
-> `presets/` 下的 preset 都是可安装的 **bundle 包**（npm 名 `@lynn123411/dsh-preset-<id>`），安装命令与插件同一条：它把包写进 profile 的 `dependencies`、并把包名登记进 `dsh.profile.bundles`。装完**重启 DSH**，再在新建会话界面选择对应模式——preset 的挂载在进程内只装载一次，改 patch 或随包文件都不会热更。开发副本把包名换成仓库内路径：`dsh plugin --profile web add ./presets/<id>`（在仓库根执行，会记成 `link:`）。
+> `presets/` 下的 preset 都是可安装的 **bundle 包**（npm 名 `@lynn123411/dsh-preset-<id>`），安装命令与插件同一条：它把包写进 profile 的 `dependencies`、并把包名登记进 `dsh.profile.bundles`。装完直接在新建会话界面选择对应模式，不必重启。改过 preset 的 patch 之后要触发一次重新组合（在插件页里开关任一插件，或改存 profile 的 `cordis.patch.yml`）才会换上新声明；没有 `hmr` 的 profile 仍要重启。开发副本把包名换成仓库内路径：`dsh plugin --profile web add ./presets/<id>`（在仓库根执行，会记成 `link:`）。
 
 ---
 

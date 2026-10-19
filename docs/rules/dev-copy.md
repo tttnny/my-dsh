@@ -18,7 +18,11 @@ profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就�
 
 - **自带构建的插件（`src/` → `lib/`）先 `pnpm build`**：链接过去的是构建产物，编辑 `src/` 不 build 等于没改。
 - **客户端半边**：刷新页面即生效（bundle 按 `rev` 下发并带长期缓存，HMR 重新哈希后才换 `rev`，必要时硬刷新 `Cmd+Shift+R`）。想确认这一次到底拿到哪份产物：`node tools/verify-client.mjs <包> --needle '<你新写的类名或文案>'`（`--build` 连构建一起做）——它抄首页上那条带 `rev` 的地址、带 cookie 取回 bundle、在产物里找那段新东西，找不到就 FAIL。
-- **宿主半边**：重启 DSH 实例——loader 只在启动时装载。增删 `link:` 包、或本地覆盖某个安装包，同样要重启：解析表在进程启动时固定。改完不想动正在服务的这个实例时，用 `node tools/host-smoke.mjs`：它拿一份副本 home 起第二个实例（临时端口、不开浏览器、不碰启动器），判「本仓 bundle 全部解析到 + 首页 200 + 每个客户端 bundle 取得到 + 启动日志里没有装载异常」。正在跑那个实例的日志路径由 `node tools/dsh-env.mjs` 打出——启动期的装载异常就写在那里。
+- **宿主半边**：loader 不监听文件，改 `lib/` 之后要**触发一次 profile 重新组合**才会换上新代码。带 `hmr` 行的 profile（Web 就是：base bundle 在 `profileContext` 存在时启用它）不用重启进程，两种做法都行——在插件页或 `plugin_manager` 里把插件关一次再开一次；或者改存 profile 的 `cordis.patch.yml`（HMR 盯着它）。这次重新组合会把已装载模块与磁盘逐一比对身份（inode、大小、修改时间），变了的模块先逐出、再由 Loader 重新 `import`，所以拿到的是磁盘上最新的文件；`link:` 包的目标目录同样在比对范围内。
+- **没有 `hmr` 的 profile**（headless、SDK、ACP 在 YAML 里把它关了）仍旧重启才生效。
+- **这几种情况必须重启**：操作结果是 `restart-required`，`restartReason` 说明理由——`no-hmr`（没有 HMR）、`package-moved`（某个安装映射换了目录）、`module-comparison`（模块缓存无法与磁盘比对），以及待处理模块标着 `host-module` / `unmanaged-plugin`（进程入口静态图里的模块，比如把 DSH 自己的包软链进 profile）。
+- **增删 `link:` 包**：走插件页 / `plugin_manager` 安装时，重新组合重算映射并启动新行；在 profile 里手工 `pnpm add` 之后要靠 `cordis.patch.yml` 或 `dsh.profile.bundles` 的变化触发重新组合，而映射变动被拒时结果仍是 `restart-required`（`package-moved`）。
+- 改完不想动正在服务的这个实例时，用 `node tools/host-smoke.mjs`：它拿一份副本 home 起第二个实例（临时端口、不开浏览器、不碰启动器），判「本仓 bundle 全部解析到 + 首页 200 + 每个客户端 bundle 取得到 + 启动日志里没有装载异常」。正在跑那个实例的日志路径由 `node tools/dsh-env.mjs` 打出——启动期的装载异常就写在那里。
 
 ## 内核包解析
 

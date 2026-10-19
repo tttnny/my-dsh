@@ -33,7 +33,7 @@ cd ~/.dsh/profiles/web && pnpm add "link:<my-dsh 绝对路径>/plugins/dsh-model
 cd <my-dsh 绝对路径>/plugins/dsh-model-submenu && pnpm install && pnpm build
 ```
 
-客户端半边改完刷新页面即生效，必要时硬刷新一次；宿主半边要重启 DSH 实例（loader 只在启动时装载）。
+客户端半边改完刷新页面即生效，必要时硬刷新一次；宿主半边改完要触发一次 profile 重新组合——在插件页或 `plugin_manager` 里把本插件关一次再开一次，不必重启进程。
 
 ## 验证
 

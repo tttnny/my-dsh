@@ -30,4 +30,4 @@
 dsh plugin --profile web add @lynn123411/dsh-preset-plugin-upgrade-cordis
 ```
 
-装完**重启 DSH**，在新建会话界面选择「插件升级创造模式」。开发副本把包名换成仓库内路径（在仓库根执行）：`dsh plugin --profile web add ./presets/plugin-upgrade-cordis`。
+装完直接在新建会话界面选择「插件升级创造模式」，不必重启。开发副本把包名换成仓库内路径（在仓库根执行）：`dsh plugin --profile web add ./presets/plugin-upgrade-cordis`。

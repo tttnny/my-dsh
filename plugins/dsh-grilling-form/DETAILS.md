@@ -70,7 +70,7 @@ cd <my-dsh 绝对路径>/plugins/dsh-grilling-form && pnpm install && pnpm build
 
 本插件宿主半边 `import` 了 `@deepseek-ai/dsh-tools`，浏览器半边 `import` 了 `@deepseek-ai/dsh-client-ui-primitives`；`link:` 插件的这些内核包由 DSH 自身路由供给（前提是 DSH 带 `--preserve-symlinks` 启动，启动器已默认带上）。**不要**手工拷贝进 `node_modules/`：裸拷贝是未注册状态，`pnpm install` / `dsh plugin add|remove` 等任何 profile 同步都会把它当 extraneous 清掉。
 
-改完 `src/` 必须重新 `pnpm build`：宿主半边要重启 DSH 实例才生效；已经在图里的客户端 bundle 由 `dsh-client-hmr` 轮询到改动后热换，页面自行重载，必要时硬刷新一次。
+改完 `src/` 必须重新 `pnpm build`：宿主半边要触发一次 profile 重新组合才会换上新产物——在插件页或 `plugin_manager` 里把本插件关一次再开一次，不必重启进程；已经在图里的客户端 bundle 由 `dsh-client-hmr` 轮询到改动后热换，页面自行重载，必要时硬刷新一次。
 
 ## 自检
 
