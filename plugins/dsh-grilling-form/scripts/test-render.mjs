@@ -553,6 +553,7 @@ test('取代时搬勾选：题干一字不差的那道题带着旧表的勾选�
   assert.match(markup, /data-checked="true"/, '新表上没有推荐项，勾上只可能来自搬运');
   assert.match(markup, /旧表填的/);
   assert.doesNotMatch(markup, /不该搬/, '题干差一个字就不搬');
+  assert.deepEqual(drafts, [], '取代发生时不往草稿里写：要等用户自己点导入');
   buttons.find((button) => button.className === 'dsg-import').onClick();
   assert.match(drafts[0], /- 甲：这样/);
   assert.match(drafts[0], /- 旧表填的/);

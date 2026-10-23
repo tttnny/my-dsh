@@ -14,7 +14,8 @@
 //      「冻结了没」一条；草稿里那段已经是当前作答时按键就没用了（没块 = 还没导入、
 //      块旧了 = 要更新），状态是算出来的，不是记出来的。
 //   5. **取代时的两件搬运**：勾选按题干原文一模一样从旧表搬过来（见 carryOverAnswers），
-//      草稿里旧表那块换成新表那块（见 carryImport）——两件都收在 importInto 这一条出口上。
+//      用户点导入时草稿里旧表那块换成新表那块（见 carryImport）——草稿只在用户按键时动，
+//      插件不会在他没按的时候往里写。
 //
 // 纯函数：不碰 React、不读时钟、不读全局；storage 与 sessionId 由调用方传进来。
 
@@ -92,7 +93,7 @@ export function carriedAnswers({ sessionId, storage, replaced, questions }) {
  *   storage: import('./form-model.js').StorageLike|undefined,
  *   draft: unknown,
  * }} input - questions：题面；sessionId / callId：存储与配对；replacedCallId：被这张表取代的那张的
- *   id（有它就把草稿里旧表那块换成这张表的）；replyText：实发消息里那张作答块（给了就是冻结态）；
+ *   id（用户点导入时把草稿里旧表那块换成这张表的）；replyText：实发消息里那张作答块（给了就是冻结态）；
  *   superseded：后面那张把它取代了；storedAnswers：用户自己那份；storage：带 getItem/setItem 的存储；
  *   draft：当前草稿（用来算「导入了没」「草稿里那份是不是已经旧了」）。
  * @returns {{

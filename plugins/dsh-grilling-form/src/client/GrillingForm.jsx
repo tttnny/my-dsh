@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Button,
   IconBranchOutlineRegular,
@@ -168,7 +168,7 @@ export function GrillingFormTail({ turn, sessionId, t, useInput, useConversation
   // 这块作答块认的是这次调用的 id：别的表、别的轮次的块都不会被当成它的作答。
   const reply = formReplyAfter(chat?.legacy?.nodes, round.callId);
   const superseded = reply === undefined && supersededAfter(chat, turn?.turn);
-  // 取代发生的那一刻：把旧表题干一样的那些题的勾选搬过来，草稿里旧表那块也换成这张表的。
+  // 取代发生的那一刻：把旧表题干一样的那些题的勾选搬过来。草稿由用户自己点导入才会动。
   const replaced = reply === undefined && !superseded ? replacedForm(chat, turn?.turn) : undefined;
   const carried = carriedAnswers({ sessionId, storage: storageOf(), replaced, questions: model.questions });
   return (
@@ -259,14 +259,6 @@ function GrillingForm({ model, toolName, callId, replacedCallId, carried, sessio
     draft,
   });
   const { readOnly, answers, draftState } = session;
-
-  // 取代发生的那一刻：草稿里旧表那块换成这张表的（旧块整段拿掉，新块放在它原来的位置）。
-  // 只在挂载时做一次——之后草稿是用户的，插件不再动它；旧块不在草稿里时这一步什么都不改。
-  useEffect(() => {
-    if (replacedCallId === undefined) return;
-    const next = session.importInto(draft);
-    if (next !== draft) inputActions.setDraft(next);
-  }, []);
 
   const onFork = typeof forkAt === 'function' && forkSeq !== undefined
     ? () => {
