@@ -16,7 +16,7 @@ import {
   type SessionLike,
 } from './server/identity.ts';
 import { judgeTaskType } from './server/judge-client.ts';
-import { selectableRows } from './server/judge-prompt.ts';
+import { composeJudgeSubject, selectableRows } from './server/judge-prompt.ts';
 import { LogStore } from './server/log-store.ts';
 import { createFetchRoutes } from './server/router.ts';
 import type { LogEntry } from './server/types.ts';
@@ -172,16 +172,17 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
     if (!isJudgeUsable(cfg)) return resolved;
     judged.add(agent.id);
 
-    const taskText = readChildLabel(agent) || readTaskText(agent);
+    const label = readChildLabel(agent);
+    const taskText = readTaskText(agent);
     const outcome = await judgeTaskType(
       { url: cfg.endpointUrl, model: cfg.judgeModel, apiKey },
       selectableRows(cfg.rows),
-      taskText,
+      composeJudgeSubject(label, taskText),
     );
     const decision = decideRewrite(outcome);
 
     if (cfg.logEnabled) {
-      log.append(buildEntry(ctx, agent, resolved, decision, outcome, taskText));
+      log.append(buildEntry(ctx, agent, resolved, decision, outcome, label, taskText));
     }
     return applyDecision(resolved, decision);
   });
@@ -209,7 +210,9 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
  *
  * A fallback row reports the route the child actually keeps — the main agent's
  * resolved provider, model and effort — rather than a blank, because the point
- * of the row is what the child ran on.
+ * of the row is what the child ran on. The subagent column carries the
+ * delegation's own label; the task text is part of the request shown in the
+ * row's detail, not repeated in the table.
  */
 function buildEntry(
   ctx: HostContext,
@@ -217,6 +220,7 @@ function buildEntry(
   resolved: CallConfig,
   decision: ReturnType<typeof decideRewrite>,
   outcome: Awaited<ReturnType<typeof judgeTaskType>>,
+  label: string,
   taskText: string,
 ): LogEntry {
   const matched = decision.kind === 'rewrite';
@@ -232,7 +236,7 @@ function buildEntry(
     at: Date.now(),
     latencyMs: outcome.latencyMs,
     parentTitle: readParentTitle(ctx, agent.session.header.parentSession),
-    childLabel: truncate(taskText),
+    childLabel: truncate(label !== '' ? label : taskText),
     prompt: outcome.prompt,
   };
 }

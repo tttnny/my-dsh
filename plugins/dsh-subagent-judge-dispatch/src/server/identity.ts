@@ -78,6 +78,9 @@ export function isSubagent(agent: AgentLike): boolean {
   return depth >= 1;
 }
 
+/** Opening words of the return guidance the Host appends to a delegation. */
+export const RETURN_GUIDANCE_PREFIX = 'Your parent agent id is ';
+
 /**
  * Read the child's delegation description.
  *
@@ -85,12 +88,14 @@ export function isSubagent(agent: AgentLike): boolean {
  * and the child's durable descriptor keeps it — which is why it is readable here
  * without the parent's tool call. Only the child's OWN events are read, and the
  * LAST descriptor wins: a resumed or re-activated child appends a fresh one, and
- * the newest is the delegation actually running. A child whose descriptor
- * carries no label (a one-shot delegation that omitted one) falls back to the
- * opening of the task text.
+ * the newest is the delegation actually running.
+ *
+ * The label is a display summary the delegating agent wrote, so it is returned
+ * on its own and never merged with the task text: the judge gets the label as a
+ * heading over the task, and the log's subagent column gets the label alone.
  *
  * @param agent - the subagent.
- * @returns the description, or the task text's opening when there is none.
+ * @returns the description, or '' when its descriptor carries none.
  */
 export function readChildLabel(agent: AgentLike): string {
   let found = '';
@@ -101,39 +106,66 @@ export function readChildLabel(agent: AgentLike): string {
     const label = (data as { label?: unknown }).label;
     if (typeof label === 'string' && label.trim() !== '') found = label.trim();
   }
-  return found !== '' ? found : readTaskText(agent);
+  return found;
 }
 
 /**
- * Read the child's opening task text.
+ * Read the task the parent delegated.
  *
- * It is the first user message of the child's OWN log — the prompt the parent
- * delegated. Used as the judge's subject when no description exists.
+ * The delegation arrives as the child's first message whose `source.kind` is
+ * `user`; every other producer writes user-role messages too — the working
+ * directory notice, workspace instructions, the runtime snapshot, the skill
+ * catalog, the time snapshot — so the source is what separates the task from
+ * the context wrapped around it.
+ *
+ * The Host appends its return guidance as one trailing block of that same
+ * message. It tells the child how to report back, not what the job is, so it is
+ * dropped: leaving it in would spend most of the subject on boilerplate.
+ *
+ * Only the child's OWN events are read, because a forked child's log opens with
+ * the parent's finished turns.
  *
  * @param agent - the subagent.
- * @returns the text, or '' when the log carries none.
+ * @returns the delegated task text, or '' when no delegation message exists.
  */
 export function readTaskText(agent: AgentLike): string {
   for (const event of ownEventsOf(agent.session)) {
     if (event.type !== 'user/message') continue;
-    const text = textOf(event.data);
+    const source = sourceOf(event.data);
+    if (source?.kind !== 'user') continue;
+    const blocks = textBlocksOf(event.data);
+    // The guidance is appended last; a task that happens to open with the same
+    // words is still honored because only the trailing block is examined.
+    if (blocks.length > 1 && blocks[blocks.length - 1].startsWith(RETURN_GUIDANCE_PREFIX)) {
+      blocks.pop();
+    }
+    const text = blocks.join('\n').trim();
     if (text !== '') return text;
   }
   return '';
 }
 
-/** Pull the concatenated text blocks out of a message payload. */
-function textOf(data: unknown): string {
-  if (typeof data !== 'object' || data === null) return '';
+/** Read the durable producer facts off one message payload. */
+function sourceOf(data: unknown): { kind: string } | undefined {
+  if (typeof data !== 'object' || data === null) return undefined;
+  const source = (data as { source?: unknown }).source;
+  if (typeof source !== 'object' || source === null) return undefined;
+  const kind = (source as { kind?: unknown }).kind;
+  return typeof kind === 'string' ? { kind } : undefined;
+}
+
+/** Pull the text blocks out of a message payload, in order. */
+function textBlocksOf(data: unknown): string[] {
+  if (typeof data !== 'object' || data === null) return [];
   const content = (data as { content?: unknown }).content;
-  if (!Array.isArray(content)) return '';
-  const parts: string[] = [];
+  if (!Array.isArray(content)) return [];
+  const texts: string[] = [];
   for (const block of content) {
     if (typeof block !== 'object' || block === null) continue;
     const record = block as { type?: unknown; text?: unknown };
-    if (record.type === 'text' && typeof record.text === 'string') parts.push(record.text);
+    if (record.type === 'text' && typeof record.text === 'string') texts.push(record.text);
   }
-  return parts.join('\n').trim();
+  return texts;
 }
 
 /**

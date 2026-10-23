@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-subagent-judge-dispatch",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "用一个判断模型从你写的任务类型清单里挑一个编号，据此改写子代理使用的模型与思考强度。",
   "type": "module",
   "main": "lib/index.js",

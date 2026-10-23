@@ -96,23 +96,84 @@ export function selectableRows(rows: readonly TypeRow[]): TypeRow[] {
 }
 
 /**
+ * How much of a delegated task's opening the judge reads.
+ *
+ * The judge answers one multiple-choice question; the opening of a task says
+ * what kind of job it is, and the rest is usually detail the choice does not
+ * turn on. Bounding it keeps the request small and keeps one enormous
+ * delegation from crowding out the type list it is being weighed against.
+ */
+export const SUBJECT_HEAD_CHARS = 1400;
+
+/**
+ * How much of a task's closing the judge reads.
+ *
+ * Supplementary requirements are written at the end — "also run the review" —
+ * so the tail is kept rather than the middle.
+ */
+export const SUBJECT_TAIL_CHARS = 400;
+
+/** Opening words of the label line the judge reads above the task. */
+export const LABEL_PREFIX = 'Delegation label: ';
+
+/**
+ * Build the subject the judge is asked to classify.
+ *
+ * Two parts, in the order the reader would put them: the delegation's own label
+ * — a summary the delegating agent wrote, which carries its intent — and then
+ * the task text itself. The label alone is a display phrase of a few words, too
+ * little to classify by; the task text alone loses that intent when it opens
+ * with boilerplate.
+ *
+ * @param label - the delegation label, or '' when the child has none.
+ * @param taskText - the delegated task text, or '' when it cannot be read.
+ * @returns the subject to send, bounded to {@link SUBJECT_HEAD_CHARS} plus
+ *   {@link SUBJECT_TAIL_CHARS} characters of task text.
+ */
+export function composeJudgeSubject(label: string, taskText: string): string {
+  const task = clipTaskText(taskText.trim());
+  const heading = label.trim();
+  if (heading === '') return task;
+  return task === '' ? LABEL_PREFIX + heading : `${LABEL_PREFIX}${heading}\n\n${task}`;
+}
+
+/**
+ * Bound a task text to its opening and closing.
+ *
+ * The dropped middle is named rather than silently removed, so a reader looking
+ * at the logged request can tell truncation from a short task. The marker is
+ * English like the rest of the protocol, so it reads as a note from the plugin
+ * rather than as part of the task, whatever language the task is written in.
+ *
+ * @param text - the task text.
+ * @returns the text, or its head and tail around a count of what was dropped.
+ */
+function clipTaskText(text: string): string {
+  if (text.length <= SUBJECT_HEAD_CHARS + SUBJECT_TAIL_CHARS) return text;
+  const dropped = text.length - SUBJECT_HEAD_CHARS - SUBJECT_TAIL_CHARS;
+  const head = text.slice(0, SUBJECT_HEAD_CHARS);
+  const tail = text.slice(text.length - SUBJECT_TAIL_CHARS);
+  return `${head}\n… (${dropped} characters omitted) …\n${tail}`;
+}
+
+/**
  * Build the exact body sent to the judge endpoint.
  *
  * @param rows - the selectable rows, in page order.
  * @param model - the judge model id.
- * @param taskText - the delegated job's text.
+ * @param subject - the text the judge classifies, from {@link composeJudgeSubject}.
  * @returns the request body.
  */
 export function buildJudgeRequest(
   rows: readonly TypeRow[],
   model: string,
-  taskText: string,
+  subject: string,
 ): JudgeRequest {
   const criteria: Record<string, string> = {};
   for (const row of rows) criteria[String(row.id)] = row.description;
   return {
     model,
-    state: { message: taskText },
+    state: { message: subject },
     questions: {
       [QUESTION_KEY]: {
         type: 'choice',
@@ -167,15 +228,19 @@ export function formatJudgeRequest(body: JudgeRequest): string {
 /**
  * The text the configuration page's preview shows.
  *
- * It is the request body minus the task text, because no task text exists until
- * a delegation happens; the preview marks that spot instead of inventing one.
+ * It is the request body minus the subject, because no delegation exists until
+ * one happens; the preview marks both spots the subject will fill rather than
+ * inventing a task. The two markers are told apart, because the real subject is
+ * a label line followed by the task text and the preview should read that way.
  *
  * @param rows - the selectable rows, in page order.
  * @param model - the judge model id.
  * @returns the pretty-printed preview text.
  */
 export function buildPreview(rows: readonly TypeRow[], model: string): string {
-  return formatJudgeRequest(buildJudgeRequest(rows, model, '（派工时才填）'));
+  return formatJudgeRequest(
+    buildJudgeRequest(rows, model, composeJudgeSubject('（派工时才填：派工标签）', '（派工时才填：任务正文）')),
+  );
 }
 
 /** What reading the judge's answer produced. */

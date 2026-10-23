@@ -104,14 +104,14 @@ export async function probeJudge(
  *
  * @param endpoint - where and how to call the judge.
  * @param rows - the selectable rows, in page order.
- * @param taskText - the delegated job's text.
+ * @param subject - the text to classify, from `composeJudgeSubject`.
  * @param fetchImpl - the fetch to call; defaults to the global one.
  * @returns the decision, or the fallback reason that replaced it.
  */
 export async function judgeTaskType(
   endpoint: JudgeEndpoint,
   rows: readonly TypeRow[],
-  taskText: string,
+  subject: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<JudgeOutcome> {
   const startedAt = Date.now();
@@ -120,7 +120,7 @@ export async function judgeTaskType(
     return { kind: 'fallback', reason: 'unreachable', latencyMs: elapsed(), prompt: '' };
   }
 
-  const body = buildJudgeRequest(rows, endpoint.model.trim(), taskText);
+  const body = buildJudgeRequest(rows, endpoint.model.trim(), subject);
   // The body the log keeps is the one sent, not a re-built one: the reader
   // opens it to see exactly what the judge was asked.
   const prompt = formatJudgeRequest(body);

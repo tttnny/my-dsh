@@ -21,10 +21,13 @@ import {
   buildJudgeRequest,
   buildPreview,
   buildProbeRequest,
+  composeJudgeSubject,
   QUESTION_INSTRUCTIONS,
   readChoice,
   readJudgeAnswer,
   selectableRows,
+  SUBJECT_HEAD_CHARS,
+  SUBJECT_TAIL_CHARS,
 } from '../src/server/judge-prompt.ts';
 import { judgeTaskType, probeJudge } from '../src/server/judge-client.ts';
 import { LogStore, LOG_LIMIT } from '../src/server/log-store.ts';
@@ -146,11 +149,58 @@ await test('判断请求的形状：一个问题、键是编号、值是描述',
   assert.ok(question.instructions.length > 0);
 });
 
-await test('预览里任务正文处标注派工时才填，且不含自发编造的任务', () => {
+await test('判断模型的输入：标签在前、任务正文在后', () => {
+  assert.equal(
+    composeJudgeSubject('评审一处改动', '评审 src 下这一组改动，只看不写'),
+    'Delegation label: 评审一处改动\n\n评审 src 下这一组改动，只看不写',
+  );
+});
+
+await test('没有标签时只发任务正文，不留空标签行', () => {
+  assert.equal(composeJudgeSubject('', '把测试跑一遍'), '把测试跑一遍');
+  assert.equal(composeJudgeSubject('   ', '把测试跑一遍'), '把测试跑一遍');
+});
+
+await test('只有标签没有任务正文时只发标签', () => {
+  assert.equal(composeJudgeSubject('评审一处改动', ''), 'Delegation label: 评审一处改动');
+  assert.equal(composeJudgeSubject('评审一处改动', '   '), 'Delegation label: 评审一处改动');
+});
+
+await test('两样都没有时输入为空，判断仍然照常发出去', () => {
+  assert.equal(composeJudgeSubject('', ''), '');
+});
+
+await test('短任务原样发，一个字都不动', () => {
+  const task = '把测试跑一遍，跑完把失败的用例名贴回来。';
+  assert.equal(composeJudgeSubject('', task), task);
+});
+
+await test('长任务留开头与结尾，中间省掉的字数写明白', () => {
+  const head = '甲'.repeat(SUBJECT_HEAD_CHARS);
+  const middle = '乙'.repeat(500);
+  const tail = '丙'.repeat(SUBJECT_TAIL_CHARS);
+  const subject = composeJudgeSubject('', head + middle + tail);
+  assert.ok(subject.startsWith(head), '开头照留');
+  assert.ok(subject.endsWith(tail), '结尾照留');
+  assert.doesNotMatch(subject, /乙/, '中间那段不在里面');
+  assert.match(subject, /500 characters omitted/);
+});
+
+await test('刚好到上限的任务不算被截断', () => {
+  const exact = '丁'.repeat(SUBJECT_HEAD_CHARS + SUBJECT_TAIL_CHARS);
+  assert.equal(composeJudgeSubject('', exact), exact);
+  assert.doesNotMatch(composeJudgeSubject('', exact), /omitted/);
+});
+
+await test('预览里标签与任务正文两处都标注派工时才填，且不含自发编造的任务', () => {
   const preview = buildPreview([row()], 'judge-x');
-  assert.ok(preview.includes('派工时才填'));
   const parsed = JSON.parse(preview);
-  assert.deepEqual(parsed.state, { message: '（派工时才填）' });
+  assert.match(parsed.state.message, /Delegation label: .*派工时才填/);
+  assert.match(parsed.state.message, /派工时才填/);
+  assert.equal(
+    parsed.state.message,
+    'Delegation label: （派工时才填：派工标签）\n\n（派工时才填：任务正文）',
+  );
 });
 
 await test('答复读取：三种形状都认', () => {

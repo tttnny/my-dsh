@@ -59,8 +59,43 @@ function makeConfig(overrides = {}) {
   };
 }
 
+/** The return guidance the Host appends to a continuable delegation's task. */
+const RETURN_GUIDANCE =
+  'Your parent agent id is "session-main". Before you finish, send your result to that agent with '
+  + 'send_message({ agent_id: "session-main", message: "<self-contained result>" }).';
+
+/**
+ * The messages a freshly delegated child's own log opens with.
+ *
+ * The shape is the Host's, in the Host's order: a working-directory notice
+ * (user-role, but not the task), then the delegation message carrying the task
+ * and the appended return guidance as two separate blocks. Reading the task
+ * means telling these apart by source, and dropping the guidance.
+ */
+function delegatedMessages(taskText) {
+  return [
+    {
+      type: 'user/message',
+      data: {
+        source: { kind: 'working-directory' },
+        content: [{ type: 'text', text: 'The working directory changed from "/w" to "/w/child".' }],
+      },
+    },
+    {
+      type: 'user/message',
+      data: {
+        source: { kind: 'user' },
+        content: [
+          { type: 'text', text: taskText },
+          { type: 'text', text: RETURN_GUIDANCE },
+        ],
+      },
+    },
+  ];
+}
+
 /** A child agent whose durable facts say "subagent, delegated by the main one". */
-function childAgent(id = 'child-1', label = '跑一下测试') {
+function childAgent(id = 'child-1', label = '跑一下测试', taskText = '把测试跑一遍') {
   return {
     id,
     options: { subagentDepth: 1 },
@@ -68,7 +103,7 @@ function childAgent(id = 'child-1', label = '跑一下测试') {
       header: { parentSession: 'session-main', delegationDepth: 1 },
       snapshotEvents: () => [
         { type: 'subagent/descriptor', data: { version: 3, mode: 'one-shot', provider: 'in-process', label } },
-        { type: 'user/message', data: { content: [{ type: 'text', text: '把测试跑一遍' }] } },
+        ...delegatedMessages(taskText),
       ],
     },
   };
@@ -82,11 +117,11 @@ function childAgent(id = 'child-1', label = '跑一下测试') {
 function forkedChildAgent(id = 'child-fork') {
   const inherited = [
     { type: 'subagent/descriptor', data: { version: 3, mode: 'one-shot', provider: 'in-process', label: '祖先的活' } },
-    { type: 'user/message', data: { content: [{ type: 'text', text: '父代理对话的第一条消息' }] } },
+    { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '父代理对话的第一条消息' }] } },
   ];
   const own = [
     { type: 'subagent/descriptor', data: { version: 3, mode: 'one-shot', provider: 'in-process', label: '真正这次派的活' } },
-    { type: 'user/message', data: { content: [{ type: 'text', text: '这次的任务正文' }] } },
+    ...delegatedMessages('这次的任务正文'),
   ];
   return {
     id,
@@ -212,7 +247,8 @@ await test('日志里存的就是那一次发出去的请求，一字不差', as
   const entry = body.entries[0];
   assert.equal(entry.prompt, JSON.stringify(sent === undefined ? '' : JSON.parse(sent), null, 2),
     '日志里那段提示词必须与真正发出去的请求体同值');
-  assert.equal(JSON.parse(entry.prompt).state.message, '只读地盯着这个活', '任务文字也在提示词里');
+  assert.equal(JSON.parse(entry.prompt).state.message, 'Delegation label: 只读地盯着这个活\n\n把测试跑一遍',
+    '任务文字也在提示词里');
   assert.equal(entry.typeId, 2);
   assert.equal(entry.childLabel, '只读地盯着这个活');
   assert.equal(entry.parentTitle, '主对话标题');
@@ -280,51 +316,118 @@ await test('清单里没有填全的行时不判断', async () => {
 
 await test('发送的请求体形状：一个问题、编号为键、描述为值', async () => {
   let body;
-  await judgeOnce(handlers, childAgent('child-body', '评审一处改动'), RESOLVED, async (_url, init) => {
+  await judgeOnce(handlers, childAgent('child-body', '评审一处改动', '评审 src 下这一组改动'), RESOLVED, async (_url, init) => {
     body = JSON.parse(init.body);
     return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
   });
   assert.equal(body.model, 'jev-latest');
-  assert.equal(body.state.message, '评审一处改动', '任务文字取自子代理的派工描述');
   assert.deepEqual(Object.keys(body.questions.task_type.criteria), ['1', '2']);
   assert.equal(body.questions.task_type.criteria['2'], '评审代码');
 });
 
-await test('fork 出来的子代理只读自己的事件，不把祖先的文字送给判断模型', async () => {
+await test('判断模型读到的是派工标签加任务正文，不只是那句显示用的短标签', async () => {
+  let body;
+  await judgeOnce(handlers, childAgent('child-subject', '评审一处改动', '评审 src 下这一组改动'), RESOLVED, async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.equal(
+    body.state.message,
+    'Delegation label: 评审一处改动\n\n评审 src 下这一组改动',
+    '标签在前、任务正文在后，两段都在',
+  );
+});
+
+await test('任务正文按来源取，不把工作目录提示当成任务', async () => {
+  let body;
+  await judgeOnce(handlers, childAgent('child-cwd'), RESOLVED, async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.match(body.state.message, /把测试跑一遍/);
+  assert.doesNotMatch(body.state.message, /working directory changed/,
+    '工作目录提示是 user 角色的消息，但不是这次派的活');
+});
+
+await test('宿主追加的返回指引不送给判断模型', async () => {
+  let body;
+  await judgeOnce(handlers, childAgent('child-guidance'), RESOLVED, async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.doesNotMatch(body.state.message, /Your parent agent id is/,
+    '怎么回报讲的是交作业，不是这次干什么');
+});
+
+await test('任务正文很长时只取开头与结尾，中间被省掉的字数写明白', async () => {
+  const long = `开头的要求。${'中间细节。'.repeat(400)}结尾的要求。`;
+  let body;
+  await judgeOnce(handlers, childAgent('child-long', '长活', long), RESOLVED, async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '1' } } }), { status: 200 });
+  });
+  const message = body.state.message;
+  assert.ok(message.length < long.length, '整段原样发出去就没有截断');
+  assert.match(message, /^Delegation label: 长活/);
+  assert.match(message, /开头的要求。/);
+  assert.match(message, /结尾的要求。/);
+  assert.match(message, /characters omitted/, '省掉了多少要写出来，读者才分得清截断与短任务');
+});
+
+await test('叉出来的子代理只读自己的事件，不把祖先的文字送给判断模型', async () => {
   let body;
   await judgeOnce(handlers, forkedChildAgent(), RESOLVED, async (_url, init) => {
     body = JSON.parse(init.body);
     return new Response(JSON.stringify({ answers: { task_type: { choice: '1' } } }), { status: 200 });
   });
-  assert.equal(body.state.message, '真正这次派的活', '必须取子代理自己的最后一条 descriptor');
-  assert.notEqual(body.state.message, '祖先的活', '不能读到被浇灌进来的祖先标签');
+  assert.match(body.state.message, /^Delegation label: 真正这次派的活/,
+    '必须取子代理自己的最后一条 descriptor');
+  assert.doesNotMatch(body.state.message, /祖先的活/, '不能读到被浇灌进来的祖先标签');
+  assert.doesNotMatch(body.state.message, /父代理对话的第一条消息/);
 });
 
-await test('fork 出来的子代理没有自己的描述时，任务正文也取自己那段', async () => {
+await test('叉出来的子代理没有自己的描述时，任务正文也取自己那段', async () => {
   const agent = forkedChildAgent('child-fork-nodesc');
-  agent.session.ownEvents = () => [
-    { type: 'user/message', data: { content: [{ type: 'text', text: '这次的任务正文' }] } },
-  ];
+  agent.session.ownEvents = () => delegatedMessages('这次的任务正文');
   let body;
   await judgeOnce(handlers, agent, RESOLVED, async (_url, init) => {
     body = JSON.parse(init.body);
     return new Response(JSON.stringify({ answers: { task_type: { choice: '1' } } }), { status: 200 });
   });
-  assert.equal(body.state.message, '这次的任务正文');
+  assert.equal(body.state.message, '这次的任务正文', '没有标签就只发任务正文');
   assert.notEqual(body.state.message, '父代理对话的第一条消息');
 });
 
 await test('没有描述时拿任务正文来判', async () => {
-  const agent = childAgent('child-nodesc');
-  agent.session.snapshotEvents = () => [
-    { type: 'user/message', data: { content: [{ type: 'text', text: '把这条正文当任务' }] } },
-  ];
+  const agent = childAgent('child-nodesc', '', '把这条正文当任务');
   let body;
   await judgeOnce(handlers, agent, RESOLVED, async (_url, init) => {
     body = JSON.parse(init.body);
     return new Response(JSON.stringify({ answers: { task_type: { choice: '1' } } }), { status: 200 });
   });
   assert.equal(body.state.message, '把这条正文当任务');
+});
+
+await test('日志的子代理一栏只写派工标签，不把整段任务正文塞进去', async () => {
+  const mounted = mount();
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+  const logRoute = mounted.routes.find((route) => route.path === '/api/dsh-subagent-judge-dispatch/log');
+  const task = `这是一个很长的活。${'细节。'.repeat(30)}`;
+  await judgeOnce(mounted.handlers, childAgent('child-label', '跑一下测试', task), RESOLVED, answer('2'));
+  const body = await (await logRoute.fetch(new Request('http://host/api/log'), {})).json();
+  assert.equal(body.entries[0].childLabel, '跑一下测试');
+  assert.equal(body.entries[0].typeId, 2);
+});
+
+await test('没有标签时日志的子代理一栏退回任务正文的开头', async () => {
+  const mounted = mount();
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+  const logRoute = mounted.routes.find((route) => route.path === '/api/dsh-subagent-judge-dispatch/log');
+  const task = '把这条正文当任务'.repeat(20);
+  await judgeOnce(mounted.handlers, childAgent('child-label-fallback', '', task), RESOLVED, answer('2'));
+  const body = await (await logRoute.fetch(new Request('http://host/api/log'), {})).json();
+  assert.ok(body.entries[0].childLabel.startsWith('把这条正文当任务'));
+  assert.ok(body.entries[0].childLabel.length <= 60, '一栏放不下整段正文，截到 60 字');
 });
 
 await test('判断过的子代理记忆有上限，不会随运行时间无限长大', async () => {
