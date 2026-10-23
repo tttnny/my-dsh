@@ -228,12 +228,12 @@ function buildEntry(
     effort: matched
       ? decision.rewrite.reasoningEffort
       : typeof resolved.reasoningEffort === 'string' ? resolved.reasoningEffort : '',
-    source: matched ? 'judged' : 'inherited',
     ...reason === undefined ? {} : { reason },
     at: Date.now(),
     latencyMs: outcome.latencyMs,
     parentTitle: readParentTitle(ctx, agent.session.header.parentSession),
     childLabel: truncate(taskText),
+    prompt: outcome.prompt,
   };
 }
 

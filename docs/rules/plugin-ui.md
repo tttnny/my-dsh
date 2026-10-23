@@ -58,8 +58,14 @@ JSON 表达不了。产物落 `tmp/ui-preview/`，HTML 留着，想看交互就�
   shiki、simple-icons、katex，本仓装不下来。替身只顶掉组件本身；样式取它安装副本里的真实 CSS，
   所以 markdown 段落间距、Tag、Button 的长相都是宿主那一份。**插件新引一个 ui-primitives 名字，
   就要在那个替身里补一个**，否则那一处是 `undefined`，React 只打一行 warning、预览页上静默少一块。
+  现有薄壳：`Button`、`Tag`、`Input`、`Switch`、`SegmentedTabs`、`Modal`、`CodeBlock`、`Menu`、
+  `MarkdownText` 与几个图标；新加一个时照它真组件的类名与 DOM 层数写（`Input` 的类名落在外面那层
+  `.wrap` 上，`Switch` 的外观键在 `aria-checked` 上），并在 `ui-preview.mjs` 的 `hostSheets`
+  里补上那份 `.module.css`——替身只有类名，样式不会自己跟过来。
 - **主题变量取宿主 checkout 里的真表**（`design-platform.css` 与 `gradient-shadow-text.css`，
   路径随 `DSH_SOURCE`）。所以深浅色、字号档位都跟着宿主走，不在这里另抄一份。
+- **预览只画组件，不跑 `apply()`**：插件在 `apply()` 里注入的那份 `<style>`（见上文「样式在
+  `apply()` 里注入」）不会出现在预览页上。预览图据此刻读结构，布局与观感仍要回真实例上看。
 
 它验的是「这块界面长什么样」；布局在真实对话流里会不会被挤、滚动归属、遮挡，仍然要
 `gui-shot` 在真实例上看。

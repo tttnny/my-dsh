@@ -130,8 +130,14 @@ function mount(configOverrides = {}, options = {}) {
   };
   ctx.sessions = { get: (id) => (id === 'session-main' ? { header: {} } : undefined) };
   ctx.sessionTitle = { get: () => ({ title: options.parentTitle ?? '主对话标题' }) };
+  // 插件的三条读取挂在 connection 的 /api 通道上：给了这个服务，页面读日志那条路
+  // 才会被注册，下面「日志里存的就是发出去的请求」才有地方读。
+  const routes = [];
+  ctx.provide('connection', {
+    fetch: { register: (route) => { routes.push(route); return () => {}; } },
+  });
   plugin.apply(ctx, makeConfig(configOverrides));
-  return { ctx, handlers };
+  return { ctx, handlers, routes };
 }
 
 /** 凭据服务被问过哪些引用名；用来证明插件读的是自己那个固定引用。 */
@@ -186,6 +192,44 @@ await test('判断连不上时原对象按身份退回，一个字段都不写',
 await test('答复对不上清单时同样一个字都不写', async () => {
   const result = await judgeOnce(handlers, childAgent('child-bad'), RESOLVED, answer('99'));
   assert.equal(result, RESOLVED);
+});
+
+await test('日志里存的就是那一次发出去的请求，一字不差', async () => {
+  const mounted = mount();
+  // connection 是通过 ctx.inject 取的可选服务：那条 fiber 在自己的回合里才装载。
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+  const logRoute = mounted.routes.find((route) => route.path === '/api/dsh-subagent-judge-dispatch/log');
+  assert.ok(logRoute, '日志路由注册上了');
+
+  let sent;
+  await judgeOnce(mounted.handlers, childAgent('child-prompt', '只读地盯着这个活'), RESOLVED, async (_url, init) => {
+    sent = init.body;
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+
+  const body = await (await logRoute.fetch(new Request('http://host/api/log'), {})).json();
+  assert.equal(body.entries.length, 1);
+  const entry = body.entries[0];
+  assert.equal(entry.prompt, JSON.stringify(sent === undefined ? '' : JSON.parse(sent), null, 2),
+    '日志里那段提示词必须与真正发出去的请求体同值');
+  assert.equal(JSON.parse(entry.prompt).state.message, '只读地盯着这个活', '任务文字也在提示词里');
+  assert.equal(entry.typeId, 2);
+  assert.equal(entry.childLabel, '只读地盯着这个活');
+  assert.equal(entry.parentTitle, '主对话标题');
+});
+
+await test('没判成的那一行也带着发出去的提示词', async () => {
+  const mounted = mount();
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+  const logRoute = mounted.routes.find((route) => route.path === '/api/dsh-subagent-judge-dispatch/log');
+  await judgeOnce(mounted.handlers, childAgent('child-fallback-prompt'), RESOLVED, async () => {
+    throw new Error('connection refused');
+  });
+  const body = await (await logRoute.fetch(new Request('http://host/api/log'), {})).json();
+  assert.equal(body.entries.length, 1);
+  assert.equal(body.entries[0].typeId, null, '没判成就是 null，页面据此写「未判成」');
+  assert.equal(body.entries[0].reason, 'unreachable');
+  assert.match(body.entries[0].prompt, /"model": "jev-latest"/, '连不上也有请求体可看');
 });
 
 await test('主代理自己不被判断', async () => {

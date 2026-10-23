@@ -10,6 +10,7 @@ import {
   SegmentedTabs,
   Switch,
   Tag,
+  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import {
   BUNDLE_CONFIG_KEY,
@@ -19,6 +20,7 @@ import {
 import {
   ALLOWED_MODELS_NAMESPACE,
   createDispatchRemote,
+  describeChoice,
   dispatchCardStore,
   JUDGE_API_KEY_REF,
   type CredentialsRemoteLike,
@@ -54,6 +56,29 @@ function withSamples(text: string, samples: Record<string, string>): React.React
     const sample = name === '' ? undefined : samples[name];
     return sample === undefined ? part : <code key={index}>{sample}</code>;
   });
+}
+
+/**
+ * One log cell: the text clips to its column, and the whole value is one hover
+ * away.
+ *
+ * The bubble is the Host's `Tooltip`, not a native `title`: the Host's own rule
+ * is that a hover surface comes from the primitives package, and the native one
+ * cannot be reached by keyboard. It carries `hint` when the cell has something
+ * the column itself has no room for — the reason a judgement did not match —
+ * and the cell's own text otherwise.
+ *
+ * @param props.text - the value shown in the cell.
+ * @param props.hint - extra text the bubble should carry instead of `text`.
+ * @returns the cell.
+ */
+function LogCell({ text, hint }: { text: string; hint?: string }): React.ReactElement {
+  const label = hint === undefined || hint === '' ? text : hint;
+  return (
+    <Tooltip label={label} side="top" portal>
+      <span className="dsh-judge-cell-clip">{text}</span>
+    </Tooltip>
+  );
 }
 
 /**
@@ -93,8 +118,9 @@ const CARD_CSS = `
 .dsh-judge-field input { box-sizing: border-box; width: 100%; min-width: 0; }
 .dsh-judge-key-line { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; }
 .dsh-judge-off { display: block; color: var(--dsw-alias-state-warn-label); font: var(--dsw-font-xxxs-11); white-space: nowrap; }
-.dsh-judge-head-actions { display: flex; align-items: center; gap: 8px; }
-.dsh-judge-actions { display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding-top: 12px; border-top: 0.5px solid var(--dsw-alias-border-l3); }
+/* 这一节的出口：左边写下去，右边查已有的——两个方向分开，按错一个不会串到另一个。 */
+.dsh-judge-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 0.5px solid var(--dsw-alias-border-l3); }
+.dsh-judge-actions-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .dsh-judge-hint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); }
 .dsh-judge-note-ok { color: var(--dsw-alias-state-success-primary); font: var(--dsw-font-xxs-12); }
 .dsh-judge-note-bad { color: var(--dsw-alias-state-error-primary); font: var(--dsw-font-xxs-12); }
@@ -123,13 +149,14 @@ const CARD_CSS = `
 .dsh-judge-preset-title { font: var(--dsw-font-xs-13); }
 .dsh-judge-preset-hint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxxs-11); }
 .dsh-judge-log { display: flex; flex-direction: column; gap: 4px; font: var(--dsw-font-xxs-12); }
-.dsh-judge-log-row { display: grid; grid-template-columns: 130px minmax(0, 1fr) 80px 92px 84px; gap: 8px; align-items: center; text-align: left; border: 0; background: none; padding: 6px 4px; border-radius: var(--dsw-radius-sm); cursor: pointer; color: inherit; }
+/* 六列的宽度按内容定：结果与时间是定长的，选择最长、主代理与子代理各占一份余量。
+   minmax(0, …) 是截断的前提——不给下限归零，长内容会把整列撑出去。 */
+.dsh-judge-log-row { display: grid; grid-template-columns: 72px minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 1.2fr) 62px 74px; gap: 8px; align-items: center; text-align: left; border: 0; background: none; padding: 6px 4px; border-radius: var(--dsw-radius-sm); cursor: pointer; color: inherit; font: inherit; }
 .dsh-judge-cell-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dsh-judge-log-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .dsh-judge-log-head { font-weight: 600; color: var(--dsw-alias-label-tertiary); cursor: default; }
 .dsh-judge-log-head:hover { background: none; }
-.dsh-judge-detail { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font: var(--dsw-font-xs-13); }
-/* 预览里是一整段 JSON，默认的弹窗宽度会把它折得很碎。 */
+/* 弹窗里是一整段 JSON，默认的弹窗宽度会把它折得很碎。 */
 .dsh-judge-modal { width: min(760px, 100%); max-height: min(85vh, 100%); }
 `;
 
@@ -217,34 +244,42 @@ export function JudgeDispatchPanel(
     setPreviewOpen(true);
   };
 
-  /** One section's save row: the write, the discard, and what a save would do. */
-  const saveRow = (section: Section, dirty: boolean, onSave: () => void): React.ReactElement => (
+  /** One section's save row: the write and the discard on the left, that section's checks on the right. */
+  const saveRow = (
+    section: Section,
+    dirty: boolean,
+    onSave: () => void,
+    checks?: React.ReactNode,
+  ): React.ReactElement => (
     <div className="dsh-judge-actions">
-      {/* 类型清单有缺时按钮仍可点：按下去由 saveRows 弹窗说明为什么存不了。
-          做成 disabled 的话，读者只看到一个点不动的按钮，不知道要改哪里。 */}
-      <Button
-        variant="primary"
-        size="sm"
-        disabled={state.saving !== '' || !dirty || !state.writable}
-        onClick={onSave}
-      >
-        {state.saving === section ? t('save.saving') : t('save.button')}
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={state.saving !== '' || !dirty}
-        onClick={() => dispatchCardStore.revert(section)}
-      >
-        {t('save.discard')}
-      </Button>
-      {dirty && <span className="dsh-judge-hint">{t('save.unsaved')}</span>}
-      {/* 失败按节报：判断服务那次保存没落地时，任务类型那一节不该跟着报错。 */}
-      {state.saveFailed === section && state.saveError !== '' && (
-        <span className="dsh-judge-note-bad" role="alert">
-          {t('save.failed').replace('{error}', state.saveError)}
-        </span>
-      )}
+      <div className="dsh-judge-actions-group">
+        {/* 类型清单有缺时按钮仍可点：按下去由 saveRows 弹窗说明为什么存不了。
+            做成 disabled 的话，读者只看到一个点不动的按钮，不知道要改哪里。 */}
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={state.saving !== '' || !dirty || !state.writable}
+          onClick={onSave}
+        >
+          {state.saving === section ? t('save.saving') : t('save.button')}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={state.saving !== '' || !dirty}
+          onClick={() => dispatchCardStore.revert(section)}
+        >
+          {t('save.discard')}
+        </Button>
+        {dirty && <span className="dsh-judge-hint">{t('save.unsaved')}</span>}
+        {/* 失败按节报：判断服务那次保存没落地时，任务类型那一节不该跟着报错。 */}
+        {state.saveFailed === section && state.saveError !== '' && (
+          <span className="dsh-judge-note-bad" role="alert">
+            {t('save.failed').replace('{error}', state.saveError)}
+          </span>
+        )}
+      </div>
+      {checks !== undefined && <div className="dsh-judge-actions-group">{checks}</div>}
     </div>
   );
 
@@ -379,25 +414,6 @@ export function JudgeDispatchPanel(
       <div className="dsh-judge-section">
         <div className="dsh-judge-head">
           <span className="dsh-judge-title">{t('judge.title')}</span>
-          {/* 预览与试通都是「这套设置会怎样」的检查，跟着设置一起放，不另占一块。 */}
-          <div className="dsh-judge-head-actions">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={probing || state.dirty}
-              onClick={() => void runProbe()}
-            >
-              {probing ? t('judge.probing') : t('judge.probe')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={state.dirty}
-              onClick={() => void openPreview()}
-            >
-              {t('preview.open')}
-            </Button>
-          </div>
         </div>
         <div className="dsh-judge-desc">{t('judge.desc')}</div>
 
@@ -522,7 +538,28 @@ export function JudgeDispatchPanel(
         )}
         {state.dirty && <div className="dsh-judge-hint">{t('preview.blocked')}</div>}
 
-        {saveRow('judge', state.judgeDirty, () => void dispatchCardStore.save('judge'))}
+        {/* 试通与预览问的都是「这一节存下去会怎样」，所以跟着这一节的保存走：
+            左边写下去，右边查现在这份。 */}
+        {saveRow('judge', state.judgeDirty, () => void dispatchCardStore.save('judge'), (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={probing || state.dirty}
+              onClick={() => void runProbe()}
+            >
+              {probing ? t('judge.probing') : t('judge.probe')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={state.dirty}
+              onClick={() => void openPreview()}
+            >
+              {t('preview.open')}
+            </Button>
+          </>
+        ))}
       </div>
 
       <div className="dsh-judge-section">
@@ -596,26 +633,38 @@ export function JudgeDispatchPanel(
         {state.log.length > 0 && (
           <div className="dsh-judge-log">
             <div className="dsh-judge-log-row dsh-judge-log-head">
-              <span>{t('log.colProvider')}</span>
-              <span>{t('log.colModel')}</span>
-              <span>{t('log.colEffort')}</span>
+              <span>{t('log.colResult')}</span>
+              <span>{t('log.colChoice')}</span>
+              <span>{t('log.colParent')}</span>
+              <span>{t('log.colChild')}</span>
               <span>{t('log.colTime')}</span>
               <span>{t('log.colLatency')}</span>
             </div>
-            {state.log.map((entry, index) => (
-              <button
-                key={index}
-                type="button"
-                className="dsh-judge-log-row"
-                onClick={() => setDetail(entry)}
-              >
-                <span className="dsh-judge-cell-clip" title={entry.provider}>{entry.provider || '—'}</span>
-                <span className="dsh-judge-cell-clip" title={entry.model}>{entry.model || '—'}</span>
-                <span>{entry.effort || '—'}</span>
-                <span>{new Date(entry.at).toLocaleTimeString()}</span>
-                <span>{t('ms').replace('{value}', String(entry.latencyMs))}</span>
-              </button>
-            ))}
+            {state.log.map((entry, index) => {
+              // 判成了写类型编号；没判成就写「未判成」，原因留给悬停——那一列宽度
+              // 是给编号留的，塞一段原因会把六列的宽度全挤歪。
+              const result = entry.typeId === null
+                ? {
+                  text: t('log.resultInherited'),
+                  hint: entry.reason === undefined ? '' : reasonText(entry.reason),
+                }
+                : { text: t('log.resultJudged').replace('{id}', String(entry.typeId)), hint: '' };
+              return (
+                <button
+                  key={index}
+                  type="button"
+                  className="dsh-judge-log-row"
+                  onClick={() => setDetail(entry)}
+                >
+                  <LogCell text={result.text} hint={result.hint} />
+                  <LogCell text={describeChoice(entry) || '—'} />
+                  <LogCell text={entry.parentTitle || '—'} />
+                  <LogCell text={entry.childLabel || '—'} />
+                  <span>{new Date(entry.at).toLocaleTimeString()}</span>
+                  <span>{t('ms').replace('{value}', String(entry.latencyMs))}</span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -666,36 +715,23 @@ export function JudgeDispatchPanel(
         </div>
       </Modal>
 
+      {/* 判断详情这一处只回答一个问题：这次到底发给判断模型什么。行上那几列已经写清了
+          结果、选择、谁派的活、耗时，弹窗再列一遍只是把同一件事说两次。 */}
       <Modal
         open={detail !== null}
         onClose={() => setDetail(null)}
-        title={t('log.detailTitle')}
-        closeLabel={t('log.detailClose')}
+        title={t('log.promptTitle')}
+        closeLabel={t('log.promptClose')}
+        description={t('log.promptDesc')}
+        className="dsh-judge-modal"
       >
-        {detail !== null && (
-          <div className="dsh-judge-detail">
-            <span>{t('log.detailSource')}</span>
-            <span>
-              {detail.source === 'judged'
-                ? t('log.sourceJudged').replace('{id}', String(detail.typeId ?? ''))
-                : t('log.sourceInherited').replace('{reason}', reasonText(detail.reason))}
-            </span>
-            <span>{t('log.detailProvider')}</span>
-            <span>{detail.provider || '—'}</span>
-            <span>{t('log.detailModel')}</span>
-            <span>{detail.model || '—'}</span>
-            <span>{t('log.detailEffort')}</span>
-            <span>{detail.effort || '—'}</span>
-            <span>{t('log.detailReason')}</span>
-            <span>{detail.reason === undefined ? '—' : reasonText(detail.reason)}</span>
-            <span>{t('log.detailLatency')}</span>
-            <span>{t('ms').replace('{value}', String(detail.latencyMs))}</span>
-            <span>{t('log.detailParent')}</span>
-            <span>{detail.parentTitle || '—'}</span>
-            <span>{t('log.detailChild')}</span>
-            <span style={{ whiteSpace: 'pre-wrap' }}>{detail.childLabel || '—'}</span>
-          </div>
-        )}
+        {detail !== null && (detail.prompt === ''
+          ? <div className="dsh-judge-desc">{t('log.promptEmpty')}</div>
+          : <CodeBlock
+            code={detail.prompt}
+            copyLabel={t('preview.copy')}
+            copiedLabel={t('preview.copied')}
+          />)}
       </Modal>
     </div>
   );

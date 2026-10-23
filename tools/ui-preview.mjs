@@ -194,8 +194,13 @@ const hostSheets = [
   join(dshRoot, 'packages/client/ui-theme/src/styles/design-platform.css'),
   join(dshRoot, 'packages/client/ui-theme/src/styles/gradient-shadow-text.css'),
   join(primitivesRoot, 'markdown/MarkdownText.module.css'),
+  join(primitivesRoot, 'markdown/CodeBlock.module.css'),
   join(primitivesRoot, 'Tag.module.css'),
   join(primitivesRoot, 'Button.module.css'),
+  join(primitivesRoot, 'Input.module.css'),
+  join(primitivesRoot, 'Switch.module.css'),
+  join(primitivesRoot, 'Modal.module.css'),
+  join(primitivesRoot, 'SegmentedTabs.module.css'),
 ].filter((path) => existsSync(path));
 
 const flatten = (text) => text.replace(/:global\(([^)]*)\)/g, '$1');

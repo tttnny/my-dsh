@@ -150,6 +150,21 @@ export function buildProbeRequest(model: string): JudgeRequest {
 }
 
 /**
+ * Serialize one request body the way the page shows it.
+ *
+ * Both the preview and a logged judgement display this text, while the call
+ * itself sends the same object compacted onto the wire. Deriving both from one
+ * body is what keeps the shown text from describing a different request than
+ * the one that went out.
+ *
+ * @param body - the request body.
+ * @returns the pretty-printed JSON.
+ */
+export function formatJudgeRequest(body: JudgeRequest): string {
+  return JSON.stringify(body, null, 2);
+}
+
+/**
  * The text the configuration page's preview shows.
  *
  * It is the request body minus the task text, because no task text exists until
@@ -160,8 +175,7 @@ export function buildProbeRequest(model: string): JudgeRequest {
  * @returns the pretty-printed preview text.
  */
 export function buildPreview(rows: readonly TypeRow[], model: string): string {
-  const body = buildJudgeRequest(rows, model, '（派工时才填）');
-  return JSON.stringify(body, null, 2);
+  return formatJudgeRequest(buildJudgeRequest(rows, model, '（派工时才填）'));
 }
 
 /** What reading the judge's answer produced. */

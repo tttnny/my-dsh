@@ -8,7 +8,13 @@
  * must never fail because the judge was unavailable.
  */
 
-import { PROBE_OPTION_ID, buildJudgeRequest, buildProbeRequest, readJudgeAnswer } from './judge-prompt.ts';
+import {
+  PROBE_OPTION_ID,
+  buildJudgeRequest,
+  buildProbeRequest,
+  formatJudgeRequest,
+  readJudgeAnswer,
+} from './judge-prompt.ts';
 import type { FallbackReason, JudgeOutcome, ProbeOutcome, TypeRow } from './types.ts';
 
 /** How long a judgement may take before it is abandoned. */
@@ -111,8 +117,13 @@ export async function judgeTaskType(
   const startedAt = Date.now();
   const elapsed = (): number => Date.now() - startedAt;
   if (endpoint.url.trim() === '' || endpoint.model.trim() === '' || rows.length === 0) {
-    return { kind: 'fallback', reason: 'unreachable', latencyMs: elapsed() };
+    return { kind: 'fallback', reason: 'unreachable', latencyMs: elapsed(), prompt: '' };
   }
+
+  const body = buildJudgeRequest(rows, endpoint.model.trim(), taskText);
+  // The body the log keeps is the one sent, not a re-built one: the reader
+  // opens it to see exactly what the judge was asked.
+  const prompt = formatJudgeRequest(body);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), JUDGE_TIMEOUT_MS);
@@ -131,24 +142,24 @@ export async function judgeTaskType(
         // would otherwise receive an empty Bearer and reject the call itself.
         ...endpoint.apiKey.trim() === '' ? {} : { authorization: `Bearer ${endpoint.apiKey.trim()}` },
       },
-      body: JSON.stringify(buildJudgeRequest(rows, endpoint.model.trim(), taskText)),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
     if (!response.ok) {
-      return { kind: 'fallback', reason: 'unreachable', latencyMs: elapsed() };
+      return { kind: 'fallback', reason: 'unreachable', latencyMs: elapsed(), prompt };
     }
     const payload: unknown = await response.json();
     const decision = readJudgeAnswer(payload, rows);
     if (decision.kind === 'empty') {
-      return { kind: 'fallback', reason: 'unmatched', latencyMs: elapsed() };
+      return { kind: 'fallback', reason: 'unmatched', latencyMs: elapsed(), prompt };
     }
     if (decision.kind === 'unmatched') {
-      return { kind: 'fallback', reason: 'unmatched', latencyMs: elapsed() };
+      return { kind: 'fallback', reason: 'unmatched', latencyMs: elapsed(), prompt };
     }
-    return { kind: 'matched', row: decision.row, latencyMs: elapsed() };
+    return { kind: 'matched', row: decision.row, latencyMs: elapsed(), prompt };
   } catch {
     const reason: FallbackReason = timedOut ? 'timeout' : 'unreachable';
-    return { kind: 'fallback', reason, latencyMs: elapsed() };
+    return { kind: 'fallback', reason, latencyMs: elapsed(), prompt };
   } finally {
     clearTimeout(timer);
     controller.signal.removeEventListener('abort', onTimeout);

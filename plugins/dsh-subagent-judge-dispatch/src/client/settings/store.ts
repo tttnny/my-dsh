@@ -50,12 +50,13 @@ export interface LogRow {
   provider: string;
   model: string;
   effort: string;
-  source: 'judged' | 'inherited';
   reason?: string;
   at: number;
   latencyMs: number;
   parentTitle: string;
   childLabel: string;
+  /** The exact request body that went to the judge; '' when none went out. */
+  prompt: string;
 }
 
 /** Which of the two sections a save writes. */
@@ -245,6 +246,25 @@ export function readRow(value: unknown): TypeRowDraft {
     model: text('model'),
     effort: text('effort'),
   };
+}
+
+/**
+ * The three route fields of one log row as a single scanned value.
+ *
+ * The list shows one "choice" cell rather than three, because provider, model
+ * and effort are read together — "which route did this child run on". The three
+ * are joined with the same middle dot the model menu uses, and a blank field is
+ * dropped rather than left as a dangling separator on a fallback row that kept
+ * only a partially known inherited route.
+ *
+ * @param row - the provider, model and effort to join.
+ * @returns the joined text, or '' when all three are blank.
+ */
+export function describeChoice(row: Pick<LogRow, 'provider' | 'model' | 'effort'>): string {
+  return [row.provider, row.model, row.effort]
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+    .join(' · ');
 }
 
 /**

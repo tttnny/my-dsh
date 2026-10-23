@@ -43,6 +43,7 @@ export {
   ALLOWED_MODELS_NAMESPACE,
   buildModelOptions,
   createDispatchRemote,
+  describeChoice,
   dispatchCardStore,
   readRow,
   SETTINGS_NAMESPACE,

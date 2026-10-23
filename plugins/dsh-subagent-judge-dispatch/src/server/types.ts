@@ -40,6 +40,8 @@ export type JudgeOutcome =
     row: TypeRow;
     /** How long the judgement call took, in milliseconds. */
     latencyMs: number;
+    /** The request body that went out, pretty-printed; '' when none was sent. */
+    prompt: string;
   }
   | {
     /** The judgement did not produce a rewrite. */
@@ -48,6 +50,8 @@ export type JudgeOutcome =
     reason: FallbackReason;
     /** How long the judgement call took, in milliseconds. */
     latencyMs: number;
+    /** The request body that went out, pretty-printed; '' when none was sent. */
+    prompt: string;
   };
 
 /** What one connectivity check found. */
@@ -75,8 +79,6 @@ export interface LogEntry {
   model: string;
   /** Effort the child was given, or the effort it kept on a fallback. */
   effort: string;
-  /** Where the route came from: the judgement, or the main agent. */
-  source: 'judged' | 'inherited';
   /** Why it fell back; absent on a matched judgement. */
   reason?: FallbackReason;
   /** When the delegation was judged, as an epoch millisecond. */
@@ -87,4 +89,6 @@ export interface LogEntry {
   parentTitle: string;
   /** The subagent's delegation description. */
   childLabel: string;
+  /** The exact request body sent to the judge, pretty-printed; '' when none went out. */
+  prompt: string;
 }

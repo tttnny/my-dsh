@@ -21,6 +21,7 @@ import {
   buildJudgeRequest,
   buildPreview,
   buildProbeRequest,
+  QUESTION_INSTRUCTIONS,
   readChoice,
   readJudgeAnswer,
   selectableRows,
@@ -242,6 +243,54 @@ await test('判断调用：成功时带回选中的行与耗时', async () => {
   assert.equal(outcome.kind, 'matched');
   assert.equal(outcome.row.description, '评审代码');
   assert.ok(Number.isFinite(outcome.latencyMs));
+  // 弹窗里给读者看的就是这次真正发出去的那段：任务文字也在里面，不是预览里那个占位。
+  assert.deepEqual(JSON.parse(outcome.prompt), {
+    model: 'judge-x',
+    state: { message: '任务正文' },
+    questions: {
+      task_type: {
+        type: 'choice',
+        instructions: QUESTION_INSTRUCTIONS,
+        criteria: { '2': '评审代码' },
+      },
+    },
+  });
+});
+
+await test('判断调用：失败时也带回那次发出去的请求体', async () => {
+  const outcome = await judgeTaskType(
+    { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
+    [row({ id: 1 })],
+    '任务正文',
+    async () => new Response('nope', { status: 500 }),
+  );
+  assert.equal(outcome.kind, 'fallback');
+  assert.equal(JSON.parse(outcome.prompt).state.message, '任务正文', '没判成也要能看发出去的请求');
+});
+
+await test('判断调用：没发出请求时提示词为空，页面据此说「没有发出请求」', async () => {
+  const outcome = await judgeTaskType(
+    { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
+    [],
+    '任务正文',
+    async () => new Response('{}', { status: 200 }),
+  );
+  assert.equal(outcome.kind, 'fallback');
+  assert.equal(outcome.prompt, '');
+});
+
+await test('页面显示的提示词与实际发出去的请求体逐字一致', async () => {
+  let sent;
+  const outcome = await judgeTaskType(
+    { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
+    [row({ id: 1 }), row({ id: 2, description: '评审代码' })],
+    '任务正文',
+    async (_url, init) => {
+      sent = JSON.parse(init.body);
+      return new Response(JSON.stringify({ answers: { task_type: { choice: '1' } } }), { status: 200 });
+    },
+  );
+  assert.deepEqual(JSON.parse(outcome.prompt), sent);
 });
 
 await test('判断调用：没有清单可选项时不发请求', async () => {
@@ -282,8 +331,8 @@ await test('日志：留最近 20 条，新的在前', () => {
   const store = new LogStore();
   for (let i = 1; i <= LOG_LIMIT + 5; i += 1) {
     store.append({
-      typeId: i, provider: 'p', model: 'm', effort: 'low', source: 'judged', at: i,
-      latencyMs: 1, parentTitle: 'p', childLabel: 'c',
+      typeId: i, provider: 'p', model: 'm', effort: 'low', at: i,
+      latencyMs: 1, parentTitle: 'p', childLabel: 'c', prompt: '',
     });
   }
   const list = store.list();
@@ -295,11 +344,13 @@ await test('日志：留最近 20 条，新的在前', () => {
 await test('日志：读出来的副本改不动内部记录', () => {
   const store = new LogStore();
   store.append({
-    typeId: 1, provider: 'p', model: 'm', effort: 'low', source: 'judged', at: 1,
-    latencyMs: 1, parentTitle: 'p', childLabel: 'c',
+    typeId: 1, provider: 'p', model: 'm', effort: 'low', at: 1,
+    latencyMs: 1, parentTitle: 'p', childLabel: 'c', prompt: '{"model":"judge-x"}',
   });
   store.list()[0].model = 'tampered';
+  store.list()[0].prompt = 'tampered';
   assert.equal(store.list()[0].model, 'm');
+  assert.equal(store.list()[0].prompt, '{"model":"judge-x"}');
 });
 
 await test('配置读取：编号按位置给，永远从 1 连着', () => {

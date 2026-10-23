@@ -52,19 +52,126 @@ function inline(text) {
   return nodes;
 }
 
-/** 宿主的按钮薄壳：外观靠它真实的 `Button` 类。 */
-export function Button(props) {
+/** 宿主的按钮薄壳：外观靠它真实的 `button` / `variant` / `size` 类。 */
+export function Button({ variant = 'ghost', size = 'md', icon, children, className, ...rest }) {
   return createElement(
     'button',
-    { type: 'button', className: `button outline sm ${String(props.className ?? '')}`.trim(), onClick: props.onClick },
-    props.icon ?? null,
-    props.children,
+    { type: 'button', className: `button ${variant} ${size} ${String(className ?? '')}`.trim(), ...rest },
+    icon === undefined ? null : createElement('span', { className: 'icon' }, icon),
+    children,
   );
 }
 
 /** 宿主的标签薄壳：靠它真实的 `Tag` 类。 */
 export function Tag(props) {
   return createElement('span', { className: `tag tag-${String(props.tone ?? 'outline')} ${String(props.className ?? '')}`.trim() }, props.children);
+}
+
+/** 宿主的输入框薄壳：真组件把 input 包在 `.wrap` 里，类名落在外面那层——插件的宽度规则就是照这个写的。 */
+export function Input({ className, icon, ...rest }) {
+  return createElement(
+    'span',
+    { className: `wrap ${String(className ?? '')}`.trim() },
+    icon === undefined ? null : createElement('span', { className: 'icon' }, icon),
+    createElement('input', { className: 'input', ...rest }),
+  );
+}
+
+/** 宿主的开关薄壳：外观键在 `aria-checked` 上（真组件按它取色）。 */
+export function Switch({ checked, onChange, label, disabled }) {
+  return createElement(
+    'button',
+    {
+      type: 'button',
+      role: 'switch',
+      className: 'switch',
+      'aria-checked': checked === true,
+      'aria-label': label,
+      disabled: disabled === true,
+      onClick: () => onChange?.(checked !== true),
+    },
+    createElement('span', { className: 'thumb' }),
+  );
+}
+
+/** 宿主的标签页薄壳：靠它真实的 `tabs` / `tab` 类。 */
+export function SegmentedTabs({ items, value, onChange, label }) {
+  return createElement(
+    'div',
+    { className: 'tabs', role: 'tablist', 'aria-label': label },
+    items.map((item) => createElement(
+      'button',
+      {
+        key: item.value,
+        type: 'button',
+        id: item.id,
+        role: 'tab',
+        className: 'tab',
+        'aria-selected': item.value === value,
+        'aria-controls': item.panelId,
+        onClick: () => onChange(item.value),
+      },
+      item.label,
+    )),
+  );
+}
+
+/** 宿主的弹窗薄壳：靠它真实的 `root` / `dialog` / `body` 类，预览里只画打开的那一种。 */
+export function Modal({ open, onClose, title, closeLabel, description, children, className }) {
+  if (open !== true) return null;
+  return createElement(
+    'div',
+    { className: 'root' },
+    createElement('div', { className: 'mask', onClick: onClose }),
+    createElement(
+      'div',
+      { className: `dialog ${String(className ?? '')}`.trim(), role: 'dialog', 'aria-label': title },
+      createElement(
+        'div',
+        { className: 'content' },
+        createElement(
+          'div',
+          { className: 'header' },
+          createElement('h2', { className: 'title' }, title),
+          createElement('button', { type: 'button', className: 'close', 'aria-label': closeLabel, onClick: onClose }, '×'),
+        ),
+        description === undefined ? null : createElement('p', { className: 'description' }, description),
+        createElement('div', { className: 'body' }, children),
+      ),
+    ),
+  );
+}
+
+/** 宿主的代码块薄壳：真组件的 shiki 高亮进不来，这里保住 `block` / `content` 的外框与等宽字。 */
+export function CodeBlock({ code, copyLabel }) {
+  return createElement(
+    'div',
+    { className: 'block plain' },
+    createElement('div', { className: 'banner' }, createElement('span', { className: 'infostring' }, copyLabel)),
+    createElement('div', { className: 'content' }, createElement('pre', null, createElement('code', null, code))),
+  );
+}
+
+/**
+ * 宿主的菜单薄壳：真组件是带定位的浮层，预览里把锚点与选项原样摊开。
+ * @param {object} props - `anchor` 与 `items`（`{ id, label }` 或 `{ type: 'label', text }`）。
+ * @returns {import('react').ReactNode} 渲染结果。
+ */
+export function Menu({ anchor, items = [], onSelect, open }) {
+  return createElement(
+    'span',
+    null,
+    anchor,
+    open === true
+      ? createElement(
+        'div',
+        null,
+        items.map((item) => (item.type === 'label'
+          ? createElement('div', { key: item.id }, item.text)
+          : createElement('button', { key: item.id, type: 'button', onClick: () => onSelect?.(item.id) }, item.label))),
+      )
+      : null,
+  );
 }
 
 /** markdown 链接代理：真的那个只用 context 传 openFile，预览里不需要任何行为。 */

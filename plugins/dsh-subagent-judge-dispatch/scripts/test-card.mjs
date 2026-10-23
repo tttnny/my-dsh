@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   buildModelOptions,
+  describeChoice,
   DispatchCardStore,
   readRow,
   routeKey,
@@ -396,6 +397,20 @@ await test('存下来的行读得回来，缺字段当空串', () => {
     description: 'a', provider: 'p', model: '', effort: '',
   });
   assert.deepEqual(readRow(null), { description: '', provider: '', model: '', effort: '' });
+});
+
+await test('「选择」一列把供应商、模型、强度连成一段', () => {
+  assert.equal(
+    describeChoice({ provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'high' }),
+    'magpie · deepseek/deepseek-flash · high',
+  );
+});
+
+await test('「选择」一列不留下悬空的分隔点', () => {
+  // 退回时强度可能读不到，那条路不该写成「magpie · 模型 · 」。
+  assert.equal(describeChoice({ provider: 'magpie', model: 'm', effort: '' }), 'magpie · m');
+  assert.equal(describeChoice({ provider: '', model: 'm', effort: 'low' }), 'm · low');
+  assert.equal(describeChoice({ provider: '  ', model: '  ', effort: '  ' }), '');
 });
 
 await test('描述空或重了都不让存', () => {
