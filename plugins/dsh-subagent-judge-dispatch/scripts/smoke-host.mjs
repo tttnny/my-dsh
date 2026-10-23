@@ -64,38 +64,59 @@ const RETURN_GUIDANCE =
   'Your parent agent id is "session-main". Before you finish, send your result to that agent with '
   + 'send_message({ agent_id: "session-main", message: "<self-contained result>" }).';
 
+/** The delegation message itself, in the shape the Host builds it. */
+function delegationMessage(taskText) {
+  return {
+    source: { kind: 'user' },
+    content: [
+      { type: 'text', text: taskText },
+      { type: 'text', text: RETURN_GUIDANCE },
+    ],
+  };
+}
+
 /**
- * The messages a freshly delegated child's own log opens with.
+ * The events a freshly delegated child's own log opens with, in one of the two
+ * shapes its delegation takes.
  *
- * The shape is the Host's, in the Host's order: a working-directory notice
- * (user-role, but not the task), then the delegation message carrying the task
- * and the appended return guidance as two separate blocks. Reading the task
- * means telling these apart by source, and dropping the guidance.
+ * `pending` is what the first request sees: the delegation is spliced into the
+ * inbox and claimed at the step boundary, and it becomes a `user/message` only
+ * after the request this plugin hooks is answered. `committed` is the message
+ * after that append. A log may carry either, so the task must be readable from
+ * both.
+ *
+ * Alongside it sits a user-role message that is not the task: the
+ * working-directory notice. Reading the task means telling these apart by
+ * source, and dropping the appended guidance.
+ *
+ * @param taskText - the delegated task.
+ * @param options - `committed` selects the committed shape.
+ * @returns the child-owned events, in log order.
  */
-function delegatedMessages(taskText) {
+function delegatedMessages(taskText, { committed = false } = {}) {
+  const message = delegationMessage(taskText);
+  const notice = {
+    type: 'user/message',
+    data: {
+      source: { kind: 'working-directory' },
+      content: [{ type: 'text', text: 'The working directory changed from "/w" to "/w/child".' }],
+    },
+  };
+  if (committed) return [notice, { type: 'user/message', data: message }];
   return [
-    {
-      type: 'user/message',
-      data: {
-        source: { kind: 'working-directory' },
-        content: [{ type: 'text', text: 'The working directory changed from "/w" to "/w/child".' }],
-      },
-    },
-    {
-      type: 'user/message',
-      data: {
-        source: { kind: 'user' },
-        content: [
-          { type: 'text', text: taskText },
-          { type: 'text', text: RETURN_GUIDANCE },
-        ],
-      },
-    },
+    notice,
+    { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, inserted: [message] } },
+    { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, removedCount: 1, inserted: [] } },
   ];
 }
 
 /** A child agent whose durable facts say "subagent, delegated by the main one". */
-function childAgent(id = 'child-1', label = '跑一下测试', taskText = '把测试跑一遍') {
+function childAgent(
+  id = 'child-1',
+  label = '跑一下测试',
+  taskText = '把测试跑一遍',
+  options = {},
+) {
   return {
     id,
     options: { subagentDepth: 1 },
@@ -103,7 +124,7 @@ function childAgent(id = 'child-1', label = '跑一下测试', taskText = '把�
       header: { parentSession: 'session-main', delegationDepth: 1 },
       snapshotEvents: () => [
         { type: 'subagent/descriptor', data: { version: 3, mode: 'one-shot', provider: 'in-process', label } },
-        ...delegatedMessages(taskText),
+        ...delegatedMessages(taskText, options),
       ],
     },
   };
@@ -372,6 +393,26 @@ await test('任务正文很长时只取开头与结尾，中间被省掉的字�
   assert.match(message, /开头的要求。/);
   assert.match(message, /结尾的要求。/);
   assert.match(message, /characters omitted/, '省掉了多少要写出来，读者才分得清截断与短任务');
+});
+
+await test('第一次请求时派工消息还挂在收件箱里，也要读到正文', async () => {
+  // 判断就发生在这一步：派工消息是收件箱里的待办，宿主还没把它写成 user/message。
+  let body;
+  await judgeOnce(handlers, childAgent('child-pending'), RESOLVED, async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.match(body.state.message, /把测试跑一遍/, '收件箱事件里那段正文就是这次的活');
+});
+
+await test('已经落盘成 user/message 的那份也认，两次读到同一段正文', async () => {
+  // 第二步以后收件箱已清空，派工消息以 user/message 留在日志里。
+  let body;
+  await judgeOnce(handlers, childAgent('child-committed', '跑一下测试', '把测试跑一遍', { committed: true }), RESOLVED, async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.equal(body.state.message, 'Delegation label: 跑一下测试\n\n把测试跑一遍');
 });
 
 await test('叉出来的子代理只读自己的事件，不把祖先的文字送给判断模型', async () => {

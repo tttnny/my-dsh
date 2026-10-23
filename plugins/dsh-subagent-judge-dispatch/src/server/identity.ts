@@ -112,15 +112,23 @@ export function readChildLabel(agent: AgentLike): string {
 /**
  * Read the task the parent delegated.
  *
- * The delegation arrives as the child's first message whose `source.kind` is
- * `user`; every other producer writes user-role messages too — the working
- * directory notice, workspace instructions, the runtime snapshot, the skill
- * catalog, the time snapshot — so the source is what separates the task from
- * the context wrapped around it.
+ * The delegation is the message whose `source.kind` is `user`; every other
+ * producer writes user-role messages too — the working directory notice,
+ * workspace instructions, the runtime snapshot, the skill catalog, the time
+ * snapshot — so the source is what separates the task from the context wrapped
+ * around it.
  *
- * The Host appends its return guidance as one trailing block of that same
- * message. It tells the child how to report back, not what the job is, so it is
- * dropped: leaving it in would spend most of the subject on boilerplate.
+ * Two shapes carry that message, and both are read because the judgement runs
+ * before the second one exists. A delegation starts as pending inbox input, so
+ * it first appears inside an `agent/inbox/spliced` event; the Host claims it at
+ * the step boundary and only then appends the `user/message` carrying it. The
+ * judge is asked during the step's request, which is before that append — so
+ * reading only `user/message` would find nothing on the very request that
+ * matters. From the next step on the `user/message` is there instead.
+ *
+ * The Host appends its return guidance as one trailing block of that message.
+ * It tells the child how to report back, not what the job is, so it is dropped:
+ * leaving it in would spend most of the subject on boilerplate.
  *
  * Only the child's OWN events are read, because a forked child's log opens with
  * the parent's finished turns.
@@ -130,19 +138,41 @@ export function readChildLabel(agent: AgentLike): string {
  */
 export function readTaskText(agent: AgentLike): string {
   for (const event of ownEventsOf(agent.session)) {
-    if (event.type !== 'user/message') continue;
-    const source = sourceOf(event.data);
-    if (source?.kind !== 'user') continue;
-    const blocks = textBlocksOf(event.data);
-    // The guidance is appended last; a task that happens to open with the same
-    // words is still honored because only the trailing block is examined.
-    if (blocks.length > 1 && blocks[blocks.length - 1].startsWith(RETURN_GUIDANCE_PREFIX)) {
-      blocks.pop();
+    const candidates = delegationMessagesOf(event);
+    for (const data of candidates) {
+      const blocks = textBlocksOf(data);
+      // The guidance is appended last; a task that happens to open with the same
+      // words is still honored because only the trailing block is examined.
+      if (blocks.length > 1 && blocks[blocks.length - 1].startsWith(RETURN_GUIDANCE_PREFIX)) {
+        blocks.pop();
+      }
+      const text = blocks.join('\n').trim();
+      if (text !== '') return text;
     }
-    const text = blocks.join('\n').trim();
-    if (text !== '') return text;
   }
   return '';
+}
+
+/**
+ * The messages one event contributes, in log order.
+ *
+ * A delegation message is written twice across a child's life — once as pending
+ * inbox input, once as the committed `user/message` — so both event shapes are
+ * unwrapped here and the caller keeps the first usable one.
+ *
+ * @param event - one child-owned session event.
+ * @returns the delegation-shaped messages the event carries, possibly none.
+ */
+function delegationMessagesOf(event: SessionEventLike): unknown[] {
+  if (event.type === 'user/message') {
+    return sourceOf(event.data)?.kind === 'user' ? [event.data] : [];
+  }
+  if (event.type === 'agent/inbox/spliced') {
+    const inserted = (event.data as { inserted?: unknown } | undefined)?.inserted;
+    if (!Array.isArray(inserted)) return [];
+    return inserted.filter((message) => sourceOf(message)?.kind === 'user');
+  }
+  return [];
 }
 
 /** Read the durable producer facts off one message payload. */
