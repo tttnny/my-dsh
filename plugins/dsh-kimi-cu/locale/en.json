@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "KimiCU Desktop Access",
+    "description": "Connects the local KimiCU app: exposes its MCP server as mcp__kimi-cu__* tools and ships the kimi-cu skill for operating app interfaces."
+  }
+}

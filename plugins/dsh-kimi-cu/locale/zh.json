@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "KimiCU 桌面操作",
+    "description": "接上本机 KimiCU：把它的 mcp 服务挂成 mcp__kimi-cu__* 工具，并随包带一份操作界面用的 kimi-cu 技能。"
+  }
+}

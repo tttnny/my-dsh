@@ -1,0 +1,36 @@
+# @lynn123411/dsh-kimi-cu bundle patch
+# 声明在 package.json 的 dsh.bundle.patch，`dsh plugin --profile web add` 后自动并入 profile 层栈。
+#
+# 两行都是内核自带的包，本插件不带任何自有代码：
+#   - mcp-kimi-cu：把本机 KimiCU 的 `mcp -s user` 挂成 mcp__kimi-cu__* 工具。
+#   - skill-kimi-cu：另起一条技能行，只扫本包 `skills/`（随包带的那份 kimi-cu 技能）。
+#
+# 两行都带 macOS 守卫：KimiCU 只有 macOS 版，别的平台上插件装上也不生效，更不会因为
+# 找不到 /Applications/KimiCU.app 让宿主启动失败。
+- insert:
+    # KimiCU 的二进制在 app 包里，不是 PATH 上的命令。
+    - id: mcp-kimi-cu
+      name: '@deepseek-ai/dsh-mcp-client'
+      disabled: !!js process.platform !== 'darwin'
+      config:
+        serverName: kimi-cu
+        transport: stdio
+        command: /Applications/KimiCU.app/Contents/MacOS/kimi-cu
+        args: [mcp, -s, user]
+        # 没装 KimiCU 时直接报错，而不是静默少掉一整排工具。
+        failOnStartupError: true
+
+    # 内核已经挂了一条默认的 skill-filesystem（项目 / 用户技能目录），这一条是给它加的邻居：
+    # providerName 另取一个名字，includeDefaultRoots 关掉默认目录，只扫本包的 skills/，
+    # 所以两边互不覆盖，也不会把用户的技能目录扫两遍。
+    #
+    # 路径必须写成包里解析出来的绝对路径：bundle patch 的 `!!js` 以 PROFILE 目录为 baseUrl，
+    # 相对路径 `./skills` 会落到 profile 自己身上。
+    - id: skill-kimi-cu
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      disabled: !!js process.platform !== 'darwin'
+      config:
+        providerName: kimi-cu
+        includeDefaultRoots: false
+        customSkillDirs:
+          - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@lynn123411/dsh-kimi-cu/package.json')), 'skills')

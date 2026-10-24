@@ -51,6 +51,12 @@
       <td><b>GUI 登录</b><br>模型调用一次工具就拿到这个 GUI 带 token 的地址：用它换一次会话 cookie，之后照常访问干净地址。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-web-auth-url</code></td>
     </tr>
+    <tr>
+      <td><b>🖥️ 桌面操作</b><br><i>读写本机 app 的界面</i></td>
+      <td><a href="./plugins/dsh-kimi-cu"><code>@lynn123411/dsh-kimi-cu</code></a></td>
+      <td><b>KimiCU 桌面操作</b><br>接上本机 KimiCU，让模型看见并操作 macOS 上已打开的应用窗口：观察、点击、输入、滚动、拖拽，随包带一份操作技能。</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-kimi-cu</code></td>
+    </tr>
   </tbody>
 </table>
 
