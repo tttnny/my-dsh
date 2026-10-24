@@ -28,6 +28,7 @@ async function test(name, fn) {
 }
 
 const { planAssistantRow } = await import('../src/client/chat/row-plan.ts');
+const { isConclusionRow, hasReplyContent, hasToolCall } = await import('../src/client/chat/conclusion.ts');
 const storeModule = await import('../src/client/chat/translate-store.ts');
 const { createTranslateStore, chunkTexts } = storeModule;
 const { isCleanHotspotClick } = await import('../src/client/chat/click-guard.ts');
@@ -291,6 +292,118 @@ await test('reasoning 分组不送译：texts 与本组渲染的正文块同域'
   });
   assert.deepEqual(response.texts, ['what']);
   assert.equal(response.entries[0].translated, '答案', 'response 行的第 0 块对齐 outcomes[0]');
+});
+
+await test('结论步骤的正文一律不译：整行不进送译清单，左缘什么都不出现', () => {
+  const blocks = [{ kind: 'text', text: '结论在这里，本来就是中文。' }];
+  const plan = planAssistantRow({
+    blocks,
+    streaming: false,
+    interrupted: false,
+    channel: 'ready',
+    conclusion: true,
+    outcomes: [{ translated: '不该被用上', ok: true }],
+  });
+  assert.deepEqual(plan.texts, [], '结论行没有可送译的正文');
+  assert.equal(plan.entries[0].type, 'prose');
+  assert.equal(plan.entries[0].translated, null, '结论行按原文呈现');
+  assert.equal(plan.entries[0].mark, null, '结论行不挂任何标记：没有窄带，也没有 ↻');
+
+  // 结论判据不吃「设置没配好」这一支：那不是失败，是这里不翻译。
+  const unconfigured = planAssistantRow({
+    blocks,
+    streaming: false,
+    interrupted: false,
+    channel: 'unconfigured',
+    conclusion: true,
+  });
+  assert.equal(unconfigured.entries[0].mark, null, '结论行的正文不报「设置没配好」');
+
+  // 空白块照旧不占位，结论与否都不改变这条。
+  const withBlank = planAssistantRow({
+    blocks: [{ kind: 'text', text: '  ' }, { kind: 'text', text: '正文' }],
+    streaming: false,
+    interrupted: false,
+    channel: 'ready',
+    conclusion: true,
+  });
+  assert.deepEqual(withBlank.texts, []);
+  assert.equal(withBlank.entries[0].mark, null);
+  assert.equal(withBlank.entries[1].mark, null);
+});
+
+await test('结论判据：宿主给了 answerStep 就用它，流式期间靠 step 序列与 tool-call 从严判断', () => {
+  const prose = [{ kind: 'text', text: 'x' }];
+  const withTool = [{ kind: 'text', text: 'x' }, { kind: 'tool-call' }];
+
+  // 1. 宿主已判定：answerStep 是权威。
+  assert.equal(
+    isConclusionRow({ status: 'settled', step: 2, blocks: prose, answerStep: 2 }),
+    true,
+    'answerStep 指到本行：是结论'
+  );
+  assert.equal(
+    isConclusionRow({ status: 'settled', step: 1, blocks: prose, answerStep: 2 }),
+    false,
+    'answerStep 指到别的 step：不是结论'
+  );
+
+  // 2. answerStep 还是 null（本轮消息未落定）：后面还有 step 就肯定不是结论。
+  assert.equal(
+    isConclusionRow({ status: 'running', step: 1, blocks: withTool, answerStep: null, turnSteps: [1, 2] }),
+    false,
+    '本轮还有第 2 步：第 1 步不是结论'
+  );
+  assert.equal(
+    isConclusionRow({ status: 'running', step: 2, blocks: prose, answerStep: null, turnSteps: [1, 2] }),
+    true,
+    '已经排在最后一步、又是纯正文：先按结论对待'
+  );
+
+  // 3. 带 tool-call 的 step 按宿主判据永远成不了结论，可以当场送译。
+  assert.equal(
+    isConclusionRow({ status: 'running', step: 2, blocks: withTool, answerStep: null }),
+    false,
+    '最后一步正在调工具：它不是结论行，照常送译'
+  );
+
+  // 4. 落定但 answerStep 仍为 null（本轮消息未落定）：按宿主判据的镜像判断——
+  //    最后一步、有读者看得见的正文、不含工具调用，就是结论。
+  assert.equal(
+    isConclusionRow({ status: 'settled', step: 3, blocks: prose, answerStep: null }),
+    true,
+    '落定的纯正文行按结论对待'
+  );
+  assert.equal(
+    isConclusionRow({ status: 'settled', step: 3, blocks: withTool, answerStep: null }),
+    false,
+    '落定的带工具行不是结论'
+  );
+  assert.equal(
+    isConclusionRow({ status: 'settled', step: 3, blocks: [{ kind: 'reasoning', text: 'r' }], answerStep: null }),
+    false,
+    '没有读者看得见的正文：谈不上结论行'
+  );
+
+  // 5. 没有轮次投影：判不了就是判不了，照旧送译——不能因为拿不到投影就把整段
+  //    正文悄悄关掉。
+  assert.equal(
+    isConclusionRow({ status: 'settled', step: 3, blocks: prose, answerStep: undefined }),
+    false,
+    '没有轮次投影时照旧送译'
+  );
+});
+
+await test('结论行与 reasoning 分组叠加：两组都不送译，texts 为空', () => {
+  const plan = planAssistantRow({
+    blocks: [{ kind: 'text', text: 'x' }],
+    streaming: false,
+    interrupted: false,
+    channel: 'ready',
+    groupPart: 'response',
+    conclusion: true,
+  });
+  assert.deepEqual(plan.texts, []);
 });
 
 // ---------------------------------------------------------------

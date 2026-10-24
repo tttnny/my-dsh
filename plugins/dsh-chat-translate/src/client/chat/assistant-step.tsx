@@ -44,6 +44,7 @@ import type {
 import { settingsStore } from '../settings/store.ts';
 import { growingTailIndex, planAssistantRow } from './row-plan.ts';
 import type { ChannelState } from './row-plan.ts';
+import { isConclusionRow } from './conclusion.ts';
 import { isCleanHotspotClick } from './click-guard.ts';
 import { hideHintBubble, placeHintBubble } from './hint-bubble.ts';
 import { rowCopy } from '../locales.ts';
@@ -87,7 +88,12 @@ interface NodeDataLike {
 interface TurnProcessLike {
   readonly foldable: boolean;
   readonly open: boolean;
-  readonly spec: { readonly answerStep: number; readonly inlineReasoning: boolean };
+  /**
+   * 宿主 `TurnProcessSpec` 的结构性镜像。`answerStep` 在宿主那里是可以为 null
+   * 的（本轮还没有落定的消息），镜像必须照实写，否则判据会在类型层面被当成
+   * 「永远有值」。
+   */
+  readonly spec: { readonly answerStep: number | null; readonly inlineReasoning: boolean };
   readonly setOpen: (open: boolean) => void;
 }
 
@@ -99,7 +105,14 @@ export interface AssistantStepProps {
   readonly store?: RowTranslateStore;
   readonly node: {
     readonly data: NodeDataLike;
-    readonly location?: { readonly kind?: string; readonly turn?: { readonly status?: string } };
+    /**
+     * 宿主 `TurnLocation` 的结构性镜像：本轮各 step 的号只用来判「后面还有没有
+     * 一步」，所以这里只声明 `step` 一个字段，不声明每一步的数据。
+     */
+    readonly location?: {
+      readonly kind?: string;
+      readonly turn?: { readonly status?: string; readonly steps?: readonly { readonly step: number }[] };
+    };
     readonly anchorSeq?: number;
   };
   readonly groupPart?: string;
@@ -556,6 +569,19 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
 
   // 计划层给出文本清单与渲染分支；行渲染先于挂载，池按当前文本登记。
   const blocks = useMemo(() => data.blocks ?? [], [data.blocks]);
+
+  // 结论步骤的正文一律不译：这一行把结论交给读者，通常已经是写好的中文，再送一遍
+  // 只换来等待与改坏的风险。判据集中在 conclusion.ts——宿主给的 answerStep 优先，
+  // 流式期间它还是 null，那里按「后面还有没有 step」与「有没有 tool-call」从严判断。
+  const turnSteps = turn?.steps?.map((entry) => entry.step);
+  const conclusion = isConclusionRow({
+    status: data.status,
+    step: data.step,
+    blocks,
+    answerStep: turnProcess?.spec.answerStep,
+    turnSteps,
+  });
+
   const plan = useMemo(
     () =>
       planAssistantRow({
@@ -565,15 +591,16 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
         groupPart,
         channel,
         outcomes: undefined,
+        conclusion,
       }),
-    [blocks, streaming, interrupted, groupPart, channel]
+    [blocks, streaming, interrupted, groupPart, channel, conclusion]
   );
 
   // 已经写完的块数：正文只往后追加，所以流式期间除了正在长的尾块，前面每一块的
   // 内容都不会再变——「写定」就是它们的送译许可，不必等整段回答结束。
   const frozenCount = useMemo(
-    () => (streaming ? growingTailIndex(blocks, groupPart) : plan.texts.length),
-    [blocks, groupPart, plan.texts.length, streaming]
+    () => (streaming ? growingTailIndex(blocks, groupPart, conclusion) : plan.texts.length),
+    [blocks, groupPart, conclusion, plan.texts.length, streaming]
   );
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -605,8 +632,9 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
         frozen: rowState?.settledThrough ?? frozenCount,
         retrying: rowState?.retrying,
         originalKeys,
+        conclusion,
       }),
-    [blocks, streaming, interrupted, groupPart, channel, rowState, frozenCount, originalKeys]
+    [blocks, streaming, interrupted, groupPart, channel, rowState, frozenCount, originalKeys, conclusion]
   );
 
   const reasoningHidden =
