@@ -27,7 +27,7 @@ export class LruDiskCache {
   private saveTimer: NodeJS.Timeout | null = null;
   private dirty = false;
 
-  constructor(maxEntries = 1000, fileName = 'cache.json', revision = PROMPT_REVISION) {
+  constructor(maxEntries = 1000, fileName = 'cache.json', revision: string = PROMPT_REVISION) {
     this.maxEntries = maxEntries;
     this.revision = revision;
     // Follow the DSH convention of component-owned home subdirectories
@@ -35,6 +35,25 @@ export class LruDiskCache {
     // dshHomePath mirrors resolveDshHome exactly: explicit configured home,
     // then $DSH_HOME (tilde-expanded), then ~/.dsh.
     this.filePath = dshHomePath('dsh-chat-translate', fileName);
+  }
+
+  /**
+   * Move the pool to the generation a prompt edit produced.
+   *
+   * Called whenever the prompt in force changes. A different revision means the
+   * entries already held were written under wording the reader has replaced, so
+   * they are dropped rather than served under the new prompt; the same revision
+   * is a no-op, so re-committing the same text costs nothing.
+   *
+   * @param revision - the generation the current prompt resolves to.
+   */
+  setRevision(revision: string): void {
+    if (revision === this.revision) return;
+    this.revision = revision;
+    if (this.cache.size === 0) return;
+    this.cache.clear();
+    this.dirty = true;
+    this.scheduleSave();
   }
 
   async init(): Promise<void> {

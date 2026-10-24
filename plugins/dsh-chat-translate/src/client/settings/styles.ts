@@ -86,6 +86,49 @@ export const SETTINGS_CSS = String.raw`
   width: 120px;
 }
 
+/*
+ * 提示词输入框：ui-primitives 没有多行控件，这里自己画一条 textarea，外观取
+ * Input 的同款令牌（细边框、行内代码字族、底色下陷一层）。高度由组件按内容
+ * 量出来写进 style（整段默认指令要一眼看全），这里只给一个不让它塌掉的下限。
+ *
+ * 默认是只读态（:read-only）：边框收淡、底色回到卡片那层，光标不动手；点
+ * 「编辑」后才换成可写的下陷观感，一眼能看出此刻改不改得动。
+ */
+.dsh-tidy-prompt {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  outline: none;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxs-12);
+  font-family: var(--ds-font-family-code);
+  line-height: 1.6;
+  overflow: hidden;
+  resize: none;
+}
+
+.dsh-tidy-prompt:read-only {
+  border-color: var(--dsw-alias-border-l2);
+  background: transparent;
+  cursor: default;
+}
+
+.dsh-tidy-prompt:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+/* 标题右侧的按钮组：编辑态多出「恢复默认」与「完成」，与标题同一行排开。 */
+.dsh-tidy-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .dsh-tidy-test-result {
   margin-left: 10px;
   font: var(--dsw-font-xxs-12);

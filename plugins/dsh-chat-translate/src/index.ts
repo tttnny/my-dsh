@@ -10,6 +10,7 @@ import {
 } from './server/config.ts';
 import { CredentialsReader, TRANSLATE_API_KEY_REF } from './server/credentials.ts';
 import { LruDiskCache } from './server/cache.ts';
+import { cacheRevision } from './server/prompt-revision.ts';
 import { TranslationDispatcher } from './server/dispatcher.ts';
 import { createFetchRoutes } from './server/router.ts';
 
@@ -43,6 +44,8 @@ export const Config = z.object({
     .volatile(),
   baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl).volatile(),
   model: z.string().default(DEFAULT_CONFIG.model).volatile(),
+  // 发给模型的指令正文：空着用内置默认（`src/prompt.ts`），写了就整段以这里为准。
+  prompt: z.string().default(DEFAULT_CONFIG.prompt).volatile(),
 });
 
 interface HostContext {
@@ -76,7 +79,9 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
     createLiveConfigSource((listener) => ctx.on('loader/volatile-update', listener), config),
     credentials
   );
-  const cache = new LruDiskCache(1000);
+  // 缓存池的世代跟着「此刻生效的提示词」走：启动时就用当前提示词的世代去读盘，
+  // 否则一份提示词没改过的池会被当成上一代整池丢掉，每次重启都白翻一遍。
+  const cache = new LruDiskCache(1000, 'cache.json', cacheRevision(configManager.getConfig().prompt));
   const dispatcher = new TranslationDispatcher(configManager, cache, credentials);
 
   // This entry's configuration surface is the card in the DSH **Plugins** page,

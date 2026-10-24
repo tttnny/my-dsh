@@ -3,6 +3,7 @@ export interface PluginConfig {
   aiTimeoutMs: number; // AI request timeout for one packed reply batch
   baseUrl: string; // OpenAI-compatible base URL; empty = AI not configured
   model: string; // model name; empty = AI not configured
+  prompt: string; // translator instruction; empty = the built-in default
 }
 
 /** Per-request knobs an adapter may honor; channels that cannot use them ignore the argument. */

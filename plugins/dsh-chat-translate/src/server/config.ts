@@ -22,6 +22,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
   aiTimeoutMs: 600000,
   baseUrl: '',
   model: '',
+  prompt: '',
 };
 
 /**
@@ -50,6 +51,7 @@ export interface PluginConfigRefs {
   readonly aiTimeoutMs: Volatile<number>;
   readonly baseUrl: Volatile<string>;
   readonly model: Volatile<string>;
+  readonly prompt: Volatile<string>;
 }
 
 /**
@@ -63,6 +65,7 @@ export function readPluginConfig(refs: PluginConfigRefs): PluginConfig {
     aiTimeoutMs: refs.aiTimeoutMs.get(),
     baseUrl: refs.baseUrl.get(),
     model: refs.model.get(),
+    prompt: refs.prompt.get(),
   };
 }
 

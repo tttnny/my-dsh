@@ -12,8 +12,6 @@ export const NS = 'settings.chatTranslate';
 export const zh = {
   masterTitle: '翻译总开关',
   enableTranslation: '启用翻译',
-  masterDesc:
-    '自动把助手回答正文翻成中文（如 {example}）：折叠块里的过程正文与最终汇总一视同仁，整段中文的块也照送，由模型一并改写成自然中文、顺掉机器腔。Think 卡与工具调用行不翻，代码块原样保留。正文的排版与原生完全一致，左缘不画任何标记。切换不在正文上：贴着正文左缘的一条透明窄带才是操作区，鼠标移到它上面变手型，点一下在译文与原文间切换，再点一下切回来——正文整块不响应点击，选字、拖选复制都不会误触；模型认为原样最好、返回一模一样的文字时同样算翻译过、同样可切。翻译失败时这一段保持原文，左缘只留下一个小 ↻：鼠标停上去出气泡报出通道细节（超时、断流或空返回），点它整行重新翻译，等待期间它原地转圈且不能重复点；已经成功的段落保持显示不打扰。通道失败不自动重试，恢复后由你点 ↻ 救活。译文按原 markdown 格式重新渲染，表格、列表、加粗与行内代码保持结构。回答还在流式输出时不翻，落定后按阅读顺序逐段出中文。只作用于当前查看的会话，译文不写回会话上下文。输入框下方那一行有同款开关，两处状态同步。',
 
   aiTitle: 'AI 翻译（OpenAI 兼容协议）',
   aiRule: '只有这一条通道：Key / Base URL / 模型齐备才会翻译，缺任何一项都保持原文。',
@@ -48,9 +46,11 @@ export const zh = {
   saveProbeOk: '设置已保存，通道连接正常',
   saveProbeFail: '设置已保存，但通道探测失败：{error}',
 
-  behaviorTitle: '翻译范围',
-  behaviorRule:
-    '助手回答正文一律翻译，包括最终汇总与整段中文的块：中文块同样交给模型改写成自然中文，意义、术语与数字不变；空白块不送译、左缘不出现任何标记。思考链正文、工具调用标题与折叠摘要不翻译，代码块及其内部原样保留。',
+  promptTitle: '翻译提示词',
+  promptDesc: '发给翻译模型的系统指令。点「编辑」可以改写，改完点下面的「保存」生效；留空等于用内置默认。',
+  promptEdit: '编辑',
+  promptDone: '完成',
+  promptRestore: '恢复默认',
 
   dockLabel: '译',
   dockOn: '正文翻译已开启，点击关闭',
@@ -75,8 +75,6 @@ export type ChatTranslateLocaleKey = keyof typeof zh;
 export const en: Record<ChatTranslateLocaleKey, string> = {
   masterTitle: 'Translation master switch',
   enableTranslation: 'Enable translation',
-  masterDesc:
-    'Automatically translates assistant reply prose (e.g. {example}) into Chinese: text inside disclosure blocks and the final summary are treated alike, and blocks written entirely in Chinese go through the model too, which rewrites them into natural Chinese and smooths out machine-flavored phrasing. Think cards and tool-call rows are never translated, and code blocks stay untouched. Prose keeps the host\'s own layout — nothing is drawn at its left edge. Switching does not live on the prose: a transparent slim strip hugging its left edge is the control — the pointer turns into a hand over it, and one click swaps translation and original, another swaps back, while the prose itself never reacts to clicks, so selecting or drag-copying text never triggers a swap by accident. A reply the model returned unchanged still counts as translated and stays switchable. When a block fails to translate it stays in its original language with a small ↻ left beside it: hover that button for the channel detail (a timeout, a broken stream or an empty return), click it to re-run the whole row, and while it waits the icon spins in place and cannot be clicked again; blocks that already succeeded stay on screen undisturbed. Channel failures are never retried automatically: once the channel recovers, a click on ↻ revives the row. Translations are re-rendered as Markdown, so tables, lists, bold runs and inline code keep their structure. A reply that is still streaming is left alone until it settles, then prose turns to Chinese paragraph by paragraph in reading order. Applies to the session you are viewing only; translations never enter the conversation context. The same switch sits on the row below the composer, sharing its state.',
 
   aiTitle: 'AI translation (OpenAI-compatible)',
   aiRule:
@@ -112,9 +110,11 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   saveProbeOk: 'Settings saved; the channel answered',
   saveProbeFail: 'Settings saved, but the channel probe failed: {error}',
 
-  behaviorTitle: 'What gets translated',
-  behaviorRule:
-    'All assistant reply prose, the final summary and Chinese-only blocks included: Chinese blocks are also handed to the model, which rewrites them into natural Chinese while keeping meaning, terms and numbers unchanged; blank blocks are never sent and never marked. Think-chain text, tool-call titles and folded summaries are never translated; code blocks and their contents stay untouched.',
+  promptTitle: 'Translation prompt',
+  promptDesc: 'The system instruction the translation model receives. Press Edit to rewrite it, then Save to apply; an empty field means the built-in default.',
+  promptEdit: 'Edit',
+  promptDone: 'Done',
+  promptRestore: 'Restore default',
 
   dockLabel: 'Translate',
   dockOn: 'Translation is on; click to turn it off',

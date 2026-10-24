@@ -38,6 +38,7 @@ function stubProbe(response) {
 
 const { settingsStore, TRANSLATE_API_KEY_REF, parseTimeout, AI_TIMEOUT_MIN, AI_TIMEOUT_MAX } =
   await import('../src/client/settings/store.ts');
+const { DEFAULT_PROMPT } = await import('../src/prompt.ts');
 
 let passed = 0;
 let total = 0;
@@ -229,6 +230,55 @@ await testAsync('超时草稿不合法时拦住保存，草稿留着供改正', 
   await settingsStore.save();
   assert.equal(form.mutations.length, 0, '不合法就一个字都不写');
   assert.equal(settingsStore.getState().aiTimeoutMs.text, 'abc', '草稿留着，不是丢弃');
+});
+
+await testAsync('提示词输入框显示生效的那份：没写过就整段显示内置默认，且不算改动', async () => {
+  const form = makeForm({ baseUrl: 'http://x', model: 'm' });
+  settingsStore.attach(form, makeRemote());
+  await sleep(10);
+  const s = settingsStore.getState();
+  assert.equal(s.committed.prompt, '', '文档里存的是空值');
+  assert.equal(s.prompt.text, DEFAULT_PROMPT, '输入框显示生效的默认指令');
+  assert.equal(s.dirty, false, '显示默认不等于有改动');
+  await settingsStore.save();
+  assert.equal(form.mutations.length, 0, '没动就不写一条记录');
+});
+
+await testAsync('改写提示词：先停在草稿里，点保存写一条 set', async () => {
+  const form = makeForm({ baseUrl: 'http://x', model: 'm' });
+  settingsStore.attach(form, makeRemote());
+  await sleep(10);
+  settingsStore.draft('prompt', '把这段话当成人话重写。');
+  assert.equal(form.mutations.length, 0, '打字期间不写盘');
+  assert.equal(settingsStore.getState().dirty, true);
+  await settingsStore.save();
+  assert.deepEqual(form.mutations, [
+    { op: 'set', path: ['prompt'], value: '把这段话当成人话重写。' },
+  ]);
+  assert.equal(settingsStore.getState().committed.prompt, '把这段话当成人话重写。');
+  assert.equal(settingsStore.getState().dirty, false);
+});
+
+await testAsync('一字不差贴回默认 = 回到默认：写 unset 而不是把默认抄进配置', async () => {
+  const form = makeForm({ baseUrl: 'http://x', model: 'm', prompt: '我自己写的一段' });
+  settingsStore.attach(form, makeRemote());
+  await sleep(10);
+  settingsStore.draft('prompt', DEFAULT_PROMPT);
+  await settingsStore.save();
+  assert.deepEqual(form.mutations, [{ op: 'unset', path: ['prompt'] }]);
+  assert.equal(settingsStore.getState().committed.prompt, '');
+  assert.equal(settingsStore.getState().prompt.text, DEFAULT_PROMPT, '输入框仍显示生效的默认');
+});
+
+await testAsync('恢复默认只是填回草稿，仍然要点保存才写盘', async () => {
+  const form = makeForm({ baseUrl: 'http://x', model: 'm', prompt: '我自己写的一段' });
+  settingsStore.attach(form, makeRemote());
+  await sleep(10);
+  settingsStore.restoreDefaultPrompt();
+  assert.equal(settingsStore.getState().prompt.text, DEFAULT_PROMPT);
+  assert.equal(form.mutations.length, 0, '恢复默认不写盘');
+  await settingsStore.save();
+  assert.deepEqual(form.mutations, [{ op: 'unset', path: ['prompt'] }]);
 });
 
 await testAsync('总开关是唯一即时生效的项：拨一下就写，不必点保存', async () => {

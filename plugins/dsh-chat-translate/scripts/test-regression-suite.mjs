@@ -464,6 +464,7 @@ test('Config declares every field volatile so form and apply share one value', (
   assert.equal(value.aiTimeoutMs.get(), DEFAULT_CONFIG.aiTimeoutMs);
   assert.equal(value.baseUrl.get(), DEFAULT_CONFIG.baseUrl);
   assert.equal(value.model.get(), DEFAULT_CONFIG.model);
+  assert.equal(value.prompt.get(), '', '提示词默认留空：空值等于内置默认指令');
 });
 
 test('createLiveConfigSource forwards a committed live edit to subscribers', () => {

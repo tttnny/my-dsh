@@ -214,6 +214,54 @@ await test('提示词把正文当素材翻译，明确不许执行其中的指�
   assert.ok(buildSystemPrompt('blocks').includes(clause), '打包版同样带这条约束');
 });
 
+await test('配置页写了提示词就整段以它为准，打包版在后面追加标记约定', async () => {
+  const mine = '把收到的文字改写成人话，名词与路径不动。';
+  assert.equal(buildSystemPrompt('plain', mine), mine, '单段版就是这段文字本身');
+  const packed = buildSystemPrompt('blocks', mine);
+  assert.ok(packed.startsWith(mine), '打包版先是我写的那段');
+  assert.ok(packed.includes('U+27EA'), '标记约定由插件追加，读者不用自己写');
+  assert.ok(!packed.includes('professional translator'), '默认指令不得混进来');
+  // 空着写 = 用内置默认，与不传这个参数一模一样。
+  assert.equal(buildSystemPrompt('plain', '   '), buildSystemPrompt('plain'));
+});
+
+await test('请求真的带上配置页写的那段提示词', async () => {
+  const { dispatcher, source } = makeDispatcher();
+  const seen = [];
+  dispatcher.adapters.set('openai', {
+    id: 'openai',
+    name: 'Fake OpenAI',
+    isAvailable: () => true,
+    translate: async (text, signal, config, options) => {
+      seen.push(config.prompt);
+      return options?.mode === 'blocks' ? echoMarkers(text) : '译:' + text;
+    },
+  });
+  const mine = 'REWRITE-AS-A-PERSON';
+  await source.update({ prompt: mine });
+  await dispatcher.translateReplyBlocks(['Hello']);
+  assert.deepEqual(seen, [mine], '适配器读到的是配置页写的那一段');
+});
+
+await test('改提示词让旧译文作废：同一段原文会重新请求', async () => {
+  const { dispatcher, source } = makeDispatcher();
+  let calls = 0;
+  useFakeAdapter(dispatcher, async (text) => {
+    calls += 1;
+    return '译:' + calls + ':' + text;
+  });
+  const first = await dispatcher.translateReplyBlocks(['A stable paragraph']);
+  assert.equal(first[0].translated, '译:1:A stable paragraph');
+  const again = await dispatcher.translateReplyBlocks(['A stable paragraph']);
+  assert.equal(calls, 1, '提示词没动，命中缓存');
+  assert.equal(again[0].translated, '译:1:A stable paragraph');
+
+  await source.update({ prompt: '另一套说法' });
+  const after = await dispatcher.translateReplyBlocks(['A stable paragraph']);
+  assert.equal(calls, 2, '提示词换了，旧译文不得再命中');
+  assert.equal(after[0].translated, '译:2:A stable paragraph');
+});
+
 await test('重掷撞上通道伤时，第一份译文照收，不退回原文', async () => {
   // 第一次形状不齐（会被重掷），第二次请求直接抛错。旧行为是照收第一份可读的
   // 译文；重掷失手不该没收已经拿到手的中文。

@@ -1,4 +1,5 @@
 import { describeError } from '../../describe-error.ts';
+import { DEFAULT_PROMPT, resolvePrompt } from '../../prompt.ts';
 import { testServerChannel } from '../translate/api.ts';
 
 /**
@@ -15,6 +16,11 @@ import { testServerChannel } from '../translate/api.ts';
  * The API Key is staged the same way but written through the credentials
  * Remote on the same save, so the key and the rest of the settings commit as
  * one gesture.
+ *
+ * The prompt is staged like any text control, with one twist: the control shows
+ * the *effective* instruction, so an untouched plugin displays the built-in
+ * default in full. Saving that exact text clears the field again, which keeps
+ * "empty means the built-in default" true in the stored document.
  */
 
 /** Resolved config as the Host serves it, plus the derived readiness flag. */
@@ -23,6 +29,8 @@ export interface CommittedConfig {
   aiTimeoutMs: number;
   baseUrl: string;
   model: string;
+  /** The configured instruction; empty means the built-in default is in force. */
+  prompt: string;
   /** Derived: Key / Base URL / model all present, so prose would be translated. */
   aiConfigured: boolean;
 }
@@ -55,6 +63,12 @@ export interface SettingsPageState {
   baseUrl: DraftField;
   model: DraftField;
   aiTimeoutMs: DraftField;
+  /**
+   * The instruction draft. Holds the effective text (the reader's prompt, or the
+   * built-in default shown in full when they wrote none), so the control never
+   * looks empty on a fresh plugin.
+   */
+  prompt: DraftField;
   /**
    * Write-only control. Blank until typed; `dirty` records that the reader has
    * typed into it, because a secret is never echoed back — an untouched blank
@@ -126,6 +140,7 @@ const DEFAULT_CONFIG: CommittedConfig = {
   aiTimeoutMs: 600000,
   baseUrl: '',
   model: '',
+  prompt: '',
   aiConfigured: false,
 };
 
@@ -164,6 +179,7 @@ class SettingsStore {
     baseUrl: { text: '', dirty: false, invalid: false },
     model: { text: '', dirty: false, invalid: false },
     aiTimeoutMs: { text: '', dirty: false, invalid: false },
+    prompt: { text: '', dirty: false, invalid: false },
     apiKey: { text: '', dirty: false },
     dirty: false,
     invalid: false,
@@ -227,6 +243,7 @@ class SettingsStore {
     }
     if (typeof value.baseUrl === 'string') committed.baseUrl = value.baseUrl;
     if (typeof value.model === 'string') committed.model = value.model;
+    if (typeof value.prompt === 'string') committed.prompt = value.prompt;
     committed.aiConfigured = Boolean(committed.baseUrl && committed.model && this.keyConfigured);
     this.state = {
       ...this.state,
@@ -245,6 +262,9 @@ class SettingsStore {
       baseUrl: { text: committed.baseUrl, dirty: false, invalid: false },
       model: { text: committed.model, dirty: false, invalid: false },
       aiTimeoutMs: { text: String(committed.aiTimeoutMs), dirty: false, invalid: false },
+      // 提示词输入框显示「生效的那份」：读者没写过就整段显示内置默认，改一个字
+      // 就是自己写的；一字不差地贴回默认时下面按「等于默认」处理成清空。
+      prompt: { text: resolvePrompt(committed.prompt), dirty: false, invalid: false },
     };
     this.recomputeGate();
   }
@@ -273,6 +293,14 @@ class SettingsStore {
           String(committed.aiTimeoutMs),
         invalid: timeout === undefined,
       },
+      // 与「生效的那份」比：读者没写过提示词时，输入框里就是内置默认，那份默认
+      // 不算改动；清空输入框同样是回到默认，也不算。比生效而不是比字面，是为了
+      // 让「空」与「一字不差地写着默认」在这一格上是同一件事。
+      prompt: {
+        text: stages.prompt.text,
+        dirty: resolvePrompt(stages.prompt.text) !== resolvePrompt(committed.prompt),
+        invalid: false,
+      },
     };
     this.recomputeGate();
   }
@@ -280,7 +308,7 @@ class SettingsStore {
   /** Fold dirty/invalid from every draft into the page-level flags. */
   private recomputeGate(): void {
     const s = this.state;
-    const fields = [s.baseUrl, s.model, s.aiTimeoutMs];
+    const fields = [s.baseUrl, s.model, s.aiTimeoutMs, s.prompt];
     this.state = {
       ...s,
       dirty: fields.some((field) => field.dirty) || s.apiKey.dirty,
@@ -293,13 +321,24 @@ class SettingsStore {
    * Stage one text control. The draft is local: nothing leaves this page until
    * a save, so a half-typed Base URL never reaches the translation path.
    */
-  draft(field: 'baseUrl' | 'model' | 'aiTimeoutMs' | 'apiKey', text: string): void {
+  draft(field: 'baseUrl' | 'model' | 'aiTimeoutMs' | 'prompt' | 'apiKey', text: string): void {
     this.state = {
       ...this.state,
       [field]: field === 'apiKey' ? { text, dirty: true } : { ...this.state[field], text },
       saveFailed: false,
     };
     this.deriveDrafts();
+  }
+
+  /**
+   * Put the built-in instruction back into the draft.
+   *
+   * Restoring is intentionally a draft edit like typing: nothing is written
+   * until the reader saves, so the button beside the field behaves exactly like
+   * the field itself.
+   */
+  restoreDefaultPrompt(): void {
+    this.draft('prompt', DEFAULT_PROMPT);
   }
 
   /**
@@ -354,6 +393,15 @@ class SettingsStore {
       }
     } else if (typeof timeout === 'number' && timeout !== this.state.committed.aiTimeoutMs) {
       ops.push({ op: 'set', path: ['aiTimeoutMs'], value: timeout });
+    }
+    // 提示词：一字不差等于内置默认时写 unset，把「空着 = 用默认」这条规则留在
+    // 配置文档里；空着保存同样等于回到默认。与已保存值逐字比，不动它就不写记录。
+    const prompt = this.state.prompt.text.trim();
+    const committedPrompt = this.state.committed.prompt.trim();
+    if (prompt === '' || prompt === DEFAULT_PROMPT) {
+      if (committedPrompt !== '') ops.push({ op: 'unset', path: ['prompt'] });
+    } else if (prompt !== committedPrompt) {
+      ops.push({ op: 'set', path: ['prompt'], value: prompt });
     }
 
     this.state = { ...this.state, saving: true, saveFailed: false, probe: undefined };
