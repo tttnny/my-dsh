@@ -3,6 +3,7 @@ import type { ITranslationAdapter, PluginConfig, TranslateAdapterOptions } from 
 import { TRANSLATE_API_KEY_REF } from '../credentials.ts';
 import type { KeyReader } from '../credentials.ts';
 import { BATCH_PROMPT_CLAUSE, resolvePrompt } from '../../prompt.ts';
+import { SAMPLING_TEMPERATURE, SAMPLING_TOP_P } from '../sampling.ts';
 
 /**
  * OpenAI-compatible Chat Completions translation channel.
@@ -11,25 +12,38 @@ import { BATCH_PROMPT_CLAUSE, resolvePrompt } from '../../prompt.ts';
  * ~/.dsh/.credentials.yaml (refs.TRANSLATE_API_KEY). Works with OpenAI,
  * DeepSeek, Qwen, Ollama and any other service exposing the standard endpoint.
  *
- * 系统指令的正文来自本插件的配置（配置页上可改），打包多段时再追加那段标记
- * 约定。指令正文本身连同它的写作要点住在 `src/prompt.ts`。
+ * 请求里只有一条 user 消息，格式与 Hy-MT 系列的训练分布一致：指令在前、
+ * 待译正文在后。模型没有默认 system_prompt，往 system 轮写中文约束时它会把
+ * 整段约束当成待译内容复读一遍，所以那一轮留空。指令正文连同它的写作要点
+ * 住在 `src/prompt.ts`。
  */
 
 /**
  * The translator instruction for one request: the configured prompt, and the
  * multi-part marker clause when the request packs several parts.
  *
- * Exported because it is the exact text the model receives as its system
- * message — the regression suite asserts on it directly rather than through a
- * request.
+ * Exported because it is the exact text the model receives ahead of the body —
+ * the regression suite asserts on it directly rather than through a request.
  *
  * @param mode - `plain` for one fragment, `blocks` for a packed multi-part request.
  * @param prompt - the prompt as configured; blank means the built-in default.
- * @returns the complete system prompt.
+ * @returns the complete request prefix.
  */
 export function buildSystemPrompt(mode: 'plain' | 'blocks', prompt?: string): string {
   const base = resolvePrompt(prompt);
   return mode === 'plain' ? base : `${base}\n\n${BATCH_PROMPT_CLAUSE}`;
+}
+
+/**
+ * 一条请求的 user 消息：指令在前，待译正文在后，中间空一行。
+ *
+ * @param mode - `plain` for one fragment, `blocks` for a packed multi-part request.
+ * @param text - the text to translate, markers included when packed.
+ * @param prompt - the prompt as configured; blank means the built-in default.
+ * @returns the user message content.
+ */
+export function buildUserMessage(mode: 'plain' | 'blocks', text: string, prompt?: string): string {
+  return `${buildSystemPrompt(mode, prompt)}\n\n${text}`;
 }
 
 export class OpenAiCompatibleAdapter implements ITranslationAdapter {
@@ -78,11 +92,14 @@ export class OpenAiCompatibleAdapter implements ITranslationAdapter {
       },
       body: JSON.stringify({
         model,
-        temperature: 0,
+        temperature: SAMPLING_TEMPERATURE,
+        top_p: SAMPLING_TOP_P,
         ...(options?.maxTokens === undefined ? {} : { max_tokens: options.maxTokens }),
         messages: [
-          { role: 'system', content: buildSystemPrompt(options?.mode ?? 'plain', config.prompt) },
-          { role: 'user', content: text },
+          {
+            role: 'user',
+            content: buildUserMessage(options?.mode ?? 'plain', text, config.prompt),
+          },
         ],
       }),
       signal,

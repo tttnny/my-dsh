@@ -47,7 +47,7 @@ export const zh = {
   saveProbeFail: '设置已保存，但通道探测失败：{error}',
 
   promptTitle: '翻译提示词',
-  promptDesc: '发给翻译模型的系统指令。点「编辑」可以改写，改完点下面的「保存」生效；留空等于用内置默认。',
+  promptDesc: '拼在待译正文前面的那段指令。点「编辑」可以改写，改完点下面的「保存」生效；留空等于用内置默认。',
   promptEdit: '编辑',
   promptDone: '完成',
   promptRestore: '恢复默认',
@@ -111,7 +111,7 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   saveProbeFail: 'Settings saved, but the channel probe failed: {error}',
 
   promptTitle: 'Translation prompt',
-  promptDesc: 'The system instruction the translation model receives. Press Edit to rewrite it, then Save to apply; an empty field means the built-in default.',
+  promptDesc: 'The instruction placed ahead of the text to translate. Press Edit to rewrite it, then Save to apply; an empty field means the built-in default.',
   promptEdit: 'Edit',
   promptDone: 'Done',
   promptRestore: 'Restore default',
