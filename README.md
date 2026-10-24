@@ -25,7 +25,7 @@
     <tr>
       <td><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
-      <td><b>聊天翻译</b><br>接管助手行的正文渲染，把每段回答改写成自然简体中文，译文与原文随时一键切换。</td>
+      <td><b>聊天翻译</b><br>接管助手行的正文渲染，把过程步骤的散文改写成自然简体中文，译文与原文随时一键切换。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-chat-translate</code></td>
     </tr>
     <tr>

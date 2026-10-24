@@ -144,6 +144,59 @@ await test('接管座次仍压过宿主默认渲染器（priority -1）', () => 
   );
 });
 
+// 结论步骤的判据：流式期间 answerStep 是 null，插件只能自己补那一段判断，
+// 补的就是宿主 latestAnswer() 的三条条件。宿主改这三条时这里要红。
+const HOST_ANSWER_FILE = 'packages/client/ui-chat/src/client/conversation-nodes/turn-process.ts';
+
+/** 取宿主源码里 latestAnswer() 那一整段函数体。 */
+async function findLatestAnswer() {
+  for (const root of CANDIDATES) {
+    try {
+      const source = await fs.readFile(path.join(root, HOST_ANSWER_FILE), 'utf-8');
+      const start = source.indexOf('function latestAnswer(');
+      if (start < 0) return { source: null, body: null };
+      const end = source.indexOf('\n}', start);
+      if (end < 0) return { source, body: null };
+      return { source, body: source.slice(start, end + 2) };
+    } catch {
+      // 换下一个候选目录。
+    }
+  }
+  return { source: null, body: null };
+}
+
+const answer = await findLatestAnswer();
+if (answer.source === null) {
+  console.log('─ 结论判据一致性: 跳过（没找到宿主的 turn-process.ts）');
+} else {
+  await test('宿主判定「结论步骤」的三条条件仍然成立', () => {
+    assert.ok(
+      answer.body !== null,
+      `宿主源码里找不到 function latestAnswer(：本插件 conclusion.ts 复刻的判据失去了依据`
+    );
+    assert.match(
+      answer.body,
+      /turn\.steps\.at\(-1\)/,
+      '宿主不再取本轮最后一个 step：本插件 conclusion.ts 的「最后一步」判断要跟着改'
+    );
+    assert.match(
+      answer.body,
+      /isFinalAssistant\(data\)/,
+      '宿主不再要求消息已落定（finalNode 存在）：本插件 conclusion.ts 的 status 判断要跟着改'
+    );
+    assert.match(
+      answer.body,
+      /hasAssistantReplyContent\(data\.blocks\)/,
+      '宿主不再要求有读者看得见的正文：本插件 conclusion.ts 的 hasReplyContent 要跟着改'
+    );
+    assert.match(
+      answer.body,
+      /block\.kind === 'tool-call'\) \? null/,
+      '宿主不再排除带 tool-call 的 step：本插件 conclusion.ts 的 hasToolCall 要跟着改'
+    );
+  });
+}
+
 console.log(`
 宿主渲染一致性：${passed}/${total} 通过`);
 process.exit(passed === total ? 0 : 1);

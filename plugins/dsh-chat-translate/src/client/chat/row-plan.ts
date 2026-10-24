@@ -107,10 +107,10 @@ function isBlankText(value: string | undefined): boolean {
 
 /**
  * 送译清单：本分组真正会渲染出来的非空白 text 块。reasoning 分组不渲染任何正文，
- * 也就不送译；结论步骤（{@link isConclusionRow}）的正文按原文呈现，整行一块都不送
- * ——判据见 `conclusion.ts`。texts、textIndex、outcomes 三者始终同域对齐。渲染层判
- * 「已经写定到第几块」用的是同一份清单（{@link growingTailIndex}），所以这里导出的
- * 既是一个读法，也是那条判据的唯一实现。
+ * 也就不送译；结论步骤的正文按原文呈现，整行一块都不送——判据见
+ * `conclusion.ts` 的 `isConclusionRow()`。texts、textIndex、outcomes 三者始终同域
+ * 对齐。渲染层判「已经写定到第几块」用的是同一份清单（{@link growingTailIndex}），
+ * 所以这里导出的既是一个读法，也是那条判据的唯一实现。
  *
  * @param blocks - 行的块清单。
  * @param groupPart - flow 分组。
@@ -136,15 +136,15 @@ export function proseTexts(
  *
  * @param blocks - 行的块清单。
  * @param groupPart - flow 分组；reasoning 分组一块都不送。
- * @param conclusion - 结论步骤的正文不送译，送译清单为空。
+ * @param options - `conclusion` 说这一行是结论步骤，送译清单为空。
  * @returns 已经写定的正文块数。
  */
 export function growingTailIndex(
   blocks: readonly AssistantBlockLike[],
-  groupPart?: string,
-  conclusion = false
+  groupPart: string | undefined,
+  options: { conclusion?: boolean } = {}
 ): number {
-  return Math.max(0, proseTexts(blocks, groupPart, conclusion).length - 1);
+  return Math.max(0, proseTexts(blocks, groupPart, options.conclusion ?? false).length - 1);
 }
 
 /**
@@ -185,6 +185,10 @@ export function planAssistantRow(input: RowPlanInput): RowPlan {
   // 整行不送译，清单因此为空。
   const texts = proseTexts(blocks, groupPart, conclusion);
 
+  // 结论步骤的正文按原文呈现，与总开关关着是同一种「这里不翻译」：把本行的通道
+  // 直接降成 off，下面每一支就只剩一种判断，不必到处再问一遍是不是结论行。
+  const textChannel: ChannelState = conclusion ? 'off' : channel;
+
   const entries: RowPlanEntry[] = [];
   let textIndex = 0;
   let imageRun: unknown[] | null = null;
@@ -216,11 +220,9 @@ export function planAssistantRow(input: RowPlanInput): RowPlan {
         // 写完（内容冻结）且开关开着才有得谈：正在长的尾块一个字都没送过，
         // 既不该有译文，也不该有失败标记——它连结果位都没有。
         const settled = index < (frozen ?? Number.POSITIVE_INFINITY);
-        // 结论步骤的正文按原文呈现：不送译、不报「设置没配好」、左缘什么都不出现
-        // ——与总开关关着时同一种「不翻译」，不是失败。
-        const attemptable = !blank && !conclusion && channel === 'ready' && settled;
+        const attemptable = !blank && textChannel === 'ready' && settled;
         // 「设置没配好」不送请求，但同样如实标记：静默会让读者以为插件坏了。
-        const unconfigured = !blank && !conclusion && channel === 'unconfigured' && settled;
+        const unconfigured = !blank && textChannel === 'unconfigured' && settled;
         const outcome: BlockOutcome | null = attemptable && outcomes !== undefined ? outcomes[index] ?? null : null;
         let mark: ProseMark = null;
         let fail: string | null = null;

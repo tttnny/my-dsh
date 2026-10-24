@@ -7,10 +7,13 @@
  * 呈现，左缘不出现任何东西（没有窄带、没有 ↻、不报「设置没配好」）——与总开关
  * 关着时一样，是纯粹的「这里不翻译」，不是失败。
  *
- * 「哪一步是结论」不自己发明：宿主已经算好了。`TurnProcessSpec.answerStep`
+ * 「哪一步是结论」的权威信号来自宿主。`TurnProcessSpec.answerStep`
  * （`packages/client/ui-chat/src/client/conversation-nodes/turn-process.ts`）取本轮
  * 最后一个 step，要求它带着 `finalNode`（消息已落定）、有正文、且**不含
- * tool-call**。判定按从严到宽分档：
+ * tool-call**。这个字段在流式期间是 null，插件因此要自己补上「还没落定」那一段
+ * 的判断——下面 3、4 两档复刻的就是宿主那三条条件，宿主改动时由
+ * `scripts/test-host-parity.mjs` 里钉 `latestAnswer()` 的那条断言报出来。判定按
+ * 从严到宽分档：
  *
  * 1. `answerStep` 有值：直接用，它是宿主的权威答案。
  * 2. 没有轮次投影（`answerStep === undefined`）：判不了就是判不了，一律照旧送译
@@ -33,7 +36,7 @@ import type { AssistantBlockLike } from './row-plan.ts';
  * @param blocks - 行的块清单。
  * @returns 有正文则为 true。
  */
-export function hasReplyContent(blocks: readonly AssistantBlockLike[]): boolean {
+function hasReplyContent(blocks: readonly AssistantBlockLike[]): boolean {
   return blocks.some((block) => {
     if (block.kind === 'reasoning' || block.kind === 'tool-call') return false;
     if (block.kind === 'text') return (block.text ?? '').trim() !== '';
@@ -47,14 +50,14 @@ export function hasReplyContent(blocks: readonly AssistantBlockLike[]): boolean 
  * @param blocks - 行的块清单。
  * @returns 有工具调用则为 true。
  */
-export function hasToolCall(blocks: readonly AssistantBlockLike[]): boolean {
+function hasToolCall(blocks: readonly AssistantBlockLike[]): boolean {
   return blocks.some((block) => block.kind === 'tool-call');
 }
 
 /** {@link isConclusionRow} 的输入。 */
 export interface ConclusionInput {
   /** 行状态：`running` 还在写，`settled` 已落定，`interrupted` 被中断。 */
-  status: string;
+  status: 'running' | 'settled' | 'interrupted';
   /** 这一行所属的 step 号。 */
   step: number;
   /** 行的块清单。 */

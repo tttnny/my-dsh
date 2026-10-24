@@ -78,7 +78,7 @@ interface PresentationLike {
 }
 
 interface NodeDataLike {
-  readonly status: string;
+  readonly status: 'running' | 'settled' | 'interrupted';
   readonly turn: number;
   readonly step: number;
   readonly blocks: readonly AssistantBlockLike[];
@@ -599,7 +599,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
   // 已经写完的块数：正文只往后追加，所以流式期间除了正在长的尾块，前面每一块的
   // 内容都不会再变——「写定」就是它们的送译许可，不必等整段回答结束。
   const frozenCount = useMemo(
-    () => (streaming ? growingTailIndex(blocks, groupPart, conclusion) : plan.texts.length),
+    () => (streaming ? growingTailIndex(blocks, groupPart, { conclusion }) : plan.texts.length),
     [blocks, groupPart, conclusion, plan.texts.length, streaming]
   );
 

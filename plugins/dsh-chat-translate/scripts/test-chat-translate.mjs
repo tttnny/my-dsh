@@ -28,7 +28,7 @@ async function test(name, fn) {
 }
 
 const { planAssistantRow } = await import('../src/client/chat/row-plan.ts');
-const { isConclusionRow, hasReplyContent, hasToolCall } = await import('../src/client/chat/conclusion.ts');
+const { isConclusionRow } = await import('../src/client/chat/conclusion.ts');
 const storeModule = await import('../src/client/chat/translate-store.ts');
 const { createTranslateStore, chunkTexts } = storeModule;
 const { isCleanHotspotClick } = await import('../src/client/chat/click-guard.ts');
