@@ -18,16 +18,12 @@ import { CredentialsReader } from '../src/server/credentials.ts';
 import { createFetchRoutes, REPLY_ROUTE_PATH } from '../src/server/router.ts';
 import {
   OpenAiCompatibleAdapter,
-  buildSystemPrompt,
+  buildRequestPrefix,
   buildUserMessage,
 } from '../src/server/adapters/openai.ts';
+import { DEFAULT_PROMPT } from '../src/prompt.ts';
 import { cacheGeneration, PROMPT_REVISION } from '../src/server/prompt-revision.ts';
-import {
-  SAMPLING_REPETITION_PENALTY,
-  SAMPLING_TEMPERATURE,
-  SAMPLING_TOP_K,
-  SAMPLING_TOP_P,
-} from '../src/server/sampling.ts';
+import { SAMPLING_TEMPERATURE, SAMPLING_TOP_P } from '../src/server/sampling.ts';
 import {
   buildBatchPayload,
   createBatchFormat,
@@ -218,49 +214,53 @@ await test('正文只有 openai 一条通道：别的适配器不参与', async 
 });
 
 await test('默认提示词先立两个短例，再给规则：中文原样抄写，外文才翻', async () => {
-  // 1.8B 只认示例、不认规则句：去掉示例，已通顺中文的改动率从 4% 升到 27%
-  // （样本集见 scripts/prompt-samples.mjs）。示例还必须排在规则前面。
-  const prompt = buildSystemPrompt('plain');
-  const examplesAt = prompt.indexOf('输入：The build passed.');
-  const ruleAt = prompt.indexOf('外文译成简体中文');
-  assert.ok(examplesAt >= 0, '默认提示词必须带一条外文示例');
-  assert.ok(prompt.includes('输入：这一版改好了。'), '还要一条「中文原样抄写」的示例');
-  assert.ok(ruleAt > examplesAt, '示例必须排在规则前面：排到后面模型会把它们复读进译文');
-  assert.ok(prompt.includes('中文原样抄写'), '中文说的是抄写，不是翻译');
+  // 只管结构，不管措辞：换一套同义的说法不该红，把示例挪到规则后面、或把
+  // 中文改成「翻译/整理」才该红。样本集见 scripts/prompt-samples.mjs。
+  const prompt = buildRequestPrefix('plain');
+  const lines = prompt.split('\n').map((line) => line.trim()).filter(Boolean);
+  const firstRuleAt = lines.findIndex((line) => line.includes('这段文字') || line.includes('下面这段'));
+  assert.ok(firstRuleAt > 0, '规则前面必须还有东西：示例得排在最前');
+  const exampleLines = lines.slice(0, firstRuleAt);
   assert.ok(
-    !prompt.includes('翻译为简体中文') && !prompt.includes('整理成简体中文'),
-    '首句的动词不能是翻译或整理：实测这两类写法让中文改动率回到 18%~22%'
+    exampleLines.some((line) => line.startsWith('输入：')) &&
+      exampleLines.some((line) => line.startsWith('输出：')),
+    '示例要写成「输入/输出」的对话样式'
+  );
+  assert.ok(
+    exampleLines.filter((line) => line.startsWith('输入：')).length >= 2,
+    '至少两个短例：一条外文、一条中文'
+  );
+  assert.ok(prompt.includes('原样抄写'), '中文说的是抄写，不是翻译');
+  assert.ok(
+    !prompt.includes('整理成') && !/翻译为简体中文/.test(prompt),
+    '首句的动词不能是翻译或整理：那会让已通顺的中文被换一套说法'
   );
 });
 
 await test('正文当素材翻译：请求里只有一条 user 消息，没有 system 轮', async () => {
-  // 模型没有默认 system_prompt；往 system 轮写中文约束时，1.8B 会把整段约束
-  // 当成待译内容复读一遍。所以指令拼在正文前面的同一条 user 消息里。
+  // 模型没有默认 system_prompt，system 轮也不是它的训练格式；指令拼在正文
+  // 前面的同一条 user 消息里。
   const message = buildUserMessage('plain', 'Hello');
-  assert.ok(message.startsWith(buildSystemPrompt('plain')), '指令在前');
+  assert.ok(message.startsWith(buildRequestPrefix('plain')), '指令在前');
   assert.ok(message.endsWith('\n\nHello'), '待译正文在后，空一行隔开');
   const packed = buildUserMessage('blocks', '⟪abcd0⟫\nHello');
-  assert.ok(packed.indexOf('两个括号') < packed.indexOf('⟪abcd0⟫'), '打包约定排在待译正文之前');
+  assert.ok(packed.indexOf('标记') < packed.indexOf('⟪abcd0⟫'), '打包约定排在待译正文之前');
 });
 
 await test('配置页写了提示词就整段以它为准，打包版在后面追加标记约定', async () => {
   const mine = '把收到的文字改写成人话，名词与路径不动。';
-  assert.equal(buildSystemPrompt('plain', mine), mine, '单段版就是这段文字本身');
-  const packed = buildSystemPrompt('blocks', mine);
+  assert.equal(buildRequestPrefix('plain', mine), mine, '单段版就是这段文字本身');
+  const packed = buildRequestPrefix('blocks', mine);
   assert.ok(packed.startsWith(mine), '打包版先是我写的那段');
-  assert.ok(packed.includes('两个括号'), '标记约定由插件追加，读者不用自己写');
-  assert.ok(!packed.includes('外文译成简体中文'), '默认指令不得混进来');
+  assert.ok(packed.length > mine.length, '标记约定由插件追加，读者不用自己写');
+  assert.ok(!packed.includes(DEFAULT_PROMPT), '默认指令不得混进来');
   // 空着写 = 用内置默认，与不传这个参数一模一样。
-  assert.equal(buildSystemPrompt('plain', '   '), buildSystemPrompt('plain'));
+  assert.equal(buildRequestPrefix('plain', '   '), buildRequestPrefix('plain'));
 });
 
-await test('采样参数用官方推荐的温度与 top_p，扩展参数不随请求发出', async () => {
-  // top_k 与 repetition_penalty 是 vLLM 系扩展：严格的 OpenAI 兼容端点收到会
-  // 直接 400，那会把翻译整个打死。它们登记在 sampling.ts 里，但不出现在请求体。
+await test('采样参数用官方推荐的温度与 top_p', async () => {
   assert.equal(SAMPLING_TEMPERATURE, 0.7);
   assert.equal(SAMPLING_TOP_P, 0.6);
-  assert.equal(typeof SAMPLING_TOP_K, 'number', '扩展参数留作登记，供自建服务参考');
-  assert.equal(typeof SAMPLING_REPETITION_PENALTY, 'number');
 });
 
 await test('真实请求体：一条 user 消息、官方采样参数、没有扩展参数', async () => {

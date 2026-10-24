@@ -1,20 +1,24 @@
 /**
- * 用真实服务量一次默认提示词：已通顺中文被改了多少，病句改没改通。
+ * 用真实服务量一次默认提示词：已通顺中文被改了多少，病句有没有被改动。
  *
  * 这不是 `pnpm test` 的一部分（那条路不联网）。改完 `src/prompt.ts` 想确认
  * 新措辞真的比旧的好时手动跑：
  *
- *   node scripts/compare-prompt.mjs --base-url http://127.0.0.1:8081/v1 --api-key <key> [--model hy-mt2-1.8b]
+ *   node scripts/compare-prompt.mjs [--base-url <url>] [--model <name>] [--api-key <key>]
  *
- * 不给 `--api-key` 时读 `~/.dsh/.credentials.yaml` 里的 `TRANSLATE_API_KEY`。
- * 输出三行汇总与逐条明细：改动率（编辑距离 / 原文字数）、完全一致率、
- * 病句改通次数。判据是「已通顺中文平均改动率 ≤ 10%，且两条病句至少改通一条」。
+ * 不给参数时用配置页上此刻的通道（读当前 profile 的 patch 与
+ * `~/.dsh/.credentials.yaml`），平时跑哪一套就量哪一套。
+ *
+ * 输出汇总与逐条明细：改动率（编辑距离 / 两者中较长的字数）、完全一致率、
+ * 病句被改动的次数。判据是「已通顺中文平均改动率 ≤ 10%，且两条病句至少
+ * 一条被改动」——那条纪律要求它至少还得动手。
  */
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DEFAULT_PROMPT } from '../src/prompt.ts';
+import { buildUserMessage } from '../src/server/adapters/openai.ts';
 import { SAMPLING_TEMPERATURE, SAMPLING_TOP_P } from '../src/server/sampling.ts';
 import {
   BAD_CHINESE,
@@ -31,7 +35,7 @@ function arg(name) {
   return index === -1 ? undefined : process.argv[index + 1];
 }
 
-/** 编辑距离除以原文字数：0 = 一个字没动。 */
+/** 编辑距离除以两者中较长的字数：0 = 一个字没动。 */
 function changeRatio(original, translated) {
   const a = [...original];
   const b = [...translated];
@@ -96,7 +100,7 @@ async function translate({ baseUrl, apiKey, model, text }) {
       temperature: SAMPLING_TEMPERATURE,
       top_p: SAMPLING_TOP_P,
       max_tokens: 900,
-      messages: [{ role: 'user', content: `${DEFAULT_PROMPT}\n\n${text}` }],
+      messages: [{ role: 'user', content: buildUserMessage('plain', text, DEFAULT_PROMPT) }],
     }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
@@ -130,14 +134,15 @@ const average = ratios.reduce((sum, value) => sum + value, 0) / ratios.length;
 const median = ratios[Math.floor(ratios.length / 2)];
 const p90 = ratios[Math.floor(ratios.length * 0.9)];
 
-// 2. 病句：每轮都算「改动了」，三轮里改通几次。
-const badFixed = [];
+// 2. 病句：数「被改动了」几次。改得通不通要靠人看下面打出的原文与结果，
+//    这里只保证它没有对病句一言不发（那说明模型已经退化成完全不动）。
+const badTouched = [];
 for (const sample of BAD_CHINESE) {
-  let fixed = 0;
+  let touched = 0;
   for (let round = 0; round < 3; round++) {
-    if (changeRatio(sample, await call(sample)) > 0.05) fixed += 1;
+    if (changeRatio(sample, await call(sample)) > 0.05) touched += 1;
   }
-  badFixed.push(fixed);
+  badTouched.push(touched);
 }
 
 // 3. 外文、markdown、注入句：只看有没有明显退化，各自打一行预览。
@@ -146,17 +151,28 @@ for (const sample of [...FOREIGN, ...MARKDOWN, ...INJECTION]) {
   previews[sample.slice(0, 30)] = await call(sample);
 }
 
+// 4. 病句原文与一次实际改写并排打出来，供人判断改得对不对。
+const badPreviews = [];
+for (const sample of BAD_CHINESE) {
+  badPreviews.push({ original: sample, result: await call(sample) });
+}
+
 console.log(`已通顺中文：${GOOD_CHINESE.length} 条 × ${ROUNDS} 轮`);
 console.log(`  平均改动率 ${(average * 100).toFixed(1)}%   中位数 ${(median * 100).toFixed(1)}%   p90 ${(p90 * 100).toFixed(1)}%`);
 console.log(`  完全一致 ${identical}/${ratios.length}（${((identical / ratios.length) * 100).toFixed(0)}%）`);
-console.log(`病句改通：${badFixed.map((n) => `${n}/3`).join('、')}`);
+console.log(`病句被改动：${badTouched.map((n) => `${n}/3`).join('、')}`);
+console.log('');
+for (const { original, result } of badPreviews) {
+  console.log(`— 病句原文：${original}`);
+  console.log(`  译文：${result}`);
+}
 console.log('');
 for (const [key, value] of Object.entries(previews)) {
   console.log(`— ${key}…`);
   console.log(`  ${value.replace(/\n/g, '\n  ')}`);
 }
 
-const pass = average <= 0.1 && badFixed.some((n) => n > 0);
+const pass = average <= 0.1 && badTouched.every((n) => n > 0);
 console.log('');
-console.log(pass ? '判据通过：平均改动率 ≤ 10%，且至少一条病句被改通。' : '判据未通过。');
+console.log(pass ? '判据通过：平均改动率 ≤ 10%，且两条病句都被动过。' : '判据未通过。');
 process.exitCode = pass ? 0 : 1;
