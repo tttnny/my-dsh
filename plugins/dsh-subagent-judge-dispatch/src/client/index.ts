@@ -44,6 +44,7 @@ export {
   buildModelOptions,
   createDispatchRemote,
   describeChoice,
+  describeModel,
   dispatchCardStore,
   readRow,
   SETTINGS_NAMESPACE,

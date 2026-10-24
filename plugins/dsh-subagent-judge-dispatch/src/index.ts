@@ -127,6 +127,11 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
   const judged = new JudgedChildren();
   let apiKey = '';
 
+  // The log outlives the process: read what a previous run wrote before the
+  // first append could overwrite it. `init` never rejects — a missing or broken
+  // file just leaves the log empty.
+  const logReady = log.init();
+
   const resolvedConfig = (): ResolvedConfig => readPluginConfig(config);
 
   /** Re-read the judge key; a key set outside the page takes effect at once. */
@@ -182,6 +187,9 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
     const decision = decideRewrite(outcome);
 
     if (cfg.logEnabled) {
+      // Wait for the stored log before appending, so the first judgement of a
+      // run does not overwrite the history it was about to join.
+      await logReady;
       log.append(buildEntry(ctx, agent, resolved, decision, outcome, label, taskText));
     }
     return applyDecision(resolved, decision);
@@ -193,7 +201,12 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
   ctx.inject(['connection'], (connectionCtx) => {
     const routes = createFetchRoutes({
       config: resolvedConfig,
-      log: () => log.list(),
+      // 路由可能在磁盘读完之后才被问到，也可能在之前：先等那一次读，别把「还没读完」
+      // 报成「一条都没有」。
+      log: async () => {
+        await logReady;
+        return log.list();
+      },
       apiKey: () => apiKey,
     });
     const disposers = routes.map((route) =>
@@ -203,6 +216,14 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
       for (const dispose of disposers) void Promise.resolve(dispose()).catch(() => {});
     };
   });
+
+  // 每次追加都立刻开写；卸载时再等一次在飞的写落地，卸载不丢最后那条。
+  ctx.effect(
+    () => () => {
+      void log.flush();
+    },
+    'dsh-subagent-judge-dispatch: judgement log flush',
+  );
 }
 
 /**

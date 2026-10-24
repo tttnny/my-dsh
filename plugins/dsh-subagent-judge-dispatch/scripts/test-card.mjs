@@ -16,7 +16,10 @@ import { fileURLToPath } from 'node:url';
 import {
   buildModelOptions,
   describeChoice,
+  describeModel,
   DispatchCardStore,
+  exportRowsJson,
+  parseRowsJson,
   readRow,
   routeKey,
   splitRouteKey,
@@ -399,18 +402,81 @@ await test('存下来的行读得回来，缺字段当空串', () => {
   assert.deepEqual(readRow(null), { description: '', provider: '', model: '', effort: '' });
 });
 
-await test('「选择」一列把供应商、模型、强度连成一段', () => {
-  assert.equal(
-    describeChoice({ provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'high' }),
-    'magpie · deepseek/deepseek-flash · high',
-  );
+await test('「选择」一列写模型与强度，供应商留给悬停的整段路', () => {
+  const row = { provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'high' };
+  assert.equal(describeModel(row), 'deepseek/deepseek-flash · high');
+  assert.equal(describeChoice(row), 'magpie · deepseek/deepseek-flash · high');
 });
 
-await test('「选择」一列不留下悬空的分隔点', () => {
-  // 退回时强度可能读不到，那条路不该写成「magpie · 模型 · 」。
+await test('两条路都不留下悬空的分隔点', () => {
+  // 退回时强度可能读不到，两条路都不该写成「m · 」或「magpie · m · 」。
+  assert.equal(describeModel({ model: 'm', effort: '' }), 'm');
   assert.equal(describeChoice({ provider: 'magpie', model: 'm', effort: '' }), 'magpie · m');
   assert.equal(describeChoice({ provider: '', model: 'm', effort: 'low' }), 'm · low');
   assert.equal(describeChoice({ provider: '  ', model: '  ', effort: '  ' }), '');
+  assert.equal(describeModel({ model: '  ', effort: '  ' }), '');
+});
+
+await test('带一条没填完的行也能读了再粘回来（导出与导入往返）', () => {
+  const rows = [
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
+    // 「加一行」之后还没填的那一条：导出不该把它写成一行空壳，导入也不该拒收。
+    { description: '', provider: '', model: '', effort: '' },
+  ];
+  const text = exportRowsJson(rows);
+  assert.deepEqual(JSON.parse(text), [rows[0]], '空白行不写进 JSON');
+  assert.deepEqual(parseRowsJson(text), { ok: true, rows: [rows[0]] });
+
+  // 别人手写的 JSON 里带着一条空白行，同样照收其余几条。
+  const pasted = JSON.stringify([rows[0], { description: '', provider: '', model: '', effort: '' }]);
+  assert.deepEqual(parseRowsJson(pasted), { ok: true, rows: [rows[0]] });
+});
+
+await test('整份都是空行时算空清单', () => {
+  assert.deepEqual(parseRowsJson('[{"description":"","provider":"","model":"","effort":""}]'), {
+    ok: false, error: 'empty',
+  });
+});
+
+await test('导出就是清单本身，不带编号', () => {
+  const text = exportRowsJson([
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
+    { description: '评审代码', provider: '', model: '', effort: '' },
+  ]);
+  assert.deepEqual(JSON.parse(text), [
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
+    { description: '评审代码', provider: '', model: '', effort: '' },
+  ]);
+});
+
+await test('导出的文本读回来还是那几条', () => {
+  const rows = [
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
+    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+  ];
+  assert.deepEqual(parseRowsJson(exportRowsJson(rows)), { ok: true, rows });
+});
+
+await test('导入认不出 JSON、不是数组、字段不是文字，各报各的', () => {
+  assert.deepEqual(parseRowsJson('{不是 JSON'), { ok: false, error: 'json' });
+  assert.deepEqual(parseRowsJson('{"description":"a"}'), { ok: false, error: 'shape' });
+  assert.deepEqual(parseRowsJson('["a"]'), { ok: false, error: 'shape' });
+  assert.deepEqual(parseRowsJson('[{"description":1}]'), { ok: false, error: 'shape' });
+  // 只剩空行时等于一份空清单，按空清单说。
+  assert.deepEqual(parseRowsJson('[{}]'), { ok: false, error: 'empty' });
+  assert.deepEqual(parseRowsJson('[]'), { ok: false, error: 'empty' });
+});
+
+await test('导入认得缺字段与多出来的字段', () => {
+  const result = parseRowsJson(JSON.stringify([
+    { description: '只有描述' },
+    { description: '多一个字段', provider: 'p', model: 'm', effort: 'low', extra: '不认识的' },
+  ]));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.rows, [
+    { description: '只有描述', provider: '', model: '', effort: '' },
+    { description: '多一个字段', provider: 'p', model: 'm', effort: 'low' },
+  ]);
 });
 
 await test('描述空或重了都不让存', () => {

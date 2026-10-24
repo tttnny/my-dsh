@@ -11,6 +11,7 @@
 
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection';
 import { buildPreview, selectableRows } from './judge-prompt.ts';
+import { LOG_PAGE_LIMIT } from './log-store.ts';
 import { probeJudge } from './judge-client.ts';
 import type { ResolvedConfig } from './config.ts';
 import type { LogEntry } from './types.ts';
@@ -43,8 +44,8 @@ export interface ProbeResult {
 export interface DispatchRouteFace {
   /** Current committed configuration. */
   config(): ResolvedConfig;
-  /** Read the runtime log, newest first. */
-  log(): LogEntry[];
+  /** Read the whole kept log, newest first; may resolve once the file has been read. */
+  log(): LogEntry[] | Promise<LogEntry[]>;
   /** The judge key resolved from credentials, or '' when unset. */
   apiKey(): string;
 }
@@ -61,7 +62,8 @@ export function createFetchRoutes(face: DispatchRouteFace): ConnectionFetchRoute
     requestBody: 'buffered',
     fetch: async () => {
       try {
-        return sendJson(200, { ok: true, entries: face.log() });
+        // The page shows only the tail of the log; the file keeps the rest.
+        return sendJson(200, { ok: true, entries: (await face.log()).slice(0, LOG_PAGE_LIMIT) });
       } catch (err) {
         return sendJson(500, { ok: false, error: describe(err) });
       }

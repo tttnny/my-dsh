@@ -2,10 +2,10 @@
  * 渲染自检：用真 react 把配置卡片画进 jsdom，锁住这次界面的三件事。
  *
  *   1. 试通与预览两个按钮在判断服务那一节的保存行里，不在标题栏；
- *   2. 最近判断那张表是六列：结果、选择、主代理、子代理、时间、耗时——结果在最左，
- *      供应商·模型·强度合成一格；
+ *   2. 判断日志那张表是六列：结果、选择、主代理、子代理、时间、耗时——结果在最左，
+ *      模型·强度合成一格，供应商只在悬停时补上；
  *   3. 点一行开出来的弹窗只讲一件事：这次发给判断模型的完整内容。结果、选择、
- *      主代理这些行上已经有了，弹窗不再各列一遍。
+ *      主代理这些行上已经有了，弹窗不再各列一遍；那段正文自己换行，高了在框里滚动。
  *
  * `@deepseek-ai/dsh-client-ui-primitives` 是替身：真组件是浏览器里的 ESM、带 .css
  * 导入，Node 里跑不起来。替身只把 children 与 aria 原样渲染，所以这里验的是本插件
@@ -58,15 +58,24 @@ const ENTRIES = [
   },
 ];
 
+/** 剪贴板替身：记下最后一次写进去的文本，写成功与否由 `clipboardWorks` 决定。 */
+const clipboard = { text: null };
+let clipboardWorks = true;
+
 /** ui-primitives 替身：只还原本测试关心的渲染结果。 */
 const primitives = primitivesStub({
-  Modal: ({ open, onClose, closeLabel, title, description, children }) => open
+  writeClipboard: async (text) => {
+    clipboard.text = text;
+    return clipboardWorks;
+  },
+  Modal: ({ open, onClose, closeLabel, title, description, children, footer }) => open
     ? createElement(
       'div',
       { role: 'dialog', 'data-title': title },
       createElement('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, '×'),
       description === undefined ? null : createElement('p', null, description),
       children,
+      footer === undefined ? null : createElement('div', { className: 'modal-footer' }, footer),
     )
     : null,
   Input: ({ className, ...rest }) => createElement('input', { ...rest, className }),
@@ -185,6 +194,23 @@ const click = async (node) => {
   await act(async () => { await new Promise((tick) => setTimeout(tick, 0)); });
 };
 
+/**
+ * 往受控输入框里打字。
+ *
+ * React 记着上一次渲染时节点上的值，直接赋 `node.value` 会被它当成「没变」而
+ * 丢掉这次 input；走原型上的原生 setter 赋值，React 读到的是真的变化。
+ */
+const type = async (node, value) => {
+  const proto = node instanceof dom.window.HTMLTextAreaElement
+    ? dom.window.HTMLTextAreaElement.prototype
+    : dom.window.HTMLInputElement.prototype;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(node, value);
+    node.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  });
+  await act(async () => { await new Promise((tick) => setTimeout(tick, 0)); });
+};
+
 let passed = 0;
 let total = 0;
 const test = async (label, fn) => {
@@ -214,6 +240,79 @@ await test('试通与预览两个按钮在保存行里，不在标题栏', () =>
   assert.equal(head?.querySelectorAll('button').length ?? 0, 0, '标题栏里不该再有按钮');
 });
 
+await test('导出把整份清单按纯 JSON 复制走', async () => {
+  clipboard.text = null;
+  clipboardWorks = true;
+  await click(buttonByText(zh['rows.export']));
+  const parsed = JSON.parse(clipboard.text ?? 'null');
+  assert.deepEqual(parsed, [
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
+  ], '导出的是清单本身，不带编号');
+  assert.equal(container.textContent?.includes(zh['rows.exported']), true, '复制成功要说一声');
+});
+
+await test('导出失败时如实报错，不装作复制好了', async () => {
+  clipboardWorks = false;
+  await click(buttonByText(zh['rows.export']));
+  assert.equal(container.textContent?.includes(zh['rows.exportFailed']), true);
+  clipboardWorks = true;
+});
+
+await test('导入是粘贴，粘进来的清单只填表，保存仍要另按', async () => {
+  await click(buttonByText(zh['rows.importOpen']));
+  const box = container.querySelector('textarea.dsh-judge-paste');
+  assert.ok(box !== null, '导入弹窗里应当有一个粘贴框');
+
+  const pasted = JSON.stringify([
+    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+    { description: '跑测试', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
+  ]);
+  await type(box, pasted);
+  await click(buttonByText(zh['rows.importApply']));
+
+  const rows = [...container.querySelectorAll('.dsh-judge-table tbody tr')];
+  // 第二格是描述；模型与强度各有自己的格子。
+  assert.deepEqual(
+    rows.map((line) => line.children[1].querySelector('input').value),
+    ['评审代码', '跑测试'],
+    '表里换成了粘进来的两条',
+  );
+  assert.deepEqual(
+    rows.map((line) => line.children[2].querySelector('input').value),
+    ['a6api/kimi-k3', 'magpie/deepseek/deepseek-flash'],
+    '模型也跟着换了',
+  );
+  assert.deepEqual(
+    rows.map((line) => line.children[3].querySelector('input').value),
+    ['high', 'low'],
+    '强度也跟着换了',
+  );
+  // 导入落在草稿里：清单那一节的保存按钮此刻可点，说明还没写进文档。
+  const rowsSection = buttonByText(zh['rows.importOpen'])?.closest('.dsh-judge-section');
+  const saveButton = [...(rowsSection?.querySelectorAll('button') ?? [])]
+    .find((node) => node.textContent?.trim() === zh['save.button']);
+  assert.equal(saveButton?.disabled, false, '导入之后仍要读者自己按保存');
+});
+
+await test('粘进来的不是清单时说清楚是哪一种问题', async () => {
+  await click(buttonByText(zh['rows.importOpen']));
+  const box = container.querySelector('textarea.dsh-judge-paste');
+  await type(box, '{不是 JSON');
+  await click(buttonByText(zh['rows.importApply']));
+  assert.equal(container.textContent?.includes(zh['rows.importBadJson']), true, '这不是 JSON 就要这么说');
+
+  await type(box, '[{"description": 1}]');
+  await click(buttonByText(zh['rows.importApply']));
+  assert.equal(container.textContent?.includes(zh['rows.importBadShape']), true, '字段不是文字就算形状不对');
+
+  await type(box, '[]');
+  await click(buttonByText(zh['rows.importApply']));
+  assert.equal(container.textContent?.includes(zh['rows.importEmpty']), true, '空清单不算一次导入');
+
+  await click(buttonByText(zh['rows.importCancel']));
+  assert.equal(container.querySelector('textarea.dsh-judge-paste'), null, '取消之后弹窗关掉');
+});
+
 await test('点开日志页后，六列按顺序摆好', async () => {
   await click([...container.querySelectorAll('[role="tab"]')].find((node) => node.textContent === zh['tab.log']));
   const head = container.querySelector('.dsh-judge-log-head');
@@ -237,11 +336,20 @@ await test('「结果」列写「类型 3」与「未判成」，不写编号以
   assert.equal(document.getElementById(described)?.textContent, zh['reason.unmatched']);
 });
 
-await test('「选择」列是供应商·模型·强度连成的一格', () => {
+await test('「选择」列只写模型与强度，悬停才带上供应商', () => {
   const rows = [...container.querySelectorAll('.dsh-judge-log-row:not(.dsh-judge-log-head)')];
-  assert.equal(rows[0].children[1].textContent, 'magpie · deepseek/deepseek-flash · high');
+  assert.equal(rows[0].children[1].textContent, 'deepseek/deepseek-flash · high');
+  const described = rows[0].children[1].getAttribute('aria-describedby');
+  assert.ok(described !== null, '这一格应当挂着 Tooltip');
+  assert.equal(
+    document.getElementById(described)?.textContent,
+    'magpie · deepseek/deepseek-flash · high',
+    '悬停的那一段才把供应商写在前面',
+  );
   // 没判成时强度可能读不到，不能留下悬空的分隔点。
-  assert.equal(rows[1].children[1].textContent, 'magpie · deepseek/deepseek-flash');
+  assert.equal(rows[1].children[1].textContent, 'deepseek/deepseek-flash');
+  const missing = rows[1].children[1].getAttribute('aria-describedby');
+  assert.equal(document.getElementById(missing)?.textContent, 'magpie · deepseek/deepseek-flash');
 });
 
 await test('「主代理」与「子代理」两列各放各的内容', () => {
@@ -278,6 +386,8 @@ await test('点一行开出来的弹窗只讲这段提示词', async () => {
   assert.ok(dialog !== null, '弹窗应当打开');
   assert.equal(dialog.getAttribute('data-title'), zh['log.promptTitle']);
   assert.equal(dialog.querySelector('pre')?.getAttribute('data-code'), ENTRIES[0].prompt, '弹窗里就是那条请求体');
+  // 请求体外面这一层负责两件事：正文自己换行，高了在框里滚动。
+  assert.ok(dialog.querySelector('pre')?.closest('.dsh-judge-prompt') !== null, '请求体应当套在会滚动的框里');
   // 行上已有的标签不在弹窗里再列一遍。只看标签，不看正文：提示词里本来就会有
   // 主代理写的任务文字，那是它该有的内容，不是「重复列了一遍」。
   const labels = [...dialog.querySelectorAll('*')]

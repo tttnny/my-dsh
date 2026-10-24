@@ -9,6 +9,8 @@
  * Run: node scripts/test-decision.mjs
  */
 import assert from 'node:assert/strict';
+import { rmSync } from 'node:fs';
+import * as fs from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,11 +32,41 @@ import {
   SUBJECT_TAIL_CHARS,
 } from '../src/server/judge-prompt.ts';
 import { judgeTaskType, probeJudge } from '../src/server/judge-client.ts';
-import { LogStore, LOG_LIMIT } from '../src/server/log-store.ts';
+import { LogStore, LOG_KEEP, LOG_PAGE_LIMIT } from '../src/server/log-store.ts';
 import { readPluginConfig, isJudgeUsable } from '../src/server/config.ts';
-import { createFetchRoutes, PROBE_ROUTE_PATH, PREVIEW_ROUTE_PATH } from '../src/server/router.ts';
+import {
+  createFetchRoutes,
+  LOG_ROUTE_PATH,
+  PROBE_ROUTE_PATH,
+  PREVIEW_ROUTE_PATH,
+} from '../src/server/router.ts';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
+
+/** 落盘要用的临时家目录：仓库根的 tmp/，进程退出时删掉。 */
+const tmpRoot = join(root, 'tmp');
+await fs.mkdir(tmpRoot, { recursive: true });
+const tmpHome = await fs.mkdtemp(join(tmpRoot, 'judge-log-'));
+process.on('exit', () => {
+  try {
+    rmSync(tmpHome, { recursive: true, force: true });
+  } catch {
+    // 临时目录删不掉不影响自检结论。
+  }
+});
+
+/** 一份指向临时目录的日志，避免自检写到真实的家目录。 */
+function newLog(fileName = 'judgements.json') {
+  return new LogStore(join(tmpHome, fileName));
+}
+
+/** 造一条日志记录，只覆盖要断言的那几项。 */
+function entryAt(typeId) {
+  return {
+    typeId, provider: 'p', model: 'm', effort: 'low', at: typeId,
+    latencyMs: 1, parentTitle: 'p', childLabel: 'c', prompt: '',
+  };
+}
 
 let passed = 0;
 let total = 0;
@@ -377,22 +409,81 @@ await test('判断调用：超时走 timeout，且不重试', async () => {
   assert.equal(outcome.reason, 'timeout');
 });
 
-await test('日志：留最近 20 条，新的在前', () => {
-  const store = new LogStore();
-  for (let i = 1; i <= LOG_LIMIT + 5; i += 1) {
-    store.append({
-      typeId: i, provider: 'p', model: 'm', effort: 'low', at: i,
-      latencyMs: 1, parentTitle: 'p', childLabel: 'c', prompt: '',
-    });
-  }
+await test('日志：文件留最近 200 条，新的在前', async () => {
+  const store = newLog('keep.json');
+  await store.init();
+  for (let i = 1; i <= LOG_KEEP + 5; i += 1) store.append(entryAt(i));
   const list = store.list();
-  assert.equal(list.length, LOG_LIMIT);
-  assert.equal(list[0].typeId, LOG_LIMIT + 5);
-  assert.equal(list[LOG_LIMIT - 1].typeId, 6);
+  assert.equal(list.length, LOG_KEEP);
+  assert.equal(list[0].typeId, LOG_KEEP + 5);
+  assert.equal(list[LOG_KEEP - 1].typeId, 6);
 });
 
-await test('日志：读出来的副本改不动内部记录', () => {
-  const store = new LogStore();
+await test('日志：页面那一层只取最近 10 条，文件里还有更多', async () => {
+  const store = newLog('page.json');
+  await store.init();
+  for (let i = 1; i <= 25; i += 1) store.append(entryAt(i));
+  assert.equal(LOG_PAGE_LIMIT, 10);
+  const all = store.list();
+  const page = all.slice(0, LOG_PAGE_LIMIT);
+  assert.equal(page.length, 10);
+  assert.equal(page[0].typeId, 25);
+  assert.equal(page[9].typeId, 16);
+  assert.ok(all.length > page.length, '文件里的记录比页面展示的多');
+});
+
+await test('日志：换了进程也读得回来', async () => {
+  const file = join(tmpHome, 'restart.json');
+  const first = new LogStore(file);
+  await first.init();
+  first.append({ ...entryAt(1), childLabel: '重启前的那次', prompt: '{"model":"judge-x"}' });
+  await first.flush();
+
+  const second = new LogStore(file);
+  await second.init();
+  const list = second.list();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].childLabel, '重启前的那次');
+  assert.equal(list[0].prompt, '{"model":"judge-x"}');
+});
+
+await test('日志：先追加后读盘时，刚记下的一条不会被旧记录盖掉', async () => {
+  const file = join(tmpHome, 'race.json');
+  await fs.writeFile(file, JSON.stringify([{ ...entryAt(1), childLabel: '上一轮留下的' }]), 'utf-8');
+  const store = new LogStore(file);
+  // 故意不等 init：追加发生在读盘回来之前，两条都要留住。
+  const loading = store.init();
+  store.append({ ...entryAt(2), childLabel: '这一轮刚记下的' });
+  await loading;
+  await store.flush();
+  const list = store.list();
+  assert.deepEqual(list.map((entry) => entry.childLabel), ['这一轮刚记下的', '上一轮留下的']);
+});
+
+await test('日志：文件缺失或残缺都不抛，从空日志起步', async () => {
+  const missing = newLog('missing.json');
+  await missing.init();
+  assert.deepEqual(missing.list(), []);
+
+  const broken = join(tmpHome, 'broken.json');
+  await fs.writeFile(broken, '{不是 JSON', 'utf-8');
+  const store = new LogStore(broken);
+  await store.init();
+  assert.deepEqual(store.list(), []);
+
+  // 半个字段的记录留住它带着的那部分，不连累整份文档。
+  const partial = join(tmpHome, 'partial.json');
+  await fs.writeFile(partial, JSON.stringify([{ typeId: 3, model: 'm' }, null, 'x']), 'utf-8');
+  const partialStore = new LogStore(partial);
+  await partialStore.init();
+  assert.equal(partialStore.list().length, 1);
+  assert.equal(partialStore.list()[0].typeId, 3);
+  assert.equal(partialStore.list()[0].provider, '');
+});
+
+await test('日志：读出来的副本改不动内部记录', async () => {
+  const store = newLog('copy.json');
+  await store.init();
   store.append({
     typeId: 1, provider: 'p', model: 'm', effort: 'low', at: 1,
     latencyMs: 1, parentTitle: 'p', childLabel: 'c', prompt: '{"model":"judge-x"}',
@@ -545,6 +636,47 @@ await test('探测路由：地址与模型都在、端点答得出时算通（�
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+await test('日志路由：磁盘还没读完时也要等，不能报成空日志', async () => {
+  let release;
+  const gate = new Promise((resolveGate) => { release = resolveGate; });
+  const route = createFetchRoutes({
+    config: () => ({
+      enabled: true, logEnabled: true,
+      endpointUrl: 'http://judge.invalid', judgeModel: 'judge-x',
+      rows: [],
+    }),
+    // 模拟「读文件还没回来」：路由必须等它，而不是抢先交出空数组。
+    log: async () => {
+      await gate;
+      return [entryAt(1)];
+    },
+    apiKey: () => '',
+  }).find((candidate) => candidate.path === LOG_ROUTE_PATH);
+  const pending = route.fetch(new Request('http://host/api/log'), {});
+  release();
+  const body = await (await pending).json();
+  assert.equal(body.entries.length, 1, '等到了那条记录，而不是空数组');
+});
+
+await test('日志路由：接口只回最近 10 条，不是文件里的全部', async () => {
+  const route = createFetchRoutes({
+    config: () => ({
+      enabled: true, logEnabled: true,
+      endpointUrl: 'http://judge.invalid', judgeModel: 'judge-x',
+      rows: [],
+    }),
+    // 文件里存着更多，接口这一层只交出页面要的那一段。
+    log: () => Array.from({ length: 40 }, (_unused, index) => entryAt(40 - index)),
+    apiKey: () => '',
+  }).find((candidate) => candidate.path === LOG_ROUTE_PATH);
+  assert.ok(route, '日志路由注册上了');
+  const response = await route.fetch(new Request('http://host/api/log'), {});
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.entries.length, 10);
+  assert.equal(body.entries[0].typeId, 40, '新的在前');
 });
 
 await test('预览路由：清单为空时也答得出（预览的是将要发出去的那段）', async () => {

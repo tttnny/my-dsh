@@ -11,6 +11,7 @@ import {
   Switch,
   Tag,
   Tooltip,
+  writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import {
   BUNDLE_CONFIG_KEY,
@@ -21,8 +22,11 @@ import {
   ALLOWED_MODELS_NAMESPACE,
   createDispatchRemote,
   describeChoice,
+  describeModel,
   dispatchCardStore,
+  exportRowsJson,
   JUDGE_API_KEY_REF,
+  parseRowsJson,
   type CredentialsRemoteLike,
   routeKey,
   SETTINGS_NAMESPACE,
@@ -34,17 +38,12 @@ import {
 } from './store.ts';
 import { NS } from '../locales.ts';
 
-/** The ready-made entries, each with the effort hint it ships. */
-const PRESETS: readonly { key: string; effortHint: string }[] = [
-  { key: 'mechanical', effortHint: 'preset.effortLow' },
-  { key: 'research', effortHint: 'preset.effortLow' },
-  { key: 'smallFeature', effortHint: 'preset.effortMedium' },
-  { key: 'spec', effortHint: 'preset.effortHigh' },
-  { key: 'review', effortHint: 'preset.effortMedium' },
-  { key: 'debug', effortHint: 'preset.effortHigh' },
-  { key: 'design', effortHint: 'preset.effortHigh' },
-  { key: 'test', effortHint: 'preset.effortLow' },
-];
+/** 导入被拒时那句话的键：三种坏输入各说各的，不在调用处拼键名。 */
+const IMPORT_ERROR_KEYS = {
+  json: 'rows.importBadJson',
+  shape: 'rows.importBadShape',
+  empty: 'rows.importEmpty',
+} as const;
 
 /** Path shown in the key hint; the value itself never reaches the page. */
 const CREDENTIALS_PATH = '~/.dsh/.credentials.yaml';
@@ -65,8 +64,9 @@ function withSamples(text: string, samples: Record<string, string>): React.React
  * The bubble is the Host's `Tooltip`, not a native `title`: the Host's own rule
  * is that a hover surface comes from the primitives package, and the native one
  * cannot be reached by keyboard. It carries `hint` when the cell has something
- * the column itself has no room for — the reason a judgement did not match —
- * and the cell's own text otherwise.
+ * the column itself has no room for — the reason a judgement did not match, or
+ * the provider behind a choice cell that shows only model and effort — and the
+ * cell's own text otherwise.
  *
  * @param props.text - the value shown in the cell.
  * @param props.hint - extra text the bubble should carry instead of `text`.
@@ -143,11 +143,6 @@ const CARD_CSS = `
 .dsh-judge-no { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); font-variant-numeric: tabular-nums; }
 .dsh-judge-row-off .dsh-judge-field { opacity: 0.6; }
 .dsh-judge-cell-actions { display: flex; gap: 6px; }
-.dsh-judge-presets { display: flex; flex-wrap: wrap; gap: 6px; }
-.dsh-judge-preset { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 10px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.dsh-judge-preset:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.dsh-judge-preset-title { font: var(--dsw-font-xs-13); }
-.dsh-judge-preset-hint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxxs-11); }
 .dsh-judge-log { display: flex; flex-direction: column; gap: 4px; font: var(--dsw-font-xxs-12); }
 /* 六列的宽度按内容定：结果与时间是定长的，选择最长、主代理与子代理各占一份余量。
    minmax(0, …) 是截断的前提——不给下限归零，长内容会把整列撑出去。 */
@@ -156,8 +151,14 @@ const CARD_CSS = `
 .dsh-judge-log-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .dsh-judge-log-head { font-weight: 600; color: var(--dsw-alias-label-tertiary); cursor: default; }
 .dsh-judge-log-head:hover { background: none; }
-/* 弹窗里是一整段 JSON，默认的弹窗宽度会把它折得很碎。 */
-.dsh-judge-modal { width: min(760px, 100%); max-height: min(85vh, 100%); }
+/* 弹窗里是一整段请求体：量宽放开，正文自己换行，高了就在框里滚动——撑到弹窗
+   外面的内容既看不见也滚不到。滚动条的两种颜色跟着弹窗这层表面走。 */
+.dsh-judge-modal { width: min(760px, 100%); max-height: min(85vh, 100%); --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2); --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2); }
+.dsh-judge-prompt { max-height: 58vh; overflow: auto; }
+.dsh-judge-prompt pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+/* 粘贴框：等宽显示，好让读者看出 JSON 的层级；自己撑高到一屏的一半再滚动。 */
+.dsh-judge-paste { box-sizing: border-box; width: 100%; min-height: 220px; max-height: 45vh; resize: vertical; padding: 10px 12px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: var(--dsw-font-markdown-code-block); }
+.dsh-judge-paste:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary); }
 `;
 
 /**
@@ -173,12 +174,19 @@ export function injectCardStyles(): void {
   if (document.getElementById(STYLE_ID) !== null) return;
   const element = document.createElement('style');
   element.id = STYLE_ID;
+  // 两个归属键缺一不可：client-modules 按 `data-plugin` 在卸载与换代码时整表清掉，
+  // 没打键的表会一直叠在页面上（docs/rules/plugin-ui.md「样式在 apply() 里注入」）。
+  element.dataset.plugin = PLUGIN_NAME;
+  element.dataset.pluginCss = `${PLUGIN_NAME}/settings/ui`;
   element.textContent = CARD_CSS;
   document.head.appendChild(element);
 }
 
 /** DOM id of this card's stylesheet, so a remount does not append a second one. */
 const STYLE_ID = 'dsh-subagent-judge-dispatch-styles';
+
+/** 本插件的包名，用作样式表的归属键。 */
+const PLUGIN_NAME = '@lynn123411/dsh-subagent-judge-dispatch';
 
 /**
  * This plugin's configuration card inside the DSH **Plugins** page.
@@ -209,6 +217,12 @@ export function JudgeDispatchPanel(
   const [openMenu, setOpenMenu] = useState<{ index: number; kind: 'model' | 'effort' } | null>(null);
   /** The reason a save was refused, shown as a popup. */
   const [refusal, setRefusal] = useState<string | null>(null);
+  /** The paste box for importing a task-type list; null when it is closed. */
+  const [importText, setImportText] = useState<string | null>(null);
+  /** Why the last import attempt was refused, or ''. */
+  const [importError, setImportError] = useState('');
+  /** What the last export did, shown until the next action. */
+  const [copyNote, setCopyNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     setState(dispatchCardStore.getState());
@@ -242,6 +256,31 @@ export function JudgeDispatchPanel(
     const text = await dispatchCardStore.preview();
     setPreview(text ?? t('preview.failed'));
     setPreviewOpen(true);
+  };
+
+  /** Copy the task-type list out as plain JSON. */
+  const exportRows = async (): Promise<void> => {
+    const copied = await writeClipboard(exportRowsJson(state.rows));
+    setCopyNote({ ok: copied, text: t(copied ? 'rows.exported' : 'rows.exportFailed') });
+  };
+
+  /** Open the paste box, empty and with no leftover complaint. */
+  const openImport = (): void => {
+    setImportText('');
+    setImportError('');
+    setCopyNote(null);
+  };
+
+  /** Read the pasted list into the drafts; the section's save is still separate. */
+  const applyImport = (): void => {
+    const result = parseRowsJson(importText ?? '');
+    if (!result.ok) {
+      setImportError(t(IMPORT_ERROR_KEYS[result.error] as never));
+      return;
+    }
+    dispatchCardStore.replaceRows(result.rows);
+    setImportText(null);
+    setImportError('');
   };
 
   /** One section's save row: the write and the discard on the left, that section's checks on the right. */
@@ -583,35 +622,28 @@ export function JudgeDispatchPanel(
             </tbody>
           </table>
         )}
-        <div>
+        <div className="dsh-judge-actions-group">
           <Button variant="outline" size="sm" onClick={() => dispatchCardStore.addRow()}>
             {t('rows.add')}
           </Button>
+          {/* 导入与导出都只动这一份清单：导入落在草稿里，导出就是把草稿抄成 JSON，
+              两者都不碰保存按钮那条路。 */}
+          <Button variant="outline" size="sm" onClick={openImport}>
+            {t('rows.importOpen')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void exportRows()}>
+            {t('rows.export')}
+          </Button>
+          {copyNote !== null && (
+            <span className={copyNote.ok ? 'dsh-judge-note-ok' : 'dsh-judge-note-bad'} role="status">
+              {copyNote.text}
+            </span>
+          )}
         </div>
         {state.rowsInvalid !== '' && state.rowsDirty && (
           <div className="dsh-judge-note-bad" role="alert">{state.rowsInvalid}</div>
         )}
         {saveRow('rows', state.rowsDirty, saveRows)}
-      </div>
-
-      <div className="dsh-judge-section">
-        <div className="dsh-judge-title">{t('presets.title')}</div>
-        <div className="dsh-judge-desc">{t('presets.desc')}</div>
-        <div className="dsh-judge-presets">
-          {PRESETS.map((preset) => (
-            <button
-              key={preset.key}
-              type="button"
-              className="dsh-judge-preset"
-              onClick={() => dispatchCardStore.addPreset(t(`preset.${preset.key}.desc` as never))}
-            >
-              <span className="dsh-judge-preset-title">{t(`preset.${preset.key}` as never)}</span>
-              <span className="dsh-judge-preset-hint">
-                {t('presets.effortHint').replace('{effort}', t(preset.effortHint as never))}
-              </span>
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -657,7 +689,7 @@ export function JudgeDispatchPanel(
                   onClick={() => setDetail(entry)}
                 >
                   <LogCell text={result.text} hint={result.hint} />
-                  <LogCell text={describeChoice(entry) || '—'} />
+                  <LogCell text={describeModel(entry) || '—'} hint={describeChoice(entry)} />
                   <LogCell text={entry.parentTitle || '—'} />
                   <LogCell text={entry.childLabel || '—'} />
                   <span>{new Date(entry.at).toLocaleTimeString()}</span>
@@ -701,7 +733,43 @@ export function JudgeDispatchPanel(
         className="dsh-judge-modal"
       >
         <div className="dsh-judge-desc">{t('preview.desc')}</div>
-        <CodeBlock code={preview ?? ''} copyLabel={t('preview.copy')} copiedLabel={t('preview.copied')} />
+        <div className="dsh-judge-prompt">
+          <CodeBlock code={preview ?? ''} copyLabel={t('preview.copy')} copiedLabel={t('preview.copied')} />
+        </div>
+      </Modal>
+
+      {/* 导入只收粘贴：这一步不读文件、不联网，读者看到的和用进去的是同一段文本。 */}
+      <Modal
+        open={importText !== null}
+        onClose={() => setImportText(null)}
+        title={t('rows.importTitle')}
+        closeLabel={t('rows.browseClose')}
+        description={t('rows.importDesc')}
+        className="dsh-judge-modal"
+        footer={(
+          <>
+            <Button variant="outline" size="sm" onClick={() => setImportText(null)}>
+              {t('rows.importCancel')}
+            </Button>
+            <Button variant="primary" size="sm" onClick={applyImport}>
+              {t('rows.importApply')}
+            </Button>
+          </>
+        )}
+      >
+        <textarea
+          className="dsh-judge-paste"
+          value={importText ?? ''}
+          aria-label={t('rows.importTitle')}
+          placeholder={t('rows.importPlaceholder')}
+          spellCheck={false}
+          data-modal-autofocus
+          onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => {
+            setImportText(event.target.value);
+            setImportError('');
+          }}
+        />
+        {importError !== '' && <div className="dsh-judge-note-bad" role="alert">{importError}</div>}
       </Modal>
 
       <Modal
@@ -727,11 +795,13 @@ export function JudgeDispatchPanel(
       >
         {detail !== null && (detail.prompt === ''
           ? <div className="dsh-judge-desc">{t('log.promptEmpty')}</div>
-          : <CodeBlock
-            code={detail.prompt}
-            copyLabel={t('preview.copy')}
-            copiedLabel={t('preview.copied')}
-          />)}
+          : <div className="dsh-judge-prompt">
+            <CodeBlock
+              code={detail.prompt}
+              copyLabel={t('preview.copy')}
+              copiedLabel={t('preview.copied')}
+            />
+          </div>)}
       </Modal>
     </div>
   );

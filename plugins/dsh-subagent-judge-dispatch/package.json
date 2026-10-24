@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-subagent-judge-dispatch",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "用一个判断模型从你写的任务类型清单里挑一个编号，据此改写子代理使用的模型与思考强度。",
   "type": "module",
   "main": "lib/index.js",
@@ -69,6 +69,7 @@
     "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.1-rc.2",
     "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1-rc.2",
     "@deepseek-ai/dsh-client-ui-slots": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.1-rc.2",
     "@deepseek-ai/schemastery": "^3.18.5",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.18",

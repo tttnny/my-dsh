@@ -249,19 +249,48 @@ export function readRow(value: unknown): TypeRowDraft {
 }
 
 /**
- * The three route fields of one log row as a single scanned value.
+ * The model and effort of one log row as a single scanned value.
  *
- * The list shows one "choice" cell rather than three, because provider, model
- * and effort are read together — "which route did this child run on". The three
- * are joined with the same middle dot the model menu uses, and a blank field is
- * dropped rather than left as a dangling separator on a fallback row that kept
- * only a partially known inherited route.
+ * The list shows one "choice" cell rather than three, because model and effort
+ * are read together — "which route did this child run on". The two are joined
+ * with the same middle dot the model menu uses, and a blank field is dropped
+ * rather than left as a dangling separator on a fallback row that kept only a
+ * partially known inherited route. The provider stays out of the cell: it is
+ * the same for nearly every row and is only one hover away in
+ * {@link describeChoice}.
+ *
+ * @param row - the model and effort to join.
+ * @returns the joined text, or '' when both are blank.
+ */
+export function describeModel(row: Pick<LogRow, 'model' | 'effort'>): string {
+  return joinRouteParts([row.model, row.effort]);
+}
+
+/**
+ * The full route of one log row: provider, model and effort.
+ *
+ * This is what the choice cell's hover bubble carries, so the provider is still
+ * one hover away from a reader who needs to know which adapter served the
+ * child. Blank fields are dropped by the same rule as {@link describeModel}.
  *
  * @param row - the provider, model and effort to join.
  * @returns the joined text, or '' when all three are blank.
  */
 export function describeChoice(row: Pick<LogRow, 'provider' | 'model' | 'effort'>): string {
-  return [row.provider, row.model, row.effort]
+  return joinRouteParts([row.provider, row.model, row.effort]);
+}
+
+/**
+ * Join the parts of a route the way both cells above need it.
+ *
+ * One rule, two callers: a blank part is dropped rather than left as a dangling
+ * separator, and the rest are joined with the middle dot the model menu uses.
+ *
+ * @param parts - the route fields, in display order.
+ * @returns the joined text, or '' when every part is blank.
+ */
+function joinRouteParts(parts: readonly string[]): string {
+  return parts
     .map((part) => part.trim())
     .filter((part) => part !== '')
     .join(' · ');
@@ -359,6 +388,90 @@ export function validateRows(rows: readonly TypeRowDraft[], t: (key: string) => 
     seen.add(description);
   }
   return '';
+}
+
+/**
+ * The task-type list as plain JSON text, for copying out.
+ *
+ * The shape is the stored one — an array of `{ description, provider, model,
+ * effort }` — with the sequence numbers left out: they are positional, and
+ * writing them would invite a reader to think they are part of the setting.
+ *
+ * @param rows - the rows as they stand on the page.
+ * @returns indented JSON text.
+ */
+export function exportRowsJson(rows: readonly TypeRowDraft[]): string {
+  return JSON.stringify(
+    // 空白行（读者按了「加一行」还没填）不写进 JSON：它没有内容可带走，写出去
+    // 还会让这份文本自己读不回来。
+    rows.filter((row) => !isBlankRow(row)).map((row) => ({
+      description: row.description,
+      provider: row.provider,
+      model: row.model,
+      effort: row.effort,
+    })),
+    null,
+    2,
+  );
+}
+
+/**
+ * Whether a row carries nothing at all.
+ * @param row - the row to inspect.
+ * @returns true when all four fields are empty or whitespace.
+ */
+function isBlankRow(row: TypeRowDraft): boolean {
+  return [row.description, row.provider, row.model, row.effort]
+    .every((field) => field.trim() === '');
+}
+
+/** What reading pasted JSON produced. */
+export type RowsImport =
+  | { ok: true; rows: TypeRowDraft[] }
+  /** `error` names the fault; the page turns it into its own sentence. */
+  | { ok: false; error: 'json' | 'shape' | 'empty' };
+
+/**
+ * Read a pasted task-type list.
+ *
+ * The text is checked before it can reach the page: it must be one JSON array,
+ * every element must be an object, and the four fields must be strings. An
+ * unknown field is ignored rather than refused, so a list copied from a newer
+ * version still loads what it understands.
+ *
+ * @param text - what the reader pasted.
+ * @returns the rows, or the fault that stopped it.
+ */
+export function parseRowsJson(text: string): RowsImport {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, error: 'json' };
+  }
+  if (!Array.isArray(parsed)) return { ok: false, error: 'shape' };
+  if (parsed.length === 0) return { ok: false, error: 'empty' };
+  const rows: TypeRowDraft[] = [];
+  for (const value of parsed) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return { ok: false, error: 'shape' };
+    const record = value as Record<string, unknown>;
+    // 字段存在但不是文字，是形状不对；缺字段当作空串，那是合法的残缺记录。
+    const wrongType = ['description', 'provider', 'model', 'effort']
+      .some((key) => record[key] !== undefined && typeof record[key] !== 'string');
+    if (wrongType) return { ok: false, error: 'shape' };
+    const field = (key: string): string => (typeof record[key] === 'string' ? (record[key] as string) : '');
+    const row = {
+      description: field('description'),
+      provider: field('provider'),
+      model: field('model'),
+      effort: field('effort'),
+    };
+    // 空白行照收不误、直接跳过：导出会带来这种行，拒收会让这份 JSON 自己读不回来。
+    if (isBlankRow(row)) continue;
+    rows.push(row);
+  }
+  if (rows.length === 0) return { ok: false, error: 'empty' };
+  return { ok: true, rows };
 }
 
 /** A key nothing is staged for and nothing is known about. */
@@ -619,9 +732,17 @@ export class DispatchCardStore {
     this.recompute();
   }
 
-  /** Append a ready-made entry; the effort hint is not filled in. */
-  addPreset(description: string): void {
-    this.state = { ...this.state, rows: [...this.state.rows, { description, provider: '', model: '', effort: '' }], saveFailed: '' };
+  /**
+   * Stage a whole imported list, replacing what the page holds.
+   *
+   * Nothing is written: an import lands in the drafts exactly like typing does,
+   * so the section's own save button is still the only thing that reaches the
+   * document, and the reader can discard the import like any other edit.
+   *
+   * @param rows - the rows read from the pasted JSON.
+   */
+  replaceRows(rows: readonly TypeRowDraft[]): void {
+    this.state = { ...this.state, rows: rows.map((row) => ({ ...row })), saveFailed: '' };
     this.recompute();
   }
 

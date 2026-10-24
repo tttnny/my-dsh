@@ -200,6 +200,12 @@ check('字典注册上了', locales.includes('subagentjudgedispatch'));
 check('没有占用设置页', registrations.every((record) => record.name !== 'settings.section'));
 
 check('样式表在 apply() 时追加一次，且带 id 便于判重', appendedStyles.length === 1 && appendedStyles[0].id === 'dsh-subagent-judge-dispatch-styles');
+// 卸载与换代码时 client-modules 按 data-plugin 把标签整批清掉；没打键的表会一直叠着。
+check(
+  '样式表带两个归属键，卸载时才清得掉',
+  appendedStyles[0]?.dataset?.plugin === '@lynn123411/dsh-subagent-judge-dispatch'
+    && appendedStyles[0]?.dataset?.pluginCss === '@lynn123411/dsh-subagent-judge-dispatch/settings/ui',
+);
 check('样式表里没有写死色值（只从主题变量取）', !/#[0-9a-fA-F]{3,8}\b/.test(appendedStyles[0]?.textContent ?? ''));
 // 卡片区是设置卡片，弹窗是浮起面，两套材料不能混。这里断言的是「谁用了哪一套」，
 // 不是把 CSS 的值再抄一遍：设置卡片必须取 settings-card 那两个词元，且不许配阴影

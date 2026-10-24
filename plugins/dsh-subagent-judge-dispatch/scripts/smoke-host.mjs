@@ -11,7 +11,7 @@
  * 跑法：pnpm test / node scripts/smoke-host.mjs
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,6 +21,31 @@ import * as plugin from '../lib/index.js';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 const pkgName = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name;
+
+// 判断日志落盘到家目录：每个 mount() 换一个仓库根 tmp/ 下的临时家目录，自检既
+// 不去读写真实的家目录，也不会把上一条用例剩下的记录读成这一条用例的。
+const tmpRoot = join(root, 'tmp');
+mkdirSync(tmpRoot, { recursive: true });
+const tmpHomes = [];
+process.on('exit', () => {
+  for (const dir of tmpHomes) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // 临时目录删不掉不影响自检结论。
+    }
+  }
+});
+
+/** 换一份空的家目录，返回它。 */
+function freshHome() {
+  const dir = mkdtempSync(join(tmpRoot, 'judge-host-'));
+  tmpHomes.push(dir);
+  process.env.DSH_HOME = dir;
+  return dir;
+}
+
+/** 当前家目录里落盘的日志。 */
 
 let passed = 0;
 let total = 0;
@@ -170,6 +195,8 @@ function mainAgent() {
  * waterfall listener it registers.
  */
 function mount(configOverrides = {}, options = {}) {
+  // 日志在 apply() 里按当时的 DSH_HOME 定下位置，所以要在这之前换好。
+  freshHome();
   const ctx = new Context();
   const handlers = [];
   const original = ctx.on.bind(ctx);
