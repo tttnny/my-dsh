@@ -59,11 +59,14 @@ JSON 表达不了。产物落 `tmp/ui-preview/`，HTML 留着，想看交互就�
   所以 markdown 段落间距、Tag、Button 的长相都是宿主那一份。**插件新引一个 ui-primitives 名字，
   就要在那个替身里补一个**，否则那一处是 `undefined`，React 只打一行 warning、预览页上静默少一块。
   现有薄壳：`Button`、`Tag`、`Input`、`Switch`、`SegmentedTabs`、`Modal`、`CodeBlock`、`Menu`、
-  `MarkdownText` 与几个图标；新加一个时照它真组件的类名与 DOM 层数写（`Input` 的类名落在外面那层
-  `.wrap` 上，`Switch` 的外观键在 `aria-checked` 上），并在 `ui-preview.mjs` 的 `hostSheets`
-  里补上那份 `.module.css`——替身只有类名，样式不会自己跟过来。
-- **主题变量取宿主 checkout 里的真表**（`design-platform.css` 与 `gradient-shadow-text.css`，
-  路径随 `DSH_SOURCE`）。所以深浅色、字号档位都跟着宿主走，不在这里另抄一份。
+  `Tooltip`、`writeClipboard`、`MarkdownText` 与几个图标；新加一个时照它真组件的类名与 DOM 层数写
+  （`Input` 的类名落在外面那层 `.wrap` 上，`Switch` 的外观键在 `aria-checked` 上），并在
+  `ui-preview.mjs` 的 `hostSheets` 里补上那份 `.module.css`——替身只有类名，样式不会自己跟过来。
+- **主题变量取宿主 checkout 里的真表**（`design-platform.css`、`gradient-shadow-text.css`、
+  `base.css`、`corner-shape.css`、`focus.css`、`scrollbar.css`，路径随 `DSH_SOURCE`）。色板在
+  `design-platform.css`，而圆角、字号与卡片材料那几组 `--dsw-*` 在 `base.css` 里——只取前者，
+  预览图上所有圆角都会消失，看着像样式写坏了。所以深浅色、字号档位、圆角都跟着宿主走，
+  不在这里另抄一份。
 - **预览只画组件，不跑 `apply()`**：插件在 `apply()` 里注入的那份 `<style>`（见上文「样式在
   `apply()` 里注入」）不会出现在预览页上。预览图据此刻读结构，布局与观感仍要回真实例上看。
 

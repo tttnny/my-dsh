@@ -191,8 +191,14 @@ await build({
 const dshRoot = process.env.DSH_SOURCE ?? resolve(root, '..', 'other', 'deepseek-harness');
 const primitivesRoot = join(pkg.dir, 'node_modules/@deepseek-ai/dsh-client-ui-primitives/lib');
 const hostSheets = [
+  // 主题的四份表都要在：design-platform 只给色板，圆角、字号与卡片材料在 base 里，
+  // 少了它 --dsw-radius-* 、--dsw-font-* 全是空的，预览图上就成了一堆尖角。
   join(dshRoot, 'packages/client/ui-theme/src/styles/design-platform.css'),
   join(dshRoot, 'packages/client/ui-theme/src/styles/gradient-shadow-text.css'),
+  join(dshRoot, 'packages/client/ui-theme/src/styles/base.css'),
+  join(dshRoot, 'packages/client/ui-theme/src/styles/corner-shape.css'),
+  join(dshRoot, 'packages/client/ui-theme/src/styles/focus.css'),
+  join(dshRoot, 'packages/client/ui-theme/src/styles/scrollbar.css'),
   join(primitivesRoot, 'markdown/MarkdownText.module.css'),
   join(primitivesRoot, 'markdown/CodeBlock.module.css'),
   join(primitivesRoot, 'Tag.module.css'),
@@ -201,6 +207,9 @@ const hostSheets = [
   join(primitivesRoot, 'Switch.module.css'),
   join(primitivesRoot, 'Modal.module.css'),
   join(primitivesRoot, 'SegmentedTabs.module.css'),
+  join(primitivesRoot, 'Menu.module.css'),
+  join(primitivesRoot, 'MenuSurface.module.css'),
+  join(primitivesRoot, 'Tooltip.module.css'),
 ].filter((path) => existsSync(path));
 
 const flatten = (text) => text.replace(/:global\(([^)]*)\)/g, '$1');

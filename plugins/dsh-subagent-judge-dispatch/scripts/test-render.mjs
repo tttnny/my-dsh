@@ -1,7 +1,9 @@
 /**
  * 渲染自检：用真 react 把配置卡片画进 jsdom，锁住这次界面的三件事。
  *
- *   1. 试通与预览两个按钮在判断服务那一节的保存行里，不在标题栏；
+ *   1. 每节各有自己的保存行：试通在判断服务那节的保存行里，导入、导出、加一行按这个
+ *      顺序排在任务类型那节的保存行右端；预览同时用到判断模型与类型清单，单独排在卡片
+ *      最下面那一条栏里；
  *   2. 判断日志那张表是六列：结果、选择、主代理、子代理、时间、耗时——结果在最左，
  *      模型·强度合成一格，供应商只在悬停时补上；
  *   3. 点一行开出来的弹窗只讲一件事：这次发给判断模型的完整内容。结果、选择、
@@ -225,19 +227,36 @@ const test = async (label, fn) => {
   }
 };
 
-await test('试通与预览两个按钮在保存行里，不在标题栏', () => {
+await test('导入导出与加一行在任务类型那一节的保存行里，预览在卡片最下面', () => {
   const probe = buttonByText(zh['judge.probe']);
-  const preview = buttonByText(zh['preview.open']);
   assert.ok(probe !== undefined, '试通按钮应当在场');
-  assert.ok(preview !== undefined, '预览按钮应当在场');
-  // 两者同在一个 .dsh-judge-actions 里，且与「保存」同在那一行。
+  // 试通问的是「这一节存下去能不能用」，与那一节的保存同行。
   const row = probe.closest('.dsh-judge-actions');
   assert.ok(row !== null, '试通按钮应当落在某一节的保存行里');
-  assert.equal(preview.closest('.dsh-judge-actions'), row, '两个按钮在同一行');
-  assert.equal(buttonByText(zh['save.button'])?.closest('.dsh-judge-actions'), row, '跟保存同一行');
+  assert.equal(buttonByText(zh['save.button'])?.closest('.dsh-judge-actions'), row, '跟判断服务那一节的保存同一行');
   // 标题栏里不再有按钮。
   const head = probe.closest('.dsh-judge-section')?.querySelector('.dsh-judge-head');
   assert.equal(head?.querySelectorAll('button').length ?? 0, 0, '标题栏里不该再有按钮');
+
+  // 导入、导出、加一行都只动这份清单，所以排在它自己那一节的保存行右端；
+  // 顺序固定：先导入再导出，最后才是往下续一条的「加一行」。
+  const rowsRow = [...container.querySelectorAll('.dsh-judge-actions')]
+    .find((node) => node.textContent?.includes(zh['rows.add']));
+  assert.ok(rowsRow !== undefined, '任务类型那一节应当有保存行');
+  const trailing = [...(rowsRow?.querySelectorAll('.dsh-judge-actions-group') ?? [])].at(-1);
+  assert.deepEqual(
+    [...(trailing?.querySelectorAll('button') ?? [])].map((node) => node.textContent?.trim()),
+    [zh['rows.importOpen'], zh['rows.export'], zh['rows.add']],
+    '这一行右端按「导入、导出、加一行」排',
+  );
+  assert.notEqual(rowsRow, row, '导入导出不跟判断服务那一节挤在同一行');
+
+  // 预览同时用到判断模型与类型清单，哪一节都不独占，单独排在两节之外。
+  const preview = buttonByText(zh['preview.open']);
+  assert.ok(preview !== undefined, '预览按钮应当在场');
+  assert.equal(preview.closest('.dsh-judge-section'), null, '预览不该再挂在某一节里面');
+  assert.ok(preview.closest('.dsh-judge-footer') !== null, '预览应当落在卡片最下面那条栏里');
+  assert.equal(probe.closest('.dsh-judge-footer'), null, '试通不搬到这条栏里');
 });
 
 await test('导出把整份清单按纯 JSON 复制走', async () => {
@@ -288,7 +307,7 @@ await test('导入是粘贴，粘进来的清单只填表，保存仍要另按',
     '强度也跟着换了',
   );
   // 导入落在草稿里：清单那一节的保存按钮此刻可点，说明还没写进文档。
-  const rowsSection = buttonByText(zh['rows.importOpen'])?.closest('.dsh-judge-section');
+  const rowsSection = container.querySelector('.dsh-judge-table')?.closest('.dsh-judge-section');
   const saveButton = [...(rowsSection?.querySelectorAll('button') ?? [])]
     .find((node) => node.textContent?.trim() === zh['save.button']);
   assert.equal(saveButton?.disabled, false, '导入之后仍要读者自己按保存');
