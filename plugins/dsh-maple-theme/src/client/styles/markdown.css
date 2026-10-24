@@ -1,0 +1,240 @@
+/* Maple 正文层：对话流里的 markdown 排版与装饰。
+ *
+ * 作用范围只有一处：助手回答的正文（`[data-chat-flow-kind='assistant-step']`）。
+ * 推理块用的是同一个 kind，但它自己带 `data-chat-group-part='reasoning'`，被排除在外——
+ * 推理行要保持宿主的小字号与紧凑行距，跟着正文一起放大就糊成一片。
+ * 工具行也排除：它的 flow kind 是 `tool-call`，宿主本来就不在里面放 markdown 元素。
+ *
+ * 选择器一律「宿主的数据属性 + 元素名」两层：宿主正文的类名是 CSS Modules 的哈希串，
+ * 换一次构建就变，不能当锚点。属性两层加元素一个，优先级 (0,2,1) 恰好压过宿主
+ * module 样式表里的 `.markdown h2` (0,1,1)，所以不需要 !important。
+ */
+
+html[data-maple-theme='on'] {
+  --maple-p-gap: 10px;
+  --maple-underline-offset: 2px;
+  --maple-inline-code: hsl(0 45% 48%);
+  --maple-quote-bar: hsl(var(--maple-hue-light, 35) 26% 38% / 45%);
+  --maple-quote-fill: hsl(var(--maple-hue-light, 35) 20% 95%);
+  --maple-table-head: hsl(var(--maple-hue-light, 35) 30% 91%);
+}
+
+html[data-maple-theme='on'] body[data-ds-dark-theme] {
+  --maple-inline-code: hsl(0 44% 68%);
+  --maple-quote-bar: hsl(var(--maple-hue-dark, 207) 30% 72% / 40%);
+  --maple-quote-fill: hsl(var(--maple-hue-dark, 207) 10% 14%);
+  --maple-table-head: hsl(var(--maple-hue-dark, 207) 12% 17%);
+}
+
+/* 段落与行内元素：段距取 Maple 的 8px 量级（宿主是 16px），行高已在 tokens.css 里给。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(p) {
+  margin: var(--maple-p-gap) 0;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(li > p) {
+  margin: 4px 0;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(strong) {
+  font-weight: 600;
+}
+
+/* 行内代码：Maple 用暖红一色区分，不再是「加了底的正文」。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :not(pre) > code {
+  color: var(--maple-inline-code);
+  background-color: color-mix(in srgb, var(--maple-inline-code) 8%, transparent);
+  border-color: color-mix(in srgb, var(--maple-inline-code) 18%, transparent);
+}
+
+/* 链接下划线的抬升量：Maple 的 --setting-underline-offset 默认 2px。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(a) {
+  text-underline-offset: var(--maple-underline-offset);
+}
+
+/* 标题：字号与字重来自 tokens.css 的复合令牌，这里只补颜色、间距与 h5/h6。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6) {
+  position: relative;
+  margin: 28px 0 12px;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5) {
+  font-size: calc(var(--dsh-content-font-size, 14px) * 1.05);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6) {
+  font-size: var(--dsh-content-font-size, 14px);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1) { color: var(--maple-h1); }
+html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h2) { color: var(--maple-h2); }
+html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h3) { color: var(--maple-h3); }
+html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h4) { color: var(--maple-h4); }
+html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5) { color: var(--maple-h5); }
+html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6) { color: var(--maple-h6); }
+
+/* 标题等级标记：Maple 的 heading-indicator-auto——平时看不见，悬停时在左侧淡入 H1…H6。 */
+html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6)::before {
+  position: absolute;
+  inset-inline-start: -1.9rem;
+  top: 0.15em;
+  font-size: calc(var(--dsh-content-font-size, 14px) * 0.7);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--dsw-alias-label-caption);
+  opacity: 0;
+  transition: opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+  pointer-events: none;
+}
+
+html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6):hover::before {
+  opacity: 1;
+}
+
+html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1)::before { content: 'H1'; }
+html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h2)::before { content: 'H2'; }
+html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h3)::before { content: 'H3'; }
+html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h4)::before { content: 'H4'; }
+html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5)::before { content: 'H5'; }
+html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6)::before { content: 'H6'; }
+
+/* 引用：Maple 是浅底 + 左侧一条色带，不是宿主的单边竖线。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote) {
+  position: relative;
+  margin: 14px 0;
+  padding: 8px 14px 8px 18px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--maple-quote-fill);
+  color: var(--dsw-alias-label-secondary);
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote)::before {
+  content: '';
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 7px;
+  width: 3px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--maple-quote-bar);
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote blockquote) {
+  margin-inline-end: 0;
+  background: color-mix(in srgb, var(--maple-quote-fill) 70%, var(--dsw-alias-bg-base));
+}
+
+/* 列表：Maple 的标记用等宽字体，并按层级换形状（实心圆 → 空心圆 → 方块）。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul, ol) {
+  margin: var(--maple-p-gap) 0;
+  padding-inline-start: 1.35em;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(li)::marker {
+  font-family: var(--ds-font-family-code);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul) > :where(li)::marker {
+  font-size: 0.85em;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul ul, ul ul ul ul, ul ul ul ul ul ul) {
+  list-style-type: circle;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul ul ul, ul ul ul ul ul) {
+  list-style-type: square;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(li) {
+  margin: 3px 0;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(input[type='checkbox']) {
+  accent-color: var(--dsw-alias-state-business-primary);
+  margin-inline-end: 8px;
+}
+
+/* 表格：Maple 的表头填一层浅底、外边圆角、横线只在行之间。
+ * 宿主用 border-collapse: collapse，圆角会被裁掉，所以改成 separate + 零间距，
+ * 只给四角的单元格上圆角。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(table) {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: calc(var(--dsh-content-font-size, 14px) - 1px);
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(th) {
+  background: var(--maple-table-head);
+  font-weight: 600;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(thead > tr > th:first-child) {
+  border-start-start-radius: var(--dsw-radius-sm);
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(thead > tr > th:last-child) {
+  border-start-end-radius: var(--dsw-radius-sm);
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(tbody > tr:last-child > td:first-child) {
+  border-end-start-radius: var(--dsw-radius-sm);
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(tbody > tr:last-child > td:last-child) {
+  border-end-end-radius: var(--dsw-radius-sm);
+}
+
+/* 分隔线：Maple 是一条两端淡出的渐变，不是一根等宽实线，上下留白也更大。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(hr) {
+  height: 1px;
+  margin: 28px 0;
+  border: 0;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--dsw-alias-border-l3) 22%,
+    var(--dsw-alias-border-l4) 50%,
+    var(--dsw-alias-border-l3) 78%,
+    transparent 100%
+  );
+}
+
+/* 代码块：Maple 给它一圈发丝边框、比宿主小一档的圆角，标题条用比正文深一档的底。
+ * 宿主把圆角收在一个局部变量里（--dsl-code-block-border-radius，默认 radius-lg），
+ * 所以换圆角只要换那个变量，不必去写各角的 border-radius。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(.md-code-block) {
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  --dsl-code-block-border-radius: var(--dsw-radius-md);
+}
+
+/* 标题条：Maple 的 code-language 用等宽字体、行内代码那个暖色，字号小一号。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where([data-code-block-banner]) {
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where([data-code-block-banner]) :where(div:first-child) {
+  font-family: var(--ds-font-family-code);
+  letter-spacing: 0.02em;
+  color: var(--maple-inline-code);
+}
+
+/* 行号栏：Maple 的行号比宿主的再淡一档，让代码本身更突出。
+ * 宿主把行号画在 `.line::before` 上并直接取 --dsw-alias-label-tertiary，所以在行号容器里
+ * 把那个变量换成 caption 一档；`--dsl-*` 是组件自己的局部变量，不在这里改。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where([data-line-numbers]) {
+  --dsw-alias-label-tertiary: var(--dsw-alias-label-caption);
+}
+
+/* 选中文字：Maple 用强调色的低透明度，不是浏览器的默认蓝。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step'] ::selection {
+  background: hsl(35 60% 62% / 28%);
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}

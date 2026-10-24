@@ -1,0 +1,75 @@
+/* Maple 外壳层：侧栏、会话头部、输入区与标签条的观感。
+ *
+ * 锚点只有一样是稳的：`data-slot`。宿主的外壳类名全是 CSS Modules 的哈希串
+ * （`pI_x6G_sidebarCol`、`wSkVaW_tabActive`），换一次构建就变；而 `data-slot` 是座位注册时
+ * 写死的名字，属于跨包契约——插件的座位就是靠它认的。需要选中「装座位的那个壳」时用
+ * `:has(> [data-slot='…'])`：壳没有名字，但它的孩子有。行与标签另有具体属性：
+ * `[data-row-key^='session:']`、`[data-conversation-tabs] [aria-selected]`。
+ *
+ * 这一层只改**观感**：底色、分隔线、圆角、字重。不动 grid、不动尺寸、不动滚动归属，
+ * 所以宿主的折叠、拖宽、响应式都照旧。要变成布局改动就得同时接管布局，那是另一件事。
+ *
+ * 整层受 `data-maple-shell` 开关控制，配置页上可以整个关掉回到宿主原样。
+ */
+
+/* 中央列：Maple 的 app-layout-card 把编辑区当成一张浮在侧栏底色上的卡片，
+ * 四周留一条窄缝（它的 --app-layout-spacing 默认在 6~8px）。这里照同样思路，
+ * 但只给内边距，不动 grid 轨道——轨道由宿主按拖宽实时写行内样式。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body :has(> [data-slot='main']) {
+  padding: 6px 6px 0;
+  box-sizing: border-box;
+}
+
+/* 侧栏与中央卡片之间：宿主的 0.5px 冷灰分隔线，Maple 用留白分层，不要这条线。
+ * 侧栏底色已由 tokens.css 的 --dsw-specific-sidebar-fill 给出（Maple 的暖灰）。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body :has(> [data-slot='sidebar']) {
+  border-right: 0;
+}
+
+/* 会话头部：Maple 的标题区没有那条贯穿的分隔线。
+ * 宿主用 border-bottom 画它；改成 transparent 而不是 none，避免高度跳 0.5px。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body :has(> [data-slot='conversation.header']) {
+  border-bottom-color: transparent;
+}
+
+/* 标签条：Maple 的 tab-float 把活动标签做成一枚浮起的药丸，底下不带指示条。
+ * 宿主的活动指示是 `::after` 的一条 2px 线，这里撤掉它、改用同宽的圆角底。
+ * 药丸圆角与本条规则同写 corner-shape：整圆与药丸必须配对，否则主题的
+ * superellipse 会把它揉成方圆形。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-conversation-tabs] [aria-selected='true'] {
+  border-radius: var(--dsw-radius-sm);
+  corner-shape: round;
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-conversation-tabs] [aria-selected='true']::after {
+  opacity: 0;
+}
+
+/* 输入区：Maple 的输入卡是「比正文浅一档的纸」，圆角取面板级。
+ * 宿主的 composer 已经是 border: 0 + elevation-soft（投影层只换填充与圆角，不碰阴影）。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-composer-card] {
+  background: var(--dsw-specific-input-major);
+  border-radius: var(--dsw-radius-panel);
+}
+
+/* 侧栏的导航行与工作区行：Maple 的列表项带圆角，悬停与选中都是圆角块。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-row-key^='session:'],
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-row-key^='workspace:'] {
+  border-radius: var(--dsw-radius-sm);
+}
+
+/* 侧栏底部工具栏：宿主的冷灰浮层，换成 Maple 的纸色。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-slot='shell.bottom'] {
+  background: var(--dsw-specific-tip);
+}
+
+/* 会话头部的图标按钮：Maple 的图标按钮是紧凑控件级圆角。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-slot='conversation.session.header.actions'] button {
+  border-radius: var(--dsw-radius-sm);
+}
+
+/* 滚动条：Maple 是细的圆头胶囊，比宿主的 5px 略宽一档、颜色更暖。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body {
+  --dsh-scrollbar-width: 6px;
+}

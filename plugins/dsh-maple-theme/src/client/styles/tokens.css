@@ -1,0 +1,241 @@
+/* Maple 配色层：把宿主的 --dsw-* 语义令牌改写成 Maple 的两套调色板。
+ *
+ * 这一层是**主题层**，所以按定义要写具体色值——它替换的正是宿主那些写死色值的语义令牌。
+ * 选择器必须与宿主同形（`body` 与 `body[data-ds-dark-theme]`）：插件的样式表后注入，
+ * 同优先级下后者赢；换成别的选择器会被宿主那一份压回去。
+ *
+ * Maple 整套颜色从一个色相推导：浅色 35°（暖白），深色 207°（冷灰），其余全是 hsl 公式。
+ * 这里照它的形状写，两个色相由插件写在 <html> 的行内变量上（--maple-hue-light / -dark），
+ * 所以配置页拨一下数字，整套色板跟着转，样式表不用重建。
+ *
+ * 与 Maple 原版的偏差只有两处，都是为了让对话流读得清：
+ *   - 链接与强调色按 WCAG AA 压深（原版 hsl(35 22% 56%) 在 #F8F8F6 上只有 2.79:1）；
+ *   - 深色的正文不再叠 15% 透明度（原版 --color-opacity 会让长文整体发灰）。
+ * 对比度由 scripts/test-tokens.mjs 读这份文件自己算，改色值前先看那里。
+ */
+
+body {
+  --dsw-alias-bg-base: hsl(var(--maple-hue-light, 35) 12% 97%);
+  --dsw-alias-bg-layer-1: hsl(var(--maple-hue-light, 35) 10% 95%);
+  --dsw-alias-bg-layer-2: hsl(calc(var(--maple-hue-light, 35) - 18) 8% 93%);
+  --dsw-alias-bg-overlay: hsl(var(--maple-hue-light, 35) 10% 94%);
+  --dsw-alias-bg-module-platform: hsl(var(--maple-hue-light, 35) 13.2% 90.6%);
+
+  --dsw-alias-label-primary: hsl(var(--maple-hue-light, 35) 10% 18%);
+  --dsw-alias-label-secondary: hsl(var(--maple-hue-light, 35) 8% 35%);
+  --dsw-alias-label-tertiary: hsl(var(--maple-hue-light, 35) 7% 42%);
+  --dsw-alias-label-caption: hsl(var(--maple-hue-light, 35) 6% 50%);
+  --dsw-alias-label-dimmed: hsl(var(--maple-hue-light, 35) 8% 82%);
+  --dsw-alias-label-primary-dimmed: hsl(var(--maple-hue-light, 35) 9% 27%);
+  --dsw-alias-label-primary-bluish: hsl(var(--maple-hue-light, 35) 26% 38%);
+  --dsw-alias-label-primary-foreground: hsl(var(--maple-hue-light, 35) 40% 96%);
+  --dsw-alias-label-primary-inverted: hsl(var(--maple-hue-light, 35) 40% 96%);
+  --dsw-alias-label-shimmer: hsl(var(--maple-hue-light, 35) 10% 18% / 30%);
+
+  --dsw-alias-link: hsl(162 76% 29%);
+
+  --dsw-alias-brand-primary: hsl(var(--maple-hue-light, 35) 26% 38%);
+  --dsw-alias-brand-text: hsl(var(--maple-hue-light, 35) 10% 18%);
+  --dsw-alias-state-business-primary: hsl(var(--maple-hue-light, 35) 26% 38%);
+  --dsw-alias-state-business-tertiary: hsl(var(--maple-hue-light, 35) 40% 88%);
+  --dsw-alias-state-error-primary: hsl(0 45% 48%);
+  --dsw-alias-state-warn-primary: hsl(32 70% 37%);
+  --dsw-alias-state-success-primary: hsl(95 75% 29%);
+
+  --dsw-alias-border-l1: hsl(var(--maple-hue-light, 35) 26% 38% / 10%);
+  --dsw-alias-border-l2: hsl(var(--maple-hue-light, 35) 26% 38% / 16%);
+  --dsw-alias-border-l3: hsl(var(--maple-hue-light, 35) 26% 38% / 20%);
+  --dsw-alias-border-l4: hsl(var(--maple-hue-light, 35) 26% 38% / 26%);
+  --dsw-alias-separator-primary: hsl(var(--maple-hue-light, 35) 26% 38% / 16%);
+
+  --dsw-alias-interactive-bg-hover: hsl(var(--maple-hue-light, 35) 26% 38% / 7%);
+  --dsw-alias-interactive-bg-active: hsl(var(--maple-hue-light, 35) 26% 38% / 12%);
+  --dsw-alias-interactive-bg-hover-solid: hsl(var(--maple-hue-light, 35) 12% 93%);
+
+  --dsw-alias-button-info-fill: hsl(162 62% 30%);
+  --dsw-alias-button-info-hover: hsl(162 62% 24%);
+  --dsw-alias-brand-primary-new-colorprimary-new-color: hsl(var(--maple-hue-light, 35) 30% 42%);
+
+  --dsw-alias-button-primary-fill: hsl(var(--maple-hue-light, 35) 30% 42%);
+  --dsw-alias-button-primary-hover: hsl(var(--maple-hue-light, 35) 32% 34%);
+  --dsw-alias-button-floating-fill: hsl(var(--maple-hue-light, 35) 14% 98.5%);
+  --dsw-alias-button-floating-hover: hsl(var(--maple-hue-light, 35) 10% 95%);
+
+  --dsw-alias-markdown-code-block: hsl(var(--maple-hue-light, 35) 10% 95%);
+  --dsw-alias-markdown-code-block-banner: hsl(var(--maple-hue-light, 35) 13.2% 90.6%);
+  --dsw-alias-markdown-inline-code: hsl(var(--maple-hue-light, 35) 14% 94%);
+  --dsw-alias-markdown-tag: hsl(var(--maple-hue-light, 35) 40% 88%);
+  --dsw-alias-markdown-citation: hsl(var(--maple-hue-light, 35) 10% 94%);
+
+  --dsw-alias-scrollbar-bg-l1: hsl(var(--maple-hue-light, 35) 14% 84%);
+  --dsw-alias-scrollbar-bg-l2: hsl(var(--maple-hue-light, 35) 20% 78%);
+  --dsw-alias-scrollbar-hover-l2: hsl(var(--maple-hue-light, 35) 18% 71%);
+
+  --dsw-alias-menu-icon: hsl(var(--maple-hue-light, 35) 8% 35%);
+
+  --dsw-specific-sidebar-fill: hsl(calc(var(--maple-hue-light, 35) - 18) 8% 93%);
+  --dsw-specific-sidebar-nav-item-active: hsl(var(--maple-hue-light, 35) 26% 88%);
+  --dsw-specific-sidebar-nav-item-hover: hsl(var(--maple-hue-light, 35) 26% 38% / 8%);
+  --dsw-specific-sidebar-nav-item-active-accent: hsl(var(--maple-hue-light, 35) 40% 84%);
+  --dsw-specific-tip: hsl(var(--maple-hue-light, 35) 18% 90%);
+  --dsw-specific-login-input: hsl(var(--maple-hue-light, 35) 14% 98.5%);
+
+  --dsw-specific-bubble: hsl(var(--maple-hue-light, 35) 24% 93%);
+  --dsw-specific-bubble-highlight: hsl(var(--maple-hue-light, 35) 30% 87%);
+  --dsw-specific-input-major: hsl(var(--maple-hue-light, 35) 14% 98.5%);
+  --dsw-specific-selector: hsl(var(--maple-hue-light, 35) 14% 94%);
+}
+
+body[data-ds-dark-theme] {
+  --dsw-alias-bg-base: hsl(var(--maple-hue-dark, 207) 6% 11%);
+  --dsw-alias-bg-layer-1: hsl(var(--maple-hue-dark, 207) 10% 13%);
+  --dsw-alias-bg-layer-2: hsl(calc(var(--maple-hue-dark, 207) - 8) 6% 12%);
+  --dsw-alias-bg-overlay: hsl(var(--maple-hue-dark, 207) 8% 14%);
+  --dsw-alias-bg-module-platform: hsl(var(--maple-hue-dark, 207) 12% 12.4%);
+
+  --dsw-alias-label-primary: hsl(var(--maple-hue-dark, 207) 24% 88%);
+  --dsw-alias-label-secondary: hsl(var(--maple-hue-dark, 207) 16% 72%);
+  --dsw-alias-label-tertiary: hsl(var(--maple-hue-dark, 207) 12% 58%);
+  --dsw-alias-label-caption: hsl(var(--maple-hue-dark, 207) 10% 46%);
+  --dsw-alias-label-dimmed: hsl(var(--maple-hue-dark, 207) 8% 26%);
+  --dsw-alias-label-primary-dimmed: hsl(var(--maple-hue-dark, 207) 18% 80%);
+  --dsw-alias-label-primary-bluish: hsl(var(--maple-hue-dark, 207) 26% 72%);
+  --dsw-alias-label-primary-foreground: hsl(var(--maple-hue-dark, 207) 10% 9%);
+  --dsw-alias-label-primary-inverted: hsl(var(--maple-hue-dark, 207) 10% 13%);
+  --dsw-alias-label-shimmer: hsl(0 0% 100% / 45%);
+
+  --dsw-alias-link: hsl(178 30% 62%);
+
+  --dsw-alias-brand-primary: hsl(var(--maple-hue-dark, 207) 26% 72%);
+  --dsw-alias-brand-text: hsl(var(--maple-hue-dark, 207) 24% 88%);
+  --dsw-alias-state-business-primary: hsl(var(--maple-hue-dark, 207) 26% 72%);
+  --dsw-alias-state-business-tertiary: hsl(var(--maple-hue-dark, 207) 18% 22%);
+  --dsw-alias-state-error-primary: hsl(0 44% 68%);
+  --dsw-alias-state-warn-primary: hsl(20 40% 68%);
+  --dsw-alias-state-success-primary: hsl(130 32% 68%);
+
+  --dsw-alias-border-l1: hsl(var(--maple-hue-dark, 207) 24% 88% / 7%);
+  --dsw-alias-border-l2: hsl(var(--maple-hue-dark, 207) 24% 88% / 13%);
+  --dsw-alias-border-l3: hsl(var(--maple-hue-dark, 207) 24% 88% / 17%);
+  --dsw-alias-border-l4: hsl(var(--maple-hue-dark, 207) 24% 88% / 22%);
+  --dsw-alias-separator-primary: hsl(var(--maple-hue-dark, 207) 24% 88% / 13%);
+
+  --dsw-alias-interactive-bg-hover: hsl(var(--maple-hue-dark, 207) 24% 88% / 8%);
+  --dsw-alias-interactive-bg-active: hsl(var(--maple-hue-dark, 207) 24% 88% / 14%);
+  --dsw-alias-interactive-bg-hover-solid: hsl(var(--maple-hue-dark, 207) 14% 16%);
+
+  --dsw-alias-button-info-fill: hsl(178 34% 34%);
+  --dsw-alias-button-info-hover: hsl(178 34% 42%);
+  --dsw-alias-brand-primary-new-colorprimary-new-color: hsl(var(--maple-hue-dark, 207) 30% 66%);
+
+  --dsw-alias-button-primary-fill: hsl(var(--maple-hue-dark, 207) 30% 66%);
+  --dsw-alias-button-primary-hover: hsl(var(--maple-hue-dark, 207) 32% 76%);
+  --dsw-alias-button-floating-fill: hsl(var(--maple-hue-dark, 207) 8% 15%);
+  --dsw-alias-button-floating-hover: hsl(var(--maple-hue-dark, 207) 14% 19%);
+
+  --dsw-alias-markdown-code-block: hsl(var(--maple-hue-dark, 207) 10% 13%);
+  --dsw-alias-markdown-code-block-banner: hsl(var(--maple-hue-dark, 207) 8% 15%);
+  --dsw-alias-markdown-inline-code: hsl(var(--maple-hue-dark, 207) 8% 15%);
+  --dsw-alias-markdown-tag: hsl(var(--maple-hue-dark, 207) 14% 20%);
+  --dsw-alias-markdown-citation: hsl(var(--maple-hue-dark, 207) 8% 14%);
+
+  --dsw-alias-scrollbar-bg-l1: hsl(var(--maple-hue-dark, 207) 10% 25%);
+  --dsw-alias-scrollbar-bg-l2: hsl(var(--maple-hue-dark, 207) 12% 32%);
+  --dsw-alias-scrollbar-hover-l2: hsl(var(--maple-hue-dark, 207) 10% 39%);
+
+  --dsw-alias-menu-icon: hsl(var(--maple-hue-dark, 207) 18% 80%);
+
+  --dsw-specific-sidebar-fill: hsl(calc(var(--maple-hue-dark, 207) - 8) 6% 12%);
+  --dsw-specific-sidebar-nav-item-active: hsl(var(--maple-hue-dark, 207) 14% 19%);
+  --dsw-specific-sidebar-nav-item-hover: hsl(var(--maple-hue-dark, 207) 24% 88% / 8%);
+  --dsw-specific-sidebar-nav-item-active-accent: hsl(var(--maple-hue-dark, 207) 18% 24%);
+  --dsw-specific-tip: hsl(var(--maple-hue-dark, 207) 12% 18%);
+  --dsw-specific-login-input: hsl(var(--maple-hue-dark, 207) 8% 15%);
+
+  --dsw-specific-bubble: hsl(var(--maple-hue-dark, 207) 14% 19%);
+  --dsw-specific-bubble-highlight: hsl(var(--maple-hue-dark, 207) 16% 24%);
+  --dsw-specific-input-major: hsl(var(--maple-hue-dark, 207) 8% 15%);
+  --dsw-specific-selector: hsl(var(--maple-hue-dark, 207) 14% 19%);
+}
+
+/* 正文排版走宿主自己的复合令牌：MarkdownText 用 `font: var(--dsw-font-markdown-*)` 取字号、
+ * 行高与字族，所以改这几条就够，不必去碰 CSS Modules 的哈希类名。
+ * h5/h6 宿主归并进 base-strong，没有单独令牌，由 markdown.css 补。 */
+html[data-maple-theme='on'] body {
+  --dsw-font-markdown-base:
+    var(--dsh-content-font-size, 14px) / calc(var(--dsh-content-font-size, 14px) * var(--maple-line-height, 1.75))
+    var(--dsw-font-family);
+  --dsw-font-markdown-base-strong:
+    600 var(--dsh-content-font-size, 14px) / calc(var(--dsh-content-font-size, 14px) * var(--maple-line-height, 1.75))
+    var(--dsw-font-family);
+
+  --dsw-font-markdown-h1:
+    700 calc(var(--dsh-content-font-size, 14px) * 1.6) / 1.3 var(--dsw-font-family);
+  --dsw-font-markdown-h1-font-size: calc(var(--dsh-content-font-size, 14px) * 1.6);
+  --dsw-font-markdown-h1-font-weight: 700;
+  --dsw-font-markdown-h1-line-height: 1.3;
+
+  --dsw-font-markdown-h2:
+    700 calc(var(--dsh-content-font-size, 14px) * 1.5) / 1.3 var(--dsw-font-family);
+  --dsw-font-markdown-h2-font-size: calc(var(--dsh-content-font-size, 14px) * 1.5);
+  --dsw-font-markdown-h2-font-weight: 700;
+  --dsw-font-markdown-h2-line-height: 1.3;
+
+  --dsw-font-markdown-h3:
+    600 calc(var(--dsh-content-font-size, 14px) * 1.35) / 1.35 var(--dsw-font-family);
+  --dsw-font-markdown-h3-font-size: calc(var(--dsh-content-font-size, 14px) * 1.35);
+  --dsw-font-markdown-h3-font-weight: 600;
+  --dsw-font-markdown-h3-line-height: 1.35;
+
+  --dsw-font-markdown-h4:
+    600 calc(var(--dsh-content-font-size, 14px) * 1.15) / 1.4 var(--dsw-font-family);
+  --dsw-font-markdown-h4-font-size: calc(var(--dsh-content-font-size, 14px) * 1.15);
+  --dsw-font-markdown-h4-font-weight: 600;
+  --dsw-font-markdown-h4-line-height: 1.4;
+}
+
+/* 标题六色：Maple 默认的 colorful，逐级换色。浅色那一列按 4.5:1 调过明度，
+ * 深色用它自己那套提亮色。 */
+html[data-maple-theme='on'][data-maple-heading='colorful'] {
+  --maple-h1: hsl(0 45% 52.5%);
+  --maple-h2: hsl(32 70% 37%);
+  --maple-h3: hsl(95 75% 29%);
+  --maple-h4: hsl(193 94% 31.5%);
+  --maple-h5: hsl(260 20% 48%);
+  --maple-h6: hsl(156 75% 28%);
+}
+
+html[data-maple-theme='on'][data-maple-heading='colorful'] body[data-ds-dark-theme] {
+  --maple-h1: hsl(0 44% 68%);
+  --maple-h2: hsl(20 40% 68%);
+  --maple-h3: hsl(130 32% 68%);
+  --maple-h4: hsl(210 80% 72%);
+  --maple-h5: hsl(247 65% 82%);
+  --maple-h6: hsl(178 40% 64%);
+}
+
+/* 代码语法色：Maple 的 prism 调色板落到宿主的 shiki 变量上。
+ * 宿主 CodeBlock 只认 --shiki-token-*，换这一组就整体换配色。 */
+html[data-maple-theme='on'][data-maple-code='on'] {
+  --shiki-token-keyword: hsl(260 20% 48%);
+  --shiki-token-string: hsl(95 75% 29%);
+  --shiki-token-string-expression: hsl(95 75% 29%);
+  --shiki-token-function: hsl(193 94% 31.5%);
+  --shiki-token-constant: hsl(156 75% 28%);
+  --shiki-token-parameter: hsl(32 70% 37%);
+  --shiki-token-comment: hsl(35 6% 58%);
+  --shiki-token-punctuation: hsl(35 7% 46%);
+  --shiki-token-link: hsl(162 76% 29%);
+}
+
+html[data-maple-theme='on'][data-maple-code='on'] body[data-ds-dark-theme] {
+  --shiki-token-keyword: hsl(247 65% 82%);
+  --shiki-token-string: hsl(130 32% 68%);
+  --shiki-token-string-expression: hsl(130 32% 68%);
+  --shiki-token-function: hsl(210 80% 72%);
+  --shiki-token-constant: hsl(178 40% 64%);
+  --shiki-token-parameter: hsl(20 40% 68%);
+  --shiki-token-comment: hsl(207 10% 46%);
+  --shiki-token-punctuation: hsl(207 12% 58%);
+  --shiki-token-link: hsl(178 30% 62%);
+}

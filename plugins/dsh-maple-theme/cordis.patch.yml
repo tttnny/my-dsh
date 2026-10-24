@@ -1,0 +1,11 @@
+# @lynn123411/dsh-maple-theme bundle patch
+# 声明在 package.json 的 dsh.bundle.patch，`dsh plugin --profile web add` 后自动并入 profile 层栈。
+#
+# 这一条 insert 行同时承载两个半边（见 docs/rules/client-wiring.md）：
+#   - 宿主半边：在那条行下注册插件本体（上面 src/index.ts 的 apply）。行在 root 层，
+#     所以它落进全局层；要收窄到某个 preset，就在 preset 的 config.plugins 里另注册一行。
+#   - 浏览器半边：这条行是 root loader entry，dsh-client-modules 只对 root loader 的
+#     enabled entry 依据 dsh.client 声明服务浏览器半边（lib/client.js）。
+- insert:
+    - id: dsh-maple-theme
+      name: '@lynn123411/dsh-maple-theme'

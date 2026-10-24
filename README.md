@@ -17,6 +17,12 @@
   </thead>
   <tbody>
     <tr>
+      <td><b>🎨 外观</b><br><i>整界面的配色与对话正文的排版</i></td>
+      <td><a href="./plugins/dsh-maple-theme"><code>@lynn123411/dsh-maple-theme</code></a></td>
+      <td><b>Maple 主题</b><br>把 Obsidian 的 Maple 主题搬进 DSH：暖白 / 冷灰两套配色，加上对话正文的排版、代码块与侧栏观感。</td>
+      <td><code>dsh plugin --profile web add @lynn123411/dsh-maple-theme</code></td>
+    </tr>
+    <tr>
       <td><b>📖 阅读体验</b><br><i>作用于对话流的「读」，不污染上下文</i></td>
       <td><a href="./plugins/dsh-chat-translate"><code>@lynn123411/dsh-chat-translate</code></a></td>
       <td><b>聊天翻译</b><br>接管助手行的正文渲染，把每段回答改写成自然简体中文，译文与原文随时一键切换。</td>
