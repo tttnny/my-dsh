@@ -6,8 +6,9 @@
  * `:has(> [data-slot='…'])`：壳没有名字，但它的孩子有。行与标签另有具体属性：
  * `[data-row-key^='session:']`、`[data-conversation-tabs] [aria-selected]`。
  *
- * 这一层只改**观感**：底色、分隔线、圆角、字重。不动 grid、不动尺寸、不动滚动归属，
- * 所以宿主的折叠、拖宽、响应式都照旧。要变成布局改动就得同时接管布局，那是另一件事。
+ * 这一层只改**观感**：底色、分隔线、圆角、留白。唯独中央列那一圈内边距算是尺寸——
+ * 它是 Maple 卡片式布局的外沿，值固定在 6px，不参与宿主的任何计算。
+ * 不动 grid 轨道、不动滚动归属，所以折叠、拖宽、响应式都照旧。
  *
  * 整层受 `data-maple-shell` 开关控制，配置页上可以整个关掉回到宿主原样。
  */
@@ -21,21 +22,27 @@ html[data-maple-theme='on'][data-maple-shell='on'] body :has(> [data-slot='main'
 }
 
 /* 侧栏与中央卡片之间：宿主的 0.5px 冷灰分隔线，Maple 用留白分层，不要这条线。
+ * 两侧都要撤——非 darwin 画在侧栏的右边框上，darwin 画在中央列的左边框上。
  * 侧栏底色已由 tokens.css 的 --dsw-specific-sidebar-fill 给出（Maple 的暖灰）。 */
 html[data-maple-theme='on'][data-maple-shell='on'] body :has(> [data-slot='sidebar']) {
   border-right: 0;
 }
 
+html[data-maple-theme='on'][data-maple-shell='on'] body :has(> [data-slot='main']) {
+  border-left: 0;
+}
+
 /* 会话头部：Maple 的标题区没有那条贯穿的分隔线。
- * 宿主用 border-bottom 画它；改成 transparent 而不是 none，避免高度跳 0.5px。 */
-html[data-maple-theme='on'][data-maple-shell='on'] body :has(> [data-slot='conversation.header']) {
+ * 座位锚点自己是 display: contents，边框画在它包着的真 <header> 上，
+ * 所以这里往下一层找；改成 transparent 而不是 none，避免高度跳 0.5px。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-slot='conversation.header'] header {
   border-bottom-color: transparent;
 }
 
-/* 标签条：Maple 的 tab-float 把活动标签做成一枚浮起的药丸，底下不带指示条。
+/* 标签条：Maple 的 tab-float 把活动标签做成一枚浮起的圆角块，底下不带指示条。
  * 宿主的活动指示是 `::after` 的一条 2px 线，这里撤掉它、改用同宽的圆角底。
- * 药丸圆角与本条规则同写 corner-shape：整圆与药丸必须配对，否则主题的
- * superellipse 会把它揉成方圆形。 */
+ * 圆角与 corner-shape 必须写在同一组声明里，否则宿主的 superellipse 会把
+ * 这个直角圆角揉成方圆形。 */
 html[data-maple-theme='on'][data-maple-shell='on'] body [data-conversation-tabs] [aria-selected='true'] {
   border-radius: var(--dsw-radius-sm);
   corner-shape: round;
@@ -59,8 +66,9 @@ html[data-maple-theme='on'][data-maple-shell='on'] body [data-row-key^='workspac
   border-radius: var(--dsw-radius-sm);
 }
 
-/* 侧栏底部工具栏：宿主的冷灰浮层，换成 Maple 的纸色。 */
-html[data-maple-theme='on'][data-maple-shell='on'] body [data-slot='shell.bottom'] {
+/* 侧栏底部工具栏：宿主的冷灰浮层，换成 Maple 的纸色。
+ * 座位锚点是 display: contents，涂在它不会见效，得涂装它的那个壳。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body :has(> [data-slot='shell.bottom']) {
   background: var(--dsw-specific-tip);
 }
 
@@ -69,7 +77,7 @@ html[data-maple-theme='on'][data-maple-shell='on'] body [data-slot='conversation
   border-radius: var(--dsw-radius-sm);
 }
 
-/* 滚动条：Maple 是细的圆头胶囊，比宿主的 5px 略宽一档、颜色更暖。 */
+/* 滚动条：Maple 的滑块宽 12px、圆头，颜色取它的暖灰（tokens.css 已换）。 */
 html[data-maple-theme='on'][data-maple-shell='on'] body {
-  --dsh-scrollbar-width: 6px;
+  --dsh-scrollbar-width: 12px;
 }

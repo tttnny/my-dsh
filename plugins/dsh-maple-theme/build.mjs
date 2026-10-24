@@ -27,6 +27,7 @@ const PLATFORM_MODULES = [
 // 宿主半边由 DSH 进程按 realpath 路由供给的内核包，inline 进来会造出第二份 registry。
 const KERNEL_MODULES = [
   '@deepseek-ai/cordis',
+  '@deepseek-ai/schemastery',
   '@deepseek-ai/dsh-tools',
 ];
 

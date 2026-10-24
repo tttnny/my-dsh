@@ -1,5 +1,5 @@
 /**
- * 配色自检：直接读 `src/client/styles/tokens.css`，把里面每一对「文字放在底色上」算成
+ * 配色自检：读 `src/client/tokens.ts` 里的两套令牌表，把每一对「文字放在底色上」算成
  * WCAG 对比度，低于阈值就红。
  *
  * 为什么要这一条：主题层写的是具体色值，改一个数不会让任何构建失败，只会让人读不清。
@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 const css = readFileSync(join(root, 'src/client/styles/tokens.css'), 'utf8');
+const tokenSource = readFileSync(join(root, 'src/client/tokens.ts'), 'utf8');
 
 let passed = 0;
 let total = 0;
@@ -32,24 +33,16 @@ function test(label, fn) {
 }
 
 /**
- * 把一份 CSS 的一个规则块读成「变量名 → 值」。
- * 按字符串定位大括号，不拼正则：选择器里有 `[` `]` 与 `-`，拼进正则很容易被转义坑到。
- * @param selector - 块的选择器原文（例如 `body[data-ds-dark-theme]`）。
- * @returns 该块里声明的自定义变量。
+ * 把令牌表读成「令牌名 → 某一个模式的值」。
+ * 每条的形状是 `'--dsw-…': { light: '…', dark: '…' },`，所以按模式各收一份。
+ * @param mode - `light` 或 `dark`。
+ * @returns 该模式下所有令牌的值。
  */
-function block(selector) {
-  const start = css.indexOf(`${selector} {`);
-  assert.notEqual(start, -1, `找不到选择器 ${selector} 的规则块`);
-  const bodyStart = css.indexOf('{', start) + 1;
-  const bodyEnd = css.indexOf('\n}', bodyStart);
-  assert.notEqual(bodyEnd, -1, `选择器 ${selector} 的规则块没有闭合`);
+function palette(mode) {
   const vars = {};
-  for (const line of css.slice(bodyStart, bodyEnd).split(';')) {
-    const at = line.indexOf(':');
-    if (at < 0) continue;
-    const name = line.slice(0, at).trim();
-    if (!name.startsWith('--')) continue;
-    vars[name] = line.slice(at + 1).trim();
+  for (const match of tokenSource.matchAll(/'(--dsw-[a-z0-9-]+)':\s*\{([^}]*)\}/g)) {
+    const value = new RegExp(`${mode}:\\s*'([^']*)'`).exec(match[2]);
+    if (value !== null) vars[match[1]] = value[1];
   }
   return vars;
 }
@@ -128,8 +121,8 @@ function contrast(foreground, background) {
   return contrastRgb(hslaToRgb(foreground), hslaToRgb(background));
 }
 
-const light = block('body');
-const dark = block('body[data-ds-dark-theme]');
+const light = palette('light');
+const dark = palette('dark');
 
 /**
  * 断言某个前景色在某个底色上达到阈值。
@@ -248,6 +241,43 @@ test('caption 一档只用于装饰性文字：正文与三级文字都不许退
     const caption = resolveVar(vars, '--dsw-alias-label-caption');
     for (const role of ['--dsw-alias-label-primary', '--dsw-alias-label-secondary', '--dsw-alias-label-tertiary']) {
       assert.notEqual(resolveVar(vars, role), caption, `${label} ${role} 退成了 caption 一档`);
+    }
+  }
+});
+
+test('三种标题配色各有自己的声明，且「强调色」与「正文色」不是同一个值', () => {
+  for (const mode of ['colorful', 'accent', 'text']) {
+    assert.match(
+      css,
+      new RegExp(`\\[data-maple-heading='${mode}'\\]\\s*\\{`),
+      `标题配色 ${mode} 在浅色下没有声明`,
+    );
+    assert.match(
+      css,
+      new RegExp(`\\[data-maple-heading='${mode}'\\]\\s*body\\[data-ds-dark-theme\\]\\s*\\{`),
+      `标题配色 ${mode} 在深色下没有声明`,
+    );
+  }
+  // 强调色与正文色若取同一个值，配置页上那两档就分不出来，等于少了一档。
+  const accentLight = /\[data-maple-heading='accent'\]\s*\{([^}]*)\}/.exec(css);
+  const textLight = /\[data-maple-heading='text'\]\s*\{([^}]*)\}/.exec(css);
+  assert.notEqual(accentLight, null);
+  assert.notEqual(textLight, null);
+  const value = (block) => /--maple-heading-color:\s*([^;]+);/.exec(block[1])?.[1]?.trim();
+  assert.notEqual(value(accentLight), undefined, '强调色一档没声明 --maple-heading-color');
+  assert.notEqual(value(textLight), undefined, '正文色一档没声明 --maple-heading-color');
+  assert.notEqual(value(accentLight), value(textLight), '强调色与正文色取了同一个值');
+});
+
+test('六级标题的两种单色模式都逐级挂到了元素上', () => {
+  const markdown = readFileSync(join(root, 'src/client/styles/markdown.css'), 'utf8');
+  for (const mode of ['accent', 'text']) {
+    for (const level of ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']) {
+      assert.match(
+        markdown,
+        new RegExp(`\\[data-maple-heading='${mode}'\\][^{]*:where\\(${level}\\)`),
+        `${mode} 模式没给 ${level} 挂颜色`,
+      );
     }
   }
 });

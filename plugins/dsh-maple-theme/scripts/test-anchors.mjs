@@ -79,6 +79,20 @@ test('装饰层与外壳层只挂在自己的根属性下面（关掉就整段�
   assert.deepEqual(offenders, [], `这些规则没挂在根属性下：${offenders.join(' | ')}`);
 });
 
+test('段落间距落在容器的 gap 上（宿主的正文容器是 flex，段落 margin 被归零）', () => {
+  const markdown = sheets['markdown.css'];
+  assert.match(
+    markdown,
+    /:has\(> \[class\*='markdown'\]\)\s*\{[^}]*gap:\s*var\(--maple-p-gap/,
+    '段距没有落在容器的 gap 上——写 p 的 margin 会被宿主的 flex 归零，等于没生效',
+  );
+  assert.doesNotMatch(
+    markdown,
+    /:where\(p\)\s*\{[^}]*margin:\s*var\(--maple-p-gap/,
+    '段距写回了 p 的 margin，宿主的 flex 容器会把它吃掉',
+  );
+});
+
 test('每一处圆角都取 --dsw-radius-* 或 Maple 自己的变量，没有字面 px', () => {
   const offenders = [];
   for (const [file, css] of Object.entries(sheets)) {
@@ -105,13 +119,17 @@ test('药丸与整圆的每条规则都配了 corner-shape: round', () => {
   }
 });
 
-/** 宿主源码根：优先用 --source，其次按工具脚本的约定找。 */
+/**
+ * 宿主源码根：优先用 --source，其次按仓库工具脚本同一套顺序找
+ * （`DSH_SOURCE`、仓库同级的 ../other/deepseek-harness、再上一层的 ../deepseek-harness）。
+ * 与 tools/lib/dsh-source.mjs 保持同样三个位置，路径里不写死任何人的机器。
+ */
 function findHostSource() {
   const explicit = process.argv.slice(2).find((arg) => arg.startsWith('--source='))?.slice('--source='.length);
   if (explicit !== undefined) return resolve(explicit);
   const candidates = [
     process.env.DSH_SOURCE,
-    '/Users/tny/Desktop/work/other/deepseek-harness',
+    resolve(root, '../../../other/deepseek-harness'),
     resolve(root, '../../../deepseek-harness'),
   ].filter((value) => typeof value === 'string' && value !== '');
   return candidates.find((candidate) => existsSync(join(candidate, 'packages/client')));

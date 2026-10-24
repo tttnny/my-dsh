@@ -77,6 +77,7 @@ const form = fakeForm({});
 const localeRegistrations = [];
 const slotRegistrations = [];
 const injectCalls = [];
+const themeOverrides = [];
 const errors = [];
 
 /** 服务表：只有这里列出的服务存在；读别的就是「未声明」。 */
@@ -103,6 +104,12 @@ function services() {
       register: (namespace, dictionaries) => {
         localeRegistrations.push({ namespace, dictionaries });
         return () => {};
+      },
+    },
+    theme: {
+      overrideTokens: (sourceName, tokens) => {
+        themeOverrides.push({ source: sourceName, tokens });
+        return () => { themeOverrides.length = 0; };
       },
     },
   };
@@ -143,7 +150,7 @@ check(
 );
 check(
   'inject 写的就是它真正读的服务',
-  JSON.stringify([...exported.inject].sort()) === '["configForms","locale","slots"]',
+  JSON.stringify([...exported.inject].sort()) === '["configForms","locale","slots","theme"]',
   JSON.stringify(exported.inject),
 );
 

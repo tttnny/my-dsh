@@ -116,6 +116,29 @@ await test('没有 settings 服务时 apply 当场失败（守卫仍有牙齿）
   assert.throws(() => plugin.apply(new Context()), /settings|undefined/i);
 });
 
+await test('宿主半边的出厂值与浏览器半边那份默认值逐字段一致', async () => {
+  // 两边各写一份默认值是必要的：宿主半边不带 DOM、浏览器半边不读 schema。
+  // 但两份必须相同——否则卡片上显示的出厂值与实际渲染的出厂值会分叉。
+  const { DEFAULT_SETTINGS } = await import('../lib/client.js').catch(() => ({}));
+  if (DEFAULT_SETTINGS === undefined) {
+    // 客户端 bundle 装着 DOM 依赖，这里不装载它；改读设计源文件的字面量。
+    const source = readFileSync(new URL('../src/client/settings.ts', import.meta.url), 'utf8');
+    const block = /DEFAULT_SETTINGS[^{]*\{([^}]*)\}/.exec(source);
+    assert.notEqual(block, null, '找不到 DEFAULT_SETTINGS');
+    const fields = Object.fromEntries(
+      [...block[1].matchAll(/(\w+):\s*([^,\n]+),/g)].map((m) => [m[1], m[2].trim()]),
+    );
+    const resolved = new plugin.Config({});
+    for (const key of ['hueLight', 'hueDark', 'lineHeight', 'paragraphGap']) {
+      assert.equal(String(valueOf(resolved, key)), fields[key], `${key} 的两份默认值不一致`);
+    }
+    for (const key of ['headingColor', 'headingIndicator', 'codePalette', 'shellSkin']) {
+      const expected = fields[key] === 'true' ? true : fields[key] === 'false' ? false : fields[key].replace(/['"]/g, '');
+      assert.equal(valueOf(resolved, key), expected, `${key} 的两份默认值不一致`);
+    }
+  }
+});
+
 await test('包内 cordis.patch.yml 只有一条装配行，id 与包名各自独立地对上', () => {
   const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
     .split('\n')

@@ -6,8 +6,10 @@
  * 工具行也排除：它的 flow kind 是 `tool-call`，宿主本来就不在里面放 markdown 元素。
  *
  * 选择器一律「宿主的数据属性 + 元素名」两层：宿主正文的类名是 CSS Modules 的哈希串，
- * 换一次构建就变，不能当锚点。属性两层加元素一个，优先级 (0,2,1) 恰好压过宿主
- * module 样式表里的 `.markdown h2` (0,1,1)，所以不需要 !important。
+ * 换一次构建就变，不能当锚点。典型一条是
+ * `html[data-maple-theme][data-maple-heading][data-chat-flow-kind]:not([data-chat-group-part]) body :where(h2)`，
+ * 属性三个（`html` 与 `body` 两个元素不计在内）压过宿主 module 样式表里的
+ * `.markdown h2` 那一个类，所以不需要 !important。
  */
 
 html[data-maple-theme='on'] {
@@ -26,11 +28,18 @@ html[data-maple-theme='on'] body[data-ds-dark-theme] {
   --maple-table-head: hsl(var(--maple-hue-dark, 207) 12% 17%);
 }
 
-/* 段落与行内元素：段距取 Maple 的 8px 量级（宿主是 16px），行高已在 tokens.css 里给。 */
-html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(p) {
-  margin: var(--maple-p-gap) 0;
+/* 段距：宿主的正文容器是纵向 flex，块与块之间的空隙由容器的 `gap: 16px` 给，
+ * 段落自己的 margin 被归零。所以要改的是容器那一个 gap，不是 p 的 margin。
+ * 容器是包住 markdown 根节点的那个 div，用 :has() 从根节点往上认。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) {
+  --maple-gap: var(--maple-p-gap, 10px);
 }
 
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :has(> [class*='markdown']) {
+  gap: var(--maple-p-gap, 10px);
+}
+
+/* 列表项里的段落仍按块级 margin 走：宿主的列表没有 gap，段落间距归零会挤成一坨。 */
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(li > p) {
   margin: 4px 0;
 }
@@ -75,6 +84,23 @@ html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind=
 html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h4) { color: var(--maple-h4); }
 html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5) { color: var(--maple-h5); }
 html[data-maple-theme='on'][data-maple-heading='colorful'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6) { color: var(--maple-h6); }
+
+/* 另两种标题配色：六级统一取一个色，不再逐级换。
+ * 令牌层给了 --maple-heading-color，这里按元素逐级挂上——宿主用的是元素选择器，
+ * 一次 :where(h1, h2, …) 的优先级与它相同，分不开。 */
+html[data-maple-theme='on'][data-maple-heading='accent'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1),
+html[data-maple-theme='on'][data-maple-heading='accent'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h2),
+html[data-maple-theme='on'][data-maple-heading='accent'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h3),
+html[data-maple-theme='on'][data-maple-heading='accent'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h4),
+html[data-maple-theme='on'][data-maple-heading='accent'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5),
+html[data-maple-theme='on'][data-maple-heading='accent'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6) { color: var(--maple-heading-color); }
+
+html[data-maple-theme='on'][data-maple-heading='text'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1),
+html[data-maple-theme='on'][data-maple-heading='text'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h2),
+html[data-maple-theme='on'][data-maple-heading='text'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h3),
+html[data-maple-theme='on'][data-maple-heading='text'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h4),
+html[data-maple-theme='on'][data-maple-heading='text'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5),
+html[data-maple-theme='on'][data-maple-heading='text'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6) { color: var(--maple-heading-color); }
 
 /* 标题等级标记：Maple 的 heading-indicator-auto——平时看不见，悬停时在左侧淡入 H1…H6。 */
 html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6)::before {

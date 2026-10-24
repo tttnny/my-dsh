@@ -20,12 +20,13 @@ import { CARD_CSS } from './card-css.ts';
 import { MapleThemeCard } from './card.tsx';
 import { NS, en, zh } from './locales.ts';
 import tokens from './styles/tokens.css?inline';
+import { MAPLE_TOKENS, THEME_SOURCE } from './tokens.ts';
 import markdown from './styles/markdown.css?inline';
 import shell from './styles/shell.css?inline';
 
 export { NS } from './locales.ts';
 export {
-  BUNDLE_CONFIG_KEY, BUNDLE_CONFIG_SLOT, BUNDLE_NAME, SETTINGS_NAMESPACE, bindProjection, paint, readSettings,
+  BUNDLE_CONFIG_SLOT, BUNDLE_NAME, SETTINGS_NAMESPACE, bindProjection, readSettings,
 } from './binding.ts';
 export { MapleThemeCard } from './card.tsx';
 export {
@@ -37,10 +38,11 @@ export {
 export const name = '@lynn123411/dsh-maple-theme';
 
 /**
- * 声明的服务：`configForms` 读本插件那一行的配置，`slots` 与 `locale` 画配置卡片。
+ * 声明的服务：`configForms` 读本插件那一行的配置，`slots` 与 `locale` 画配置卡片，
+ * `theme` 把两套调色板交给宿主的主题通道。
  * 漏声明不会报错，只会让整个浏览器半边在页面里消失（docs/rules/client-wiring.md）。
  */
-export const inject = ['configForms', 'slots', 'locale'];
+export const inject = ['configForms', 'slots', 'locale', 'theme'];
 
 /** 本插件的样式表：归属键按「包名/文件名」拼，卸载时整批删。 */
 const SHEETS: readonly (readonly [string, string])[] = [
@@ -86,6 +88,9 @@ interface ClientServices {
   locale: {
     register(namespace: string, dictionaries: { zh: unknown; en: unknown }): () => void;
   };
+  theme: {
+    overrideTokens(source: string, tokens: Record<string, { light: string; dark: string }>): () => void;
+  };
 }
 
 /**
@@ -99,6 +104,13 @@ export function apply(ctx: ClientContext): void {
     injectStyles();
     return () => { removeStyles(); };
   }, 'dsh-maple-theme: stylesheets');
+
+  // 配色：走宿主的主题通道，由它写到 body 的行内样式上（docs/web-styling.md 的所有权归主题，
+  // 功能包消费令牌而不是另立一份全局主题）。disposer 会把这层覆盖整份撤掉。
+  ctx.effect(
+    () => services.theme.overrideTokens(THEME_SOURCE, MAPLE_TOKENS),
+    'dsh-maple-theme: palette',
+  );
 
   ctx.effect(
     () => services.locale.register(NS, { zh, en }),

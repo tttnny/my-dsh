@@ -24,15 +24,19 @@ export type HeadingMode = typeof HEADING_MODES[number];
 /** 本插件在 profile 里的 loader 行 id，同时是设置的命名空间。 */
 export const SETTINGS_NAMESPACE = name;
 
-/** 配置的形状与默认值。默认值取 Maple 自己的出厂值（基础色相 35 / 207、行高 1.75）。 */
+/**
+ * 配置的形状与默认值。色相取 Maple 自己的出厂值（浅色 35、深色 207）。
+ * 行高与段落间距比 Maple 的 1.8 / 8px 松一档：对话正文的行宽比笔记窄，
+ * 按笔记的行距排会显得稀，所以这里收紧行距、放大段距。
+ */
 export const Config = z.object({
   /** 浅色基础色相（度）：整套浅色从它推导。 */
   hueLight: z.number().step(1).min(0).max(360).default(35).volatile(),
   /** 深色基础色相（度）。 */
   hueDark: z.number().step(1).min(0).max(360).default(207).volatile(),
-  /** 正文行高倍数。 */
+  /** 正文行高倍数（Maple 的出厂值是 1.8，对话正文取 1.75）。 */
   lineHeight: z.number().step(0.05).min(1.4).max(2).default(1.75).volatile(),
-  /** 段落间距（px）。 */
+  /** 段落间距（px；Maple 的出厂值是 8，对话正文取 10）。 */
   paragraphGap: z.number().step(1).min(4).max(24).default(10).volatile(),
   /** 标题配色方式。 */
   headingColor: z.union([...HEADING_MODES]).default('colorful').volatile(),
@@ -43,18 +47,6 @@ export const Config = z.object({
   /** 外壳装饰：侧栏与标签条的圆角、输入卡填充、去掉会话头部那条分隔线。 */
   shellSkin: z.boolean().default(true).volatile(),
 });
-
-/** 宿主交给 apply 的那份已解析配置。 */
-export type MapleConfig = {
-  hueLight: number;
-  hueDark: number;
-  lineHeight: number;
-  paragraphGap: number;
-  headingColor: HeadingMode;
-  headingIndicator: boolean;
-  codePalette: boolean;
-  shellSkin: boolean;
-};
 
 /** 宿主上下文里本插件用到的那两个成员。 */
 interface HostContext {
