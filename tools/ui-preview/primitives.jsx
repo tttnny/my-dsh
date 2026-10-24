@@ -179,6 +179,25 @@ export function MarkdownDelegateProvider({ children }) {
   return children;
 }
 
+/**
+ * 宿主的气泡薄壳：真的那个把锚点原样留在流里、气泡是 fixed 定位的浮层。预览里只画锚点，
+ * 免得一个本来浮着的框把版面撑开——要看气泡的文案，读锚点上的 `aria-describedby`。
+ * @param {{ label: string, children: import('react').ReactNode }} props - 气泡文案（预览不画）与锚点。
+ * @returns {import('react').ReactNode} 锚点本身。
+ */
+export function Tooltip({ children }) {
+  return children;
+}
+
+/**
+ * 宿主的剪贴板写入：预览页里没有权限、也没有读者要复制，只答「写成功了」。
+ * @param {string} _text - 会被写进剪贴板的文本。
+ * @returns {Promise<boolean>} 总是成功。
+ */
+export async function writeClipboard(_text) {
+  return true;
+}
+
 /** 图标薄壳：真的图标是路径很长的 SVG；预览里只需要占位与尺寸，颜色跟 currentColor 走。 */
 function icon(name) {
   const Icon = ({ size = 16 }) => createElement(

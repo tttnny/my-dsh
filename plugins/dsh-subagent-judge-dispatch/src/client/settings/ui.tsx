@@ -91,7 +91,7 @@ function LogCell({ text, hint }: { text: string; hint?: string }): React.ReactEl
  * plus a shadow.
  */
 const CARD_CSS = `
-.dsh-judge-card { display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; width: 100%; max-width: 760px; color: var(--dsw-alias-label-primary); }
+.dsh-judge-card { display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; width: 100%; color: var(--dsw-alias-label-primary); }
 .dsh-judge-panel { display: flex; flex-direction: column; gap: 16px; }
 .dsh-judge-section {
   display: flex;
@@ -121,6 +121,9 @@ const CARD_CSS = `
 /* 这一节的出口：左边写下去，右边查已有的——两个方向分开，按错一个不会串到另一个。 */
 .dsh-judge-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 0.5px solid var(--dsw-alias-border-l3); }
 .dsh-judge-actions-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* 卡片最下面的出口：只有预览这一件跨节的动作，靠右与两节的右边缘对齐；要先把改动
+   存下去时，那句提醒在它左边。 */
+.dsh-judge-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .dsh-judge-hint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); }
 .dsh-judge-note-ok { color: var(--dsw-alias-state-success-primary); font: var(--dsw-font-xxs-12); }
 .dsh-judge-note-bad { color: var(--dsw-alias-state-error-primary); font: var(--dsw-font-xxs-12); }
@@ -575,29 +578,17 @@ export function JudgeDispatchPanel(
               : t('judge.probeFail').replace('{reason}', reasonText(probeResult.reason))}
           </div>
         )}
-        {state.dirty && <div className="dsh-judge-hint">{t('preview.blocked')}</div>}
 
-        {/* 试通与预览问的都是「这一节存下去会怎样」，所以跟着这一节的保存走：
-            左边写下去，右边查现在这份。 */}
+        {/* 试通问的是「这一节存下去能不能用」，所以就跟着这一节的保存走：左边写下去，右边查一下。 */}
         {saveRow('judge', state.judgeDirty, () => void dispatchCardStore.save('judge'), (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={probing || state.dirty}
-              onClick={() => void runProbe()}
-            >
-              {probing ? t('judge.probing') : t('judge.probe')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={state.dirty}
-              onClick={() => void openPreview()}
-            >
-              {t('preview.open')}
-            </Button>
-          </>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={probing || state.dirty}
+            onClick={() => void runProbe()}
+          >
+            {probing ? t('judge.probing') : t('judge.probe')}
+          </Button>
         ))}
       </div>
 
@@ -622,28 +613,43 @@ export function JudgeDispatchPanel(
             </tbody>
           </table>
         )}
-        <div className="dsh-judge-actions-group">
-          <Button variant="outline" size="sm" onClick={() => dispatchCardStore.addRow()}>
-            {t('rows.add')}
-          </Button>
-          {/* 导入与导出都只动这一份清单：导入落在草稿里，导出就是把草稿抄成 JSON，
-              两者都不碰保存按钮那条路。 */}
-          <Button variant="outline" size="sm" onClick={openImport}>
-            {t('rows.importOpen')}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => void exportRows()}>
-            {t('rows.export')}
-          </Button>
-          {copyNote !== null && (
-            <span className={copyNote.ok ? 'dsh-judge-note-ok' : 'dsh-judge-note-bad'} role="status">
-              {copyNote.text}
-            </span>
-          )}
-        </div>
         {state.rowsInvalid !== '' && state.rowsDirty && (
           <div className="dsh-judge-note-bad" role="alert">{state.rowsInvalid}</div>
         )}
-        {saveRow('rows', state.rowsDirty, saveRows)}
+        {/* 这一节的出口：左边写下去，右边是这张表自己的三个动作——导入、导出都只动这份
+            清单（导入落草稿、导出把草稿抄成 JSON），加一行往下续一条，三件都不落盘。 */}
+        {saveRow('rows', state.rowsDirty, saveRows, (
+          <>
+            <Button variant="outline" size="sm" onClick={openImport}>
+              {t('rows.importOpen')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void exportRows()}>
+              {t('rows.export')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => dispatchCardStore.addRow()}>
+              {t('rows.add')}
+            </Button>
+            {copyNote !== null && (
+              <span className={copyNote.ok ? 'dsh-judge-note-ok' : 'dsh-judge-note-bad'} role="status">
+                {copyNote.text}
+              </span>
+            )}
+          </>
+        ))}
+      </div>
+
+      {/* 预览问的是这一整份设置存下去会发给判断服务什么：它同时用到判断模型与类型清单，
+          哪一节都不独占，所以单独排在两节之外。 */}
+      <div className="dsh-judge-footer">
+        {state.dirty && <span className="dsh-judge-hint">{t('preview.blocked')}</span>}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={state.dirty}
+          onClick={() => void openPreview()}
+        >
+          {t('preview.open')}
+        </Button>
       </div>
     </div>
   );
