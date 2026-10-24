@@ -17,15 +17,13 @@
         transport: stdio
         command: /Applications/KimiCU.app/Contents/MacOS/kimi-cu
         args: [mcp, -s, user]
-        # 没装 KimiCU 时直接报错，而不是静默少掉一整排工具。
+        # 连不上时报错并让这一行回滚，而不是静默少掉一整排工具。
         failOnStartupError: true
 
-    # 内核已经挂了一条默认的 skill-filesystem（项目 / 用户技能目录），这一条是给它加的邻居：
-    # providerName 另取一个名字，includeDefaultRoots 关掉默认目录，只扫本包的 skills/，
-    # 所以两边互不覆盖，也不会把用户的技能目录扫两遍。
+    # 技能 provider 的第二份：providerName 另取一个名字，includeDefaultRoots 关掉默认目录，
+    # 只扫本包的 skills/。内核那条默认技能行照旧负责项目与用户技能目录。
     #
-    # 路径必须写成包里解析出来的绝对路径：bundle patch 的 `!!js` 以 PROFILE 目录为 baseUrl，
-    # 相对路径 `./skills` 会落到 profile 自己身上。
+    # 路径必须写成包里解析出来的绝对路径：bundle patch 的 `!!js` 以 PROFILE 目录为 baseUrl。
     - id: skill-kimi-cu
       name: '@deepseek-ai/dsh-skill-filesystem'
       disabled: !!js process.platform !== 'darwin'

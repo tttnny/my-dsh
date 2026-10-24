@@ -17,35 +17,33 @@
 
 ## 为什么 MCP 那行要 `failOnStartupError: true`
 
-KimiCU 的二进制在 app 包内，不是 PATH 上的命令。缺装、被移走、`mcp` 子命令没有响应时，默认行为是「宿主照常起，日志里一行错，模型看不到任何工具」——用户侧的表现是「插件装了但没用」。设成 `true` 让那一行启动即红，故障当场看见。MCP 与技能是两行，MCP 失败不影响技能那一行。
+KimiCU 的二进制在 app 包内，不是 PATH 上的命令。不设 `failOnStartupError` 时，初次连不上只写一行日志，模型看不到任何工具——用户侧的表现是「插件装了但没用」。设成 `true` 让那一行的 fiber 在激活时回滚并报错，故障当场看得见。
 
-环境变量按内核默认处理：ambient 环境先脱敏，再叠 `config.env`。本插件不写 `env`，KimiCU 也不需要 DSH 注入任何凭据。
+代价要讲清楚：激活失败会连带销毁这条连接的重连监督器，所以开机时 KimiCU 没在跑，它不会自己回来——把 KimiCU 打开之后，要在插件页里把这个插件关一次再开一次（或重启），那一行才会重新连。宿主本身照常启动：`mcp-kimi-cu` 不在内核的必需启动行清单里（`agent-loop`、`webserver` 那一组），所以表现是一行启动警告加一行激活错误，不是宿主起不来。
 
-## 为什么技能行要另起一条，而不是改写默认那条
+MCP 与技能是两行，MCP 失败不影响技能那一行。
 
-内核的 base bundle 已经挂了一条 `skill-filesystem`（`id: skill-filesystem`），它负责项目目录（`<project>/.dsh/skills`、`<project>/.agents/skills`）与用户目录（`~/.dsh/skills`、`~/.agents/skills`）。本插件要加第五个根，有两条路：
+环境变量按内核默认处理：ambient 环境里名字命中 `KEY` / `PASSWORD` / `SECRET` / `TOKEN` 的、以及 `DSH_*` 的会被丢掉，再叠 `config.env`。本插件不写 `env`，KimiCU 也不需要 DSH 注入任何凭据。
 
-- 按 id 覆盖那条行的 `config.customSkillDirs`——配置文件少一行，但从今往后用户每加一个技能目录都要改这个插件的 patch，而且覆盖是整份替换，内核改默认值时本插件也跟着过期。
-- 另起一条行，`providerName: kimi-cu`、`includeDefaultRoots: false`、`customSkillDirs: [<本包>/skills]`——两个 provider 并存，各扫各的根，同名技能在各自 provider 内先到先得，跨 provider 由 `ctx.skills` 的层与 rank 合并。默认那条一行都不用动。
+## 为什么技能行要另起一条
 
-选的是后者。
+内核的 base bundle 已经挂了一条 `skill-filesystem`（`id: skill-filesystem`），负责项目目录（`<project>/.dsh/skills`、`<project>/.agents/skills`）与用户目录（`~/.dsh/skills`、`~/.agents/skills`）。本插件另起一条同包的行，`providerName: kimi-cu`、`includeDefaultRoots: false`、`customSkillDirs: [<本包>/skills]`：两个 provider 并存，各扫各的根，默认那条一行都不用动。
+
+同名技能在各自 provider 内先到先得，跨 provider 由 `ctx.skills` 按层与 rank 合并。
 
 ## 技能目录为什么不能写相对路径
 
-bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `baseUrl` 求值；对 bundle 层来说那是 profile 目录。所以：
-
-- `./skills` 会解析成 `<profile>/skills`——一个不存在的目录，技能发现拿到空表，页面上什么也不报。
-- 正确写法是先按包名解析出包目录，再拼 `skills`：
+bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `baseUrl` 求值；对 bundle 层来说那是 profile 目录。所以技能目录写成先按包名解析出包目录、再拼 `skills`：
 
 ```yaml
 - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@lynn123411/dsh-kimi-cu/package.json')), 'skills')
 ```
 
-`process.getBuiltinModule` 而不是 `require`：后者在 ESM 求值作用域里不一定在，前者是 Node 22 起的正式入口。兄弟 preset `plugin-upgrade-cordis` 的 patch 用的是同一个形状。
+表达式里用 `process.getBuiltinModule` 取内置模块：它在 ESM 求值作用域里直接可用，是 Node 22 起的正式入口。兄弟 preset `plugin-upgrade-cordis` 的 patch 用的是同一个形状。
 
 ## 随包技能从哪来
 
-`skills/kimi-cu/SKILL.md` 是 KimiCU 自带技能的一份拷贝，装 KimiCU 时它在 `/Users/tny/.kimi-code/plugins/managed/kimi-cu/skills/kimi-cu/SKILL.md`。插件不追上游：上游改了要人工再拷一次。拷贝而不是指向上游目录，理由是上游路径属于 KimiCU 的安装布局，KimiCU 卸载或改布局之后，指向它的技能会静默消失。
+`skills/kimi-cu/SKILL.md` 是 KimiCU 自带技能的一份拷贝，装 KimiCU 时它在 `/Users/tny/.kimi-code/plugins/managed/kimi-cu/skills/kimi-cu/SKILL.md`。上游改了要人工再拷一次；拷贝进包，技能内容就不受 KimiCU 的安装布局影响。
 
 技能只有这一份 `SKILL.md`，没有附带脚本或参考文件，所以包内也不需要额外转发资源。
 
@@ -66,3 +64,4 @@ bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `b
 ## 实测记录
 
 - 2026-10-25，内核 0.2.1-rc.2，macOS：`pnpm check` 两段全通过（`check-bundle` 11/11，`preset-skills` 报 1 个候选、装载通过）；技能候选名与目录名一致。
+- 同日装进 web profile 后就地验证：`cordis_inspect_query` 的 `Config.listConfigs` 看到 `include:mcp-kimi-cu` 与 `include:skill-kimi-cu` 两行；工具表里出现 `mcp__kimi-cu__*`，调 `list_apps` 返回 11 个在跑的应用；技能目录里出现 `kimi-cu`；插件页卡片显示本包的标题与说明。
