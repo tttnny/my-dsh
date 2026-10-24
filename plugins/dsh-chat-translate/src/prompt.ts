@@ -48,3 +48,16 @@ export function resolvePrompt(prompt: string | undefined): string {
   const trimmed = (prompt ?? '').trim();
   return trimmed === '' ? DEFAULT_PROMPT : trimmed;
 }
+
+/**
+ * 这份草稿是不是就等于内置默认（空着、或一字不差地写着默认都算）。
+ *
+ * 配置页上有三处要判同一件事：草稿脏不脏、保存时写不写 `unset`、「恢复默认」
+ * 该不该置灰。三处共用这一个判断，免得同一个规则有三种写法。
+ *
+ * @param draft - 输入框里此刻的文字。
+ * @returns 生效后就是内置默认则为 true。
+ */
+export function isDefaultPrompt(draft: string | undefined): boolean {
+  return resolvePrompt(draft) === DEFAULT_PROMPT;
+}

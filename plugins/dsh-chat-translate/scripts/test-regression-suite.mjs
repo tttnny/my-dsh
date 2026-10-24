@@ -24,7 +24,7 @@ import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { ConfigManager, createLiveConfigSource, DEFAULT_CONFIG } from '../src/server/config.ts';
 import { apply as applyHost, Config as HostConfig, inject as hostInject } from '../src/index.ts';
 import { LruDiskCache } from '../src/server/cache.ts';
-import { PROMPT_REVISION } from '../src/server/prompt-revision.ts';
+import { cacheGeneration } from '../src/server/prompt-revision.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
 import {
   createFetchRoutes,
@@ -333,7 +333,9 @@ await testAsync('LruDiskCache drops malformed entries while loading from disk', 
   await fs.writeFile(
     cachePath,
     JSON.stringify({
-      rev: PROMPT_REVISION,
+      // 盘上那份必须是**当前提示词的世代**（`cacheGeneration()` 的产物），
+      // 不是裸的修订号：两者形状不同，写错一个字符整池就被当成陌生代际丢掉。
+      rev: cacheGeneration(''),
       entries: {
         ok: { v: '正常译文' },
         // 非字符串译文与不成形的条目：陌生形态，读取时被丢掉。

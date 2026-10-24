@@ -1,5 +1,5 @@
 import { describeError } from '../../describe-error.ts';
-import { DEFAULT_PROMPT, resolvePrompt } from '../../prompt.ts';
+import { DEFAULT_PROMPT, isDefaultPrompt, resolvePrompt } from '../../prompt.ts';
 import { testServerChannel } from '../translate/api.ts';
 
 /**
@@ -191,6 +191,12 @@ class SettingsStore {
   private credentials: CredentialsRemoteLike | null = null;
   private unsubscribeForm: (() => void) | null = null;
   private keyConfigured = false;
+  /**
+   * 上一次播种时的那份已保存值。每次宿主通知都重算已保存值，但**只有值真变了
+   * 的字段**才重新播种：读者正在改别的字段时，一次与草稿无关的提交（比如拨一下
+   * 输入框下方的「译」胶囊）不该把没保存的草稿冲掉。
+   */
+  private seeded: CommittedConfig | null = null;
 
   /**
    * Bind the DSH services. Called once from the settings UI setup; re-binding
@@ -203,6 +209,9 @@ class SettingsStore {
     }
     this.form = form;
     this.credentials = credentials;
+    // 换了一份配置面（重新连接、页面重挂载）就是另一份文档：上一份的已保存值
+    // 不能拿来判断「这个字段变没变」，否则新文档会沿用旧草稿。
+    this.seeded = null;
     if (form) {
       this.unsubscribeForm = form.subscribe(() => this.deriveCommitted());
       this.deriveCommitted();
@@ -254,18 +263,36 @@ class SettingsStore {
     this.seedDrafts();
   }
 
-  /** Seed every control from what the Host serves, once, and mark nothing dirty. */
+  /**
+   * Seed the controls from what the Host serves, and mark the seeded ones clean.
+   *
+   * A field is reseeded only when its committed value moved since the last seed:
+   * an unrelated commit (the composer's translation pill writes `enabled`) must
+   * not throw away a draft the reader is in the middle of.
+   */
   private seedDrafts(): void {
     const committed = this.state.committed;
+    const prev = this.seeded;
+    const changed = (field: keyof CommittedConfig): boolean =>
+      prev === null || prev[field] !== committed[field];
+    const stages = this.state;
     this.state = {
-      ...this.state,
-      baseUrl: { text: committed.baseUrl, dirty: false, invalid: false },
-      model: { text: committed.model, dirty: false, invalid: false },
-      aiTimeoutMs: { text: String(committed.aiTimeoutMs), dirty: false, invalid: false },
-      // 提示词输入框显示「生效的那份」：读者没写过就整段显示内置默认，改一个字
-      // 就是自己写的；一字不差地贴回默认时下面按「等于默认」处理成清空。
-      prompt: { text: resolvePrompt(committed.prompt), dirty: false, invalid: false },
+      ...stages,
+      baseUrl: changed('baseUrl')
+        ? { text: committed.baseUrl, dirty: false, invalid: false }
+        : stages.baseUrl,
+      model: changed('model')
+        ? { text: committed.model, dirty: false, invalid: false }
+        : stages.model,
+      aiTimeoutMs: changed('aiTimeoutMs')
+        ? { text: String(committed.aiTimeoutMs), dirty: false, invalid: false }
+        : stages.aiTimeoutMs,
+      // 提示词输入框显示「生效的那份」：读者没写过就整段显示内置默认。
+      prompt: changed('prompt')
+        ? { text: resolvePrompt(committed.prompt), dirty: false, invalid: false }
+        : stages.prompt,
     };
+    this.seeded = committed;
     this.recomputeGate();
   }
 
@@ -293,9 +320,7 @@ class SettingsStore {
           String(committed.aiTimeoutMs),
         invalid: timeout === undefined,
       },
-      // 与「生效的那份」比：读者没写过提示词时，输入框里就是内置默认，那份默认
-      // 不算改动；清空输入框同样是回到默认，也不算。比生效而不是比字面，是为了
-      // 让「空」与「一字不差地写着默认」在这一格上是同一件事。
+      // 与「生效的那份」比：空着与一字不差地写着默认，在这一格上是同一件事。
       prompt: {
         text: stages.prompt.text,
         dirty: resolvePrompt(stages.prompt.text) !== resolvePrompt(committed.prompt),
@@ -355,6 +380,24 @@ class SettingsStore {
   }
 
   /**
+   * Put the prompt box back to rest: show the instruction actually in force.
+   *
+   * A reader who clears the box, or types the default back word for word, has
+   * staged no change — the effective prompt is still the default. Leaving the
+   * box blank in that state would contradict what the card promises (the box
+   * always shows what the model receives), so it is filled in again. Called when
+   * a save lands and when the reader leaves the editing state.
+   */
+  settlePromptDraft(): void {
+    if (!isDefaultPrompt(this.state.prompt.text)) return;
+    this.state = {
+      ...this.state,
+      prompt: { text: resolvePrompt(this.state.committed.prompt), dirty: false, invalid: false },
+    };
+    this.recomputeGate();
+  }
+
+  /**
    * Write every staged edit as one revision-fenced batch, then probe the
    * channel and report what the probe found.
    *
@@ -398,7 +441,7 @@ class SettingsStore {
     // 配置文档里；空着保存同样等于回到默认。与已保存值逐字比，不动它就不写记录。
     const prompt = this.state.prompt.text.trim();
     const committedPrompt = this.state.committed.prompt.trim();
-    if (prompt === '' || prompt === DEFAULT_PROMPT) {
+    if (isDefaultPrompt(prompt)) {
       if (committedPrompt !== '') ops.push({ op: 'unset', path: ['prompt'] });
     } else if (prompt !== committedPrompt) {
       ops.push({ op: 'set', path: ['prompt'], value: prompt });
@@ -431,6 +474,7 @@ class SettingsStore {
       apiKey: { text: '', dirty: false },
       probe: { running: true },
     };
+    this.settlePromptDraft();
     this.notify();
     const probe = await testServerChannel('openai');
     this.state = {

@@ -259,6 +259,47 @@ await testAsync('改写提示词：先停在草稿里，点保存写一条 set',
   assert.equal(settingsStore.getState().dirty, false);
 });
 
+await testAsync('清空提示词框后点完成：框里回到生效的那份，不再是空的', async () => {
+  // 只读态显示的是「模型实际收到什么」。空草稿等于默认，若就这样回到只读态，
+  // 读者看到的是一个空框，而模型仍在收默认指令——与配置页的承诺相反。
+  const form = makeForm({ baseUrl: 'http://x', model: 'm' });
+  settingsStore.attach(form, makeRemote());
+  await sleep(10);
+  settingsStore.draft('prompt', '');
+  settingsStore.settlePromptDraft();
+  const s = settingsStore.getState();
+  assert.equal(s.prompt.text, DEFAULT_PROMPT, '空草稿被填回生效的默认指令');
+  assert.equal(s.prompt.dirty, false, '填回默认不算改动');
+  assert.equal(form.mutations.length, 0, '这一步只是把框摆正，不写盘');
+});
+
+await testAsync('拨一下「译」胶囊不会冲掉正在改的提示词草稿', async () => {
+  // 胶囊写的是 enabled，与提示词无关；宿主通知回来时不能把 prompt 草稿一起重置。
+  const form = makeForm({ baseUrl: 'http://x', model: 'm' });
+  settingsStore.attach(form, makeRemote());
+  await sleep(10);
+  settingsStore.draft('prompt', '正在改的一段');
+  await settingsStore.setEnabled(false);
+  await sleep(10);
+  const s = settingsStore.getState();
+  assert.equal(s.committed.enabled, false, '前置：开关确实写下去了');
+  assert.equal(s.prompt.text, '正在改的一段', '提示词草稿原样留着');
+  assert.equal(s.dirty, true, '仍算有待保存的改动');
+});
+
+await testAsync('宿主那边真改了提示词时，草稿跟着换成新的已保存值', async () => {
+  const form = makeForm({ baseUrl: 'http://x', model: 'm' });
+  settingsStore.attach(form, makeRemote());
+  await sleep(10);
+  settingsStore.draft('prompt', '本地没保存的一段');
+  await form.mutate([{ op: 'set', path: ['prompt'], value: '别处写进来的' }]);
+  await sleep(10);
+  const s = settingsStore.getState();
+  assert.equal(s.committed.prompt, '别处写进来的');
+  assert.equal(s.prompt.text, '别处写进来的', '这一格跟着已保存值走');
+  assert.equal(s.prompt.dirty, false);
+});
+
 await testAsync('一字不差贴回默认 = 回到默认：写 unset 而不是把默认抄进配置', async () => {
   const form = makeForm({ baseUrl: 'http://x', model: 'm', prompt: '我自己写的一段' });
   settingsStore.attach(form, makeRemote());

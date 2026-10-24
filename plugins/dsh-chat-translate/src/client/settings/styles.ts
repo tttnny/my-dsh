@@ -29,10 +29,10 @@ export const SETTINGS_CSS = String.raw`
 }
 
 /*
- * Prose keeps a reading measure even though the card spans the host column: the
- * master description is a 500-character paragraph, and at full width it would
- * run to ~76 CJK characters per line. 46em tracks the element's own 12px font,
- * so the measure survives a font-size change.
+ * Prose keeps a reading measure even though the card spans the host column: a
+ * paragraph running the full width lands near 76 CJK characters per line. 46em
+ * tracks the element's own 12px font, so the measure survives a font-size
+ * change.
  */
 .dsh-tidy-desc {
   max-width: 46em;
@@ -87,9 +87,10 @@ export const SETTINGS_CSS = String.raw`
 }
 
 /*
- * 提示词输入框：ui-primitives 没有多行控件，这里自己画一条 textarea，外观取
- * Input 的同款令牌（细边框、行内代码字族、底色下陷一层）。高度由组件按内容
- * 量出来写进 style（整段默认指令要一眼看全），这里只给一个不让它塌掉的下限。
+ * 提示词输入框：这里不用宿主的 InlineEditor——它是「Enter 存、Esc 撤、
+ * 最高六行」的短草稿控件，而这段指令有十几行，要按内容长高、且默认只读。
+ * 外观取 Input 的同款令牌（细边框、行内代码字族、底色下陷一层）；高度由组件
+ * 按内容量出来写进 style，这里只给一个不让它塌掉的下限。
  *
  * 默认是只读态（:read-only）：边框收淡、底色回到卡片那层，光标不动手；点
  * 「编辑」后才换成可写的下陷观感，一眼能看出此刻改不改得动。

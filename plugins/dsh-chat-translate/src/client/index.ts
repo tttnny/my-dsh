@@ -1,7 +1,9 @@
 import { setupSettingsUi } from './settings/ui.tsx';
+import { settingsStore } from './settings/store.ts';
 import { setupComposerToggle } from './composer/dock-toggle.tsx';
 import { AssistantStepView } from './chat/assistant-step.tsx';
 import { chatPresentation } from './chat/presentation.ts';
+import { chatTranslate } from './chat/translate-store.ts';
 import { ensureAssistantStyles } from './chat/styles.ts';
 import { bindRowCopy } from './locales.ts';
 // Type-only, erased from the bundle: the renderer augments Context with the
@@ -86,6 +88,21 @@ export function apply(ctx: ClientContext): void {
 
   // 4. 「译」开关：输入框下方那一行，与设置页总开关同一个 enabled
   ctx.effect(() => setupComposerToggle(ctx), 'dsh-chat-translate: composer dock toggle');
+
+  // 5. 换了提示词就丢掉池里旧措辞的译文：不丢的话，读者改了提示词却看不到任何
+  //    变化——已经翻过的段落照样取旧译文，一个请求都不发。宿主半边的磁盘池按世代
+  //    作废，这是浏览器半边对应的那一半。
+  let lastPrompt = settingsStore.getState().committed.prompt;
+  ctx.effect(
+    () =>
+      settingsStore.subscribe(() => {
+        const next = settingsStore.getState().committed.prompt;
+        if (next === lastPrompt) return;
+        lastPrompt = next;
+        chatTranslate.dropTranslations();
+      }),
+    'dsh-chat-translate: relay pool follows the prompt'
+  );
 
   // 行渲染器的私有文案（失败块的 ↻ 标签与败因泡泡）绑上本命名空间的活翻译器。
   // 放在最后：此时 setupSettingsUi 的 locale.register(NS) 已落地，bind 立刻可解析键。

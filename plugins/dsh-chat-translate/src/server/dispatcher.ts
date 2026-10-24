@@ -8,7 +8,7 @@ import type {
 } from './types.ts';
 import type { ConfigManager } from './config.ts';
 import { LruDiskCache } from './cache.ts';
-import { cacheRevision } from './prompt-revision.ts';
+import { cacheGeneration } from './prompt-revision.ts';
 import type { KeyReader } from './credentials.ts';
 import { OpenAiCompatibleAdapter } from './adapters/openai.ts';
 import {
@@ -157,7 +157,7 @@ export class TranslationDispatcher {
     const config = this.configManager.getConfig();
     // 提示词是配置页上可改的一项：先让缓存池换到当前提示词那一代，再读池——
     // 否则读者刚改完提示词，旧措辞产出的译文还会照命中。同一代是空操作。
-    this.cache.setRevision(cacheRevision(config.prompt));
+    this.cache.setRevision(cacheGeneration(config.prompt));
     // 总开关关着 = 用户明说不要翻译：不是失败，不给任何标记。
     if (!config.enabled) return results;
 

@@ -4,15 +4,16 @@
  * The reply cache stores results keyed by source text; a cache document written
  * under a different prompt semantics would replay stale translations into a new
  * policy (the exact poisoning that makes "already-Chinese blocks look
- * untranslated" outlive a prompt fix). The document therefore carries this
- * revision, and a load whose revision differs starts from an empty pool.
+ * untranslated" outlive a prompt fix). The document therefore carries a
+ * generation string, and a load whose generation differs starts from an empty
+ * pool.
  *
- * Two things move the revision:
+ * Two things move the generation:
  *
  * - a change to the built-in prompt in `src/prompt.ts`, which bumps
  *   {@link PROMPT_REVISION} by hand;
  * - the reader writing their own prompt on the configuration page, which flows
- *   in as a digest of the effective text ({@link cacheRevision}).
+ *   in as a digest of the effective text ({@link cacheGeneration}).
  */
 import { createHash } from 'node:crypto';
 import { resolvePrompt } from '../prompt.ts';
@@ -32,9 +33,9 @@ export const PROMPT_REVISION = 'r5';
  * and writing the same text back lands in the same pool again.
  *
  * @param prompt - the configured prompt; blank means the built-in default.
- * @returns the revision string a cache document is written and matched under.
+ * @returns the generation string a cache document is written and matched under.
  */
-export function cacheRevision(prompt: string | undefined): string {
+export function cacheGeneration(prompt: string | undefined): string {
   const digest = createHash('sha256').update(resolvePrompt(prompt), 'utf8').digest('hex').slice(0, 12);
   return `${PROMPT_REVISION}:${digest}`;
 }

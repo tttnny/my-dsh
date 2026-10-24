@@ -143,9 +143,26 @@ export class ChatTranslateStore {
     this.fetch = fetcher;
   }
 
-  /** 单调版本号：任何状态变化（含单批落定）都前进一位，供渲染层判等重渲。 */
+  /** 单调版本号：任何状态变化（含单批落定、整池换代）都前进一位，供渲染层判等重渲。 */
   getVersion(): number {
     return this.version;
+  }
+
+  /**
+   * 丢弃池里全部已送达的译文，让下一轮按现在的提示词重新翻。
+   *
+   * 提示词换了措辞，池里那些译文是旧措辞的产物：留着它们，读者改了提示词却看不到
+   * 任何变化——已经翻过的段落照旧是旧调子，一个请求都不发。宿主半边的磁盘池按提示词
+   * 世代作废，这里跟着作废，两边的「换一代」说的是同一件事。
+   *
+   * 已经显示在屏幕上的译文不动（行状态里那份还在），下一轮需要新译文时才重发。
+   * @returns 池里原本是否有东西可丢。
+   */
+  dropTranslations(): boolean {
+    if (this.translated.size === 0) return false;
+    this.translated.clear();
+    this.bump();
+    return true;
   }
 
   subscribe = (listener: () => void): (() => void) => {

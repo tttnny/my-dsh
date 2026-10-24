@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
-import { PROMPT_REVISION } from './prompt-revision.ts';
+import { cacheGeneration } from './prompt-revision.ts';
 
 /** 池里的一个条目：原文对应的译文。 */
 interface CacheEntry {
@@ -27,7 +27,7 @@ export class LruDiskCache {
   private saveTimer: NodeJS.Timeout | null = null;
   private dirty = false;
 
-  constructor(maxEntries = 1000, fileName = 'cache.json', revision: string = PROMPT_REVISION) {
+  constructor(maxEntries = 1000, fileName = 'cache.json', revision: string = cacheGeneration('')) {
     this.maxEntries = maxEntries;
     this.revision = revision;
     // Follow the DSH convention of component-owned home subdirectories

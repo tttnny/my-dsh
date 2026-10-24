@@ -477,6 +477,35 @@ await test('行往后追加（新块写定）时，在途那一块的迟到结�
   assert.equal(state.outcomes[1].translated, '新代:two');
 });
 
+await test('丢掉译文池：同一段原文下次要重新请求，屏幕上已有的译文不动', async () => {
+  // 提示词换了措辞，池里那些是旧措辞的产物。不丢的话读者改了提示词却看不到任何
+  // 变化——已经翻过的段落照样取旧译文，一个请求都不发。
+  const sent = [];
+  const store = createTranslateStore(async (texts) => {
+    sent.push([...texts]);
+    return texts.map((t) => ({ translated: '译' + sent.length + ':' + t, ok: true }));
+  });
+  store.ensure('a1', ['same']);
+  await flush();
+  assert.equal(store.getState('a1').outcomes[0].translated, '译1:same');
+
+  assert.equal(store.dropTranslations(), true, '池里本来有东西，返回 true');
+  // 屏幕上那一份还在：丢掉的是「以后复用」的账，不是已经显示出来的译文。
+  assert.equal(store.getState('a1').outcomes[0].translated, '译1:same', '已显示的不动');
+
+  store.ensure('a2', ['same']);
+  await flush();
+  assert.deepEqual(sent, [['same'], ['same']], '同一段原文重新走一次通道');
+  assert.equal(store.getState('a2').outcomes[0].translated, '译2:same', '拿到的是新措辞的产物');
+});
+
+await test('池空时丢掉是空操作，不惊动订阅者', async () => {
+  const store = createTranslateStore(async (texts) => texts.map((t) => ({ translated: t, ok: true })));
+  const before = store.getVersion();
+  assert.equal(store.dropTranslations(), false);
+  assert.equal(store.getVersion(), before, '没东西可丢就不发通知');
+});
+
 await test('内容寻址：同一段原文在另一行出现直接复用，不再打通道', async () => {
   const sent = [];
   const store = createTranslateStore(async (texts) => {

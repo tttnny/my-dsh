@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as React from 'react';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { Button, Input, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives';
-import { DEFAULT_PROMPT } from '../../prompt.ts';
+import { isDefaultPrompt } from '../../prompt.ts';
 import {
   settingsStore,
   SETTINGS_NAMESPACE,
@@ -225,12 +225,19 @@ export function TidySettingsPanel(
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={state.prompt.text.trim() === DEFAULT_PROMPT}
+                  disabled={isDefaultPrompt(state.prompt.text)}
                   onClick={() => settingsStore.restoreDefaultPrompt()}
                 >
                   {t('promptRestore')}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setEditingPrompt(false)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    settingsStore.settlePromptDraft();
+                    setEditingPrompt(false);
+                  }}
+                >
                   {t('promptDone')}
                 </Button>
               </>

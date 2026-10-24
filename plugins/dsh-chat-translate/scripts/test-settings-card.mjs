@@ -84,8 +84,22 @@ const form = {
   },
 };
 
-// 保存之后的通道探测走真实接口：挡掉网络，回一份成功。
-globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: true, latencyMs: 1 }) });
+// 两个接口都挡掉网络：保存后的通道探测回一份成功，正文翻译按块回「译:…」，
+// 这样译文池里真的会落下东西，换代那条断言才有东西可丢。
+globalThis.fetch = async (url, init) => {
+  if (String(url).includes('translate-reply')) {
+    const blocks = JSON.parse(init.body).blocks;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        results: blocks.map((block) => ({ translated: `译:${block}`, ok: true })),
+      }),
+    };
+  }
+  return { ok: true, json: async () => ({ ok: true, latencyMs: 1 }) };
+};
 
 exported.apply(ctx);
 
@@ -93,7 +107,7 @@ const card = registrations.find((entry) => entry.options.name === 'plugins.bundl
 assert.ok(card !== undefined, '配置卡没有注册进 plugins.bundle.config');
 assert.equal(card.options.locale, 'settings.chatTranslate');
 
-const { settingsStore } = exported;
+const { settingsStore, chatTranslate } = exported;
 const { DEFAULT_PROMPT } = await import('../src/prompt.ts');
 
 let passed = 0;
@@ -158,18 +172,6 @@ await test('点「编辑」才进改写态，并交出输入焦点', async () =>
   const labels = [...container.querySelectorAll('button')].map((button) => button.textContent);
   assert.ok(labels.includes('promptRestore'), '改写态才摆「恢复默认」');
   assert.ok(labels.includes('promptDone'), '改写态给一个「完成」回只读');
-});
-
-await test('总开关下面那段说明文字已经删掉', () => {
-  const text = container.textContent ?? '';
-  assert.ok(!text.includes('masterDesc'), '旧的整段说明不得再渲染');
-  assert.ok(!text.includes('I traced the failing path'), '旧的示例句不得再出现');
-});
-
-await test('「翻译范围」那块说明也删掉了', () => {
-  const text = container.textContent ?? '';
-  assert.ok(!text.includes('behaviorTitle'), '翻译范围卡片不再渲染');
-  assert.ok(!text.includes('助手回答正文一律翻译'), '那段范围说明不再出现在页面上');
 });
 
 await test('改提示词：先停在输入框里，配置文档一个字都不动', async () => {
@@ -267,6 +269,32 @@ await test('总开关关着时提示词照样看得见', async () => {
     for (const listener of [...listeners]) listener();
     await settle();
   });
+});
+
+await test('提示词一改，浏览器这一侧的译文池跟着换代', async () => {
+  // 不换代的话，本页里已经翻过的段落会一直取旧措辞的译文，一个请求都不发——
+  // 读者改了提示词却看不到任何变化。接线在 src/client/index.ts 的订阅里。
+  const seeded = chatTranslate.ensure('probe-row', ['A paragraph worth translating']);
+  await act(async () => {
+    await settle();
+    await settle();
+  });
+  const before = chatTranslate.getState('probe-row');
+  assert.ok(before !== undefined, '前置：这一行有状态');
+  assert.equal(chatTranslate.dropTranslations(), true, '前置：池里确实有译文可丢');
+
+  // 真改一次提示词：写进配置文档，宿主通知回来，订阅把它换成新一代。
+  await act(async () => {
+    await form.mutate([{ op: 'set', path: ['prompt'], value: '一套新说法' }]);
+    await settle();
+  });
+  assert.equal(settingsStore.getState().committed.prompt, '一套新说法');
+  assert.equal(
+    chatTranslate.dropTranslations(),
+    false,
+    '池里已经空了：说明订阅在提示词变化时丢掉过一遍'
+  );
+  assert.ok(seeded !== undefined, 'ensure 的返回值不影响这次断言，只用来占位说明前置动作');
 });
 
 act(() => rootHandle.unmount());
