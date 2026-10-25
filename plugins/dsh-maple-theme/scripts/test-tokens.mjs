@@ -424,6 +424,21 @@ test('代码块的九个语法色在自己那块底色上都过 4.5:1', () => {
   }
 });
 
+test('新补的几组「字压在底上」都过 AA', () => {
+  // 浮层与标签这类深底浅字的组合，最容易在补令牌时随手配错。
+  const pairs = [
+    ['--dsw-alias-tooltip-label', '--dsw-alias-tooltip-bg', '提示框'],
+    ['--dsw-alias-toast-label', '--dsw-alias-toast-bg', '轻提示'],
+    ['--dsw-alias-label-document-preview', '--dsw-alias-bg-document-preview', '文档预览'],
+    ['--dsw-alias-state-warn-label', '--dsw-alias-bg-base', '警告标签'],
+    ['--dsw-alias-button-contrast-fill', '--dsw-alias-bg-base', '对比按钮'],
+  ];
+  for (const [fg, bg, label] of pairs) {
+    report.push([`light ${label}`, assertContrast(light, `浅色${label}`, fg, bg, 4.5)]);
+    report.push([`dark ${label}`, assertContrast(dark, `深色${label}`, fg, bg, 4.5)]);
+  }
+});
+
 test('宿主定义且组件在用的语义令牌都覆盖到了', () => {
   // 覆盖表就是那 113 条；这里钉住「至少没有退回几十条的老规模」，
   // 并确认几组曾经漏掉的令牌确实在表里（它们各自撑着一块宿主组件的底色）。
