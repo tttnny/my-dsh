@@ -33,6 +33,25 @@ function test(label, fn) {
 }
 
 /**
+ * 从一条 hsl() 配方里取明度那个分量。
+ * 配方里可能嵌着 `var(...)` 或 `calc(...)`，所以按最外层括号内的空白分段，取最后一段；
+ * 不能用 `[^)]*?` 去啃，那会在内层 `)` 处停住，一个明度都取不到。
+ * @param value - 一个 hsl() 颜色值。
+ * @returns 明度数值（百分比，去掉符号）；取不到时返回 undefined。
+ */
+function lightnessOf(value) {
+  const inner = /^hsl\((.+)\)$/.exec(value.trim());
+  if (inner === null) return undefined;
+  // 带 `/ a` 的半透明覆盖层，最后三段是「明度 / 透明度」，明度在倒数第二段。
+  const parts = inner[1].trim().split(/\s+/);
+  const last = parts.length >= 3 && parts[parts.length - 2] === '/'
+    ? parts[parts.length - 3]
+    : parts[parts.length - 1];
+  const num = /\(?([\d.]+)%|^([\d.]+)%/.exec(last);
+  return num === null ? undefined : Number(num[1] ?? num[2]);
+}
+
+/**
  * 把令牌表读成「令牌名 → 某一个模式的值」。
  * 每条的形状是 `'--dsw-…': { light: '…', dark: '…' },`，所以按模式各收一份。
  * @param mode - `light` 或 `dark`。
@@ -315,6 +334,39 @@ const HOST_USED_UNDEFINED = [
   '--dsw-alias-label-quaternary',
   '--dsw-alias-separator-primary',
 ];
+
+test('名字里带 fill / bg 的令牌是背景，明度必须在浅色里偏亮、深色里偏暗', () => {
+  // 这条挡的是「把背景令牌当文字色给」：fill 类令牌铺在文字底下，
+  // 给它一个深色就是一块压不住的色块（会话头部的预设标签就这样冒出来过一块棕色）。
+  const offenders = [];
+  for (const [name, value] of Object.entries(light)) {
+    if (!/-(fill|bg)[-a-z0-9]*$/.test(name)) continue;
+    // 这几类不按「背景板」判：
+    // 按钮填充是深色底配浅色字，本来就该深；
+    // interactive-* 与 scrollbar-* 是叠在别处之上的覆盖层或滑块，不是底板。
+    if (name.includes('button-')) continue;
+    if (name.includes('interactive-')) continue;
+    if (name.includes('scrollbar-')) continue;
+    if (name.includes('interactive-')) continue;
+    if (name.includes('scrollbar-')) continue;
+    const l = lightnessOf(value);
+    if (l === undefined) offenders.push(`浅色 ${name} 的明度取不出来：${value}`);
+    else if (l < 80) offenders.push(`浅色 ${name} 的明度只有 ${l}%`);
+  }
+  for (const [name, value] of Object.entries(dark)) {
+    if (!/-(fill|bg)[-a-z0-9]*$/.test(name)) continue;
+    // 这几类不按「背景板」判：
+    // 按钮填充是深色底配浅色字，本来就该深；
+    // interactive-* 与 scrollbar-* 是叠在别处之上的覆盖层或滑块，不是底板。
+    if (name.includes('button-')) continue;
+    if (name.includes('interactive-')) continue;
+    if (name.includes('scrollbar-')) continue;
+    const l = lightnessOf(value);
+    if (l === undefined) offenders.push(`深色 ${name} 的明度取不出来：${value}`);
+    else if (l > 40) offenders.push(`深色 ${name} 的明度到了 ${l}%`);
+  }
+  assert.deepEqual(offenders, [], offenders.join('；'));
+});
 
 test('宿主用了却没自己定义的令牌，插件都补上了', () => {
   const missing = HOST_USED_UNDEFINED.filter((name) => !(name in light) || !(name in dark));

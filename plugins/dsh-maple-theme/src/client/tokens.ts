@@ -52,7 +52,7 @@ export const MAPLE_TOKENS = {
   '--dsw-alias-fill-l1': { light: 'hsl(var(--maple-hue-light, 35) 12% 94%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 17%)' },
   '--dsw-alias-fill-l2': { light: 'hsl(var(--maple-hue-light, 35) 14% 90%)', dark: 'hsl(var(--maple-hue-dark, 207) 14% 21%)' },
   '--dsw-alias-fill-tertiary': { light: 'hsl(var(--maple-hue-light, 35) 10% 91%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 19%)' },
-  '--dsw-alias-fill-tsp-secondary': { light: 'hsl(var(--maple-hue-light, 35) 26% 38%)', dark: 'hsl(var(--maple-hue-dark, 207) 26% 72%)' },
+  '--dsw-alias-fill-tsp-secondary': { light: 'hsl(var(--maple-hue-light, 35) 14% 92%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 20%)' },
   '--dsw-alias-label-error': { light: 'hsl(0 60% 42%)', dark: 'hsl(0 52% 68%)' },
   '--dsw-alias-label-quaternary': { light: 'hsl(var(--maple-hue-light, 35) 6% 50%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 52%)' },
   '--dsw-alias-separator-primary': { light: 'hsl(var(--maple-hue-light, 35) 26% 38% / 16%)', dark: 'hsl(var(--maple-hue-dark, 207) 24% 88% / 13%)' },
