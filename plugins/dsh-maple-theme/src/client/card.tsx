@@ -13,12 +13,57 @@ import { readSettings, type MapleForm } from './binding.ts';
 import { DEFAULT_SETTINGS, type MapleSettings } from './settings.ts';
 import { NS } from './locales.ts';
 
+/**
+ * 常用配色的色相预设：一键把浅色与深色色相同时切过去。
+ *
+ * 这些都是「暖 / 冷」两极里有名字的位置，不是随手取的数：
+ * 35° 是 Maple 出厂值（暖白），207° 是它的深色出厂值（冷灰），
+ * 其余几个覆盖日常会想要的方向（紫、青、绿、玫瑰）。
+ * 浅色取偏亮的一侧、深色取偏冷的一侧，两套同时给，切过去立刻成套。
+ */
+const PALETTE_PRESETS = [
+  { id: 'maple', light: 35, dark: 207, key: 'card.presetMaple' },
+  { id: 'lavender', light: 280, dark: 250, key: 'card.presetLavender' },
+  { id: 'mint', light: 160, dark: 175, key: 'card.presetMint' },
+  { id: 'forest', light: 110, dark: 140, key: 'card.presetForest' },
+  { id: 'rose', light: 345, dark: 320, key: 'card.presetRose' },
+  { id: 'steel', light: 210, dark: 215, key: 'card.presetSteel' },
+] as const;
+
 /** 标题配色的三个选项：值、文案键、面板 id 后缀。 */
 const HEADING_OPTIONS = [
   { value: 'colorful', key: 'card.headingColorColorful' },
   { value: 'accent', key: 'card.headingColorAccent' },
   { value: 'text', key: 'card.headingColorText' },
 ] as const;
+
+/**
+ * 色相滑块：拖动时逐点提交，松手才算一次改动。
+ *
+ * 色相要一边拖一边看效果才有意义，所以不像数字框那样等失焦；
+ * 但每移动一像素就写一次配置会让表单反复重建，所以按 `input` 事件节流到动画帧。
+ * @param props.value - 当前色相（0…360）。
+ * @param props.onChange - 拖动过程中持续回报。
+ * @param props.label - 控件的可访问名。
+ */
+function HueSlider({ value, label, onChange }: {
+  value: number;
+  label: string;
+  onChange: (next: number) => void;
+}): React.ReactElement {
+  return (
+    <input
+      type="range"
+      className="dsh-maple-hue"
+      min={0}
+      max={360}
+      step={1}
+      value={value}
+      aria-label={label}
+      onChange={(event) => { onChange(Number(event.currentTarget.value)) }}
+    />
+  );
+}
 
 /** 一行「标题 + 说明 + 控件」。 */
 function Row({ title, hint, children }: {
@@ -112,17 +157,43 @@ export function MapleThemeCard(
   if (!available) return <div className="dsh-maple-card"><div className="dsh-maple-empty">{t('card.unavailable')}</div></div>;
 
   const current = settings ?? DEFAULT_SETTINGS;
+  /*
+   * 当前落在哪个预设上：两个色相都与某个预设对得上才算，否则返回空串。
+   * 返回空串而不是硬选一个——用户手调过之后，分段控件不该假装他还停在某个预设上。
+   */
+  const currentPreset = PALETTE_PRESETS.find(
+    preset => preset.light === current.hueLight && preset.dark === current.hueDark,
+  )?.id ?? '';
   const write = (field: keyof MapleSettings, value: unknown): void => { void form.set(field, value); };
 
   return (
     <div className="dsh-maple-card">
       <section className="dsh-maple-group">
         <div className="dsh-maple-group-title">{t('card.colors')}</div>
+        <Row title={t('card.preset')} hint={t('card.presetHint')}>
+          <SegmentedControl
+            id="dsh-maple-preset"
+            value={currentPreset}
+            label={t('card.preset')}
+            options={PALETTE_PRESETS.map(preset => ({ value: preset.id, label: t(preset.key) }))}
+            onChange={(next) => {
+              const preset = PALETTE_PRESETS.find(item => item.id === next);
+              if (preset === undefined) return;
+              // 一次改两个字段：浅色与深色是成套的，只改一个会得到半套配色。
+              write('hueLight', preset.light);
+              write('hueDark', preset.dark);
+            }}
+          />
+        </Row>
         <Row title={t('card.hueLight')} hint={t('card.hueLightHint')}>
+          <HueSlider value={current.hueLight} label={t('card.hueLight')}
+            onChange={(next) => { write('hueLight', next) }} />
           <NumberField value={current.hueLight} min={0} max={360} step={1} unit="°"
             label={t('card.hueLight')} onCommit={(next) => { write('hueLight', next) }} />
         </Row>
         <Row title={t('card.hueDark')} hint={t('card.hueDarkHint')}>
+          <HueSlider value={current.hueDark} label={t('card.hueDark')}
+            onChange={(next) => { write('hueDark', next) }} />
           <NumberField value={current.hueDark} min={0} max={360} step={1} unit="°"
             label={t('card.hueDark')} onCommit={(next) => { write('hueDark', next) }} />
         </Row>

@@ -4,6 +4,14 @@ export const NS = 'mapletheme';
 /** 英文文案。 */
 export const en = {
   'card.colors': 'Colors',
+  'card.preset': 'Preset',
+  'card.presetHint': 'Pick a pair of hues at once; the sliders below fine-tune each side.',
+  'card.presetMaple': 'Maple warm',
+  'card.presetLavender': 'Lavender',
+  'card.presetMint': 'Mint',
+  'card.presetForest': 'Forest',
+  'card.presetRose': 'Rose',
+  'card.presetSteel': 'Steel',
   'card.hueLight': 'Light hue',
   'card.hueLightHint': 'Base hue the whole light palette is derived from. Maple ships 35 (warm white).',
   'card.hueDark': 'Dark hue',
@@ -36,6 +44,14 @@ export const en = {
 /** 中文文案。 */
 export const zh: Record<keyof typeof en, string> = {
   'card.colors': '配色',
+  'card.preset': '预设',
+  'card.presetHint': '一次定下浅色与深色两个色相；下面的滑块再各自微调。',
+  'card.presetMaple': 'Maple 暖白',
+  'card.presetLavender': '薰衣草',
+  'card.presetMint': '薄荷',
+  'card.presetForest': '森林',
+  'card.presetRose': '玫瑰',
+  'card.presetSteel': '钢青',
   'card.hueLight': '浅色基础色相',
   'card.hueLightHint': '浅色整套颜色由这个色相推导。Maple 出厂值是 35（暖白）。',
   'card.hueDark': '深色基础色相',

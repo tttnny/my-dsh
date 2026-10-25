@@ -33,6 +33,17 @@ function test(label, fn) {
 }
 
 /**
+ * 用一组分量拼出一个 hsl() 字面量，供「换色相、不动明度」那类断言使用。
+ * @param hue - 色相（度）。
+ * @param saturation - 饱和度（百分比数值）。
+ * @param lightness - 明度（百分比数值）。
+ * @returns 可直接交给 {@link contrast} 的 hsl() 字符串。
+ */
+function hslLiteral(hue, saturation, lightness) {
+  return `hsl(${hue} ${saturation}% ${lightness}%)`;
+}
+
+/**
  * 从一条 hsl() 配方里取明度那个分量。
  * 配方里可能嵌着 `var(...)` 或 `calc(...)`，所以按最外层括号内的空白分段，取最后一段；
  * 不能用 `[^)]*?` 去啃，那会在内层 `)` 处停住，一个明度都取不到。
@@ -397,6 +408,47 @@ test('代码块的九个语法色在自己那块底色上都过 4.5:1', () => {
     for (const [, name, value] of entries) {
       const ratio = contrast(inlineFallbacks(value), inlineFallbacks(backgrounds[mode]));
       assert.ok(ratio >= 4.5, `${mode} 语法色 ${name} 在代码块底色上只有 ${ratio.toFixed(2)}:1，要求 4.5:1`);
+    }
+  }
+});
+
+test('配置页的预设表与这条自检用的是同一组数', () => {
+  // 两处各写一份色相就会分叉：配置页改了预设，自检还在验旧值，等于白验。
+  const card = readFileSync(join(root, 'src/client/card.tsx'), 'utf8');
+  const found = [...card.matchAll(/\{ id: '(\w+)', light: (\d+), dark: (\d+), key: 'card\.preset\w+' \}/g)]
+    .map((m) => [m[1], Number(m[2]), Number(m[3])]);
+  assert.equal(found.length, 6, `配置页里找到 ${found.length} 个预设，应当是 6 个`);
+  const expected = {
+    maple: [35, 207],
+    lavender: [280, 250],
+    mint: [160, 175],
+    forest: [110, 140],
+    rose: [345, 320],
+    steel: [210, 215],
+  };
+  for (const [id, light, dark] of found) {
+    assert.deepEqual([light, dark], expected[id], `预设 ${id} 的色相与自检里的不一致`);
+  }
+});
+
+test('配置页的六个预设，两套模式的正文对比度都过 AA', () => {
+  // 预设只换色相、不动明度，所以对比度本应与 Maple 出厂值持平；
+  // 这条挡的是「哪天有人给某个预设单独调了明度」——那会悄悄破坏可读性。
+  const presets = [
+    ['Maple', 35, 207],
+    ['薰衣草', 280, 250],
+    ['薄荷', 160, 175],
+    ['森林', 110, 140],
+    ['玫瑰', 345, 320],
+    ['钢青', 210, 215],
+  ];
+  for (const [name, lightHue, darkHue] of presets) {
+    for (const [mode, hue, fgS, fgL, bgS, bgL] of [
+      ['浅色', lightHue, 10, 18, 12, 97],
+      ['深色', darkHue, 24, 88, 6, 11],
+    ]) {
+      const ratio = contrast(hslLiteral(hue, fgS, fgL), hslLiteral(hue, bgS, bgL));
+      assert.ok(ratio >= 4.5, `${name}·${mode} 的正文只有 ${ratio.toFixed(2)}:1，要求 4.5:1`);
     }
   }
 });
