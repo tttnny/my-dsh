@@ -14,6 +14,15 @@ export const CARD_CSS = `
 .dsh-maple-row-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
 .dsh-maple-row-field{flex:none;display:flex;align-items:center;gap:8px}
 .dsh-maple-number{width:88px}
+/* 预设选择器：与同一行的数字框同高同圆角，右边一枚下拉箭头。 */
+.dsh-maple-select{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 8px 0 12px;box-sizing:border-box;
+  border:0.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);
+  background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);
+  font:inherit;font-size:14px;line-height:22px;cursor:pointer}
+.dsh-maple-select:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-maple-select:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));outline-offset:2px}
+.dsh-maple-select-label{min-width:72px;text-align:left}
+.dsh-maple-chevron{flex:none;color:var(--dsw-alias-label-tertiary)}
 /* 色相滑块：轨道本身铺一条色相环，拖到哪就是哪个色，比看数字直观。 */
 .dsh-maple-hue{width:140px;height:32px;appearance:none;background:transparent;cursor:pointer;margin:0}
 .dsh-maple-hue::-webkit-slider-runnable-track{height:6px;border-radius:999px;corner-shape:round;

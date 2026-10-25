@@ -94,9 +94,44 @@ export function Switch({ checked, onChange, label, disabled }) {
   );
 }
 
-/** 宿主的标签页薄壳：靠它真实的 `tabs` / `tab` 类。 */
-export function SegmentedTabs({ items, value, onChange, label }) {
+/**
+ * 宿主的分段控件薄壳：DOM 层数与真组件一致（轨道 + 一枚绝对定位的指示块 + 若干 tab），
+ * 指示块的位置靠 `--dsh-segment-count` / `--dsh-segment-index` 两个变量算，
+ * 所以「没选中任何一项时指示块会跑出轨道」这种毛病在预览里也能看见。
+ * @param {{ id: string, value: string, options: readonly { value: string, label: string }[], onChange: (v: string) => void, label: string }} props
+ *   - 与真组件同名的入参。
+ * @returns {import('react').ReactNode} 渲染结果。
+ */
+export function SegmentedControl({ id, value, options, onChange, label }) {
+  const index = options.findIndex((option) => option.value === value);
   return createElement(
+    'div',
+    {
+      role: 'tablist',
+      'aria-label': label,
+      className: 'control',
+      style: { '--dsh-segment-count': String(options.length), '--dsh-segment-index': String(index) },
+    },
+    createElement('span', { key: 'indicator', 'aria-hidden': 'true', className: 'indicator' }),
+    options.map((option) => createElement(
+      'button',
+      {
+        key: option.value,
+        id: `${id}-${option.value}`,
+        type: 'button',
+        role: 'tab',
+        className: 'tab',
+        'aria-selected': option.value === value,
+        tabIndex: option.value === value ? 0 : -1,
+        onClick: () => { if (option.value !== value) onChange(option.value) },
+      },
+      option.label,
+    )),
+  );
+}
+
+/** 宿主的标签页薄壳：靠它真实的 `tabs` / `tab` 类。 */
+export function SegmentedTabs({ items, value, onChange, label }) {  return createElement(
     'div',
     { className: 'tabs', role: 'tablist', 'aria-label': label },
     items.map((item) => createElement(
@@ -212,6 +247,11 @@ export const IconQuestionOutlineRegular = icon('question');
 export const IconInspectOutlineRegular = icon('inspect');
 export const IconDownloadOutlineRegular = icon('download');
 export const IconBranchOutlineRegular = icon('branch');
+export const IconChevronDownOutlineRegular = ({ size = 14 }) => createElement(
+  'svg',
+  { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', 'data-icon': 'chevron-down' },
+  createElement('path', { d: 'M4 6.5 8 10.5 12 6.5', stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+);
 export const IconCheckOutlineRegular = ({ size = 16 }) => createElement(
   'svg',
   { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', 'data-icon': 'check' },

@@ -146,8 +146,12 @@ export const MAPLE_TOKENS = {
   '--dsw-alias-scrollbar-bg-l2': { light: 'hsl(var(--maple-hue-light, 35) 20% 78%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 32%)' },
   '--dsw-alias-scrollbar-hover-l2': { light: 'hsl(var(--maple-hue-light, 35) 18% 71%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 39%)' },
   '--dsw-alias-menu-icon': { light: 'hsl(var(--maple-hue-light, 35) 8% 35%)', dark: 'hsl(var(--maple-hue-dark, 207) 18% 80%)' },
-  '--dsw-specific-sidebar-fill': { light: 'hsl(calc(var(--maple-hue-light, 35) - 18) 8% 93%)', dark: 'hsl(calc(var(--maple-hue-dark, 207) - 8) 6% 12%)' },
-  '--dsw-specific-sidebar-nav-item-active': { light: 'hsl(var(--maple-hue-light, 35) 26% 88%)', dark: 'hsl(var(--maple-hue-dark, 207) 14% 19%)' },
+  /* 侧栏是「桌面」，正文区是浮在上面的纸。这一档颜色取的是 Maple 在 Obsidian 里
+   * **画出来**的结果，不是它写下的 --background-secondary 原值：那份原值（h-18、8%、93%）
+   * 只是垫在卡片布局的渐变背景上的一层，实际看到的是它与渐变混合之后的颜色——
+   * 更深一档、也更带色相。照原值取会得到一块发白的灰，与纸面分不开。 */
+  '--dsw-specific-sidebar-fill': { light: 'hsl(calc(var(--maple-hue-light, 35) - 10) 17% 91%)', dark: 'hsl(calc(var(--maple-hue-dark, 207) + 2) 12% 16%)' },
+  '--dsw-specific-sidebar-nav-item-active': { light: 'hsl(var(--maple-hue-light, 35) 28% 86%)', dark: 'hsl(var(--maple-hue-dark, 207) 16% 22%)' },
   '--dsw-specific-sidebar-nav-item-hover': { light: 'hsl(var(--maple-hue-light, 35) 26% 38% / 8%)', dark: 'hsl(var(--maple-hue-dark, 207) 24% 88% / 8%)' },
   '--dsw-specific-sidebar-nav-item-active-accent': { light: 'hsl(var(--maple-hue-light, 35) 40% 84%)', dark: 'hsl(var(--maple-hue-dark, 207) 18% 24%)' },
   '--dsw-specific-tip': { light: 'hsl(var(--maple-hue-light, 35) 18% 90%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 18%)' },

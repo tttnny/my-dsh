@@ -66,6 +66,14 @@ html[data-maple-theme='on'][data-maple-shell='on'] body [data-row-key^='workspac
   border-radius: var(--dsw-radius-sm);
 }
 
+/* 选中的那一行：Maple 里当前文件是块实心色，宿主只给一层 7% 的墨色，
+ * 落在侧栏底色上几乎看不出来。这里换成主题自己的强调块，
+ * 文字仍是正文色（深底浅字的反差够，不用改字色）。 */
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-row-key^='session:'][aria-selected='true'],
+html[data-maple-theme='on'][data-maple-shell='on'] body [data-slot='sidebar'] nav button[aria-current='page'] {
+  background: var(--dsw-specific-sidebar-nav-item-active);
+}
+
 
 
 /* 会话头部的图标按钮：Maple 的图标按钮是紧凑控件级圆角。 */

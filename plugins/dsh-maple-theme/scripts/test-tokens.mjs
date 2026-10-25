@@ -64,6 +64,22 @@ function lightnessOf(value) {
 }
 
 /**
+ * 从一条 hsl() 配方里取饱和度那个分量，分段规则与 {@link lightnessOf} 同一套。
+ * @param value - 一个 hsl() 颜色值。
+ * @returns 饱和度数值（百分比，去掉符号）；取不到时返回 undefined。
+ */
+function saturationOf(value) {
+  const inner = /^hsl\((.+)\)$/.exec(value.trim());
+  if (inner === null) return undefined;
+  const parts = inner[1].trim().split(/\s+/);
+  const index = parts.length >= 3 && parts[parts.length - 2] === '/'
+    ? parts.length - 4
+    : parts.length - 2;
+  const num = /\(?([\d.]+)%|^([\d.]+)%/.exec(parts[index] ?? '');
+  return num === null ? undefined : Number(num[1] ?? num[2]);
+}
+
+/**
  * 把令牌表读成「令牌名 → 某一个模式的值」。
  * 每条的形状是 `'--dsw-…': { light: '…', dark: '…' },`，所以按模式各收一份。
  * @param mode - `light` 或 `dark`。
@@ -93,7 +109,7 @@ function resolveVar(vars, name, seen = new Set()) {
 /**
  * 把色相里的变量换成它的兜底值：样式表写的是 `hsl(var(--maple-hue-light, 35) 12% 97%)`，
  * 也就是「配置页没给值时用 35」，所以按兜底值算是这一层的出厂样子。
- * `calc(var(--maple-hue-light, 35) - 18)` 这种偏移也要能算。
+ * `calc(var(--maple-hue-light, 35) - 18)` 与 `calc(... + 2)` 两种偏移都要能算。
  * @param value - 一个 CSS 颜色值。
  * @returns 变量已换掉的同形字符串。
  */
@@ -101,7 +117,9 @@ function inlineFallbacks(value) {
   return value
     .replace(/var\(--maple-hue-light,\s*(-?[\d.]+)\)/g, '$1')
     .replace(/var\(--maple-hue-dark,\s*(-?[\d.]+)\)/g, '$1')
-    .replace(/calc\((-?[\d.]+)\s*-\s*([\d.]+)\)/g, (_m, a, b) => String(Number(a) - Number(b)));
+    .replace(/calc\((-?[\d.]+)\s*([+-])\s*([\d.]+)\)/g, (_m, a, op, b) => String(
+      op === '+' ? Number(a) + Number(b) : Number(a) - Number(b),
+    ));
 }
 
 /** 把 hsl(h s% l% / a) 或 hsl(h s% l%) 求值成 rgb（忽略 alpha，按最坏情况算）。 */
@@ -524,6 +542,30 @@ test('每一个 --dsw-alias-* / --dsw-specific-* 都在两套里各写了一次'
   const darkNames = Object.keys(dark).sort();
   assert.deepEqual(darkNames, lightNames, '两套配色的令牌集不一致');
   assert.ok(lightNames.length >= 45, `令牌只有 ${lightNames.length} 条，少得不正常`);
+});
+
+test('侧栏与正文纸面分成两档，且侧栏带得住色相', () => {
+  // 这一条钉的是「侧栏读起来是不是另一层」。Maple 的侧栏在 Obsidian 里画出来是
+  // hsl(h-10 17% 91%) 一类的颜色：比纸面深五档以上、饱和度翻倍。
+  // 照抄它写下的 --background-secondary 原值（8%、93%）会得到一块发白的灰，
+  // 与纸面分不开——那是这一条要挡的退化。
+  for (const [mode, vars] of [['浅色', light], ['深色', dark]]) {
+    const side = resolveVar(vars, '--dsw-specific-sidebar-fill');
+    const paper = resolveVar(vars, '--dsw-alias-bg-base');
+    const sideL = lightnessOf(side);
+    const paperL = lightnessOf(paper);
+    const sideS = saturationOf(side);
+    assert.ok(sideL !== undefined && paperL !== undefined && sideS !== undefined,
+      `${mode}侧栏或纸面的颜色解析不出来：${side} / ${paper}`);
+    const gap = paperL - sideL;
+    if (mode === '浅色') {
+      assert.ok(gap >= 5, `${mode}侧栏只比纸面深 ${gap} 个百分点，要求至少 5（侧栏 ${sideL}%，纸面 ${paperL}%）`);
+    } else {
+      assert.ok(-gap >= 3, `${mode}侧栏只比纸面浅 ${-gap} 个百分点，要求至少 3（侧栏 ${sideL}%，纸面 ${paperL}%）`);
+    }
+    const minimum = mode === '浅色' ? 14 : 10;
+    assert.ok(sideS >= minimum, `${mode}侧栏的饱和度只有 ${sideS}%，要求至少 ${minimum}%——再低就成灰的了`);
+  }
 });
 
 for (const [label, ratio] of report) console.log(`        ${label.padEnd(20)} ${ratio.toFixed(2)}:1`);

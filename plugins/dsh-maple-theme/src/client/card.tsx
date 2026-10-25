@@ -7,12 +7,12 @@
  */
 import { useEffect, useState } from 'react';
 import * as React from 'react';
-import { Input, SegmentedControl, Switch } from '@deepseek-ai/dsh-client-ui-primitives';
+import { IconChevronDownOutlineRegular, Input, Menu, SegmentedControl, Switch } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { readSettings, type MapleForm, type MapleOp } from './binding.ts';
 import { DEFAULT_SETTINGS, type MapleSettings } from './settings.ts';
 import { NS } from './locales.ts';
-import { PALETTE_PRESETS } from './presets.ts';
+import { matchPreset, PALETTE_PRESETS } from './presets.ts';
 
 /**
  * 常用配色的色相预设：一键把浅色与深色色相同时切过去。
@@ -127,6 +127,55 @@ function NumberField({ value, min, max, step, unit, label, onCommit }: {
 }
 
 /**
+ * 预设选择器：一个下拉按钮，列出六个配色预设。
+ *
+ * 用下拉而不是分段控件，两个理由：
+ *   1. 分段控件没有「一个都没选中」这种状态。手调过色相之后一对色相不对应任何预设，
+ *      传个空串进去，指示块会被平移到轨道外面、压在同一行的说明文字上。
+ *   2. 六个中文标签铺开要 600px 以上，会把同一行的说明挤成两行。
+ * 下拉按钮的文案本身就是状态：对上某个预设就显示它的名字，对不上显示「自定义」。
+ * @param props.value - 当前命中的预设 id；自定义时为 undefined。
+ * @param props.items - 六个预设的 id 与已本地化的名字。
+ * @param props.customLabel - 自定义状态下按钮显示的名字。
+ * @param props.onSelect - 选中一个预设。
+ * @param props.label - 控件的可访问名。
+ */
+function PresetPicker({ value, items, customLabel, onSelect, label }: {
+  value: string | undefined;
+  items: readonly { id: string; label: string }[];
+  customLabel: string;
+  onSelect: (id: string) => void;
+  label: string;
+}): React.ReactElement {
+  const [open, setOpen] = useState(false);
+  const currentLabel = items.find(item => item.id === value)?.label ?? customLabel;
+  return (
+    <Menu
+      open={open}
+      onClose={() => { setOpen(false) }}
+      items={items}
+      selectedId={value}
+      onSelect={onSelect}
+      align="end"
+      portal
+      anchor={(
+        <button
+          type="button"
+          className="dsh-maple-select"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={label}
+          onClick={() => { setOpen(current => !current) }}
+        >
+          <span className="dsh-maple-select-label">{currentLabel}</span>
+          <IconChevronDownOutlineRegular className="dsh-maple-chevron" size={14} />
+        </button>
+      )}
+    />
+  );
+}
+
+/**
  * 渲染配置卡片。
  * @param props - 座位给的 `t`，加上本插件在 `inject` 里投出去的那张表单。
  * @returns 卡片的元素树。
@@ -154,12 +203,10 @@ export function MapleThemeCard(
 
   const current = settings ?? DEFAULT_SETTINGS;
   /*
-   * 当前落在哪个预设上：两个色相都与某个预设对得上才算，否则返回空串。
-   * 返回空串而不是硬选一个——用户手调过之后，分段控件不该假装他还停在某个预设上。
+   * 当前落在哪个预设上：两个色相都与某个预设对得上才算，否则是 undefined（自定义）。
+   * 不硬选一个「最接近的」——用户手调过之后，控件不该假装他还停在某个预设上。
    */
-  const currentPreset = PALETTE_PRESETS.find(
-    preset => preset.light === current.hueLight && preset.dark === current.hueDark,
-  )?.id ?? '';
+  const currentPreset = matchPreset(current.hueLight, current.hueDark)?.id;
   const write = (field: keyof MapleSettings, value: unknown): void => { void form.set(field, value); };
   /**
    * 一次写多个字段：浅色与深色是成套的，分开写会让页面闪一次「半套」配色。
@@ -177,12 +224,12 @@ export function MapleThemeCard(
       <section className="dsh-maple-group">
         <div className="dsh-maple-group-title">{t('card.colors')}</div>
         <Row title={t('card.preset')} hint={t('card.presetHint')}>
-          <SegmentedControl
-            id="dsh-maple-preset"
+          <PresetPicker
             value={currentPreset}
             label={t('card.preset')}
-            options={PALETTE_PRESETS.map(preset => ({ value: preset.id, label: t(preset.key) }))}
-            onChange={(next) => {
+            customLabel={t('card.presetCustom')}
+            items={PALETTE_PRESETS.map(preset => ({ id: preset.id, label: t(preset.key) }))}
+            onSelect={(next) => {
               const preset = PALETTE_PRESETS.find(item => item.id === next);
               if (preset === undefined) return;
               // 一次改两个字段：浅色与深色是成套的，只改一个会得到半套配色。

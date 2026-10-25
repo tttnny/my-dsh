@@ -15,6 +15,7 @@ import {
   ROOT_VARIABLES,
   DEFAULT_SETTINGS, clampNumber, normalizeSettings, projectSettings, applyProjection, clearProjection,
 } from '../src/client/settings.ts';
+import { matchPreset, PALETTE_PRESETS } from '../src/client/presets.ts';
 
 let passed = 0;
 let total = 0;
@@ -129,6 +130,28 @@ test('重复投影是幂等的，不会叠出第二份', () => {
   applyProjection(root, projection);
   applyProjection(root, projection);
   assert.equal(root.style.getPropertyValue('--maple-hue-light'), '200');
+});
+
+test('每个预设的色相对都匹配回它自己', () => {
+  for (const preset of PALETTE_PRESETS) {
+    assert.equal(matchPreset(preset.light, preset.dark)?.id, preset.id, `${preset.id} 没匹配回自己`);
+  }
+});
+
+test('手调过的色相对不匹配任何预设（控件这时显示「自定义」）', () => {
+  // 差一度也不行：预设是一对具体的数，不是范围。硬选一个「最接近的」就是撒谎。
+  assert.equal(matchPreset(123, 207), undefined);
+  assert.equal(matchPreset(35, 208), undefined);
+  assert.equal(matchPreset(36, 207), undefined);
+  assert.equal(matchPreset(36, 208), undefined);
+});
+
+test('色相环上 360° 就是 0°：绕圈的写法匹配到同一个预设', () => {
+  const maple = PALETTE_PRESETS.find(preset => preset.id === 'maple');
+  assert.notEqual(maple, undefined);
+  assert.equal(matchPreset(maple.light + 360, maple.dark)?.id, 'maple');
+  assert.equal(matchPreset(maple.light - 360, maple.dark)?.id, 'maple');
+  assert.equal(matchPreset(maple.light, maple.dark + 720)?.id, 'maple');
 });
 
 console.log(`${passed}/${total} passed`);

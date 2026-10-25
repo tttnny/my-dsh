@@ -207,6 +207,7 @@ const hostSheets = [
   join(primitivesRoot, 'Switch.module.css'),
   join(primitivesRoot, 'Modal.module.css'),
   join(primitivesRoot, 'SegmentedTabs.module.css'),
+  join(primitivesRoot, 'SegmentedControl.module.css'),
   join(primitivesRoot, 'Menu.module.css'),
   join(primitivesRoot, 'MenuSurface.module.css'),
   join(primitivesRoot, 'Tooltip.module.css'),
