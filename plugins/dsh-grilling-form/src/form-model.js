@@ -152,12 +152,16 @@ export const QUESTION_TYPES = ['single', 'multi', 'free'];
 /**
  * 一张表的身份记号：调用 id 里的 4 位小写字母数字。它只出现在作答块的起止行里，
  * 用户看不见也不用管；两张表、两个轮次之间靠它互相不认领。
+ *
+ * PTC 模式下这张表是 `run_code` 的子调用，id 是 `<父调用 id>:ptc:<序号>`：先剥掉这段后缀再取。
+ * 序号每轮都从 1 数起，拿它算记号会让两轮的第一张表都叫 `ptc1`，那块作答互相认领；
+ * 剥掉之后认的还是父调用 id，与原生模式一样按调用取记号。
  * @param {unknown} callId - 那次调用的 id。
  * @returns {string} 4 位记号。
  */
 export function shortFormId(callId) {
   const text = typeof callId === 'string' ? callId : '';
-  const compact = text.replace(/[^0-9a-z]/gi, '').toLowerCase();
+  const compact = text.replace(/:ptc:\d+$/, '').replace(/[^0-9a-z]/gi, '').toLowerCase();
   return compact.length >= 4 ? compact.slice(-4) : compact.padStart(4, '0');
 }
 
@@ -227,13 +231,16 @@ function readOptions(options) {
 /**
  * argsRaw → 这一轮问了什么、是不是点名要取代前一张表。
  *
+ * 入参既可能是调用的原始参数文本（会话事件与界面上的 `argsRaw`），也可能已经是解析好的那份
+ * 对象——PTC 模式下闸门读的 `tool/ptc-dispatch-start` 事件把参数摊成对象交过来。
+ *
  * 读不出来、没有 questions、某题不是对象、或 questions 是空数组时给空题表（界面据此什么都不画）。
  * 题型缺省**不是**作废的理由：有选项按多选、没选项按自由——模型漏写题型不该整轮被拒。
- * @param {unknown} argsRaw - 调用的原始参数文本。
+ * @param {unknown} args - 调用的原始参数文本，或已解析的参数对象。
  * @returns {{ questions: Question[], replace: boolean }} 题面与取代标记。
  */
-function readRound(argsRaw) {
-  const parsed = parseJson(argsRaw);
+function readRound(args) {
+  const parsed = isRecord(args) ? args : parseJson(args);
   if (!isRecord(parsed) || !Array.isArray(parsed.questions) || parsed.questions.length === 0) {
     return { questions: [], replace: false };
   }
@@ -786,28 +793,31 @@ export function initialFormGate() {
 export function foldFormGate(state, event) {
   if (!isRecord(event) || typeof event.type !== 'string') return state;
   const data = isRecord(event.data) ? event.data : {};
-  if (event.type === 'tool/call' && data.name === TOOL_NAME) {
+  // 两种呈现模式下这张表各是一类事件，字段名也一样跟着换：
+  //   原生（native）——模型直呼 grilling_form：`tool/call` 开始、`tool/result` 结算，身份是 callId；
+  //   PTC——模型只调 run_code，这张表是它的子调用：`tool/ptc-dispatch-start` 开始、
+  //        `tool/ptc-dispatch` 结算，身份是 subCallId。
+  // 结算事件一律不带工具名（结果只认调用 id），所以按 id 对回候选，不再看 name。
+  if (event.type === 'tool/call' || event.type === 'tool/ptc-dispatch-start') {
+    if (data.name !== TOOL_NAME) return state;
     const questions = readQuestions(data.arguments);
     if (questions.length === 0) return state;
-    const callId = typeof data.callId === 'string' ? data.callId : String(data.callId ?? '');
     return {
       ...state,
       call: {
-        callId,
+        callId: String((event.type === 'tool/call' ? data.callId : data.subCallId) ?? ''),
         questions: questions.map((question) => question.question),
         seq: typeof event.seq === 'number' ? event.seq : -1,
       },
     };
   }
   if (event.type === 'tool/result') {
-    const call = state.call;
-    if (call === null) return state;
     const message = isRecord(data.message) ? data.message : undefined;
-    if (message === undefined || String(message.toolCallId) !== call.callId) return state;
-    const result = readResult(firstText(message.content));
-    return result !== undefined && result.shown
-      ? { call: null, pending: call }
-      : { ...state, call: null };
+    if (message === undefined) return state;
+    return settleFormGate(state, String(message.toolCallId), firstText(message.content));
+  }
+  if (event.type === 'tool/ptc-dispatch') {
+    return settleFormGate(state, String(data.subCallId ?? ''), firstText(data.content));
   }
   if (event.type === 'user/message') {
     const pending = state.pending;
@@ -818,6 +828,23 @@ export function foldFormGate(state, event) {
       : { ...state, pending: null };
   }
   return state;
+}
+
+/**
+ * 一次投出候选的结算：结果说 `ok: true` 才算真的有一张待答的表，说别的就把候选丢掉、
+ * 前一张待答的表一个不动。
+ * @param {FormGate} state - 当前状态。
+ * @param {string} callId - 结算的那次调用的 id。
+ * @param {string|undefined} resultText - 结果里的文本。
+ * @returns {FormGate} 新状态；不是这个候选的结算时是入参本身。
+ */
+function settleFormGate(state, callId, resultText) {
+  const call = state.call;
+  if (call === null || callId !== call.callId) return state;
+  const result = readResult(resultText);
+  return result !== undefined && result.shown
+    ? { call: null, pending: call }
+    : { ...state, call: null };
 }
 
 /**
@@ -833,9 +860,8 @@ export function foldFormGate(state, event) {
  */
 export function formReplyAfter(nodes, callId) {
   if (!Array.isArray(nodes)) return undefined;
-  const mine = nodes.find((node) => isRecord(node) && node.callId === callId);
-  if (!isRecord(mine) || typeof mine.seq !== 'number') return undefined;
-  const mineSeq = mine.seq;
+  const mineSeq = callSeq(nodes, callId);
+  if (mineSeq === undefined) return undefined;
   /** @type {Record<string, unknown>|undefined} */
   let reply;
   for (const node of nodes) {
@@ -846,6 +872,36 @@ export function formReplyAfter(nodes, callId) {
     if (reply === undefined || node.seq < /** @type {number} */ (reply.seq)) reply = node;
   }
   return reply;
+}
+
+/**
+ * 这条调用落在记录里的哪个位置（seq）。
+ *
+ * 原生模式下它就是节点自己；PTC 模式下它只是 `run_code` 根块里的一个子调用，而 compat 视图只摊
+ * 根块——子调用没有自己的一行位置，所以取**装着它的那个根块**的 seq。拿不到这条调用时 undefined。
+ * @param {unknown[]} nodes - chat 视图的 legacy.nodes。
+ * @param {unknown} callId - 这次工具调用的 callId。
+ * @returns {number|undefined} 那条调用（或装着它的根块）的 seq。
+ */
+function callSeq(nodes, callId) {
+  for (const node of nodes) {
+    if (!isRecord(node) || typeof node.seq !== 'number') continue;
+    if (node.callId === callId) return node.seq;
+    if (containsCall(node.subCalls, callId)) return node.seq;
+  }
+  return undefined;
+}
+
+/**
+ * 一个工具的子树里有没有这条调用（子调用还可以再套子调用，所以要往里走）。
+ * @param {unknown} subCalls - 一个块的 subCalls。
+ * @param {unknown} callId - 要找的调用 id。
+ * @returns {boolean} 找得到时为 true。
+ */
+function containsCall(subCalls, callId) {
+  if (!Array.isArray(subCalls)) return false;
+  return subCalls.some((child) => isRecord(child)
+    && (child.callId === callId || containsCall(child.subCalls, callId)));
 }
 
 /**
@@ -864,8 +920,22 @@ export function messageText(node) {
 }
 
 /**
+ * 一个工具调用块自己叫什么（结果节点把调用头挂在 `call` 上，还没落结果的那次摊在自己身上）。
+ * @param {unknown} block - 工具调用块。
+ * @returns {unknown} 工具名；读不出来时 undefined。
+ */
+function blockToolName(block) {
+  if (!isRecord(block)) return undefined;
+  const call = isRecord(block.call) ? block.call : undefined;
+  return typeof call?.name === 'string' ? call.name : block.name;
+}
+
+/**
  * 本轮里那次 `grilling_form` 调用。位置由 chat 的位置索引给出（按轮次取本轮的节点键），
  * 所以不靠 seq 猜边界；投出即结束本轮，取**最后一次**——被拒之后又投的那一次才算数。
+ *
+ * PTC 模式下模型只调 `run_code`，这张表是它的**子调用**（宿主把子调用挂在根块的 `subCalls` 上），
+ * 所以两处都要看：根块本身、以及每个根块的子调用。子调用那边同样取最后一次。
  * @param {unknown} chat - chat 视图快照（ChatSnapshotLike）。
  * @param {unknown} turn - 轮次号。
  * @returns {{ block: unknown, toolName: unknown, callId: unknown }|undefined} 本轮的表单调用；没有就不画。
@@ -884,12 +954,13 @@ export function roundCall(chat, turn) {
     const node = getNode.call(snapshot.nodes, key);
     if (!isRecord(node) || node.kind !== 'tool-call') continue;
     const data = isRecord(node.data) ? node.data : undefined;
-    const block = data?.root;
-    if (!isRecord(block)) continue;
-    const call = isRecord(block.call) ? block.call : undefined;
-    const toolName = typeof call?.name === 'string' ? call.name : block.name;
-    if (toolName !== TOOL_NAME) continue;
-    found = { block, toolName, callId: block.callId };
+    const root = data?.root;
+    if (!isRecord(root)) continue;
+    for (const block of [root, ...(Array.isArray(root.subCalls) ? root.subCalls : [])]) {
+      if (!isRecord(block)) continue;
+      if (blockToolName(block) !== TOOL_NAME) continue;
+      found = { block, toolName: TOOL_NAME, callId: block.callId };
+    }
   }
   return found;
 }
@@ -1112,7 +1183,9 @@ export function pendingFormOf(state) {
  */
 export const FORM_GATE_UNIT = {
   key: GATE_KEY,
-  stateVersion: 1,
+  // 2：折叠开始认 PTC 的子调用事件（`tool/ptc-dispatch-start` / `tool/ptc-dispatch`），
+  // 旧版缓存里 PTC 轮次折出来的「没有待答的表」是错的，必须丢掉重折。
+  stateVersion: 2,
   stateSchema: { parse: (value) => normalizeGate(value) },
   init: () => initialFormGate(),
   apply: (state, event) => foldFormGate(state, event),

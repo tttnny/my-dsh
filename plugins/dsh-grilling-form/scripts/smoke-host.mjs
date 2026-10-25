@@ -99,6 +99,29 @@ function recordUserMessage({ append }, text) {
   append({ type: 'user/message', data: { role: 'user', content: [{ type: 'text', text }] } });
 }
 
+/**
+ * PTC 模式下的那一轮：模型只调 run_code，这张表是它的子调用，开始与结算分别落成
+ * `tool/ptc-dispatch-start` / `tool/ptc-dispatch`（参数摊成对象、身份叫 subCallId）。
+ */
+function recordDispatchRound({ append }, { subCallId, args, result }) {
+  append({
+    type: 'tool/ptc-dispatch-start',
+    data: { rootCallId: 'call-run', parentCallId: 'call-run', subCallId, name: TOOL_NAME, arguments: args },
+  });
+  append({
+    type: 'tool/ptc-dispatch',
+    data: {
+      rootCallId: 'call-run',
+      parentCallId: 'call-run',
+      subCallId,
+      name: TOOL_NAME,
+      arguments: args,
+      isError: false,
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+    },
+  });
+}
+
 /** 假执行上下文：真 DSH 的执行上下文带着 concludeTurn 与会话，这里只记录它被喊了几次。 */
 function makeExec(session) {
   const concluded = [];
@@ -355,6 +378,36 @@ await test('闸门：用户带着那张表的记号作答之后，下一轮照�
   const second = makeExec(world.session);
   const result = await tool.execute({ questions: [{ question: '新的？' }] }, second.exec);
   assert.equal(result.ok, true);
+  assert.equal(ctx.sessionProjections.stateOf(world.session, GATE_KEY).pending, null);
+});
+
+await test('闸门（PTC）：子调用走 ptc-dispatch 事件，照样记成待答的表', async () => {
+  const { ctx, tool } = await assemble();
+  const world = makeSession();
+  const questions = [{ question: 'PTC 下问的？' }];
+  await tool.execute({ questions }, makeExec(world.session).exec);
+  recordDispatchRound(world, {
+    subCallId: 'call-run:ptc:1',
+    args: { questions },
+    result: { ok: true, message: 'x' },
+  });
+  const state = ctx.sessionProjections.stateOf(world.session, GATE_KEY);
+  assert.equal(state.pending.callId, 'call-run:ptc:1');
+});
+
+await test('闸门（PTC）：待答的表在，第二次投出会被拦下；用户带记号作答之后才放行', async () => {
+  const { ctx, tool } = await assemble();
+  const world = makeSession();
+  const questions = [{ question: 'PTC 下问的？' }];
+  await tool.execute({ questions }, makeExec(world.session).exec);
+  recordDispatchRound(world, { subCallId: 'call-run:ptc:1', args: { questions }, result: { ok: true, message: 'x' } });
+
+  const blocked = await tool.execute({ questions: [{ question: '下一批？' }] }, makeExec(world.session).exec);
+  assert.equal(blocked.ok, false, 'PTC 模式下闸门同样要拦');
+
+  recordUserMessage(world, `${importBlockStart('call-run:ptc:1')}\n1.\n- 甲\n【/拷问作答】`);
+  const passed = await tool.execute({ questions: [{ question: '下一批？' }] }, makeExec(world.session).exec);
+  assert.equal(passed.ok, true);
   assert.equal(ctx.sessionProjections.stateOf(world.session, GATE_KEY).pending, null);
 });
 

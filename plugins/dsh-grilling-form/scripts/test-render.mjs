@@ -274,6 +274,47 @@ test('摊开、不折叠：可填时页面上没有折叠行，也没有卡片�
   assert.doesNotMatch(markup, /dsg-card/);
 });
 
+// --- PTC 模式：这张表是 run_code 的子调用 ---
+
+/** PTC 模式下本轮那个根块：模型调的是 run_code，表住在它的 subCalls 里。 */
+const runCodeRoot = (subCalls) => ({
+  kind: 'tool-result',
+  callId: 'call-run',
+  seq: 5,
+  call: { name: 'run_code', argsRaw: JSON.stringify({ code: 'await tools.grilling_form({...})', description: '交一轮问题' }) },
+  content: [{ type: 'text', text: '(run_code completed with no output)' }],
+  isError: false,
+  subCalls,
+});
+
+/** run_code 里那个 grilling_form 子调用（id 形状与宿主一致）。 */
+const dispatchedForm = (overrides = {}) => ({
+  kind: 'tool-result',
+  callId: 'call-run:ptc:1',
+  parentCallId: 'call-run',
+  seq: 6,
+  call: { name: 'grilling_form', argsRaw },
+  content: [{ type: 'text', text: shown }],
+  isError: false,
+  subCalls: [],
+  ...overrides,
+});
+
+test('PTC：表在 run_code 的子调用里时，轮次尾部照样把整张表画出来', () => {
+  globalThis.localStorage = fakeStorage();
+  const { markup } = html({ call: runCodeRoot([dispatchedForm()]) });
+  assert.match(markup, /dsg-number">1\.</);
+  assert.match(markup, /Host 权威层怎么改？/);
+  assert.match(markup, /范围呢？/);
+  assert.match(markup, /导入输入框/);
+});
+
+test('PTC：run_code 里没有这张表时什么都不画', () => {
+  globalThis.localStorage = fakeStorage();
+  const otherChild = { ...dispatchedForm(), call: { name: 'bash', argsRaw: '{}' } };
+  assert.equal(html({ call: runCodeRoot([otherChild]) }).markup, '');
+});
+
 test('本轮没有这张表：什么都不画', () => {
   globalThis.localStorage = fakeStorage();
   assert.equal(html({ turn: { turn: 9, start: { seq: 30 }, end: { seq: 35 } } }).markup, '');

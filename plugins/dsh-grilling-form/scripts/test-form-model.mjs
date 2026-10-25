@@ -92,7 +92,24 @@ test('作答块的起止行：开头那行带这张表的身份记号，收尾�
   assert.equal(importBlockStart('k3f9'), '【拷问作答 k3f9】');
 });
 
+test('身份记号：PTC 子调用 id 剥掉「:ptc:<序号>」再取，两轮的第一张表不会撞记号', () => {
+  // PTC 下这张表是 run_code 的子调用，id 是 `<父调用 id>:ptc:<序号>`，序号每轮都从 1 重新数。
+  assert.equal(shortFormId('call-aaaa:ptc:1'), shortFormId('call-aaaa'), '就是父调用 id 的那个记号');
+  assert.equal(shortFormId('call-aaaa:ptc:3'), shortFormId('call-aaaa'));
+  assert.notEqual(
+    shortFormId('call-aaaa:ptc:1'),
+    shortFormId('call-bbbb:ptc:1'),
+    '不同轮次的第一张表记号必须不同，否则作答块互相认领',
+  );
+});
+
 // --- 取数 ---
+
+test('题面取数：参数已经是解析好的对象时照样读得出（PTC 的 dispatch 事件摊的就是对象）', () => {
+  const asObject = { questions: [{ question: '继续吗？', options: [{ label: '继续' }] }] };
+  assert.deepEqual(readQuestions(asObject), readQuestions(JSON.stringify(asObject)));
+  assert.deepEqual(readQuestions(asObject).map((question) => question.number), [1]);
+});
 
 test('题面取数：题号由题序生成（从 1 起），题干、题型、选项都在', () => {
   const questions = readQuestions(args([
@@ -583,6 +600,62 @@ test('轮次定位：本轮里别的工具不是这张表；被拦下之后又�
   assert.equal(roundCall(fakeChat({ 1: [blocked, accepted] }), 1).block.seq, 6, '投出去的那次是最后一次');
 });
 
+// --- 轮次定位（PTC 模式：这张表是 run_code 的子调用）---
+
+/** PTC 模式下本轮的那个根块：模型调的是 run_code，表住在它的 subCalls 里。 */
+const runCodeRoot = (subCalls, overrides = {}) => ({
+  kind: 'tool-result',
+  callId: 'call-run',
+  seq: 7,
+  call: { name: 'run_code', argsRaw: JSON.stringify({ code: 'await tools.grilling_form({...})', description: '交一轮问题' }) },
+  content: [{ type: 'text', text: '(run_code completed with no output)' }],
+  isError: false,
+  subCalls,
+  ...overrides,
+});
+
+/** run_code 的一个 grilling_form 子调用；id 的形状与宿主一致（`<父调用 id>:ptc:<序号>`）。 */
+const dispatchedForm = (overrides = {}) => ({
+  kind: 'tool-result',
+  callId: 'call-run:ptc:1',
+  parentCallId: 'call-run',
+  seq: 8,
+  call: { name: TOOL_NAME, argsRaw: args([call()]) },
+  content: [{ type: 'text', text: shown }],
+  isError: false,
+  subCalls: [],
+  ...overrides,
+});
+
+test('轮次定位（PTC）：表是 run_code 的子调用，照样认得出这次调用与它的 id', () => {
+  const child = dispatchedForm();
+  const chat = fakeChat({ 4: [runCodeRoot([child])] });
+  assert.deepEqual(roundCall(chat, 4), { block: child, toolName: TOOL_NAME, callId: 'call-run:ptc:1' });
+});
+
+test('轮次定位（PTC）：run_code 里别的子调用不是这张表；本轮没有它就不画', () => {
+  const otherChild = { ...dispatchedForm(), call: { name: 'bash', argsRaw: '{}' } };
+  assert.equal(roundCall(fakeChat({ 4: [runCodeRoot([otherChild])] }), 4), undefined);
+  assert.equal(roundCall(fakeChat({ 4: [runCodeRoot([])] }), 4), undefined, 'run_code 没有派子调用');
+});
+
+test('轮次定位（PTC）：同一个 run_code 里派了两次就取最后一次', () => {
+  const blocked = dispatchedForm({ callId: 'call-run:ptc:1', seq: 8, content: [{ type: 'text', text: hidden }] });
+  const accepted = dispatchedForm({ callId: 'call-run:ptc:2', seq: 9 });
+  const chat = fakeChat({ 4: [runCodeRoot([blocked, accepted])] });
+  assert.equal(roundCall(chat, 4).callId, 'call-run:ptc:2');
+});
+
+test('作答块到达（PTC）：位置取装着它的那个 run_code 根块的 seq，子调用自己没有一行位置', () => {
+  const child = dispatchedForm();
+  const root = runCodeRoot([child]);
+  const answer = replyNode(applyImport('', '1.\n- A：详情页', child.callId), 9);
+  assert.equal(formReplyAfter([root, answer], child.callId), answer);
+  // 子调用之前的那条发言不算（它的位置按根块的 seq 比）。
+  const before = replyNode(applyImport('', '1.\n- A：详情页', child.callId), 6);
+  assert.equal(formReplyAfter([root, before], child.callId), undefined);
+});
+
 // --- 被后面那张取代 ---
 
 const replacing = (overrides = {}) => settledRoot({
@@ -679,6 +752,26 @@ const resultEvent = (callId, value, seq) => ({
 });
 const userEvent = (text, seq) => ({ type: 'user/message', seq, data: { content: [{ type: 'text', text }] } });
 
+// PTC 模式的两类事件：参数摊成对象、身份叫 subCallId（与宿主 @deepseek-ai/dsh-tools/types 一致）。
+const dispatchStartEvent = (subCallId, args, seq) => ({
+  type: 'tool/ptc-dispatch-start',
+  seq,
+  data: { rootCallId: 'call-run', parentCallId: 'call-run', subCallId, name: TOOL_NAME, arguments: args },
+});
+const dispatchEvent = (subCallId, value, seq) => ({
+  type: 'tool/ptc-dispatch',
+  seq,
+  data: {
+    rootCallId: 'call-run',
+    parentCallId: 'call-run',
+    subCallId,
+    name: TOOL_NAME,
+    arguments: { questions: [call()] },
+    isError: false,
+    content: [{ type: 'text', text: JSON.stringify(value) }],
+  },
+});
+
 /** 走一遍「调用 → 结果 ok → 待答」这三步。 */
 function pend(state, callId = 'call-1', argsRaw = args([call()])) {
   return foldFormGate(foldFormGate(state, callEvent(callId, argsRaw, 1)), resultEvent(callId, { ok: true, message: 'x' }, 2));
@@ -699,6 +792,38 @@ test('闸门：结果说没投出（入参被拒、被拦下）时，前面那�
   const withPending = pend(initialFormGate(), 'call-1');
   const blocked = foldFormGate(foldFormGate(withPending, callEvent('call-2', args([call()]), 5)), resultEvent('call-2', { ok: false, message: 'no' }, 6));
   assert.equal(pendingFormOf(blocked).callId, 'call-1');
+});
+
+test('闸门（PTC）：子调用的开始与结算走 ptc-dispatch 事件，同样记成待答，身份是 subCallId', () => {
+  const argsObject = { questions: [{ question: '继续吗？' }] };
+  const afterStart = foldFormGate(initialFormGate(), dispatchStartEvent('call-run:ptc:1', argsObject, 11));
+  assert.equal(afterStart.call.callId, 'call-run:ptc:1', '参数是对象也读得出题面');
+  assert.deepEqual(afterStart.call.questions, ['继续吗？']);
+  assert.equal(pendingFormOf(afterStart), null, '结算还没来，还算不上待答');
+  const afterSettle = foldFormGate(afterStart, dispatchEvent('call-run:ptc:1', { ok: true, message: 'x' }, 12));
+  assert.equal(pendingFormOf(afterSettle).callId, 'call-run:ptc:1');
+  assert.equal(afterSettle.call, null);
+});
+
+test('闸门（PTC）：子调用被拒或拦下时不进待答，前面那张待答的表一个不动', () => {
+  const withPending = pend(initialFormGate(), 'call-1');
+  const blocked = foldFormGate(
+    foldFormGate(withPending, dispatchStartEvent('call-run:ptc:1', { questions: [call()] }, 11)),
+    dispatchEvent('call-run:ptc:1', { ok: false, message: 'no' }, 12),
+  );
+  assert.equal(pendingFormOf(blocked).callId, 'call-1');
+});
+
+test('闸门（PTC）：run_code 里别的子调用不记成候选；用户带这张表的记号作答后照样清空', () => {
+  const other = { ...dispatchStartEvent('call-run:ptc:1', { questions: [call()] }, 11), data: { subCallId: 'call-run:ptc:1', name: 'bash', arguments: { command: 'ls' } } };
+  const initial = initialFormGate();
+  assert.equal(foldFormGate(initial, other), initial, '别的工具原样放过（同一个引用）');
+  const pending = foldFormGate(
+    foldFormGate(initialFormGate(), dispatchStartEvent('call-run:ptc:1', { questions: [call()] }, 11)),
+    dispatchEvent('call-run:ptc:1', { ok: true, message: 'x' }, 12),
+  );
+  const answered = foldFormGate(pending, userEvent(`${importBlockStart('call-run:ptc:1')}\n1.\n- A\n【/拷问作答】`, 13));
+  assert.equal(pendingFormOf(answered), null);
 });
 
 test('闸门：用户发言里带着这张表的记号就清空；转向消息、聊别的事、答别的表都不清', () => {
