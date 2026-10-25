@@ -16,15 +16,15 @@ html[data-maple-theme='on'] {
   --maple-p-gap: 10px;
   --maple-underline-offset: 2px;
   --maple-inline-code: hsl(0 45% 48%);
-  --maple-quote-bar: hsl(var(--maple-hue-light, 35) 26% 38% / 45%);
-  --maple-quote-fill: hsl(var(--maple-hue-light, 35) 20% 95%);
+  --maple-quote-bar: hsl(var(--maple-hue-light, 35) 26% 38%);
+  --maple-quote-fill: hsl(var(--maple-hue-light, 35) 10% 95%);
   --maple-table-head: hsl(var(--maple-hue-light, 35) 30% 91%);
 }
 
 html[data-maple-theme='on'] body[data-ds-dark-theme] {
   --maple-inline-code: hsl(0 44% 68%);
-  --maple-quote-bar: hsl(var(--maple-hue-dark, 207) 30% 72% / 40%);
-  --maple-quote-fill: hsl(var(--maple-hue-dark, 207) 10% 14%);
+  --maple-quote-bar: hsl(var(--maple-hue-dark, 207) 26% 72%);
+  --maple-quote-fill: hsl(var(--maple-hue-dark, 207) 10% 13%);
   --maple-table-head: hsl(var(--maple-hue-dark, 207) 12% 17%);
 }
 
@@ -148,12 +148,20 @@ html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-cha
   background: var(--maple-quote-bar);
 }
 
+/* 引用里的标题压回正文字号：引用本身是「一段引来的话」，标题在里面继续放大
+ * 会抢走引用块的层级。Maple 对六级标题一律压到正文字号。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote) :where(h1, h2, h3, h4, h5, h6) {
+  font-size: var(--dsh-content-font-size, 14px);
+  font-weight: 600;
+  margin: 6px 0;
+}
+
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote blockquote) {
   margin-inline-end: 0;
   background: color-mix(in srgb, var(--maple-quote-fill) 70%, var(--dsw-alias-bg-base));
 }
 
-/* 列表：Maple 的标记用等宽字体，并按层级换形状（实心圆 → 空心圆 → 方块）。 */
+/* 列表：Maple 只把标记换成等宽字体，形状沿用宿主的层级圆点，不另换。 */
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul, ol) {
   margin: var(--maple-p-gap) 0;
   padding-inline-start: 1.35em;
@@ -166,14 +174,6 @@ html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-cha
 
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul) > :where(li)::marker {
   font-size: 0.85em;
-}
-
-html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul ul, ul ul ul ul, ul ul ul ul ul ul) {
-  list-style-type: circle;
-}
-
-html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul ul ul, ul ul ul ul ul) {
-  list-style-type: square;
 }
 
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(li) {
