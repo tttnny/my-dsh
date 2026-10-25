@@ -218,14 +218,22 @@ test('主按钮文字压在强调色上仍然读得清（AA 大字）', () => {
   report.push(['dark button', assertContrast(dark, '深色主按钮', '--dsw-alias-label-primary-foreground', '--dsw-alias-brand-primary', 3)]);
 });
 
-test('发送按钮的填充跟随色相，且色相环全周压白字都过 AA', () => {
-  // 两条一起钉。第一条是「跟随」：发送键读 --dsw-alias-button-info-fill，写死一个色相
-  // 就换过预设也不动——同一屏里别的按钮都跟着走，只有它停在宿主的深绿上。
-  // 第二条才是对比度，且必须按**色相环全周**扫：只看出厂的两个角度，60°（黄）那一圈
-  // 会被漏掉，而那里白字最不够。
+test('发送按钮跟随色相，且两档都看得见、箭头读得清', () => {
+  // 三条一起钉。
+  // 一、跟随：发送键读 --dsw-alias-button-info-fill，写死一个色相就换过预设也不动。
+  // 二、按钮自己是图形控件（只有箭头、没有文字），判据是 3:1，按**色相环全周**扫——
+  //     只看出厂的两个角度会漏掉 60°（黄）那一圈，白箭头在那里最不够。
+  // 三、按钮还要从它脚下的输入卡里跳出来。深色档若按 4.5:1 压到 34%，与输入卡只差
+  //     2.06:1，整枚钮就陷进去了——那是「对比度达标但看不见」。
+  const surfaces = {
+    浅色: resolveVar(light, '--dsw-specific-input-major'),
+    深色: resolveVar(dark, '--dsw-specific-input-major'),
+  };
   for (const [mode, vars] of [['浅色', light], ['深色', dark]]) {
     const fill = resolveVar(vars, '--dsw-alias-button-info-fill');
     assert.match(fill, /--maple-hue-(light|dark)/, `${mode}发送按钮写死了色相：${fill}`);
+    assert.match(resolveVar(vars, '--dsw-alias-button-info-hover'), /--maple-hue-(light|dark)/, `${mode}发送按钮的悬停色写死了色相`);
+    let worst = Infinity;
     for (let hue = 0; hue < 360; hue += 1) {
       const swapped = fill
         .replace(/var\(--maple-hue-light,\s*(-?[\d.]+)\)/g, String(hue))
@@ -234,9 +242,12 @@ test('发送按钮的填充跟随色相，且色相环全周压白字都过 AA',
           op === '+' ? Number(a) + Number(b) : Number(a) - Number(b),
         ));
       const ratio = contrastRgb(hslaToRgb(swapped), [255, 255, 255]);
-      assert.ok(ratio >= 4.5, `${mode}发送按钮在色相 ${hue}° 时：${swapped} 与白色只有 ${ratio.toFixed(2)}:1`);
+      assert.ok(ratio >= 3, `${mode}发送按钮在色相 ${hue}° 时：${swapped} 与白箭头只有 ${ratio.toFixed(2)}:1`);
+      worst = Math.min(worst, ratio);
     }
-    report.push([`${mode} 发送按钮`, contrastRgb(hslaToRgb(fill), [255, 255, 255])]);
+    const stand = contrastRgb(hslaToRgb(fill), hslaToRgb(surfaces[mode]));
+    assert.ok(stand >= 2.5, `${mode}发送按钮与脚下输入卡只有 ${stand.toFixed(2)}:1，按钮会陷进去`);
+    report.push([`${mode} 发送按钮`, worst]);
   }
 });
 

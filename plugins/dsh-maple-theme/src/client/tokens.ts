@@ -132,9 +132,12 @@ export const MAPLE_TOKENS = {
   /* 发送键读的是 button-info-fill，不是 button-primary-fill：宿主 InputBar 用它给那一枚圆钮上色，
    * 箭头是宿主自己写死的 #fff（不跟前景令牌）。这一对必须跟随色相，否则换过预设之后
    * 同一屏里「充值」跟着走、「发送」不跟着走。
-   * 明度取 36% / 34%：色相环上每个角度压白字都过 4.5:1（最差 4.67:1，在 60°）。 */
-  '--dsw-alias-button-info-fill': { light: 'hsl(var(--maple-hue-light, 35) 30% 36%)', dark: 'hsl(var(--maple-hue-dark, 207) 30% 34%)' },
-  '--dsw-alias-button-info-hover': { light: 'hsl(var(--maple-hue-light, 35) 32% 30%)', dark: 'hsl(var(--maple-hue-dark, 207) 32% 40%)' },
+   * 两档方向相反：浅色深底浅字（36%），深色亮底浅字（42%）。宿主自己的深色那一档就指到
+   * deepseek-400 的亮蓝（#679EFE）。按 4.5:1 把深色压到 34% 会让整枚钮陷进输入卡底色里，
+   * 看不见按钮。这一枚只有箭头没有文字，判据是图形控件的 3:1；色环上最紧的一档（60° 黄）
+   * 4.65:1，与宿主的深色档同量级。 */
+  '--dsw-alias-button-info-fill': { light: 'hsl(var(--maple-hue-light, 35) 30% 36%)', dark: 'hsl(var(--maple-hue-dark, 207) 30% 42%)' },
+  '--dsw-alias-button-info-hover': { light: 'hsl(var(--maple-hue-light, 35) 32% 30%)', dark: 'hsl(var(--maple-hue-dark, 207) 30% 44%)' },
   '--dsw-alias-brand-primary-new-colorprimary-new-color': { light: 'hsl(var(--maple-hue-light, 35) 30% 42%)', dark: 'hsl(var(--maple-hue-dark, 207) 30% 66%)' },
   '--dsw-alias-button-primary-fill': { light: 'hsl(var(--maple-hue-light, 35) 30% 42%)', dark: 'hsl(var(--maple-hue-dark, 207) 30% 66%)' },
   '--dsw-alias-button-primary-hover': { light: 'hsl(var(--maple-hue-light, 35) 32% 34%)', dark: 'hsl(var(--maple-hue-dark, 207) 32% 76%)' },
