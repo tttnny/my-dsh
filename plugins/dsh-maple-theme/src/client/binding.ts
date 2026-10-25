@@ -35,7 +35,17 @@ export interface MapleForm {
   };
   subscribe(listener: () => void): () => void;
   set(field: string, value: unknown): Promise<boolean>;
+  /**
+   * 一次写入多个字段：宿主把它们当成同一个修订提交。
+   * 分成多次 `set` 会各自产生一份快照，页面上会闪一次「半套」状态。
+   */
+  mutate(ops: readonly MapleOp[], expectedRevision?: number): Promise<boolean>;
 }
+
+/** 一次原子写入里的一条字段操作。 */
+export type MapleOp =
+  | { op: 'set'; path: string[]; value: unknown }
+  | { op: 'unset'; path: string[] };
 
 /**
  * 读表单当前值，收拢成一份可信配置。

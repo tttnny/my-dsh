@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import * as React from 'react';
 import { Input, SegmentedControl, Switch } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
-import { readSettings, type MapleForm } from './binding.ts';
+import { readSettings, type MapleForm, type MapleOp } from './binding.ts';
 import { DEFAULT_SETTINGS, type MapleSettings } from './settings.ts';
 import { NS } from './locales.ts';
 
@@ -167,6 +167,16 @@ export function MapleThemeCard(
     preset => preset.light === current.hueLight && preset.dark === current.hueDark,
   )?.id ?? '';
   const write = (field: keyof MapleSettings, value: unknown): void => { void form.set(field, value); };
+  /**
+   * 一次写多个字段：浅色与深色是成套的，分开写会让页面闪一次「半套」配色。
+   * @param changes - 字段与目标值。
+   */
+  const writeMany = (changes: Partial<Record<keyof MapleSettings, unknown>>): void => {
+    const ops: MapleOp[] = Object.entries(changes).map(
+      ([field, value]) => ({ op: 'set', path: [field], value }),
+    );
+    void form.mutate(ops);
+  };
 
   return (
     <div className="dsh-maple-card">
@@ -182,8 +192,7 @@ export function MapleThemeCard(
               const preset = PALETTE_PRESETS.find(item => item.id === next);
               if (preset === undefined) return;
               // 一次改两个字段：浅色与深色是成套的，只改一个会得到半套配色。
-              write('hueLight', preset.light);
-              write('hueDark', preset.dark);
+              writeMany({ hueLight: preset.light, hueDark: preset.dark });
             }}
           />
         </Row>

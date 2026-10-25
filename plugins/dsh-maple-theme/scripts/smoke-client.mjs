@@ -57,11 +57,27 @@ window.__ModuleLoader__ = {
 function fakeForm(initial) {
   let snapshot = { status: 'ready', value: { ...initial }, writable: true, revision: 1 };
   const listeners = new Set();
+  /** 每一次写入都记下来，按「一次提交」的粒度。 */
+  const writes = [];
   return {
+    writes,
     getSnapshot: () => snapshot,
     subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     async set(field, value) {
+      writes.push(['set', field, value]);
       snapshot = { ...snapshot, value: { ...snapshot.value, [field]: value }, revision: snapshot.revision + 1 };
+      for (const listener of listeners) listener();
+      return true;
+    },
+    /** 原子写多字段：一次快照更新，记成一条，供断言「预设没有分两次写」。 */
+    async mutate(ops) {
+      writes.push(['mutate', ops]);
+      const next = { ...snapshot.value };
+      for (const entry of ops) {
+        if (entry.op === 'set') next[entry.path[0]] = entry.value;
+        else delete next[entry.path[0]];
+      }
+      snapshot = { ...snapshot, value: next, revision: snapshot.revision + 1 };
       for (const listener of listeners) listener();
       return true;
     },
