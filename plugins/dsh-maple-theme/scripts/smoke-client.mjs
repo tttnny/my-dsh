@@ -233,9 +233,29 @@ check('zh/en 键集一致且非空', zhKeys.length > 0 && JSON.stringify(zhKeys)
 check('每条文案都非空', enKeys.every((key) => typeof dictionary.en[key] === 'string' && dictionary.en[key].length > 0));
 
 /* ---- 卸载：痕迹撤干净 ---- */
+// 卸载前先把每个开关都打开、每个变量都写上，否则「卸载后不留痕迹」这条是空转：
+// 前面几步已经把一半属性删掉了，卸载时本来就没东西可删。
+form.push({
+  hueLight: 35, hueDark: 207, lineHeight: 1.75, paragraphGap: 10,
+  headingColor: 'colorful', headingIndicator: true, codePalette: true, shellSkin: true, mapleFont: true,
+});
+const beforeUnload = [
+  'data-maple-theme', 'data-maple-heading', 'data-maple-indicator',
+  'data-maple-code', 'data-maple-shell', 'data-maple-font',
+].filter((name) => rootElement.getAttribute(name) !== null);
+check('卸载前确实写满了属性（否则下面那条是空转）', beforeUnload.length === 6, beforeUnload.join('、'));
+
 for (const dispose of ctx.effects.splice(0)) dispose();
-check('卸载后根元素不留属性', rootElement.getAttribute('data-maple-theme') === null);
-check('卸载后根元素不留变量', rootElement.style.getPropertyValue('--maple-hue-light') === '');
+// 投影一共写六个属性与四个变量；卸载后一个都不许留，否则下次启用会带着旧状态。
+const PROJECTED_ATTRIBUTES = [
+  'data-maple-theme', 'data-maple-heading', 'data-maple-indicator',
+  'data-maple-code', 'data-maple-shell', 'data-maple-font',
+];
+const leftover = PROJECTED_ATTRIBUTES.filter((name) => rootElement.getAttribute(name) !== null);
+check('卸载后根元素不留属性', leftover.length === 0, leftover.join('、'));
+const leftVars = ['--maple-hue-light', '--maple-hue-dark', '--maple-line-height', '--maple-p-gap']
+  .filter((name) => rootElement.style.getPropertyValue(name) !== '');
+check('卸载后根元素不留变量', leftVars.length === 0, leftVars.join('、'));
 check('卸载后样式标签全删了', document.head.querySelectorAll('style[data-plugin]').length === 0);
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`);
