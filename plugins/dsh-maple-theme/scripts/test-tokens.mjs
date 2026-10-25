@@ -282,6 +282,22 @@ test('六级标题的两种单色模式都逐级挂到了元素上', () => {
   }
 });
 
+test('每条令牌的配方都是一个真颜色，不是空串或认不出的写法', () => {
+  // 令牌写错一个字符不会让任何构建失败，只会让那一处界面静默变回宿主原色。
+  // 这里只做形状校验：每条的浅色与深色都必须是 hsl() 开头、括号配平、分量齐全的值。
+  for (const [mode, vars] of [['浅色', light], ['深色', dark]]) {
+    for (const [name, value] of Object.entries(vars)) {
+      assert.match(value, /^hsl\(/, `${mode} ${name} 不是一个 hsl() 值：${value}`);
+      assert.equal(
+        (value.match(/\(/g) ?? []).length,
+        (value.match(/\)/g) ?? []).length,
+        `${mode} ${name} 的括号不配平：${value}`,
+      );
+      assert.doesNotMatch(value, /undefined|NaN|\[object/, `${mode} ${name} 里混进了非法值：${value}`);
+    }
+  }
+});
+
 test('每一个 --dsw-alias-* / --dsw-specific-* 都在两套里各写了一次', () => {
   const lightNames = Object.keys(light).sort();
   const darkNames = Object.keys(dark).sort();

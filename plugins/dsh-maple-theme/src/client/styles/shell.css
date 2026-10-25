@@ -66,11 +66,7 @@ html[data-maple-theme='on'][data-maple-shell='on'] body [data-row-key^='workspac
   border-radius: var(--dsw-radius-sm);
 }
 
-/* 侧栏底部工具栏：宿主的冷灰浮层，换成 Maple 的纸色。
- * 座位锚点是 display: contents，涂在它不会见效，得涂装它的那个壳。 */
-html[data-maple-theme='on'][data-maple-shell='on'] body :has(> [data-slot='shell.bottom']) {
-  background: var(--dsw-specific-tip);
-}
+
 
 /* 会话头部的图标按钮：Maple 的图标按钮是紧凑控件级圆角。 */
 html[data-maple-theme='on'][data-maple-shell='on'] body [data-slot='conversation.session.header.actions'] button {
