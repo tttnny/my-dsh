@@ -19,6 +19,13 @@ export const THEME_SOURCE = '@lynn123411/dsh-maple-theme';
  * 令牌名与宿主 `design-platform.css` 一致，换的是值，不是名字。
  */
 export const MAPLE_TOKENS = {
+  /* 宿主的 static 色阶里有几个纯灰被组件直接拿来当卡片头部的填充（`ChangedFiles`、
+   * `Deliverables`、`PlanPreview`、`ScheduleCreateCard`）。纯灰在暖白底上会发冷，
+   * 所以把这一档也按色相推导一遍。只动被这几处用到的那几档，不动整条色阶。 */
+  '--dsw-static-neutral-50': { light: 'hsl(var(--maple-hue-light, 35) 12% 98%)', dark: 'hsl(var(--maple-hue-dark, 207) 8% 13%)' },
+  '--dsw-static-neutral-100': { light: 'hsl(var(--maple-hue-light, 35) 12% 96%)', dark: 'hsl(var(--maple-hue-dark, 207) 8% 15%)' },
+  '--dsw-static-neutral-800': { light: 'hsl(var(--maple-hue-light, 35) 10% 30%)', dark: 'hsl(var(--maple-hue-dark, 207) 8% 17%)' },
+  '--dsw-static-neutral-850': { light: 'hsl(var(--maple-hue-light, 35) 10% 26%)', dark: 'hsl(var(--maple-hue-dark, 207) 8% 14%)' },
   '--dsw-alias-bg-base': { light: 'hsl(var(--maple-hue-light, 35) 12% 97%)', dark: 'hsl(var(--maple-hue-dark, 207) 6% 11%)' },
   '--dsw-alias-bg-layer-1': { light: 'hsl(var(--maple-hue-light, 35) 10% 95%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 13%)' },
   '--dsw-alias-bg-layer-2': { light: 'hsl(calc(var(--maple-hue-light, 35) - 18) 8% 93%)', dark: 'hsl(calc(var(--maple-hue-dark, 207) - 8) 6% 12%)' },

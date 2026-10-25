@@ -413,6 +413,20 @@ test('代码块的九个语法色在自己那块底色上都过 4.5:1', () => {
   }
 });
 
+test('被组件直接拿来当填充的四档静态灰也带色相', () => {
+  // 宿主有四个组件（ChangedFiles / Deliverables / PlanPreview / ScheduleCreateCard）
+  // 直接用 --dsw-static-neutral-* 当卡片头部填充。纯灰在暖白底上会发冷。
+  const warmed = ['--dsw-static-neutral-50', '--dsw-static-neutral-100', '--dsw-static-neutral-800', '--dsw-static-neutral-850'];
+  for (const name of warmed) {
+    assert.ok(name in light, `缺少 ${name}`);
+    assert.ok(name in dark, `深色缺少 ${name}`);
+    for (const [mode, vars] of [['浅色', light], ['深色', dark]]) {
+      const rgb = hslaToRgb(inlineFallbacks(vars[name]));
+      assert.ok(new Set(rgb).size > 1, `${mode}的 ${name} 是纯灰 ${rgb.join(',')}，应当带色相`);
+    }
+  }
+});
+
 test('滚动条的三个令牌都在，悬停色带 Maple 的暖调而不是灰色', () => {
   // 宿主默认的悬停色取 scrollbar-hover-l1；只覆盖 l2 不会生效（l2 只有少数面板用）。
   for (const name of ['--dsw-alias-scrollbar-bg-l1', '--dsw-alias-scrollbar-hover-l1', '--dsw-alias-scrollbar-bg-l2']) {
