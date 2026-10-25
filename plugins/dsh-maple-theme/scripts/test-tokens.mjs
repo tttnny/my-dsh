@@ -318,7 +318,12 @@ test('每条令牌的配方都是一个真颜色，不是空串或认不出的�
   // 这里只做形状校验：每条的浅色与深色都必须是 hsl() 开头、括号配平、分量齐全的值。
   for (const [mode, vars] of [['浅色', light], ['深色', dark]]) {
     for (const [name, value] of Object.entries(vars)) {
-      assert.match(value, /^hsl\(/, `${mode} ${name} 不是一个 hsl() 值：${value}`);
+      // 三种写法都合法：hsl()、带 alpha 的 hsl(… / x%)、以及做遮罩与骨架用的 rgba()。
+      assert.match(
+        value,
+        /^(hsl\(|rgba?\()/,
+        `${mode} ${name} 不是一个可识别的颜色：${value}`,
+      );
       assert.equal(
         (value.match(/\(/g) ?? []).length,
         (value.match(/\)/g) ?? []).length,
@@ -355,8 +360,11 @@ test('名字里带 fill / bg 的令牌是背景，明度必须在浅色里偏亮
     if (!/-(fill|bg)[-a-z0-9]*$/.test(name)) continue;
     // 这几类不按「背景板」判：
     // 按钮填充是深色底配浅色字，本来就该深；
-    // interactive-* 与 scrollbar-* 是叠在别处之上的覆盖层或滑块，不是底板。
+    // interactive-* 与 scrollbar-* 是叠在别处之上的覆盖层或滑块，不是底板；
+    // tooltip / toast 是深底浅字的浮层，mask / skeleton / document-selection 是半透明遮罩。
     if (name.includes('button-')) continue;
+    if (name.includes('tooltip-') || name.includes('toast-')) continue;
+    if (name.includes('mask-') || name.includes('skeleton') || name.includes('document-selection')) continue;
     if (name.includes('interactive-')) continue;
     if (name.includes('scrollbar-')) continue;
     if (name.includes('interactive-')) continue;
@@ -369,8 +377,11 @@ test('名字里带 fill / bg 的令牌是背景，明度必须在浅色里偏亮
     if (!/-(fill|bg)[-a-z0-9]*$/.test(name)) continue;
     // 这几类不按「背景板」判：
     // 按钮填充是深色底配浅色字，本来就该深；
-    // interactive-* 与 scrollbar-* 是叠在别处之上的覆盖层或滑块，不是底板。
+    // interactive-* 与 scrollbar-* 是叠在别处之上的覆盖层或滑块，不是底板；
+    // tooltip / toast 是深底浅字的浮层，mask / skeleton / document-selection 是半透明遮罩。
     if (name.includes('button-')) continue;
+    if (name.includes('tooltip-') || name.includes('toast-')) continue;
+    if (name.includes('mask-') || name.includes('skeleton') || name.includes('document-selection')) continue;
     if (name.includes('interactive-')) continue;
     if (name.includes('scrollbar-')) continue;
     const l = lightnessOf(value);
@@ -411,6 +422,27 @@ test('代码块的九个语法色在自己那块底色上都过 4.5:1', () => {
       assert.ok(ratio >= 4.5, `${mode} 语法色 ${name} 在代码块底色上只有 ${ratio.toFixed(2)}:1，要求 4.5:1`);
     }
   }
+});
+
+test('宿主定义且组件在用的语义令牌都覆盖到了', () => {
+  // 覆盖表就是那 113 条；这里钉住「至少没有退回几十条的老规模」，
+  // 并确认几组曾经漏掉的令牌确实在表里（它们各自撑着一块宿主组件的底色）。
+  const covered = Object.keys(light);
+  assert.ok(covered.length >= 110, `只覆盖了 ${covered.length} 个令牌`);
+  const must = [
+    '--dsw-alias-bg-layer-3',
+    '--dsw-alias-button-elevated-fill',
+    '--dsw-alias-switch-thumb',
+    '--dsw-alias-tooltip-bg',
+    '--dsw-alias-toast-bg',
+    '--dsw-alias-file-diff-added-bg',
+    '--dsw-alias-file-diff-deleted-bg',
+    '--dsw-alias-state-warn-secondary',
+    '--dsw-alias-state-success-tertiary',
+    '--dsw-specific-menu',
+  ];
+  const missing = must.filter((name) => !(name in light) || !(name in dark));
+  assert.deepEqual(missing, [], `这些令牌没覆盖：${missing.join('、')}`);
 });
 
 test('被组件直接拿来当填充的四档静态灰也带色相', () => {

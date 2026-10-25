@@ -26,6 +26,69 @@ export const MAPLE_TOKENS = {
   '--dsw-static-neutral-100': { light: 'hsl(var(--maple-hue-light, 35) 12% 96%)', dark: 'hsl(var(--maple-hue-dark, 207) 8% 15%)' },
   '--dsw-static-neutral-800': { light: 'hsl(var(--maple-hue-light, 35) 10% 30%)', dark: 'hsl(var(--maple-hue-dark, 207) 8% 17%)' },
   '--dsw-static-neutral-850': { light: 'hsl(var(--maple-hue-light, 35) 10% 26%)', dark: 'hsl(var(--maple-hue-dark, 207) 8% 14%)' },
+  /* ---- 宿主定义、组件在用、本插件此前未覆盖的令牌 ---- */
+  /* 层级再往上一档与文档预览底：取 Maple 的纸色，深色下比 layer-2 略亮。 */
+  '--dsw-alias-bg-layer-3': { light: 'hsl(var(--maple-hue-light, 35) 14% 99%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 19%)' },
+  '--dsw-alias-bg-document-preview': { light: 'hsl(var(--maple-hue-light, 35) 10% 95%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 16%)' },
+  '--dsw-alias-button-elevated-fill': { light: 'hsl(var(--maple-hue-light, 35) 14% 99%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 20%)' },
+  '--dsw-alias-switch-thumb': { light: 'hsl(var(--maple-hue-light, 35) 20% 99%)', dark: 'hsl(var(--maple-hue-dark, 207) 20% 96%)' },
+  '--dsw-alias-menu-group-header-fill': { light: 'hsl(var(--maple-hue-light, 35) 12% 97%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 14%)' },
+  '--dsw-alias-turn-trigger-bg': { light: 'hsl(var(--maple-hue-light, 35) 10% 95%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 16%)' },
+  '--dsw-alias-turn-trigger-bg-hover': { light: 'hsl(var(--maple-hue-light, 35) 12% 93%)', dark: 'hsl(var(--maple-hue-dark, 207) 14% 20%)' },
+
+  /* 幽灵按钮的激活态：底与描边都取 Maple 的控件级。 */
+  '--dsw-alias-button-ghost-active-fill': { light: 'hsl(var(--maple-hue-light, 35) 14% 92%)', dark: 'hsl(var(--maple-hue-dark, 207) 14% 22%)' },
+  '--dsw-alias-button-ghost-active-border': { light: 'hsl(var(--maple-hue-light, 35) 10% 60%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 55%)' },
+
+  /* 深色浮层：提示与轻提示用比正文深一档的暖墨，不是宿主的冷蓝灰。 */
+  '--dsw-alias-tooltip-bg': { light: 'hsl(var(--maple-hue-light, 35) 10% 23%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 30%)' },
+  '--dsw-alias-toast-bg': { light: 'hsl(var(--maple-hue-light, 35) 10% 26%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 32%)' },
+  '--dsw-alias-tooltip-key-bg': { light: 'hsl(var(--maple-hue-light, 35) 10% 36%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 42%)' },
+  '--dsw-alias-tooltip-label': { light: 'hsl(var(--maple-hue-light, 35) 20% 97%)', dark: 'hsl(var(--maple-hue-dark, 207) 20% 97%)' },
+  '--dsw-alias-toast-label': { light: 'hsl(var(--maple-hue-light, 35) 20% 97%)', dark: 'hsl(var(--maple-hue-dark, 207) 20% 97%)' },
+
+  /* 遮罩与骨架：中性做法，只把冷蓝灰换成不带偏色的黑/白。 */
+  '--dsw-alias-bg-mask-1': { light: 'rgba(0, 0, 0, 0.24)', dark: 'rgba(0, 0, 0, 0.5)' },
+  '--dsw-alias-bg-mask-drop': { light: 'hsl(var(--maple-hue-light, 35) 14% 99% / 70%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 16% / 70%)' },
+  '--dsw-alias-bg-skeleton': { light: 'hsl(var(--maple-hue-light, 35) 10% 20% / 4%)', dark: 'hsl(var(--maple-hue-dark, 207) 20% 90% / 6%)' },
+  '--dsw-alias-bg-document-selection': { light: 'hsl(var(--maple-hue-light, 35) 60% 62% / 40%)', dark: 'hsl(var(--maple-hue-dark, 207) 50% 62% / 44%)' },
+  '--dsw-alias-border-inverted': { light: 'rgba(0, 0, 0, 0)', dark: 'rgba(0, 0, 0, 0)' },
+  '--dsw-alias-border-l2-darkmode-thin': { light: 'hsl(var(--maple-hue-light, 35) 10% 20% / 10%)', dark: 'hsl(var(--maple-hue-dark, 207) 20% 90% / 12%)' },
+
+  /* 工具条按钮：压在正文上的半透明浮层，取 Maple 的暖墨。 */
+  '--dsw-alias-button-tool-bar-fill': { light: 'hsl(var(--maple-hue-light, 35) 10% 35% / 50%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 70% / 30%)' },
+  '--dsw-alias-button-tool-bar-hover': { light: 'hsl(var(--maple-hue-light, 35) 10% 35% / 62%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 70% / 42%)' },
+
+  /* 危险悬停：红保持不变，只把底色调成 Maple 的红。 */
+  '--dsw-alias-interactive-bg-hover-danger': { light: 'hsl(0 62% 46% / 7%)', dark: 'hsl(0 55% 68% / 12%)' },
+  '--dsw-alias-button-contrast-fill': { light: 'hsl(var(--maple-hue-light, 35) 10% 32%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 86%)' },
+
+  /* 状态色的次级与三级：色相沿用 Maple 的红/绿/琥珀，明度按层级取。 */
+  '--dsw-alias-state-error-secondary': { light: 'hsl(0 45% 66%)', dark: 'hsl(0 44% 74%)' },
+  '--dsw-alias-state-warn-label': { light: 'hsl(32 70% 37%)', dark: 'hsl(20 40% 68%)' },
+  '--dsw-alias-state-warn-secondary': { light: 'hsl(32 70% 58%)', dark: 'hsl(20 45% 72%)' },
+  '--dsw-alias-state-warn-tertiary': { light: 'hsl(32 70% 92%)', dark: 'hsl(20 30% 24%)' },
+  '--dsw-alias-state-success-secondary': { light: 'hsl(95 60% 56%)', dark: 'hsl(130 32% 72%)' },
+  '--dsw-alias-state-success-tertiary': { light: 'hsl(95 55% 92%)', dark: 'hsl(130 22% 24%)' },
+  '--dsw-alias-state-idle-primary': { light: 'hsl(var(--maple-hue-light, 35) 8% 80%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 36%)' },
+
+  /* 文件差异的增删底色：绿与红沿用 Maple 的语义色，底色取极浅一档。 */
+  '--dsw-alias-code-diff-added': { light: 'hsl(95 60% 32% / 10%)', dark: 'hsl(130 35% 62% / 14%)' },
+  '--dsw-alias-code-diff-deleted': { light: 'hsl(0 45% 46% / 10%)', dark: 'hsl(0 45% 70% / 14%)' },
+  '--dsw-alias-file-diff-added-bg': { light: 'hsl(95 40% 94%)', dark: 'hsl(130 22% 17%)' },
+  '--dsw-alias-file-diff-added-gutter': { light: 'hsl(95 40% 96%)', dark: 'hsl(130 22% 15%)' },
+  '--dsw-alias-file-diff-added-marker': { light: 'hsl(95 75% 32%)', dark: 'hsl(130 35% 62%)' },
+  '--dsw-alias-file-diff-deleted-bg': { light: 'hsl(0 45% 95%)', dark: 'hsl(0 30% 18%)' },
+  '--dsw-alias-file-diff-deleted-gutter': { light: 'hsl(0 45% 97%)', dark: 'hsl(0 30% 16%)' },
+  '--dsw-alias-file-diff-deleted-marker': { light: 'hsl(0 62% 44%)', dark: 'hsl(0 45% 68%)' },
+
+  /* 预览与深潜文字：前者取 Maple 的三级文字，后者沿用宿主品牌的靛蓝。 */
+  '--dsw-alias-label-document-preview': { light: 'hsl(var(--maple-hue-light, 35) 8% 35%)', dark: 'hsl(var(--maple-hue-dark, 207) 14% 70%)' },
+  '--dsw-alias-label-deep-diving': { light: 'hsl(245 60% 50%)', dark: 'hsl(245 65% 74%)' },
+  '--dsw-alias-label-deep-diving-shimmer': { light: 'hsl(245 60% 50% / 30%)', dark: 'hsl(245 65% 74% / 34%)' },
+
+  /* 菜单材质归主题所有，但它的底是纯色时也该跟着配色。 */
+  '--dsw-specific-menu': { light: 'hsl(var(--maple-hue-light, 35) 12% 97% / 94%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 16% / 94%)' },
   '--dsw-alias-bg-base': { light: 'hsl(var(--maple-hue-light, 35) 12% 97%)', dark: 'hsl(var(--maple-hue-dark, 207) 6% 11%)' },
   '--dsw-alias-bg-layer-1': { light: 'hsl(var(--maple-hue-light, 35) 10% 95%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 13%)' },
   '--dsw-alias-bg-layer-2': { light: 'hsl(calc(var(--maple-hue-light, 35) - 18) 8% 93%)', dark: 'hsl(calc(var(--maple-hue-dark, 207) - 8) 6% 12%)' },
