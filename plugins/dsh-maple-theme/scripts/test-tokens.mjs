@@ -15,6 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
+const { PALETTE_PRESETS } = await import(join(root, 'src/client/presets.ts'));
 const css = readFileSync(join(root, 'src/client/styles/tokens.css'), 'utf8');
 const tokenSource = readFileSync(join(root, 'src/client/tokens.ts'), 'utf8');
 
@@ -412,37 +413,25 @@ test('代码块的九个语法色在自己那块底色上都过 4.5:1', () => {
   }
 });
 
-test('配置页的预设表与这条自检用的是同一组数', () => {
-  // 两处各写一份色相就会分叉：配置页改了预设，自检还在验旧值，等于白验。
-  const card = readFileSync(join(root, 'src/client/card.tsx'), 'utf8');
-  const found = [...card.matchAll(/\{ id: '(\w+)', light: (\d+), dark: (\d+), key: 'card\.preset\w+' \}/g)]
-    .map((m) => [m[1], Number(m[2]), Number(m[3])]);
-  assert.equal(found.length, 6, `配置页里找到 ${found.length} 个预设，应当是 6 个`);
-  const expected = {
-    maple: [35, 207],
-    lavender: [280, 250],
-    mint: [160, 175],
-    forest: [110, 140],
-    rose: [345, 320],
-    steel: [210, 215],
-  };
-  for (const [id, light, dark] of found) {
-    assert.deepEqual([light, dark], expected[id], `预设 ${id} 的色相与自检里的不一致`);
+test('预设表自身自洽：六个、id 不重、色相在合法范围内', () => {
+  assert.equal(PALETTE_PRESETS.length, 6, `预设表里有 ${PALETTE_PRESETS.length} 个`);
+  const ids = PALETTE_PRESETS.map((preset) => preset.id);
+  assert.equal(new Set(ids).size, ids.length, `预设 id 有重复：${ids.join('、')}`);
+  for (const preset of PALETTE_PRESETS) {
+    for (const [side, hue] of [['浅色', preset.light], ['深色', preset.dark]]) {
+      assert.ok(
+        Number.isInteger(hue) && hue >= 0 && hue <= 360,
+        `预设 ${preset.id} 的${side}色相 ${hue} 不在 0…360 里`,
+      );
+    }
   }
 });
 
 test('配置页的六个预设，两套模式的正文对比度都过 AA', () => {
   // 预设只换色相、不动明度，所以对比度本应与 Maple 出厂值持平；
   // 这条挡的是「哪天有人给某个预设单独调了明度」——那会悄悄破坏可读性。
-  const presets = [
-    ['Maple', 35, 207],
-    ['薰衣草', 280, 250],
-    ['薄荷', 160, 175],
-    ['森林', 110, 140],
-    ['玫瑰', 345, 320],
-    ['钢青', 210, 215],
-  ];
-  for (const [name, lightHue, darkHue] of presets) {
+  for (const preset of PALETTE_PRESETS) {
+    const { id: name, light: lightHue, dark: darkHue } = preset;
     for (const [mode, hue, fgS, fgL, bgS, bgL] of [
       ['浅色', lightHue, 10, 18, 12, 97],
       ['深色', darkHue, 24, 88, 6, 11],

@@ -12,6 +12,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import { readSettings, type MapleForm, type MapleOp } from './binding.ts';
 import { DEFAULT_SETTINGS, type MapleSettings } from './settings.ts';
 import { NS } from './locales.ts';
+import { PALETTE_PRESETS } from './presets.ts';
 
 /**
  * 常用配色的色相预设：一键把浅色与深色色相同时切过去。
@@ -21,14 +22,7 @@ import { NS } from './locales.ts';
  * 其余几个覆盖日常会想要的方向（紫、青、绿、玫瑰）。
  * 浅色取偏亮的一侧、深色取偏冷的一侧，两套同时给，切过去立刻成套。
  */
-const PALETTE_PRESETS = [
-  { id: 'maple', light: 35, dark: 207, key: 'card.presetMaple' },
-  { id: 'lavender', light: 280, dark: 250, key: 'card.presetLavender' },
-  { id: 'mint', light: 160, dark: 175, key: 'card.presetMint' },
-  { id: 'forest', light: 110, dark: 140, key: 'card.presetForest' },
-  { id: 'rose', light: 345, dark: 320, key: 'card.presetRose' },
-  { id: 'steel', light: 210, dark: 215, key: 'card.presetSteel' },
-] as const;
+
 
 /** 标题配色的三个选项：值、文案键、面板 id 后缀。 */
 const HEADING_OPTIONS = [
