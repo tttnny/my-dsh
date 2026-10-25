@@ -79,17 +79,19 @@ test('装饰层与外壳层只挂在自己的根属性下面（关掉就整段�
   assert.deepEqual(offenders, [], `这些规则没挂在根属性下：${offenders.join(' | ')}`);
 });
 
-test('段落间距落在容器的 gap 上（宿主的正文容器是 flex，段落 margin 被归零）', () => {
+test('段落间距落在 p 的 margin 上（宿主就是用它给段落分段的）', () => {
   const markdown = sheets['markdown.css'];
+  // 宿主给 `.markdown p` 写的是 `margin: 16px 0`；跟着改 margin 才生效。
+  // 中间那层容器是 block 不是 flex，给它 gap 不会产生任何间距。
   assert.match(
     markdown,
-    /:has\(> \[class\*='markdown'\]\)\s*\{[^}]*gap:\s*var\(--maple-p-gap/,
-    '段距没有落在容器的 gap 上——写 p 的 margin 会被宿主的 flex 归零，等于没生效',
+    /:where\(p\)\s*\{[^}]*margin:\s*var\(--maple-p-gap/,
+    '段距没有落在 p 的 margin 上',
   );
   assert.doesNotMatch(
     markdown,
-    /:where\(p\)\s*\{[^}]*margin:\s*var\(--maple-p-gap/,
-    '段距写回了 p 的 margin，宿主的 flex 容器会把它吃掉',
+    /gap:\s*var\(--maple-p-gap/,
+    '段距又写回了容器的 gap——那一层是 block，gap 不产生间距',
   );
 });
 

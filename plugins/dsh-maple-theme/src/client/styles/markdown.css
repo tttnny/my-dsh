@@ -28,14 +28,11 @@ html[data-maple-theme='on'] body[data-ds-dark-theme] {
   --maple-table-head: hsl(var(--maple-hue-dark, 207) 12% 17%);
 }
 
-/* 段距：宿主的正文容器是纵向 flex，块与块之间的空隙由容器的 `gap: 16px` 给，
- * 段落自己的 margin 被归零。所以要改的是容器那一个 gap，不是 p 的 margin。
- * 容器是包住 markdown 根节点的那个 div，用 :has() 从根节点往上认。 */
-html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) {
-}
-
-html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :has(> [class*='markdown']) {
-  gap: var(--maple-p-gap, 10px);
+/* 段距：宿主给 `.markdown p` 写的是 `margin: 16px 0`，块与块之间的空隙就来自这里。
+ * 下面这条的优先级比它高一级（多两个数据属性），所以能压过去。
+ * 不改成容器的 gap：flex 容器在别的渲染器里可能不存在，而 p 的 margin 一直都认。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(p) {
+  margin: var(--maple-p-gap, 10px) 0;
 }
 
 /* 列表项里的段落仍按块级 margin 走：宿主的列表没有 gap，段落间距归零会挤成一坨。 */
