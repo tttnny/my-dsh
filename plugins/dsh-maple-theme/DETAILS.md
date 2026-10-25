@@ -42,6 +42,42 @@ disposer 由 `ctx.effect` 持有，插件卸载时整层覆盖一起撤掉。
 （`字号 × 配置的行高倍数`），不写死像素——宿主把行高写成「24px + 字号增量」，
 换成乘法之后两个轴同时生效，用户调大字号时行高跟着长。
 
+## 配置页的十项
+
+十项分六组：
+
+| 组 | 项 |
+| --- | --- |
+| 配色 | 预设、浅色色相、深色色相 |
+| 打字体验 | 行高、段落间距 |
+| 标题 | 标题颜色、等级标记 |
+| 代码 | Maple 语法配色 |
+| 字体 | Maple 字体 |
+| 周边 | 侧栏、标签条与输入卡 |
+
+配色组第一行是预设：六个色相组合（Maple 暖白、薰衣草、薄荷、森林、玫瑰、钢青），
+一次把浅色与深色切过去。两个色相是成套的，只改一个会得到「暖白配冷灰」这种半套配色，
+所以切换预设走一次 `form.mutate`，不是两次分开的字段写。
+
+预设下面是两个色相滑块，轨道铺一条色相环，拖到哪就是哪个色，旁边配数字框做精确输入。
+滑块在拖动中就提交（试色要看得见效果），数字框在失焦或回车时才提交
+（避免输入 `1.75` 的中途把页面刷成中间态）。
+
+预设只换色相、不动明度，所以六个预设的正文对比度都在 12:1 以上，与出厂值持平。
+
+## 内嵌字体
+
+Maple 把整个界面的字族都换成内嵌的 Maple Mono，观感的一大半来自这里。两个字体面
+（正常 71KB、斜体 80KB）放在 `src/client/styles/fonts/`，构建时按 data URI 内联进
+客户端 bundle（`build.mjs` 的 `?datauri` 处理器）：插件在 registry 上的实际路径是装的时候
+才知道的，另发字体文件就得拼一个自己不可能知道的 URL。
+
+因此 `files` 不含 `src`：字体只在 `lib/client.js` 里那份内联产物中，源码目录不必随包发布。
+
+字族声明排在宿主之后、并靠一个属性提一级优先级。用户的字体偏好
+（`--dsh-font-family-text` / `-code`）仍然排在最前——用户显式选过的字族不该被主题盖掉，
+主题只提供默认值。
+
 ## 正文装饰的锚点
 
 宿主的正文由 `MarkdownText` 渲染，根节点的类名是 CSS Modules 的哈希串，换一次构建就变。可用的稳定锚点只有两样：
@@ -117,21 +153,22 @@ cd plugins/dsh-maple-theme && pnpm check
 | 步骤 | 断言什么 |
 | --- | --- |
 | `tsc -p tsconfig.json --noEmit` | 类型闸门，覆盖两半边连同配置投影模块 |
-| `scripts/smoke-host.mjs` | 真 cordis `Context`：`Config` 八个字段的默认值、越界值被 schema 拒绝、每个字段都是 `volatile`、`apply` 按 `{ auto: false }` 登记、包内 `cordis.patch.yml` 只有一条装配行且 id 与包名各自对上 |
-| `scripts/test-projection.mjs` | 脏输入收拢（越界、字符串、`null`、缺字段）、投影只写五个属性与四个变量、关掉的开关写成「删属性」、写到真 DOM 再撤掉不留痕迹、重复投影幂等 |
+| `scripts/smoke-host.mjs` | 真 cordis `Context`：`Config` 九个字段的默认值、越界值被 schema 拒绝、每个字段都是 `volatile`、`apply` 按 `{ auto: false }` 登记、包内 `cordis.patch.yml` 只有一条装配行且 id 与包名各自对上 |
+| `scripts/test-projection.mjs` | 脏输入收拢（越界、字符串、`null`、缺字段）、投影只写六个属性与四个变量、关掉的开关写成「删属性」、写到真 DOM 再撤掉不留痕迹、重复投影幂等 |
 | `scripts/smoke-client.mjs` | 按 Web shell 的方式装载 `lib/client.js`：色板交给主题通道且每条令牌都成对、五张样式表都带 `data-plugin` 归属键、投影真的写到 `<html>`、配置变化后属性跟着换、卡片注册进 `plugins.bundle.config` 且 key 是包名、词典中英键集一致、卸载后属性与变量都撤干净；另带一条反例断言证明「读未声明服务会抛」的守卫还在响 |
 | `scripts/test-tokens.mjs` | 读 `src/client/tokens.ts` 算 WCAG 对比度：两套模式的正文、次要、三级文字、链接、主按钮、代码块、侧栏、提示框、气泡都过阈值；标题六色两套都过 4.5:1；两套令牌集一一对应 |
 | `scripts/test-anchors.mjs` | 宿主锚点契约：属性名与座位名仍在宿主源码里、样式表不含哈希类名、圆角无字面值、药丸圆角配了 `corner-shape: round` |
 
 `node scripts/assert-lib-untracked.mjs` 最后确认 `lib/` 没被 git 跟踪。
 
-界面验证走仓库的截图工具，浅色与深色各拍一张：
+界面验证走仓库的截图工具：
 
 ```sh
 node tools/gui-shot.mjs --session <会话 id> --shot tmp/maple-light.png
-node tools/gui-shot.mjs --session <会话 id> --eval 'document.body.setAttribute("data-ds-dark-theme","")' --shot tmp/maple-dark.png
 ```
 
-拍完把深色那句去掉，或在同一条命令里改回浅色，别把会话留在深色上。
+深色要走出宿主自己的外观开关（账号菜单 → 设置 → 通用设置 → 深色），不能用脚本改
+`data-ds-dark-theme`：令牌的值是 `ctx.theme.overrideTokens` 在调用那一刻按当时的模式定下来的，
+手动改属性绕过了宿主的重新组合，读到的仍是浅色那一套。验完记得切回浅色。
 
 改动配色或断言之后做一次变异测试（`docs/rules/plugins.md`「证明断言有牙齿」）：把 `--dsw-alias-label-primary` 改成浅色，`test-tokens.mjs` 会当场报 1.23:1；把投影里关闭开关的分支改成恒 `'on'`，`smoke-client.mjs` 会报「关掉的开关把属性删掉了」。

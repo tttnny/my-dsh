@@ -95,6 +95,33 @@ test('段落间距落在 p 的 margin 上（宿主就是用它给段落分段的
   );
 });
 
+test('文档里写死的数字与实际一致', () => {
+  // 这几处数字改一次代码就会过期一次，写进自检比靠人记可靠。
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  const details = readFileSync(join(root, 'DETAILS.md'), 'utf8');
+  const host = readFileSync(join(root, 'src/index.ts'), 'utf8');
+  const card = readFileSync(join(root, 'src/client/card.tsx'), 'utf8');
+  const index = readFileSync(join(root, 'src/client/index.ts'), 'utf8');
+
+  /** 阿拉伯数字与中文数字都要认：文档里两种写法都在用。 */
+  const CN = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+  const forms = (n) => [String(n), CN[n]].filter((x) => x !== undefined);
+  // 文档里数字与单位之间没有空格（「九个字段」），所以直接相接。
+  const says = (text, n, unit) => forms(n).some((x) => text.includes(`${x}${unit}`));
+
+  const fields = (host.match(/^\s+\w+: z\./gm) ?? []).length;
+  const controls = (card.match(/<Row title=/g) ?? []).length;
+  const sheets = (index.match(/^\s*\['[a-z]+\.css',/gm) ?? []).length;
+
+  assert.ok(says(details, fields, '个字段'), `DETAILS 里的字段数不是 ${fields}`);
+  assert.ok(says(readme, controls, '项'), `README 里的项数不是 ${controls}`);
+  assert.ok(says(details, sheets, '张样式表'), `DETAILS 里的样式表数不是 ${sheets}`);
+  // 投影写的属性数
+  const projection = readFileSync(join(root, 'src/client/settings.ts'), 'utf8');
+  const attrs = (projection.match(/\[(ROOT|HEADING|INDICATOR|CODE|SHELL|FONT)_ATTRIBUTE\]:/g) ?? []).length / 2;
+  assert.ok(says(details, attrs, '个属性'), `DETAILS 里的属性数不是 ${attrs}`);
+});
+
 test('跟随配色的那些颜色都读 --maple-hue-*，不写死色相', () => {
   // 写死一个度数，换预设后那一处还停在原来的颜色上。这条钉的是「哪些必须跟随」：
   // 判据在注释里写明——标题六色、语法色、行内代码是固定的设计色，不随配色走；
