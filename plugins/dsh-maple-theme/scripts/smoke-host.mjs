@@ -65,7 +65,7 @@ function valueOf(resolved, field) {
   return slot !== null && typeof slot === 'object' && typeof slot.get === 'function' ? slot.get() : slot;
 }
 
-await test('Config 的九个字段齐全且默认值就是 Maple 的出厂值', () => {
+await test('Config 的十个字段齐全且默认值就是 Maple 的出厂值', () => {
   const resolved = new plugin.Config({});
   assert.equal(valueOf(resolved, 'hueLight'), 35);
   assert.equal(valueOf(resolved, 'hueDark'), 207);
@@ -76,8 +76,9 @@ await test('Config 的九个字段齐全且默认值就是 Maple 的出厂值', 
   assert.equal(valueOf(resolved, 'codePalette'), true);
   assert.equal(valueOf(resolved, 'shellSkin'), true);
   assert.equal(valueOf(resolved, 'mapleFont'), true);
+  assert.equal(valueOf(resolved, 'nativePalette'), false);
   assert.deepEqual(Object.keys(resolved).sort(), [
-    'codePalette', 'headingColor', 'headingIndicator', 'hueDark', 'hueLight', 'lineHeight', 'mapleFont', 'paragraphGap', 'shellSkin',
+    'codePalette', 'headingColor', 'headingIndicator', 'hueDark', 'hueLight', 'lineHeight', 'mapleFont', 'nativePalette', 'paragraphGap', 'shellSkin',
   ]);
 });
 

@@ -12,7 +12,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import { readSettings, type MapleForm, type MapleOp } from './binding.ts';
 import { DEFAULT_SETTINGS, type MapleSettings } from './settings.ts';
 import { NS } from './locales.ts';
-import { matchPreset, PALETTE_PRESETS } from './presets.ts';
+import { HUE_PRESETS, matchPreset, NATIVE_PRESET_ID, PALETTE_PRESETS } from './presets.ts';
 
 /**
  * 常用配色的色相预设：一键把浅色与深色色相同时切过去。
@@ -127,15 +127,15 @@ function NumberField({ value, min, max, step, unit, label, onCommit }: {
 }
 
 /**
- * 预设选择器：一个下拉按钮，列出六个配色预设。
+ * 预设选择器：一个下拉按钮，列出七个色相组合加一条「DSH 原生」。
  *
  * 用下拉而不是分段控件，两个理由：
  *   1. 分段控件没有「一个都没选中」这种状态。手调过色相之后一对色相不对应任何预设，
  *      传个空串进去，指示块会被平移到轨道外面、压在同一行的说明文字上。
- *   2. 六个中文标签铺开要 600px 以上，会把同一行的说明挤成两行。
+ *   2. 八个中文标签铺开要 700px 以上，会把同一行的说明挤成两行。
  * 下拉按钮的文案本身就是状态：对上某个预设就显示它的名字，对不上显示「自定义」。
  * @param props.value - 当前命中的预设 id；自定义时为 undefined。
- * @param props.items - 六个预设的 id 与已本地化的名字。
+ * @param props.items - 预设的 id 与已本地化的名字。
  * @param props.customLabel - 自定义状态下按钮显示的名字。
  * @param props.onSelect - 选中一个预设。
  * @param props.label - 控件的可访问名。
@@ -155,7 +155,11 @@ function PresetPicker({ value, items, customLabel, onSelect, label }: {
       onClose={() => { setOpen(false) }}
       items={items}
       selectedId={value}
-      onSelect={onSelect}
+      // Menu 只负责把选中项报上来，不会自己关：关这一下归调用方。
+      onSelect={(id) => {
+        setOpen(false);
+        onSelect(id);
+      }}
       align="end"
       portal
       anchor={(
@@ -203,11 +207,25 @@ export function MapleThemeCard(
 
   const current = settings ?? DEFAULT_SETTINGS;
   /*
-   * 当前落在哪个预设上：两个色相都与某个预设对得上才算，否则是 undefined（自定义）。
-   * 不硬选一个「最接近的」——用户手调过之后，控件不该假装他还停在某个预设上。
+   * 当前落在哪一档上，三选一：
+   *   1. 「DSH 原生」——由 nativePalette 决定，与色相无关，优先显示；
+   *   2. 某个色相预设——两个色相都对得上才算；
+   *   3. 自定义（undefined）——手调过，不硬选一个「最接近的」假装他还停在某个预设上。
    */
-  const currentPreset = matchPreset(current.hueLight, current.hueDark)?.id;
+  const currentPreset = current.nativePalette
+    ? NATIVE_PRESET_ID
+    : matchPreset(current.hueLight, current.hueDark)?.id;
   const write = (field: keyof MapleSettings, value: unknown): void => { void form.set(field, value); };
+  /**
+   * 改一个色相。手调色相意味着「我要用自己这组颜色」，所以顺手退出「DSH 原生」——
+   * 不退的话，原生模式下拖滑块页面一点反应都没有，看上去像是坏了。
+   * @param field - `hueLight` 或 `hueDark`。
+   * @param value - 新的角度。
+   */
+  const writeHue = (field: 'hueLight' | 'hueDark', value: number): void => {
+    if (current.nativePalette) writeMany({ [field]: value, nativePalette: false });
+    else write(field, value);
+  };
   /**
    * 一次写多个字段：浅色与深色是成套的，分开写会让页面闪一次「半套」配色。
    * @param changes - 字段与目标值。
@@ -230,24 +248,29 @@ export function MapleThemeCard(
             customLabel={t('card.presetCustom')}
             items={PALETTE_PRESETS.map(preset => ({ id: preset.id, label: t(preset.key) }))}
             onSelect={(next) => {
-              const preset = PALETTE_PRESETS.find(item => item.id === next);
-              if (preset === undefined) return;
-              // 一次改两个字段：浅色与深色是成套的，只改一个会得到半套配色。
-              writeMany({ hueLight: preset.light, hueDark: preset.dark });
+              if (next === NATIVE_PRESET_ID) {
+                // 只翻开关：两个色相原样留着，换回任意色相预设时还是他调过的那一组。
+                write('nativePalette', true);
+                return;
+              }
+              const hue = HUE_PRESETS.find(item => item.id === next);
+              if (hue === undefined) return;
+              // 一次改三个字段：浅色与深色是成套的，同时把「原生」关掉。
+              writeMany({ hueLight: hue.light, hueDark: hue.dark, nativePalette: false });
             }}
           />
         </Row>
         <Row title={t('card.hueLight')} hint={t('card.hueLightHint')}>
           <HueSlider value={current.hueLight} label={t('card.hueLight')}
-            onChange={(next) => { write('hueLight', next) }} />
+            onChange={(next) => { writeHue('hueLight', next) }} />
           <NumberField value={current.hueLight} min={0} max={360} step={1} unit="°"
-            label={t('card.hueLight')} onCommit={(next) => { write('hueLight', next) }} />
+            label={t('card.hueLight')} onCommit={(next) => { writeHue('hueLight', next) }} />
         </Row>
         <Row title={t('card.hueDark')} hint={t('card.hueDarkHint')}>
           <HueSlider value={current.hueDark} label={t('card.hueDark')}
-            onChange={(next) => { write('hueDark', next) }} />
+            onChange={(next) => { writeHue('hueDark', next) }} />
           <NumberField value={current.hueDark} min={0} max={360} step={1} unit="°"
-            label={t('card.hueDark')} onCommit={(next) => { write('hueDark', next) }} />
+            label={t('card.hueDark')} onCommit={(next) => { writeHue('hueDark', next) }} />
         </Row>
       </section>
 

@@ -118,8 +118,33 @@ test('文档里写死的数字与实际一致', () => {
   assert.ok(says(details, sheets, '张样式表'), `DETAILS 里的样式表数不是 ${sheets}`);
   // 投影写的属性数
   const projection = readFileSync(join(root, 'src/client/settings.ts'), 'utf8');
-  const attrs = (projection.match(/\[(ROOT|HEADING|INDICATOR|CODE|SHELL|FONT)_ATTRIBUTE\]:/g) ?? []).length / 2;
+  const attrs = (projection.match(/\[(ROOT|HEADING|INDICATOR|CODE|SHELL|FONT|NATIVE)_ATTRIBUTE\]:/g) ?? []).length / 2;
   assert.ok(says(details, attrs, '个属性'), `DETAILS 里的属性数不是 ${attrs}`);
+});
+
+test('「DSH 原生」下所有直接写颜色的装饰段都整段失效', () => {
+  // 退回宿主配色时最难看的那种半套状态是「宿主底 + Maple 彩标题」：令牌那一层撤掉了，
+  // 而样式表里**不读令牌、直接写颜色**的规则还在。所以这些规则必须与原生互斥，
+  // 判据不是「有没有写 data-maple-native」，而是「这条规则里出现 var(--maple-*) 或字面 hsl()
+  // 颜色时，选择器上带不带 :not([data-maple-native='on'])」。
+  const offenders = [];
+  for (const [file, css] of Object.entries(sheets)) {
+    const body = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const rule of body.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = rule[1].trim();
+      const block = rule[2];
+      if (selector.includes(":not([data-maple-native='on'])")) continue;
+      // 只看「给颜色」的声明：背景、前景、边框、描边、accent-color、::selection。
+      const paints = /(^|;)\s*(background(-color)?|color|border(-[a-z]+)?-color|outline-color|accent-color)\s*:/.test(block);
+      if (!paints) continue;
+      // 直接写死的颜色才会在原生下留下痕迹；纯 var(--dsw-*) 的会跟着令牌一起退。
+      const hardColor = /var\(--maple-(h[1-6]|inline-code|quote-bar|quote-fill|table-head|heading-color)\)|hsl\(/.test(block);
+      if (!hardColor) continue;
+      // 标题六色那一组由贴身的 :not 判据守着，这里只统计漏掉的。
+      offenders.push(`${file}: ${selector.slice(0, 72)}`);
+    }
+  }
+  assert.deepEqual(offenders, [], `这些直接写颜色的规则没跟「DSH 原生」互斥：${offenders.join('；')}`);
 });
 
 test('跟随配色的那些颜色都读 --maple-hue-*，不写死色相', () => {

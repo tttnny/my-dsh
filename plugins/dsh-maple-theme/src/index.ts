@@ -46,6 +46,14 @@ export const Config = z.object({
   codePalette: z.boolean().default(true).volatile(),
   /** 外壳装饰：侧栏与标签条的圆角、输入卡填充、去掉会话头部那条分隔线。 */
   shellSkin: z.boolean().default(true).volatile(),
+  /**
+   * 配色退回宿主自己的（配置页预设里的「DSH 原生」）。
+   *
+   * 打开时撤掉本插件的令牌接管那一层，样式表里直接写颜色的装饰段也一并失效；
+   * 排版、字号、圆角这些与颜色无关的开关不受影响。两个色相值原样留着，
+   * 关掉之后就回到那一组色相。
+   */
+  nativePalette: z.boolean().default(false).volatile(),
   /** 内嵌 Maple 的字体：正文与界面换成 maplemono。 */
   mapleFont: z.boolean().default(true).volatile(),
 });

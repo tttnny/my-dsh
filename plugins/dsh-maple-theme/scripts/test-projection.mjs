@@ -11,11 +11,11 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import {
-  ROOT_ATTRIBUTE, HEADING_ATTRIBUTE, INDICATOR_ATTRIBUTE, CODE_ATTRIBUTE, SHELL_ATTRIBUTE, FONT_ATTRIBUTE,
+  ROOT_ATTRIBUTE, HEADING_ATTRIBUTE, INDICATOR_ATTRIBUTE, CODE_ATTRIBUTE, SHELL_ATTRIBUTE, FONT_ATTRIBUTE, NATIVE_ATTRIBUTE,
   ROOT_VARIABLES,
   DEFAULT_SETTINGS, clampNumber, normalizeSettings, projectSettings, applyProjection, clearProjection,
 } from '../src/client/settings.ts';
-import { matchPreset, PALETTE_PRESETS } from '../src/client/presets.ts';
+import { HUE_PRESETS, matchPreset, NATIVE_PRESET_ID, PALETTE_PRESETS } from '../src/client/presets.ts';
 
 let passed = 0;
 let total = 0;
@@ -73,10 +73,10 @@ test('clampNumber 认得出数字字符串，认不出的用兜底', () => {
   assert.equal(clampNumber(Number.POSITIVE_INFINITY, 0, 360, 35), 35);
 });
 
-test('投影写的是六个属性与四个变量，没有别的', () => {
+test('投影写的是七个属性与四个变量，没有别的', () => {
   const projection = projectSettings(normalizeSettings({}));
   assert.deepEqual(Object.keys(projection.attributes).sort(), [
-    CODE_ATTRIBUTE, FONT_ATTRIBUTE, HEADING_ATTRIBUTE, INDICATOR_ATTRIBUTE, ROOT_ATTRIBUTE, SHELL_ATTRIBUTE,
+    CODE_ATTRIBUTE, FONT_ATTRIBUTE, HEADING_ATTRIBUTE, INDICATOR_ATTRIBUTE, NATIVE_ATTRIBUTE, ROOT_ATTRIBUTE, SHELL_ATTRIBUTE,
   ].sort());
   assert.deepEqual(Object.keys(projection.variables).sort(), [...ROOT_VARIABLES].sort());
   assert.equal(projection.attributes[ROOT_ATTRIBUTE], 'on');
@@ -133,7 +133,7 @@ test('重复投影是幂等的，不会叠出第二份', () => {
 });
 
 test('每个预设的色相对都匹配回它自己', () => {
-  for (const preset of PALETTE_PRESETS) {
+  for (const preset of HUE_PRESETS) {
     assert.equal(matchPreset(preset.light, preset.dark)?.id, preset.id, `${preset.id} 没匹配回自己`);
   }
 });
@@ -147,11 +147,33 @@ test('手调过的色相对不匹配任何预设（控件这时显示「自定�
 });
 
 test('色相环上 360° 就是 0°：绕圈的写法匹配到同一个预设', () => {
-  const maple = PALETTE_PRESETS.find(preset => preset.id === 'maple');
+  const maple = HUE_PRESETS.find(preset => preset.id === 'maple');
   assert.notEqual(maple, undefined);
   assert.equal(matchPreset(maple.light + 360, maple.dark)?.id, 'maple');
   assert.equal(matchPreset(maple.light - 360, maple.dark)?.id, 'maple');
   assert.equal(matchPreset(maple.light, maple.dark + 720)?.id, 'maple');
+});
+
+test('「DSH 原生」是一个挂得上的属性，不是一组色相', () => {
+  assert.equal(projectSettings(normalizeSettings({ nativePalette: true })).attributes[NATIVE_ATTRIBUTE], 'on');
+  assert.equal(projectSettings(normalizeSettings({ nativePalette: false })).attributes[NATIVE_ATTRIBUTE], null);
+  // 它不参与色相匹配：原生与色相各管各的，换回来还是原来那一组。
+  assert.equal(matchPreset(35, 207)?.id, 'maple');
+  assert.ok(!PALETTE_PRESETS.slice(0, -1).some((preset) => preset.id === NATIVE_PRESET_ID));
+});
+
+test('打开「DSH 原生」时投影仍然照常写色相，好让用户切回来时回到原处', () => {
+  const projection = projectSettings(normalizeSettings({ nativePalette: true, hueLight: 230, hueDark: 230 }));
+  assert.equal(projection.variables['--maple-hue-light'], '230');
+  assert.equal(projection.variables['--maple-hue-dark'], '230');
+  assert.equal(projection.attributes[NATIVE_ATTRIBUTE], 'on');
+});
+
+test('天青预设的两个基础色相都是 230', () => {
+  const azure = HUE_PRESETS.find(preset => preset.id === 'azure');
+  assert.notEqual(azure, undefined, '预设表里没有天青');
+  assert.equal(azure.light, 230);
+  assert.equal(azure.dark, 230);
 });
 
 console.log(`${passed}/${total} passed`);

@@ -49,7 +49,7 @@ html[data-maple-theme='on'][data-maple-heading='text'] body[data-ds-dark-theme] 
 
 /* 代码语法色：Maple 的 prism 调色板落到宿主的 shiki 变量上。
  * 宿主 CodeBlock 只认 --shiki-token-*，换这一组就整体换配色。 */
-html[data-maple-theme='on'][data-maple-code='on'] {
+html[data-maple-theme='on'][data-maple-code='on']:not([data-maple-native='on']) {
   --shiki-token-keyword: hsl(260 20% 48%);
   --shiki-token-string: hsl(95 75% 27.5%);
   --shiki-token-string-expression: hsl(95 75% 27.5%);
@@ -61,7 +61,7 @@ html[data-maple-theme='on'][data-maple-code='on'] {
   --shiki-token-link: hsl(162 76% 27.5%);
 }
 
-html[data-maple-theme='on'][data-maple-code='on'] body[data-ds-dark-theme] {
+html[data-maple-theme='on'][data-maple-code='on']:not([data-maple-native='on']) body[data-ds-dark-theme] {
   --shiki-token-keyword: hsl(247 65% 82%);
   --shiki-token-string: hsl(130 32% 68%);
   --shiki-token-string-expression: hsl(130 32% 68%);

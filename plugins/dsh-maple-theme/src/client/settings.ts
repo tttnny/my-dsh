@@ -28,6 +28,17 @@ export const SHELL_ATTRIBUTE = 'data-maple-shell';
 /** 内嵌字体的开关属性名。 */
 export const FONT_ATTRIBUTE = 'data-maple-font';
 
+/**
+ * 「DSH 原生」配色：整层令牌接管失效，退回宿主自己的配色。
+ *
+ * 这一个开关同时压住两件事，缺一件都退不干净：
+ *   1. 调色板——`ctx.theme.overrideTokens` 的这一层要撤掉，否则宿主拿到的还是我们的值；
+ *   2. 装饰层——样式表里**不读令牌、直接写颜色**的那些地方（标题六色、语法色、
+ *      引用条、表格头、行内代码）必须整段不匹配，否则会出现「宿主底 + Maple 彩标题」。
+ * 它不参与色相匹配：原生与色相无关，切换时两个色相值原地留着，换回来还是原来那一组。
+ */
+export const NATIVE_ATTRIBUTE = 'data-maple-native';
+
 /** 一份配置投影出来的结果：要写的属性与变量。 */
 export interface MapleProjection {
   /** `<html>` 上要设的属性（值为 `null` 表示删掉）。 */
@@ -54,6 +65,8 @@ export interface MapleSettings {
   headingIndicator: boolean;
   codePalette: boolean;
   shellSkin: boolean;
+  /** 配色退回宿主自己的（「DSH 原生」预设）。 */
+  nativePalette: boolean;
   /** 内嵌 Maple 的字体。 */
   mapleFont: boolean;
 }
@@ -68,6 +81,7 @@ export const DEFAULT_SETTINGS: Readonly<MapleSettings> = Object.freeze({
   headingIndicator: true,
   codePalette: true,
   shellSkin: true,
+  nativePalette: false,
   mapleFont: true,
 });
 
@@ -108,6 +122,7 @@ export function normalizeSettings(raw: Partial<MapleSettings> | undefined | null
     headingIndicator: source.headingIndicator ?? DEFAULT_SETTINGS.headingIndicator,
     codePalette: source.codePalette ?? DEFAULT_SETTINGS.codePalette,
     shellSkin: source.shellSkin ?? DEFAULT_SETTINGS.shellSkin,
+    nativePalette: source.nativePalette ?? DEFAULT_SETTINGS.nativePalette,
     mapleFont: source.mapleFont ?? DEFAULT_SETTINGS.mapleFont,
   };
 }
@@ -133,6 +148,7 @@ export function projectSettings(settings: MapleSettings, enabled = true): MapleP
         [CODE_ATTRIBUTE]: null,
         [SHELL_ATTRIBUTE]: null,
         [FONT_ATTRIBUTE]: null,
+        [NATIVE_ATTRIBUTE]: null,
       },
       variables,
     };
@@ -145,6 +161,9 @@ export function projectSettings(settings: MapleSettings, enabled = true): MapleP
       [CODE_ATTRIBUTE]: settings.codePalette ? 'on' : null,
       [SHELL_ATTRIBUTE]: settings.shellSkin ? 'on' : null,
       [FONT_ATTRIBUTE]: settings.mapleFont ? 'on' : null,
+      // 「DSH 原生」时挂上这一个属性，样式表里所有「不读令牌、直接写颜色」的装饰段
+      // 靠它整段失效；令牌那一层在浏览器半边撤掉（见 index.ts）。
+      [NATIVE_ATTRIBUTE]: settings.nativePalette ? 'on' : null,
     },
     variables: {
       '--maple-hue-light': String(settings.hueLight),

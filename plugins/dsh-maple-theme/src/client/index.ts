@@ -15,7 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client';
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client';
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
-import { bindProjection, BUNDLE_NAME, BUNDLE_CONFIG_SLOT, SETTINGS_NAMESPACE, type MapleForm } from './binding.ts';
+import { bindProjection, BUNDLE_NAME, BUNDLE_CONFIG_SLOT, readSettings, SETTINGS_NAMESPACE, type MapleForm } from './binding.ts';
 import { CARD_CSS } from './card-css.ts';
 import { MapleThemeCard } from './card.tsx';
 import { NS, en, zh } from './locales.ts';
@@ -109,10 +109,31 @@ export function apply(ctx: ClientContext): void {
 
   // 配色：走宿主的主题通道，由它写到 body 的行内样式上（docs/web-styling.md 的所有权归主题，
   // 功能包消费令牌而不是另立一份全局主题）。disposer 会把这层覆盖整份撤掉。
-  ctx.effect(
-    () => services.theme.overrideTokens(THEME_SOURCE, MAPLE_TOKENS),
-    'dsh-maple-theme: palette',
-  );
+  //
+  // 「DSH 原生」预设下这一层要真的撤掉，而不是写一份「跟宿主一样」的值：宿主自带的两套
+  // 主题里还有我们没覆盖的令牌，抄一份值只会在那些地方留下半套。订阅配置、只在开关
+  // 翻动时重挂这一层，所以拖动色相滑块不会连带重建调色板。
+  ctx.effect(() => {
+    const form = services.configForms.get(SETTINGS_NAMESPACE);
+    const disposers: (() => void)[] = [];
+    let layered = false;
+    const sync = (): void => {
+      const native = readSettings(form)?.nativePalette === true;
+      if (native === layered) return;
+      layered = native;
+      if (native) {
+        for (const dispose of disposers.splice(0)) dispose();
+        return;
+      }
+      disposers.push(services.theme.overrideTokens(THEME_SOURCE, MAPLE_TOKENS));
+    };
+    sync();
+    const off = form.subscribe(sync);
+    return () => {
+      off();
+      for (const dispose of disposers.splice(0)) dispose();
+    };
+  }, 'dsh-maple-theme: palette');
 
   ctx.effect(
     () => services.locale.register(NS, { zh, en }),

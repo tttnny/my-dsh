@@ -15,7 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
-const { PALETTE_PRESETS } = await import(join(root, 'src/client/presets.ts'));
+const { HUE_PRESETS, NATIVE_PRESET_ID, PALETTE_PRESETS } = await import(join(root, 'src/client/presets.ts'));
 const css = readFileSync(join(root, 'src/client/styles/tokens.css'), 'utf8');
 const tokenSource = readFileSync(join(root, 'src/client/tokens.ts'), 'utf8');
 
@@ -447,8 +447,8 @@ test('代码块的九个语法色在自己那块底色上都过 4.5:1', () => {
     dark: 'hsl(var(--maple-hue-dark, 207) 10% 13%)',
   };
   const markers = {
-    light: "html[data-maple-theme='on'][data-maple-code='on'] {",
-    dark: "html[data-maple-theme='on'][data-maple-code='on'] body[data-ds-dark-theme] {",
+    light: "html[data-maple-theme='on'][data-maple-code='on']:not([data-maple-native='on']) {",
+    dark: "html[data-maple-theme='on'][data-maple-code='on']:not([data-maple-native='on']) body[data-ds-dark-theme] {",
   };
   for (const mode of ['light', 'dark']) {
     const at = css.indexOf(markers[mode]);
@@ -530,11 +530,14 @@ test('滚动条的三个令牌都在，悬停色带 Maple 的暖调而不是灰�
   }
 });
 
-test('预设表自身自洽：六个、id 不重、色相在合法范围内', () => {
-  assert.equal(PALETTE_PRESETS.length, 6, `预设表里有 ${PALETTE_PRESETS.length} 个`);
+test('预设表自身自洽：七个色相组 + 一条原生、id 不重、色相在合法范围内', () => {
+  assert.equal(HUE_PRESETS.length, 7, `色相预设表里有 ${HUE_PRESETS.length} 个`);
+  assert.equal(PALETTE_PRESETS.length, HUE_PRESETS.length + 1, '下拉条目应当正好是「色相组 + 一条原生」');
+  assert.equal(PALETTE_PRESETS.at(-1).id, NATIVE_PRESET_ID, '「DSH 原生」排在最后一条');
+  assert.ok(!HUE_PRESETS.some((preset) => preset.id === NATIVE_PRESET_ID), '原生不是色相组，不该混进那张表');
   const ids = PALETTE_PRESETS.map((preset) => preset.id);
   assert.equal(new Set(ids).size, ids.length, `预设 id 有重复：${ids.join('、')}`);
-  for (const preset of PALETTE_PRESETS) {
+  for (const preset of HUE_PRESETS) {
     for (const [side, hue] of [['浅色', preset.light], ['深色', preset.dark]]) {
       assert.ok(
         Number.isInteger(hue) && hue >= 0 && hue <= 360,
@@ -544,10 +547,10 @@ test('预设表自身自洽：六个、id 不重、色相在合法范围内', ()
   }
 });
 
-test('配置页的六个预设，两套模式的正文对比度都过 AA', () => {
+test('配置页的七个色相预设，两套模式的正文对比度都过 AA', () => {
   // 预设只换色相、不动明度，所以对比度本应与 Maple 出厂值持平；
   // 这条挡的是「哪天有人给某个预设单独调了明度」——那会悄悄破坏可读性。
-  for (const preset of PALETTE_PRESETS) {
+  for (const preset of HUE_PRESETS) {
     const { id: name, light: lightHue, dark: darkHue } = preset;
     for (const [mode, hue, fgS, fgL, bgS, bgL] of [
       ['浅色', lightHue, 10, 18, 12, 97],
