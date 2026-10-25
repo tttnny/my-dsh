@@ -93,7 +93,8 @@ const form = fakeForm({});
 const localeRegistrations = [];
 const slotRegistrations = [];
 const injectCalls = [];
-const themeOverrides = [];
+/** 主题通道此刻挂着的覆盖层；disposer 只摘自己那一层，与宿主的行为一致。 */
+const paletteLayers = [];
 const errors = [];
 
 /** 服务表：只有这里列出的服务存在；读别的就是「未声明」。 */
@@ -124,8 +125,12 @@ function services() {
     },
     theme: {
       overrideTokens: (sourceName, tokens) => {
-        themeOverrides.push({ source: sourceName, tokens });
-        return () => { themeOverrides.length = 0; };
+        const layer = { source: sourceName, tokens };
+        paletteLayers.push(layer);
+        return () => {
+          const index = paletteLayers.indexOf(layer);
+          if (index !== -1) paletteLayers.splice(index, 1);
+        };
       },
     },
   };
@@ -219,6 +224,27 @@ check('关掉代码配色也删属性', rootElement.getAttribute('data-maple-cod
 check('关掉外壳装饰也删属性', rootElement.getAttribute('data-maple-shell') === null, String(rootElement.getAttribute('data-maple-shell')));
 check('关掉字体也删属性', rootElement.getAttribute('data-maple-font') === null, String(rootElement.getAttribute('data-maple-font')));
 
+/* ---- 调色板：真的挂上了主题通道，且只挂一层、与「DSH 原生」互斥 ---- */
+// 这一段是给「配置页显示切过去了，页面还是宿主原色」那类回归用的：色板没挂上时，
+// <html> 上的属性与变量照常写着，只有页面底色出卖它，光看投影断言查不出来。
+check('出厂配置下色板挂上了主题通道', paletteLayers.length === 1, paletteLayers.length + ' 层');
+check(
+  '色板的来源名就是包名',
+  paletteLayers[0]?.source === '@lynn123411/dsh-maple-theme',
+  String(paletteLayers[0]?.source),
+);
+const unpaired = Object.entries(paletteLayers[0]?.tokens ?? {})
+  .filter(([, modes]) => typeof modes?.light !== 'string' || typeof modes?.dark !== 'string')
+  .map(([name]) => name);
+check('色板每条令牌都成对给了浅色与深色', unpaired.length === 0, unpaired.join('、'));
+
+form.push({ nativePalette: true });
+check('选「DSH 原生」把色板撤掉', paletteLayers.length === 0, paletteLayers.length + ' 层');
+form.push({ nativePalette: false });
+check('切回色相预先把色板重新挂上', paletteLayers.length === 1, paletteLayers.length + ' 层');
+form.push({ hueLight: 280, hueDark: 250 });
+check('换色相不连带重造色板', paletteLayers.length === 1, paletteLayers.length + ' 层');
+
 /* ---- 卡片：座位、key、词典 ---- */
 check('走插件的 plugins.bundle.config 座位', injectCalls.includes('plugins.bundle.config'), JSON.stringify(injectCalls));
 check('注册了一项配置卡片', slotRegistrations.length === 1, String(slotRegistrations.length));
@@ -257,6 +283,7 @@ const leftVars = ['--maple-hue-light', '--maple-hue-dark', '--maple-line-height'
   .filter((name) => rootElement.style.getPropertyValue(name) !== '');
 check('卸载后根元素不留变量', leftVars.length === 0, leftVars.join('、'));
 check('卸载后样式标签全删了', document.head.querySelectorAll('style[data-plugin]').length === 0);
+check('卸载后主题通道不留本插件的色板', paletteLayers.length === 0, paletteLayers.length + ' 层');
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`);
 process.exit(failures.length === 0 ? 0 : 1);

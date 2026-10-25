@@ -112,26 +112,29 @@ export function apply(ctx: ClientContext): void {
   //
   // 「DSH 原生」预设下这一层要真的撤掉，而不是写一份「跟宿主一样」的值：宿主自带的两套
   // 主题里还有我们没覆盖的令牌，抄一份值只会在那些地方留下半套。订阅配置、只在开关
-  // 翻动时重挂这一层，所以拖动色相滑块不会连带重建调色板。
+  // 翻动时挂上或撤掉这一层，所以拖动色相滑块不会连带重建调色板。
   ctx.effect(() => {
     const form = services.configForms.get(SETTINGS_NAMESPACE);
     const disposers: (() => void)[] = [];
+    /** 这一层此刻有没有挂在宿主上；sync 每次都先看它，所以重复调用不会叠出第二层。 */
     let layered = false;
     const sync = (): void => {
       const native = readSettings(form)?.nativePalette === true;
-      if (native === layered) return;
-      layered = native;
       if (native) {
         for (const dispose of disposers.splice(0)) dispose();
+        layered = false;
         return;
       }
+      if (layered) return;
       disposers.push(services.theme.overrideTokens(THEME_SOURCE, MAPLE_TOKENS));
+      layered = true;
     };
     sync();
     const off = form.subscribe(sync);
     return () => {
       off();
       for (const dispose of disposers.splice(0)) dispose();
+      layered = false;
     };
   }, 'dsh-maple-theme: palette');
 

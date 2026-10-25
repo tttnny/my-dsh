@@ -35,6 +35,9 @@ ctx.theme.overrideTokens('@lynn123411/dsh-maple-theme', {
 行内样式沿继承链解析得到，所以整套色板仍然由一个数字转动——配置页拨一下色相，令牌不用重新登记。
 disposer 由 `ctx.effect` 持有，插件卸载时整层覆盖一起撤掉。
 
+这一层只在「当前不是 DSH 原生」时挂着，判据每次由 `sync` 现读配置：要挂而已经挂着就原地不动
+（拖色相滑块不会重造色板），要挂而没挂着才调一次 `overrideTokens`，要撤就撤并记下已撤。
+
 取色取的是 Maple 在 Obsidian 里**画出来**的结果，不是它写下的变量原值。两者在一处差得很明显：
 侧栏。Maple 的 `--background-secondary` 写的是 `hsl(h-18 8% 93%)`，但那层颜色是垫在
 卡片布局的渐变背景图上、按 `--bg-opacity` 半透明铺开的，眼睛收到的是它与渐变混合之后的颜色——
@@ -181,7 +184,7 @@ cd plugins/dsh-maple-theme && pnpm check
 | `tsc -p tsconfig.json --noEmit` | 类型闸门，覆盖两半边连同配置投影模块 |
 | `scripts/smoke-host.mjs` | 真 cordis `Context`：`Config` 十个字段的默认值、越界值被 schema 拒绝、每个字段都是 `volatile`、`apply` 按 `{ auto: false }` 登记、包内 `cordis.patch.yml` 只有一条装配行且 id 与包名各自对上 |
 | `scripts/test-projection.mjs` | 脏输入收拢（越界、字符串、`null`、缺字段）、投影只写七个属性与四个变量、关掉的开关写成「删属性」、写到真 DOM 再撤掉不留痕迹、重复投影幂等；七个色相预设各自匹配回自己、手调过的色相不匹配任何预设、色相环上 360° 绕一圈仍匹配、「DSH 原生」挂得上属性且不参与色相匹配、天青两个色相都是 230 |
-| `scripts/smoke-client.mjs` | 按 Web shell 的方式装载 `lib/client.js`：色板交给主题通道且每条令牌都成对、五张样式表都带 `data-plugin` 归属键、投影真的写到 `<html>`、配置变化后属性跟着换、卡片注册进 `plugins.bundle.config` 且 key 是包名、词典中英键集一致、卸载后属性与变量都撤干净；另带一条反例断言证明「读未声明服务会抛」的守卫还在响 |
+| `scripts/smoke-client.mjs` | 按 Web shell 的方式装载 `lib/client.js`：色板真的挂上了主题通道、来源名是包名、每条令牌都成对、换色相不重造色板、「DSH 原生」撤掉色板而切回色相预先把色板挂回来、五张样式表都带 `data-plugin` 归属键、投影真的写到 `<html>`、配置变化后属性跟着换、卡片注册进 `plugins.bundle.config` 且 key 是包名、词典中英键集一致、卸载后属性、变量与色板都不留；另带一条反例断言证明「读未声明服务会抛」的守卫还在响 |
 | `scripts/test-tokens.mjs` | 读 `src/client/tokens.ts` 算 WCAG 对比度：两套模式的正文、次要、三级文字、链接、主按钮、代码块、侧栏、提示框、气泡都过阈值；标题六色两套都过 4.5:1；两套令牌集一一对应；侧栏与纸面分成两档且带得住色相；发送键跟随色相、按色环全周扫箭头对比，并与输入卡底色分得开 |
 | `scripts/test-anchors.mjs` | 宿主锚点契约：属性名与座位名仍在宿主源码里、样式表不含哈希类名、圆角无字面值、药丸圆角配了 `corner-shape: round` |
 
