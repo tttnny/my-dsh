@@ -93,6 +93,32 @@ test('段落间距落在容器的 gap 上（宿主的正文容器是 flex，段�
   );
 });
 
+test('跟随配色的那些颜色都读 --maple-hue-*，不写死色相', () => {
+  // 写死一个度数，换预设后那一处还停在原来的颜色上。这条钉的是「哪些必须跟随」：
+  // 判据在注释里写明——标题六色、语法色、行内代码是固定的设计色，不随配色走；
+  // 其余以 hsl() 直接出现的值都属于跟随配色的，必须带 --maple-hue-*。
+  const pinned = new Set([
+    '--maple-inline-code', '--maple-h1', '--maple-h2', '--maple-h3',
+    '--maple-h4', '--maple-h5', '--maple-h6', '--maple-table-head',
+    '--shiki',
+  ]);
+  const offenders = [];
+  for (const [file, css] of Object.entries(sheets)) {
+    for (const rule of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = rule[1].trim();
+      for (const decl of rule[2].matchAll(/([a-z-]+):\s*([^;]*hsl\([0-9][^;]*);/g)) {
+        const [, property, value] = decl;
+        // 只有「背景 / 边框 / 描边」这类跟随配色的位置需要跟随；固定色见 pinned。
+        if (!/^(background|border|outline)/.test(property)) continue;
+        if ([...pinned].some((name) => selector.includes(name) || value.includes(name))) continue;
+        if (selector.includes('data-maple-heading') || selector.includes('data-maple-code')) continue;
+        offenders.push(`${file}: ${selector.slice(0, 40)} 的 ${property} 写死了 ${value.trim().slice(0, 24)}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], offenders.join('；'));
+});
+
 test('每一处圆角都取 --dsw-radius-* 或 Maple 自己的变量，没有字面 px', () => {
   const offenders = [];
   for (const [file, css] of Object.entries(sheets)) {

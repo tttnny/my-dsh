@@ -413,6 +413,22 @@ test('代码块的九个语法色在自己那块底色上都过 4.5:1', () => {
   }
 });
 
+test('滚动条的三个令牌都在，悬停色带 Maple 的暖调而不是灰色', () => {
+  // 宿主默认的悬停色取 scrollbar-hover-l1；只覆盖 l2 不会生效（l2 只有少数面板用）。
+  for (const name of ['--dsw-alias-scrollbar-bg-l1', '--dsw-alias-scrollbar-hover-l1', '--dsw-alias-scrollbar-bg-l2']) {
+    assert.ok(name in light, `缺少 ${name}`);
+    assert.ok(name in dark, `深色缺少 ${name}`);
+  }
+  // 暖调意味着三个分量不完全相等（灰色的 R=G=B）。
+  for (const [mode, vars] of [['浅色', light], ['深色', dark]]) {
+    const rgb = hslaToRgb(inlineFallbacks(vars['--dsw-alias-scrollbar-hover-l1']));
+    assert.ok(
+      new Set(rgb).size > 1,
+      `${mode}的滚动条悬停色是纯灰 ${rgb.join(',')}，应当带 Maple 的色相`,
+    );
+  }
+});
+
 test('预设表自身自洽：六个、id 不重、色相在合法范围内', () => {
   assert.equal(PALETTE_PRESETS.length, 6, `预设表里有 ${PALETTE_PRESETS.length} 个`);
   const ids = PALETTE_PRESETS.map((preset) => preset.id);

@@ -266,9 +266,14 @@ html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-cha
   --dsw-alias-label-tertiary: var(--dsw-alias-label-caption);
 }
 
-/* 选中文字：Maple 用强调色的低透明度，不是浏览器的默认蓝。 */
+/* 选中文字：Maple 用强调色的低透明度，不是浏览器的默认蓝。
+ * 色相跟随当前配色，不写字面值——写死一个度数，换了预设之后选中色还停在原来的颜色上。 */
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step'] ::selection {
-  background: hsl(35 60% 62% / 28%);
+  background: hsl(var(--maple-hue-light, 35) 60% 62% / 28%);
+}
+
+html[data-maple-theme='on'] body[data-ds-dark-theme] [data-chat-flow-kind='assistant-step'] ::selection {
+  background: hsl(var(--maple-hue-dark, 207) 50% 62% / 34%);
 }
 
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6):first-child {

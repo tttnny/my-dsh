@@ -73,7 +73,6 @@ html[data-maple-theme='on'][data-maple-shell='on'] body [data-slot='conversation
   border-radius: var(--dsw-radius-sm);
 }
 
-/* 滚动条：Maple 的滑块宽 12px、圆头，颜色取它的暖灰（tokens.css 已换）。 */
-html[data-maple-theme='on'][data-maple-shell='on'] body {
-  --dsh-scrollbar-width: 12px;
-}
+/* 滚动条：颜色由 tokens.ts 的 scrollbar-* 令牌给出（滑块取 Maple 的暖灰）。
+ * 宽度不跟着 Maple 走：宿主拿 --dsh-scrollbar-width 当布局量算宽表的底部留白
+ * （.md-table-wide 的 padding-bottom），把它调宽会让每张宽表底部多出一截空白。 */

@@ -72,6 +72,7 @@ export const MAPLE_TOKENS = {
   '--dsw-alias-markdown-tag': { light: 'hsl(var(--maple-hue-light, 35) 40% 88%)', dark: 'hsl(var(--maple-hue-dark, 207) 14% 20%)' },
   '--dsw-alias-markdown-citation': { light: 'hsl(var(--maple-hue-light, 35) 10% 94%)', dark: 'hsl(var(--maple-hue-dark, 207) 8% 14%)' },
   '--dsw-alias-scrollbar-bg-l1': { light: 'hsl(var(--maple-hue-light, 35) 14% 84%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 25%)' },
+  '--dsw-alias-scrollbar-hover-l1': { light: 'hsl(var(--maple-hue-light, 35) 18% 71%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 39%)' },
   '--dsw-alias-scrollbar-bg-l2': { light: 'hsl(var(--maple-hue-light, 35) 20% 78%)', dark: 'hsl(var(--maple-hue-dark, 207) 12% 32%)' },
   '--dsw-alias-scrollbar-hover-l2': { light: 'hsl(var(--maple-hue-light, 35) 18% 71%)', dark: 'hsl(var(--maple-hue-dark, 207) 10% 39%)' },
   '--dsw-alias-menu-icon': { light: 'hsl(var(--maple-hue-light, 35) 8% 35%)', dark: 'hsl(var(--maple-hue-dark, 207) 18% 80%)' },
