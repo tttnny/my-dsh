@@ -298,6 +298,34 @@ test('每条令牌的配方都是一个真颜色，不是空串或认不出的�
   }
 });
 
+/**
+ * 宿主组件引用、但 `design-platform.css` 里没有定义的令牌。
+ * 这些位置在宿主里本来就无色（`var()` 落到空值），只有主题补上才会显示，
+ * 主题不补就一直是空的。清单随宿主演进，这里钉住的是「补了没有」。
+ */
+const HOST_USED_UNDEFINED = [
+  '--dsw-alias-bg-l1',
+  '--dsw-alias-bg-l2',
+  '--dsw-alias-bg-layer-4',
+  '--dsw-alias-fill-l1',
+  '--dsw-alias-fill-l2',
+  '--dsw-alias-fill-tertiary',
+  '--dsw-alias-fill-tsp-secondary',
+  '--dsw-alias-label-error',
+  '--dsw-alias-label-quaternary',
+  '--dsw-alias-separator-primary',
+];
+
+test('宿主用了却没自己定义的令牌，插件都补上了', () => {
+  const missing = HOST_USED_UNDEFINED.filter((name) => !(name in light) || !(name in dark));
+  assert.deepEqual(missing, [], `这些令牌宿主在用但没定义，插件也没补：${missing.join('、')}`);
+});
+
+test('补上的错误色与标注级文字也过 AA', () => {
+  report.push(['light label-error', assertContrast(light, '浅色错误色', '--dsw-alias-label-error', '--dsw-alias-bg-base', 4.5)]);
+  report.push(['dark label-error', assertContrast(dark, '深色错误色', '--dsw-alias-label-error', '--dsw-alias-bg-base', 4.5)]);
+});
+
 test('每一个 --dsw-alias-* / --dsw-specific-* 都在两套里各写了一次', () => {
   const lightNames = Object.keys(light).sort();
   const darkNames = Object.keys(dark).sort();
