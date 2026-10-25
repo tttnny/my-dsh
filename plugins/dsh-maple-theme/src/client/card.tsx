@@ -60,6 +60,8 @@ function HueSlider({ value, label, onChange }: {
       step={1}
       value={value}
       aria-label={label}
+      // 读屏报「色相 35 度」而不是裸数字：这个值的单位对理解很关键。
+      aria-valuetext={`${value}°`}
       onChange={(event) => { onChange(Number(event.currentTarget.value)) }}
     />
   );

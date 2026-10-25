@@ -15,7 +15,7 @@ export const CARD_CSS = `
 .dsh-maple-row-field{flex:none;display:flex;align-items:center;gap:8px}
 .dsh-maple-number{width:88px}
 /* 色相滑块：轨道本身铺一条色相环，拖到哪就是哪个色，比看数字直观。 */
-.dsh-maple-hue{width:140px;height:20px;appearance:none;background:transparent;cursor:pointer}
+.dsh-maple-hue{width:140px;height:32px;appearance:none;background:transparent;cursor:pointer;margin:0}
 .dsh-maple-hue::-webkit-slider-runnable-track{height:6px;border-radius:999px;corner-shape:round;
   background:linear-gradient(to right,
     hsl(0 60% 62%), hsl(40 60% 62%), hsl(80 60% 62%), hsl(120 60% 62%),
