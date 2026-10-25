@@ -199,6 +199,17 @@ html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-cha
   font-weight: 600;
 }
 
+/* 首末列的内边距：宿主把首列的左内边距与末列的右内边距归零，让表格文字与正文左沿对齐。
+ * 这里给表头填了底色、给四角上了圆角，归零之后文字就顶在填色块的边缘上，
+ * 所以在填色块这一侧把内边距补回来。 */
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(th:first-child, td:first-child) {
+  padding-inline-start: 12px;
+}
+
+html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(th:last-child, td:last-child) {
+  padding-inline-end: 12px;
+}
+
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(thead > tr > th:first-child) {
   border-start-start-radius: var(--dsw-radius-sm);
 }
