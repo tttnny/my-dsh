@@ -32,7 +32,6 @@ html[data-maple-theme='on'] body[data-ds-dark-theme] {
  * 段落自己的 margin 被归零。所以要改的是容器那一个 gap，不是 p 的 margin。
  * 容器是包住 markdown 根节点的那个 div，用 :has() 从根节点往上认。 */
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) {
-  --maple-gap: var(--maple-p-gap, 10px);
 }
 
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :has(> [class*='markdown']) {
