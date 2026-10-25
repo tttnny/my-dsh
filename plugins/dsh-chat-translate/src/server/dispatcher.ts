@@ -290,11 +290,15 @@ export class TranslationDispatcher {
       // 通道伤不重掷——断了就断了，重试只是白烧流量，救活归用户的点击。
       // 答案与它的修形结果成对留在 accepted 里：循环结束后直接取，不再重算。
       // 重掷失手不能没收已有答案——第一份译文即便形状不齐也仍可读，照收。
+      // 唯一不收的是**正文没写全**的那一份（见下面的缺段判断），而对付缺段的
+      // 第二问换带标记的形状：同一段原文、同一个模型，标记把它框成「一整段
+      // 待译内容」，模型就不再把开头那段当成整段交差。
       let accepted: { answer: string; repair: ShapeRepair } | null = null;
+      let packed = false;
       for (let attempt = 0; attempt < 2; attempt++) {
         let answer: string;
         try {
-          answer = (await this.fetchReplyAnswers(adapter, [piece], config))[0] ?? '';
+          answer = (await this.fetchReplyAnswers(adapter, [piece], config, packed))[0] ?? '';
         } catch (err) {
           if (accepted === null) {
             recordLedgerFailure(ledger, [key], classifyError(err));
@@ -306,11 +310,21 @@ export class TranslationDispatcher {
         }
         accepted = { answer, repair: repairShape(piece.text, answer) };
         if (accepted.repair.text !== null) break;
+        packed = accepted.repair.missingContent === true;
       }
       if (accepted === null) continue;
       const { answer, repair } = accepted;
       if (repair.text !== null) {
         out.set(key, this.assemble(piece, repair.text, true));
+        continue;
+      }
+      if (repair.missingContent) {
+        // 缺段没有照收这条退路：收下就等于把原文那几段永久丢掉，读者还以为
+        // 是模型没话说。整块保持原文，失败标记留给它，重翻由手点发起。
+        recordLedgerFailure(ledger, [key], { detail: repair.error ?? '', reason: 'channel' });
+        console.warn(
+          `[dsh-chat-translate] reply block ${piece.block} #${piece.index} came back short, keeping the original: ${repair.error}`
+        );
         continue;
       }
       // 第三层防线：照收。结构没修齐也展示模型的译文——链接数不等时不回填
@@ -331,18 +345,22 @@ export class TranslationDispatcher {
   /**
    * 发出一次正文请求，返回逐片段的裸答案（打包标记已剥除、首尾已 trim）。
    * 空返回与打包拆不回都按通道失败抛出——形状对不对在这里不算败因。
+   *
+   * @param packed - 单个片段也走带标记的打包形状。缺段之后的重问用它：标记把
+   *   这一段框成「一整段待译内容」，模型不再把开头那段当整段交差。
    */
   private async fetchReplyAnswers(
     adapter: ITranslationAdapter,
     batch: ReplyPiece[],
-    config: PluginConfig
+    config: PluginConfig,
+    packed = false
   ): Promise<string[]> {
     const timeout = config.aiTimeoutMs || 600000;
     const abortCtrl = new AbortController();
     const timer = setTimeout(() => abortCtrl.abort(), timeout);
     let answers: string[];
     try {
-      if (batch.length === 1) {
+      if (batch.length === 1 && !packed) {
         answers = [
           await adapter.translate(batch[0]!.text, abortCtrl.signal, config, {
             maxTokens: REPLY_MAX_OUTPUT_TOKENS,

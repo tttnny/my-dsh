@@ -235,16 +235,17 @@ await testAsync('Markdown shape drift is accepted, never discarded', async () =>
   assert.ok(cache.get(source.toLowerCase()), '照收的译文进缓存');
 });
 
-await testAsync('A genuine block merge still keeps the original', async () => {
-  // 骨架真破了（两段并一段、非空行数对不上）且重掷仍破——照收策略下模型译文
-  // 结构会漂，但通道正常时块不再回退原文；这里锁定的仍是「非空行数对不上」
-  // 这一类 repairShape 修不了的路径最终也照收，失败标记只留给通道伤。
+await testAsync('Text that came back short keeps the original instead of dropping paragraphs', async () => {
+  // 三段的原文，模型只写回一段（弱模型把开头那段当整段交差是真实的退化形态）。
+  // 收下它就是永久丢掉后两段：整块保持原文，并如实报一类失败交给手点重翻。
   const { entry, dispatcher } = makeDispatcher(async () => '甲乙丙全挤成一行');
   await entry.update({ baseUrl: 'http://x', model: 'm' });
   const source = 'one\n\ntwo\n\nthree';
   const result = (await dispatcher.translateReplyBlocks([source]))[0];
-  assert.equal(result.ok, true, '形状修不齐也照收，不否决内容');
-  assert.equal(result.translated, '甲乙丙全挤成一行', '模型译文原样进成品');
+  assert.equal(result.ok, false, '正文少了几段不是「形状漂移」，不能照收');
+  assert.equal(result.translated, source, '整块保持原文，读者看到的是完整的');
+  assert.equal(result.reason, 'channel', '救法是点 ↻ 重翻，不是去改设置');
+  assert.ok((result.detail ?? '').length > 0, '悬停要说出为什么');
 });
 
 await testAsync('Inline code may be translated, added or dropped without veto', async () => {

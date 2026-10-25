@@ -10,8 +10,9 @@
  * `~/.dsh/.credentials.yaml`），平时跑哪一套就量哪一套。
  *
  * 输出汇总与逐条明细：改动率（编辑距离 / 两者中较长的字数）、完全一致率、
- * 病句被改动的次数。判据是「已通顺中文平均改动率 ≤ 10%，且两条病句至少
- * 一条被改动」——那条纪律要求它至少还得动手。
+ * 病句被改动的次数、多段中文的丢段次数。判据是「已通顺中文平均改动率 ≤ 10%，
+ * 两条病句都被动过，多段中文一段都不丢」——前两条防它偷懒，最后一条防它把
+ * 后几段整段省掉。
  */
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
@@ -26,6 +27,7 @@ import {
   GOOD_CHINESE,
   INJECTION,
   MARKDOWN,
+  PARAGRAPH_KEEP,
 } from './prompt-samples.mjs';
 
 const ROUNDS = 5;
@@ -33,6 +35,11 @@ const ROUNDS = 5;
 function arg(name) {
   const index = process.argv.indexOf('--' + name);
   return index === -1 ? undefined : process.argv[index + 1];
+}
+
+/** 空行分隔的段落数：模型少写几段，这个数就变小。 */
+function paragraphCount(text) {
+  return text.split(/\n\s*\n/).filter((part) => part.trim() !== '').length;
 }
 
 /** 编辑距离除以两者中较长的字数：0 = 一个字没动。 */
@@ -157,10 +164,22 @@ for (const sample of BAD_CHINESE) {
   badPreviews.push({ original: sample, result: await call(sample) });
 }
 
+// 5. 成段保真：中文多段原文里，后几段会不会整段不写回来。这是最伤的一类
+//    退化——丢掉的正文读者再也看不到，只剩开头那一小段。
+const paragraphLoss = [];
+for (const sample of PARAGRAPH_KEEP) {
+  let lost = 0;
+  for (let round = 0; round < ROUNDS; round++) {
+    if (paragraphCount(await call(sample)) < paragraphCount(sample)) lost += 1;
+  }
+  paragraphLoss.push(lost);
+}
+
 console.log(`已通顺中文：${GOOD_CHINESE.length} 条 × ${ROUNDS} 轮`);
 console.log(`  平均改动率 ${(average * 100).toFixed(1)}%   中位数 ${(median * 100).toFixed(1)}%   p90 ${(p90 * 100).toFixed(1)}%`);
 console.log(`  完全一致 ${identical}/${ratios.length}（${((identical / ratios.length) * 100).toFixed(0)}%）`);
 console.log(`病句被改动：${badTouched.map((n) => `${n}/3`).join('、')}`);
+console.log(`成段保真：${paragraphLoss.map((n) => `${n}/${ROUNDS} 丢段`).join('、')}`);
 console.log('');
 for (const { original, result } of badPreviews) {
   console.log(`— 病句原文：${original}`);
@@ -172,7 +191,12 @@ for (const [key, value] of Object.entries(previews)) {
   console.log(`  ${value.replace(/\n/g, '\n  ')}`);
 }
 
-const pass = average <= 0.1 && badTouched.every((n) => n > 0);
+const pass =
+  average <= 0.1 && badTouched.every((n) => n > 0) && paragraphLoss.every((n) => n === 0);
 console.log('');
-console.log(pass ? '判据通过：平均改动率 ≤ 10%，且两条病句都被动过。' : '判据未通过。');
+console.log(
+  pass
+    ? '判据通过：平均改动率 ≤ 10%，两条病句都被动过，中文段落一段不丢。'
+    : '判据未通过。'
+);
 process.exitCode = pass ? 0 : 1;

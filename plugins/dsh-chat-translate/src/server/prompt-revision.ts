@@ -26,7 +26,7 @@ import { SAMPLING_TEMPERATURE, SAMPLING_TOP_P } from './sampling.ts';
  * Bump it — and only here — whenever the built-in prompt in `src/prompt.ts`
  * changes what the model is asked to do. Copy-only edits may ride.
  */
-export const PROMPT_REVISION = 'r6';
+export const PROMPT_REVISION = 'r7';
 
 /**
  * Cache generation for the prompt currently in force.

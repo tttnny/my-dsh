@@ -119,6 +119,12 @@ export interface ShapeRepair {
   text: string | null;
   /** 修不了时的一句理由，直接进悬停文案。 */
   error: string | null;
+  /**
+   * 修不了的原因是不是**正文没写全**：整段少写了才算，记号、竖线、链接这些
+   * 骨架漂移不算。内容少了没有「照收」这条退路——收下就等于把原文那几段
+   * 永久丢掉，所以调用方据此换一种救法。
+   */
+  missingContent?: boolean;
 }
 
 function isBlankLine(line: string): boolean {
@@ -181,8 +187,10 @@ function spliceLineShape(want: string, got: string): string {
 
 /**
  * 形状修复：核对与修形一次过，能修的绝不成败因。骨架按**段落块**对齐——
- * 1. 块数必须相等（模型把两段并拢、或把一段劈开，才是真破损）；空行布局
- *    一律取原文——模型吞空行、多空行都被重排消化。
+ * 1. 块数可以因为空行漂移不等（模型吞空行、多空行都由重排消化），但**非空行
+ *    一条都不能少**：少了就是正文被吞了一段（弱模型会把开头那段当整段交差，
+ *    后面几段一个字都不写），带 missingContent 交回调用方重掷。多出来的行
+ *    按非空行签名 1:1 对齐后重排。
  * 2. 块内**结构行**逐一对齐（记号类别、表格竖线数、链接个数、缩进代码的
  *    缩进），行首前缀修回原文同款：`##`→`###`、`-`→`*`、序号、引用深度、
  *    列表缩进的漂移就此消失。
@@ -200,7 +208,17 @@ export function repairShape(original: string, translated: string): ShapeRepair {
     const wantFilled = wantLines.filter((line) => !isBlankLine(line));
     const gotFilled = gotLines.filter((line) => !isBlankLine(line));
     if (wantFilled.length !== gotFilled.length) {
-      return { text: null, error: `line count changed (${wantLines.length} -> ${gotLines.length})` };
+      // 非空行也少了 = 正文被吞了一段（弱模型会把开头那段当整段交差，后面几段
+      // 一个字都不写）。这不是散文重排，照收就是永久丢掉原文那几段，所以带
+      // missingContent 交回调用方换救法。
+      const short = wantFilled.length > gotFilled.length;
+      return {
+        text: null,
+        error: short
+          ? `content came back short (${wantFilled.length} lines -> ${gotFilled.length})`
+          : `line count changed (${wantLines.length} -> ${gotLines.length})`,
+        missingContent: short,
+      };
     }
     for (let index = 0; index < wantFilled.length; index++) {
       const sw = lineSignature(wantFilled[index] ?? '');

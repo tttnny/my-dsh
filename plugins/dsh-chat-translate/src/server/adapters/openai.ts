@@ -2,7 +2,7 @@ import { TranslationFailure } from '../types.ts';
 import type { ITranslationAdapter, PluginConfig, TranslateAdapterOptions } from '../types.ts';
 import { TRANSLATE_API_KEY_REF } from '../credentials.ts';
 import type { KeyReader } from '../credentials.ts';
-import { BATCH_PROMPT_CLAUSE, resolvePrompt } from '../../prompt.ts';
+import { BATCH_PROMPT_CLAUSE, promptFor } from '../../prompt.ts';
 import { SAMPLING_TEMPERATURE, SAMPLING_TOP_P } from '../sampling.ts';
 
 /**
@@ -17,17 +17,19 @@ import { SAMPLING_TEMPERATURE, SAMPLING_TOP_P } from '../sampling.ts';
  */
 
 /**
- * 一条请求的前缀：配置页上那段指令，打包多段时再接上标记约定。
+ * 一条请求的前缀：配置页上那段指令，正文分了段时接上成段保真那一句，打包
+ * 多段时再接上标记约定。
  *
  * 导出是因为它就是模型在正文之前原样收到的那段文字——回归测试直接断言它，
  * 而不是绕一圈发一个请求。
  *
  * @param mode - `plain` for one fragment, `blocks` for a packed multi-part request.
+ * @param text - 这一次要送出去的待译正文；分段与否决定要不要追加保真那一句。
  * @param prompt - the prompt as configured; blank means the built-in default.
  * @returns the complete request prefix.
  */
-export function buildRequestPrefix(mode: 'plain' | 'blocks', prompt?: string): string {
-  const base = resolvePrompt(prompt);
+export function buildRequestPrefix(mode: 'plain' | 'blocks', text: string, prompt?: string): string {
+  const base = promptFor(text, prompt);
   return mode === 'plain' ? base : `${base}\n\n${BATCH_PROMPT_CLAUSE}`;
 }
 
@@ -40,7 +42,7 @@ export function buildRequestPrefix(mode: 'plain' | 'blocks', prompt?: string): s
  * @returns the user message content.
  */
 export function buildUserMessage(mode: 'plain' | 'blocks', text: string, prompt?: string): string {
-  return `${buildRequestPrefix(mode, prompt)}\n\n${text}`;
+  return `${buildRequestPrefix(mode, text, prompt)}\n\n${text}`;
 }
 
 export class OpenAiCompatibleAdapter implements ITranslationAdapter {

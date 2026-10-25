@@ -21,7 +21,7 @@ import {
   buildRequestPrefix,
   buildUserMessage,
 } from '../src/server/adapters/openai.ts';
-import { DEFAULT_PROMPT } from '../src/prompt.ts';
+import { DEFAULT_PROMPT, PARAGRAPH_KEEP_CLAUSE } from '../src/prompt.ts';
 import { cacheGeneration, PROMPT_REVISION } from '../src/server/prompt-revision.ts';
 import { SAMPLING_TEMPERATURE, SAMPLING_TOP_P } from '../src/server/sampling.ts';
 import {
@@ -216,7 +216,7 @@ await test('正文只有 openai 一条通道：别的适配器不参与', async 
 await test('默认提示词先立两个短例，再给规则：中文原样抄写，外文才翻', async () => {
   // 只管结构，不管措辞：换一套同义的说法不该红，把示例挪到规则后面、或把
   // 中文改成「翻译/整理」才该红。样本集见 scripts/prompt-samples.mjs。
-  const prompt = buildRequestPrefix('plain');
+  const prompt = buildRequestPrefix('plain', 'Hello');
   const lines = prompt.split('\n').map((line) => line.trim()).filter(Boolean);
   const firstRuleAt = lines.findIndex((line) => line.includes('这段文字') || line.includes('下面这段'));
   assert.ok(firstRuleAt > 0, '规则前面必须还有东西：示例得排在最前');
@@ -235,13 +235,32 @@ await test('默认提示词先立两个短例，再给规则：中文原样抄�
     !prompt.includes('整理成') && !/翻译为简体中文/.test(prompt),
     '首句的动词不能是翻译或整理：那会让已通顺的中文被换一套说法'
   );
+  // 单段正文不追加成段保真：那时它没有要保的东西，只会让中文被多改一遍。
+  assert.ok(!prompt.includes('一段都不要少'), '只有一段时不该出现成段保真');
+});
+
+await test('成段保真只在正文分了段时追加，且排在生效指令的末尾', async () => {
+  // 小模型会把开头那段当整段交差、后几段整段不写；这一句压住那个退化。但它
+  // 会让只有一段的中文被多改一遍，所以只在正文自己分段时才出现。
+  const two = buildRequestPrefix('plain', '第一段。\n\n第二段。');
+  assert.ok(two.includes(PARAGRAPH_KEEP_CLAUSE), '分了段就带上它');
+  assert.ok(two.endsWith(PARAGRAPH_KEEP_CLAUSE), '它排在最后：给模型看的最后一条要求');
+  assert.ok(two.startsWith(DEFAULT_PROMPT), '默认指令整段在前，不改一个字');
+  assert.ok(!two.includes('一段都不要少') === false, '单独成句，看得见');
+  // 只有一段（含单换行、行内空行都以空行为界）时一律不带。
+  for (const single of ['只有一段。', '第一行\n第二行', '一段。\n']) {
+    assert.ok(!buildRequestPrefix('plain', single).includes(PARAGRAPH_KEEP_CLAUSE), single);
+  }
+  // 读者自己写的指令同样在后面接上这一句，保真不归读者维护。
+  const mine = '把收到的文字改写成人话。';
+  assert.equal(buildRequestPrefix('plain', '甲。\n\n乙。', mine), `${mine}\n${PARAGRAPH_KEEP_CLAUSE}`);
 });
 
 await test('正文当素材翻译：请求里只有一条 user 消息，没有 system 轮', async () => {
   // 模型没有默认 system_prompt，system 轮也不是它的训练格式；指令拼在正文
   // 前面的同一条 user 消息里。
   const message = buildUserMessage('plain', 'Hello');
-  assert.ok(message.startsWith(buildRequestPrefix('plain')), '指令在前');
+  assert.ok(message.startsWith(buildRequestPrefix('plain', 'Hello')), '指令在前');
   assert.ok(message.endsWith('\n\nHello'), '待译正文在后，空一行隔开');
   const packed = buildUserMessage('blocks', '⟪abcd0⟫\nHello');
   assert.ok(packed.indexOf('标记') < packed.indexOf('⟪abcd0⟫'), '打包约定排在待译正文之前');
@@ -249,13 +268,17 @@ await test('正文当素材翻译：请求里只有一条 user 消息，没有 s
 
 await test('配置页写了提示词就整段以它为准，打包版在后面追加标记约定', async () => {
   const mine = '把收到的文字改写成人话，名词与路径不动。';
-  assert.equal(buildRequestPrefix('plain', mine), mine, '单段版就是这段文字本身');
-  const packed = buildRequestPrefix('blocks', mine);
+  assert.equal(buildRequestPrefix('plain', 'Hello', mine), mine, '单段版就是这段文字本身');
+  const packed = buildRequestPrefix('blocks', '⟪abcd0⟫\nHello', mine);
   assert.ok(packed.startsWith(mine), '打包版先是我写的那段');
   assert.ok(packed.length > mine.length, '标记约定由插件追加，读者不用自己写');
   assert.ok(!packed.includes(DEFAULT_PROMPT), '默认指令不得混进来');
   // 空着写 = 用内置默认，与不传这个参数一模一样。
-  assert.equal(buildRequestPrefix('plain', '   '), buildRequestPrefix('plain'));
+  assert.equal(
+    buildRequestPrefix('plain', 'Hello', '   '),
+    buildRequestPrefix('plain', 'Hello'),
+    '空着写等于没写过'
+  );
 });
 
 await test('采样参数用官方推荐的温度与 top_p', async () => {
@@ -331,7 +354,8 @@ await test('改提示词让旧译文作废：同一段原文会重新请求', as
 
 await test('重掷撞上通道伤时，第一份译文照收，不退回原文', async () => {
   // 第一次形状不齐（会被重掷），第二次请求直接抛错。旧行为是照收第一份可读的
-  // 译文；重掷失手不该没收已经拿到手的中文。
+  // 译文；重掷失手不该没收已经拿到手的中文。这里第一份的毛病是记号漂移（标题
+  // 层级变了），内容一行不少——缺段的那一类没有照收这条退路，见下一条。
   const { dispatcher } = makeDispatcher();
   let calls = 0;
   useFakeAdapter(dispatcher, async () => {
@@ -339,13 +363,55 @@ await test('重掷撞上通道伤时，第一份译文照收，不退回原文',
     // 1 = 整批那次（失败，退到逐片单发）；2 = 单发第一次（形状不齐，触发重掷）；
     // 3 = 单发重掷（通道伤）。重掷失手不该没收第 2 次那份可读的译文。
     if (calls === 1) throw new Error('503 Service Unavailable');
-    if (calls === 2) return '译文吞掉了空行';
+    if (calls === 2) return '### 第一段\n\n第二段';
     throw new Error('503 Service Unavailable');
   });
-  const results = await dispatcher.translateReplyBlocks(['first paragraph\n\nsecond paragraph']);
-  assert.equal(calls, 3, '整批失败一次 + 单发两次（首次不齐、重掷抛错）');
-  assert.equal(results[0].translated, '译文吞掉了空行', '重掷失手不没收第一份答案：照收它');
+  const results = await dispatcher.translateReplyBlocks(['## 第一段\n\n第二段']);
+  assert.equal(calls, 2, '整批失败一次 + 单发重掷一次（重掷抛错即收手）');
+  assert.equal(results[0].translated, '## 第一段\n\n第二段', '第一份照收，前缀修回原文同款');
   assert.equal(results[0].detail, undefined, '照收不是失败，不带失败细节');
+});
+
+await test('正文整段没写回来时不照收：整块保持原文，并留下可重翻的一类失败', async () => {
+  // 模型把开头那段当整段交差，后几段一个字都不写。这不是形状漂移——收下它就
+  // 等于永久丢掉原文那几段，所以整块退回原文，失败标记留给手点 ↻ 重翻。
+  const { dispatcher } = makeDispatcher();
+  let calls = 0;
+  const modes = [];
+  useFakeAdapter(dispatcher, async (text, signal, config, options) => {
+    calls++;
+    modes.push(options?.mode);
+    return '只有第一段回来了';
+  });
+  const source = '第一段\n\n第二段\n\n第三段';
+  const results = await dispatcher.translateReplyBlocks([source]);
+  assert.equal(calls, 3, '整批一次 + 单发重掷两次（两次都只回来一段）');
+  assert.equal(results[0].ok, false, '缺段不是成功');
+  assert.equal(results[0].translated, source, '整块保持原文，不出现半截中文');
+  assert.equal(results[0].reason, 'channel', '救法是点 ↻ 重翻');
+  assert.match(results[0].detail ?? '', /came back short/, '说清是正文少了，不是形状漂移');
+  // 缺段后的重问换带标记的打包形状：标记把这段框成「一整段待译内容」，模型
+  // 不再把开头那段当成整段。第二问起逐步由 plain 换成 blocks。
+  assert.deepEqual(modes, ['plain', 'plain', 'blocks'], '缺段后的重掷换打包形状');
+});
+
+await test('缺段重掷救回整段时按成功收下，不留失败标记', async () => {
+  // 第一次只回来开头那段（缺段），第二问带标记就写全了——这是真实模型上的
+  // 常见走法，读者最终看到的是完整译文，不该留 ↻。
+  const { dispatcher } = makeDispatcher();
+  let calls = 0;
+  useFakeAdapter(dispatcher, async (text, signal, config, options) => {
+    calls++;
+    if (options?.mode === 'blocks') return echoMarkers(text);
+    return '第一段而已';
+  });
+  const source = 'one\n\ntwo\n\nthree';
+  const results = await dispatcher.translateReplyBlocks([source]);
+  assert.equal(calls, 3, '首问缺段、重掷仍缺段，第三问带标记救回');
+  assert.equal(results[0].ok, true, '救回来的整段不是失败');
+  assert.ok(!results[0].translated.includes('⟪'), '标记被剥干净');
+  assert.ok(results[0].translated.includes('译:one'), '带标记那一问的译文被采纳');
+  assert.equal(results[0].detail, undefined, '成功不带失败细节');
 });
 
 await test('单段请求带 max_tokens 与 plain 模式；多段打包带 blocks 模式', async () => {

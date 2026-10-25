@@ -21,6 +21,12 @@
  *   （`pipeline/segments.ts`），提示词只管让模型少制造要修的地方，不逐条
  *   规定行数、链接括号这些细节——那些由代码兜底。
  *
+ * 「原文分几段的，译文也分几段，一段都不要少」不在默认里，由
+ * {@link promptFor} 按待译正文**追加**：小模型会把开头那段当整段交差、后面
+ * 几段整段不写，这一句能把丢段压到零；但它同时会让本来就只有一段的中文被
+ * 多改一遍（实测同样的五条单段样本，改动率从约 2% 升到约 10%）。所以它只在
+ * 正文自己分了段时才出现——那一刻丢段才是真正的风险。
+ *
  * 代码围栏在送模型之前就被切掉了（`pipeline/segments.ts`），所以这里不提
  * 围栏本身，只按括号形状描述打包标记：点名具体字符会让模型把整段约定当成
  * 待译内容。
@@ -35,6 +41,14 @@ export const DEFAULT_PROMPT = [
   `下面这段文字：外文译成简体中文；中文原样抄写，只有句子读不通时才改那几句。`,
   `保持原有的 Markdown 记号不变。只输出结果。`,
 ].join('\n');
+
+/**
+ * 多段正文追加的一句：原文分几段，译文就分几段，一段都不许少。
+ *
+ * 它单独成句、接在默认指令之后，不并进上面那句话：并进去会失效。待译正文
+ * 只有一段时它不出现——那时它没有要保的东西，只会让中文被多改一遍。
+ */
+export const PARAGRAPH_KEEP_CLAUSE = `原文分几段的，译文也分几段，一段都不要少。`;
 
 /**
  * 打包成多段时追加的一段：说清每段自带一行标记、标记要原样带出、段与段不
@@ -52,6 +66,28 @@ export const BATCH_PROMPT_CLAUSE =
 export function resolvePrompt(prompt: string | undefined): string {
   const trimmed = (prompt ?? '').trim();
   return trimmed === '' ? DEFAULT_PROMPT : trimmed;
+}
+
+/** 空行分隔的段落数：待译正文自己分了几段。 */
+function paragraphCount(text: string): number {
+  return text.split(/\n\s*\n/).filter((part) => part.trim() !== '').length;
+}
+
+/**
+ * 拼一条请求真正用的前缀：生效的指令，正文分了段时再接上
+ * {@link PARAGRAPH_KEEP_CLAUSE}。
+ *
+ * 追加的最后一句是给模型看的最后一条要求，所以它排在生效指令的末尾——生效
+ * 指令由读者改写时同样如此，成段保真不归读者维护。
+ *
+ * @param text - 这一次要送出去的待译正文（打包时带标记的整段负载）。
+ * @param prompt - the prompt as configured; blank means the built-in default.
+ * @returns 拼在待译正文前面的那段文字。
+ */
+export function promptFor(text: string, prompt?: string): string {
+  const base = resolvePrompt(prompt);
+  if (paragraphCount(text) < 2) return base;
+  return `${base}\n${PARAGRAPH_KEEP_CLAUSE}`;
 }
 
 /**
