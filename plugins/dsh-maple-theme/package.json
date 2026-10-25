@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-maple-theme",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "把 Obsidian 的 Maple 主题搬进 DSH：暖白 / 冷灰两套配色、内嵌字体、对话正文的排版、代码块与侧栏观感。",
   "type": "module",
   "main": "lib/index.js",
