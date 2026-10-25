@@ -36,10 +36,10 @@ export function fontCss(): string {
 }
 
 html[data-maple-theme='on'][data-maple-font='on'] body {
-  --dsw-font-family: var(--dsh-font-family-text, '${FAMILY}'), '${FAMILY}',
-    var(--dsh-font-family-text-default);
-  --ds-font-family-code: var(--dsh-font-family-code, '${FAMILY}'), '${FAMILY}',
-    var(--dsh-font-family-code-default);
+  /* 用户没选字体时，var() 的兜底就是 maplemono 本身，所以这里只写一次；
+   * 用户选过字体时，他的字族排首位，maplemono 仍然兜在末尾。 */
+  --dsw-font-family: var(--dsh-font-family-text, '${FAMILY}'), var(--dsh-font-family-text-default);
+  --ds-font-family-code: var(--dsh-font-family-code, '${FAMILY}'), var(--dsh-font-family-code-default);
 }
 `;
 }
