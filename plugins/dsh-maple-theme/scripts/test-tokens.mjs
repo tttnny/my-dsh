@@ -218,15 +218,25 @@ test('主按钮文字压在强调色上仍然读得清（AA 大字）', () => {
   report.push(['dark button', assertContrast(dark, '深色主按钮', '--dsw-alias-label-primary-foreground', '--dsw-alias-brand-primary', 3)]);
 });
 
-test('发送按钮的白色图标压在填充色上达到 AA（宿主写死 #fff，不跟前景令牌）', () => {
-  const fgs = [[255, 255, 255], [255, 255, 255]];
-  const pairs = [
-    ['浅色发送按钮', resolveVar(light, '--dsw-alias-button-info-fill'), fgs[0]],
-    ['深色发送按钮', resolveVar(dark, '--dsw-alias-button-info-fill'), fgs[1]],
-  ];
-  for (const [label, fill, white] of pairs) {
-    const ratio = contrastRgb(hslaToRgb(fill), white);
-    assert.ok(ratio >= 4.5, `${label}：${fill} 与白色只有 ${ratio.toFixed(2)}:1，要求 4.5:1`);
+test('发送按钮的填充跟随色相，且色相环全周压白字都过 AA', () => {
+  // 两条一起钉。第一条是「跟随」：发送键读 --dsw-alias-button-info-fill，写死一个色相
+  // 就换过预设也不动——同一屏里别的按钮都跟着走，只有它停在宿主的深绿上。
+  // 第二条才是对比度，且必须按**色相环全周**扫：只看出厂的两个角度，60°（黄）那一圈
+  // 会被漏掉，而那里白字最不够。
+  for (const [mode, vars] of [['浅色', light], ['深色', dark]]) {
+    const fill = resolveVar(vars, '--dsw-alias-button-info-fill');
+    assert.match(fill, /--maple-hue-(light|dark)/, `${mode}发送按钮写死了色相：${fill}`);
+    for (let hue = 0; hue < 360; hue += 1) {
+      const swapped = fill
+        .replace(/var\(--maple-hue-light,\s*(-?[\d.]+)\)/g, String(hue))
+        .replace(/var\(--maple-hue-dark,\s*(-?[\d.]+)\)/g, String(hue))
+        .replace(/calc\((-?[\d.]+)\s*([+-])\s*([\d.]+)\)/g, (_m, a, op, b) => String(
+          op === '+' ? Number(a) + Number(b) : Number(a) - Number(b),
+        ));
+      const ratio = contrastRgb(hslaToRgb(swapped), [255, 255, 255]);
+      assert.ok(ratio >= 4.5, `${mode}发送按钮在色相 ${hue}° 时：${swapped} 与白色只有 ${ratio.toFixed(2)}:1`);
+    }
+    report.push([`${mode} 发送按钮`, contrastRgb(hslaToRgb(fill), [255, 255, 255])]);
   }
 });
 
@@ -473,6 +483,7 @@ test('宿主定义且组件在用的语义令牌都覆盖到了', () => {
     '--dsw-alias-state-warn-secondary',
     '--dsw-alias-state-success-tertiary',
     '--dsw-specific-menu',
+    '--dsw-alias-button-info-fill',
   ];
   const missing = must.filter((name) => !(name in light) || !(name in dark));
   assert.deepEqual(missing, [], `这些令牌没覆盖：${missing.join('、')}`);

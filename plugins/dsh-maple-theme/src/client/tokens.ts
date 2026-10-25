@@ -129,8 +129,12 @@ export const MAPLE_TOKENS = {
   '--dsw-alias-interactive-bg-hover': { light: 'hsl(var(--maple-hue-light, 35) 26% 38% / 7%)', dark: 'hsl(var(--maple-hue-dark, 207) 24% 88% / 8%)' },
   '--dsw-alias-interactive-bg-active': { light: 'hsl(var(--maple-hue-light, 35) 26% 38% / 12%)', dark: 'hsl(var(--maple-hue-dark, 207) 24% 88% / 14%)' },
   '--dsw-alias-interactive-bg-hover-solid': { light: 'hsl(var(--maple-hue-light, 35) 12% 93%)', dark: 'hsl(var(--maple-hue-dark, 207) 14% 16%)' },
-  '--dsw-alias-button-info-fill': { light: 'hsl(162 62% 30%)', dark: 'hsl(178 34% 34%)' },
-  '--dsw-alias-button-info-hover': { light: 'hsl(162 62% 24%)', dark: 'hsl(178 34% 42%)' },
+  /* 发送键读的是 button-info-fill，不是 button-primary-fill：宿主 InputBar 用它给那一枚圆钮上色，
+   * 箭头是宿主自己写死的 #fff（不跟前景令牌）。这一对必须跟随色相，否则换过预设之后
+   * 同一屏里「充值」跟着走、「发送」不跟着走。
+   * 明度取 36% / 34%：色相环上每个角度压白字都过 4.5:1（最差 4.67:1，在 60°）。 */
+  '--dsw-alias-button-info-fill': { light: 'hsl(var(--maple-hue-light, 35) 30% 36%)', dark: 'hsl(var(--maple-hue-dark, 207) 30% 34%)' },
+  '--dsw-alias-button-info-hover': { light: 'hsl(var(--maple-hue-light, 35) 32% 30%)', dark: 'hsl(var(--maple-hue-dark, 207) 32% 40%)' },
   '--dsw-alias-brand-primary-new-colorprimary-new-color': { light: 'hsl(var(--maple-hue-light, 35) 30% 42%)', dark: 'hsl(var(--maple-hue-dark, 207) 30% 66%)' },
   '--dsw-alias-button-primary-fill': { light: 'hsl(var(--maple-hue-light, 35) 30% 42%)', dark: 'hsl(var(--maple-hue-dark, 207) 30% 66%)' },
   '--dsw-alias-button-primary-hover': { light: 'hsl(var(--maple-hue-light, 35) 32% 34%)', dark: 'hsl(var(--maple-hue-dark, 207) 32% 76%)' },
