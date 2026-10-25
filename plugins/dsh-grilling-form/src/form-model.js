@@ -118,7 +118,7 @@ import { normalizeOption, readExplanation } from './recommendation.js';
  */
 
 /**
- * 会话事件里本模块用到的那两件。宿主半边的闸门折叠只看这两类事件，别的原样放过。
+ * 会话事件里本模块用到的那几件。宿主半边的闸门折叠只看这几类事件，别的原样放过。
  * @typedef {{ type: string, seq: number, data: Record<string, unknown> }} SessionEventLike
  */
 
@@ -153,15 +153,15 @@ export const QUESTION_TYPES = ['single', 'multi', 'free'];
  * 一张表的身份记号：调用 id 里的 4 位小写字母数字。它只出现在作答块的起止行里，
  * 用户看不见也不用管；两张表、两个轮次之间靠它互相不认领。
  *
- * PTC 模式下这张表是 `run_code` 的子调用，id 是 `<父调用 id>:ptc:<序号>`：先剥掉这段后缀再取。
- * 序号每轮都从 1 数起，拿它算记号会让两轮的第一张表都叫 `ptc1`，那块作答互相认领；
- * 剥掉之后认的还是父调用 id，与原生模式一样按调用取记号。
+ * PTC 模式下这张表是 `run_code` 的子调用，id 是 `<父调用 id>:ptc:<序号>`。`ptc` 这三个字符去掉、
+ * 序号留着：只去后缀会把同一个 `run_code` 里接连派出的两张表压成同一个记号，只留序号又会让
+ * 两轮的第一张表撞在一起。父调用 id 加序号一起算，同一轮里不同的子调用、不同轮次之间都分得开。
  * @param {unknown} callId - 那次调用的 id。
  * @returns {string} 4 位记号。
  */
 export function shortFormId(callId) {
   const text = typeof callId === 'string' ? callId : '';
-  const compact = text.replace(/:ptc:\d+$/, '').replace(/[^0-9a-z]/gi, '').toLowerCase();
+  const compact = text.replace(/:ptc:/g, '').replace(/[^0-9a-z]/gi, '').toLowerCase();
   return compact.length >= 4 ? compact.slice(-4) : compact.padStart(4, '0');
 }
 
@@ -263,21 +263,21 @@ function readRound(args) {
 }
 
 /**
- * argsRaw → 模型出的题（readRound 的题面那一半，界面用）。
- * @param {unknown} argsRaw - 调用的原始参数文本。
+ * args → 模型出的题（readRound 的题面那一半，界面用）。
+ * @param {unknown} args - 调用的原始参数文本，或已解析的参数对象。
  * @returns {Question[]} 题目模型。
  */
-export function readQuestions(argsRaw) {
-  return readRound(argsRaw).questions;
+export function readQuestions(args) {
+  return readRound(args).questions;
 }
 
 /**
- * argsRaw 里这次调用有没有点名取代前一张待答的表（界面用它认「后面那张把这张取代了」）。
- * @param {unknown} argsRaw - 调用的原始参数文本。
+ * args 里这次调用有没有点名取代前一张待答的表（界面用它认「后面那张把这张取代了」）。
+ * @param {unknown} args - 调用的原始参数文本，或已解析的参数对象。
  * @returns {boolean} 带 replace: true 时为 true。
  */
-export function replacesEarlier(argsRaw) {
-  return readRound(argsRaw).replace;
+export function replacesEarlier(args) {
+  return readRound(args).replace;
 }
 
 /**
@@ -778,9 +778,10 @@ export function initialFormGate() {
 /**
  * 会话事件往前走一步。只认三件事，其余原样返回**同一个引用**（投影的驱动按引用判有没有变）：
  *
- *  - `tool/call` 是本工具且题面读得出来 ⇒ 记下这次调用（还只是候选，投没投出去要等结果）；
- *  - 它的 `tool/result` 说 `ok: true` ⇒ 这张表投出去了，进 `pending`；说别的（入参被拒、被闸门
- *    拦下）⇒ 候选丢掉，**前一张待答的表不动**；
+ *  - 这次调用的开始事件是本工具、且题面读得出来 ⇒ 记下这次调用（还只是候选，投没投出去要等结算）。
+ *    开始事件有两种：原生模式是 `tool/call`，PTC 模式是子调用的 `tool/ptc-dispatch-start`；
+ *  - 它的结算事件说 `ok: true` ⇒ 这张表投出去了，进 `pending`；说别的（入参被拒、被闸门
+ *    拦下）⇒ 候选丢掉，**前一张待答的表不动**。结算同样有两种：`tool/result` 与 `tool/ptc-dispatch`；
  *  - 用户发言里出现这张表的身份记号 ⇒ 它被答了，`pending` 清空。转向消息、聊别的事、答别的表
  *    都不清空它。
  *
@@ -932,10 +933,12 @@ function blockToolName(block) {
 
 /**
  * 本轮里那次 `grilling_form` 调用。位置由 chat 的位置索引给出（按轮次取本轮的节点键），
- * 所以不靠 seq 猜边界；投出即结束本轮，取**最后一次**——被拒之后又投的那一次才算数。
+ * 所以不靠 seq 猜边界。
  *
  * PTC 模式下模型只调 `run_code`，这张表是它的**子调用**（宿主把子调用挂在根块的 `subCalls` 上），
- * 所以两处都要看：根块本身、以及每个根块的子调用。子调用那边同样取最后一次。
+ * 子调用还能再套下去，所以按子树找。一轮里可能有几次：原生模式下模型被拒之后重投，PTC 模式下
+ * 一段程序里连派两张。挑的是**最后一张真的投出去的**——闸门拦下的那张不算（它没进对话流，
+ * 这一轮展示给用户的是前面那张）。一张都没投出去时才退回最后一次，让工具行照旧说明为什么没投出。
  * @param {unknown} chat - chat 视图快照（ChatSnapshotLike）。
  * @param {unknown} turn - 轮次号。
  * @returns {{ block: unknown, toolName: unknown, callId: unknown }|undefined} 本轮的表单调用；没有就不画。
@@ -948,20 +951,36 @@ export function roundCall(chat, turn) {
   const getNode = snapshot.nodes?.get;
   if (typeof getNode !== 'function') return undefined;
   /** @type {{ block: unknown, toolName: unknown, callId: unknown }|undefined} */
-  let found;
+  let last;
+  /** @type {{ block: unknown, toolName: unknown, callId: unknown }|undefined} */
+  let shown;
   for (const key of keys) {
     if (typeof key !== 'string') continue;
     const node = getNode.call(snapshot.nodes, key);
     if (!isRecord(node) || node.kind !== 'tool-call') continue;
     const data = isRecord(node.data) ? node.data : undefined;
-    const root = data?.root;
-    if (!isRecord(root)) continue;
-    for (const block of [root, ...(Array.isArray(root.subCalls) ? root.subCalls : [])]) {
-      if (!isRecord(block)) continue;
+    for (const block of callsIn(data?.root)) {
       if (blockToolName(block) !== TOOL_NAME) continue;
-      found = { block, toolName: TOOL_NAME, callId: block.callId };
+      const call = { block, toolName: TOOL_NAME, callId: block.callId };
+      last = call;
+      if (drawsForm(readCallModel(block))) shown = call;
     }
   }
+  return shown ?? last;
+}
+
+/**
+ * 一个工具块自己以及它整棵子树里的调用，按深度优先的次序交出来（先自己、再各棵子树）。
+ * 只留真像调用块的记录：有工具名可读的。
+ * @param {unknown} block - 一个工具调用块。
+ * @returns {Record<string, unknown>[]} 这棵子树里的工具块。
+ */
+function callsIn(block) {
+  if (!isRecord(block)) return [];
+  /** @type {Record<string, unknown>[]} */
+  const found = blockToolName(block) === undefined ? [] : [block];
+  const children = Array.isArray(block.subCalls) ? block.subCalls : [];
+  for (const child of children) found.push(...callsIn(child));
   return found;
 }
 
@@ -1183,8 +1202,7 @@ export function pendingFormOf(state) {
  */
 export const FORM_GATE_UNIT = {
   key: GATE_KEY,
-  // 2：折叠开始认 PTC 的子调用事件（`tool/ptc-dispatch-start` / `tool/ptc-dispatch`），
-  // 旧版缓存里 PTC 轮次折出来的「没有待答的表」是错的，必须丢掉重折。
+  // 折叠语义的第 2 版：闸门认原生与 PTC 两套事件（见 foldFormGate），旧版折出来的状态不作数。
   stateVersion: 2,
   stateSchema: { parse: (value) => normalizeGate(value) },
   init: () => initialFormGate(),

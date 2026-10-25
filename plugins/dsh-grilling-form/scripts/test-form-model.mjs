@@ -28,6 +28,7 @@ import {
   messageText,
   parseImportedAnswersResult,
   pendingFormOf,
+  readCallModel,
   readFormModel,
   readQuestions,
   readStoredForm,
@@ -92,15 +93,21 @@ test('作答块的起止行：开头那行带这张表的身份记号，收尾�
   assert.equal(importBlockStart('k3f9'), '【拷问作答 k3f9】');
 });
 
-test('身份记号：PTC 子调用 id 剥掉「:ptc:<序号>」再取，两轮的第一张表不会撞记号', () => {
-  // PTC 下这张表是 run_code 的子调用，id 是 `<父调用 id>:ptc:<序号>`，序号每轮都从 1 重新数。
-  assert.equal(shortFormId('call-aaaa:ptc:1'), shortFormId('call-aaaa'), '就是父调用 id 的那个记号');
-  assert.equal(shortFormId('call-aaaa:ptc:3'), shortFormId('call-aaaa'));
+test('身份记号：PTC 子调用 id 去掉「ptc」这三个字符、保留序号，同一轮与不同轮次都分得开', () => {
+  // PTC 下这张表是 run_code 的子调用，id 是 `<父调用 id>:ptc:<序号>`；
+  // 序号每轮都从 1 重新数，所以父调用 id 与序号要一起参与。
+  assert.notEqual(
+    shortFormId('call-aaaa:ptc:1'),
+    shortFormId('call-aaaa:ptc:2'),
+    '同一个 run_code 里接连派出的两张表必须分得开，否则作答块互相认领',
+  );
   assert.notEqual(
     shortFormId('call-aaaa:ptc:1'),
     shortFormId('call-bbbb:ptc:1'),
-    '不同轮次的第一张表记号必须不同，否则作答块互相认领',
+    '不同轮次的第一张表也必须分得开',
   );
+  assert.equal(shortFormId('call-aaaa:ptc:1'), shortFormId('call-aaaa:ptc:1'), '同一次调用每次都给同一个记号');
+  assert.equal(shortFormId('call-aaaa'), 'aaaa', '原生 id 不含「ptc」，取法与原来一致');
 });
 
 // --- 取数 ---
@@ -639,11 +646,40 @@ test('轮次定位（PTC）：run_code 里别的子调用不是这张表；本�
   assert.equal(roundCall(fakeChat({ 4: [runCodeRoot([])] }), 4), undefined, 'run_code 没有派子调用');
 });
 
-test('轮次定位（PTC）：同一个 run_code 里派了两次就取最后一次', () => {
-  const blocked = dispatchedForm({ callId: 'call-run:ptc:1', seq: 8, content: [{ type: 'text', text: hidden }] });
+test('轮次定位（PTC）：连着派几张时挑最后一张真的投出去的，被闸门拦下的那张不算', () => {
+  const blockedFirst = dispatchedForm({ callId: 'call-run:ptc:1', seq: 8, content: [{ type: 'text', text: hidden }] });
   const accepted = dispatchedForm({ callId: 'call-run:ptc:2', seq: 9 });
-  const chat = fakeChat({ 4: [runCodeRoot([blocked, accepted])] });
-  assert.equal(roundCall(chat, 4).callId, 'call-run:ptc:2');
+  assert.equal(roundCall(fakeChat({ 4: [runCodeRoot([blockedFirst, accepted])] }), 4).callId, 'call-run:ptc:2');
+
+  // 反过来的次序：先投出真表、后一张被拦下——这一轮展示给用户的是先那张，不能因为后一张没投出就不画。
+  const shownFirst = dispatchedForm({ callId: 'call-run:ptc:1', seq: 8 });
+  const blockedLater = dispatchedForm({ callId: 'call-run:ptc:2', seq: 9, content: [{ type: 'text', text: hidden }] });
+  const round = roundCall(fakeChat({ 4: [runCodeRoot([shownFirst, blockedLater])] }), 4);
+  assert.equal(round.callId, 'call-run:ptc:1', '挑的是投出去的那张');
+  assert.equal(drawsForm(readCallModel(round.block)), true, '这一轮真投出了表，就得画出来');
+});
+
+test('轮次定位（PTC）：一张都没投出去时退回最后一次，让工具行照旧说明为什么没投出', () => {
+  const first = dispatchedForm({ callId: 'call-run:ptc:1', seq: 8, content: [{ type: 'text', text: hidden }] });
+  const second = dispatchedForm({ callId: 'call-run:ptc:2', seq: 9, content: [{ type: 'text', text: hidden }] });
+  const round = roundCall(fakeChat({ 4: [runCodeRoot([first, second])] }), 4);
+  assert.equal(round.callId, 'call-run:ptc:2');
+  assert.equal(readCallModel(round.block).state, 'notShown');
+});
+
+test('轮次定位（PTC）：子调用再套一层也找得到（与作答块位置那份判据同一深度）', () => {
+  const deep = dispatchedForm({ callId: 'call-run:ptc:1', seq: 8 });
+  const wrapper = {
+    kind: 'tool-result',
+    callId: 'call-run:ptc:1:nested',
+    seq: 8,
+    call: { name: 'workflow', argsRaw: '{}' },
+    content: [],
+    isError: false,
+    subCalls: [deep],
+  };
+  const round = roundCall(fakeChat({ 4: [runCodeRoot([wrapper])] }), 4);
+  assert.equal(round.callId, 'call-run:ptc:1');
 });
 
 test('作答块到达（PTC）：位置取装着它的那个 run_code 根块的 seq，子调用自己没有一行位置', () => {
