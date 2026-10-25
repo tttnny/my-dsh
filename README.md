@@ -19,7 +19,7 @@
     <tr>
       <td><b>🎨 外观</b><br><i>整界面的配色与对话正文的排版</i></td>
       <td><a href="./plugins/dsh-maple-theme"><code>@lynn123411/dsh-maple-theme</code></a></td>
-      <td><b>Maple 主题</b><br>把 Obsidian 的 Maple 主题搬进 DSH：暖白 / 冷灰两套配色，加上对话正文的排版、代码块与侧栏观感。</td>
+      <td><b>Maple 主题</b><br>把 Obsidian 的 Maple 主题搬进 DSH：暖白 / 冷灰两套配色、内嵌字体、对话正文的排版、代码块与侧栏观感。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-maple-theme</code></td>
     </tr>
     <tr>

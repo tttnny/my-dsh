@@ -378,6 +378,29 @@ test('补上的错误色与标注级文字也过 AA', () => {
   report.push(['dark label-error', assertContrast(dark, '深色错误色', '--dsw-alias-label-error', '--dsw-alias-bg-base', 4.5)]);
 });
 
+test('代码块的九个语法色在自己那块底色上都过 4.5:1', () => {
+  // 语法色是小字号等宽的，4.5:1 才读得清；注释与标点最容易漏。
+  const backgrounds = {
+    light: 'hsl(var(--maple-hue-light, 35) 10% 95%)',
+    dark: 'hsl(var(--maple-hue-dark, 207) 10% 13%)',
+  };
+  const markers = {
+    light: "html[data-maple-theme='on'][data-maple-code='on'] {",
+    dark: "html[data-maple-theme='on'][data-maple-code='on'] body[data-ds-dark-theme] {",
+  };
+  for (const mode of ['light', 'dark']) {
+    const at = css.indexOf(markers[mode]);
+    assert.notEqual(at, -1, `找不到 ${mode} 的语法色块`);
+    const block = css.slice(css.indexOf('{', at) + 1, css.indexOf('\n}', at));
+    const entries = [...block.matchAll(/--shiki-token-([a-z-]+):\s*(hsl\([^;]+\));/g)];
+    assert.ok(entries.length >= 9, `${mode} 语法色只找到 ${entries.length} 条`);
+    for (const [, name, value] of entries) {
+      const ratio = contrast(inlineFallbacks(value), inlineFallbacks(backgrounds[mode]));
+      assert.ok(ratio >= 4.5, `${mode} 语法色 ${name} 在代码块底色上只有 ${ratio.toFixed(2)}:1，要求 4.5:1`);
+    }
+  }
+});
+
 test('每一个 --dsw-alias-* / --dsw-specific-* 都在两套里各写了一次', () => {
   const lightNames = Object.keys(light).sort();
   const darkNames = Object.keys(dark).sort();

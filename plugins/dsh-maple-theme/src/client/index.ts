@@ -23,6 +23,7 @@ import tokens from './styles/tokens.css?inline';
 import { MAPLE_TOKENS, THEME_SOURCE } from './tokens.ts';
 import markdown from './styles/markdown.css?inline';
 import shell from './styles/shell.css?inline';
+import { fontCss } from './styles/font.ts';
 
 export { NS } from './locales.ts';
 export {
@@ -49,6 +50,7 @@ const SHEETS: readonly (readonly [string, string])[] = [
   ['tokens.css', tokens],
   ['markdown.css', markdown],
   ['shell.css', shell],
+  ['fonts.css', fontCss()],
   ['card.css', CARD_CSS],
 ];
 

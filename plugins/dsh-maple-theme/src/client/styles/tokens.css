@@ -51,14 +51,14 @@ html[data-maple-theme='on'][data-maple-heading='text'] body[data-ds-dark-theme] 
  * 宿主 CodeBlock 只认 --shiki-token-*，换这一组就整体换配色。 */
 html[data-maple-theme='on'][data-maple-code='on'] {
   --shiki-token-keyword: hsl(260 20% 48%);
-  --shiki-token-string: hsl(95 75% 29%);
-  --shiki-token-string-expression: hsl(95 75% 29%);
-  --shiki-token-function: hsl(193 94% 31.5%);
+  --shiki-token-string: hsl(95 75% 27.5%);
+  --shiki-token-string-expression: hsl(95 75% 27.5%);
+  --shiki-token-function: hsl(193 94% 30.25%);
   --shiki-token-constant: hsl(156 75% 28%);
-  --shiki-token-parameter: hsl(32 70% 37%);
-  --shiki-token-comment: hsl(35 6% 58%);
-  --shiki-token-punctuation: hsl(35 7% 46%);
-  --shiki-token-link: hsl(162 76% 29%);
+  --shiki-token-parameter: hsl(32 70% 35.75%);
+  --shiki-token-comment: hsl(35 6% 42%);
+  --shiki-token-punctuation: hsl(35 7% 42%);
+  --shiki-token-link: hsl(162 76% 27.5%);
 }
 
 html[data-maple-theme='on'][data-maple-code='on'] body[data-ds-dark-theme] {
@@ -68,7 +68,7 @@ html[data-maple-theme='on'][data-maple-code='on'] body[data-ds-dark-theme] {
   --shiki-token-function: hsl(210 80% 72%);
   --shiki-token-constant: hsl(178 40% 64%);
   --shiki-token-parameter: hsl(20 40% 68%);
-  --shiki-token-comment: hsl(207 10% 46%);
+  --shiki-token-comment: hsl(207 10% 55%);
   --shiki-token-punctuation: hsl(207 12% 58%);
   --shiki-token-link: hsl(178 30% 62%);
 }

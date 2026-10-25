@@ -173,10 +173,10 @@ check('apply 期间没有接线错误', errors.length === 0, errors.join('; '));
 
 /* ---- 样式表：三张都挂上、都带归属键 ---- */
 const styleKeys = [...document.head.querySelectorAll('style[data-plugin]')].map((tag) => tag.getAttribute('data-plugin-css'));
-check('四张样式表都注入了', styleKeys.length === 4, JSON.stringify(styleKeys));
+check('五张样式表都注入了', styleKeys.length === 5, JSON.stringify(styleKeys));
 check(
   '样式表的归属键按「包名/文件名」拼',
-  ['tokens.css', 'markdown.css', 'shell.css', 'card.css'].every((file) => styleKeys.includes(`@lynn123411/dsh-maple-theme/${file}`)),
+  ['tokens.css', 'markdown.css', 'shell.css', 'fonts.css', 'card.css'].every((file) => styleKeys.includes(`@lynn123411/dsh-maple-theme/${file}`)),
   JSON.stringify(styleKeys),
 );
 const pluginTags = [...document.head.querySelectorAll('style')].map((tag) => tag.getAttribute('data-plugin'));
@@ -188,18 +188,20 @@ check('标题配色默认六级换色', rootElement.getAttribute('data-maple-hea
 check('等级标记默认开', rootElement.getAttribute('data-maple-indicator') === 'on', String(rootElement.getAttribute('data-maple-indicator')));
 check('代码配色默认开', rootElement.getAttribute('data-maple-code') === 'on', String(rootElement.getAttribute('data-maple-code')));
 check('外壳装饰默认开', rootElement.getAttribute('data-maple-shell') === 'on', String(rootElement.getAttribute('data-maple-shell')));
+check('字体默认开', rootElement.getAttribute('data-maple-font') === 'on', String(rootElement.getAttribute('data-maple-font')));
 check('浅色色相写进了行内变量', rootElement.style.getPropertyValue('--maple-hue-light') === '35', rootElement.style.getPropertyValue('--maple-hue-light'));
 check('深色色相写进了行内变量', rootElement.style.getPropertyValue('--maple-hue-dark') === '207', rootElement.style.getPropertyValue('--maple-hue-dark'));
 check('行高写进了行内变量', rootElement.style.getPropertyValue('--maple-line-height') === '1.75', rootElement.style.getPropertyValue('--maple-line-height'));
 
 /* ---- 投影随配置变化：改值 → 属性跟着换 ---- */
-form.push({ hueLight: 210, lineHeight: 1.9, headingColor: 'accent', headingIndicator: false, codePalette: false, shellSkin: false });
+form.push({ hueLight: 210, lineHeight: 1.9, headingColor: 'accent', headingIndicator: false, codePalette: false, shellSkin: false, mapleFont: false });
 check('色相改动传到了行内变量', rootElement.style.getPropertyValue('--maple-hue-light') === '210', rootElement.style.getPropertyValue('--maple-hue-light'));
 check('行高改动传到了行内变量', rootElement.style.getPropertyValue('--maple-line-height') === '1.9', rootElement.style.getPropertyValue('--maple-line-height'));
 check('标题配色改动传到了属性', rootElement.getAttribute('data-maple-heading') === 'accent', String(rootElement.getAttribute('data-maple-heading')));
 check('关掉的开关把属性删掉了', rootElement.getAttribute('data-maple-indicator') === null, String(rootElement.getAttribute('data-maple-indicator')));
 check('关掉代码配色也删属性', rootElement.getAttribute('data-maple-code') === null, String(rootElement.getAttribute('data-maple-code')));
 check('关掉外壳装饰也删属性', rootElement.getAttribute('data-maple-shell') === null, String(rootElement.getAttribute('data-maple-shell')));
+check('关掉字体也删属性', rootElement.getAttribute('data-maple-font') === null, String(rootElement.getAttribute('data-maple-font')));
 
 /* ---- 卡片：座位、key、词典 ---- */
 check('走插件的 plugins.bundle.config 座位', injectCalls.includes('plugins.bundle.config'), JSON.stringify(injectCalls));

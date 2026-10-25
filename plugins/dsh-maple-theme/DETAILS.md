@@ -11,7 +11,7 @@ dsh plugin --profile web add @lynn123411/dsh-maple-theme
 这条命令把包名写进 profile 的 `dependencies` 与 `dsh.profile.bundles`，包内 `cordis.patch.yml` 随之插入一条 root loader entry。这一条行同时承载两个半边：
 
 - **宿主半边**（`lib/index.js`）：只声明 `Config` 的形状，并登记 `settings.configure({ auto: false })`——本插件的配置界面在「插件」页上，不让内核按 schema 再生成一份同字段的设置页。
-- **浏览器半边**（`lib/client.js`）：把两套色板交给宿主的主题通道、注入四张样式表（tokens / markdown / shell / card）、把配置投影到 `<html>` 上、在「插件」页上挂配置卡片。
+- **浏览器半边**（`lib/client.js`）：把两套色板交给宿主的主题通道、注入五张样式表（tokens / markdown / shell / fonts / card）、把配置投影到 `<html>` 上、在「插件」页上挂配置卡片。
 
 声明的服务：宿主半边只要 `settings`；浏览器半边要 `configForms`（读本插件那一行的配置）、`slots` 与 `locale`（画卡片）、`theme`（交两套色板）。`package.json` 的 `dsh.client.inject` 另列了它依赖的插件契约包，两层都要声明，漏一层整条 loader entry 会静默变成 failed。
 
@@ -119,7 +119,7 @@ cd plugins/dsh-maple-theme && pnpm check
 | `tsc -p tsconfig.json --noEmit` | 类型闸门，覆盖两半边连同配置投影模块 |
 | `scripts/smoke-host.mjs` | 真 cordis `Context`：`Config` 八个字段的默认值、越界值被 schema 拒绝、每个字段都是 `volatile`、`apply` 按 `{ auto: false }` 登记、包内 `cordis.patch.yml` 只有一条装配行且 id 与包名各自对上 |
 | `scripts/test-projection.mjs` | 脏输入收拢（越界、字符串、`null`、缺字段）、投影只写五个属性与四个变量、关掉的开关写成「删属性」、写到真 DOM 再撤掉不留痕迹、重复投影幂等 |
-| `scripts/smoke-client.mjs` | 按 Web shell 的方式装载 `lib/client.js`：色板交给主题通道且每条令牌都成对、四张样式表都带 `data-plugin` 归属键、投影真的写到 `<html>`、配置变化后属性跟着换、卡片注册进 `plugins.bundle.config` 且 key 是包名、词典中英键集一致、卸载后属性与变量都撤干净；另带一条反例断言证明「读未声明服务会抛」的守卫还在响 |
+| `scripts/smoke-client.mjs` | 按 Web shell 的方式装载 `lib/client.js`：色板交给主题通道且每条令牌都成对、五张样式表都带 `data-plugin` 归属键、投影真的写到 `<html>`、配置变化后属性跟着换、卡片注册进 `plugins.bundle.config` 且 key 是包名、词典中英键集一致、卸载后属性与变量都撤干净；另带一条反例断言证明「读未声明服务会抛」的守卫还在响 |
 | `scripts/test-tokens.mjs` | 读 `src/client/tokens.ts` 算 WCAG 对比度：两套模式的正文、次要、三级文字、链接、主按钮、代码块、侧栏、提示框、气泡都过阈值；标题六色两套都过 4.5:1；两套令牌集一一对应 |
 | `scripts/test-anchors.mjs` | 宿主锚点契约：属性名与座位名仍在宿主源码里、样式表不含哈希类名、圆角无字面值、药丸圆角配了 `corner-shape: round` |
 

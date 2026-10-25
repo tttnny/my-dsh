@@ -26,6 +26,9 @@ export const en = {
   'card.shell': 'Surroundings',
   'card.shellSkin': 'Sidebar, tabs and input card',
   'card.shellSkinHint': 'Round the sidebar rows and the active tab, drop the seam under the session header, and give the input card Maple paper.',
+  'card.font': 'Font',
+  'card.mapleFont': 'Maple font',
+  'card.mapleFontHint': 'Bundle Maple Mono into the plugin and use it for body text and the interface. Adds about 150 KB to the bundle.',
   'card.scope': 'The palette is global; headings, quotes, tables, lists and rules only change inside conversation answers.',
   'card.unavailable': 'The Host does not serve this configuration right now.',
 } as const;
@@ -55,6 +58,9 @@ export const zh: Record<keyof typeof en, string> = {
   'card.shell': '周边',
   'card.shellSkin': '侧栏、标签条与输入卡',
   'card.shellSkinHint': '侧栏行与活动标签改成圆角，去掉会话头部下面那条接缝，输入卡换成 Maple 的纸色。',
+  'card.font': '字体',
+  'card.mapleFont': 'Maple 字体',
+  'card.mapleFontHint': '把 Maple Mono 打进插件，正文与界面都用它。产物因此大约多 150 KB。',
   'card.scope': '配色是全局的；标题、引用、表格、列表与分隔线只在对话正文里换样子。',
   'card.unavailable': '宿主当前没有提供这份配置。',
 };

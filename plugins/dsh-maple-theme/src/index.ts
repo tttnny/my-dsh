@@ -46,6 +46,8 @@ export const Config = z.object({
   codePalette: z.boolean().default(true).volatile(),
   /** 外壳装饰：侧栏与标签条的圆角、输入卡填充、去掉会话头部那条分隔线。 */
   shellSkin: z.boolean().default(true).volatile(),
+  /** 内嵌 Maple 的字体：正文与界面换成 maplemono。 */
+  mapleFont: z.boolean().default(true).volatile(),
 });
 
 /** 宿主上下文里本插件用到的那两个成员。 */

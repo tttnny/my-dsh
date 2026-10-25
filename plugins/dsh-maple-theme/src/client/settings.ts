@@ -25,6 +25,9 @@ export const CODE_ATTRIBUTE = 'data-maple-code';
 /** 外壳装饰（侧栏、标签条、输入区）的开关属性名。 */
 export const SHELL_ATTRIBUTE = 'data-maple-shell';
 
+/** 内嵌字体的开关属性名。 */
+export const FONT_ATTRIBUTE = 'data-maple-font';
+
 /** 一份配置投影出来的结果：要写的属性与变量。 */
 export interface MapleProjection {
   /** `<html>` 上要设的属性（值为 `null` 表示删掉）。 */
@@ -51,6 +54,8 @@ export interface MapleSettings {
   headingIndicator: boolean;
   codePalette: boolean;
   shellSkin: boolean;
+  /** 内嵌 Maple 的字体。 */
+  mapleFont: boolean;
 }
 
 /** 出厂值，与宿主半边 Config 的默认值同一组数字。 */
@@ -63,6 +68,7 @@ export const DEFAULT_SETTINGS: Readonly<MapleSettings> = Object.freeze({
   headingIndicator: true,
   codePalette: true,
   shellSkin: true,
+  mapleFont: true,
 });
 
 /**
@@ -102,6 +108,7 @@ export function normalizeSettings(raw: Partial<MapleSettings> | undefined | null
     headingIndicator: source.headingIndicator ?? DEFAULT_SETTINGS.headingIndicator,
     codePalette: source.codePalette ?? DEFAULT_SETTINGS.codePalette,
     shellSkin: source.shellSkin ?? DEFAULT_SETTINGS.shellSkin,
+    mapleFont: source.mapleFont ?? DEFAULT_SETTINGS.mapleFont,
   };
 }
 
@@ -125,6 +132,7 @@ export function projectSettings(settings: MapleSettings, enabled = true): MapleP
         [INDICATOR_ATTRIBUTE]: null,
         [CODE_ATTRIBUTE]: null,
         [SHELL_ATTRIBUTE]: null,
+        [FONT_ATTRIBUTE]: null,
       },
       variables,
     };
@@ -136,6 +144,7 @@ export function projectSettings(settings: MapleSettings, enabled = true): MapleP
       [INDICATOR_ATTRIBUTE]: settings.headingIndicator ? 'on' : null,
       [CODE_ATTRIBUTE]: settings.codePalette ? 'on' : null,
       [SHELL_ATTRIBUTE]: settings.shellSkin ? 'on' : null,
+      [FONT_ATTRIBUTE]: settings.mapleFont ? 'on' : null,
     },
     variables: {
       '--maple-hue-light': String(settings.hueLight),

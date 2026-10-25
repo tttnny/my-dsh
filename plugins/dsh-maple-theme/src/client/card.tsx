@@ -166,6 +166,14 @@ export function MapleThemeCard(
       </section>
 
       <section className="dsh-maple-group">
+        <div className="dsh-maple-group-title">{t('card.font')}</div>
+        <Row title={t('card.mapleFont')} hint={t('card.mapleFontHint')}>
+          <Switch checked={current.mapleFont} label={t('card.mapleFont')}
+            onChange={(next) => { write('mapleFont', next) }} />
+        </Row>
+      </section>
+
+      <section className="dsh-maple-group">
         <div className="dsh-maple-group-title">{t('card.shell')}</div>
         <Row title={t('card.shellSkin')} hint={t('card.shellSkinHint')}>
           <Switch checked={current.shellSkin} label={t('card.shellSkin')}

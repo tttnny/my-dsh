@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-maple-theme",
   "version": "0.1.0",
-  "description": "把 Obsidian 的 Maple 主题搬进 DSH：暖白 / 冷灰两套配色，加上对话正文的排版、代码块与侧栏观感。",
+  "description": "把 Obsidian 的 Maple 主题搬进 DSH：暖白 / 冷灰两套配色、内嵌字体、对话正文的排版、代码块与侧栏观感。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -15,7 +15,6 @@
   },
   "files": [
     "lib",
-    "src",
     "cordis.patch.yml",
     "README.md",
     "DETAILS.md",
