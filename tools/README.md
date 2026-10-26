@@ -20,6 +20,7 @@
 | 看一眼界面：点一下、量几何、拍图（会改会话状态，默认拦下并报警；等不到、点不到、页面报错一律退出码 1） | `node tools/gui-shot.mjs --click '<选择器>' --shot tmp/ui.png [--allow-mutation]` |
 | 直接拍某个会话的页面（会话页没有 URL 路由，它替你展开侧栏组再点进去） | `node tools/gui-shot.mjs --session session-<id> --shot tmp/session.png` |
 | 不碰正在服务的实例，把**真的**插件组件单独渲染出来拍图（ui-primitives 用薄壳替身、样式取宿主真表） | `node tools/ui-preview.mjs --pkg <plugins/dsh-xxx> --entry src/client/X.jsx --mount Xxx --props tmp/p.json --shot tmp/x.png`（`--props` 收 JSON，也收 `.mjs` 模块） |
+| 要在用户自己那个浏览器引擎下、或按用户已登录的站点验界面（`gui-shot` 起的是 Playwright 缓存里的 Chrome for Testing，每趟清掉临时用户目录） | 换 `ego-browser`，用法先跑 `ego-browser skill`；条件与要守的硬要求见 [plugin-ui.md](../docs/rules/plugin-ui.md)「换用 ego-browser 的条件」 |
 | 开发副本还是不是软链、客户端半边有没有登记进 bundles、有没有指向归档目录的孤儿软链（`--write` 删掉孤儿） | `node tools/dev-link.mjs [--write]` |
 | 一个会话（连同它派出去的子会话）改过哪些文件、提交过什么 | `node tools/session-changes.mjs [<会话 id>] [--json] [--since <毫秒>]` |
 
@@ -29,6 +30,6 @@
 - 找引用先用 `grep -l` 取文件清单再逐文件读：`grep -rn '<包名>' --exclude-dir={node_modules,lib,tmp,archive}` 会把匹配行所在的整行打出来，而 `lib/` 的声明文件里一行注释可能就有几千字，一次输出几十 KB 只为了几条结果。
 - 判据只读本仓库与本机 DSH 的状态（`package.json`、`docs/rules/`、`$DSH_HOME`、已装内核与它自带的官方 preset、`DSH_SOURCE` 指向的源码 checkout），不联网。
   会联网的是：`pnpm install` 及其两个内置调用者（`new-plugin.mjs` 默认会在生成的包里跑它、`dsh-baseline.mjs --write` 会在改动的包里跑它）、`tools/ci-check.mjs`、`presets/plugin-upgrade-cordis/check-upstream.mjs`（在线模式）。`dev-link.mjs --write`（`pnpm add --offline`）与 `mutate.mjs` 不联网。
-- 中间产物一律落仓库根的 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`、`tmp/ui-preview/`、`tmp/chrome-profile/`（`gui-shot.mjs` 的浏览器用户目录，留着可复用登录态）、`tmp/ui.png` 这类图。`plugins/tmp/` 是历史上就地留下的草稿区，同样被仓库根的 `.gitignore` 挡住，新东西不再往里写。
+- 中间产物一律落仓库根的 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`、`tmp/ui-preview/`、`tmp/ui.png` 这类图。`gui-shot.mjs` 的浏览器用户目录 `tmp/chrome-profile/` 每趟自己重建、跑完删掉，不留登录态。`plugins/tmp/` 是历史上就地留下的草稿区，同样被仓库根的 `.gitignore` 挡住，新东西不再往里写。
 - **工具与规则是一件事的两处**：`assert-ledger.mjs` 里的每条判据都要有出处——出处在 `docs/rules/` 里的就同步改两边；出处在实测记录或某份 README 的硬声明里的（判据 14 的「N 个字段、M 条描述」源自插件 README 自己），改那份声明时同样要回来对判据。不允许只改一边。
 - 判据要能变红：新增或翻转断言后，把被测行为改回旧写法跑一次，确认它真的 FAIL（见 `docs/rules/plugins.md`「证明断言有牙齿」）。这条机械动作交给 `tools/mutate.mjs`：它要求 `--from` 恰好命中一处，命令跑完无论成败都还原（干净文件走 `git checkout`，未提交的文件按原文写回）。
