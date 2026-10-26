@@ -1,17 +1,17 @@
 #!/bin/sh
 # my-dsh pre-commit：**改了哪个包就在哪个包里跑它自己的 check**，外加一道仓库级台账检查。
 #
-# 为什么在提交这一侧：仓库根没有 package.json、没有 CI，`docs/rules/plugins.md`「验证」
-# 只写了「改完在所在包目录跑 pnpm check」——纯靠自觉。本钩子把它变成闸门：只跑本次
-# 改动触及的包，没动的包不跑，所以代价与改动规模成正比。
+# 为什么在提交这一侧：`docs/rules/plugins.md`「验证」只写了「改完在所在包目录跑
+# pnpm check」，纯靠自觉。本钩子把它变成闸门：只跑本次改动触及的包，没动的包不跑，
+# 所以代价与改动规模成正比。仓库级一次跑齐的是 `node tools/check.mjs`（CI 跑同一个）。
 #
-# 两道闸门：
+# 三道闸门，按这个顺序：
 #   1. 台账：改到 plugins/、presets/、根 README.md、docs/rules/ 或 tools/ 时跑
 #      `node tools/assert-ledger.mjs`（判据见该文件头部）。零依赖、纯读文件，很快。
-#   3. 产物新鲜度：`node tools/assert-artifacts.mjs`——`lib/` 比 `src/` 旧时拦下。
-#      放在包检查之后：多数包的 check 自带构建，各自修好了才轮到这道。
 #   2. 包：改到的每个包在它自己目录跑 `pnpm check`。**有 check 就跑**——没有 node_modules
 #      也照跑（preset 的 check 本来就不需要依赖），跑不过就拦，不静默少跑一道闸门。
+#   3. 产物新鲜度：`node tools/assert-artifacts.mjs`——`lib/` 比 `src/` 旧时拦下。
+#      放在包检查之后：多数包的 check 自带构建，各自修好了才轮到这道。
 #
 # 装法（仓库根执行一次）：
 #   git config core.hooksPath .githooks

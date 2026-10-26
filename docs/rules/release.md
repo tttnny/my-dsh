@@ -7,7 +7,7 @@
 发布前的门禁照跑，按顺序：
 
 1. **先把版本号加上去**：`npm publish` 同版本第二次必被 registry 拒绝，白跑一遍。改该包 `package.json` 的 `version`（`dsh-baseline --write --bump patch` 只在声明真改了时才加位——内核升版那一轮已顺带加过，日常发版要自己改）。完成判据：该包的 `version` 与 `npm view @lynn123411/dsh-<name> version` 答的不一样。
-2. **scoped 包带 `publishConfig.access: "public"`**：不带就发不出去或发成受限包。6 个活包现在都有，`node tools/new-plugin.mjs` 生成的骨架也默认写这一项；`node tools/assert-ledger.mjs` **不查这一项**，新包或手改 `package.json` 时要自己看一眼。
+2. **scoped 包带 `publishConfig.access: "public"`**：不带就发不出去或发成受限包。`node tools/new-plugin.mjs` 生成的骨架默认写这一项，手写新包时要自己带上；`node tools/assert-ledger.mjs` **不查这一项**，新包或手改 `package.json` 时要自己看一眼。
 3. 各包自己的 `check`（见 [plugins.md](./plugins.md)「验证」）、`node tools/assert-ledger.mjs`（清单与目录的一致性）与 `npm pack --dry-run` 清单。
 
 本机绿不等于 CI 绿，发布前再跑一次 `node tools/ci-check.mjs`（干净 HOME 按 CI 的脚本重跑安装与 check，要联网）。`git push` 同样只在用户下令后执行。

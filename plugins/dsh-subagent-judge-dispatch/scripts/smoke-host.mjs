@@ -24,7 +24,7 @@ const pkgName = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).nam
 
 // 判断日志落盘到家目录：每个 mount() 换一个仓库根 tmp/ 下的临时家目录，自检既
 // 不去读写真实的家目录，也不会把上一条用例剩下的记录读成这一条用例的。
-const tmpRoot = join(root, 'tmp');
+const tmpRoot = join(root, '..', '..', 'tmp');
 mkdirSync(tmpRoot, { recursive: true });
 const tmpHomes = [];
 process.on('exit', () => {

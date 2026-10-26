@@ -44,7 +44,7 @@ import {
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 
 /** 落盘要用的临时家目录：仓库根的 tmp/，进程退出时删掉。 */
-const tmpRoot = join(root, 'tmp');
+const tmpRoot = join(root, '..', '..', 'tmp');
 await fs.mkdir(tmpRoot, { recursive: true });
 const tmpHome = await fs.mkdtemp(join(tmpRoot, 'judge-log-'));
 process.on('exit', () => {

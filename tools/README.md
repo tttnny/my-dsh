@@ -30,6 +30,6 @@
 - 找引用先用 `grep -l` 取文件清单再逐文件读：`grep -rn '<包名>' --exclude-dir={node_modules,lib,tmp,archive}` 会把匹配行所在的整行打出来，而 `lib/` 的声明文件里一行注释可能就有几千字，一次输出几十 KB 只为了几条结果。
 - 判据只读本仓库与本机 DSH 的状态（`package.json`、`docs/rules/`、`$DSH_HOME`、已装内核与它自带的官方 preset、`DSH_SOURCE` 指向的源码 checkout），不联网。
   会联网的是：`pnpm install` 及其两个内置调用者（`new-plugin.mjs` 默认会在生成的包里跑它、`dsh-baseline.mjs --write` 会在改动的包里跑它）、`tools/ci-check.mjs`、`presets/plugin-upgrade-cordis/check-upstream.mjs`（在线模式）。`dev-link.mjs --write`（`pnpm add --offline`）与 `mutate.mjs` 不联网。
-- 中间产物一律落仓库根的 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`、`tmp/ui-preview/`、`tmp/ui.png` 这类图。`gui-shot.mjs` 的浏览器用户目录 `tmp/chrome-profile/` 每趟自己重建、跑完删掉，不留登录态。`plugins/tmp/` 是历史上就地留下的草稿区，同样被仓库根的 `.gitignore` 挡住，新东西不再往里写。
+- 中间产物一律落仓库根的 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`、`tmp/ui-preview/`、`tmp/ui.png` 这类图。`gui-shot.mjs` 的浏览器用户目录 `tmp/chrome-profile/` 每趟自己重建、跑完删掉，不留登录态。各包自检的临时家目录（`chtest-*`、`suite-*`、`reply-*`、`judge-*`）也落在这里，包目录里不新建 `tmp/`。
 - **工具与规则是一件事的两处**：`assert-ledger.mjs` 里的每条判据都要有出处——出处在 `docs/rules/` 里的就同步改两边；出处在实测记录或某份 README 的硬声明里的（判据 14 的「N 个字段、M 条描述」源自插件 README 自己），改那份声明时同样要回来对判据。不允许只改一边。
 - 判据要能变红：新增或翻转断言后，把被测行为改回旧写法跑一次，确认它真的 FAIL（见 `docs/rules/plugins.md`「证明断言有牙齿」）。这条机械动作交给 `tools/mutate.mjs`：它要求 `--from` 恰好命中一处，命令跑完无论成败都还原（干净文件走 `git checkout`，未提交的文件按原文写回）。

@@ -2,6 +2,7 @@
 // Every row gets exactly its one first-run attempt; failures report their
 // reason (transport vs content) and only the user's click re-runs a row.
 import assert from 'node:assert/strict';
+import { rmSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { ConfigManager } from '../src/server/config.ts';
@@ -10,11 +11,14 @@ import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { CredentialsReader } from '../src/server/credentials.ts';
 import { createFakeSettingsEntry, createFakeCredentials, echoMarkers } from './test-helpers.mjs';
 
-// Isolate file-backed state under ./tmp (repo-local; system /tmp is off-limits).
-const TMP_ROOT = path.join(import.meta.dirname, '..', '..', 'tmp');
+// Isolate file-backed state under the repo-root tmp/ (repo-local; system /tmp is off-limits).
+const TMP_ROOT = path.join(import.meta.dirname, '..', '..', '..', 'tmp');
 await fs.mkdir(TMP_ROOT, { recursive: true });
 const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'chtest-'));
 process.env.DSH_HOME = TMP_HOME;
+// 缓存带有 5 秒防抖落盘：用例里最后一次写发生在收尾之前，定时器到点会把刚删掉的
+// 目录重新 mkdir 出来。退出时再删一次，删的是定时器之后那一份。
+process.on('exit', () => rmSync(TMP_HOME, { recursive: true, force: true }));
 
 let passed = 0;
 let total = 0;

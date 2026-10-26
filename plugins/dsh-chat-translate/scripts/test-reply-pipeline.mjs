@@ -1,15 +1,19 @@
 // 正文翻译的宿主侧回归：估算、切分、打包、结构核对与重装配、串行队列、
 // 单缓存池、单通道与路由形状。
 import assert from 'node:assert/strict';
+import { rmSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 // 隔离文件状态：缓存与配置都写到仓库本地的 ./tmp（系统 /tmp 禁用），
 // 绝不碰真实的 ~/.dsh。
-const TMP_ROOT = path.join(import.meta.dirname, '..', '..', 'tmp');
+const TMP_ROOT = path.join(import.meta.dirname, '..', '..', '..', 'tmp');
 await fs.mkdir(TMP_ROOT, { recursive: true });
 const TMP_HOME = await fs.mkdtemp(path.join(TMP_ROOT, 'reply-'));
 process.env.DSH_HOME = TMP_HOME;
+// 缓存带有 5 秒防抖落盘：用例里最后一次写发生在收尾之前，定时器到点会把刚删掉的
+// 目录重新 mkdir 出来。退出时再删一次，删的是定时器之后那一份。
+process.on('exit', () => rmSync(TMP_HOME, { recursive: true, force: true }));
 
 import { TranslationDispatcher } from '../src/server/dispatcher.ts';
 import { ConfigManager } from '../src/server/config.ts';
