@@ -381,8 +381,8 @@ function storageOf() {
 
 /**
  * 题目列表：可填与冻结画的是同一样东西——冻结时只是每个控件都被锁住、选项区压暗。每题前面是
- * 插件画的题号（1. 2. …），作答块里也只记这个号；题干、题目的补充说明、选项、每题的补充框
- * 按这个次序排。
+ * 插件画的题号（1. 2. …），作答块里也只记这个号；题号后面紧跟着这题画成了哪种题型（单选 / 多选 /
+ * 自由），再往后是题干、题目的补充说明、选项、每题的补充框，按这个次序排。
  * @param {QuestionListProps} props - 题目、作答与交互回调。
  * @returns {import('react').ReactNode} 列表。
  */
@@ -393,6 +393,7 @@ function QuestionList({ questions, answers, locked, t, markdownLabels, onToggleO
         <div className="dsg-item" key={question.id}>
           <div className="dsg-question">
             <span className="dsg-number">{question.number}.</span>
+            <span className="dsg-type">{t(`type.${question.type}`)}</span>
             <div className="dsg-questionText">
               <MarkdownText text={question.question} labels={markdownLabels} variant="compact" />
             </div>

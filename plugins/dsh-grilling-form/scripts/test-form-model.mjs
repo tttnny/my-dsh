@@ -137,6 +137,15 @@ test('题型漏写：有选项按多选、没选项按自由（模型漏一个�
   assert.equal(readQuestions(args([call({ type: 'checkbox', options: [{ label: '甲' }] })]))[0].type, 'multi');
 });
 
+test('题型照画出来的控件报：没有选项就是自由，有选项时按声明分单选与多选', () => {
+  const [freeWithOptions] = readQuestions(args([call({ type: 'free', options: [{ label: '甲' }] })]));
+  assert.equal(freeWithOptions.type, 'multi', '写了自由却带选项：页面上画的是勾选框，就不许报成自由');
+  const [singleWithoutOptions] = readQuestions(args([call({ type: 'single', question: '没有选项？' })]));
+  assert.equal(singleWithoutOptions.type, 'free', '写了单选却没有选项：页面上一个勾选框都没有，就不许报成单选');
+  const [multiWithOptions] = readQuestions(args([call({ type: 'multi', options: [{ label: '甲' }] })]));
+  assert.equal(multiWithOptions.type, 'multi');
+});
+
 test('选项：推荐标记剥掉之后就是选项身份，推荐另记一个布尔', () => {
   const [question] = readQuestions(args([call({
     options: [{ label: 'A：移走（推荐）' }, { label: 'B：都留' }, { label: '  ' }],

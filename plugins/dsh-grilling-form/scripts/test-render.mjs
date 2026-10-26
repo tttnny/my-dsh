@@ -1,7 +1,7 @@
 /**
  * 视图自检：用真 react 跑一遍浏览器半边的那两个注册项，断言它们在各状态下确实画出该有的东西。
  *
- * - **轮次尾部**（conversation.chat.turnTail）：表单住在这里——题号、题干、选项、导入键、分叉键，
+ * - **轮次尾部**（conversation.chat.turnTail）：表单住在这里——题号与题型、题干、选项、导入键、分叉键，
  *   以及冻结与「提问表单已被后面那张取代」两态；
  * - **工具行**（tool.call.toolview）：投出去的轮次什么都不画，没投出画那句说明、失败画失败说明。
  *
@@ -622,6 +622,35 @@ test('取代时搬勾选：这一轮自己那份优先——用户已经动过�
 
 // --- 题型 ---
 
+test('题干那一行写着题型：题号后面、题干前面，三种题型各写自己的词', () => {
+  globalThis.localStorage = fakeStorage();
+  const allTypes = JSON.stringify({
+    questions: [
+      { type: 'single', question: '单选那题', options: [{ label: '甲' }] },
+      { type: 'multi', question: '多选那题', options: [{ label: '乙' }] },
+      { type: 'free', question: '自由那题' },
+    ],
+  });
+  const { markup } = html({ call: settled(shown, { argsRaw: allTypes }) });
+  // 题干那一行是「题号 + 题型 + 题干」三列，题型在题号后面紧挨着
+  const heads = [...markup.matchAll(/<span class="dsg-number">(\d+)\.<\/span><span class="dsg-type">([^<]+)<\/span>/g)]
+    .map((match) => [match[1], match[2]]);
+  assert.deepEqual(heads, [['1', '单选'], ['2', '多选'], ['3', '自由']]);
+});
+
+test('题型照画出来的控件写：写了自由却带选项写「多选」，写了单选却没有选项写「自由」', () => {
+  globalThis.localStorage = fakeStorage();
+  const mismatched = JSON.stringify({
+    questions: [
+      { type: 'free', question: '带选项的自由题', options: [{ label: '甲' }] },
+      { type: 'single', question: '没有选项的单选' },
+    ],
+  });
+  const { markup } = html({ call: settled(shown, { argsRaw: mismatched }) });
+  const labels = [...markup.matchAll(/<span class="dsg-type">([^<]+)<\/span>/g)].map((match) => match[1]);
+  assert.deepEqual(labels, ['多选', '自由']);
+});
+
 test('单选题：勾选框上再点别的项就换掉上一个（一题至多一项），题面照旧把两项都画出来', () => {
   globalThis.localStorage = fakeStorage();
   const single = JSON.stringify({
@@ -796,6 +825,7 @@ test('冻结时选项区压暗由 data-readonly 加选项区那几个类名挂�
   assert.match(dimSelector, /dsg-optionText/, '压暗名单里要有选项文字');
   assert.doesNotMatch(dimSelector, /dsg-question\b/, '题干不压');
   assert.doesNotMatch(dimSelector, /dsg-number/, '题号不压');
+  assert.doesNotMatch(dimSelector, /dsg-type/, '题型标签跟题号一个待遇，不压');
   assert.doesNotMatch(dimSelector, /dsg-optionControl/, '圈与方框不压');
 });
 

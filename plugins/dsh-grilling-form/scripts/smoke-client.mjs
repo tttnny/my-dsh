@@ -235,6 +235,35 @@ test('原生勾选框只是藏起来，没有被删掉（开关状态与 label �
   assert.match(inputRule, /opacity:\s*0/);
   assert.doesNotMatch(inputRule, /display:\s*none|visibility:\s*hidden/, '藏法不能让它拿不到焦点');
 });
+// 题干那一行是「题号 + 题型 + 题干」三列，且三列的宽度由整张表定义一次（题目列表给列、
+// 每题用 subgrid 接上去）。少了 subgrid 或列数退回两列，各题题干的左缘就会随题型词长短左右跳
+// ——中文三个词一样宽看不出来，换成英文（Single choice / Freeform）当场露馅。
+const listRule = /\.dsg-list\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+const itemRule = /\.dsg-item\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+const questionRule = /\.dsg-question\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+test('题干那一行是题号、题型、题干三列，且三列由整张表定义一次（各题题干左缘才对得齐）', () => {
+  assert.match(listRule, /grid-template-columns:\s*20px auto minmax\(0,\s*1fr\)/, '列在题目列表上定义：题号定宽、题型按全表最宽的那个词、题干吃剩下的');
+  assert.match(itemRule, /grid-template-columns:\s*subgrid/, '每题接着列表那三列排');
+  assert.match(questionRule, /grid-template-columns:\s*subgrid/, '题干那一行也用同一组列');
+});
+
+test('题号与题型同一档：字号跟随题干继承，只有题号用等宽数字', () => {
+  // 两条规则共用一档颜色，题型不另外写 font-size（写了就比题号小一号，「同一档」当场不成立）
+  const sharedRule = /\.dsg-number,\s*\n\.dsg-type\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+  assert.notEqual(sharedRule, '', '题号与题型没有共用那一条');
+  assert.match(sharedRule, /--dsw-alias-label-caption/);
+  // 只认题型自己那一条：共用那条写成「.dsg-number,」换行再接「.dsg-type {」，直接找 /\.dsg-type\s*\{/
+  // 会先命中它（断言就成了空转）。先把注释与空白抹平，再按「选择器恰好是 .dsg-type」取。
+  const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const typeRule = [...cssNoComments.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter((match) => match[1].trim() === '.dsg-type')
+    .map((match) => match[2])
+    .join('\n');
+  assert.notEqual(typeRule, '', '找不到题型自己那一条规则');
+  assert.doesNotMatch(typeRule, /font-size/, '题型不另设字号，才跟题号一样大');
+  assert.match(/\.dsg-number\s*\{([^}]*)\}/.exec(css)?.[1] ?? '', /tabular-nums/);
+});
+
 test('单选：圈是完整圆形，按仓库约定配 corner-shape: round', () => {
   assert.notEqual(singleRule, '', '找不到单选那条规则');
   assert.match(singleRule, /border-radius:\s*50%/);

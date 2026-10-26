@@ -219,6 +219,22 @@ function readQuestionType(question) {
 }
 
 /**
+ * 一题在页面上**画成**哪种题型。页面按选项表与题型两样画：
+ *  - 没有选项 ⇒ 没有勾选框可画，只剩那个自填框，就是自由题；
+ *  - 有选项 ⇒ 声明了单选就画圈（一题至多留一项），其余（多选、漏写、认不出的值）都画方框。
+ *
+ * 声明与画法不搭时（写了 free 却带选项、写了 single 却没有选项）以画法为准：
+ * 题面上那句标签说的是用户眼前这排控件怎么作答，不能指着不存在的东西说话。
+ * @param {Record<string, unknown>} question - 模型给的一题。
+ * @param {QuestionOption[]} options - 这一题归一化之后的选项。
+ * @returns {QuestionType} 页面上画成的题型。
+ */
+function drawnType(question, options) {
+  if (options.length === 0) return 'free';
+  return readQuestionType(question) === 'single' ? 'single' : 'multi';
+}
+
+/**
  * 一份模型给的 options → 归一化之后的选项表。不是对象的项丢掉（宿主 schema 先拦）。
  * @param {unknown} options - 模型给的选项。
  * @returns {QuestionOption[]} 归一化之后的选项。
@@ -236,6 +252,10 @@ function readOptions(options) {
  *
  * 读不出来、没有 questions、某题不是对象、或 questions 是空数组时给空题表（界面据此什么都不画）。
  * 题型缺省**不是**作废的理由：有选项按多选、没选项按自由——模型漏写题型不该整轮被拒。
+ *
+ * 题型报的是**页面上画出来的样子**，不是模型声明的那句：没有选项就没有勾选框可画（只有那个自填框），
+ * 一律算自由；有选项时按声明的 single / multi 分。声明与画法不搭时（写了 free 却带选项、写了 single
+ * 却没有选项）以画法为准，于是题面上那句标签不会指着不存在的东西说话。
  * @param {unknown} args - 调用的原始参数文本，或已解析的参数对象。
  * @returns {{ questions: Question[], replace: boolean }} 题面与取代标记。
  */
@@ -255,7 +275,7 @@ function readRound(args) {
       number: index + 1,
       question: typeof question.question === 'string' ? question.question : '',
       ...detail === undefined ? {} : { detail },
-      type: readQuestionType(question) ?? (options.length > 0 ? 'multi' : 'free'),
+      type: drawnType(question, options),
       options,
     });
   }

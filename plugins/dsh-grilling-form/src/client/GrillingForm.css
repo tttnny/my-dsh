@@ -64,25 +64,35 @@
   margin: 0;
 }
 
+/* 整张表的列由题目列表定义一次，每题用 subgrid 接上去：题型那一列取全表最宽的那个词，
+   于是各题题干的左缘落在同一条线上——换语言、换题型都不会让题干左右跳。 */
 .dsg-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: 20px auto minmax(0, 1fr);
+  column-gap: 4px;
+  row-gap: 16px;
 }
 
+/* 一道题：接着列表那三列排，题干、补充说明、选项区依次占满整行。 */
 .dsg-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  row-gap: 4px;
   min-width: 0;
 }
 
-/* 题干：题号一列（固定宽度、顶端对齐），题干那个 markdown 块一列。 */
+/* 题干：题号一列（固定宽度）、题型一列（全表共用宽度）、题干那个 markdown 块一列，三列都与顶端对齐。 */
+.dsg-question,
+.dsg-questionDetail,
+.dsg-options {
+  grid-column: 1 / -1;
+}
+
 .dsg-question {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: subgrid;
   align-items: start;
-  column-gap: 4px;
   min-width: 0;
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
@@ -93,10 +103,21 @@
   min-width: 0;
 }
 
-/* 插件给每题画的题号（1. 2. …）：作答块里也只记这个号，所以它是题面的一部分。 */
-.dsg-number {
+/* 题号（1. 2. …）与题号后面那句题型（单选 / 多选 / 自由）是同一组标记：同一档小灰字、同样大小、
+   同一行基线（字号与行高都跟着题干继承，不另设）。作答块里只记题号，所以这一组是题面的一部分。
+   题型不描边、不挂徽标——选项里的「推荐」徽标才是要抢视线的那一个。 */
+.dsg-number,
+.dsg-type {
   color: var(--dsw-alias-label-caption);
+}
+
+.dsg-number {
   font-variant-numeric: tabular-nums;
+}
+
+/* 一个词就是一个词：换行会把题干那一行撑成两行，也把题型那一列撑宽。 */
+.dsg-type {
+  white-space: nowrap;
 }
 
 /* 两处补充说明共用这一档长相：小一号的灰字，行高配次级字号那档 delta。 */
