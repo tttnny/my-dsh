@@ -54,6 +54,32 @@ test('标记后还有句末标点：一起清掉', () => {
   assert.equal(out.label, 'A：xxx');
 });
 
+test('末尾连着写几段标记：全部剥掉，一段都不留在文字里', () => {
+  // 模型常把中英两种写法一起写上（`（推荐）(Recommended)`）。留下一段就会跟插件画的徽标重复，
+  // 也会让这一段文字落进用户发出的作答块。
+  for (const label of [
+    'A：xxx（推荐）(Recommended)',
+    'A：xxx(Recommended)（推荐）',
+    'A：xxx【推荐】【Recommended】',
+    'A：xxx（推荐）（推荐）',
+    'A：xxx；推荐；推荐',
+    'A：xxx（推荐）(Recommended)。',
+    'A：xxx（推荐） ( recommended )',
+  ]) {
+    const out = normalizeOption({ label });
+    assert.equal(out.recommended, true, label);
+    assert.equal(out.label, 'A：xxx', label);
+  }
+});
+
+test('剥完之后末尾不再是任何标记（不管写了几段都一样）', () => {
+  const MARKER_TAIL = /[（(【\[]\s*(?:推荐|recommended)\s*[）)】\]]\s*$/i;
+  for (const label of ['A：（推荐）(Recommended)', 'A：【推荐】(recommended)（推荐）', 'A：(Recommended)']) {
+    const out = normalizeOption({ label });
+    assert.doesNotMatch(out.label, MARKER_TAIL, `${label} → ${out.label}`);
+  }
+});
+
 test('正常以「推荐」收尾的文字：不认（防误判）', () => {
   for (const label of ['查看推荐', '参考推荐', '推荐', 'A：xxx；推荐 只保留一个']) {
     const out = normalizeOption({ label });
@@ -66,6 +92,12 @@ test('两段只差推荐标记的文字归一化之后是同一个身份（回�
   // 一个叫「甲」、一个叫「甲（推荐）」：两边都收成「甲」，宿主于是按同文选项把这一轮拒掉。
   // 绝不会出现两个界面上一样、身份却不同的选项——那样用户勾的那一项会在回填时落到另一项上。
   assert.equal(normalizeOption({ label: '甲（推荐）' }).label, normalizeOption({ label: '甲' }).label);
+});
+
+test('两段标记连写也收成同一个身份（否则同文校验会漏，勾错项照样回填到别的项上）', () => {
+  for (const label of ['甲（推荐）(Recommended)', '甲(Recommended)（推荐）', '甲（推荐）（推荐）']) {
+    assert.equal(normalizeOption({ label }).label, '甲', label);
+  }
 });
 
 test('label 不是字符串：不抛，收成空 label（由入参校验拒掉，不是让整轮以「工具坏了」收场）', () => {

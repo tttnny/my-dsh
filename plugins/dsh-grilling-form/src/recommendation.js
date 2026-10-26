@@ -1,8 +1,9 @@
 // 推荐标记的识别。
 //
-// 模型写推荐的方式五花八门：末尾带括号的「（推荐）」、不带括号的「；推荐」、方括号、英文写法。
-// 这里只做两件事：认出来，以及把标记从选项文字里剥掉。剥掉之后剩下的那段文字就是**选项身份**
-// ——界面照它渲染、存勾选、画徽标，导入文本照它写回；所以用户的消息里不会跟着模型写的标记。
+// 模型写推荐的方式五花八门：末尾带括号的「（推荐）」、不带括号的「；推荐」、方括号、英文写法，
+// 而且一段文字末尾可能连着写几种（`（推荐）(Recommended)`）。这里只做两件事：认出来，以及把
+// 标记从选项文字里剥干净。剥掉之后剩下的那段文字就是**选项身份**——界面照它渲染、存勾选、
+// 画徽标，导入文本照它写回；所以用户的消息里不会跟着模型写的任何一段标记。
 
 const MARKER = 'recommended|推荐';
 // 半角/全角圆括号与方括号/方头括号
@@ -51,13 +52,23 @@ export function readExplanation(value) {
 }
 
 /**
- * 去掉文本末尾的推荐标记。
+ * 去掉文本末尾的推荐标记，**一直剥到末尾不再是标记为止**。
+ *
+ * 模型会把中英两种写法连着写在一段末尾（`（推荐）(Recommended)`），剥一段还剩一段；剩下那段
+ * 既会显示在选项文字里、跟插件画的徽标重复，也让它与只写一段的同文选项不再同一身份，同文校验
+ * 于是漏过去——而选项身份正是回填时认出用户勾了哪一项的依据。
  * @param {unknown} text - label 原文。
- * @returns {{ text: unknown, found: boolean }} 去掉标记后的文本，以及是否找到标记。
+ * @returns {{ text: unknown, found: boolean }} 去掉全部标记后的文本，以及是否找到过标记。
  */
 function stripRecommendationMarker(text) {
   if (typeof text !== 'string') return { text, found: false };
-  const match = BRACKETED_SUFFIX.exec(text) ?? BARE_SUFFIX.exec(text);
-  if (match === null) return { text, found: false };
-  return { text: text.slice(0, match.index).replace(/\s+$/, ''), found: true };
+  let remaining = text;
+  let found = false;
+  for (;;) {
+    const match = BRACKETED_SUFFIX.exec(remaining) ?? BARE_SUFFIX.exec(remaining);
+    if (match === null) break;
+    found = true;
+    remaining = remaining.slice(0, match.index).replace(/\s+$/, '');
+  }
+  return { text: remaining, found };
 }

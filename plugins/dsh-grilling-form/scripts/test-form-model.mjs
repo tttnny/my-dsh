@@ -227,6 +227,14 @@ test('入参校验：同一题里两段只差推荐标记的文字被拒（界�
   assert.match(violations[0], /same label "A：移走"/);
 });
 
+test('入参校验：中英两段标记连写的那个选项，与只写一段的同文选项一样被拒', () => {
+  // 剥标记只剥一段时，`甲（推荐）(Recommended)` 会收成「甲（推荐）」——与「甲」不同文，校验漏过去，
+  // 而界面上的两个选项文字看着都像「甲」。这里守住剥干净之后两者是同一个身份。
+  const violations = validateRound([call({ options: [{ label: '甲（推荐）(Recommended)' }, { label: '甲' }] })]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /same label "甲"/);
+});
+
 test('入参校验：漏写题型、老开关、题型与选项不搭、重复 id 都不再是拒收项', () => {
   assert.deepEqual(validateRound([{ question: '？' }]), []);
   assert.deepEqual(validateRound([call({ multi_select: false })]), []);
@@ -325,6 +333,13 @@ test('导入正文：一项作答都没有时是空串（空作答是另一种�
 test('导入正文：选项名里带顿号、冒号都照原样写出去', () => {
   const one = [{ id: '1', number: 1, question: '？', type: 'multi', options: [{ label: '甲、乙都行', recommended: false }, { label: '丙：另起一行', recommended: false }] }];
   assert.equal(importBody(one, { 1: { selected: ['甲、乙都行', '丙：另起一行'], custom: '' } }), '1.\n- 甲、乙都行\n- 丙：另起一行');
+});
+
+test('导入正文：连着写几段推荐标记的选项，写出去的作答里一段标记都不带', () => {
+  const argsRaw = JSON.stringify({ questions: [{ question: '？', options: [{ label: '甲（推荐）(Recommended)' }] }] });
+  const round = readQuestions(argsRaw);
+  const body = importBody(round, applyRecommendedDefaults(round, {}));
+  assert.equal(body, '1.\n- 甲');
 });
 
 test('首次导入：块放在最前面，用户原有的文字整段接在后面', () => {
