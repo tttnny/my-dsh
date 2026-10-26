@@ -174,10 +174,9 @@ const files = {
     '',
   ].join('\n'),
   'assets/icon.svg': [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">',
-    '  <rect x="3.5" y="3.5" width="17" height="17" rx="4"/>',
-    '  <path d="M12 8.5v7"/>',
-    '  <path d="M8.5 12h7"/>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">',
+    '  <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" fill="#5B8DEF" stroke="#2F5FC4" stroke-width="1.2"/>',
+    '  <path d="M12 8.2v7.6M8.2 12h7.6" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>',
     '</svg>',
     '',
   ].join('\n'),

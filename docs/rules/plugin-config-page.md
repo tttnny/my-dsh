@@ -60,7 +60,7 @@ ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
 ## 卡片的脸面
 
 - **标题 / 简介**：包内 `locale/<lang>.json` 的 `meta.title` / `meta.description`（本仓写 `en.json` + `zh.json`），缺失回退 `package.json` 的 `name` / `description`。**必须在 `exports` 里导出** `./locale/en.json` 与 `./locale/zh.json`，否则解析不到、静默退回包名。
-- **图标**：`package.json` 的 `icon`，值是相对该 `package.json` 的路径，随文件系统解析、不受 `exports` 约束。
+- **图标**：`package.json` 的 `icon`，值是相对该 `package.json` 的路径，随文件系统解析、不受 `exports` 约束。宿主把图标解码成图片放进 `img`，所以 `currentColor` 在那里恒为黑：写成填色加描边的彩色 SVG（`fill` 与 `stroke` 都给定值，不在外壳上写 `stroke="currentColor"`），每个插件各画一套，不要在插件之间复用同一个形状。
 - 两者都要进 `files`（`assets`、`locale`），否则发布包缺文件。
 - **改完 `exports` 按 [dev-copy.md](./dev-copy.md)「生效时机」处置**：标题、简介与图标由宿主进程经 Node 的模块解析器读（`packages/boot/app-boot/src/package-meta.ts` 的 `readPluginMeta`，每次调用都重新解析、自身不缓存结果），属于宿主半边那一类改动。判据：插件页上这个 bundle 的标题与简介换成了新词。
 
