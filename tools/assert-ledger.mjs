@@ -11,7 +11,7 @@
  *   6. 插件与 preset README 的三节固定形状（`## 功能` / `## 特性` / `## 安装`），`## 安装` 里给的是本包名，README 指的 .md 都在目录里
  *   7. 根 `README.md` 与包目录互相覆盖（都指向对方，且没有指向不存在目录的链接）
  *   8. `docs/rules/presets.md` 的 order 台账与各 preset 的 `<id>.patch.yml` 一致
- *   9. 本机开发副本是软链、指向本仓库、版本号与仓库一致（没装开发副本的机器跳过这一项）
+ *   9. web 开发 profile 里的自有包是软链、指向本仓库、版本号与仓库一致（没装这个 profile 的机器跳过这一项）
  *  10. 规则面（`README.md`、DETAILS 以外的 `.md`、`.patch.yml`、`.mjs` / `.js` / `.ts`）里的内核
  *      版本字面量与本包 `engines.dsh` 同串；历史实测记录（`DETAILS.md`）与 vendored 内容不查
  *  11. 抄自官方 preset 的 `<id>.patch.yml` 与已装内核的官方同名文件逐行一致，只放行已登记的差异
@@ -381,8 +381,11 @@ for (const [id, order] of declaredOrders) {
   seenOrders.set(order, id);
 }
 
-// ── 9. 开发副本（本机装了才查） ──────────────────────────────────────────────
-const localProfiles = profiles(dshHome());
+// ── 9. 开发副本（只查 web 这个开发 profile，装了才查） ────────────────────────
+// desktop 等其他 profile 装的是发布版，不跟随本仓库；把它们的实体副本也当漂移报出来
+// 只会让提交前的门禁一直红。开发副本的约定只落在 web 上。
+const DEV_PROFILE = 'web';
+const localProfiles = profiles(dshHome()).filter((profile) => profile.name === DEV_PROFILE);
 for (const profile of localProfiles) {
   for (const entry of packages) {
     const state = devCopyState(profile.dir, entry.name);

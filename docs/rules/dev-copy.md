@@ -2,6 +2,8 @@
 
 profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就是已安装内容**，改完即生效。**界面是新的、路由 404** 或撞 `Cannot find package '…'` 时查这一份。
 
+提交门禁只在 `web`（开发 profile）里校验这条；`desktop` 等其他 profile 装的是发布版、不跟随本仓库，不在它的检查范围内。
+
 ## 建立与校验
 
 `node tools/dev-link.mjs` 一次查全部 profile × 全部自有包：软链还在不在、指得对不对、读到的版本号对不对、被市场顶掉的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包（客户端半边因此不会被服务）。它另外扫 `node_modules/@lynn123411/` 下的软链本体，把断了和指向 `archive/` 的孤儿软链报出来——归档只搬仓库目录，profile 的 `dependencies` 与 `dsh.profile.bundles` 仍留着那个包名：软链因此是孤儿（`--write` 会删掉），而 registry 装的那份会被下一次 profile 同步按清单物化回来。要连清单一起清掉，得在每个装过它的 profile 里卸载：`dsh plugin --profile <name> remove <包名>`（见 [release.md](./release.md)「退役（归档）」）。`--write` 把有问题的连回仓库，并删掉孤儿软链。
