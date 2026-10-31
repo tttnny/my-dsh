@@ -2,8 +2,8 @@
  * 配置页的渲染自检：提示词那一格是「真的能改」，不是一块说明文字。
  *
  * 这个文件只锁一件事：插件页上这张卡片把写给模型的指令整段铺在一个 textarea
- * 里，读者改了它、点保存，改动就以一条 `prompt` 路径写进配置；没改时一个字都
- * 不写。「恢复默认」把内置默认填回草稿，同样要点保存才落盘。
+ * 里，读者改了它、离开输入框（或点「完成」），改动就以一条 `prompt` 路径写进
+ * 配置；没改时一个字都不写。卡片上没有保存按钮，任何输入离开即写盘。
  *
  * `@deepseek-ai/dsh-client-ui-primitives` 是替身（真组件带 .css 导入，Node 里
  * 跑不起来）：替身把 text / children 原样渲染，所以这里验的是本插件自己的视图
@@ -191,7 +191,7 @@ await test('改提示词：先停在输入框里，配置文档一个字都不�
   assert.equal(mutations.length, 0, '打字期间不写盘');
 });
 
-await test('点「完成」回到只读态，草稿原样留着', async () => {
+await test('点「完成」回到只读态，并把改过的提示词写进配置', async () => {
   const done = [...container.querySelectorAll('button')].find(
     (button) => button.textContent === 'promptDone'
   );
@@ -201,19 +201,7 @@ await test('点「完成」回到只读态，草稿原样留着', async () => {
   });
   const prompt = container.querySelector('.dsh-tidy-prompt');
   assert.equal(prompt.readOnly, true, '回到只读态');
-  assert.equal(prompt.value, '把收到的文字改写成同事之间说话的语气。', '没保存的草稿仍在框里');
-  assert.equal(mutations.length, 0, '收起改写态同样不写盘');
-});
-
-await test('点保存：提示词作为一条 prompt 路径写进配置', async () => {
-  const save = [...container.querySelectorAll('button')].find(
-    (button) => button.textContent === 'save'
-  );
-  assert.ok(save !== undefined, '保存按钮要在卡片上');
-  await act(async () => {
-    save.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    await settle();
-  });
+  assert.equal(prompt.value, '把收到的文字改写成同事之间说话的语气。', '草稿已写进配置并留在框里');
   assert.deepEqual(mutations, [
     { op: 'set', path: ['prompt'], value: '把收到的文字改写成同事之间说话的语气。' },
   ]);
@@ -221,7 +209,7 @@ await test('点保存：提示词作为一条 prompt 路径写进配置', async 
   assert.equal(settingsStore.getState().dirty, false);
 });
 
-await test('恢复默认：填回草稿、仍不写盘；再点保存写 unset', async () => {
+await test('恢复默认：填回草稿不写盘；点「完成」写 unset', async () => {
   const edit = [...container.querySelectorAll('button')].find(
     (button) => button.textContent === 'promptEdit'
   );
@@ -239,36 +227,43 @@ await test('恢复默认：填回草稿、仍不写盘；再点保存写 unset',
     await settle();
   });
   assert.equal(container.querySelector('.dsh-tidy-prompt').value, DEFAULT_PROMPT, '输入框回到默认');
-  assert.equal(mutations.length, 0, '恢复默认只是草稿');
+  assert.deepEqual(mutations, [], '恢复默认只是草稿，离开输入框才写盘');
 
-  const save = [...container.querySelectorAll('button')].find((button) => button.textContent === 'save');
+  const done = [...container.querySelectorAll('button')].find((button) => button.textContent === 'promptDone');
   await act(async () => {
-    save.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    done.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     await settle();
   });
   assert.deepEqual(mutations, [{ op: 'unset', path: ['prompt'] }], '与默认一字不差就存成空值');
 });
 
-await test('总开关关着时提示词照样看得见', async () => {
-  // 总开关只决定「翻不翻」，不决定「能不能配」：读者想先写好指令再开翻译是常态。
+await test('没有保存按钮：改 Base URL 后离开输入框就写盘', async () => {
+  const labels = [...container.querySelectorAll('button')].map((button) => button.textContent);
+  assert.ok(!labels.includes('save'), '卡片上不该再有保存按钮');
+  assert.ok(!labels.includes('saving'), '卡片上不该再有保存态按钮');
+
+  mutations.length = 0;
+  const input = [...container.querySelectorAll('input')].find(
+    (el) => el.getAttribute('aria-label') === 'baseUrlTitle'
+  );
+  assert.ok(input !== undefined, '要有 Base URL 输入框');
   await act(async () => {
-    doc = { ...doc, enabled: false, prompt: '' };
-    for (const listener of [...listeners]) listener();
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, 'https://api.changed.example/v1');
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     await settle();
   });
-  assert.equal(settingsStore.getState().committed.enabled, false, '前置：总开关应是关着的');
-  const prompt = container.querySelector('.dsh-tidy-prompt');
-  assert.ok(prompt !== null, '总开关关着时提示词那一格仍在页面上');
-  assert.equal(prompt.value, DEFAULT_PROMPT, '显示生效中的默认指令');
-  const editable =
-    [...container.querySelectorAll('button')].some((button) => button.textContent === 'promptEdit')
-    || !prompt.readOnly;
-  assert.ok(editable, '总开关关着时也能进改写态');
+  assert.deepEqual(mutations, [], '打字期间一个字都不写盘');
+
   await act(async () => {
-    doc = { ...doc, enabled: true };
-    for (const listener of [...listeners]) listener();
+    input.focus();
+    input.blur();
     await settle();
   });
+  assert.deepEqual(mutations, [
+    { op: 'set', path: ['baseUrl'], value: 'https://api.changed.example/v1' },
+  ], '离开输入框即写盘');
+  assert.equal(settingsStore.getState().committed.baseUrl, 'https://api.changed.example/v1');
 });
 
 await test('提示词一改，浏览器这一侧的译文池跟着换代', async () => {

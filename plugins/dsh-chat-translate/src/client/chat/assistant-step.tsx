@@ -538,7 +538,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     [translate]
   );
 
-  // 只读**已保存**的值：页面上还没点保存的草稿不影响正在看的这一行。
+  // 只读**已提交**的值：页面上还没写盘的草稿不影响正在看的这一行。
   const enabled = useSyncExternalStore(subscribeSettings, () => settingsStore.getState().committed.enabled);
   const aiConfigured = useSyncExternalStore(
     subscribeSettings,

@@ -1,26 +1,24 @@
 import { describeError } from '../../describe-error.ts';
 import { DEFAULT_PROMPT, isDefaultPrompt, resolvePrompt } from '../../prompt.ts';
-import { testServerChannel } from '../translate/api.ts';
 
 /**
  * This plugin's configuration page state: what the Host serves, what the reader
- * has staged on the page, and what a save would do.
+ * has staged on the page, and what a commit would write.
  *
- * There is no optimistic write and no debounce. Every control stages its edit
- * in a draft; the live configuration changes only when the reader presses
- * **保存**, and the whole batch crosses the wire as one revision-fenced write.
- * That is what keeps a half-typed Base URL from reaching the translation path
- * mid-edit, and it is why the reply renderer reads only the committed values:
- * a draft never changes what is already on screen.
+ * Every control stages its edit in a draft, and a draft is written as soon as
+ * the reader leaves that control: there is no save button. Leaving a control
+ * that holds an invalid value (an out-of-range timeout) writes nothing, so a
+ * bad number never reaches the Host; the page shows why and keeps the draft for
+ * correction.
  *
  * The API Key is staged the same way but written through the credentials
- * Remote on the same save, so the key and the rest of the settings commit as
+ * Remote on the same commit, so the key and the rest of the settings land as
  * one gesture.
  *
  * The prompt is staged like any text control, with one twist: the control shows
  * the *effective* instruction, so an untouched plugin displays the built-in
- * default in full. Saving that exact text clears the field again, which keeps
- * "empty means the built-in default" true in the stored document.
+ * default in full. Committing that exact text clears the field again, which
+ * keeps "empty means the built-in default" true in the stored document.
  */
 
 /** Resolved config as the Host serves it, plus the derived readiness flag. */
@@ -43,13 +41,6 @@ export interface DraftField {
   dirty: boolean;
   /** Whether the draft is not a value this field accepts (blocks saving). */
   invalid: boolean;
-}
-
-/** The channel probe run by one save: what the settings page reports. */
-export interface ProbeState {
-  running: boolean;
-  ok?: boolean;
-  message?: string;
 }
 
 /** Everything the page renders. */
@@ -81,10 +72,8 @@ export interface SettingsPageState {
   /** Whether any draft is invalid, which blocks the save. */
   invalid: boolean;
   saving: boolean;
-  /** The last save did not land: drafts stay for correction. */
+  /** The last commit did not land: drafts stay for correction. */
   saveFailed: boolean;
-  /** Probe from the last save; undefined until a save ran. */
-  probe?: ProbeState;
 }
 
 /** Profile entry id (== settings namespace) + credentials ref. */
@@ -165,11 +154,11 @@ export function parseTimeout(text: string): number | null | undefined {
 
 /**
  * The configuration page's own store: committed reads for the whole client,
- * plus the drafts and the save that this page alone owns.
+ * plus the drafts and the commit this page alone owns.
  *
  * `update` is the surface for controls outside the page — the composer dock
  * toggle writes the master switch straight through, which is the one place a
- * click takes effect without a save.
+ * click takes effect without leaving a control.
  */
 class SettingsStore {
   private state: SettingsPageState = {
@@ -197,6 +186,8 @@ class SettingsStore {
    * 输入框下方的「译」胶囊）不该把没保存的草稿冲掉。
    */
   private seeded: CommittedConfig | null = null;
+  /** One in-flight commit shared by every control that leaves at once. */
+  private inflight: Promise<void> | null = null;
 
   /**
    * Bind the DSH services. Called once from the settings UI setup; re-binding
@@ -343,8 +334,9 @@ class SettingsStore {
   }
 
   /**
-   * Stage one text control. The draft is local: nothing leaves this page until
-   * a save, so a half-typed Base URL never reaches the translation path.
+   * Stage one text control. The draft is local: nothing leaves this page while
+   * the reader types, so a half-typed Base URL never reaches the translation
+   * path. The control's blur commits it (see {@link save}).
    */
   draft(field: 'baseUrl' | 'model' | 'aiTimeoutMs' | 'prompt' | 'apiKey', text: string): void {
     this.state = {
@@ -358,9 +350,9 @@ class SettingsStore {
   /**
    * Put the built-in instruction back into the draft.
    *
-   * Restoring is intentionally a draft edit like typing: nothing is written
-   * until the reader saves, so the button beside the field behaves exactly like
-   * the field itself.
+   * Restoring is intentionally a draft edit like typing: it becomes committed
+   * when the reader leaves the field, so the button beside the field behaves
+   * exactly like the field itself.
    */
   restoreDefaultPrompt(): void {
     this.draft('prompt', DEFAULT_PROMPT);
@@ -368,8 +360,8 @@ class SettingsStore {
 
   /**
    * The master switch, written straight through: the composer dock pill and the
-   * page's own switch are two entries into one state, and the pill has no save
-   * button to press.
+   * page's own switch are two entries into one state, and the pill has no field
+   * to leave.
    */
   async setEnabled(enabled: boolean): Promise<void> {
     this.state = { ...this.state, committed: { ...this.state.committed, enabled } };
@@ -386,7 +378,7 @@ class SettingsStore {
    * staged no change — the effective prompt is still the default. Leaving the
    * box blank in that state would contradict what the card promises (the box
    * always shows what the model receives), so it is filled in again. Called when
-   * a save lands and when the reader leaves the editing state.
+   * a commit lands and when the reader leaves the editing state.
    */
   settlePromptDraft(): void {
     if (!isDefaultPrompt(this.state.prompt.text)) return;
@@ -398,16 +390,26 @@ class SettingsStore {
   }
 
   /**
-   * Write every staged edit as one revision-fenced batch, then probe the
-   * channel and report what the probe found.
+   * Write every staged edit as one revision-fenced batch.
    *
-   * The probe runs after the save lands, never before it: a probe against
-   * values the Host has not accepted would report on a configuration nobody
-   * has. A refused write keeps every draft so the reader can correct it.
+   * Called when the reader leaves a control. An invalid draft writes nothing at
+   * all, so the page keeps it for correction instead of storing a value it never
+   * showed. A refused write keeps every draft for the same reason.
+   *
+   * Concurrent callers (a field blur racing the prompt's **完成** button) share
+   * one in-flight commit instead of starting a second one.
    *
    * @returns nothing; the outcome is published through {@link getState}.
    */
-  async save(): Promise<void> {
+  save(): Promise<void> {
+    if (this.inflight) return this.inflight;
+    this.inflight = this.runSave().finally(() => {
+      this.inflight = null;
+    });
+    return this.inflight;
+  }
+
+  private async runSave(): Promise<void> {
     if (this.state.saving) return;
     if (this.state.invalid) return;
     const form = this.form;
@@ -429,7 +431,7 @@ class SettingsStore {
       ops.push(model === '' ? { op: 'unset', path: ['model'] } : { op: 'set', path: ['model'], value: model });
     }
     if (timeout === null) {
-      // 空着保存 = 清除该项：写 unset，让它回落到 schema 默认；值本来就等于默认
+      // 空着离开 = 清除该项：写 unset，让它回落到 schema 默认；值本来就等于默认
       // 时不必写一条什么也不改变的记录。
       if (this.state.committed.aiTimeoutMs !== DEFAULT_CONFIG.aiTimeoutMs) {
         ops.push({ op: 'unset', path: ['aiTimeoutMs'] });
@@ -438,7 +440,7 @@ class SettingsStore {
       ops.push({ op: 'set', path: ['aiTimeoutMs'], value: timeout });
     }
     // 提示词：一字不差等于内置默认时写 unset，把「空着 = 用默认」这条规则留在
-    // 配置文档里；空着保存同样等于回到默认。与已保存值逐字比，不动它就不写记录。
+    // 配置文档里；空着离开同样等于回到默认。与已保存值逐字比，不动它就不写记录。
     const prompt = this.state.prompt.text.trim();
     const committedPrompt = this.state.committed.prompt.trim();
     if (isDefaultPrompt(prompt)) {
@@ -447,7 +449,7 @@ class SettingsStore {
       ops.push({ op: 'set', path: ['prompt'], value: prompt });
     }
 
-    this.state = { ...this.state, saving: true, saveFailed: false, probe: undefined };
+    this.state = { ...this.state, saving: true, saveFailed: false };
     this.notify();
 
     let landed = true;
@@ -472,15 +474,9 @@ class SettingsStore {
       saving: false,
       saveFailed: false,
       apiKey: { text: '', dirty: false },
-      probe: { running: true },
     };
     this.settlePromptDraft();
     this.notify();
-    const probe = await testServerChannel('openai');
-    this.state = {
-      ...this.state,
-      probe: { running: false, ok: probe.ok, message: probe.error },
-    };
     this.deriveDrafts();
   }
 

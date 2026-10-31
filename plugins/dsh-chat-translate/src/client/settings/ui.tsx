@@ -46,10 +46,10 @@ function withSamples(text: string, samples: Record<string, string>): React.React
 /**
  * Chat-translate's own configuration page inside the DSH **Plugins** page.
  *
- * Every control stages its edit; **保存** writes the whole batch as one
- * revision-fenced document mutation and then probes the channel, reporting
- * what it found. Nothing here is written while the reader types, so a
- * half-finished Base URL can never reach the translation path.
+ * Every control stages its edit and leaves no save button; leaving that control
+ * writes the whole batch as one revision-fenced document mutation. Nothing here
+ * is written while the reader types, so a half-finished Base URL can never reach
+ * the translation path.
  *
  * @param props - renderer-bound seat of the `plugins.bundle.config` slot: the
  * `view` asked for plus the `t` seat its `locale: NS` registration injects.
@@ -99,8 +99,6 @@ export function TidySettingsPanel(
     });
   };
 
-  const saveDisabled = state.saving || state.invalid || !state.dirty || (!state.writable && state.apiKey.text.trim() === '');
-
   return (
     <div className="dsh-tidy-settings">
       {/* 1. 总开关：拨了就生效（输入框下方那颗「译」胶囊是同一个状态，它没有保存按钮） */}
@@ -143,6 +141,9 @@ export function TidySettingsPanel(
             placeholder={state.committed.aiConfigured ? t('apiKeyPlaceholderConfigured') : 'sk-...'}
             value={state.apiKey.text}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => settingsStore.draft('apiKey', e.target.value)}
+            onBlur={() => {
+              void settingsStore.save();
+            }}
             aria-label={t('apiKeyTitle')}
           />
         </div>
@@ -163,6 +164,9 @@ export function TidySettingsPanel(
             placeholder="https://api.openai.com/v1"
             value={state.baseUrl.text}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => settingsStore.draft('baseUrl', e.target.value)}
+            onBlur={() => {
+              void settingsStore.save();
+            }}
             aria-label={t('baseUrlTitle')}
           />
         </div>
@@ -180,6 +184,9 @@ export function TidySettingsPanel(
             placeholder="gpt-4o-mini"
             value={state.model.text}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => settingsStore.draft('model', e.target.value)}
+            onBlur={() => {
+              void settingsStore.save();
+            }}
             aria-label={t('modelTitle')}
           />
         </div>
@@ -199,9 +206,17 @@ export function TidySettingsPanel(
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               settingsStore.draft('aiTimeoutMs', e.target.value)
             }
+            onBlur={() => {
+              void settingsStore.save();
+            }}
             aria-label={t('timeoutTitle')}
           />
         </div>
+        {state.invalid && (
+          <div className="dsh-tidy-test-result fail" role="status">
+            {t('invalidTimeout')}
+          </div>
+        )}
 
         <div className="dsh-tidy-row">
           <Button variant="outline" size="sm" disabled={testing?.running} onClick={runTest}>
@@ -234,8 +249,10 @@ export function TidySettingsPanel(
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    settingsStore.settlePromptDraft();
-                    setEditingPrompt(false);
+                    void settingsStore.save().then(() => {
+                      settingsStore.settlePromptDraft();
+                      setEditingPrompt(false);
+                    });
                   }}
                 >
                   {t('promptDone')}
@@ -260,42 +277,20 @@ export function TidySettingsPanel(
             if (!editingPrompt) return;
             settingsStore.draft('prompt', e.target.value);
           }}
+          onBlur={() => {
+            if (!editingPrompt) return;
+            void settingsStore.save();
+          }}
         />
       </div>
 
-      {/* 4. 保存：唯一写盘的手势，一次提交上面所有草稿；写完自动探一次通道 */}
-      <div className="dsh-tidy-card">
-        <div className="dsh-tidy-row dsh-tidy-actions">
-          <Button
-            variant="primary"
-            size="sm"
-            className="dsh-tidy-save"
-            disabled={saveDisabled}
-            onClick={() => {
-              void settingsStore.save();
-            }}
-          >
-            {state.saving ? t('saving') : t('save')}
-          </Button>
-          {state.dirty && !state.saving && <span className="dsh-tidy-hint">{t('unsavedHint')}</span>}
-        </div>
-        {state.invalid && (
-          <div className="dsh-tidy-test-result fail" role="status">
-            {t('invalidTimeout')}
-          </div>
-        )}
-        {state.saveFailed && (
-          <div className="dsh-tidy-test-result fail" role="status">
-            {t('saveFailed').replace('{error}', t('unknownError'))}
-          </div>
-        )}
-        {state.probe !== undefined && !state.probe.running && (
-          <div className={`dsh-tidy-test-result ${state.probe.ok ? 'ok' : 'fail'}`} role="status">
-            {state.probe.ok
-              ? t('saveProbeOk')
-              : t('saveProbeFail').replace('{error}', state.probe.message || t('unknownError'))}
-          </div>
-        )}
+      {/* 4. 自动保存状态：改动在离开输入框时写盘，没有保存按钮 */}
+      <div className="dsh-tidy-autosave" role="status">
+        {state.saving
+          ? t('saving')
+          : state.saveFailed
+            ? t('saveFailed').replace('{error}', t('unknownError'))
+            : t('autoSaveHint')}
       </div>
     </div>
   );

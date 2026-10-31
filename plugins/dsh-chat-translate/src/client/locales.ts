@@ -19,12 +19,10 @@ export const zh = {
   badgeUnconfigured: '未配置',
 
   apiKeyTitle: 'API Key',
-  apiKeyDesc: '保存至 {home} 的 {ref}，保存后立即生效；留空保存 = 清除',
+  apiKeyDesc: '保存至 {home} 的 {ref}，离开输入框即保存生效；留空离开 = 清除',
   apiKeyPlaceholderConfigured: '已配置（如需更换请直接输入）',
-  save: '保存',
   saving: '保存中…',
-  keySaved: '已保存到 {home}，立即生效',
-  keyCleared: '已清除 API Key（未配置时正文保持原文，不会翻译）',
+  autoSaveHint: '改动在离开输入框时自动保存',
   saveFailed: '保存失败：{error}',
   unknownError: '未知错误',
 
@@ -41,13 +39,10 @@ export const zh = {
   testOk: '连接正常，延迟 {latency}ms',
   testFail: '失败：{error}',
 
-  unsavedHint: '改动保存后才生效',
   invalidTimeout: '超时填写不合法：请填 500 到 900000 之间的毫秒数',
-  saveProbeOk: '设置已保存，通道连接正常',
-  saveProbeFail: '设置已保存，但通道探测失败：{error}',
 
   promptTitle: '翻译提示词',
-  promptDesc: '拼在待译正文前面的那段指令。点「编辑」可以改写，改完点下面的「保存」生效；留空等于用内置默认。',
+  promptDesc: '拼在待译正文前面的那段指令。点「编辑」可以改写，离开输入框或点「完成」后立即生效；留空等于用内置默认。',
   promptEdit: '编辑',
   promptDone: '完成',
   promptRestore: '恢复默认',
@@ -83,12 +78,10 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   badgeUnconfigured: 'Not configured',
 
   apiKeyTitle: 'API Key',
-  apiKeyDesc: 'Saved as {ref} in {home}; takes effect immediately. Saving an empty value clears it.',
+  apiKeyDesc: 'Saved as {ref} in {home}; leaving the field saves it and it takes effect immediately. Leaving it empty clears it.',
   apiKeyPlaceholderConfigured: 'Configured (type a new value to replace it)',
-  save: 'Save',
   saving: 'Saving…',
-  keySaved: 'Saved to {home}; takes effect immediately',
-  keyCleared: 'API Key cleared (with nothing configured, replies stay in their original language)',
+  autoSaveHint: 'Changes are saved when you leave a field',
   saveFailed: 'Save failed: {error}',
   unknownError: 'Unknown error',
 
@@ -105,13 +98,10 @@ export const en: Record<ChatTranslateLocaleKey, string> = {
   testOk: 'Connected, {latency}ms latency',
   testFail: 'Failed: {error}',
 
-  unsavedHint: 'Changes take effect after you save',
   invalidTimeout: 'Invalid timeout: enter a number of milliseconds between 500 and 900000',
-  saveProbeOk: 'Settings saved; the channel answered',
-  saveProbeFail: 'Settings saved, but the channel probe failed: {error}',
 
   promptTitle: 'Translation prompt',
-  promptDesc: 'The instruction placed ahead of the text to translate. Press Edit to rewrite it, then Save to apply; an empty field means the built-in default.',
+  promptDesc: 'The instruction placed ahead of the text to translate. Press Edit to rewrite it; it applies when you leave the field or press Done. An empty field means the built-in default.',
   promptEdit: 'Edit',
   promptDone: 'Done',
   promptRestore: 'Restore default',

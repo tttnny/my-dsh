@@ -1,7 +1,7 @@
 // SettingsStore unit tests: attach/derive over the shared configuration form,
-// staged drafts that write nothing until the reader saves, the save's
-// revision-fenced path-op batch, the credentials Remote unwrapping, the
-// master switch written straight through, and the probe a save runs.
+// staged drafts that write nothing while the reader types, the commit's
+// revision-fenced path-op batch, the credentials Remote unwrapping, and the
+// master switch written straight through.
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
@@ -14,27 +14,6 @@ global.document = dom.window.document;
 global.localStorage = dom.window.localStorage;
 global.MutationObserver = dom.window.MutationObserver;
 global.HTMLElement = dom.window.HTMLElement;
-
-// 保存之后的通道探测走真实的 testServerChannel，它的唯一出口是 fetch。
-// 每个用例自己装、自己拆，避免拼次的假 fetch 把状态带到下一个用例。
-let probeCalls = 0;
-
-/**
- * 装一个只服务本次探测的 fetch 桩。
- *
- * @param response - 探测接口要回的那份 JSON。
- * @returns 拆掉这个桩的函数。
- */
-function stubProbe(response) {
-  const original = global.fetch;
-  global.fetch = async () => {
-    probeCalls++;
-    return { ok: true, json: async () => response };
-  };
-  return () => {
-    global.fetch = original;
-  };
-}
 
 const { settingsStore, TRANSLATE_API_KEY_REF, parseTimeout, AI_TIMEOUT_MIN, AI_TIMEOUT_MAX } =
   await import('../src/client/settings/store.ts');
@@ -142,7 +121,7 @@ await testAsync('attach 后从表单读出已保存值，草稿就位且一个�
   assert.equal(s.dirty, false, '刚挂载没有任何待保存的改动');
 });
 
-await testAsync('暂存：改草稿不写盘，已保存值与渲染读到的都不动', async () => {
+await testAsync('暂存：打字期间不写盘，已保存值与渲染读到的都不动', async () => {
   const form = makeForm({ baseUrl: 'http://old', model: 'm' });
   settingsStore.attach(form, makeRemote());
   await sleep(10);
@@ -151,7 +130,7 @@ await testAsync('暂存：改草稿不写盘，已保存值与渲染读到的都
   settingsStore.draft('model', 'm2');
   await sleep(20);
 
-  assert.equal(form.mutations.length, 0, '草稿一个字都不许写盘');
+  assert.equal(form.mutations.length, 0, '打字期间一个字都不许写盘');
   assert.equal(settingsStore.getState().baseUrl.text, 'http://new', '草稿留在页面上');
   assert.equal(settingsStore.getState().committed.baseUrl, 'http://old', '已保存值是另一份');
   assert.equal(settingsStore.getState().dirty, true, '有待保存的改动');
@@ -244,7 +223,7 @@ await testAsync('提示词输入框显示生效的那份：没写过就整段显
   assert.equal(form.mutations.length, 0, '没动就不写一条记录');
 });
 
-await testAsync('改写提示词：先停在草稿里，点保存写一条 set', async () => {
+await testAsync('改写提示词：先停在草稿里，离开输入框才写一条 set', async () => {
   const form = makeForm({ baseUrl: 'http://x', model: 'm' });
   settingsStore.attach(form, makeRemote());
   await sleep(10);
@@ -311,7 +290,7 @@ await testAsync('一字不差贴回默认 = 回到默认：写 unset 而不是�
   assert.equal(settingsStore.getState().prompt.text, DEFAULT_PROMPT, '输入框仍显示生效的默认');
 });
 
-await testAsync('恢复默认只是填回草稿，仍然要点保存才写盘', async () => {
+await testAsync('恢复默认只是填回草稿，离开输入框才写盘', async () => {
   const form = makeForm({ baseUrl: 'http://x', model: 'm', prompt: '我自己写的一段' });
   settingsStore.attach(form, makeRemote());
   await sleep(10);
@@ -322,47 +301,13 @@ await testAsync('恢复默认只是填回草稿，仍然要点保存才写盘', 
   assert.deepEqual(form.mutations, [{ op: 'unset', path: ['prompt'] }]);
 });
 
-await testAsync('总开关是唯一即时生效的项：拨一下就写，不必点保存', async () => {
+await testAsync('总开关拨一下就写，不必等离开输入框', async () => {
   const form = makeForm({ enabled: true, baseUrl: 'http://x', model: 'm' });
   settingsStore.attach(form, makeRemote());
   await sleep(10);
   await settingsStore.setEnabled(false);
   assert.deepEqual(form.mutations, [{ op: 'set', path: ['enabled'], value: false }]);
   assert.equal(settingsStore.getState().committed.enabled, false, '胶囊与配置页共用的状态立刻跟着变');
-});
-
-await testAsync('保存后自动探一次通道，结果留在页面上', async () => {
-  const form = makeForm({ baseUrl: 'http://old', model: 'm' });
-  settingsStore.attach(form, makeRemote());
-  await sleep(10);
-  probeCalls = 0;
-  const restore = stubProbe({ ok: true, latencyMs: 12 });
-  try {
-    settingsStore.draft('baseUrl', 'http://new');
-    await settingsStore.save();
-  } finally {
-    restore();
-  }
-  assert.equal(probeCalls, 1, '一次保存探一次，不多探');
-  assert.equal(settingsStore.getState().probe?.running, false);
-  assert.equal(settingsStore.getState().probe?.ok, true);
-});
-
-await testAsync('探测失败不改保存结果：设置仍然落盘，失败原因报在页面上', async () => {
-  const form = makeForm({ baseUrl: 'http://old', model: 'm' });
-  settingsStore.attach(form, makeRemote());
-  await sleep(10);
-  const restore = stubProbe({ ok: false, latencyMs: 5, error: 'HTTP 401' });
-  try {
-    settingsStore.draft('baseUrl', 'http://new');
-    await settingsStore.save();
-  } finally {
-    restore();
-  }
-  assert.equal(settingsStore.getState().committed.baseUrl, 'http://new', '保存本身是成功的');
-  assert.equal(settingsStore.getState().saveFailed, false);
-  assert.equal(settingsStore.getState().probe?.ok, false);
-  assert.equal(settingsStore.getState().probe?.message, 'HTTP 401', '失败原因原样带回页面');
 });
 
 await testAsync('API Key 与其它设置共用一次保存：草稿写进凭据面，草稿随后清空', async () => {
@@ -379,6 +324,16 @@ await testAsync('API Key 与其它设置共用一次保存：草稿写进凭据�
   );
   assert.equal(settingsStore.getState().apiKey.text, '', '密钥不回显：草稿保存后清空');
   assert.equal(settingsStore.getState().committed.baseUrl, 'http://new');
+});
+
+await testAsync('同时两次提交共享同一批写，不重复落盘', async () => {
+  const form = makeForm({ baseUrl: 'http://old', model: 'm' });
+  settingsStore.attach(form, makeRemote());
+  await sleep(10);
+  settingsStore.draft('baseUrl', 'http://new');
+  await Promise.all([settingsStore.save(), settingsStore.save()]);
+  assert.deepEqual(form.mutations, [{ op: 'set', path: ['baseUrl'], value: 'http://new' }], '只写一批');
+  assert.equal(settingsStore.getState().dirty, false);
 });
 
 await testAsync('out-of-range 超时收进范围', async () => {
