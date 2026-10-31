@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import {
-  ROOT_ATTRIBUTE, HEADING_ATTRIBUTE, INDICATOR_ATTRIBUTE, CODE_ATTRIBUTE, SHELL_ATTRIBUTE, FONT_ATTRIBUTE, NATIVE_ATTRIBUTE,
+  ROOT_ATTRIBUTE, HEADING_ATTRIBUTE, CODE_ATTRIBUTE, SHELL_ATTRIBUTE, FONT_ATTRIBUTE, NATIVE_ATTRIBUTE,
   ROOT_VARIABLES,
   DEFAULT_SETTINGS, clampNumber, normalizeSettings, projectSettings, applyProjection, clearProjection,
 } from '../src/client/settings.ts';
@@ -73,10 +73,10 @@ test('clampNumber 认得出数字字符串，认不出的用兜底', () => {
   assert.equal(clampNumber(Number.POSITIVE_INFINITY, 0, 360, 35), 35);
 });
 
-test('投影写的是七个属性与四个变量，没有别的', () => {
+test('投影写的是六个属性与四个变量，没有别的', () => {
   const projection = projectSettings(normalizeSettings({}));
   assert.deepEqual(Object.keys(projection.attributes).sort(), [
-    CODE_ATTRIBUTE, FONT_ATTRIBUTE, HEADING_ATTRIBUTE, INDICATOR_ATTRIBUTE, NATIVE_ATTRIBUTE, ROOT_ATTRIBUTE, SHELL_ATTRIBUTE,
+    CODE_ATTRIBUTE, FONT_ATTRIBUTE, HEADING_ATTRIBUTE, NATIVE_ATTRIBUTE, ROOT_ATTRIBUTE, SHELL_ATTRIBUTE,
   ].sort());
   assert.deepEqual(Object.keys(projection.variables).sort(), [...ROOT_VARIABLES].sort());
   assert.equal(projection.attributes[ROOT_ATTRIBUTE], 'on');
@@ -85,8 +85,7 @@ test('投影写的是七个属性与四个变量，没有别的', () => {
 });
 
 test('关掉的开关写成 null（调用方删属性），不是写个 off', () => {
-  const projection = projectSettings(normalizeSettings({ headingIndicator: false, codePalette: false, shellSkin: false, mapleFont: false }));
-  assert.equal(projection.attributes[INDICATOR_ATTRIBUTE], null);
+  const projection = projectSettings(normalizeSettings({ codePalette: false, shellSkin: false, mapleFont: false }));
   assert.equal(projection.attributes[CODE_ATTRIBUTE], null);
   assert.equal(projection.attributes[SHELL_ATTRIBUTE], null);
   assert.equal(projection.attributes[FONT_ATTRIBUTE], null);

@@ -65,20 +65,19 @@ function valueOf(resolved, field) {
   return slot !== null && typeof slot === 'object' && typeof slot.get === 'function' ? slot.get() : slot;
 }
 
-await test('Config 的十个字段齐全且默认值就是 Maple 的出厂值', () => {
+await test('Config 的九个字段齐全且默认值就是 Maple 的出厂值', () => {
   const resolved = new plugin.Config({});
   assert.equal(valueOf(resolved, 'hueLight'), 35);
   assert.equal(valueOf(resolved, 'hueDark'), 207);
   assert.equal(valueOf(resolved, 'lineHeight'), 1.75);
   assert.equal(valueOf(resolved, 'paragraphGap'), 10);
   assert.equal(valueOf(resolved, 'headingColor'), 'colorful');
-  assert.equal(valueOf(resolved, 'headingIndicator'), true);
   assert.equal(valueOf(resolved, 'codePalette'), true);
   assert.equal(valueOf(resolved, 'shellSkin'), true);
   assert.equal(valueOf(resolved, 'mapleFont'), true);
   assert.equal(valueOf(resolved, 'nativePalette'), false);
   assert.deepEqual(Object.keys(resolved).sort(), [
-    'codePalette', 'headingColor', 'headingIndicator', 'hueDark', 'hueLight', 'lineHeight', 'mapleFont', 'nativePalette', 'paragraphGap', 'shellSkin',
+    'codePalette', 'headingColor', 'hueDark', 'hueLight', 'lineHeight', 'mapleFont', 'nativePalette', 'paragraphGap', 'shellSkin',
   ]);
 });
 
@@ -134,7 +133,7 @@ await test('宿主半边的出厂值与浏览器半边那份默认值逐字段�
     for (const key of ['hueLight', 'hueDark', 'lineHeight', 'paragraphGap']) {
       assert.equal(String(valueOf(resolved, key)), fields[key], `${key} 的两份默认值不一致`);
     }
-    for (const key of ['headingColor', 'headingIndicator', 'codePalette', 'shellSkin', 'mapleFont']) {
+    for (const key of ['headingColor', 'codePalette', 'shellSkin', 'mapleFont']) {
       const expected = fields[key] === 'true' ? true : fields[key] === 'false' ? false : fields[key].replace(/['"]/g, '');
       assert.equal(valueOf(resolved, key), expected, `${key} 的两份默认值不一致`);
     }

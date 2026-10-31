@@ -118,7 +118,7 @@ test('文档里写死的数字与实际一致', () => {
   assert.ok(says(details, sheets, '张样式表'), `DETAILS 里的样式表数不是 ${sheets}`);
   // 投影写的属性数
   const projection = readFileSync(join(root, 'src/client/settings.ts'), 'utf8');
-  const attrs = (projection.match(/\[(ROOT|HEADING|INDICATOR|CODE|SHELL|FONT|NATIVE)_ATTRIBUTE\]:/g) ?? []).length / 2;
+  const attrs = (projection.match(/\[(ROOT|HEADING|CODE|SHELL|FONT|NATIVE)_ATTRIBUTE\]:/g) ?? []).length / 2;
   assert.ok(says(details, attrs, '个属性'), `DETAILS 里的属性数不是 ${attrs}`);
 });
 

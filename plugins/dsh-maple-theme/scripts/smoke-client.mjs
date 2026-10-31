@@ -206,7 +206,6 @@ check('每张标签都带 data-plugin（卸载时按它清理）', pluginTags.ev
 /* ---- 投影：出厂的几个值真的落到 <html> 上 ---- */
 check('根元素带上了开启属性', rootElement.getAttribute('data-maple-theme') === 'on', String(rootElement.getAttribute('data-maple-theme')));
 check('标题配色默认六级换色', rootElement.getAttribute('data-maple-heading') === 'colorful', String(rootElement.getAttribute('data-maple-heading')));
-check('等级标记默认开', rootElement.getAttribute('data-maple-indicator') === 'on', String(rootElement.getAttribute('data-maple-indicator')));
 check('代码配色默认开', rootElement.getAttribute('data-maple-code') === 'on', String(rootElement.getAttribute('data-maple-code')));
 check('外壳装饰默认开', rootElement.getAttribute('data-maple-shell') === 'on', String(rootElement.getAttribute('data-maple-shell')));
 check('字体默认开', rootElement.getAttribute('data-maple-font') === 'on', String(rootElement.getAttribute('data-maple-font')));
@@ -215,11 +214,10 @@ check('深色色相写进了行内变量', rootElement.style.getPropertyValue('-
 check('行高写进了行内变量', rootElement.style.getPropertyValue('--maple-line-height') === '1.75', rootElement.style.getPropertyValue('--maple-line-height'));
 
 /* ---- 投影随配置变化：改值 → 属性跟着换 ---- */
-form.push({ hueLight: 210, lineHeight: 1.9, headingColor: 'accent', headingIndicator: false, codePalette: false, shellSkin: false, mapleFont: false });
+form.push({ hueLight: 210, lineHeight: 1.9, headingColor: 'accent', codePalette: false, shellSkin: false, mapleFont: false });
 check('色相改动传到了行内变量', rootElement.style.getPropertyValue('--maple-hue-light') === '210', rootElement.style.getPropertyValue('--maple-hue-light'));
 check('行高改动传到了行内变量', rootElement.style.getPropertyValue('--maple-line-height') === '1.9', rootElement.style.getPropertyValue('--maple-line-height'));
 check('标题配色改动传到了属性', rootElement.getAttribute('data-maple-heading') === 'accent', String(rootElement.getAttribute('data-maple-heading')));
-check('关掉的开关把属性删掉了', rootElement.getAttribute('data-maple-indicator') === null, String(rootElement.getAttribute('data-maple-indicator')));
 check('关掉代码配色也删属性', rootElement.getAttribute('data-maple-code') === null, String(rootElement.getAttribute('data-maple-code')));
 check('关掉外壳装饰也删属性', rootElement.getAttribute('data-maple-shell') === null, String(rootElement.getAttribute('data-maple-shell')));
 check('关掉字体也删属性', rootElement.getAttribute('data-maple-font') === null, String(rootElement.getAttribute('data-maple-font')));
@@ -263,18 +261,18 @@ check('每条文案都非空', enKeys.every((key) => typeof dictionary.en[key] =
 // 前面几步已经把一半属性删掉了，卸载时本来就没东西可删。
 form.push({
   hueLight: 35, hueDark: 207, lineHeight: 1.75, paragraphGap: 10,
-  headingColor: 'colorful', headingIndicator: true, codePalette: true, shellSkin: true, mapleFont: true,
+  headingColor: 'colorful', codePalette: true, shellSkin: true, mapleFont: true,
 });
 const beforeUnload = [
-  'data-maple-theme', 'data-maple-heading', 'data-maple-indicator',
+  'data-maple-theme', 'data-maple-heading',
   'data-maple-code', 'data-maple-shell', 'data-maple-font',
 ].filter((name) => rootElement.getAttribute(name) !== null);
-check('卸载前确实写满了属性（否则下面那条是空转）', beforeUnload.length === 6, beforeUnload.join('、'));
+check('卸载前确实写满了属性（否则下面那条是空转）', beforeUnload.length === 5, beforeUnload.join('、'));
 
 for (const dispose of ctx.effects.splice(0)) dispose();
-// 投影一共写六个属性与四个变量；卸载后一个都不许留，否则下次启用会带着旧状态。
+// 投影一共写五个属性与四个变量；卸载后一个都不许留，否则下次启用会带着旧状态。
 const PROJECTED_ATTRIBUTES = [
-  'data-maple-theme', 'data-maple-heading', 'data-maple-indicator',
+  'data-maple-theme', 'data-maple-heading',
   'data-maple-code', 'data-maple-shell', 'data-maple-font',
 ];
 const leftover = PROJECTED_ATTRIBUTES.filter((name) => rootElement.getAttribute(name) !== null);

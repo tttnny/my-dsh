@@ -58,7 +58,6 @@ html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-cha
 
 /* 标题：字号与字重来自 tokens.css 的复合令牌，这里只补颜色、间距与 h5/h6。 */
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6) {
-  position: relative;
   margin: 28px 0 12px;
 }
 
@@ -97,31 +96,6 @@ html[data-maple-theme='on'][data-maple-heading='text']:not([data-maple-native='o
 html[data-maple-theme='on'][data-maple-heading='text']:not([data-maple-native='on']) [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h4),
 html[data-maple-theme='on'][data-maple-heading='text']:not([data-maple-native='on']) [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5),
 html[data-maple-theme='on'][data-maple-heading='text']:not([data-maple-native='on']) [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6) { color: var(--maple-heading-color); }
-
-/* 标题等级标记：Maple 的 heading-indicator-auto——平时看不见，悬停时在左侧淡入 H1…H6。 */
-html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6)::before {
-  position: absolute;
-  inset-inline-start: -1.9rem;
-  top: 0.15em;
-  font-size: calc(var(--dsh-content-font-size, 14px) * 0.7);
-  font-weight: 500;
-  line-height: 1;
-  color: var(--dsw-alias-label-caption);
-  opacity: 0;
-  transition: opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out);
-  pointer-events: none;
-}
-
-html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6):hover::before {
-  opacity: 1;
-}
-
-html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1)::before { content: 'H1'; }
-html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h2)::before { content: 'H2'; }
-html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h3)::before { content: 'H3'; }
-html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h4)::before { content: 'H4'; }
-html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5)::before { content: 'H5'; }
-html[data-maple-theme='on'][data-maple-indicator='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6)::before { content: 'H6'; }
 
 /* 引用：Maple 是浅底 + 左侧一条色带，不是宿主的单边竖线。 */
 html[data-maple-theme='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote) {

@@ -17,12 +17,10 @@ import { HUE_PRESETS, matchPreset, NATIVE_PRESET_ID, PALETTE_PRESETS } from './p
 /**
  * 常用配色的色相预设：一键把浅色与深色色相同时切过去。
  *
- * 这些都是「暖 / 冷」两极里有名字的位置，不是随手取的数：
- * 35° 是 Maple 出厂值（暖白），207° 是它的深色出厂值（冷灰），
- * 其余几个覆盖日常会想要的方向（紫、青、绿、玫瑰）。
- * 浅色取偏亮的一侧、深色取偏冷的一侧，两套同时给，切过去立刻成套。
+ * 这些都是有名字的位置，不是随手取的数：
+ * 35° 是 Maple 出厂值（暖白），207° 是它的深色出厂值（冷灰）；
+ * 230° 是浅深同调的蓝（天青），想要整屏一个方向时用它。
  */
-
 
 /** 标题配色的三个选项：值、文案键、面板 id 后缀。 */
 const HEADING_OPTIONS = [
@@ -127,12 +125,10 @@ function NumberField({ value, min, max, step, unit, label, onCommit }: {
 }
 
 /**
- * 预设选择器：一个下拉按钮，列出七个色相组合加一条「DSH 原生」。
+ * 预设选择器：一个下拉按钮，列出两个色相组合加一条「DSH 原生」。
  *
- * 用下拉而不是分段控件，两个理由：
- *   1. 分段控件没有「一个都没选中」这种状态。手调过色相之后一对色相不对应任何预设，
- *      传个空串进去，指示块会被平移到轨道外面、压在同一行的说明文字上。
- *   2. 八个中文标签铺开要 700px 以上，会把同一行的说明挤成两行。
+ * 用下拉而不是分段控件，是因为分段控件没有「一个都没选中」这种状态：手调过色相之后
+ * 一对色相不对应任何预设，传个空串进去，指示块会被平移到轨道外面、压在同一行的说明文字上。
  * 下拉按钮的文案本身就是状态：对上某个预设就显示它的名字，对不上显示「自定义」。
  * @param props.value - 当前命中的预设 id；自定义时为 undefined。
  * @param props.items - 预设的 id 与已本地化的名字。
@@ -296,10 +292,6 @@ export function MapleThemeCard(
             options={HEADING_OPTIONS.map(option => ({ value: option.value, label: t(option.key) }))}
             onChange={(next) => { write('headingColor', next) }}
           />
-        </Row>
-        <Row title={t('card.headingIndicator')} hint={t('card.headingIndicatorHint')}>
-          <Switch checked={current.headingIndicator} label={t('card.headingIndicator')}
-            onChange={(next) => { write('headingIndicator', next) }} />
         </Row>
       </section>
 

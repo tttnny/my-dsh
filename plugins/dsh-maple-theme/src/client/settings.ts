@@ -16,9 +16,6 @@ export const ROOT_ATTRIBUTE = 'data-maple-theme';
 /** 标题配色方式落到 `<html>` 上的属性名。 */
 export const HEADING_ATTRIBUTE = 'data-maple-heading';
 
-/** 标题等级标记的开关属性名。 */
-export const INDICATOR_ATTRIBUTE = 'data-maple-indicator';
-
 /** 代码配色的开关属性名。 */
 export const CODE_ATTRIBUTE = 'data-maple-code';
 
@@ -62,7 +59,6 @@ export interface MapleSettings {
   lineHeight: number;
   paragraphGap: number;
   headingColor: 'colorful' | 'accent' | 'text';
-  headingIndicator: boolean;
   codePalette: boolean;
   shellSkin: boolean;
   /** 配色退回宿主自己的（「DSH 原生」预设）。 */
@@ -78,7 +74,6 @@ export const DEFAULT_SETTINGS: Readonly<MapleSettings> = Object.freeze({
   lineHeight: 1.75,
   paragraphGap: 10,
   headingColor: 'colorful',
-  headingIndicator: true,
   codePalette: true,
   shellSkin: true,
   nativePalette: false,
@@ -119,7 +114,6 @@ export function normalizeSettings(raw: Partial<MapleSettings> | undefined | null
     headingColor: heading === 'colorful' || heading === 'accent' || heading === 'text'
       ? heading
       : DEFAULT_SETTINGS.headingColor,
-    headingIndicator: source.headingIndicator ?? DEFAULT_SETTINGS.headingIndicator,
     codePalette: source.codePalette ?? DEFAULT_SETTINGS.codePalette,
     shellSkin: source.shellSkin ?? DEFAULT_SETTINGS.shellSkin,
     nativePalette: source.nativePalette ?? DEFAULT_SETTINGS.nativePalette,
@@ -144,7 +138,6 @@ export function projectSettings(settings: MapleSettings, enabled = true): MapleP
       attributes: {
         [ROOT_ATTRIBUTE]: null,
         [HEADING_ATTRIBUTE]: null,
-        [INDICATOR_ATTRIBUTE]: null,
         [CODE_ATTRIBUTE]: null,
         [SHELL_ATTRIBUTE]: null,
         [FONT_ATTRIBUTE]: null,
@@ -157,7 +150,6 @@ export function projectSettings(settings: MapleSettings, enabled = true): MapleP
     attributes: {
       [ROOT_ATTRIBUTE]: 'on',
       [HEADING_ATTRIBUTE]: settings.headingColor,
-      [INDICATOR_ATTRIBUTE]: settings.headingIndicator ? 'on' : null,
       [CODE_ATTRIBUTE]: settings.codePalette ? 'on' : null,
       [SHELL_ATTRIBUTE]: settings.shellSkin ? 'on' : null,
       [FONT_ATTRIBUTE]: settings.mapleFont ? 'on' : null,

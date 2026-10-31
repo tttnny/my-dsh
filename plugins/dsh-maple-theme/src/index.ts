@@ -40,8 +40,6 @@ export const Config = z.object({
   paragraphGap: z.number().step(1).min(4).max(24).default(10).volatile(),
   /** 标题配色方式。 */
   headingColor: z.union([...HEADING_MODES]).default('colorful').volatile(),
-  /** 悬停时在标题左侧显示 H1…H6 等级标记。 */
-  headingIndicator: z.boolean().default(true).volatile(),
   /** 代码块使用 Maple 的语法配色。 */
   codePalette: z.boolean().default(true).volatile(),
   /** 外壳装饰：侧栏与标签条的圆角、输入卡填充、去掉会话头部那条分隔线。 */

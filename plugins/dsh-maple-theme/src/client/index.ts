@@ -31,7 +31,7 @@ export {
 } from './binding.ts';
 export { MapleThemeCard } from './card.tsx';
 export {
-  DEFAULT_SETTINGS, HEADING_ATTRIBUTE, INDICATOR_ATTRIBUTE, CODE_ATTRIBUTE, ROOT_ATTRIBUTE, ROOT_VARIABLES,
+  DEFAULT_SETTINGS, HEADING_ATTRIBUTE, CODE_ATTRIBUTE, ROOT_ATTRIBUTE, ROOT_VARIABLES,
   applyProjection, clearProjection, clampNumber, normalizeSettings, projectSettings,
 } from './settings.ts';
 

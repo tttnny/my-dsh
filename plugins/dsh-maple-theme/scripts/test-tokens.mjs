@@ -530,8 +530,8 @@ test('滚动条的三个令牌都在，悬停色带 Maple 的暖调而不是灰�
   }
 });
 
-test('预设表自身自洽：七个色相组 + 一条原生、id 不重、色相在合法范围内', () => {
-  assert.equal(HUE_PRESETS.length, 7, `色相预设表里有 ${HUE_PRESETS.length} 个`);
+test('预设表自身自洽：两个色相组 + 一条原生、id 不重、色相在合法范围内', () => {
+  assert.equal(HUE_PRESETS.length, 2, `色相预设表里有 ${HUE_PRESETS.length} 个`);
   assert.equal(PALETTE_PRESETS.length, HUE_PRESETS.length + 1, '下拉条目应当正好是「色相组 + 一条原生」');
   assert.equal(PALETTE_PRESETS.at(-1).id, NATIVE_PRESET_ID, '「DSH 原生」排在最后一条');
   assert.ok(!HUE_PRESETS.some((preset) => preset.id === NATIVE_PRESET_ID), '原生不是色相组，不该混进那张表');
@@ -547,7 +547,7 @@ test('预设表自身自洽：七个色相组 + 一条原生、id 不重、色�
   }
 });
 
-test('配置页的七个色相预设，两套模式的正文对比度都过 AA', () => {
+test('配置页的两个色相预设，两套模式的正文对比度都过 AA', () => {
   // 预设只换色相、不动明度，所以对比度本应与 Maple 出厂值持平；
   // 这条挡的是「哪天有人给某个预设单独调了明度」——那会悄悄破坏可读性。
   for (const preset of HUE_PRESETS) {
