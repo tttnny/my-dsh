@@ -25,11 +25,19 @@ MCP 与技能是两行，MCP 失败不影响技能那一行。
 
 环境变量按内核默认处理：ambient 环境里名字命中 `KEY` / `PASSWORD` / `SECRET` / `TOKEN` 的、以及 `DSH_*` 的会被丢掉，再叠 `config.env`。本插件不写 `env`，KimiCU 也不需要 DSH 注入任何凭据。
 
+## 为什么把工具调用上限设成 5 分钟
+
+内核 `mcp-client` 的默认值是 60 秒。KimiCU 的 `js` cell 可以跑循环和批量操作，超过 60 秒会被客户端取消，服务端报 `previous cell was cancelled by the MCP client`。5 分钟覆盖常见的批量；更长的任务拆成多个 cell，不要把超时当进度条。
+
 ## 为什么技能行要另起一条
 
 内核的 base bundle 已经挂了一条 `skill-filesystem`（`id: skill-filesystem`），负责项目目录（`<project>/.dsh/skills`、`<project>/.agents/skills`）与用户目录（`~/.dsh/skills`、`~/.agents/skills`）。本插件另起一条同包的行，`providerName: kimi-cu`、`includeDefaultRoots: false`、`customSkillDirs: [<本包>/skills]`：两个 provider 并存，各扫各的根，默认那条一行都不用动。
 
 同名技能在各自 provider 内先到先得，跨 provider 由 `ctx.skills` 按层与 rank 合并。
+
+## 一条连接服务所有 session
+
+两行都在根层，宿主只起一个 KimiCU MCP 连接，所有 session 共用。KimiCU 的快照与 index 缓存是连接级的：两个 session 同时操作同一个应用，后一次观察会顶掉前一次的参照。技能要求每次动作前重新观察，正常使用能兜住；并发操作同一个窗口时仍要自己错开。
 
 ## 技能目录为什么不能写相对路径
 
@@ -43,7 +51,7 @@ bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `b
 
 ## 随包技能从哪来
 
-`skills/kimi-cu/SKILL.md` 是 KimiCU 自带技能的一份拷贝，装 KimiCU 时它在 `/Users/tny/.kimi-code/plugins/managed/kimi-cu/skills/kimi-cu/SKILL.md`。上游改了要人工再拷一次；拷贝进包，技能内容就不受 KimiCU 的安装布局影响。
+`skills/kimi-cu/SKILL.md` 以 KimiCU 自带技能为底稿，装 KimiCU 时底稿在 `/Users/tny/.kimi-code/plugins/managed/kimi-cu/skills/kimi-cu/SKILL.md`；包内这份另加 DSH 适配：工具名带 `mcp__kimi-cu__` 前缀、窗口级工具 `get_window_state` / `get_window` / `launch_app` 的用法，以及 `activate_window` / `debug_tap` 的使用边界。上游改了要人工同步一次，同步时保留 DSH 适配段；拷贝进包，技能内容就不受 KimiCU 的安装布局影响。
 
 技能只有这一份 `SKILL.md`，没有附带脚本或参考文件，所以包内也不需要额外转发资源。
 
@@ -53,7 +61,7 @@ bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `b
 
 1. `node scripts/check-bundle.mjs`——三层断言：
    - 清单面：`files`、`exports`、`icon` 点得到，locale 两种语言的标题与说明齐备，`SKILL.md` 的 frontmatter 合规。
-   - 文本面：patch 只插两行、id 与内核包名对、两行都有 macOS 守卫、MCP 那行指向 app 内二进制且 `failOnStartupError: true`、技能那行另取 providerName 且关掉默认目录。
+   - 文本面：patch 只插两行、id 与内核包名对、两行都有 macOS 守卫、MCP 那行指向 app 内二进制、`failOnStartupError: true` 且工具调用上限不低于 2 分钟、技能那行另取 providerName 且关掉默认目录。
    - 契约面（本机装了内核才跑，缺内核时明说跳过）：用内核自带 `cordis-plugin-include` 的 `entryListSchema` 读这份 patch（与装载时同一份 YAML 方言），把两行 config 交给内核 `dsh-mcp-client` 与 `dsh-skill-filesystem` 的真 `Config` schema，再照 Loader 的方式求值技能目录那条表达式，确认结果就是本包 `skills/`。
 2. `node ../../tools/probes/preset-skills.mjs --skills skills`——用内核真正的 skill provider 做一次发现与装载：候选名对得上、`source` 是 `custom`、零条警告、正文取得回来、`resourceBase` 指回技能目录。没装内核的机器上它明说跳过。
 
@@ -65,3 +73,4 @@ bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `b
 
 - 2026-10-25，内核 0.2.1-rc.2，macOS：`pnpm check` 两段全通过（`check-bundle` 11/11，`preset-skills` 报 1 个候选、装载通过）；技能候选名与目录名一致。
 - 同日装进 web profile 后就地验证：`cordis_inspect_query` 的 `Config.listConfigs` 看到 `include:mcp-kimi-cu` 与 `include:skill-kimi-cu` 两行；工具表里出现 `mcp__kimi-cu__*`，调 `list_apps` 返回 11 个在跑的应用；技能目录里出现 `kimi-cu`；插件页卡片显示本包的标题与说明。
+- 2026-11-02，内核 0.2.1-rc.2，KimiCU 0.6.8，macOS：`pnpm check` 两段全通过（`check-bundle` 12/12，`preset-skills` 报 1 个候选、装载通过）；按插件的启动参数起 KimiCU MCP，握手成功，`tools/list` 返回全部工具，实调 `list_apps` 返回在跑的应用；把超时断言变异成 60 秒后该条 FAIL。

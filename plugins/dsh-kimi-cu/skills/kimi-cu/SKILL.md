@@ -8,18 +8,22 @@ description: |
 
 通过 KimiCU MCP 的无障碍（AX）树和截图观察界面，再定向操作目标应用。参数以当前工具 schema 为准；本 skill 说明目标绑定、操作选择和验证规则。
 
+DSH 把这些工具注册为 `mcp__kimi-cu__<name>`（例如 `mcp__kimi-cu__list_apps`）；下文用去掉前缀的短名指代。
+
 ## 操作边界
 
 - 默认后台操作，不自行激活应用、抬窗或开启前台 fallback。永不移动真实光标、使用 HID 投递或拦截用户真实点击；不要用 AppleScript / cliclick 等绕过这些限制。
+- `activate_window` 会把目标窗口带到前台并取得键盘焦点；只有用户明确要求把窗口切到前面时才用，其余情况保持后台投递。
 - 前台应用、键盘焦点、窗口层叠顺序是不同状态；`foreground_changed:false` 不能单独证明窗口未抬起。发现抬窗或打断用户输入时，停止相关重试并如实说明。
 - 发送、提交、删除、付款等动作须在用户已明确授权的目标和范围内；已有授权不重复确认，缺少必要信息时再问。
 
 ## 观察与目标绑定
 
-1. 目标不明确时优先用 `list_apps(running_only:true)` / `list_windows` 定位已打开的应用和窗口，避免输出全部安装目录。需要找尚未启动的应用时才用 `list_apps(running_only:false)`；不传参数同样包含已安装用户应用，内部 helper 和系统后台组件已过滤。
+1. 目标不明确时优先用 `list_apps(running_only:true)` / `list_windows` 定位已打开的应用和窗口，避免输出全部安装目录。需要找尚未启动的应用时才用 `list_apps(running_only:false)`；不传参数同样包含已安装用户应用，内部 helper 和系统后台组件已过滤。需要把尚未运行的应用启动起来时用 `launch_app`，它只启动，不激活。
 2. 用 MCP `get_app_state` 观察目标；后续 index 和坐标必须来自这次观察。`mode:"full"` 返回树和图，`mode:"image"` 适合看图、浮层和视觉验证，`mode:"ax"` 适合读文本及按 index 操作；`ax_filter` 可缩小树的输出。
-3. 执行动作；页面切换、滚动、弹窗或布局变化影响目标时，重新观察再决定下一步。
-4. 验证任务要求的结果。投递成功不等于生效；尤其检查 `verified`、`verification_required`、`effect`，必要时再次观察。
+3. 只需要某一个窗口（尤其是浮窗）时，用 `get_window_state` 传 `window_id`，用 `include_screenshot` / `include_text` 选择截图与 AX 文本；`get_window` 只用来把窗口标识解析成 app、pid 与标题。
+4. 执行动作；页面切换、滚动、弹窗或布局变化影响目标时，重新观察再决定下一步。
+5. 验证任务要求的结果。投递成功不等于生效；尤其检查 `verified`、`verification_required`、`effect`，必要时再次观察。
 
 坐标纪律：
 
@@ -81,6 +85,7 @@ nodeRepl.write(await kimiCU.list_apps({ running_only: true }));
 - 缺图/黑图：先看 `screenshot_diagnosis`，区分最小化、窗口关闭、其他 Space、锁屏、未渲染和权限问题。需要用户恢复窗口或切回所在桌面时明确说明，不自行切 Space。
 - 空 AX 树也可能是自绘或远程渲染控件；有可用截图时可按图操作，不直接认定权限丢失。
 - `unknown field` / `KIMI_CU_UNKNOWN_FIELD`：先核对当前入口的 schema；刚升级时优先排查旧 MCP 桥和 JS 内核，不能据此直接断言新功能不存在。
+- 怀疑某个进程收不到事件时，用 `debug_tap` 在服务侧记录它的投递事件；它不改变界面，也不是常规操作入口。排查完如实报告结论，不要靠反复投递试探。
 
 ### 服务和权限
 

@@ -139,6 +139,12 @@ await test('MCP 那行指向 KimiCU 的 app 内二进制，缺装时当场报错
   assert.match(block, /failOnStartupError: true/, '缺装 KimiCU 时要当场报错，而不是静默少掉一排工具');
 });
 
+await test('MCP 那行给 KimiCU 的长任务留足超时', () => {
+  const block = rowBlock('mcp-kimi-cu');
+  const value = Number(/toolCallTimeoutMs:\s*(\d+)/.exec(block)?.[1]);
+  assert.ok(value >= 120_000, `工具调用上限要覆盖 KimiCU 的 js 长任务，不能停在默认的 60 秒，现为 ${value}`);
+});
+
 await test('技能那行另取 providerName、关掉默认目录，只扫本包 skills/', () => {
   const block = rowBlock('skill-kimi-cu');
   assert.match(block, /providerName: kimi-cu/, '不另取名就会与内核那条默认技能行同名');
@@ -245,6 +251,7 @@ if (kernel !== undefined && dirs !== undefined) {
     assert.equal(resolved.command, KIMI_CU_BINARY);
     assert.deepEqual(resolved.args, ['mcp', '-s', 'user']);
     assert.equal(resolved.failOnStartupError, true);
+    assert.ok(resolved.toolCallTimeoutMs >= 120_000, '真 schema 解析出来的工具调用上限要覆盖长任务');
   });
 
   await test('技能那行的 config 通过内核 skill-filesystem 的真 Config schema，表达式落回本包 skills/', async () => {
