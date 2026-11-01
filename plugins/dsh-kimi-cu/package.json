@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-kimi-cu",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "接上本机 KimiCU：把它的 mcp 服务挂成 mcp__kimi-cu__* 工具，并随包带一份 kimi-cu 操作技能。",
   "type": "module",
   "exports": {
