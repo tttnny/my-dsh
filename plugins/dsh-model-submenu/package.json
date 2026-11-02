@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-model-submenu",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "给输入框的模型选择器换成两层：一层只列当前供应商的模型与思考等级，一层弹窗列全部供应商的模型。",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
