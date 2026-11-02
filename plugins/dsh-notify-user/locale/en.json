@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Progress updates",
+    "description": "Gives the model a channel to report progress to the user without ending its turn, and nudges it when it has gone several tool calls without an update."
+  }
+}

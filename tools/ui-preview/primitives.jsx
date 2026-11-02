@@ -277,3 +277,38 @@ export function ShortcutKeys({ keys = [] }) {
 export function rankByName(items) {
   return items;
 }
+
+/**
+ * 宿主的进度行薄壳：真的那个是 24px 的 disclosure 行，标题可点、展开体在下方。
+ * 预览里只画结构与文案，行高与字距仍由预览页的宿主样式表决定。
+ * @param {object} props - 与真组件同名的那几个成员。
+ * @returns {import('react').ReactNode} 行与展开体。
+ */
+export function DisclosureRow({
+  icon, title, open, expandable, onToggle, running, collapsedContent, children, className, titleClassName,
+}) {
+  return createElement(
+    'div',
+    { className, 'data-open': open || undefined },
+    createElement(
+      'div',
+      { 'data-disclosure-row': true, 'data-expandable': expandable || undefined, style: { display: 'flex', alignItems: 'center', gap: 8, minHeight: 24 } },
+      createElement('span', { style: { display: 'inline-flex', color: 'var(--dsw-alias-brand-primary)' } }, icon),
+      createElement(
+        'button',
+        { type: 'button', className: titleClassName, onClick: onToggle, style: { background: 'none', border: 0, padding: 0, cursor: expandable ? 'pointer' : 'default', color: 'var(--dsw-alias-label-primary)', font: 'inherit' } },
+        title,
+      ),
+      running === true ? createElement('span', { style: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12 } }, '…') : null,
+      collapsedContent ?? null,
+    ),
+    open ? children : null,
+  );
+}
+
+/** 宿主的 shimmer 薄壳：预览里不跑动画，只把子节点原样放出来。 */
+export function TextShimmer({ children, className }) {
+  return createElement('span', { className }, children);
+}
+
+export const IconPaperPlaneOutlineRegular = icon('paper-plane');

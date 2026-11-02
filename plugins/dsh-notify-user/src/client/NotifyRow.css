@@ -1,0 +1,72 @@
+/* `notify_user` 的进度卡：圆点 + 标题 + 折叠键 + 时间，正文默认展开。 */
+
+.dsh-notify-card {
+  padding: 2px 0 8px;
+}
+
+.dsh-notify-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.dsh-notify-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.dsh-notify-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dsh-notify-title {
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.dsh-notify-chevron {
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+  transition: transform 0.15s ease;
+}
+
+.dsh-notify-chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+.dsh-notify-time {
+  flex: none;
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dsh-notify-body {
+  margin: 2px 0 0 3px;
+  padding-left: 14px;
+  border-left: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 宿主的 compact markdown 自带灰字，这里按散文黑覆盖到它的根节点。 */
+.dsh-notify-body > div {
+  color: var(--dsw-alias-label-primary);
+}

@@ -1,0 +1,61 @@
+/* 插件页上的催办阈值配置卡。 */
+
+.dsh-notify-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dsh-notify-config-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dsh-notify-config-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dsh-notify-config-label {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.dsh-notify-config-hint {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dsh-notify-config-field {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.dsh-notify-config-input {
+  width: 88px;
+}
+
+.dsh-notify-config-unit {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.dsh-notify-config-error {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dsh-notify-config-note {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
