@@ -20,7 +20,7 @@
 
 - **产物不入库**：`build` 生成的镜像目录（`lib/` 这类与 `src/` 对应的副本）由包的 `.gitignore` 挡住、留在 `files` 里、并由 `check` 的产物门禁断言未被 git 跟踪——`files` 不含产物目录时 npm 会漏打运行入口。手写源码形式的 `lib/` 属源码，不受这条约束。
 - **镜像与 `src/` 一一对应**：`build` 必须在 emit 前清掉上一轮的声明产物（`rmSync('lib/types')`，见 `dsh-chat-translate` 的 `build.mjs`），因为 `tsc` 从不清理 `outDir`：删掉或改名的模块会把它旧的 `.d.ts` 一直留在 `lib/types` 里，而 `files` 含 `lib`，旧声明会随发布包发出去。这条只能由「清镜像」保证——`lib` 是 gitignore 的、`git status` 不显示，「产物未被跟踪」那道门禁也看不见陈旧文件。目前只有 `dsh-chat-translate` 发声明产物，它靠 `build.mjs` 的两处保证一致：先 `rmSync('lib/types')`，再让 `tsc` 重新 emit，emit 失败置 `process.exitCode = 1`（只 `warn` 会让整个声明镜像静默消失）。要再加一道逐文件对账的闸门（陈旧与缺失两个方向都查），`archive/` 下某个已归档插件的 `scripts/assert-lib-mirror.mjs` 就是现成实现，抄一份进该包的 `check` 即可。
-- 发布产物由包自己的 `build` 出：`dsh-grilling-form`、`dsh-subagent-judge-dispatch` 与 `dsh-native-plus` 另有 `prepack`（发布时现打一次），其余包靠发布前跑过的 `check`。新增 `prepack` 的包要把这一行同步到这里。
+- 发布产物由包自己的 `build` 出：`dsh-grilling-form`、`dsh-subagent-judge-dispatch`、`dsh-native-plus` 与 `dsh-notify-user` 另有 `prepack`（发布时现打一次），其余包靠发布前跑过的 `check`。新增 `prepack` 的包要把这一行同步到这里。
 - 内核升版后各包声明的批量跟随与版本号，一次做完：`node tools/dsh-baseline.mjs --write --bump patch`（见 [plugins.md](./plugins.md)「版本与依赖」）。
 - 删掉任何文件时当场同步 `files`、`scripts` 与镜像断言，清单只写还存在的条目。许可声明见 [plugins.md](./plugins.md)「许可」。
 

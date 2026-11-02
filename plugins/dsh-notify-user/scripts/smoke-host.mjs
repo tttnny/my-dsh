@@ -205,7 +205,7 @@ await test('子代理不计数、不注入', async () => {
   assert.equal(noticeOf(await h.step(agent)), undefined);
 });
 
-await test('下游拒绝这一步时不追加消息', async () => {
+await test('下游拒绝这一步时不追加消息，也不吞掉这次催办', async () => {
   const agent = mainAgent();
   const h = harness(8);
   for (let index = 0; index < 8; index += 1) await h.rootCall(agent);
@@ -213,6 +213,7 @@ await test('下游拒绝这一步时不追加消息', async () => {
     agent, messages: [], turn: 1, step: 1, signal: new AbortController().signal,
   }, async () => ({ kind: 'reject' }));
   assert.equal(decision.kind, 'reject');
+  assert.ok(noticeOf(await h.step(agent)) !== undefined, '拒绝后下一次进入应当仍能催');
 });
 
 console.log(`${passed}/${total} passed`);

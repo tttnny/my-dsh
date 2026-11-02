@@ -70,6 +70,7 @@ export function NotifyRow(props: NotifyRowProps): ReactElement {
   const expanded = collapsible ? open : true;
   const running = props.phase === 'start';
   const time = formatClock(props.block.time);
+  const titleNode = running ? <TextShimmer active>{title}</TextShimmer> : title;
 
   return (
     <div
@@ -87,9 +88,7 @@ export function NotifyRow(props: NotifyRowProps): ReactElement {
             aria-expanded={expanded}
             onClick={() => { setOpen((value) => !value); }}
           >
-            <span className="dsh-notify-title">
-              {running ? <TextShimmer active>{title}</TextShimmer> : title}
-            </span>
+            <span className="dsh-notify-title">{titleNode}</span>
             <IconChevronDownOutlineRegular
               className="dsh-notify-chevron"
               data-open={expanded || undefined}
@@ -97,9 +96,7 @@ export function NotifyRow(props: NotifyRowProps): ReactElement {
             />
           </button>
         ) : (
-          <span className="dsh-notify-title">
-            {running ? <TextShimmer active>{title}</TextShimmer> : title}
-          </span>
+          <span className="dsh-notify-title">{titleNode}</span>
         )}
         {time === null ? null : <span className="dsh-notify-time">{time}</span>}
       </div>

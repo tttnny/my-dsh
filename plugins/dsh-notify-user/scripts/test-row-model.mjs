@@ -29,7 +29,7 @@ test('原生 result 优先读 meta', () => {
   assert.deepEqual(update, { title: 'M', message: 'meta 正文' });
 });
 
-test('PTC 子调用没有 meta 时回退到 call.argsRaw', () => {
+test('没有 meta 时回退到 call.argsRaw（窗口截断或旧构建）', () => {
   const update = readUpdate({ call: { argsRaw: args } });
   assert.deepEqual(update, { title: '标题', message: '正文' });
 });

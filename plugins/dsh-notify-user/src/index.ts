@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-settings';
 import { nudgeAfterOf, type PluginConfig } from './config.js';
 import { createNudgeController, installNudge, NUDGE_TOOL_NAME } from './nudge.js';
+import { parseUpdate } from './client/row-model.js';
 
 /**
  * @lynn123411/dsh-notify-user —— 模型在干活途中主动汇报进度，久不汇报就催一条。
@@ -19,19 +20,6 @@ export const name = 'dsh-notify-user';
 export const inject = ['tools'];
 
 export { Config } from './config.js';
-
-/**
- * 从模型入参里取这次汇报的内容。
- * @param args - 模型给的参数（未校验，按 unknown 读）。
- * @returns 标题可缺省的汇报内容。
- */
-function readUpdate(args: unknown): { title?: string; message: string } {
-  if (typeof args !== 'object' || args === null) return { message: '' };
-  const record = args as Record<string, unknown>;
-  const message = typeof record['message'] === 'string' ? record['message'] : '';
-  const title = typeof record['title'] === 'string' && record['title'].length > 0 ? record['title'] : undefined;
-  return title === undefined ? { message } : { title, message };
-}
 
 /**
  * 插件本体。
@@ -69,9 +57,9 @@ export function apply(ctx: Context, config: PluginConfig): void {
       render: () => [{ type: 'text', text: 'Update shown in the conversation.' }],
       // 原生调用窗口截断后卡片仍能画；PTC 下内核把同一份 meta 写进 tool/ptc-dispatch。
       presentationMeta: (args) => {
-        const update = readUpdate(args);
-        const meta: Record<string, string> = { message: update.message };
-        if (update.title !== undefined) meta['title'] = update.title;
+        const update = parseUpdate(args);
+        const meta: Record<string, string> = { message: update?.message ?? '' };
+        if (update?.title !== undefined) meta['title'] = update.title;
         return meta;
       },
     },

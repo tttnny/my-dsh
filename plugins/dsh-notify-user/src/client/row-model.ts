@@ -3,8 +3,11 @@
  *
  * 只读日志里已有的东西，不碰实时状态，所以直播与重放画出来一样：
  *   - 原生调用的 result 相位带 `meta`（`output.presentationMeta` 的产物）；
- *   - PTC 子调用的客户端节点不带 `meta`，但一定带 `call.argsRaw`；
+ *   - PTC 子调用的节点同样带 `meta`（由 `tool/ptc-dispatch` 供给）；
  *   - 窗口截断时 `call` 可能是 null，退回 `argsRaw`。
+ *
+ * 这个文件是纯数据逻辑（不碰 DOM、不碰 React），宿主半边的 `presentationMeta`
+ * 也 import 这里的 `parseUpdate`——两边读的是同一份日志，形状只能有一处定义。
  */
 
 /** 一次汇报的内容；标题可以没有。 */
@@ -13,32 +16,30 @@ export interface Update {
   message: string;
 }
 
-/** 从一段 JSON 参数里读汇报内容。 */
-function parseArgs(raw: string | undefined): Update | null {
-  if (typeof raw !== 'string' || raw.length === 0) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    // 流式阶段可能拿到截断的 JSON 前缀；这一帧没有内容可画。
-    return null;
-  }
-  if (typeof parsed !== 'object' || parsed === null) return null;
-  const record = parsed as Record<string, unknown>;
+/**
+ * 从任意对象里读汇报内容——宿主半边投影 `presentationMeta` 也走这一份，
+ * 两边读的是同一份日志，形状只能有一处定义。
+ * @param value - 模型参数或持久化的 `meta`。
+ * @returns 读得到时返回内容；两者都空时返回 null。
+ */
+export function parseUpdate(value: unknown): Update | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
   const message = typeof record['message'] === 'string' ? record['message'] : '';
   const title = typeof record['title'] === 'string' && record['title'].length > 0 ? record['title'] : undefined;
   if (message.length === 0 && title === undefined) return null;
   return title === undefined ? { message } : { title, message };
 }
 
-/** 从持久化的 `meta` 里读汇报内容。 */
-function parseMeta(meta: unknown): Update | null {
-  if (typeof meta !== 'object' || meta === null) return null;
-  const record = meta as Record<string, unknown>;
-  const message = typeof record['message'] === 'string' ? record['message'] : '';
-  const title = typeof record['title'] === 'string' && record['title'].length > 0 ? record['title'] : undefined;
-  if (message.length === 0 && title === undefined) return null;
-  return title === undefined ? { message } : { title, message };
+/** 从一段 JSON 参数里读汇报内容。 */
+function parseArgs(raw: string | undefined): Update | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  try {
+    return parseUpdate(JSON.parse(raw));
+  } catch {
+    // 流式阶段可能拿到截断的 JSON 前缀；这一帧没有内容可画。
+    return null;
+  }
 }
 
 /**
@@ -49,15 +50,14 @@ function parseMeta(meta: unknown): Update | null {
 export function readUpdate(block: unknown): Update {
   if (typeof block !== 'object' || block === null) return { message: '' };
   const record = block as Record<string, unknown>;
-  const fromMeta = parseMeta(record['meta']);
+  const fromMeta = parseUpdate(record['meta']);
   if (fromMeta !== null) return fromMeta;
   const call = record['call'];
   if (typeof call === 'object' && call !== null) {
     const fromCall = parseArgs((call as Record<string, unknown>)['argsRaw'] as string | undefined);
     if (fromCall !== null) return fromCall;
   }
-  const fromArgs = parseArgs(record['argsRaw'] as string | undefined);
-  return fromArgs ?? { message: '' };
+  return parseArgs(record['argsRaw'] as string | undefined) ?? { message: '' };
 }
 
 /**

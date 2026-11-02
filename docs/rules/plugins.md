@@ -34,7 +34,7 @@
 
 ## 验证
 
-改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。漏了 `check` 的包以它自己 `scripts` 里的那几条为准。新克隆的仓库先在该包目录 `pnpm install`（仓库根从不装依赖）：缺 `node_modules` 时 `check.mjs` 回退出码 2，那是「没跑起来」，不是「检查不通过」。`package.json` 里带 `prepack` 的包（`dsh-grilling-form`、`dsh-subagent-judge-dispatch`、`dsh-native-plus`）在 `npm publish` / `npm pack` 时会再构建一次 `lib/`，发布打的不一定是你刚 check 过的那份产物。
+改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。漏了 `check` 的包以它自己 `scripts` 里的那几条为准。新克隆的仓库先在该包目录 `pnpm install`（仓库根从不装依赖）：缺 `node_modules` 时 `check.mjs` 回退出码 2，那是「没跑起来」，不是「检查不通过」。`package.json` 里带 `prepack` 的包（`dsh-grilling-form`、`dsh-subagent-judge-dispatch`、`dsh-native-plus`、`dsh-notify-user`）在 `npm publish` / `npm pack` 时会再构建一次 `lib/`，发布打的不一定是你刚 check 过的那份产物。
 
 跨文件的台账（14 项判据，逐条见 `node tools/assert-ledger.mjs` 头部：包名与目录名、`engines.dsh` 与全部 `dsh-*` 同串、cordis / schemastery 基线、许可只由 `license` 声明、`files` 与 bundle patch 指得到、插件 README 的三节（`## 功能` / `## 特性` / `## 安装`）、根 README 与目录互相覆盖、preset order 台账、开发副本还是不是软链、手工写死的内核版本字面量、preset 抄本与内核同版本、安装约定、归档包名不再出现在活文件里、README 写死的工具面数字与产物一致）由 `node tools/assert-ledger.mjs` 一次查完——`check` 只管包内，看不见这些。判据 14 的数字出处是插件 README 自己的那句硬声明，不是另一份独立约定：改了工具 schema 就同步改 README 里那句话。
 

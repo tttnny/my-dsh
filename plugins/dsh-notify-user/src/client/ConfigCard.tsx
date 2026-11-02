@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 import { Input, Switch } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
@@ -31,6 +31,9 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
   const [config, setConfig] = useState(() => readConfig(form));
   const [text, setText] = useState<string>(() => String(readConfig(form)?.nudgeAfter ?? DEFAULT_NUDGE_AFTER));
   const [error, setError] = useState<string | null>(null);
+  // 离开页面时把还没失焦的草稿写下去（切标签/关页面会直接卸载这张卡）。
+  const draftRef = useRef(text);
+  const committedRef = useRef(config?.nudgeAfter);
 
   useEffect(() => {
     const sync = (): void => {
@@ -40,6 +43,15 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
     };
     sync();
     return form.subscribe(sync);
+  }, [form]);
+
+  useEffect(() => { draftRef.current = text; }, [text]);
+  useEffect(() => { committedRef.current = config?.nudgeAfter; }, [config?.nudgeAfter]);
+  useEffect(() => () => {
+    const parsed = Number(draftRef.current);
+    if (!Number.isFinite(parsed)) return;
+    const next = Math.min(MAX_NUDGE_AFTER, Math.max(0, Math.floor(parsed)));
+    if (next !== committedRef.current) void form.set('nudgeAfter', next);
   }, [form]);
 
   if (config === undefined) {
@@ -63,7 +75,7 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
       setText(String(config.nudgeAfter));
       return;
     }
-    const next = Math.min(MAX_NUDGE_AFTER, Math.max(0, Math.round(parsed)));
+    const next = Math.min(MAX_NUDGE_AFTER, Math.max(0, Math.floor(parsed)));
     setText(String(next));
     if (next === config.nudgeAfter) return;
     setConfig({ ...config, nudgeAfter: next });

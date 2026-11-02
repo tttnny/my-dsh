@@ -39,7 +39,7 @@ export function renderNudge(count: number): string {
   return `You have gone ${String(count)} tool calls without a notify_user update — the user has seen no progress from you since. `
     + 'Send one now: a one-line title with what you have concluded so far, and a short structured message '
     + '(one paragraph plus a few bullet points, under ~1000 characters) with the details and what you will do next. '
-    + 'Call it from your next program or alongside your next tool calls.';
+    + 'Call it together with your next tool call.';
 }
 
 /** 一行摘要：context 行折叠时显示的那句。 */
@@ -123,9 +123,12 @@ export function installNudge(ctx: Context, controller: NudgeController): void {
 
   ctx.on('agent/pre-step', async ({ agent, messages }, next): Promise<PreStepDecision> => {
     if (isSubagent(agent)) return next();
-    const notice = controller.step(agent, messages.some((message) => message.source.kind === 'user'));
     const downstream = await next();
-    if (notice === null || downstream.kind !== 'enter') return downstream;
+    // 只在真正进入这一步之后才动状态机：下游 reject 时这一步不成立，
+    // 先清零会把这次催办吞掉。
+    if (downstream.kind !== 'enter') return downstream;
+    const notice = controller.step(agent, messages.some((message) => message.source.kind === 'user'));
+    if (notice === null) return downstream;
     return { ...downstream, messages: [...downstream.messages, notice] };
   });
 }
