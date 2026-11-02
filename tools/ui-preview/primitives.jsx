@@ -257,3 +257,23 @@ export const IconCheckOutlineRegular = ({ size = 16 }) => createElement(
   { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', 'data-icon': 'check' },
   createElement('path', { d: 'M3.5 8.5 6.5 11.5 12.5 4.5', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' }),
 );
+export const IconSearchOutlineRegular = ({ size = 14 }) => createElement(
+  'svg',
+  { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', 'data-icon': 'search' },
+  createElement('circle', { cx: 7, cy: 7, r: 4.5, stroke: 'currentColor', strokeWidth: 1.3 }),
+  createElement('path', { d: 'M10.5 10.5 14 14', stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round' }),
+);
+
+/** 宿主的快捷键提示薄壳：真组件把每个键画成一枚 kbd。 */
+export function ShortcutKeys({ keys = [] }) {
+  return createElement(
+    'span',
+    { className: 'shortcutKeys' },
+    keys.map((key) => createElement('kbd', { key, className: 'key' }, key)),
+  );
+}
+
+/** 宿主的搜索排序薄壳：预览里不排序，原样返回候选。 */
+export function rankByName(items) {
+  return items;
+}
