@@ -1,0 +1,220 @@
+/* 正文层：对话流里的 markdown 排版与装饰。
+ *
+ * 作用范围只有一处：助手回答的正文（`[data-chat-flow-kind='assistant-step']`）。
+ * 推理块用的是同一个 kind，但它自己带 `data-chat-group-part='reasoning'`，被排除在外——
+ * 推理行要保持宿主的小字号与紧凑行距，跟着正文一起放大就糊成一片。
+ * 工具行也排除：它的 flow kind 是 `tool-call`，宿主本来就不在里面放 markdown 元素。
+ *
+ * 选择器一律「宿主的数据属性 + 元素名」两层：宿主正文的类名是 CSS Modules 的哈希串，
+ * 换一次构建就变，不能当锚点。
+ *
+ * 颜色一律取 `--np-*` 变量：这些名字都指向宿主的令牌，改主题不必动这张表。
+ */
+
+html[data-native-plus='on'] {
+  --np-underline-offset: 2px;
+}
+
+/* 段距：宿主给 `.markdown p` 写的是 `margin: 16px 0`，块与块之间的空隙就来自这里。
+ * 下面这条的优先级比它高一级（多两个数据属性），所以能压过去。
+ * 不改成容器的 gap：flex 容器在别的渲染器里可能不存在，而 p 的 margin 一直都认。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(p) {
+  margin: var(--np-p-gap, 10px) 0;
+}
+
+/* 列表项里的段落仍按块级 margin 走：宿主的列表没有 gap，段落间距归零会挤成一坨。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(li > p) {
+  margin: 4px 0;
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(strong) {
+  font-weight: 600;
+}
+
+/* 行内代码：宿主的底几乎与纸面同色，这里换成一层薄薄的蓝，让它在段落里一眼能认出来。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :not(pre) > code {
+  background-color: var(--np-inline-code-bg);
+  border-color: var(--np-hairline);
+}
+
+/* 链接下划线的抬升量与字重。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(a) {
+  text-underline-offset: var(--np-underline-offset);
+}
+
+/* 标题：字号与字重来自 tokens.css 的复合令牌，这里补颜色、间距与 h5/h6。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6) {
+  margin: 28px 0 12px;
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5) {
+  font-size: calc(var(--dsh-content-font-size, 14px) * 1.05);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6) {
+  font-size: var(--dsh-content-font-size, 14px);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+/* 六级标题的蓝阶：h1 最深，逐级变浅。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1) { color: var(--np-h1); }
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h2) { color: var(--np-h2); }
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h3) { color: var(--np-h3); }
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h4) { color: var(--np-h4); }
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h5) { color: var(--np-h5); }
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h6) { color: var(--np-h6); }
+
+/* 引用：左侧一条蓝线 + 一层极浅的蓝底，不是宿主的单边灰线。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote) {
+  position: relative;
+  margin: 14px 0;
+  padding: 8px 14px 8px 18px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--np-quote-fill);
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote)::before {
+  content: '';
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 7px;
+  width: 3px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--np-quote-bar);
+}
+
+/* 引用里的标题压回正文字号：引用本身是「一段引来的话」，标题在里面继续放大
+ * 会抢走引用块的层级。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote) :where(h1, h2, h3, h4, h5, h6) {
+  font-size: var(--dsh-content-font-size, 14px);
+  font-weight: 600;
+  margin: 6px 0;
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(blockquote blockquote) {
+  margin-inline-end: 0;
+  background: color-mix(in srgb, var(--np-quote-fill) 70%, var(--dsw-alias-bg-base));
+}
+
+/* 列表：标记换成等宽字体、取链接蓝，形状沿用宿主的层级圆点。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul, ol) {
+  margin: var(--np-p-gap, 10px) 0;
+  padding-inline-start: 1.35em;
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(li)::marker {
+  font-family: var(--ds-font-family-code);
+  color: var(--np-list-marker);
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(ul) > :where(li)::marker {
+  font-size: 0.85em;
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(li) {
+  margin: 3px 0;
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(input[type='checkbox']) {
+  accent-color: var(--np-list-marker);
+  margin-inline-end: 8px;
+}
+
+/* 表格：表头填一层浅蓝、四角圆角、横线只在行之间。
+ * 宿主用 border-collapse: collapse，圆角会被裁掉，所以改成 separate + 零间距，
+ * 只给四角的单元格上圆角。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(table) {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: calc(var(--dsh-content-font-size, 14px) - 1px);
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(th) {
+  font-weight: 600;
+  background: var(--np-table-head);
+}
+
+/* 首末列的内边距：宿主把首列的左内边距与末列的右内边距归零，让表格文字与正文左沿对齐。
+ * 这里给表头填了底色、给四角上了圆角，归零之后文字就顶在填色块的边缘上，
+ * 所以在填色块这一侧把内边距补回来。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(th:first-child, td:first-child) {
+  padding-inline-start: 12px;
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(th:last-child, td:last-child) {
+  padding-inline-end: 12px;
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(thead > tr > th:first-child) {
+  border-start-start-radius: var(--dsw-radius-sm);
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(thead > tr > th:last-child) {
+  border-start-end-radius: var(--dsw-radius-sm);
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(tbody > tr:last-child > td:first-child) {
+  border-end-start-radius: var(--dsw-radius-sm);
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(tbody > tr:last-child > td:last-child) {
+  border-end-end-radius: var(--dsw-radius-sm);
+}
+
+/* 分隔线：一条两端淡出的渐变，不是一根等宽实线，上下留白也更大。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(hr) {
+  height: 1px;
+  margin: 28px 0;
+  border: 0;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--np-rule) 22%,
+    var(--np-rule) 50%,
+    var(--np-rule) 78%,
+    transparent 100%
+  );
+}
+
+/* 代码块：一圈发丝边框、比宿主小一档的圆角，底色与标题条沿用宿主的令牌。
+ * 宿主把圆角收在一个局部变量里（--dsl-code-block-border-radius，默认 radius-lg），
+ * 所以换圆角只要换那个变量，不必去写各角的 border-radius。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(.md-code-block) {
+  border: 0.5px solid var(--np-hairline);
+  --dsl-code-block-border-radius: var(--dsw-radius-md);
+  background: var(--np-code-block);
+}
+
+/* 标题条：等宽字体、行内代码那个蓝，字号小一号。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where([data-code-block-banner]) {
+  border-bottom: 0.5px solid var(--np-hairline);
+  background: var(--np-code-banner);
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where([data-code-block-banner]) :where(div:first-child) {
+  font-family: var(--ds-font-family-code);
+  letter-spacing: 0.02em;
+  color: var(--np-list-marker);
+}
+
+/* 行号栏：比宿主的再淡一档，让代码本身更突出。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where([data-line-numbers]) {
+  color: var(--dsw-alias-label-caption);
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where([data-line-numbers]) :where(.line)::before {
+  color: var(--dsw-alias-label-caption);
+}
+
+/* 选中文字：一层薄蓝，不是浏览器的默认色。 */
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step'] ::selection {
+  background: var(--np-tint-strong);
+}
+
+html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}

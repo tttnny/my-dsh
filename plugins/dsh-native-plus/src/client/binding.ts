@@ -1,5 +1,5 @@
 /**
- * 配置卡片与主题投影的唯一接线处：读哪一份表单、写哪几个字段。
+ * 配置卡片与页面投影的唯一接线处：读哪一份表单、写哪些键。
  *
  * 这一层只做「读快照 → 收拢 → 投影 → 写到 <html>」三件事，不画界面。
  * 卡片（`card.tsx`）与自检（`scripts/test-projection.mjs`）都从这里的同一个函数走，
@@ -10,26 +10,26 @@ import {
   clearProjection,
   normalizeSettings,
   projectSettings,
-  type MapleSettings,
+  type Settings,
 } from './settings.ts';
 
 /** 本插件在 profile 里的 loader 行 id，也是配置表单的命名空间。 */
-export const SETTINGS_NAMESPACE = 'dsh-maple-theme';
+export const SETTINGS_NAMESPACE = 'dsh-native-plus';
 
 /** 主题在宿主「插件」页上的座位。 */
 export const BUNDLE_CONFIG_SLOT = 'plugins.bundle.config';
 
 /** 本插件 bundle 的包名：`plugins.bundle.config` 的 key 就是它。 */
-export const BUNDLE_NAME = '@lynn123411/dsh-maple-theme';
+export const BUNDLE_NAME = '@lynn123411/dsh-native-plus';
 
 /**
  * 一张卡片要用到的配置表单：只取真正用到的那几个成员的结构子集。
  * 这样自检用假件冒充它时不必拖进整个 ui-settings 运行时。
  */
-export interface MapleForm {
+export interface ConfigForm {
   getSnapshot(): {
     status: 'loading' | 'ready' | 'unavailable';
-    value?: Partial<MapleSettings> | undefined;
+    value?: Partial<Record<string, unknown>> | undefined;
     writable?: boolean;
     revision?: number | undefined;
   };
@@ -39,11 +39,11 @@ export interface MapleForm {
    * 一次写入多个字段：宿主把它们当成同一个修订提交。
    * 分成多次 `set` 会各自产生一份快照，页面上会闪一次「半套」状态。
    */
-  mutate(ops: readonly MapleOp[], expectedRevision?: number): Promise<boolean>;
+  mutate(ops: readonly FormOp[], expectedRevision?: number): Promise<boolean>;
 }
 
 /** 一次原子写入里的一条字段操作。 */
-export type MapleOp =
+export type FormOp =
   | { op: 'set'; path: string[]; value: unknown }
   | { op: 'unset'; path: string[] };
 
@@ -52,7 +52,7 @@ export type MapleOp =
  * @param form - 本命名空间的配置表单。
  * @returns 宿主还没服务这个命名空间时返回 undefined。
  */
-export function readSettings(form: MapleForm): MapleSettings | undefined {
+export function readSettings(form: ConfigForm): Settings | undefined {
   const snapshot = form.getSnapshot();
   if (snapshot.status === 'unavailable') return undefined;
   return normalizeSettings(snapshot.value);
@@ -65,7 +65,7 @@ export function readSettings(form: MapleForm): MapleSettings | undefined {
  * @param form - 本命名空间的配置表单。
  * @returns 停止订阅并撤掉投影的 disposer。
  */
-export function bindProjection(root: HTMLElement, form: MapleForm): () => void {
+export function bindProjection(root: HTMLElement, form: ConfigForm): () => void {
   const sync = (): void => {
     const settings = readSettings(form);
     applyProjection(root, projectSettings(settings ?? normalizeSettings(undefined)));

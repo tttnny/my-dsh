@@ -1,0 +1,91 @@
+/* 正文的装饰令牌：标题的蓝阶、引用与表格的面、行内代码的底。
+ *
+ * 这一层不定义任何新颜色，只给宿主的颜色起名字：
+ *   - 标题六档在宿主蓝阶的两端之间插值，h1 最深、h6 最浅；
+ *   - 其余的面与线由宿主的链接色与纸色混出来，深色模式自动跟着翻。
+ * 所以整页仍是 DSH 的蓝白黑，深色模式也不需要另写一份。
+ *
+ * 正文样式表只认这些 --np-* 名字，不直接读宿主令牌：
+ * 宿主改一次令牌名，要改的只有这个文件。
+ *
+ * 这一层挂在 body 上而不是 html 上：宿主的 --dsw-* 令牌也定义在 body，
+ * 自定义属性在声明它的那个元素上求值，挂在 html 上就取不到那些值了。
+ */
+
+html[data-native-plus='on'] body {
+  /* 标题六档的两端：深蓝到亮蓝，两端的对比度都过 4.5:1。
+   * 取 saturated 的蓝阶（blue-*），不用发灰的 deepseek-* 那条——后者停在藏青，浅色下看着像黑。 */
+  --np-heading-strong: var(--dsw-static-blue-800);
+  --np-heading-soft: var(--dsw-static-blue-600);
+
+  --np-h1: var(--np-heading-strong);
+  --np-h2: color-mix(in srgb, var(--np-heading-strong) 80%, var(--np-heading-soft));
+  --np-h3: color-mix(in srgb, var(--np-heading-strong) 60%, var(--np-heading-soft));
+  --np-h4: color-mix(in srgb, var(--np-heading-strong) 40%, var(--np-heading-soft));
+  --np-h5: color-mix(in srgb, var(--np-heading-strong) 20%, var(--np-heading-soft));
+  --np-h6: var(--np-heading-soft);
+
+  /* 蓝调的线与面：都从宿主的链接色出发，深色下链接色自己会变浅。 */
+  --np-tint-weak: color-mix(in srgb, var(--dsw-alias-link) 6%, var(--dsw-alias-bg-base));
+  --np-tint-strong: color-mix(in srgb, var(--dsw-alias-link) 10%, var(--dsw-alias-bg-base));
+  --np-hairline: color-mix(in srgb, var(--dsw-alias-link) 22%, transparent);
+  --np-rule: color-mix(in srgb, var(--dsw-alias-link) 30%, transparent);
+
+  --np-quote-fill: var(--np-tint-weak);
+  --np-quote-bar: var(--dsw-alias-link);
+  --np-table-head: var(--np-tint-strong);
+  --np-inline-code-bg: color-mix(in srgb, var(--dsw-alias-link) 9%, transparent);
+  --np-code-block: var(--dsw-alias-markdown-code-block);
+  --np-code-banner: var(--dsw-alias-markdown-code-block-banner);
+  --np-list-marker: var(--dsw-alias-link);
+}
+
+/* 深色下换一组端点：亮度反过来排，h1 最亮、h6 最暗，仍然是六档。 */
+html[data-native-plus='on'] body[data-ds-dark-theme] {
+  --np-heading-strong: var(--dsw-static-blue-300);
+  --np-heading-soft: var(--dsw-static-blue-500);
+}
+
+/* ---------- 正文排版 ---------- */
+/* MarkdownText 用 `font: var(--dsw-font-markdown-*)` 一次取字号、行高与字族，
+ * 所以改这几条就够，不必碰 CSS Modules 的哈希类名。
+ *
+ * 行高从宿主的字号轴推，不写死像素：宿主把正文行高写成「24px + 字号增量」，
+ * 这里改成「字号 × 配置的行高倍数」——两个轴同时生效，用户调大字号时行高跟着长。 */
+html[data-native-plus='on'] body {
+  --dsw-font-markdown-base:
+    var(--dsh-content-font-size, 14px) / calc(var(--dsh-content-font-size, 14px) * var(--np-line-height, 1.75))
+    var(--dsw-font-family);
+  --dsw-font-markdown-base-font-size: var(--dsh-content-font-size, 14px);
+  --dsw-font-markdown-base-line-height: calc(var(--dsh-content-font-size, 14px) * var(--np-line-height, 1.75));
+
+  --dsw-font-markdown-base-strong:
+    600 var(--dsh-content-font-size, 14px) / calc(var(--dsh-content-font-size, 14px) * var(--np-line-height, 1.75))
+    var(--dsw-font-family);
+  --dsw-font-markdown-base-strong-font-size: var(--dsh-content-font-size, 14px);
+  --dsw-font-markdown-base-strong-line-height: calc(var(--dsh-content-font-size, 14px) * var(--np-line-height, 1.75));
+
+  --dsw-font-markdown-h1:
+    700 calc(var(--dsh-content-font-size, 14px) * 1.6) / 1.3 var(--dsw-font-family);
+  --dsw-font-markdown-h1-font-size: calc(var(--dsh-content-font-size, 14px) * 1.6);
+  --dsw-font-markdown-h1-font-weight: 700;
+  --dsw-font-markdown-h1-line-height: 1.3;
+
+  --dsw-font-markdown-h2:
+    700 calc(var(--dsh-content-font-size, 14px) * 1.5) / 1.3 var(--dsw-font-family);
+  --dsw-font-markdown-h2-font-size: calc(var(--dsh-content-font-size, 14px) * 1.5);
+  --dsw-font-markdown-h2-font-weight: 700;
+  --dsw-font-markdown-h2-line-height: 1.3;
+
+  --dsw-font-markdown-h3:
+    600 calc(var(--dsh-content-font-size, 14px) * 1.35) / 1.35 var(--dsw-font-family);
+  --dsw-font-markdown-h3-font-size: calc(var(--dsh-content-font-size, 14px) * 1.35);
+  --dsw-font-markdown-h3-font-weight: 600;
+  --dsw-font-markdown-h3-line-height: 1.35;
+
+  --dsw-font-markdown-h4:
+    600 calc(var(--dsh-content-font-size, 14px) * 1.15) / 1.4 var(--dsw-font-family);
+  --dsw-font-markdown-h4-font-size: calc(var(--dsh-content-font-size, 14px) * 1.15);
+  --dsw-font-markdown-h4-font-weight: 600;
+  --dsw-font-markdown-h4-line-height: 1.4;
+}

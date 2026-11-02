@@ -1,7 +1,7 @@
 {
-  "name": "@lynn123411/dsh-maple-theme",
-  "version": "0.4.3",
-  "description": "把 Obsidian 的 Maple 主题搬进 DSH：暖白 / 冷灰两套配色、内嵌字体、对话正文的排版、代码块与侧栏观感。",
+  "name": "@lynn123411/dsh-native-plus",
+  "version": "0.1.0",
+  "description": "在 DSH 自带的蓝白黑之上增强对话正文与外壳观感：六级标题的蓝阶、引用与表格、代码块、行高与段距、内嵌字体。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -31,7 +31,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tttnny/my-dsh.git",
-    "directory": "plugins/dsh-maple-theme"
+    "directory": "plugins/dsh-native-plus"
   },
   "scripts": {
     "build": "node build.mjs",
