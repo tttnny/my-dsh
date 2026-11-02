@@ -1,8 +1,8 @@
 /* grilling_form 的表单：住在对话流的轮次尾部（conversation.chat.turnTail）。
  *
  * 故意**没有卡片壳**：不画折叠行，也不给整张表套边框、背景、内边距与内部滚动——题目、按钮跟
- * 上下文同处一层，整轮的进度缩成顶上的一行小灰字。有框的只有选项：每个选项是一块整行可点的
- * 0.5px 描边的圆角行，勾选框、选项文字、推荐徽标与它的补充说明都在那块框里。
+ * 上下文同处一层，整轮的进度缩成顶上的一行小灰字。选项也不描边：每个选项是一整行可点的行，
+ * 勾选框、选项文字、推荐徽标与它的补充说明都在这一行里；有框的只有每题的自填框。
  *
  * 字号、行高、颜色照抄官方 @deepseek-ai/dsh-client-ui-tool 的 ToolRow / AskQuestionCard，
  * 避免同一页出现两套视觉。题干、选项文字与两处补充说明都由宿主的 MarkdownText 渲染，
@@ -158,7 +158,8 @@
   margin-top: 4px;
 }
 
-/* 一个选项：整块是一行可点的框。藏起来的原生勾选框 + 画的圈或方框 + 文字与补充说明。 */
+/* 一个选项：整行可点，不描边。藏起来的原生勾选框 + 画的圈或方框 + 文字与补充说明。
+   左侧不留内边距：控件与每题自填框的左边缘落在同一条线上，这一列只有一条左缘。 */
 .dsg-option {
   position: relative;
   display: flex;
@@ -166,19 +167,13 @@
   gap: 10px;
   box-sizing: border-box;
   min-width: 0;
-  padding: 8px 12px;
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 8px;
+  padding: 8px 12px 8px 0;
+  border-radius: var(--dsw-radius-sm);
   cursor: pointer;
 }
 
 .dsg-option:hover {
   background: var(--dsw-alias-interactive-bg-hover);
-}
-
-/* 选中的那一行：边框换成品牌色。文字颜色与底色不跟着变——勾没勾只看圈里那个点与方框里的勾。 */
-.dsg-option:has(.dsg-optionInput:checked) {
-  border-color: var(--dsw-alias-brand-primary);
 }
 
 /* 原生勾选框视觉上藏起来，但仍在页面里：开关状态、label 的点击、禁用都由它决定。
@@ -292,25 +287,32 @@
   margin-bottom: 0;
 }
 
-/* 多行自填：ui-primitives 没有多行输入控件，官方那张答题卡也是自己画的 textarea。 */
+/* 多行自填：ui-primitives 没有多行输入控件，官方那张答题卡也是自己画的 textarea。
+   长相照宿主 Input：0.5px 描边、--dsw-radius-md 圆角、layer-1 底，聚焦时描边转品牌色。
+   它是表里唯一保留描边的控件——可写的地方要跟读的地方分得开。 */
 .dsg-custom {
   box-sizing: border-box;
   width: 100%;
   min-height: 56px;
   margin-top: 2px;
-  padding: 6px 10px;
+  padding: 6px 8px;
   resize: vertical;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-base);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }
 
+.dsg-custom:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+  outline: none;
+}
+
 .dsg-custom::placeholder {
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-dimmed);
 }
 
 .dsg-footer {
@@ -328,7 +330,7 @@
 }
 
 /* 冻结：选项区整体压暗（选项文字、选项的补充说明、推荐徽标、自填框），圈与方框不压——
-   勾了什么仍然一眼看得出来。选中那一行的品牌色边框也不压，它是这行的框、不是选项区的内容。 */
+   勾了什么仍然一眼看得出来。 */
 .dsg-root[data-readonly='true'] .dsg-optionText,
 .dsg-root[data-readonly='true'] .dsg-optionDescription,
 .dsg-root[data-readonly='true'] .dsg-badge,

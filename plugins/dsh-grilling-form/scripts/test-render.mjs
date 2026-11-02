@@ -776,7 +776,7 @@ test('markdown 链接代理包在表单外面：槽位给的 openFile 传下去�
   assert.match(markup, /^<div data-markdown-delegate="yes">/, '整张表都在代理范围内');
 });
 
-test('每个选项行都是一块可点的框：里面是藏起来的原生勾选框、画的控件、文字与说明', () => {
+test('每个选项行都整行可点：里面是藏起来的原生勾选框、画的控件、文字与说明', () => {
   globalThis.localStorage = fakeStorage();
   const { markup } = html();
   const rows = [...markup.matchAll(/<div class="dsg-option(?: dsg-optionSingle)?" data-checked="[^"]*">/g)];
