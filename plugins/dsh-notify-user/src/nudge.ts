@@ -37,9 +37,9 @@ const NUDGE_SOURCE = { kind: 'notify-user-nudge' } as const;
  */
 export function renderNudge(count: number): string {
   return `You have gone ${String(count)} tool calls without a notify_user update — the user has seen no progress from you since. `
-    + 'Send one now: a one-line title with what you have concluded so far, and a short structured message '
-    + '(one paragraph plus a few bullet points, under ~1000 characters) with the details and what you will do next. '
-    + 'Call it together with your next tool call.';
+    + 'Send one now: a one-line title with what you have concluded so far, and a structured, chat-style message '
+    + '(a well structured paragraph with a few bullet points, under ~1000 characters) with the details and what you will do next, '
+    + 'batched with your next tool calls.';
 }
 
 /** 一行摘要：context 行折叠时显示的那句。 */
