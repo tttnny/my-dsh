@@ -27,13 +27,13 @@ import {
   exportRowsJson,
   JUDGE_API_KEY_REF,
   parseRowsJson,
+  rowHints,
   type CredentialsRemoteLike,
   routeKey,
   SETTINGS_NAMESPACE,
   splitRouteKey,
   type LogRow,
   type PageState,
-  type Section,
   type TypeRowDraft,
 } from './store.ts';
 import { NS } from '../locales.ts';
@@ -117,12 +117,10 @@ const CARD_CSS = `
 .dsh-judge-field { display: flex; box-sizing: border-box; width: 100%; min-width: 0; }
 .dsh-judge-field input { box-sizing: border-box; width: 100%; min-width: 0; }
 .dsh-judge-key-line { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; }
-.dsh-judge-off { display: block; color: var(--dsw-alias-state-warn-label); font: var(--dsw-font-xxxs-11); white-space: nowrap; }
-/* 这一节的出口：左边写下去，右边查已有的——两个方向分开，按错一个不会串到另一个。 */
-.dsh-judge-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 0.5px solid var(--dsw-alias-border-l3); }
+.dsh-judge-off { display: block; color: var(--dsw-alias-state-warn-label); font: var(--dsw-font-xxxs-11); }
+/* 标题行右端的一组动作：试通、导入、导出、加一行都排在这里。 */
 .dsh-judge-actions-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-/* 卡片最下面的出口：只有预览这一件跨节的动作，靠右与两节的右边缘对齐；要先把改动
-   存下去时，那句提醒在它左边。 */
+/* 卡片最下面的出口：只有预览这一件跨节的动作，靠右与两节的右边缘对齐。 */
 .dsh-judge-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .dsh-judge-hint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); }
 .dsh-judge-note-ok { color: var(--dsw-alias-state-success-primary); font: var(--dsw-font-xxs-12); }
@@ -139,10 +137,10 @@ const CARD_CSS = `
 .dsh-judge-table td { padding: 6px 8px 6px 0; vertical-align: middle; }
 .dsh-judge-table tbody tr + tr td { border-top: 0.5px solid var(--dsw-alias-border-l3); }
 .dsh-judge-table td:last-child, .dsh-judge-table th:last-child { padding-right: 0; }
-.dsh-judge-col-no { width: 52px; }
+.dsh-judge-col-no { width: 84px; }
 .dsh-judge-col-model { width: 188px; }
 .dsh-judge-col-effort { width: 124px; }
-.dsh-judge-col-actions { width: 148px; }
+.dsh-judge-col-actions { width: 96px; }
 .dsh-judge-no { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); font-variant-numeric: tabular-nums; }
 .dsh-judge-row-off .dsh-judge-field { opacity: 0.6; }
 .dsh-judge-cell-actions { display: flex; gap: 6px; }
@@ -194,11 +192,11 @@ const PLUGIN_NAME = '@lynn123411/dsh-subagent-judge-dispatch';
 /**
  * This plugin's configuration card inside the DSH **Plugins** page.
  *
- * Two tabs. The design tab holds two independently saved sections — the
- * judgement service, and the task-type table — because each is edited on its own
- * occasion and fails on its own terms; a single save for both would let an
- * unfinished description block an endpoint change. The log tab reads the Host's
- * runtime log. Nothing is written while the reader types.
+ * Two tabs. The design tab holds two sections — the judgement service, and the
+ * task-type table — and neither has a save button: a text field writes when
+ * focus leaves it, a switch and a row action write the moment they are used, and
+ * a failed write is reported at the bottom of the section that attempted it. The
+ * log tab reads the Host's runtime log.
  *
  * @param props - the renderer-bound seat of `plugins.bundle.config`.
  * @returns the card element.
@@ -210,7 +208,6 @@ export function JudgeDispatchPanel(
 
   const [state, setState] = useState<PageState>(() => dispatchCardStore.getState());
   const [tab, setTab] = useState<'design' | 'log'>('design');
-  const [browsing, setBrowsing] = useState<number | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [probing, setProbing] = useState(false);
@@ -218,8 +215,6 @@ export function JudgeDispatchPanel(
   const [detail, setDetail] = useState<LogRow | null>(null);
   /** Which row's dropdown is open, and which of the two. */
   const [openMenu, setOpenMenu] = useState<{ index: number; kind: 'model' | 'effort' } | null>(null);
-  /** The reason a save was refused, shown as a popup. */
-  const [refusal, setRefusal] = useState<string | null>(null);
   /** The paste box for importing a task-type list; null when it is closed. */
   const [importText, setImportText] = useState<string | null>(null);
   /** Why the last import attempt was refused, or ''. */
@@ -229,7 +224,12 @@ export function JudgeDispatchPanel(
 
   useEffect(() => {
     setState(dispatchCardStore.getState());
-    return dispatchCardStore.subscribe(() => setState(dispatchCardStore.getState()));
+    const unsubscribe = dispatchCardStore.subscribe(() => setState(dispatchCardStore.getState()));
+    return () => {
+      unsubscribe();
+      // 离开插件页时同样先写：卡片卸载之后没有人再替这几格提交。
+      void dispatchCardStore.flush();
+    };
   }, []);
 
   useEffect(() => {
@@ -244,15 +244,6 @@ export function JudgeDispatchPanel(
     setProbing(true);
     setProbeResult(await dispatchCardStore.probe());
     setProbing(false);
-  };
-
-  /** 类型清单有缺时按按钮不给写：把原因弹出来，而不是让按钮点不动。 */
-  const saveRows = (): void => {
-    if (state.rowsInvalid !== '') {
-      setRefusal(state.rowsInvalid);
-      return;
-    }
-    void dispatchCardStore.save('rows');
   };
 
   const openPreview = async (): Promise<void> => {
@@ -274,7 +265,7 @@ export function JudgeDispatchPanel(
     setCopyNote(null);
   };
 
-  /** Read the pasted list into the drafts; the section's save is still separate. */
+  /** Read the pasted list into the table and write it; the dialog's button is the confirmation. */
   const applyImport = (): void => {
     const result = parseRowsJson(importText ?? '');
     if (!result.ok) {
@@ -286,43 +277,15 @@ export function JudgeDispatchPanel(
     setImportError('');
   };
 
-  /** One section's save row: the write and the discard on the left, that section's checks on the right. */
-  const saveRow = (
-    section: Section,
-    dirty: boolean,
-    onSave: () => void,
-    checks?: React.ReactNode,
-  ): React.ReactElement => (
-    <div className="dsh-judge-actions">
-      <div className="dsh-judge-actions-group">
-        {/* 类型清单有缺时按钮仍可点：按下去由 saveRows 弹窗说明为什么存不了。
-            做成 disabled 的话，读者只看到一个点不动的按钮，不知道要改哪里。 */}
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={state.saving !== '' || !dirty || !state.writable}
-          onClick={onSave}
-        >
-          {state.saving === section ? t('save.saving') : t('save.button')}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={state.saving !== '' || !dirty}
-          onClick={() => dispatchCardStore.revert(section)}
-        >
-          {t('save.discard')}
-        </Button>
-        {dirty && <span className="dsh-judge-hint">{t('save.unsaved')}</span>}
-        {/* 失败按节报：判断服务那次保存没落地时，任务类型那一节不该跟着报错。 */}
-        {state.saveFailed === section && state.saveError !== '' && (
-          <span className="dsh-judge-note-bad" role="alert">
-            {t('save.failed').replace('{error}', state.saveError)}
-          </span>
-        )}
-      </div>
-      {checks !== undefined && <div className="dsh-judge-actions-group">{checks}</div>}
-    </div>
+  /** 这一节最后一次写入没落地时，就地说明；两节各报各的。 */
+  const failure = (section: 'judge' | 'rows'): React.ReactElement | null => (
+    state.saveFailed === section && state.saveError !== ''
+      ? (
+        <div className="dsh-judge-note-bad" role="alert">
+          {t('save.failed').replace('{error}', state.saveError)}
+        </div>
+      )
+      : null
   );
 
   /** One task-type row as three cells plus its row number and its actions. */
@@ -335,7 +298,9 @@ export function JudgeDispatchPanel(
       <tr key={index} className={usable ? undefined : 'dsh-judge-row-off'}>
         <td className="dsh-judge-col-no">
           <span className="dsh-judge-no">{index + 1}</span>
-          {usable ? null : <span className="dsh-judge-off">{t('rows.incomplete')}</span>}
+          {rowHints(state.rows, index, t).map((hint) => (
+            <span key={hint} className="dsh-judge-off">{hint}</span>
+          ))}
         </td>
         <td>
           <Input
@@ -346,6 +311,7 @@ export function JudgeDispatchPanel(
             aria-label={`${t('rows.colDescription')} ${index + 1}`}
             onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
               dispatchCardStore.cell(index, 'description', event.target.value)}
+            onBlur={() => void dispatchCardStore.commit('rows')}
           />
         </td>
         <td>
@@ -378,6 +344,7 @@ export function JudgeDispatchPanel(
               dispatchCardStore.cell(index, 'provider', provider);
               dispatchCardStore.cell(index, 'model', model);
               setOpenMenu(null);
+              void dispatchCardStore.commit('rows');
             }}
             onClose={() => setOpenMenu(null)}
             className="dsh-judge-field-wrap"
@@ -410,6 +377,7 @@ export function JudgeDispatchPanel(
               onSelect={(id) => {
                 dispatchCardStore.cell(index, 'effort', id);
                 setOpenMenu(null);
+                void dispatchCardStore.commit('rows');
               }}
               onClose={() => setOpenMenu(null)}
               className="dsh-judge-field-wrap"
@@ -424,19 +392,12 @@ export function JudgeDispatchPanel(
               aria-label={`${t('rows.colEffort')} ${index + 1}`}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 dispatchCardStore.cell(index, 'effort', event.target.value)}
+              onBlur={() => void dispatchCardStore.commit('rows')}
             />
           )}
         </td>
         <td className="dsh-judge-col-actions">
           <div className="dsh-judge-cell-actions">
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={`${t('rows.browse')} ${index + 1}`}
-              onClick={() => setBrowsing(index)}
-            >
-              {t('rows.browse')}
-            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -456,12 +417,20 @@ export function JudgeDispatchPanel(
       <div className="dsh-judge-section">
         <div className="dsh-judge-head">
           <span className="dsh-judge-title">{t('judge.title')}</span>
+          {/* 试通问的是「这份设置现在能不能用」，与这一节的写入无关：它只读已落地的值，
+              所以写入还在路上时先不给按。 */}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={probing || state.saving !== ''}
+            onClick={() => void runProbe()}
+          >
+            {probing ? t('judge.probing') : t('judge.probe')}
+          </Button>
         </div>
         <div className="dsh-judge-desc">{t('judge.desc')}</div>
 
-        {/* 这一节里的每一格都归下面那个保存按钮管：开关、端点、判断模型、密钥一次写入。
-            开关不另外给保存按钮，也不即时写入——「只有按保存才写」这条规则在一个节里
-            只能有一个出口，否则读者无法预判哪一下会落盘。 */}
+        {/* 开关拨了就是一次完整的决定，所以它当场写入；下面几格是文字，离开输入框才写。 */}
         <div className="dsh-judge-row">
           <div className="dsh-judge-row-info">
             <div className="dsh-judge-row-title">{t('switch.rewrite.title')}</div>
@@ -471,7 +440,7 @@ export function JudgeDispatchPanel(
             checked={state.enabled}
             onChange={(next: boolean) => dispatchCardStore.toggle('enabled', next)}
             label={t('switch.rewrite.title')}
-            disabled={!state.writable || state.saving !== ''}
+            disabled={!state.writable}
           />
         </div>
 
@@ -484,7 +453,7 @@ export function JudgeDispatchPanel(
             checked={state.logEnabled}
             onChange={(next: boolean) => dispatchCardStore.toggle('logEnabled', next)}
             label={t('switch.log.title')}
-            disabled={!state.writable || state.saving !== ''}
+            disabled={!state.writable}
           />
         </div>
 
@@ -500,8 +469,10 @@ export function JudgeDispatchPanel(
               value={state.endpointUrl}
               placeholder="http://127.0.0.1:3425/v1/systemone"
               aria-label={t('judge.endpoint')}
+              disabled={!state.writable}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 dispatchCardStore.field('endpointUrl', event.target.value)}
+              onBlur={() => void dispatchCardStore.commit('judge')}
             />
           </div>
         </div>
@@ -518,8 +489,10 @@ export function JudgeDispatchPanel(
               value={state.judgeModel}
               placeholder="future-jev/jev-latest"
               aria-label={t('judge.model')}
+              disabled={!state.writable}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 dispatchCardStore.field('judgeModel', event.target.value)}
+              onBlur={() => void dispatchCardStore.commit('judge')}
             />
           </div>
         </div>
@@ -541,9 +514,15 @@ export function JudgeDispatchPanel(
               value={state.key.text}
               placeholder={state.key.configured ? t('judge.keyPlaceholderSet') : t('judge.keyPlaceholder')}
               aria-label={t('judge.key')}
-              disabled={state.key.unavailable}
+              disabled={state.key.unavailable || !state.writable}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 dispatchCardStore.key(event.target.value)}
+              onBlur={() => void dispatchCardStore.commit('judge')}
+              onKeyDown={(event: React.KeyboardEvent<HTMLInputElement>) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                void dispatchCardStore.commit('judge');
+              }}
             />
             <div className="dsh-judge-key-line">
               <Tag tone={state.key.configured ? 'success' : 'warning'}>
@@ -560,8 +539,6 @@ export function JudgeDispatchPanel(
                 </Button>
               )}
               {state.key.unavailable && <span className="dsh-judge-hint">{t('judge.keyUnavailable')}</span>}
-              {state.key.landed === 'saved' && <span className="dsh-judge-note-ok">{t('judge.keySaved')}</span>}
-              {state.key.landed === 'cleared' && <span className="dsh-judge-note-ok">{t('judge.keyCleared')}</span>}
               {state.key.failed && (
                 <span className="dsh-judge-note-bad" role="alert">
                   {t('judge.keyFailed').replace('{error}', state.key.error || t('save.invalid'))}
@@ -579,21 +556,25 @@ export function JudgeDispatchPanel(
           </div>
         )}
 
-        {/* 试通问的是「这一节存下去能不能用」，所以就跟着这一节的保存走：左边写下去，右边查一下。 */}
-        {saveRow('judge', state.judgeDirty, () => void dispatchCardStore.save('judge'), (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={probing || state.dirty}
-            onClick={() => void runProbe()}
-          >
-            {probing ? t('judge.probing') : t('judge.probe')}
-          </Button>
-        ))}
+        {failure('judge')}
       </div>
 
       <div className="dsh-judge-section">
-        <div className="dsh-judge-title">{t('rows.title')}</div>
+        <div className="dsh-judge-head">
+          <span className="dsh-judge-title">{t('rows.title')}</span>
+          {/* 三件都是整张表的动作：导入与导出是同一份清单的两个方向，加一行是往表尾续一条。 */}
+          <div className="dsh-judge-actions-group">
+            <Button variant="outline" size="sm" onClick={openImport}>
+              {t('rows.importOpen')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void exportRows()}>
+              {t('rows.export')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => dispatchCardStore.addRow()}>
+              {t('rows.add')}
+            </Button>
+          </div>
+        </div>
         <div className="dsh-judge-desc">{t('rows.desc')}</div>
         {state.models.length === 0 && <div className="dsh-judge-off">{t('rows.allowedEmpty')}</div>}
         {state.rows.length === 0 && <div className="dsh-judge-desc">{t('rows.empty')}</div>}
@@ -613,41 +594,18 @@ export function JudgeDispatchPanel(
             </tbody>
           </table>
         )}
-        {state.rowsInvalid !== '' && state.rowsDirty && (
-          <div className="dsh-judge-note-bad" role="alert">{state.rowsInvalid}</div>
+        {failure('rows')}
+        {copyNote !== null && (
+          <div className={copyNote.ok ? 'dsh-judge-note-ok' : 'dsh-judge-note-bad'} role="status">
+            {copyNote.text}
+          </div>
         )}
-        {/* 这一节的出口：左边写下去，右边是这张表自己的三个动作——导入、导出都只动这份
-            清单（导入落草稿、导出把草稿抄成 JSON），加一行往下续一条，三件都不落盘。 */}
-        {saveRow('rows', state.rowsDirty, saveRows, (
-          <>
-            <Button variant="outline" size="sm" onClick={openImport}>
-              {t('rows.importOpen')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void exportRows()}>
-              {t('rows.export')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => dispatchCardStore.addRow()}>
-              {t('rows.add')}
-            </Button>
-            {copyNote !== null && (
-              <span className={copyNote.ok ? 'dsh-judge-note-ok' : 'dsh-judge-note-bad'} role="status">
-                {copyNote.text}
-              </span>
-            )}
-          </>
-        ))}
       </div>
 
       {/* 预览问的是这一整份设置存下去会发给判断服务什么：它同时用到判断模型与类型清单，
           哪一节都不独占，所以单独排在两节之外。 */}
       <div className="dsh-judge-footer">
-        {state.dirty && <span className="dsh-judge-hint">{t('preview.blocked')}</span>}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={state.dirty}
-          onClick={() => void openPreview()}
-        >
+        <Button variant="outline" size="sm" onClick={() => void openPreview()}>
           {t('preview.open')}
         </Button>
       </div>
@@ -717,19 +675,14 @@ export function JudgeDispatchPanel(
           { value: 'log' as const, label: t('tab.log'), id: 'judge-tab-log', panelId: 'judge-panel-log' },
         ]}
         value={tab}
-        onChange={setTab}
+        onChange={(next) => {
+          // 切走之前先把还没失焦的那一格写下去：自动保存不留「明明填了却没存」的死角。
+          void dispatchCardStore.flush();
+          setTab(next);
+        }}
         label={t('tab.design')}
       />
       {tab === 'design' ? design : log}
-
-      <Modal
-        open={refusal !== null}
-        onClose={() => setRefusal(null)}
-        title={t('save.refusedTitle')}
-        closeLabel={t('rows.browseClose')}
-      >
-        <div className="dsh-judge-note-bad" role="alert">{refusal ?? ''}</div>
-      </Modal>
 
       <Modal
         open={previewOpen}
@@ -749,7 +702,7 @@ export function JudgeDispatchPanel(
         open={importText !== null}
         onClose={() => setImportText(null)}
         title={t('rows.importTitle')}
-        closeLabel={t('rows.browseClose')}
+        closeLabel={t('rows.importCancel')}
         description={t('rows.importDesc')}
         className="dsh-judge-modal"
         footer={(
@@ -776,17 +729,6 @@ export function JudgeDispatchPanel(
           }}
         />
         {importError !== '' && <div className="dsh-judge-note-bad" role="alert">{importError}</div>}
-      </Modal>
-
-      <Modal
-        open={browsing !== null}
-        onClose={() => setBrowsing(null)}
-        title={t('rows.browseTitle').replace('{id}', String((browsing ?? 0) + 1))}
-        closeLabel={t('rows.browseClose')}
-      >
-        <div className="dsh-judge-desc" style={{ whiteSpace: 'pre-wrap' }}>
-          {browsing === null ? '' : state.rows[browsing]?.description ?? ''}
-        </div>
       </Modal>
 
       {/* 判断详情这一处只回答一个问题：这次到底发给判断模型什么。行上那几列已经写清了

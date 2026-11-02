@@ -1,12 +1,13 @@
 /**
- * 渲染自检：用真 react 把配置卡片画进 jsdom，锁住这次界面的三件事。
+ * 渲染自检：用真 react 把配置卡片画进 jsdom，锁住这次界面的四件事。
  *
- *   1. 每节各有自己的保存行：试通在判断服务那节的保存行里，导入、导出、加一行按这个
- *      顺序排在任务类型那节的保存行右端；预览同时用到判断模型与类型清单，单独排在卡片
- *      最下面那一条栏里；
- *   2. 判断日志那张表是六列：结果、选择、主代理、子代理、时间、耗时——结果在最左，
+ *   1. 没有保存按钮：试通在判断服务那节的标题行里，导入、导出、加一行按这个顺序排在
+ *      任务类型那节的标题行右端；预览同时用到判断模型与类型清单，单独排在卡片最下面
+ *      那一条栏里；行上只有「删掉」，没有「查看」；
+ *   2. 文字格离开才写、开关拨了就写；行的问题写在编号列下方；
+ *   3. 判断日志那张表是六列：结果、选择、主代理、子代理、时间、耗时——结果在最左，
  *      模型·强度合成一格，供应商只在悬停时补上；
- *   3. 点一行开出来的弹窗只讲一件事：这次发给判断模型的完整内容。结果、选择、
+ *   4. 点一行开出来的弹窗只讲一件事：这次发给判断模型的完整内容。结果、选择、
  *      主代理这些行上已经有了，弹窗不再各列一遍；那段正文自己换行，高了在框里滚动。
  *
  * `@deepseek-ai/dsh-client-ui-primitives` 是替身：真组件是浏览器里的 ESM、带 .css
@@ -122,6 +123,27 @@ const primitives = primitivesStub({
 
 const exported = await loadClientBundle({ root, primitives });
 
+/** 宿主那份配置表单：记下每次写入，并把值真的改掉。 */
+let hostValue = {
+  enabled: true,
+  logEnabled: true,
+  endpointUrl: 'http://127.0.0.1:3425/v1/systemone',
+  judgeModel: 'bailian-decision/decision-model-preview',
+  rows: [{ description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' }],
+};
+const writes = [];
+const hostForm = {
+  getSnapshot: () => ({ status: 'ready', writable: true, revision: 1, value: hostValue }),
+  subscribe: () => () => {},
+  mutate: async (ops) => {
+    writes.push(ops);
+    for (const op of ops) {
+      if (op.op === 'set') hostValue = { ...hostValue, [op.path[0]]: op.value };
+    }
+    return true;
+  },
+};
+
 /** 本测试直接拿座位组件来画，不关心注册细节。 */
 const registrations = [];
 const ctx = {
@@ -132,22 +154,7 @@ const ctx = {
     register: (options, component) => { registrations.push({ options, component }); return () => {} },
   },
   configForms: {
-    get: () => ({
-      getSnapshot: () => ({
-        status: 'ready',
-        writable: true,
-        revision: 1,
-        value: {
-          enabled: true,
-          logEnabled: true,
-          endpointUrl: 'http://127.0.0.1:3425/v1/systemone',
-          judgeModel: 'bailian-decision/decision-model-preview',
-          rows: [{ description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' }],
-        },
-      }),
-      subscribe: () => () => {},
-      mutate: async () => true,
-    }),
+    get: () => hostForm,
     whileServed: (_namespaces, register) => register(new Set()),
   },
   remote: {
@@ -227,36 +234,59 @@ const test = async (label, fn) => {
   }
 };
 
-await test('导入导出与加一行在任务类型那一节的保存行里，预览在卡片最下面', () => {
+await test('没有保存按钮：试通在判断服务标题行，导入导出与加一行在任务类型标题行，预览在卡片最下面', () => {
+  assert.equal(buttonByText(zh['save.button']), undefined, '保存按钮已经去掉');
+
   const probe = buttonByText(zh['judge.probe']);
   assert.ok(probe !== undefined, '试通按钮应当在场');
-  // 试通问的是「这一节存下去能不能用」，与那一节的保存同行。
-  const row = probe.closest('.dsh-judge-actions');
-  assert.ok(row !== null, '试通按钮应当落在某一节的保存行里');
-  assert.equal(buttonByText(zh['save.button'])?.closest('.dsh-judge-actions'), row, '跟判断服务那一节的保存同一行');
-  // 标题栏里不再有按钮。
-  const head = probe.closest('.dsh-judge-section')?.querySelector('.dsh-judge-head');
-  assert.equal(head?.querySelectorAll('button').length ?? 0, 0, '标题栏里不该再有按钮');
+  const judgeHead = probe.closest('.dsh-judge-section')?.querySelector('.dsh-judge-head');
+  assert.ok(judgeHead?.contains(probe), '试通落在判断服务那一节的标题行里');
 
-  // 导入、导出、加一行都只动这份清单，所以排在它自己那一节的保存行右端；
-  // 顺序固定：先导入再导出，最后才是往下续一条的「加一行」。
-  const rowsRow = [...container.querySelectorAll('.dsh-judge-actions')]
-    .find((node) => node.textContent?.includes(zh['rows.add']));
-  assert.ok(rowsRow !== undefined, '任务类型那一节应当有保存行');
-  const trailing = [...(rowsRow?.querySelectorAll('.dsh-judge-actions-group') ?? [])].at(-1);
+  // 三件都是整张表的动作，排在任务类型那一节的标题行右端；
+  // 顺序固定：先导入再导出，最后才是往表尾续一条的「加一行」。
+  const rowsSection = container.querySelector('.dsh-judge-table')?.closest('.dsh-judge-section');
+  const rowsHead = rowsSection?.querySelector('.dsh-judge-head');
   assert.deepEqual(
-    [...(trailing?.querySelectorAll('button') ?? [])].map((node) => node.textContent?.trim()),
+    [...(rowsHead?.querySelectorAll('button') ?? [])].map((node) => node.textContent?.trim()),
     [zh['rows.importOpen'], zh['rows.export'], zh['rows.add']],
-    '这一行右端按「导入、导出、加一行」排',
+    '标题行右端按「导入、导出、加一行」排',
   );
-  assert.notEqual(rowsRow, row, '导入导出不跟判断服务那一节挤在同一行');
+  assert.notEqual(rowsHead, judgeHead, '两节的标题行各是各的');
+
+  // 行上只剩「删掉」：说明放不下时点进格子看，不再单开一个弹窗。
+  const rowButtons = [...(container.querySelector('.dsh-judge-table tbody tr')?.querySelectorAll('button') ?? [])]
+    .map((node) => node.textContent?.trim());
+  assert.deepEqual(rowButtons, [zh['rows.remove']], '行上不再有「查看」');
 
   // 预览同时用到判断模型与类型清单，哪一节都不独占，单独排在两节之外。
   const preview = buttonByText(zh['preview.open']);
   assert.ok(preview !== undefined, '预览按钮应当在场');
-  assert.equal(preview.closest('.dsh-judge-section'), null, '预览不该再挂在某一节里面');
+  assert.equal(preview.closest('.dsh-judge-section'), null, '预览不该挂在某一节里面');
   assert.ok(preview.closest('.dsh-judge-footer') !== null, '预览应当落在卡片最下面那条栏里');
-  assert.equal(probe.closest('.dsh-judge-footer'), null, '试通不搬到这条栏里');
+});
+
+await test('文字格离开才写，写的是这一格的新值', async () => {
+  const input = container.querySelector(`input[aria-label="${zh['judge.endpoint']}"]`);
+  assert.ok(input !== null, '端点格子应当在场');
+  const before = writes.length;
+  await type(input, 'http://typed.invalid/v1/systemone');
+  assert.equal(writes.length, before, '打字期间一个字节都不写');
+
+  await act(async () => {
+    input.dispatchEvent(new dom.window.FocusEvent('focusout', { bubbles: true }));
+  });
+  await act(async () => { await new Promise((tick) => setTimeout(tick, 0)); });
+  assert.equal(writes.length, before + 1, '离开输入框就写一次');
+  assert.deepEqual(writes.at(-1), [{ op: 'set', path: ['endpointUrl'], value: 'http://typed.invalid/v1/systemone' }]);
+});
+
+await test('行的问题写在编号列下方', async () => {
+  await click(buttonByText(zh['rows.add']));
+  const rows = [...container.querySelectorAll('.dsh-judge-table tbody tr')];
+  const added = rows.at(-1);
+  const numberCell = added?.children[0]?.textContent ?? '';
+  assert.ok(numberCell.includes(zh['rows.incomplete']), '新行还没填全，编号列要说「不生效」');
+  assert.ok(numberCell.includes(zh['rows.hintNoDescription']), '新行没有描述，编号列要说出来');
 });
 
 await test('导出把整份清单按纯 JSON 复制走', async () => {
@@ -277,7 +307,7 @@ await test('导出失败时如实报错，不装作复制好了', async () => {
   clipboardWorks = true;
 });
 
-await test('导入是粘贴，粘进来的清单只填表，保存仍要另按', async () => {
+await test('导入是粘贴，粘进来的清单直接替换并立即写入', async () => {
   await click(buttonByText(zh['rows.importOpen']));
   const box = container.querySelector('textarea.dsh-judge-paste');
   assert.ok(box !== null, '导入弹窗里应当有一个粘贴框');
@@ -306,11 +336,13 @@ await test('导入是粘贴，粘进来的清单只填表，保存仍要另按',
     ['high', 'low'],
     '强度也跟着换了',
   );
-  // 导入落在草稿里：清单那一节的保存按钮此刻可点，说明还没写进文档。
-  const rowsSection = container.querySelector('.dsh-judge-table')?.closest('.dsh-judge-section');
-  const saveButton = [...(rowsSection?.querySelectorAll('button') ?? [])]
-    .find((node) => node.textContent?.trim() === zh['save.button']);
-  assert.equal(saveButton?.disabled, false, '导入之后仍要读者自己按保存');
+  // 导入即写入：文档里那一份 rows 就是粘进来的两条。
+  const rowsWrite = writes.at(-1)?.find((op) => op.path[0] === 'rows');
+  assert.ok(rowsWrite !== undefined, '导入之后应当已经写了一次 rows');
+  assert.deepEqual(rowsWrite.value, [
+    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+    { description: '跑测试', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
+  ]);
 });
 
 await test('粘进来的不是清单时说清楚是哪一种问题', async () => {

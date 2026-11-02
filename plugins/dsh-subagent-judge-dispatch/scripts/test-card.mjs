@@ -1,11 +1,12 @@
 /**
- * 配置卡片状态机自检：这一层管的是「按一下保存会发生什么」。
+ * 配置卡片状态机自检：这一层管的是「一次提交会发生什么」。
  *
- * 这里守的是三条只有把控件真的点一遍才看得见的事：
- *   1. 两节各存各的——改端点不该动类型清单，清单没填全也不该挡住端点；
- *   2. 宿主回 `false` 是**拒绝**而非成功：把它当成功会让页面显示「已保存」，
+ * 这里守的是只有把控件真的点一遍才看得见的事：
+ *   1. 按控件各自的时机写——文字格离开才写、开关与行动作当场写——且两节各写各的；
+ *   2. 宿主回 `false` 是**拒绝**而非成功：把它当成功会让页面显示已保存，
  *      而配置文件里还是旧值；
- *   3. 未保存的草稿不会被宿主的下一次发布冲掉，而**已经落地**的那一节会刷新。
+ *   3. 没填完的行照常写入（服务端本来就跳过不可用的行），页面只在行上提示；
+ *   4. 连续两次提交合并成一次写，写的是最新值。
  *
  * 跑法：pnpm test / node scripts/test-card.mjs
  */
@@ -21,9 +22,9 @@ import {
   exportRowsJson,
   parseRowsJson,
   readRow,
+  rowHints,
   routeKey,
   splitRouteKey,
-  validateRows,
   SETTINGS_NAMESPACE,
   ALLOWED_MODELS_NAMESPACE,
 } from '../src/client/settings/store.ts';
@@ -95,7 +96,7 @@ function makeForm(initial = {}, accept = true) {
 function makeCredentials(options = {}) {
   const set = [];
   const unset = [];
-  const configured = options.configured ?? false;
+  let configured = options.configured ?? false;
   const accept = options.accept ?? true;
   return {
     set,
@@ -104,11 +105,15 @@ function makeCredentials(options = {}) {
       describe: async () => ({ ok: true, value: { [JUDGE_API_KEY_REF]: { configured, writable: true } } }),
       set: async (ref, value) => {
         set.push([ref, value]);
-        return accept ? { ok: true } : { ok: false, error: { message: '凭据被环境变量遮住了' } };
+        if (!accept) return { ok: false, error: { message: '凭据被环境变量遮住了' } };
+        configured = true;
+        return { ok: true };
       },
       unset: async (ref) => {
         unset.push(ref);
-        return accept ? { ok: true } : { ok: false, error: { message: '删不掉' } };
+        if (!accept) return { ok: false, error: { message: '删不掉' } };
+        configured = false;
+        return { ok: true };
       },
     },
   };
@@ -173,49 +178,70 @@ function makeStore(options = {}) {
   return { store, host, keys };
 }
 
-await test('两节各存各的：改端点不动类型清单', async () => {
+await test('文字格只在提交时写，且只写改过的那一项', async () => {
   const { store, host } = makeStore();
-  assert.equal(store.getState().rowsDirty, false);
   store.field('endpointUrl', 'http://other.invalid/v1/systemone');
-  const state = store.getState();
-  assert.equal(state.judgeDirty, true, '判断服务那节应当脏了');
-  assert.equal(state.rowsDirty, false, '类型清单这一节不该跟着脏');
+  assert.equal(host.writes.length, 0, '还没离开输入框，一个字节都不写');
 
-  await store.save('judge');
+  await store.commit('judge');
   assert.equal(host.writes.length, 1);
   assert.deepEqual(host.writes[0].map((op) => op.path[0]), ['endpointUrl']);
-  assert.equal(store.getState().judgeDirty, false);
-  assert.equal(store.getState().rowsDirty, false);
+  assert.equal(store.getState().endpointUrl, 'http://other.invalid/v1/systemone');
 });
 
-await test('类型清单没填全时，判断服务那节照样能存', async () => {
+await test('开关拨了就写', async () => {
   const { store, host } = makeStore();
-  store.addRow();
-  assert.notEqual(store.getState().rowsInvalid, '', '新加的空行应当让清单存不了');
+  store.toggle('logEnabled', false);
+  await store.commit('judge');
+  assert.equal(host.writes.length, 1);
+  assert.deepEqual(host.writes[0], [{ op: 'set', path: ['logEnabled'], value: false }]);
+});
 
+await test('连续两次提交合并成一次写，写的是最新值', async () => {
+  const { store, host } = makeStore();
+  store.field('endpointUrl', 'http://a.invalid/v1/systemone');
+  const first = store.commit('judge');
   store.field('judgeModel', '另一个判断模型');
-  await store.save('judge');
-  assert.equal(host.writes.length, 1, '清单的毛病不该挡住端点这一节');
-  assert.equal(store.getState().judgeDirty, false);
+  const second = store.commit('judge');
+  await Promise.all([first, second]);
+  assert.equal(host.writes.length, 1, '排队的那一次读到的是最新草稿，不必再写一遍');
+  assert.deepEqual(host.writes[0].map((op) => op.path[0]).sort(), ['endpointUrl', 'judgeModel']);
 });
 
-await test('清单没填全时按保存，一个字节都不写', async () => {
+await test('没填完的行照常写入，页面只在行上提示', async () => {
   const { store, host } = makeStore();
   store.addRow();
-  await store.save('rows');
-  assert.equal(host.writes.length, 0);
-  assert.notEqual(store.getState().rowsInvalid, '');
+  await store.commit('rows');
+  assert.equal(host.writes.length, 1, '空行也写进去：它只是暂时不生效');
+  assert.deepEqual(store.rowHints(store.getState().rows.length - 1), [
+    'rows.incomplete',
+    'rows.hintNoDescription',
+  ]);
 });
 
-await test('宿主回 false 是拒绝，不是成功：页面必须报没存上', async () => {
+await test('描述为空或与别的行重复时各给一句提示，但不拦写', async () => {
+  const { store, host } = makeStore();
+  store.cell(0, 'description', '');
+  await store.commit('rows');
+  assert.equal(host.writes.length, 1, '描述空着也照写');
+  assert.deepEqual(store.rowHints(0), ['rows.hintNoDescription']);
+
+  store.cell(0, 'description', '机械修改');
+  store.addRow();
+  store.cell(1, 'description', '机械修改');
+  await store.commit('rows');
+  assert.deepEqual(store.rowHints(1), ['rows.incomplete', 'rows.hintDuplicateDescription']);
+});
+
+await test('宿主回 false 是拒绝，不是成功：页面必须报没写进去', async () => {
   const { store, host } = makeStore({ accept: false });
   store.field('endpointUrl', 'http://refused.invalid/v1/systemone');
-  await store.save('judge');
+  await store.commit('judge');
   const state = store.getState();
   assert.equal(host.writes.length, 1, '写确实发出去了');
-  assert.equal(state.saveFailed, 'judge', '宿主没接受就该报失败，并归到发起保存的那一节');
+  assert.equal(state.saveFailed, 'judge', '宿主没接受就该报失败，并归到发起提交的那一节');
   assert.notEqual(state.saveError, '');
-  assert.equal(state.judgeDirty, true, '没落地就还得是脏的');
+  assert.equal(state.endpointUrl, 'http://refused.invalid/v1/systemone', '没落地就把草稿留着');
 });
 
 await test('宿主抛错时把宿主自己的话显示出来', async () => {
@@ -224,28 +250,26 @@ await test('宿主抛错时把宿主自己的话显示出来', async () => {
     throw new Error('revision conflict');
   };
   store.field('endpointUrl', 'http://boom.invalid/v1/systemone');
-  await store.save('judge');
+  await store.commit('judge');
   assert.equal(store.getState().saveError, 'revision conflict');
 });
 
-await test('密钥跟着判断服务那次保存一起写，且写的是固定引用名', async () => {
+await test('密钥在提交时写入，且写的是固定引用名', async () => {
   const { store, keys, host } = makeStore();
   store.key('magpie');
-  assert.equal(store.getState().judgeDirty, true, '填了密钥也算这一节有改动');
+  assert.equal(keys.set.length, 0, '打字期间不写');
 
-  await store.save('judge');
+  await store.commit('judge');
   assert.deepEqual(keys.set, [[JUDGE_API_KEY_REF, 'magpie']]);
   assert.equal(host.writes.length, 0, '只填密钥不改设置时没有文档写入');
   assert.equal(store.getState().key.text, '', '落地之后输入框清空');
-  assert.equal(store.getState().key.landed, 'saved');
-  assert.equal(store.getState().judgeDirty, false);
 });
 
 await test('密钥写入被拒时，设置一个字节都不写', async () => {
   const { store, keys, host } = makeStore({ keyOptions: { accept: false } });
   store.key('magpie');
   store.field('endpointUrl', 'http://never.invalid/v1/systemone');
-  await store.save('judge');
+  await store.commit('judge');
   assert.equal(keys.set.length, 1);
   assert.equal(host.writes.length, 0, '密钥没写进去就不该再动设置');
   assert.notEqual(store.getState().saveFailed, '');
@@ -255,7 +279,7 @@ await test('密钥写入被拒时，设置一个字节都不写', async () => {
 await test('密钥值从不进页面状态，只在写入那一刻交给凭据服务', async () => {
   const { store, keys } = makeStore();
   store.key('  sk-secret-value  ');
-  await store.save('judge');
+  await store.commit('judge');
   assert.deepEqual(keys.set[0][1], 'sk-secret-value', '写入前去掉两端空白');
   const serialized = JSON.stringify(store.getState());
   assert.equal(serialized.includes('sk-secret-value'), false, '密钥值不该留在状态里');
@@ -267,10 +291,10 @@ await test('已经存了密钥时状态栏说已存，删掉后说没存', async
   assert.equal(store.getState().key.configured, true);
   await store.clearKey();
   assert.deepEqual(keys.unset, [JUDGE_API_KEY_REF]);
-  assert.equal(store.getState().key.landed, 'cleared');
+  assert.equal(store.getState().key.configured, false);
 });
 
-await test('未保存的草稿不被宿主的下一次发布冲掉', async () => {
+await test('还没提交的草稿不被宿主的下一次发布冲掉', async () => {
   const { store, host } = makeStore();
   store.field('endpointUrl', 'http://mid-typing.invalid/v1/sys');
   host.push({ judgeModel: '宿主换了模型' });
@@ -278,53 +302,54 @@ await test('未保存的草稿不被宿主的下一次发布冲掉', async () =>
   assert.equal(store.getState().judgeModel, '宿主换了模型', '没在改的那一项跟着宿主走');
 });
 
-await test('宿主改了一项而我在改另一项时，保存不会把那一项写回去', async () => {
+await test('宿主改了一项而我在改另一项时，提交不会把那一项写回去', async () => {
   const { store, host } = makeStore();
   store.field('endpointUrl', 'http://mid-typing.invalid/v1/sys');
   host.push({ judgeModel: '另一个页面改的模型' });
-  await store.save('judge');
+  await store.commit('judge');
   const paths = host.writes.flat().map((op) => op.path[0]);
   assert.deepEqual(paths, ['endpointUrl'], '只该写读者真正改过的那一项');
   assert.equal(host.writes.flat()[0].value, 'http://mid-typing.invalid/v1/sys');
   assert.equal(store.getState().judgeModel, '另一个页面改的模型', '别处的改动要留在页面上');
-  assert.equal(store.getState().judgeDirty, false);
 });
 
 await test('落地之后，宿主发布的新值会刷新到页面', async () => {
   const { store, host } = makeStore();
-  await store.save('rows');
+  await store.commit('rows');
   host.push({ endpointUrl: 'http://moved.invalid/v1/systemone' });
   assert.equal(store.getState().endpointUrl, 'http://moved.invalid/v1/systemone');
 });
 
-await test('放弃改动只丢那一节', async () => {
-  const { store } = makeStore();
-  store.field('endpointUrl', 'http://discard.invalid/v1/systemone');
+await test('导入整份清单后立即写入', async () => {
+  const { store, host } = makeStore();
+  store.replaceRows([
+    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+  ]);
+  await store.commit('rows');
+  assert.equal(host.writes.length, 1);
+  assert.deepEqual(host.writes[0][0].value, [
+    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+  ]);
+});
+
+await test('加一行与删一行都当场写入', async () => {
+  const { store, host } = makeStore();
   store.addRow();
-  store.revert('judge');
-  assert.equal(store.getState().endpointUrl, 'http://judge.invalid/v1/systemone');
-  assert.equal(store.getState().rowsDirty, true, '另一节的草稿还在');
+  await store.commit('rows');
+  assert.equal(host.writes.length, 1, '加一行立刻写');
+  store.removeRow(1);
+  await store.commit('rows');
+  assert.equal(host.writes.length, 2, '删一行也立刻写');
+  assert.equal(store.getState().rows.length, 1);
 });
 
-await test('放弃判断服务那节的草稿，不会把「已存密钥」说成「还没有密钥」', async () => {
-  const { store } = makeStore({ keyOptions: { configured: true } });
-  await new Promise((tick) => setTimeout(tick, 0));
-  assert.equal(store.getState().key.configured, true);
-  store.field('endpointUrl', 'http://discard.invalid/v1/systemone');
-  store.revert('judge');
-  assert.equal(store.getState().key.configured, true, '密钥还在凭据文件里，页面不该改口');
-  assert.equal(store.getState().key.text, '', '只清掉还没交出去的那段文本');
-});
-
-await test('保存失败按节报，且改一处就清掉上一次的失败', async () => {
+await test('失败按节报，且改那一处就清掉上一次的失败', async () => {
   const { store } = makeStore({ accept: false });
-  // 清单里先放一条填全的行，让清单那一节也能真的发出保存。
-  store.cell(0, 'description', '评审代码');
   store.field('endpointUrl', 'http://refused.invalid/v1/systemone');
-  await store.save('judge');
-  assert.equal(store.getState().saveFailed, 'judge', '失败归属发起保存的那一节');
+  await store.commit('judge');
+  assert.equal(store.getState().saveFailed, 'judge', '失败归属发起提交的那一节');
 
-  store.addRow();
+  store.field('endpointUrl', 'http://refused.invalid/v1/systemone2');
   assert.equal(store.getState().saveFailed, '', '一有改动，上一次的失败就不再是当前事实');
 });
 
@@ -343,12 +368,12 @@ await test('页面没有凭据通道时，密钥格标成不可用', async () =>
   assert.equal(store.getState().key.writable, false);
 });
 
-await test('宿主说不可写时，按保存什么也不做', async () => {
+await test('宿主说不可写时，提交什么也不做', async () => {
   const { store, host } = makeStore();
   host.setWritable(false);
   host.push({});
   store.field('endpointUrl', 'http://readonly.invalid/v1/systemone');
-  await store.save('judge');
+  await store.commit('judge');
   assert.equal(host.writes.length, 0);
 });
 
@@ -358,7 +383,7 @@ await test('换成不声明这个强度的模型时，强度跟着清掉', async
   store.cell(0, 'effort', 'max');
   store.cell(0, 'provider', 'a6api');
   store.cell(0, 'model', 'kimi-k3');
-  assert.equal(store.getState().rows[0].effort, '', 'kimi-k3 没有 max，留着它保存就会带上跑不了的强度');
+  assert.equal(store.getState().rows[0].effort, '', 'kimi-k3 没有 max，留着它写出去就会带上跑不了的强度');
 });
 
 await test('换成声明同样强度的模型时，强度保留', async () => {
@@ -375,6 +400,22 @@ await test('行残缺的判据就是宿主那条：三项都要有', () => {
   assert.equal(store.rowUsable({ description: 'a', provider: 'p', model: 'm', effort: 'low' }), true);
   assert.equal(store.rowUsable({ description: 'a', provider: 'p', model: 'm', effort: '' }), false);
   assert.equal(store.rowUsable({ description: 'a', provider: '', model: 'm', effort: 'low' }), false);
+});
+
+await test('行提示：不生效、没描述、描述重复，各一句', () => {
+  const t = (key) => key;
+  const rows = [
+    { description: '机械修改', provider: 'p', model: 'm', effort: 'low' },
+    { description: '', provider: 'p', model: 'm', effort: 'low' },
+    { description: '机械修改', provider: 'p', model: 'm', effort: 'low' },
+    { description: '跑测试', provider: '', model: '', effort: '' },
+    { description: '评审代码', provider: 'p', model: 'm', effort: 'low' },
+  ];
+  assert.deepEqual(rowHints(rows, 0, t), ['rows.hintDuplicateDescription'], '两条一模一样的描述都算重');
+  assert.deepEqual(rowHints(rows, 1, t), ['rows.hintNoDescription']);
+  assert.deepEqual(rowHints(rows, 2, t), ['rows.hintDuplicateDescription']);
+  assert.deepEqual(rowHints(rows, 3, t), ['rows.incomplete']);
+  assert.deepEqual(rowHints(rows, 4, t), []);
 });
 
 await test('路由键能原样拆回来（分隔符不会撞进 id）', () => {
@@ -409,7 +450,6 @@ await test('「选择」一列写模型与强度，供应商留给悬停的整�
 });
 
 await test('两条路都不留下悬空的分隔点', () => {
-  // 退回时强度可能读不到，两条路都不该写成「m · 」或「magpie · m · 」。
   assert.equal(describeModel({ model: 'm', effort: '' }), 'm');
   assert.equal(describeChoice({ provider: 'magpie', model: 'm', effort: '' }), 'magpie · m');
   assert.equal(describeChoice({ provider: '', model: 'm', effort: 'low' }), 'm · low');
@@ -420,14 +460,12 @@ await test('两条路都不留下悬空的分隔点', () => {
 await test('带一条没填完的行也能读了再粘回来（导出与导入往返）', () => {
   const rows = [
     { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
-    // 「加一行」之后还没填的那一条：导出不该把它写成一行空壳，导入也不该拒收。
     { description: '', provider: '', model: '', effort: '' },
   ];
   const text = exportRowsJson(rows);
   assert.deepEqual(JSON.parse(text), [rows[0]], '空白行不写进 JSON');
   assert.deepEqual(parseRowsJson(text), { ok: true, rows: [rows[0]] });
 
-  // 别人手写的 JSON 里带着一条空白行，同样照收其余几条。
   const pasted = JSON.stringify([rows[0], { description: '', provider: '', model: '', effort: '' }]);
   assert.deepEqual(parseRowsJson(pasted), { ok: true, rows: [rows[0]] });
 });
@@ -462,7 +500,6 @@ await test('导入认不出 JSON、不是数组、字段不是文字，各报各
   assert.deepEqual(parseRowsJson('{"description":"a"}'), { ok: false, error: 'shape' });
   assert.deepEqual(parseRowsJson('["a"]'), { ok: false, error: 'shape' });
   assert.deepEqual(parseRowsJson('[{"description":1}]'), { ok: false, error: 'shape' });
-  // 只剩空行时等于一份空清单，按空清单说。
   assert.deepEqual(parseRowsJson('[{}]'), { ok: false, error: 'empty' });
   assert.deepEqual(parseRowsJson('[]'), { ok: false, error: 'empty' });
 });
@@ -477,16 +514,6 @@ await test('导入认得缺字段与多出来的字段', () => {
     { description: '只有描述', provider: '', model: '', effort: '' },
     { description: '多一个字段', provider: 'p', model: 'm', effort: 'low' },
   ]);
-});
-
-await test('描述空或重了都不让存', () => {
-  const t = (key) => key;
-  assert.notEqual(validateRows([{ description: '  ', provider: 'p', model: 'm', effort: 'e' }], t), '');
-  assert.notEqual(validateRows([
-    { description: 'a', provider: 'p', model: 'm', effort: 'e' },
-    { description: 'a', provider: 'p', model: 'm', effort: 'e' },
-  ], t), '');
-  assert.equal(validateRows([{ description: 'a', provider: 'p', model: 'm', effort: 'e' }], t), '');
 });
 
 await test('命名空间与包名是两个字面量，各自写在各自的地方', () => {
