@@ -78,7 +78,7 @@ export interface KeyState {
    * say so before the reader types into it.
    */
   unavailable: boolean;
-  saving: boolean;
+  writing: boolean;
   failed: boolean;
   /** The credentials service's own message for a refused write, or ''. */
   error: string;
@@ -108,11 +108,11 @@ export interface PageState {
     rows: TypeRowDraft[];
   };
   /** Which section a commit is crossing the wire for, or '' when none is. */
-  saving: Section | '';
+  writing: Section | '';
   /** Which section's last commit did not land, or '' when none failed. */
-  saveFailed: Section | '';
+  writeFailed: Section | '';
   /** The Host's own message for the last refused write, or ''. */
-  saveError: string;
+  writeError: string;
   /** The judgement key's write-only state. */
   key: KeyState;
   /** Runtime log rows, newest first. */
@@ -481,7 +481,7 @@ export function parseRowsJson(text: string): RowsImport {
 function emptyKey(): KeyState {
   return {
     text: '', configured: false, writable: false, unavailable: false,
-    saving: false, failed: false, error: '',
+    writing: false, failed: false, error: '',
   };
 }
 
@@ -512,9 +512,9 @@ export class DispatchCardStore {
       judgeModel: DEFAULT_JUDGE_MODEL,
       rows: [],
     },
-    saving: '',
-    saveFailed: '',
-    saveError: '',
+    writing: '',
+    writeFailed: '',
+    writeError: '',
     key: emptyKey(),
     log: [],
     logLoaded: false,
@@ -665,38 +665,33 @@ export class DispatchCardStore {
   }
 
   /**
-   * Stage one edit and clear that section's last failure.
+   * Stage one edit.
    *
-   * A failure describes the drafts as they were; the moment the reader edits
-   * that section again it is no longer the current fact. The other section's
-   * failure stays — it is about a different write.
+   * A failure stays on screen until a write lands: the value it complains about
+   * has not reached the document yet, so clearing it on the first keystroke would
+   * say "fixed" while the drafts are still only on this page.
    *
    * @param patch - the state fields this edit changes.
-   * @param section - the section the edit belongs to.
    */
-  private stage(patch: Partial<PageState>, section: Section): void {
-    this.state = {
-      ...this.state,
-      ...patch,
-      ...(this.state.saveFailed === section ? { saveFailed: '' as Section | '', saveError: '' } : {}),
-    };
+  private stage(patch: Partial<PageState>): void {
+    this.state = { ...this.state, ...patch };
     this.notify();
   }
 
   /** Stage one top-level field; its control commits when focus leaves it. */
   field(key: 'endpointUrl' | 'judgeModel', value: string): void {
-    this.stage(key === 'endpointUrl' ? { endpointUrl: value } : { judgeModel: value }, 'judge');
+    this.stage(key === 'endpointUrl' ? { endpointUrl: value } : { judgeModel: value });
   }
 
   /** Flip one switch and write it: a switch is one complete decision. */
   toggle(key: 'enabled' | 'logEnabled', value: boolean): void {
-    this.stage(key === 'enabled' ? { enabled: value } : { logEnabled: value }, 'judge');
+    this.stage(key === 'enabled' ? { enabled: value } : { logEnabled: value });
     void this.commit('judge');
   }
 
   /** Stage the judgement key; its control commits when focus leaves it or on Enter. */
   key(text: string): void {
-    this.stage({ key: { ...this.state.key, text, failed: false, error: '' } }, 'judge');
+    this.stage({ key: { ...this.state.key, text, failed: false, error: '' } });
   }
 
   /** Stage one cell of one row; a text cell commits on blur, a menu choice at once. */
@@ -704,7 +699,7 @@ export class DispatchCardStore {
     const rows = this.state.rows.map((row, at) => (at === index ? { ...row, [key]: value } : row));
     // Choosing a model drops an effort that model does not declare, so a write can
     // never carry an effort the selected route cannot run.
-    this.stage({ rows: key === 'model' ? this.reconcileEffort(rows, index) : rows }, 'rows');
+    this.stage({ rows: key === 'model' ? this.reconcileEffort(rows, index) : rows });
   }
 
   /** Drop an effort the freshly selected model does not declare. */
@@ -723,7 +718,7 @@ export class DispatchCardStore {
 
   /** Append an empty row and write it: a new row is a decision like any other. */
   addRow(): void {
-    this.stage({ rows: [...this.state.rows, { description: '', provider: '', model: '', effort: '' }] }, 'rows');
+    this.stage({ rows: [...this.state.rows, { description: '', provider: '', model: '', effort: '' }] });
     void this.commit('rows');
   }
 
@@ -737,13 +732,13 @@ export class DispatchCardStore {
    * @param rows - the rows read from the pasted JSON.
    */
   replaceRows(rows: readonly TypeRowDraft[]): void {
-    this.stage({ rows: rows.map((row) => ({ ...row })) }, 'rows');
+    this.stage({ rows: rows.map((row) => ({ ...row })) });
     void this.commit('rows');
   }
 
   /** Delete one row and write the rest; the remaining rows renumber themselves. */
   removeRow(index: number): void {
-    this.stage({ rows: this.state.rows.filter((_row, at) => at !== index) }, 'rows');
+    this.stage({ rows: this.state.rows.filter((_row, at) => at !== index) });
     void this.commit('rows');
   }
 
@@ -802,18 +797,30 @@ export class DispatchCardStore {
     }
 
     const typedKey = section === 'judge' ? this.state.key.text.trim() : '';
-    if (ops.length === 0 && typedKey === '') return;
+    if (ops.length === 0 && typedKey === '') {
+      // Nothing is left to write: the drafts match the document again, so a
+      // failure about this section is no longer the current fact.
+      if (this.state.writeFailed === section) {
+        this.state = { ...this.state, writeFailed: '', writeError: '' };
+        this.notify();
+      }
+      return;
+    }
 
-    this.state = { ...this.state, saving: section, saveFailed: '', saveError: '' };
+    this.state = { ...this.state, writing: section, writeFailed: '', writeError: '' };
     this.notify();
 
     // The key goes first: a document write the Host refuses leaves the key in
     // place, while a key that landed with a refused endpoint is still a landed
     // key. Either way the reader is told which part did not take.
     let failure = '';
+    let keyFailed = false;
     if (typedKey !== '') {
       const result = await this.writeKey(typedKey);
-      if (!result.ok) failure = result.error;
+      if (!result.ok) {
+        failure = result.error;
+        keyFailed = true;
+      }
     }
     if (failure === '' && ops.length > 0) {
       try {
@@ -821,14 +828,21 @@ export class DispatchCardStore {
         // `false` is a refusal, not a rejection: the Host answered and did not
         // accept, so reporting success here would show a saved page over a
         // document that still holds the old value.
-        if (!landed) failure = this.translate('save.refused');
+        if (!landed) failure = this.translate('write.refused');
       } catch (error) {
         // The Host's own words, not a generic phrase: a rejected write is the one
         // place the reader needs to know WHAT the Host objected to.
-        failure = error instanceof Error && error.message !== '' ? error.message : this.translate('save.invalid');
+        failure = error instanceof Error && error.message !== '' ? error.message : this.translate('write.invalid');
       }
     }
-    this.state = { ...this.state, saving: '', saveFailed: failure === '' ? '' : section, saveError: failure };
+    // A key failure is already on the key row; repeating it at the section's foot
+    // would say the same sentence twice.
+    this.state = {
+      ...this.state,
+      writing: '',
+      writeFailed: failure === '' || keyFailed ? '' : section,
+      writeError: keyFailed ? '' : failure,
+    };
     if (failure === '') this.deriveCommitted();
     else this.notify();
   }
@@ -846,24 +860,24 @@ export class DispatchCardStore {
   private async writeKey(value: string): Promise<{ ok: boolean; error: string }> {
     const credentials = this.credentials;
     if (credentials === null) return { ok: false, error: this.translate('key.unavailable') };
-    this.state = { ...this.state, key: { ...this.state.key, saving: true, failed: false, error: '' } };
+    this.state = { ...this.state, key: { ...this.state.key, writing: true, failed: false, error: '' } };
     this.notify();
     try {
       const response = await credentials.set(JUDGE_API_KEY_REF, value);
       if (!response.ok) {
-        const error = response.error.message || this.translate('key.saveFailed');
-        this.state = { ...this.state, key: { ...this.state.key, saving: false, failed: true, error } };
+        const error = response.error.message || this.translate('key.writeFailed');
+        this.state = { ...this.state, key: { ...this.state.key, writing: false, failed: true, error } };
         return { ok: false, error };
       }
       this.state = {
         ...this.state,
-        key: { ...this.state.key, saving: false, failed: false, error: '', text: '', configured: true },
+        key: { ...this.state.key, writing: false, failed: false, error: '', text: '', configured: true },
       };
       await this.refreshKeyStatus();
       return { ok: true, error: '' };
     } catch (error) {
-      const message = error instanceof Error && error.message !== '' ? error.message : this.translate('key.saveFailed');
-      this.state = { ...this.state, key: { ...this.state.key, saving: false, failed: true, error: message } };
+      const message = error instanceof Error && error.message !== '' ? error.message : this.translate('key.writeFailed');
+      this.state = { ...this.state, key: { ...this.state.key, writing: false, failed: true, error: message } };
       return { ok: false, error: message };
     }
   }
@@ -880,7 +894,7 @@ export class DispatchCardStore {
   async clearKey(): Promise<void> {
     const credentials = this.credentials;
     if (credentials === null) return;
-    this.state = { ...this.state, key: { ...this.state.key, saving: true, failed: false, error: '' } };
+    this.state = { ...this.state, key: { ...this.state.key, writing: true, failed: false, error: '' } };
     this.notify();
     try {
       const response = await credentials.unset(JUDGE_API_KEY_REF);
@@ -889,7 +903,7 @@ export class DispatchCardStore {
           ...this.state,
           key: {
             ...this.state.key,
-            saving: false,
+            writing: false,
             failed: true,
             error: response.error.message || this.translate('key.clearFailed'),
           },
@@ -897,7 +911,7 @@ export class DispatchCardStore {
       } else {
         this.state = {
           ...this.state,
-          key: { ...this.state.key, saving: false, text: '', failed: false, error: '', configured: false },
+          key: { ...this.state.key, writing: false, text: '', failed: false, error: '', configured: false },
         };
         await this.refreshKeyStatus();
       }
@@ -906,7 +920,7 @@ export class DispatchCardStore {
         ...this.state,
         key: {
           ...this.state.key,
-          saving: false,
+          writing: false,
           failed: true,
           error: error instanceof Error && error.message !== '' ? error.message : this.translate('key.clearFailed'),
         },
@@ -957,11 +971,6 @@ export class DispatchCardStore {
   /** Whether one row will be offered to the judge (the server's own rule). */
   rowUsable(row: TypeRowDraft): boolean {
     return isSelectableRow(row);
-  }
-
-  /** Everything wrong with one row, as sentences to show under its number. */
-  rowHints(index: number): string[] {
-    return rowHints(this.state.rows, index, this.translate);
   }
 
   private notify(): void {

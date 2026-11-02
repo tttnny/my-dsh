@@ -247,6 +247,8 @@ export function JudgeDispatchPanel(
   };
 
   const openPreview = async (): Promise<void> => {
+    // 预览读的是已落地的配置：先把还没失焦的草稿写下去，否则看到的是上一版。
+    await dispatchCardStore.flush();
     const text = await dispatchCardStore.preview();
     setPreview(text ?? t('preview.failed'));
     setPreviewOpen(true);
@@ -277,12 +279,16 @@ export function JudgeDispatchPanel(
     setImportError('');
   };
 
+  /** 这一节的一次提交：文字格离开输入框、菜单选完时都走它。 */
+  const commitJudge = (): void => void dispatchCardStore.commit('judge');
+  const commitRows = (): void => void dispatchCardStore.commit('rows');
+
   /** 这一节最后一次写入没落地时，就地说明；两节各报各的。 */
   const failure = (section: 'judge' | 'rows'): React.ReactElement | null => (
-    state.saveFailed === section && state.saveError !== ''
+    state.writeFailed === section && state.writeError !== ''
       ? (
         <div className="dsh-judge-note-bad" role="alert">
-          {t('save.failed').replace('{error}', state.saveError)}
+          {t('write.failed').replace('{error}', state.writeError)}
         </div>
       )
       : null
@@ -311,7 +317,7 @@ export function JudgeDispatchPanel(
             aria-label={`${t('rows.colDescription')} ${index + 1}`}
             onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
               dispatchCardStore.cell(index, 'description', event.target.value)}
-            onBlur={() => void dispatchCardStore.commit('rows')}
+            onBlur={commitRows}
           />
         </td>
         <td>
@@ -344,7 +350,7 @@ export function JudgeDispatchPanel(
               dispatchCardStore.cell(index, 'provider', provider);
               dispatchCardStore.cell(index, 'model', model);
               setOpenMenu(null);
-              void dispatchCardStore.commit('rows');
+              commitRows();
             }}
             onClose={() => setOpenMenu(null)}
             className="dsh-judge-field-wrap"
@@ -377,7 +383,7 @@ export function JudgeDispatchPanel(
               onSelect={(id) => {
                 dispatchCardStore.cell(index, 'effort', id);
                 setOpenMenu(null);
-                void dispatchCardStore.commit('rows');
+                commitRows();
               }}
               onClose={() => setOpenMenu(null)}
               className="dsh-judge-field-wrap"
@@ -392,7 +398,7 @@ export function JudgeDispatchPanel(
               aria-label={`${t('rows.colEffort')} ${index + 1}`}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 dispatchCardStore.cell(index, 'effort', event.target.value)}
-              onBlur={() => void dispatchCardStore.commit('rows')}
+              onBlur={commitRows}
             />
           )}
         </td>
@@ -422,7 +428,7 @@ export function JudgeDispatchPanel(
           <Button
             variant="outline"
             size="sm"
-            disabled={probing || state.saving !== ''}
+            disabled={probing || state.writing !== ''}
             onClick={() => void runProbe()}
           >
             {probing ? t('judge.probing') : t('judge.probe')}
@@ -472,7 +478,7 @@ export function JudgeDispatchPanel(
               disabled={!state.writable}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 dispatchCardStore.field('endpointUrl', event.target.value)}
-              onBlur={() => void dispatchCardStore.commit('judge')}
+              onBlur={commitJudge}
             />
           </div>
         </div>
@@ -492,7 +498,7 @@ export function JudgeDispatchPanel(
               disabled={!state.writable}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 dispatchCardStore.field('judgeModel', event.target.value)}
-              onBlur={() => void dispatchCardStore.commit('judge')}
+              onBlur={commitJudge}
             />
           </div>
         </div>
@@ -517,11 +523,11 @@ export function JudgeDispatchPanel(
               disabled={state.key.unavailable || !state.writable}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 dispatchCardStore.key(event.target.value)}
-              onBlur={() => void dispatchCardStore.commit('judge')}
+              onBlur={commitJudge}
               onKeyDown={(event: React.KeyboardEvent<HTMLInputElement>) => {
                 if (event.key !== 'Enter') return;
                 event.preventDefault();
-                void dispatchCardStore.commit('judge');
+                commitJudge();
               }}
             />
             <div className="dsh-judge-key-line">
@@ -532,7 +538,7 @@ export function JudgeDispatchPanel(
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={state.key.saving || !state.key.writable}
+                  disabled={state.key.writing || !state.key.writable}
                   onClick={() => void dispatchCardStore.clearKey()}
                 >
                   {t('judge.keyClear')}
@@ -541,7 +547,7 @@ export function JudgeDispatchPanel(
               {state.key.unavailable && <span className="dsh-judge-hint">{t('judge.keyUnavailable')}</span>}
               {state.key.failed && (
                 <span className="dsh-judge-note-bad" role="alert">
-                  {t('judge.keyFailed').replace('{error}', state.key.error || t('save.invalid'))}
+                  {t('judge.keyFailed').replace('{error}', state.key.error || t('write.invalid'))}
                 </span>
               )}
             </div>
@@ -594,12 +600,12 @@ export function JudgeDispatchPanel(
             </tbody>
           </table>
         )}
-        {failure('rows')}
         {copyNote !== null && (
           <div className={copyNote.ok ? 'dsh-judge-note-ok' : 'dsh-judge-note-bad'} role="status">
             {copyNote.text}
           </div>
         )}
+        {failure('rows')}
       </div>
 
       {/* 预览问的是这一整份设置存下去会发给判断服务什么：它同时用到判断模型与类型清单，
@@ -702,7 +708,7 @@ export function JudgeDispatchPanel(
         open={importText !== null}
         onClose={() => setImportText(null)}
         title={t('rows.importTitle')}
-        closeLabel={t('rows.importCancel')}
+        closeLabel={t('rows.importClose')}
         description={t('rows.importDesc')}
         className="dsh-judge-modal"
         footer={(

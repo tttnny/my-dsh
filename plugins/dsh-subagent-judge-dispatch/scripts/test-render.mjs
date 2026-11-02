@@ -235,7 +235,13 @@ const test = async (label, fn) => {
 };
 
 await test('没有保存按钮：试通在判断服务标题行，导入导出与加一行在任务类型标题行，预览在卡片最下面', () => {
-  assert.equal(buttonByText(zh['save.button']), undefined, '保存按钮已经去掉');
+  // 断言要有牙齿：字典里没有那个键，页面上也没有那颗按钮——重新加回保存按钮时这里必须红。
+  assert.equal(zh['save.button'], undefined, '字典里不该再有「保存」这个键');
+  assert.equal(
+    buttons().some((node) => node.textContent?.trim() === '保存'),
+    false,
+    '卡片上不该有保存按钮',
+  );
 
   const probe = buttonByText(zh['judge.probe']);
   assert.ok(probe !== undefined, '试通按钮应当在场');

@@ -71,11 +71,11 @@ ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
 - **文字格失焦时写一次**，打字期间只改草稿；开关、行的增删、导入在**动作发生的那一刻**写。
 - **有副作用且不可见的写入**（如密钥）同样在失焦或回车时写，绝不逐字写。
 - **写入排成一条队列**，一次只发一个：宿主按 revision 给每次写入设栅栏，并行发出会让后一次撞上前一次刚换掉的 revision；排队后一次写入读到的是最新草稿，一串改动合成尽量少的写入。
-- **失败就地报**：错误出现在发起写入的那一节底部，不弹窗；读者改一下就会再试一次。
+- **失败就地报**：错误出现在发起写入的那一节底部，不弹窗；它留到下一次写入真的落地才消失，读者改一下并离开输入框就会重试。
 - **离开前先写**：切标签、离开页面之前，把还没失焦的草稿先写下去。
 - **校验不拦写**：读者可能正打到一半；行的问题（不生效、描述为空、描述重复）写在行上，服务端本来就跳过不可用的行。
 
-参照实现：`plugins/dsh-chat-translate/src/client/settings/store.ts` 与 `plugins/dsh-subagent-judge-dispatch/src/client/settings/store.ts`。
+参照实现：`plugins/dsh-subagent-judge-dispatch/src/client/settings/store.ts`（排队与离开前先写都在这里）。`plugins/dsh-chat-translate` 的配置卡同样是失焦即写，但没有排队与离开前先写。
 
 ## 静默失败
 

@@ -47,6 +47,5 @@ export {
   describeModel,
   dispatchCardStore,
   readRow,
-  rowHints,
   SETTINGS_NAMESPACE,
 } from './settings/store.ts';

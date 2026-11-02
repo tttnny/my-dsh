@@ -63,11 +63,15 @@ function makeForm(initial = {}, accept = true) {
   };
   const writes = [];
   let writable = true;
+  let acceptNow = accept;
   const listeners = new Set();
   return {
     writes,
     setWritable(next) {
       writable = next;
+    },
+    setAccept(next) {
+      acceptNow = next;
     },
     push(next) {
       value = { ...value, ...next };
@@ -81,7 +85,7 @@ function makeForm(initial = {}, accept = true) {
       },
       mutate: async (ops) => {
         writes.push(ops);
-        if (!accept) return false;
+        if (!acceptNow) return false;
         for (const op of ops) {
           if (op.op === 'set') value = { ...value, [op.path[0]]: op.value };
         }
@@ -213,7 +217,8 @@ await test('没填完的行照常写入，页面只在行上提示', async () =>
   store.addRow();
   await store.commit('rows');
   assert.equal(host.writes.length, 1, '空行也写进去：它只是暂时不生效');
-  assert.deepEqual(store.rowHints(store.getState().rows.length - 1), [
+  const hints = (index) => rowHints(store.getState().rows, index, (key) => key);
+  assert.deepEqual(hints(store.getState().rows.length - 1), [
     'rows.incomplete',
     'rows.hintNoDescription',
   ]);
@@ -224,13 +229,14 @@ await test('描述为空或与别的行重复时各给一句提示，但不拦�
   store.cell(0, 'description', '');
   await store.commit('rows');
   assert.equal(host.writes.length, 1, '描述空着也照写');
-  assert.deepEqual(store.rowHints(0), ['rows.hintNoDescription']);
+  const hints = (index) => rowHints(store.getState().rows, index, (key) => key);
+  assert.deepEqual(hints(0), ['rows.hintNoDescription']);
 
   store.cell(0, 'description', '机械修改');
   store.addRow();
   store.cell(1, 'description', '机械修改');
   await store.commit('rows');
-  assert.deepEqual(store.rowHints(1), ['rows.incomplete', 'rows.hintDuplicateDescription']);
+  assert.deepEqual(hints(1), ['rows.incomplete', 'rows.hintDuplicateDescription']);
 });
 
 await test('宿主回 false 是拒绝，不是成功：页面必须报没写进去', async () => {
@@ -239,8 +245,8 @@ await test('宿主回 false 是拒绝，不是成功：页面必须报没写进�
   await store.commit('judge');
   const state = store.getState();
   assert.equal(host.writes.length, 1, '写确实发出去了');
-  assert.equal(state.saveFailed, 'judge', '宿主没接受就该报失败，并归到发起提交的那一节');
-  assert.notEqual(state.saveError, '');
+  assert.equal(state.writeFailed, 'judge', '宿主没接受就该报失败，并归到发起提交的那一节');
+  assert.notEqual(state.writeError, '');
   assert.equal(state.endpointUrl, 'http://refused.invalid/v1/systemone', '没落地就把草稿留着');
 });
 
@@ -251,7 +257,7 @@ await test('宿主抛错时把宿主自己的话显示出来', async () => {
   };
   store.field('endpointUrl', 'http://boom.invalid/v1/systemone');
   await store.commit('judge');
-  assert.equal(store.getState().saveError, 'revision conflict');
+  assert.equal(store.getState().writeError, 'revision conflict');
 });
 
 await test('密钥在提交时写入，且写的是固定引用名', async () => {
@@ -272,7 +278,8 @@ await test('密钥写入被拒时，设置一个字节都不写', async () => {
   await store.commit('judge');
   assert.equal(keys.set.length, 1);
   assert.equal(host.writes.length, 0, '密钥没写进去就不该再动设置');
-  assert.notEqual(store.getState().saveFailed, '');
+  assert.equal(store.getState().key.failed, true, '密钥行自己报这句话');
+  assert.equal(store.getState().writeFailed, '', '同一句话不在节尾再说一遍');
   assert.equal(store.getState().key.text, 'magpie', '没存上就把输入留着，别让读者重打');
 });
 
@@ -343,14 +350,29 @@ await test('加一行与删一行都当场写入', async () => {
   assert.equal(store.getState().rows.length, 1);
 });
 
-await test('失败按节报，且改那一处就清掉上一次的失败', async () => {
+await test('失败按节报，留到下一次写入真的落地才消失', async () => {
+  const { store, host } = makeStore({ accept: false });
+  store.field('endpointUrl', 'http://refused.invalid/v1/systemone');
+  await store.commit('judge');
+  assert.equal(store.getState().writeFailed, 'judge', '失败归属发起提交的那一节');
+
+  store.field('endpointUrl', 'http://refused.invalid/v1/systemone2');
+  assert.equal(store.getState().writeFailed, 'judge', '打字期间错误不该消失：值还没写进去');
+
+  host.setAccept(true);
+  await store.commit('judge');
+  assert.equal(store.getState().writeFailed, '', '写入落地之后才清掉');
+});
+
+await test('把值改回已提交的那一份，失败提示跟着消失', async () => {
   const { store } = makeStore({ accept: false });
   store.field('endpointUrl', 'http://refused.invalid/v1/systemone');
   await store.commit('judge');
-  assert.equal(store.getState().saveFailed, 'judge', '失败归属发起提交的那一节');
+  assert.equal(store.getState().writeFailed, 'judge');
 
-  store.field('endpointUrl', 'http://refused.invalid/v1/systemone2');
-  assert.equal(store.getState().saveFailed, '', '一有改动，上一次的失败就不再是当前事实');
+  store.field('endpointUrl', 'http://judge.invalid/v1/systemone');
+  await store.commit('judge');
+  assert.equal(store.getState().writeFailed, '', '没有东西可写，错误就不再是当前事实');
 });
 
 await test('页面没有凭据通道时，密钥格标成不可用', async () => {
