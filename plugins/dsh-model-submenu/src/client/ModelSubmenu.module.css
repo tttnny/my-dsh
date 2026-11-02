@@ -421,12 +421,23 @@
   width: 100%;
 }
 
+/* The tabs scroll sideways rather than wrap: the dialog keeps one row of
+ * providers however many the catalog has, so the list below starts at the same
+ * height every time. The bar keeps its hairline and hides its scrollbar the way
+ * the effort track does. */
 .pickerTabs {
   border-bottom: .5px solid var(--dsw-alias-border-l2);
   gap: 2px;
   padding: 0 16px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.pickerTabs::-webkit-scrollbar {
+  display: none;
 }
 
 .pickerTab {
@@ -436,6 +447,7 @@
   border: none;
   border-radius: 8px;
   outline: none;
+  flex: none;
   padding: 6px 10px;
   font-size: 13px;
   line-height: 18px;
