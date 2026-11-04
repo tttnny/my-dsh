@@ -29,6 +29,10 @@ gh run watch
 
 版本号不在工作流里改：发布前先改要发的包 `package.json` 的 `version` 并提交，触发时选的分支就是发出去的那份代码。
 
+## 发布后索引重建
+
+`plugins/` 与 `presets/` 同时发布成一份 DSH 插件索引（`https://tttnny.github.io/my-dsh/index.json`，见根 [README](../../README.md)「插件索引」）。索引是生成物、不入库：`publish` 工作流发完包后调用 `market` 工作流重建并部署，推进 `main` 也会重建一次。索引读的是 npm registry，所以刚发完的版本要等 registry 的完整 packument 更新后才进索引。
+
 ## 发布不回装
 
 `npm publish` 只把包推上 registry，profile 里的自有包全程保持 `link:` 指向仓库目录——「这家代码对不对」一律在仓库里验。确需固定版本时按 [dev-copy.md](./dev-copy.md) 的例外显式装。

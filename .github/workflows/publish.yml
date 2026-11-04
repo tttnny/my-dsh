@@ -116,3 +116,13 @@ jobs:
             (cd "$dir" && npm publish --access public --tag "$tag")
             echo "::endgroup::"
           done
+  # 发完包后重建插件索引（DSH「发现」页的索引源）：索引读 npm registry，新版本要立刻进去。
+  market:
+    needs: publish
+    if: ${{ !inputs.dry_run }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/market.yml
+

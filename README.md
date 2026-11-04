@@ -77,6 +77,17 @@
 
 ---
 
+## 🔎 插件索引（发现页）
+
+`plugins/` 与 `presets/` 同时发布成一份 DSH 插件索引，可以在插件页的**发现**标签页里浏览和安装，不必逐个记包名。
+
+1. 打开**插件** → **实验性插件** → 打开**自定义插件索引**。
+2. 在**发现**里点**添加索引源**，填 `https://tttnny.github.io/my-dsh/index.json`。
+
+索引由 `node tools/market-index.mjs` 从 npm registry 生成，发版后由 `.github/workflows/market.yml` 自动重建并部署到 GitHub Pages。
+
+---
+
 ## 📄 许可证
 
 本仓库与 `plugins/` 各目录都不附带 `LICENSE` 文件：许可只由各包 `package.json` 的 `license` 字段声明（MIT）。
