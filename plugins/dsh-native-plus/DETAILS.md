@@ -46,7 +46,7 @@ dsh plugin --profile web add @lynn123411/dsh-native-plus
 | 标题 h6 | `--dsw-static-blue-600`（深色下 `-500`） |
 | 标题 h2–h5 | 上面两端之间按 80% / 60% / 40% / 20% 插值 |
 | 链接、引用竖线、列表标记、语言标签 | `--dsw-alias-link` |
-| 引用底、表头底、选中文字 | 由 `--dsw-alias-link` 与 `--dsw-alias-bg-base` 混出 |
+| 引用底、表头底 | 由 `--dsw-alias-link` 与 `--dsw-alias-bg-base` 混出 |
 | 代码块底与标题条 | `--dsw-alias-markdown-code-block` / `-banner` |
 | 语法高亮 | 宿主的 `--shiki-token-*`，插件一个字都不写 |
 

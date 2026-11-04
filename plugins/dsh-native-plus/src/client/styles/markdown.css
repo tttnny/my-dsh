@@ -210,11 +210,6 @@ html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-cha
   color: var(--dsw-alias-label-caption);
 }
 
-/* 选中文字：一层薄蓝，不是浏览器的默认色。 */
-html[data-native-plus='on'] [data-chat-flow-kind='assistant-step'] ::selection {
-  background: var(--np-tint-strong);
-}
-
 html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(h1, h2, h3, h4, h5, h6):first-child {
   margin-top: 0;
 }
