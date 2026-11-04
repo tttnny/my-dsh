@@ -26,6 +26,7 @@ gh run watch
 - 然后按 `check.yml` 的装法装依赖、跑 `node tools/check.mjs`，再逐个包 `npm pack --dry-run` 与 `npm publish --access public --tag <dist-tag>`。
 - `dry_run` 勾上时只跑门禁与 `npm pack`，不执行 `npm publish`。
 - 一次性准备：仓库 Settings → Secrets and variables → Actions 加 `NPM_TOKEN`（npm 发布令牌）；缺它时发布那一步报错退出。
+- 推送事件要几分钟才进 Actions 队列：`gh run list` 立刻看不到运行不等于没触发，过几分钟再查；要立刻跑就用 `gh workflow run <工作流>` 手动触发。
 
 版本号不在工作流里改：发布前先改要发的包 `package.json` 的 `version` 并提交，触发时选的分支就是发出去的那份代码。
 
