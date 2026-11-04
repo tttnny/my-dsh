@@ -1,10 +1,11 @@
 /**
- * Reading one subagent's identity, from the child Agent alone.
+ * Reading one subagent's identity, from the child Agent and the session log.
  *
- * Inside `agent/request` the plugin holds a child Agent and nothing else: no
+ * When the child is created the plugin holds a child Agent and nothing else: no
  * delegation record, no parent handle. Everything the log needs — what the child
  * was asked to do, and which conversation asked for it — has to be read back out
- * of the child's own durable session facts.
+ * of durable session facts: the child's own events, and the delegating call the
+ * parent has already logged.
  */
 
 /**
@@ -151,6 +152,69 @@ export function readTaskText(agent: AgentLike): string {
     }
   }
   return '';
+}
+
+/**
+ * The parent-session lookup this module needs; kept structural for tests.
+ */
+export type ParentSessionLookup = (id: string) => SessionLike | undefined;
+
+/**
+ * Read the task the parent delegated, at the moment the child is created.
+ *
+ * A fresh delegation reaches the child only after creation: the Host submits the
+ * prompt as queued inbox input once the creation listeners return. So the child's
+ * own log has no task yet, and the text is read from the delegating `tool/call`
+ * the parent recorded before dispatching. A resumed child does carry the message
+ * in its own log, which is why that read is tried first.
+ *
+ * The delegating call is identified by the description the parent wrote, which is
+ * the same string the child's descriptor keeps as its label; the newest call with
+ * a task prompt is the fallback when the labels cannot be matched.
+ *
+ * @param agent - the subagent.
+ * @param parentSessionOf - resolves a session id to its live session.
+ * @returns the delegated task text, or '' when no delegating call is readable.
+ */
+export function readDelegatedTask(agent: AgentLike, parentSessionOf: ParentSessionLookup): string {
+  const own = readTaskText(agent);
+  if (own !== '') return own;
+  const parentId = agent.session.header.parentSession;
+  if (typeof parentId !== 'string' || parentId === '') return '';
+  const parent = parentSessionOf(parentId);
+  if (parent === undefined || typeof parent.snapshotEvents !== 'function') return '';
+  const label = readChildLabel(agent);
+  const events = parent.snapshotEvents();
+  let fallback = '';
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.type !== 'tool/call') continue;
+    const call = delegatedCallOf(event.data);
+    if (call === undefined) continue;
+    if (label !== '' && call.description === label) return call.prompt;
+    if (fallback === '') fallback = call.prompt;
+  }
+  return fallback;
+}
+
+/** The task prompt and description of one recorded tool call, when it carries them. */
+function delegatedCallOf(data: unknown): { prompt: string; description?: string } | undefined {
+  if (typeof data !== 'object' || data === null) return undefined;
+  const raw = (data as { arguments?: unknown }).arguments;
+  if (typeof raw !== 'string') return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return undefined;
+  const record = parsed as { prompt?: unknown; description?: unknown };
+  if (typeof record.prompt !== 'string' || record.prompt.trim() === '') return undefined;
+  return {
+    prompt: record.prompt,
+    ...(typeof record.description === 'string' ? { description: record.description } : {}),
+  };
 }
 
 /**

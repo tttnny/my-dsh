@@ -76,26 +76,3 @@ export function outcomeReason(
   return 'incomplete';
 }
 
-/**
- * Apply a rewrite onto one model-call configuration.
- *
- * The incoming configuration is returned untouched on `none`, which is what
- * makes "the child inherits exactly what the main agent runs" true rather than
- * approximated: no field is restated, so nothing about the call changes.
- *
- * @param config - the call configuration the Host resolved.
- * @param decision - what to write.
- * @returns the configuration to use.
- */
-export function applyDecision<T extends { provider: string; model: string; reasoningEffort?: unknown }>(
-  config: T,
-  decision: DispatchDecision,
-): T {
-  if (decision.kind === 'none') return config;
-  return {
-    ...config,
-    provider: decision.rewrite.provider,
-    model: decision.rewrite.model,
-    reasoningEffort: decision.rewrite.reasoningEffort,
-  };
-}

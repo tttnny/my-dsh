@@ -7,11 +7,11 @@ import {
   type ResolvedConfig,
 } from './server/config.ts';
 import { JUDGE_API_KEY_REF, type CredentialsServiceLike } from './server/credentials.ts';
-import { applyDecision, decideRewrite, outcomeReason } from './server/dispatch.ts';
+import { decideRewrite, outcomeReason } from './server/dispatch.ts';
 import {
   isSubagent,
   readChildLabel,
-  readTaskText,
+  readDelegatedTask,
   resolveRootSessionId,
   type SessionLike,
 } from './server/identity.ts';
@@ -69,19 +69,25 @@ interface HostContext {
   inject(names: string[] | string, callback: (ctx: HostContext) => void | (() => void)): void;
 }
 
-/** Which Agent fields this plugin reads inside the request hook. */
+/** The route a child runs on; the three fields travel together. */
+interface RouteSelection {
+  provider: string;
+  model: string;
+  reasoningEffort?: string;
+}
+
+/** The Agent model face this plugin uses: read the inherited route, select the judged one. */
+interface AgentModelLike {
+  current(): RouteSelection | undefined;
+  select(selection: RouteSelection): void;
+}
+
+/** Which Agent fields this plugin reads when a child is created. */
 interface RequestAgent {
   id: string;
   options: { subagentDepth?: number };
   session: SessionLike;
-}
-
-/** One resolved model call the waterfall hands through. */
-interface CallConfig {
-  provider: string;
-  model: string;
-  reasoningEffort?: unknown;
-  [key: string]: unknown;
+  model: AgentModelLike;
 }
 
 /** How many judged children to remember before forgetting the oldest. */
@@ -159,40 +165,58 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
   /**
    * The delegation hook: one judgement per subagent, then the route it chose.
    *
-   * Never throws and never cancels: every failure path returns the config the
-   * Host already resolved, which is what makes a judge outage cost latency and
-   * nothing else. The judgement is awaited because the Host awaits this
-   * waterfall, so it can add up to the judge budget to that one delegation.
+   * Runs on `agent/created`, which the Host awaits before releasing the child's
+   * queued work: the route selected here is the one the child's first step
+   * prepares with.
+   *
+   * Never throws and never cancels: every failure path writes nothing, which is
+   * what makes a judge outage cost latency and nothing else. The judgement is
+   * awaited because the Host awaits this hook, so it can add up to the judge
+   * budget to that one delegation.
    */
-  ctx.on('agent/request', async (payload: { agent?: RequestAgent }, next: () => Promise<CallConfig>) => {
-    const resolved = await next();
+  ctx.on('agent/created', async (payload: { agent?: RequestAgent }) => {
     const agent = payload?.agent;
-    if (agent === undefined) return resolved;
+    if (agent === undefined) return;
     const cfg = resolvedConfig();
     // Only subagents, and only while the model-rewrite switch is on: with it off
     // nothing is judged and nothing is logged, so the log only ever holds
     // judgements that actually ran.
-    if (!isSubagent(agent) || !cfg.enabled) return resolved;
-    if (judged.has(agent.id)) return resolved;
-    if (!isJudgeUsable(cfg)) return resolved;
+    if (!isSubagent(agent) || !cfg.enabled) return;
+    if (judged.has(agent.id)) return;
+    if (!isJudgeUsable(cfg)) return;
     judged.add(agent.id);
 
-    const label = readChildLabel(agent);
-    const taskText = readTaskText(agent);
-    const outcome = await judgeTaskType(
-      { url: cfg.endpointUrl, model: cfg.judgeModel, apiKey },
-      selectableRows(cfg.rows),
-      composeJudgeSubject(label, taskText),
-    );
-    const decision = decideRewrite(outcome);
+    try {
+      const label = readChildLabel(agent);
+      const taskText = readDelegatedTask(agent, (id) => ctx.sessions.get(id) as SessionLike | undefined);
+      const inherited = agent.model.current() ?? { provider: '', model: '' };
+      const outcome = await judgeTaskType(
+        { url: cfg.endpointUrl, model: cfg.judgeModel, apiKey },
+        selectableRows(cfg.rows),
+        composeJudgeSubject(label, taskText),
+      );
+      const decision = decideRewrite(outcome);
 
-    if (cfg.logEnabled) {
-      // Wait for the stored log before appending, so the first judgement of a
-      // run does not overwrite the history it was about to join.
-      await logReady;
-      log.append(buildEntry(ctx, agent, resolved, decision, outcome, label, taskText));
+      // A judgement that produced no usable row writes nothing: the child keeps
+      // exactly the route the Host resolved for it.
+      if (decision.kind === 'rewrite') {
+        agent.model.select({
+          provider: decision.rewrite.provider,
+          model: decision.rewrite.model,
+          reasoningEffort: decision.rewrite.reasoningEffort,
+        });
+      }
+
+      if (cfg.logEnabled) {
+        // Wait for the stored log before appending, so the first judgement of a
+        // run does not overwrite the history it was about to join.
+        await logReady;
+        log.append(buildEntry(ctx, agent, inherited, decision, outcome, label, taskText));
+      }
+    } catch {
+      // A judge outage, an unreadable parent log or a Host rejection of the
+      // selection costs this delegation latency and nothing else.
     }
-    return applyDecision(resolved, decision);
   });
 
   // The three reads only the Host can answer. Connection's /api transport is
@@ -238,7 +262,7 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
 function buildEntry(
   ctx: HostContext,
   agent: RequestAgent,
-  resolved: CallConfig,
+  resolved: RouteSelection,
   decision: ReturnType<typeof decideRewrite>,
   outcome: Awaited<ReturnType<typeof judgeTaskType>>,
   label: string,

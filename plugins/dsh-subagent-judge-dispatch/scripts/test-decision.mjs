@@ -15,7 +15,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  applyDecision,
   decideRewrite,
   outcomeReason,
 } from '../src/server/dispatch.ts';
@@ -107,16 +106,10 @@ await test('判断成功时三项一起写出', () => {
   });
 });
 
-await test('判断失败时一个字段都不写（原对象按身份返回）', () => {
-  const config = { provider: 'magpie', model: 'future/deepseek-v4.1-flash', reasoningEffort: 'high' };
+await test('判断失败时一个字段都不写', () => {
   for (const reason of ['unreachable', 'timeout', 'unmatched', 'incomplete']) {
     const decision = decideRewrite({ kind: 'fallback', reason, latencyMs: 3 });
     assert.equal(decision.kind, 'none', `reason=${reason} 不该产生改写`);
-    assert.equal(
-      applyDecision(config, decision),
-      config,
-      `reason=${reason} 必须原样返回同一个对象，而不是复制一份`,
-    );
   }
 });
 
@@ -133,14 +126,11 @@ await test('行里缺提供方或强度时也不写', () => {
 });
 
 await test('改写时三项齐全，强度不被丢掉', () => {
-  const config = { provider: 'magpie', model: 'future/deepseek-v4.1-flash', reasoningEffort: 'high' };
   const decision = decideRewrite({ kind: 'matched', row: row({ effort: 'max' }), latencyMs: 1 });
-  const next = applyDecision(config, decision);
-  assert.equal(next.provider, 'd1api');
-  assert.equal(next.model, 'deepseek-v4.1-flash');
-  assert.equal(next.reasoningEffort, 'max');
-  // 其余字段保留
-  assert.notEqual(next, config);
+  assert.equal(decision.kind, 'rewrite');
+  assert.equal(decision.rewrite.provider, 'd1api');
+  assert.equal(decision.rewrite.model, 'deepseek-v4.1-flash');
+  assert.equal(decision.rewrite.reasoningEffort, 'max');
 });
 
 await test('只把填全的行交给判断模型', () => {
