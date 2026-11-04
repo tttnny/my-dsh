@@ -184,14 +184,14 @@ html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-cha
  * 宿主把圆角收在一个局部变量里（--dsl-code-block-border-radius，默认 radius-lg），
  * 所以换圆角只要换那个变量，不必去写各角的 border-radius。 */
 html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(.md-code-block) {
-  border: 0.5px solid var(--np-hairline);
+  border: var(--dsh-hairline-width, 0.5px) solid var(--np-hairline);
   --dsl-code-block-border-radius: var(--dsw-radius-md);
   background: var(--np-code-block);
 }
 
 /* 标题条：等宽字体、行内代码那个蓝，字号小一号。 */
 html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where([data-code-block-banner]) {
-  border-bottom: 0.5px solid var(--np-hairline);
+  border-bottom: var(--dsh-hairline-width, 0.5px) solid var(--np-hairline);
   background: var(--np-code-banner);
 }
 

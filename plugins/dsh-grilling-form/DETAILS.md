@@ -43,7 +43,7 @@
       name: '@lynn123411/dsh-grilling-form'
 ```
 
-- **工具**：宿主半边在这条行下注册 `grilling_form`。它在**根层**：注册进全局层后，profile 里每一个 preset 的 agent 都看得见它（子 scope 继承全局层；preset 自己同名的行会盖过全局那条，所以不需要幂等补丁）。**代价（明知并接受）**：全局层意味着「所有 preset 都看得见」——preset 若要在模型可见目录里没有它，只能自己在 `system-prompt/assemble` 处收窄，工具本身照旧注册。
+- **工具**：宿主半边在这条行下注册 `grilling_form`。它在**根层**：注册进全局层后，profile 里每一个 preset 的 agent 都看得见它（子 scope 继承全局层；preset 自己同名的行会盖过全局那条，所以不需要幂等补丁）。**代价（明知并接受）**：全局层意味着「所有 preset 都看得见」——preset 若要在模型可见目录里没有它，只能自己用 `ctx.tools.restrict` 把工具从本 scope 的可见集合里滤掉（或改成注册时带 `when` 条件），工具本身照旧注册。0.2.2 起 `system-prompt/assemble` 不再携带工具、返回的 tools 会被忽略，那里收窄已不起作用。
 - **浏览器半边**：这条行本身是 root loader **entry**，而客户端 bundle 只对 root loader 的 enabled entry 服务，Web shell 据此服务 `lib/client.js`。所以不需要额外的载体行——行本身既是工具行又是载体行。这一行**不写 `config`**：写了当场抛（`src/index.js` 的 `assertNoConfig`），免得拼错的行静默什么都不注册。
 
 升级过来的 profile 若还留着旧装配那条手写的 `- id: tool-grilling-form` 行，**先删掉它，再 `dsh plugin remove`**：

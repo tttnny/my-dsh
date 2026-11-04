@@ -33,7 +33,7 @@ dsh plugin --profile web add @lynn123411/dsh-subagent-judge-dispatch
 
 ## 判断与改写
 
-- **插手位置**：宿主的 `agent/created` 钩子。注册在根层上下文，每个代理创建时都会经过；插件自己用 `subagentDepth`（会话头里的 `delegationDepth` 与运行时 `options.subagentDepth` 取较大者）筛出子代理。宿主在释放子代理排队工作前 await 这个钩子，所以这里用 `agent.model.select()` 定下的路线就是它第一步用的路线；`agent/request` 不能用于这件事——那一步的选择已经定死，改提供方或模型会被宿主拒绝。
+- **插手位置**：宿主的 `agent/created` 钩子。注册在根层上下文，每个代理创建时都会经过；插件自己用 `subagentDepth`（会话头里的 `delegationDepth` 与运行时 `options.subagentDepth` 取较大者）筛出子代理。宿主在释放子代理排队工作前 await 这个钩子，所以这里用 `agent.model.select()` 定下的路线就是它第一步用的路线；`agent/request` 不能用于这件事——那一步的选择已经定死，改提供方或模型会被宿主拒绝；0.2.2 起该钩子已标为 deprecated，官方迁移方向正是 `agent.model.select()`。
 - **判断次数**：按子代理 id 记住已判过的，一个跑十步的子代理只问一次。
 - **判断模型读到的任务**：先是派出这次活的标签（`subagent/descriptor` 的 `label`，宿主用它当子会话标题），再是任务正文原文，两段之间空一行。标签只有三五个词，是派工方写的摘要；正文才是「这个活到底要做什么」。只发标签，判断只能看出个大概方向；只发正文，遇到开头是套话的任务就丢了派工方的意图。
 - **任务正文怎么取**：取子代理自己那条 `source.kind === 'user'` 的消息。用户角色不等于任务——工作目录提示、工作区指令、运行时快照、技能清单、时间快照都写成用户消息，按来源筛才分得开。这条消息在子代理一生里以两种形状出现，两种都要认：派工那一刻它是收件箱里的待办（`agent/inbox/spliced` 事件里 `inserted` 的那条），宿主在步边界认领之后才写成 `user/message`。判断发生在步内的那次请求里，比写成 `user/message` 早，只认后者会在唯一要紧的那次请求上读空、只剩标签。宿主的返回指引（「你的父代理 id 是……完事用 `send_message` 回报」）是那条消息末尾追加的一个文本块，讲的是怎么交作业，不算任务，取正文时整块去掉。

@@ -50,19 +50,13 @@ html[data-native-plus='on'][data-np-shell='on'] body [data-conversation-tabs] [a
   opacity: 0;
 }
 
-/* 输入区：输入卡是「比正文浅一档的纸」，圆角取面板级。 */
-html[data-native-plus='on'][data-np-shell='on'] body [data-composer-card] {
-  background: var(--dsw-specific-input-major);
-  border-radius: var(--dsw-radius-panel);
-}
-
 /* 侧栏的导航行与工作区行：列表项带圆角，悬停与选中都是圆角块。 */
 html[data-native-plus='on'][data-np-shell='on'] body [data-row-key^='session:'],
 html[data-native-plus='on'][data-np-shell='on'] body [data-row-key^='workspace:'] {
   border-radius: var(--dsw-radius-sm);
 }
 
-/* 选中的那一行：宿主只给一层 7% 的墨色，落在侧栏底色上几乎看不出来，换成实心的一档。 */
+/* 选中的那一行：宿主只给一层 6% 的墨色，落在侧栏底色上几乎看不出来，换成实心的一档。 */
 html[data-native-plus='on'][data-np-shell='on'] body [data-row-key^='session:'][aria-selected='true'],
 html[data-native-plus='on'][data-np-shell='on'] body [data-slot='sidebar'] nav button[aria-current='page'] {
   background: var(--dsw-specific-sidebar-nav-item-active);

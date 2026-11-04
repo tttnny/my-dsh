@@ -38,7 +38,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 ## 已知现状
 
-卡片优先读 `tool/result.meta`（原生调用）与 `tool/ptc-dispatch.meta`（PTC 子调用）；窗口截断或旧构建里没有 `meta` 时回退到 `call.argsRaw`。两条来路都来自会话日志，直播与重放画出来一样。
+卡片优先读 `tool/result.meta`（原生调用）；PTC 子调用在客户端投影出的节点不带 `meta`，按 `call.argsRaw` 读参数。窗口截断或旧构建里没有 `meta` 时同样回退到 `call.argsRaw`。两条来路都来自会话日志，直播与重放画出来一样。
 
 ## 开发副本
 
