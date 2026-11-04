@@ -59,9 +59,9 @@
 
 闸门自己坏了代价最大，改完必须验收一次：走一次**真实提交**，成功路径打出 `pre-commit: 通过（<包名>）`；再确认它真的装着——`git config --get core.hooksPath` 应回 `.githooks`（这条配置不进版本库，新克隆默认没有闸门）。`SKIP_CHECK=1` 只在确实跑不了时用；「检查全过的提交反而被钩子拦住」是钩子自己的 bug，去修钩子。
 
-### 仓库级 check 与 CI（`tools/check.mjs`、`.github/workflows/check.yml`）
+### 仓库级 check 与 CI（`tools/check.mjs`、`.github/workflows/check.yml`、`.github/workflows/ledger.yml`）
 
-本机钩子的两道短板它都补上：钩子只看本次改动的包，且只有装了钩子的机器才有。`node tools/check.mjs` 在仓库根一次跑「台账 + 全部包的 `check` + 产物新鲜度」；CI 在每个有依赖的包目录 `pnpm install --frozen-lockfile` 之后跑同一个脚本，所以「换台机器能不能过」有一份可复现的答案。
+本机钩子的两道短板它都补上：钩子只看本次改动的包，且只有装了钩子的机器才有。`node tools/check.mjs` 在仓库根一次跑「台账 + 全部包的 `check` + 产物新鲜度」；CI 的 `check` 工作流在每个有依赖的包目录 `pnpm install --frozen-lockfile` 之后跑同一个脚本，所以「换台机器能不能过」有一份可复现的答案。它只在改动落到 `plugins/`、`presets/`、`tools/`、`.githooks/` 或工作流本身时跑——逐包装依赖加自检要十分钟；纯文档改动由 `ledger.yml` 跑 `node tools/check.mjs --ledger-only` 兜住，不装依赖。
 
 三件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 这类要真内核的检查只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收；`assert-ledger.mjs` 的判据 9（开发副本是不是软链）与判据 11（preset 抄本与运行中内核比对）都读本机的 `$DSH_HOME` 与内核，没装就跳过且退出码仍为 0，这两条不能靠 CI 兜底。
 

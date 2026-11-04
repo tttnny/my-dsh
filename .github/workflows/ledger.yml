@@ -1,0 +1,21 @@
+name: ledger
+
+# 台账与产物新鲜度：每次推送与 PR 都跑，不装任何依赖。
+# 它查「README、docs/rules 与包目录互相还对不对得上」，纯文档改动同样要过——那正是 check.yml 跳过的那部分。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 版本随各包 `engines.node`（^22.19 || >=24）。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: node tools/check.mjs --ledger-only

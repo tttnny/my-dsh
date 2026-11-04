@@ -6,7 +6,7 @@
 | --- | --- |
 | 找 `dsh` 二进制、在用的内核与已装清单、内核包仓、内核自带的官方 preset、DSH 源码 checkout、profile、正在跑那个实例的日志 | `node tools/dsh-env.mjs [--json] [--dsh <版本>]` |
 | 改完包 / 根 README / 规则文档后查台账一致性 | `node tools/assert-ledger.mjs [--dsh <版本>] [--quiet]` |
-| 仓库级 check：台账 + 每个包自己的 `check` + 产物新鲜度（`assert-artifacts` 放在最后；CI 跑的就是它） | `node tools/check.mjs [--ledger-only] [--json]` |
+| 仓库级 check：台账 + 每个包自己的 `check` + 产物新鲜度（`assert-artifacts` 放在最后；CI 的 `check` 工作流跑的就是它，纯文档改动只跑 `--ledger-only`） | `node tools/check.mjs [--ledger-only] [--json]` |
 | 铺一个新插件的骨架（宿主 + 浏览器两半边，生成即 `pnpm check` 绿；默认还会跑 `pnpm install`） | `node tools/new-plugin.mjs dsh-<name> [--title 中文名] [--tool 工具名] [--host-only] [--no-install] [--link] [--out 目录]` |
 | 内核升版后把全部包的版本声明改齐 | `node tools/dsh-baseline.mjs [--write] [--bump patch] [--check] [--dsh <版本>] [--only <包名>]` |
 | 两版之间改了什么：默认比已装内核的安装产物；`--from-source` 比源码 tag（旧内核没装也能用），不给新版本就比当前已装内核；`--declared` 只看本仓声明过的包，`--presets` 在包差异之后附加一节官方 preset，`--all` 连 `package.json` 的版本号变动一起列，`--all-paths` 列出 `packages/` 之外的变动，`--list` 只列这台机器装了哪些内核 | `node tools/kernel-diff.mjs <旧版本> [<新版本>] [--from-source] [--declared] [--presets] [--all] [--only <包名>]`、`node tools/kernel-diff.mjs --list` |

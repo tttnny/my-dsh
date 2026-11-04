@@ -8,6 +8,12 @@ name: market
 on:
   push:
     branches: [main]
+    # 索引只由包与生成器决定：文档改动不重建、不重新部署。
+    paths:
+      - 'plugins/**'
+      - 'presets/**'
+      - 'tools/market-index.mjs'
+      - '.github/workflows/market.yml'
   workflow_dispatch:
   workflow_call:
 

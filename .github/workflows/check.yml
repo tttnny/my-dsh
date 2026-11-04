@@ -2,10 +2,25 @@ name: check
 
 # 仓库级 check：台账 + 每个包自己的 check。本机的同一件事是 `.githooks/pre-commit`（只看改动的包），
 # 这里一次跑全部，换台机器或有人没装钩子时也拦得住。
+#
+# 只在改动落到包、仓库级工具或闸门本身时跑：逐包装依赖加自检要十分钟，纯文档改动不值得跑。
+# 文档与 README 的台账一致性由 ledger.yml 每次兜住。
 on:
   push:
     branches: [main]
+    paths:
+      - 'plugins/**'
+      - 'presets/**'
+      - 'tools/**'
+      - '.githooks/**'
+      - '.github/workflows/**'
   pull_request:
+    paths:
+      - 'plugins/**'
+      - 'presets/**'
+      - 'tools/**'
+      - '.githooks/**'
+      - '.github/workflows/**'
 
 jobs:
   check:
