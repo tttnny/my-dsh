@@ -1,5 +1,5 @@
 /**
- * 宿主半边自检：**真实的 0.2.1-rc.2 内核服务**，断言这个工具「投出表单就结束本轮」的每一步，
+ * 宿主半边自检：**真实的 0.2.2-rc.1 内核服务**，断言这个工具「投出表单就结束本轮」的每一步，
  * 以及闸门那三分支。承重点全在真货上：真 cordis Context、真 ctx.tools（ToolRuntime：工具经它
  * 注册、再经它取回）、真会话投影（SessionProjectionRegistry：闸门就是挂在它上面的一个单元）。
  * 假的只有两处：**执行上下文**（真 DSH 里 exec.concludeTurn() 把本轮标记为结束，这里换成假件
@@ -58,8 +58,19 @@ function host(options = {}) {
  */
 async function assemble(config, options) {
   const ctx = host(options);
-  plugin.apply(ctx, config);
+  await plugin.apply(ctx, config);
   return { ctx, tool: ctx.tools.get('grilling_form') };
+}
+
+/**
+ * 闸门单元在真投影表里的当前状态。本单元是宿主半边专用的（没有 wire），`snapshot` 不服务它；
+ * 宿主对它的公开读面就是 `checkpoint`——每个已注册单元一行，键不在表里说明单元没注册上。
+ * @param {Context} ctx - 挂着真投影服务的上下文。
+ * @param {object} session - 读哪条会话的单元状态。
+ * @returns {object} 单元的当前状态（checkpoint 交出的是脱离活引用的那份）。
+ */
+function gateState(ctx, session) {
+  return ctx.sessionProjections.checkpoint(session)[GATE_KEY].val;
 }
 
 /**
@@ -328,7 +339,7 @@ await test('投影单元真的注册在投影表里：键读得出状态', async
   const { exec } = makeExec(world.session);
   await tool.execute({ questions: [{ question: '？' }] }, exec);
   recordRound(world, { callId: 'call-1', argsRaw: args([{ question: '？' }]), result: { ok: true, message: 'x' } });
-  const state = ctx.sessionProjections.stateOf(world.session, GATE_KEY);
+  const state = gateState(ctx, world.session);
   assert.equal(state.pending.callId, 'call-1');
   assert.deepEqual(state.pending.questions, ['？']);
 });
@@ -362,7 +373,7 @@ await test('闸门：带 replace: true 重调就投出，旧表退场、新表�
   assert.equal(result.ok, true);
   assert.deepEqual(second.concluded, ['concludeTurn']);
   recordRound(world, { callId: 'call-2', argsRaw: JSON.stringify({ questions: [{ question: '更新的？' }], replace: true }), result });
-  const state = ctx.sessionProjections.stateOf(world.session, GATE_KEY);
+  const state = gateState(ctx, world.session);
   assert.equal(state.pending.callId, 'call-2');
 });
 
@@ -378,7 +389,7 @@ await test('闸门：用户带着那张表的记号作答之后，下一轮照�
   const second = makeExec(world.session);
   const result = await tool.execute({ questions: [{ question: '新的？' }] }, second.exec);
   assert.equal(result.ok, true);
-  assert.equal(ctx.sessionProjections.stateOf(world.session, GATE_KEY).pending, null);
+  assert.equal(gateState(ctx, world.session).pending, null);
 });
 
 await test('闸门（PTC）：子调用走 ptc-dispatch 事件，照样记成待答的表', async () => {
@@ -391,7 +402,7 @@ await test('闸门（PTC）：子调用走 ptc-dispatch 事件，照样记成待
     args: { questions },
     result: { ok: true, message: 'x' },
   });
-  const state = ctx.sessionProjections.stateOf(world.session, GATE_KEY);
+  const state = gateState(ctx, world.session);
   assert.equal(state.pending.callId, 'call-run:ptc:1');
 });
 
@@ -408,7 +419,7 @@ await test('闸门（PTC）：待答的表在，第二次投出会被拦下；�
   recordUserMessage(world, `${importBlockStart('call-run:ptc:1')}\n1.\n- 甲\n【/拷问作答】`);
   const passed = await tool.execute({ questions: [{ question: '下一批？' }] }, makeExec(world.session).exec);
   assert.equal(passed.ok, true);
-  assert.equal(ctx.sessionProjections.stateOf(world.session, GATE_KEY).pending, null);
+  assert.equal(gateState(ctx, world.session).pending, null);
 });
 
 await test('闸门：转向消息、聊别的事、答别的表都不解闸', async () => {
@@ -443,15 +454,16 @@ await test('闸门：没挂投影服务的组合里退化成不拦，工具照�
   assert.deepEqual(concluded, ['concludeTurn']);
 });
 
-await test('闸门：投影服务比这个插件晚挂上也接得上（单元在服务出现的那一刻注册）', async () => {
+await test('闸门：投影服务比这个插件晚挂上也接得上（单元在服务出现的那一刻注册，句柄随后交回）', async () => {
   const { ctx, tool } = await assemble(undefined, { projections: false });
   const world = makeSession();
   new SessionProjectionRegistry(ctx);
-  await Promise.resolve();
+  // 注册在服务出现的那一刻就装好了，句柄是异步交回的：等它交回，闸门才读得到状态。
+  await new Promise((resolve) => setImmediate(resolve));
 
   await tool.execute({ questions: [{ question: '第一张问的？' }] }, makeExec(world.session).exec);
   recordRound(world, { callId: 'call-1', argsRaw: args([{ question: '第一张问的？' }]), result: { ok: true, message: 'x' } });
-  assert.equal(ctx.sessionProjections.stateOf(world.session, GATE_KEY).pending.callId, 'call-1');
+  assert.equal(gateState(ctx, world.session).pending.callId, 'call-1');
 
   const blocked = await tool.execute({ questions: [{ question: '第二张问的？' }] }, makeExec(world.session).exec);
   assert.equal(blocked.ok, false);

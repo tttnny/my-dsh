@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-kimi-cu",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "接上本机 KimiCU：把它的 mcp 服务挂成 mcp__kimi-cu__* 工具，并随包带一份 kimi-cu 操作技能。",
   "type": "module",
   "exports": {
@@ -37,7 +37,7 @@
     "check": "node scripts/check-bundle.mjs && node ../../tools/probes/preset-skills.mjs --skills skills"
   },
   "engines": {
-    "dsh": ">=0.2.1-rc.2",
+    "dsh": ">=0.2.2-rc.1",
     "node": "^22.19 || >=24"
   },
   "packageManager": "pnpm@11.7.0",

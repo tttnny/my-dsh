@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-model-submenu",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "给输入框的模型选择器换成两层：一层只列当前供应商的模型与思考等级，一层弹窗列全部供应商的模型。",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
@@ -10,7 +10,7 @@
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.2.1-rc.2"
+    "dsh": ">=0.2.2-rc.1"
   },
   "main": "lib/index.js",
   "exports": {
@@ -63,8 +63,8 @@
     "test": "node scripts/test-favorites.mjs && node scripts/test-facts.mjs && node scripts/test-commit.mjs && node scripts/test-rows.mjs && node scripts/test-effort-memory.mjs && node scripts/test-render.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.5",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-rc.2",
+    "@deepseek-ai/cordis": "^4.1.0",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.1",
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
@@ -73,19 +73,19 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.5",
-    "@deepseek-ai/dsh-api-remotes": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-api-session-controller": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-locale": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-store": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-conversation": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-model-selection": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-session": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-typert-protocol": ">=0.2.1-rc.2",
+    "@deepseek-ai/cordis": "^4.1.0",
+    "@deepseek-ai/dsh-api-remotes": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-store": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-model-selection": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-session": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.2-rc.1",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",

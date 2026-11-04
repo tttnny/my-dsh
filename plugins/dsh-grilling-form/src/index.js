@@ -1,5 +1,5 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
-import { FORM_GATE_UNIT, GATE_KEY, QUESTION_TYPES, pendingFormOf, validateRound } from './form-model.js';
+import { FORM_GATE_UNIT, QUESTION_TYPES, pendingFormOf, validateRound } from './form-model.js';
 
 /**
  * @lynn123411/dsh-grilling-form — grilling 轮的逐题拷问工具。
@@ -39,12 +39,17 @@ const inject = ['tools'];
 const SHOWN_MESSAGE = "The form with this round's questions is now shown in the conversation and this turn has ended. The user has not answered yet: they answer in their own composer, and their answers arrive later as their next user message, one block per round — a line with just the question number (\"1.\") and then one \"- \" line per chosen option or typed text. Do not wait for it, do not treat this as an answer, and do not write the questions in prose as well.";
 
 /**
- * 会话投影服务里本插件用到的那两件。投影契约发布在 @deepseek-ai/dsh-session-projection，
+ * 注册交回的那个读句柄：闸门每次执行都靠它同步读单元状态。
+ * @typedef {object} ProjectionHandle
+ * @property {(session: unknown) => unknown} stateOf 读这个单元的当前状态。
+ */
+
+/**
+ * 会话投影服务里本插件用到的那一件。投影契约发布在 @deepseek-ai/dsh-session-projection，
  * 本包只在自检里挂那个真货；宿主这边按**实际读到的成员**就地声明，与浏览器半边对平台服务的做法一致
- * （少声明一个不报错，那一处静默失效，所以只声明真的读到的那两个）。
+ * （少声明一个不报错，那一处静默失效，所以只声明真的读到的那一个）。
  * @typedef {object} SessionProjectionService
- * @property {(definition: unknown) => (() => void)} register 注册一个投影单元。
- * @property {(session: unknown, key: string) => unknown} stateOf 读一个单元的当前状态。
+ * @property {(definition: unknown) => Promise<ProjectionHandle>} register 注册一个投影单元，句柄异步交回。
  */
 
 /**
@@ -84,29 +89,31 @@ function gateMessage(pending) {
  * 一条 root loader 行（见上面的说明），所以这里没有 config、也不注册别的东西。
  * @param {import('@deepseek-ai/cordis').Context} ctx - 宿主插件上下文（tools 由本行的 inject 声明）。
  * @param {unknown} config - loader 交给插件行的 config；这一行不收任何键。
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function apply(ctx, config) {
+async function apply(ctx, config) {
   assertNoConfig(config);
+  /** 闸门那个单元的读句柄；投影服务不在、或句柄还没交回时按没有算（闸门少一层，工具照常投）。
+   * @type {ProjectionHandle|undefined} */
+  let gateHandle;
   // 投影服务是可选项，所以走 ctx.inject：它比本插件晚挂上、或中途换了一份时，cordis 会重跑这段
   // 回调把单元重新注册上——照着 apply 那一刻取一次，晚到的服务会让闸门永远不生效。
   // 注册的收尾挂在这个子上下文上：本插件卸下时单元跟着退掉。
-  ctx.inject(['sessionProjections'], (scoped) => {
-    scoped.effect(() => {
-      // 这段回调只在服务就位时跑，所以这里它的存在是确定的。
-      const projections = /** @type {SessionProjectionService} */ (scoped.get('sessionProjections'));
-      return projections.register(FORM_GATE_UNIT);
-    });
+  const binding = ctx.inject(['sessionProjections'], async (scoped) => {
+    // 这段回调只在服务就位时跑，所以这里它的存在是确定的。
+    const projections = /** @type {SessionProjectionService} */ (scoped.get('sessionProjections'));
+    gateHandle = await projections.register(FORM_GATE_UNIT);
+    return () => { gateHandle = undefined; };
   });
-  /** 那张投出去还没等到作答的表；**每次执行现取**服务（与注册同一份判据），
-   * 拿不到投影或拿不到会话时按没有算（闸门少一层，工具照常投）。
+  // 服务已经就位时等句柄交回再注册工具：工具一出现，闸门读的就是已就位的句柄。
+  if (ctx.get('sessionProjections') !== undefined) await binding;
+  /** 那张投出去还没等到作答的表；拿不到句柄或拿不到会话时按没有算。
    * @param {{ agent?: { session?: unknown } }} exec - 执行上下文；只有会话那一件是这里要的。
    * @returns {import('./form-model.js').FormCall|null} 待答的那张表。 */
   const pendingForm = (exec) => {
     const session = exec.agent === undefined ? undefined : exec.agent.session;
-    const projections = /** @type {SessionProjectionService|undefined} */ (ctx.get('sessionProjections'));
-    if (session === undefined || projections === undefined || typeof projections.stateOf !== 'function') return null;
-    return pendingFormOf(projections.stateOf(session, GATE_KEY));
+    if (session === undefined || gateHandle === undefined) return null;
+    return pendingFormOf(gateHandle.stateOf(session));
   };
   ctx.tools.register(defineTool({
     name: 'grilling_form',

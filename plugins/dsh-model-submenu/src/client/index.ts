@@ -72,6 +72,7 @@ export function apply(ctx: ClientContext): void {
           load: () => {
             if (available) directory.load().catch(() => {})
           },
+          resolveText: (text) => ctx.locale.resolveText(text),
           select: (selection) => available ? directory.select(selection) : Promise.resolve(undefined),
         }
       },

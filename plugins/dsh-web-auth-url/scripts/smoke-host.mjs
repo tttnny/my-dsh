@@ -1,5 +1,5 @@
 /**
- * 宿主半边自检：把承重点放在 **真实的 0.2.1-rc.2 内核服务** 上跑，而不是桩件——
+ * 宿主半边自检：把承重点放在 **真实的 0.2.2-rc.1 内核服务** 上跑，而不是桩件——
  * 每条断言的全部意义就是「DSH 换了实现，本插件立刻挂」：
  *
  * 1. 「登录地址」工具真的注册进真 `ctx.tools`（@deepseek-ai/dsh-tools 的 ToolRuntime），
@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { Context } from '@deepseek-ai/cordis';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env';
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 
 const require = createRequire(import.meta.url);
@@ -66,7 +67,9 @@ function installedVersion(pkg) {
 }
 
 /**
- * 装配一套真实的宿主树：真 systemPrompt + 真 shellEnv + 真 ToolRuntime。
+ * 装配一套真实的宿主树：真 systemPrompt + 真 shellEnv + 真 ToolRuntime + 真 native executor。
+ * 工具描述由 executor 插件产出，`systemPrompt.assemble` 前必须装一个，否则抛
+ * `TOOL_EXECUTOR_UNAVAILABLE`。
  * web 侧只桩「监听器自己报根」「对外公布的根」与「给根加 token」三个面——它们是
  * webServer、webApp 与 connection 的公开契约，dsh-web-app 读的也是这三个。
  * @param {{ token?: string, web?: boolean, origin?: string, advertised?: string, originFails?: boolean }} options - 装配参数。
@@ -77,6 +80,7 @@ async function host({ token = TOKEN, web = true, origin = ORIGIN, advertised, or
   await ctx.plugin(SystemPrompt, {});
   await ctx.plugin(ShellEnv, {});
   await ctx.plugin(ToolRuntime);
+  await ctx.plugin(NativeToolExecutor);
   const state = { token };
   if (web) {
     ctx.provide('webServer', {
@@ -115,16 +119,16 @@ await test('本插件不贡献提示词：导出里没有 Config，也没有段�
 });
 
 await test('内核基线声明齐整（engines / peer / dev 同串）', () => {
-  assert.equal(manifest.engines.dsh, '>=0.2.1-rc.2', 'engines.dsh 必须声明不低于基线 0.2.1-rc.2 的支持范围');
-  assert.equal(manifest.peerDependencies['@deepseek-ai/cordis'], '^4.0.5');
-  assert.equal(installedVersion('@deepseek-ai/cordis'), '4.0.5', 'cordis 必须对齐安装版本');
+  assert.equal(manifest.engines.dsh, '>=0.2.2-rc.1', 'engines.dsh 必须声明不低于基线 0.2.2-rc.1 的支持范围');
+  assert.equal(manifest.peerDependencies['@deepseek-ai/cordis'], '^4.1.0');
+  assert.equal(installedVersion('@deepseek-ai/cordis'), '4.1.0', 'cordis 必须对齐安装版本');
   assert.equal(manifest.dependencies, undefined, '本插件不导出 Config，因此不再需要 schemastery');
   assert.equal(manifest.peerDependencies['@deepseek-ai/dsh-tools'], manifest.engines.dsh, '工具表是硬依赖，peer 要与 engines 同串');
-  // engines.dsh 写成 >=0.2.1-rc.2（大于等于当前版本），而 devDependencies 仍定向
-  // 安装基线版本 0.2.1-rc.2，两者刻意不同：声明层写同一个范围，安装层钉住基线。
-  for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env', '@deepseek-ai/dsh-tools']) {
+  // engines.dsh 写成 >=0.2.2-rc.1（大于等于当前版本），而 devDependencies 仍定向
+  // 安装基线版本 0.2.2-rc.1，两者刻意不同：声明层写同一个范围，安装层钉住基线。
+  for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env', '@deepseek-ai/dsh-tool-executor-native', '@deepseek-ai/dsh-tools']) {
     assert.equal(manifest.devDependencies[pkg], manifest.engines.dsh, `${pkg} 的 devDependency 必须与 engines.dsh 同串`);
-    assert.equal(installedVersion(pkg), '0.2.1-rc.2', '自检跑的内核包必须仍是基线版本 0.2.1-rc.2');
+    assert.equal(installedVersion(pkg), '0.2.2-rc.1', '自检跑的内核包必须仍是基线版本 0.2.2-rc.1');
   }
 });
 
@@ -216,9 +220,11 @@ await test('内核基线声明齐整（engines / peer / dev 同串）', () => {
 
 // --- 不碰提示词：装上本插件与不装，系统提示词一模一样 ----------------------
 {
+  // 工具描述由 executor 插件产出：assemble 前必须装一个。
   const bare = new Context();
   await bare.plugin(SystemPrompt, {});
   await bare.plugin(ToolRuntime);
+  await bare.plugin(NativeToolExecutor);
   const without = await bare.systemPrompt.assemble({});
 
   const { ctx } = await host();
