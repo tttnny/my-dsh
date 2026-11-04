@@ -3,15 +3,20 @@
  *
  * 宿主把这一策略派生自 `ui-chat` 配置条目的 `transcriptView` 字段；本插件接管
  * 助手行渲染后，经 `ctx.configForms.get('ui-chat')` 读同一个字段。渲染层只用到
- * 其中一个能力：落定的思考行要不要在 Think 标题旁预览首行
- * （{@link ChatPresentationPolicy.settledReasoningPreview}），所以这里只镜像那一个
- * 字段，而不是把宿主的整张策略表搬过来。快照对象按取值常驻（同一取值恒等返回
- * 同一实例），选择器订阅看到的是稳定引用。
+ * 其中两个能力：落定的思考行要不要在 Think 标题旁预览首行
+ * （{@link ChatPresentationPolicy.settledReasoningPreview}），以及折叠时保留哪些
+ * 助手回复（{@link ChatPresentationPolicy.foldedReplies}）。只镜像本插件真正读到的
+ * 这两个字段，而不是把宿主的整张策略表搬过来。快照对象按取值常驻（同一取值恒等
+ * 返回同一实例），选择器订阅看到的是稳定引用。
  */
 
-/** 与宿主 ChatPresentationPolicy 同形的结构性镜像（只保留本插件读取的那个能力）。 */
+/** 折叠回复时保留哪些助手回复：全部，还是只有最后一条结论。 */
+export type FoldedReplies = 'all' | 'final';
+
+/** 与宿主 ChatPresentationPolicy 同形的结构性镜像（只保留本插件读取的两个能力）。 */
 export interface ChatPresentationPolicy {
   readonly settledReasoningPreview: boolean;
+  readonly foldedReplies: FoldedReplies;
 }
 
 /**
@@ -24,18 +29,38 @@ const NO_PREVIEW_MODE = 'compact';
 /** 宿主在用户没有显式选择时使用的模式。 */
 export const DEFAULT_MODE = 'standard';
 
-/** 两个常驻快照：同一取值返回同一实例，订阅判等才稳定。 */
-const WITH_PREVIEW: ChatPresentationPolicy = Object.freeze({ settledReasoningPreview: true });
-const WITHOUT_PREVIEW: ChatPresentationPolicy = Object.freeze({ settledReasoningPreview: false });
+/** 宿主在没有保存折叠回复偏好时保留全部回复。 */
+export const DEFAULT_FOLDED_REPLIES: FoldedReplies = 'all';
+
+/** 四个常驻快照：同一取值返回同一实例，订阅判等才稳定。 */
+const SNAPSHOTS: Readonly<Record<`${'preview' | 'plain'}:${FoldedReplies}`, ChatPresentationPolicy>> = {
+  'preview:all': Object.freeze({ settledReasoningPreview: true, foldedReplies: 'all' }),
+  'preview:final': Object.freeze({ settledReasoningPreview: true, foldedReplies: 'final' }),
+  'plain:all': Object.freeze({ settledReasoningPreview: false, foldedReplies: 'all' }),
+  'plain:final': Object.freeze({ settledReasoningPreview: false, foldedReplies: 'final' }),
+};
 
 /**
- * 存储值 → 策略快照。
+ * 两个存储值 → 策略快照。
+ *
+ * @param mode - `transcriptView` 的原样字符串。
+ * @param foldedReplies - `foldedReplies` 的原样字符串；未识别按保留全部。
+ * @returns 该组合的常驻快照。
+ */
+export function policyFor(mode: string, foldedReplies: string): ChatPresentationPolicy {
+  const preview = mode !== NO_PREVIEW_MODE ? 'preview' : 'plain';
+  const folded: FoldedReplies = foldedReplies === 'final' ? 'final' : 'all';
+  return SNAPSHOTS[`${preview}:${folded}`];
+}
+
+/**
+ * 存储值 → 策略快照（只按工作细节模式，折叠回复取宿主默认）。
  *
  * @param mode - `transcriptView` 的原样字符串。
  * @returns 该模式的常驻快照。
  */
 export function policyForMode(mode: string): ChatPresentationPolicy {
-  return mode === NO_PREVIEW_MODE ? WITHOUT_PREVIEW : WITH_PREVIEW;
+  return policyFor(mode, DEFAULT_FOLDED_REPLIES);
 }
 
 /** 本模块只用到配置面的这一小片形状（结构性镜像，值边不跨包）。 */
@@ -91,7 +116,8 @@ export class ChatPresentation {
       value = undefined;
     }
     const raw = typeof value?.transcriptView === 'string' ? value.transcriptView : '';
-    const next = policyForMode(raw);
+    const rawFolded = typeof value?.foldedReplies === 'string' ? value.foldedReplies : '';
+    const next = policyFor(raw, rawFolded);
     if (next !== this.policy) {
       this.policy = next;
       for (const listener of [...this.listeners]) {

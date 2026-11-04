@@ -63,8 +63,19 @@ export function apply(ctx: ClientContext): void {
           // 两侧渲染逐字一致；t 由座次按该命名空间合成。
           locale: 'chat',
           priority: -1,
-          // 思考行的 settledReasoningPreview 来自活的工作细节模式。
-          inject: () => ({ hooks: { presentation: chatPresentation } }),
+          // 思考行的 settledReasoningPreview 与 foldedReplies 来自活的工作细节模式；
+          // fileMentions 由这条注册项自己提供（0.2.2 起不再走 owner props）。
+          inject: (sessionId: string) => ({
+            hooks: { presentation: chatPresentation },
+            fileMentions: (owner: unknown) => {
+              try {
+                const service = ctx.get?.('chatFileMentions');
+                return service?.forClosing?.(owner, sessionId);
+              } catch {
+                return undefined;
+              }
+            },
+          }),
         },
         AssistantStepView
       )

@@ -17,7 +17,7 @@
  * 都不会误触。补跑在途时 ↻ 原位转圈、暂不可重复点。
  *
  * 除正文外的行内容与宿主逐分支等价：reasoning 行走折叠（含 Turn-process
- * 隐藏与 beforematch 揭示）、连续 image 组交回 owner 的 renderMessageImages、
+ * 隐藏与 beforematch 揭示）、连续 image 组交回宿主的图片画廊 Factory、
  * 未知块落 JsonBlock、tool-call 在助手行内跳过（工具行由宿主独立渲染）、
  * 中断前缀行尾带「已停止」。props 形状是宿主 contract 的结构性镜像：值边
  * 不跨包（客户端 bundle 纯净门禁），类型注释指明对应声明。
@@ -75,6 +75,7 @@ interface DisclosureState {
 
 interface PresentationLike {
   readonly settledReasoningPreview: boolean;
+  readonly foldedReplies: 'all' | 'final';
 }
 
 interface NodeDataLike {
@@ -82,7 +83,7 @@ interface NodeDataLike {
   readonly turn: number;
   readonly step: number;
   readonly blocks: readonly AssistantBlockLike[];
-  readonly finalNode?: { readonly seq: number };
+  readonly finalNode?: { readonly seq: number; readonly messageId?: string };
 }
 
 interface TurnProcessLike {
@@ -120,11 +121,12 @@ export interface AssistantStepProps {
   readonly useTurnData: (key: string) => unknown;
   readonly turnProcess?: TurnProcessLike;
   readonly openFile: (path: string, options?: { line?: number }) => void;
-  readonly renderMessageImages: (owner: {
-    readonly images: readonly { readonly attachment: unknown }[];
-    readonly align?: string;
-  }) => ReactNode;
-  readonly fileMentions: (owner: unknown) => MarkdownFileMentions | undefined;
+  /** 宿主图片画廊 Factory 的分发器；图片组走它，与宿主内置渲染器同一条路。 */
+  readonly renderFactorySlot?: (name: string, props: Record<string, unknown>) => ReactNode;
+  /** 会话授权的图片加载器；交给图片画廊 Factory。 */
+  readonly loadImage?: unknown;
+  /** 收尾轮次的文件提及解析；由注册项 inject 提供，缺省时不画提及链接。 */
+  readonly fileMentions?: (owner: unknown) => MarkdownFileMentions | undefined;
   readonly usePresentation: <R>(select: (policy: PresentationLike) => R) => R;
   readonly t: (key: string, params?: Record<string, unknown>) => string;
 }
@@ -352,6 +354,8 @@ interface ProseBlockProps {
   labels: MarkdownLabels;
   mentions: MarkdownFileMentions | undefined;
   pathImages: MarkdownPathImages;
+  /** 这一块是否作为「选中正文→引用」的源；与宿主的 settled 判定同形。 */
+  textInteractionSource: boolean;
 }
 
 /**
@@ -384,6 +388,7 @@ function ProseBlock({
   labels,
   mentions,
   pathImages,
+  textInteractionSource,
 }: ProseBlockProps): ReactElement {
   const action = proseAction(mark);
   const source = mark === 'translated' && !showingOriginal ? (translated as string) : text;
@@ -520,6 +525,7 @@ function ProseBlock({
       labels,
       fileMentions: mentions,
       pathImages,
+      textInteractionSource,
     })
   );
 }
@@ -528,7 +534,7 @@ function ProseBlock({
 
 export const AssistantStepView = memo(function AssistantStepView(props: AssistantStepProps): ReactElement | null {
   ensureAssistantStyles();
-  const { store, node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, usePresentation, t } = props;
+  const { store, node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderFactorySlot, loadImage, fileMentions, usePresentation, t } = props;
   const data = node.data;
   const streaming = data.status === 'running';
   const interrupted = data.status === 'interrupted';
@@ -565,7 +571,10 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     if (tail?.closing?.finalNode?.seq !== data.finalNode.seq) return void 0;
     return { turn, seq: data.finalNode.seq, openFile };
   }, [data.finalNode, openFile, tail, turn]);
-  const mentions = useMemo(() => (owner === void 0 ? void 0 : fileMentions(owner)), [fileMentions, owner]);
+  const mentions = useMemo(
+    () => (owner === void 0 || typeof fileMentions !== 'function' ? void 0 : fileMentions(owner)),
+    [fileMentions, owner]
+  );
 
   // 计划层给出文本清单与渲染分支；行渲染先于挂载，池按当前文本登记。
   const blocks = useMemo(() => data.blocks ?? [], [data.blocks]);
@@ -637,11 +646,15 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     [blocks, streaming, interrupted, groupPart, channel, rowState, frozenCount, originalKeys, conclusion]
   );
 
+  // 与宿主 `AssistantNodeView` 同形：保留全部回复时，只要不是 reasoning 分组就不隐藏；
+  // 只保留结论时，才按 answerStep / inlineReasoning 判。
+  const keepReplies = usePresentation((policy) => policy.foldedReplies === 'all');
   const reasoningHidden =
     turnProcess !== void 0 &&
     turnProcess.foldable &&
-    turnProcess.spec.answerStep === data.step &&
-    turnProcess.spec.inlineReasoning &&
+    (keepReplies
+      ? groupPart !== 'reasoning'
+      : turnProcess.spec.answerStep === data.step && turnProcess.spec.inlineReasoning) &&
     !turnProcess.open;
   const revealProcess = useCallback(() => {
     turnProcess?.setOpen(true);
@@ -675,6 +688,8 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
   if (displayed.entries === null) return null;
 
   const last = blocks.length - 1;
+  // 只有落定且带 messageId 的助手消息才是可引用的源；流式中与中断态都不是。
+  const textInteractionSource = data.status === 'settled' && data.finalNode?.messageId !== undefined;
   const rendered: ReactNode[] = [];
   for (const entry of displayed.entries) {
     switch (entry.type) {
@@ -695,6 +710,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
             labels,
             mentions,
             pathImages,
+            textInteractionSource,
           })
         );
         break;
@@ -721,7 +737,13 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
         rendered.push(
           React.createElement(React.Fragment, {
             key: entry.key,
-          }, renderMessageImages({ images: entry.attachments.map((attachment) => ({ attachment })), align: 'start' }))
+          }, renderFactorySlot === void 0
+            ? null
+            : renderFactorySlot('conversation.images.content', {
+              images: entry.attachments.map((attachment) => ({ attachment })),
+              loadImage,
+              align: 'start',
+            }))
         );
         break;
       case 'unknown':

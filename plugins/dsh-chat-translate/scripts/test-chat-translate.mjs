@@ -32,7 +32,7 @@ const { isConclusionRow } = await import('../src/client/chat/conclusion.ts');
 const storeModule = await import('../src/client/chat/translate-store.ts');
 const { createTranslateStore, chunkTexts } = storeModule;
 const { isCleanHotspotClick } = await import('../src/client/chat/click-guard.ts');
-const { createChatPresentation, policyForMode } = await import('../src/client/chat/presentation.ts');
+const { createChatPresentation, policyFor, policyForMode } = await import('../src/client/chat/presentation.ts');
 const stylesModule = await import('../src/client/chat/styles.ts');
 const {
   proseClassNames,
@@ -837,6 +837,19 @@ await test('策略映射与宿主一致：compact 不预览，其余模式与 le
   assert.equal(policyForMode('normal').settledReasoningPreview, true, 'legacy normal 按 standard 读');
   assert.equal(policyForMode('expanded').settledReasoningPreview, true, 'legacy expanded 按 detailed 读');
   assert.equal(policyForMode('unrecognized').settledReasoningPreview, true, '未识别的值按 standard 读');
+});
+
+await test('折叠回复策略：all/final 原样镜像，未识别与缺省都按保留全部', () => {
+  assert.equal(policyFor('standard', 'all').foldedReplies, 'all');
+  assert.equal(policyFor('standard', 'final').foldedReplies, 'final');
+  assert.equal(policyFor('compact', 'final').foldedReplies, 'final', '折叠回复与工作细节模式互不影响');
+  assert.equal(policyFor('standard', 'unrecognized').foldedReplies, 'all', '未识别按宿主默认');
+  assert.equal(policyForMode('standard').foldedReplies, 'all', '只给模式时取默认');
+});
+
+await test('策略快照按取值常驻：同一取值恒等返回同一实例', () => {
+  assert.equal(policyFor('standard', 'final'), policyFor('standard', 'final'));
+  assert.notEqual(policyFor('standard', 'final'), policyFor('standard', 'all'));
 });
 
 await test('配置面可用时跟随 transcriptView；缺省时按 standard', async () => {

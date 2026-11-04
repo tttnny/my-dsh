@@ -30,7 +30,12 @@ const { createRoot } = await import('react-dom/client');
 
 /** ui-primitives 替身：只还原本测试关心的渲染结果与锚点关系。 */
 const primitives = primitivesStub({
-  MarkdownText: ({ text }) => createElement('div', { className: 'md' }, text),
+  MarkdownText: ({ text, textInteractionSource }) =>
+    createElement(
+      'div',
+      { className: 'md', ...(textInteractionSource ? { 'data-text-interaction-source': '' } : {}) },
+      text
+    ),
   // 真 Tooltip 保留锚点本身、把 hover/focus 处理器注入那个锚点（不套外壳），
   // 所以替身也原样返回 children——DOM 形状与生产一致，悬停文案由
   // test-chat-translate.mjs 的 rowCopy 断言覆盖。
@@ -146,7 +151,7 @@ await act(async () => {
 
 const translate = (key) => key;
 
-function renderRow(rowKey, text, container, store) {
+function renderRow(rowKey, text, container, store, overrides = {}) {
   const componentProps = {
     node: {
       data: { status: 'settled', turn: 1, step: 1, blocks: [{ kind: 'text', text }] },
@@ -157,10 +162,12 @@ function renderRow(rowKey, text, container, store) {
     useTurnData: () => undefined,
     turnProcess: undefined,
     openFile: () => {},
-    renderMessageImages: () => null,
+    renderFactorySlot: () => null,
+    loadImage: undefined,
     fileMentions: () => undefined,
-    usePresentation: (select) => select({ settledReasoningPreview: false }),
+    usePresentation: (select) => select({ settledReasoningPreview: false, foldedReplies: 'all' }),
     t: translate,
+    ...overrides,
   };
   const root = createRoot(container);
   const props = { ...componentProps };
@@ -556,6 +563,119 @@ await test('失败块：键盘 Enter 在 ↻ 上补跑整行，且只发一次�
 });
 
 act(() => rootC.unmount());
+
+// --- 0.2.2 契约：图片组走宿主 Factory、选区引用源随落定态、折叠回复影响思考行隐藏 ---
+
+const containerD = dom.window.document.createElement('div');
+document.body.appendChild(containerD);
+const factoryCalls = [];
+const rootD = renderRow('ax4', 'Caption', containerD, undefined, {
+  node: {
+    data: {
+      status: 'settled',
+      turn: 1,
+      step: 1,
+      blocks: [
+        { kind: 'text', text: 'Caption' },
+        { kind: 'image', attachment: { id: 'img-1' } },
+        { kind: 'image', attachment: { id: 'img-2' } },
+      ],
+    },
+    anchorSeq: '4',
+  },
+  renderFactorySlot: (name, props) => {
+    factoryCalls.push({ name, props });
+    return createElement('div', { className: 'factory-images' });
+  },
+  loadImage: (attachment) => `blob:${attachment.id}`,
+});
+await act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+await test('连续图片组走宿主 conversation.images.content Factory，带上会话授权加载器', () => {
+  assert.ok(factoryCalls.length >= 1, '图片组应当调 Factory');
+  const last = factoryCalls[factoryCalls.length - 1];
+  assert.equal(last.name, 'conversation.images.content');
+  assert.deepEqual(last.props.images, [{ attachment: { id: 'img-1' } }, { attachment: { id: 'img-2' } }]);
+  assert.equal(last.props.align, 'start');
+  assert.equal(typeof last.props.loadImage, 'function', '加载器要原样交给画廊');
+  assert.ok(containerD.querySelector('.factory-images'), 'Factory 的产物要落到行里');
+});
+
+act(() => rootD.unmount());
+
+const containerE = dom.window.document.createElement('div');
+document.body.appendChild(containerE);
+const rootE = renderRow('ax5', 'Settled prose', containerE, undefined, {
+  node: {
+    data: { status: 'settled', turn: 1, step: 1, blocks: [{ kind: 'text', text: 'Settled prose' }], finalNode: { seq: 9, messageId: 'm-9' } },
+    anchorSeq: '5',
+  },
+});
+await act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+await test('落定且带 messageId 的正文带选区引用源标记', () => {
+  assert.ok(containerE.querySelector('.md[data-text-interaction-source]'), '宿主据此认出可引用的源');
+});
+act(() => rootE.unmount());
+
+const containerF = dom.window.document.createElement('div');
+document.body.appendChild(containerF);
+const rootF = renderRow('ax6', 'Streaming prose', containerF, undefined, {
+  node: {
+    data: { status: 'running', turn: 1, step: 1, blocks: [{ kind: 'text', text: 'Streaming prose' }] },
+    anchorSeq: '6',
+  },
+});
+await act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+await test('流式正文不带选区引用源标记', () => {
+  assert.equal(containerF.querySelector('.md[data-text-interaction-source]'), null);
+});
+act(() => rootF.unmount());
+
+/** 一行思考行，交给 turnProcess 的折叠判据；foldedReplies 决定隐藏公式。 */
+function renderReasoningRow(rowKey, foldedReplies, container) {
+  return renderRow(rowKey, 'thinking...', container, undefined, {
+    node: {
+      data: { status: 'settled', turn: 1, step: 1, blocks: [{ kind: 'reasoning', text: 'thinking about it' }] },
+      anchorSeq: rowKey.slice(1),
+    },
+    groupPart: 'reasoning',
+    turnProcess: {
+      foldable: true,
+      open: false,
+      setOpen: () => {},
+      spec: { answerStep: 1, inlineReasoning: true },
+    },
+    usePresentation: (select) => select({ settledReasoningPreview: false, foldedReplies }),
+  });
+}
+
+const containerG = dom.window.document.createElement('div');
+document.body.appendChild(containerG);
+const rootG = renderReasoningRow('ax7', 'all', containerG);
+await act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+await test('保留全部回复时，折叠轮的思考行不被隐藏', () => {
+  assert.equal(containerG.querySelector('[data-turn-process-inline]'), null);
+});
+act(() => rootG.unmount());
+
+const containerH = dom.window.document.createElement('div');
+document.body.appendChild(containerH);
+const rootH = renderReasoningRow('ax8', 'final', containerH);
+await act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+await test('只保留结论时，折叠轮的思考行被隐藏', () => {
+  assert.ok(containerH.querySelector('[data-turn-process-inline]'), '与宿主 AssistantNodeView 同形');
+});
+act(() => rootH.unmount());
 
 console.log(`${passed}/${total} passed`);
 process.exit(passed === total ? 0 : 1);
