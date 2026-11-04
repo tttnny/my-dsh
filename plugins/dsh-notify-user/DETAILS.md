@@ -28,7 +28,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 - 只数**根调用**：原生模式下是模型每次直接发起的调用（同一轮里的并行调用各算一次）；PTC 模式下是每次 `run_code`，程序内部的子调用不算。
 - `notify_user` 无论根调用还是 PTC 子调用都清零。
-- 新回合或用户插话（这一步的收件箱里有 `source.kind === 'user'` 的消息）清零。
+- 新回合（`agent/pre-step` 的 `step === 1`，不论由用户、定时提醒、队友消息还是 webhook 触发）或用户插话（收件箱里有 `source.kind === 'user'` 的消息）清零。回合边界取宿主给的 `step`，不按消息来源枚举。
 - 子代理会话不计数、不注入。
 - 催办注入的是**指令**，不是替模型写正文；注入消息的来源是 `notify-user-nudge`、`form: 'notice'`，只进模型上下文，不占对话流正文。
 
@@ -57,7 +57,7 @@ cd plugins/dsh-notify-user && pnpm check
 `check` 链上每一步：
 
 - `typecheck`：`src` 的类型闸门。
-- `smoke-host.mjs`：真 cordis + 真 `ToolRuntime`，断言配置形状、工具注册与执行、装配行，以及催办接线在真 `ctx.waterfall` 下的行为（满阈值注入、汇报/用户消息/阈值 0 清零、PTC 子调用不计数、嵌套汇报清零、子代理不注入、下游拒绝时不追加）。
+- `smoke-host.mjs`：真 cordis + 真 `ToolRuntime`，断言配置形状、工具注册与执行、装配行，以及催办接线在真 `ctx.waterfall` 下的行为（满阈值注入、汇报/新回合/用户插话/阈值 0 清零、上下文注入不清零、PTC 子调用不计数、嵌套汇报清零、子代理不注入、下游拒绝时不追加）。
 - `smoke-client.mjs`：按 Web shell 方式装载浏览器 bundle，断言两处座位注册、字典键集与「未声明服务读取会抛」的守卫。
 - `test-nudge.mjs`：催办状态机的纯逻辑（阈值、清零、现读、按 agent 隔离）。
 - `test-row-model.mjs`：进度卡数据视图的三条来路（`meta` / PTC 参数 / start 参数）与标题回退。

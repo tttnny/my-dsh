@@ -12,7 +12,8 @@ import type { Context } from '@deepseek-ai/cordis';
  * 只有 `run_code` 各算一次，程序内部的子调用不算——一个程序里的几十个子调用是
  * 同一个模型动作，算进去会让催办在一个程序之后就触发。
  *
- * `notify_user` 无论根调用还是 PTC 子调用都清零，与计数单位无关。
+ * `notify_user` 无论根调用还是 PTC 子调用都清零，与计数单位无关；新回合
+ * （`step === 1`）或用户插话也清零——回合边界取宿主给的 `step`，不按消息来源枚举。
  *
  * 注入走 `agent/pre-step` 的 `enter.messages`：消息落进该步的 user 批次并被日志
  * 记录，来源不是 `user`，所以对话流里画成一行 context 而不是用户发言。
@@ -56,10 +57,10 @@ export interface NudgeController {
   /**
    * 一步开始前问一次要不要催。
    * @param agent - 这一步的 agent。
-   * @param hasUserMessage - 这一步的收件箱里有没有用户消息（新回合或用户插话）。
+   * @param freshInput - 这一步是否重新计时：新回合的第一步，或收件箱里有用户插话。
    * @returns 要注入的消息；不催时 `null`。
    */
-  step(agent: object, hasUserMessage: boolean): UserMessage | null;
+  step(agent: object, freshInput: boolean): UserMessage | null;
 }
 
 /**
@@ -77,9 +78,9 @@ export function createNudgeController(readThreshold: () => number): NudgeControl
     toolCall(agent) {
       counts.set(agent, (counts.get(agent) ?? 0) + 1);
     },
-    step(agent, hasUserMessage) {
+    step(agent, freshInput) {
       const threshold = readThreshold();
-      if (hasUserMessage || threshold <= 0) {
+      if (freshInput || threshold <= 0) {
         counts.set(agent, 0);
         return null;
       }
@@ -107,7 +108,8 @@ export function isSubagent(agent: Agent): boolean {
  * 把状态机接到宿主的两条事件上。
  *
  * `tools/post-execute` 只观察、不改结果：`notify_user` 清零，其余**根调用**计数。
- * `agent/pre-step` 在委托下游之后，只往 `enter` 决策的消息列表末尾追加一条。
+ * `agent/pre-step` 在委托下游之后，只往 `enter` 决策的消息列表末尾追加一条；
+ * 新回合与用户插话在这里清零。
  * @param ctx - 宿主插件上下文。
  * @param controller - 催办状态机。
  */
@@ -121,13 +123,16 @@ export function installNudge(ctx: Context, controller: NudgeController): void {
     return next();
   });
 
-  ctx.on('agent/pre-step', async ({ agent, messages }, next): Promise<PreStepDecision> => {
+  ctx.on('agent/pre-step', async ({ agent, messages, step }, next): Promise<PreStepDecision> => {
     if (isSubagent(agent)) return next();
     const downstream = await next();
     // 只在真正进入这一步之后才动状态机：下游 reject 时这一步不成立，
     // 先清零会把这次催办吞掉。
     if (downstream.kind !== 'enter') return downstream;
-    const notice = controller.step(agent, messages.some((message) => message.source.kind === 'user'));
+    // 回合边界取宿主给的 `step`：第一步就是新回合，不论它由用户、定时提醒、
+    // 队友消息还是 webhook 触发。用户插话（steer）落在回合中途，按来源单独认。
+    const freshInput = step === 1 || messages.some((message) => message.source.kind === 'user');
+    const notice = controller.step(agent, freshInput);
     if (notice === null) return downstream;
     return { ...downstream, messages: [...downstream.messages, notice] };
   });

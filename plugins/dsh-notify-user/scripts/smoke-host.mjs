@@ -66,10 +66,15 @@ function harness(threshold) {
         callId: `sub-${calls}`, rootCallId: 'call-parent', parent: Symbol('parent'), name, arguments: {}, signal, agent,
       }, { isError: false, content: [] }, async () => ({ kind: 'accept' }));
     },
-    /** 一步开始前；返回这一步真正会进入的决策。 */
-    step(agent, messages = []) {
+    /**
+     * 一步开始前；返回这一步真正会进入的决策。
+     * @param {object} agent - 这一步的 agent。
+     * @param {object[]} messages - 这一步收件箱里的消息。
+     * @param {number} stepNumber - 这一步在回合内的序号；1 表示新回合。
+     */
+    step(agent, messages = [], stepNumber = 2) {
       return ctx.waterfall('agent/pre-step', {
-        agent, messages, turn: 1, step: 1, signal,
+        agent, messages, turn: 1, step: stepNumber, signal,
       }, async () => ({ kind: 'enter', messages }));
     },
   };
@@ -188,7 +193,7 @@ await test('阈值 0 关闭催办', async () => {
   assert.equal(noticeOf(await h.step(agent)), undefined);
 });
 
-await test('用户消息清零', async () => {
+await test('用户插话清零', async () => {
   const agent = mainAgent();
   const h = harness(8);
   for (let index = 0; index < 8; index += 1) await h.rootCall(agent);
@@ -196,6 +201,26 @@ await test('用户消息清零', async () => {
   assert.equal(noticeOf(await h.step(agent, [user])), undefined);
   for (let index = 0; index < 7; index += 1) await h.rootCall(agent);
   assert.equal(noticeOf(await h.step(agent)), undefined, '清零后 7 次还不够');
+});
+
+await test('新回合第一步清零：定时提醒触发的回合不催', async () => {
+  const agent = mainAgent();
+  const h = harness(8);
+  for (let index = 0; index < 8; index += 1) await h.rootCall(agent);
+  const reminder = { role: 'user', content: [{ type: 'text', text: 'reminder' }], source: { kind: 'schedule' } };
+  assert.equal(noticeOf(await h.step(agent, [reminder], 1)), undefined, '新回合第一步不该催');
+  for (let index = 0; index < 7; index += 1) await h.rootCall(agent);
+  assert.equal(noticeOf(await h.step(agent)), undefined, '清零后 7 次还不够');
+  await h.rootCall(agent);
+  assert.ok(noticeOf(await h.step(agent)) !== undefined, '再满 8 次应当催');
+});
+
+await test('回合中途的上下文注入不清零', async () => {
+  const agent = mainAgent();
+  const h = harness(8);
+  for (let index = 0; index < 8; index += 1) await h.rootCall(agent);
+  const context = { role: 'user', content: [{ type: 'text', text: 'time' }], source: { kind: 'time-context', form: 'snapshot' } };
+  assert.ok(noticeOf(await h.step(agent, [context])) !== undefined, '上下文注入不该清零');
 });
 
 await test('子代理不计数、不注入', async () => {

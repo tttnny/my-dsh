@@ -65,7 +65,7 @@ test('汇报清零', () => {
   assert.equal(controller.step(who, false), null);
 });
 
-test('用户消息清零', () => {
+test('新回合或用户插话清零', () => {
   const controller = createNudgeController(() => 3);
   const who = agent();
   for (let index = 0; index < 3; index += 1) controller.toolCall(who);

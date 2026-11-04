@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-notify-user",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "给模型一条不结束本轮就能向用户汇报进度的通道；连续多次工具调用没汇报时，插件会催它发一条。",
   "type": "module",
   "main": "lib/index.js",
