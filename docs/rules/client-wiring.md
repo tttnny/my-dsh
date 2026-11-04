@@ -57,4 +57,15 @@ client-modules: require("<说明符>") missed the module table — not a platfor
 
 `plugins/dsh-model-submenu/scripts/smoke-client.mjs` 用真 `SlotCore` 钉住这三条：接管后第三方仍能注册，接管方重声明会抛，内置项卸载后子座位与贡献一起消失、接管项留下。
 
+## 接管座位的崩溃是整格永久退位
+
+keyed slot（`conversation.chat.node` 的 `assistant-step` 等）的接管项只要在渲染中抛一次错，框架就按 `reportEntryError(..., { abdicate: spec.kind !== 'chain' })` 把这条注册项移出候选集：**那一格整体、永久地落到内置渲染器，此后所有同 key 的行都不再渲染，直到页面重载或插件重注册**，而且控制台没有对应报错。所以症状不是「某一行少画了」，是「整个接管消失」。
+
+两个高发原因都来自宿主契约漂移：
+
+- 宿主把某个 owner prop 移进注册项 `inject`（例如 `fileMentions` 从 `ChatNodeOwnerProps` 移到 `inject`），插件仍从 props 读，调用 `undefined` 即抛；
+- 宿主删除了某个 prop 或组件（例如更早的 `renderMessageImages`），插件仍在用。
+
+`pnpm check` 与 jsdom 渲染自检都可能全绿：替身会替缺失的 prop/组件兜底，或该分支根本没有用例。**判据只有真浏览器**——接管生效时页面里必须出现插件自己的根标记（如 `dsh-ct-root`）与样式标签；数量突然为 0 就是已经退位。用 `node tools/gui-shot.mjs --session <id> --eval` 数标记、`--shot` 取图。
+
 插件配置页的静默失败（注册项 key 写歪、卡片没有入口、标题退回包名）在 [plugin-config-page.md](./plugin-config-page.md)「静默失败」。

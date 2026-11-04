@@ -25,6 +25,13 @@ node tools/kernel-diff.mjs <上一版> --from-source --declared --presets
 
 **完成判据**：能说出「我们依赖的包里哪几个动了、动了哪些文件」与「官方 preset 动没动」。官方 preset 动了就进第 3 步重抄；一字未动就只跟版本号。
 
+另有一条只在复核源码时才会踩：本机 checkout 的 HEAD **不保证**等于目标 `dsh-v<版本>` tag——它可能领先若干提交，也可能尚未合入该发布线。凡是从**工作树**读宿主源码的自检（`plugins/*/scripts/test-host-parity.mjs`、`plugins/*/scripts/test-anchors.mjs`）默认验的是 HEAD 而不是目标版本，绿灯不代表契约在目标版本上成立。复核时先把 tag 抽成目录再指过去：
+
+```bash
+git -C <源码目录> archive dsh-v<版本> packages | tar -x -C tmp/<目录>
+DSH_SOURCE_DIR=tmp/<目录> pnpm test    # 在包目录里跑
+```
+
 ## 3. 跟 preset
 
 ```bash
@@ -60,6 +67,8 @@ node tools/host-smoke.mjs
 ```
 
 `check.mjs` 跑一致性检查与全部包的 `check`；`host-smoke.mjs` 起第二个实例判装载。界面要在真浏览器里点一遍：逐插件的判据在 `plugin-fleet-sweep` 技能里，取图与量几何用 `tools/gui-shot.mjs`。
+
+逐包 `pnpm check` 绿**不等于页面没坏**：宿主删除 props / 事件 / slot 造成的漂移，在纯 JS 包里不会被 `tsc` 挡住；keyed slot 的接管项抛错又会**静默整格退位**（见 [client-wiring.md](./client-wiring.md)「接管座位的崩溃是整格永久退位」）。所以这一步的真浏览器验证是必做项，不是可选。
 
 **完成判据**：`host-smoke` PASS；已装插件的入口、样式标签与交互面在页面上都在，页面零报错。
 
