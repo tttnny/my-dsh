@@ -4,7 +4,7 @@
 
 | 这一步在做什么 | 命令 |
 | --- | --- |
-| 找 `dsh` 二进制、内核版本与包仓、内核自带的官方 preset、DSH 源码 checkout、profile、正在跑那个实例的日志 | `node tools/dsh-env.mjs [--json] [--dsh <版本>]` |
+| 找 `dsh` 二进制、在用的内核与已装清单、内核包仓、内核自带的官方 preset、DSH 源码 checkout、profile、正在跑那个实例的日志 | `node tools/dsh-env.mjs [--json] [--dsh <版本>]` |
 | 改完包 / 根 README / 规则文档后查台账一致性 | `node tools/assert-ledger.mjs [--dsh <版本>] [--quiet]` |
 | 仓库级 check：台账 + 每个包自己的 `check` + 产物新鲜度（`assert-artifacts` 放在最后；CI 跑的就是它） | `node tools/check.mjs [--ledger-only] [--json]` |
 | 铺一个新插件的骨架（宿主 + 浏览器两半边，生成即 `pnpm check` 绿；默认还会跑 `pnpm install`） | `node tools/new-plugin.mjs dsh-<name> [--title 中文名] [--tool 工具名] [--host-only] [--no-install] [--link] [--out 目录]` |
@@ -28,7 +28,7 @@
 
 - 参数写成 `--k v`；`--json` 给机器读；退出码 `0` 通过、`1` 不通过、`2` 跑不起来。看到 `2` 先查是不是缺 `node_modules`（`check.mjs` 对缺依赖的包报 2）或参数写错，别当成「检查不通过」去改代码。
 - 找引用先用 `grep -l` 取文件清单再逐文件读：`grep -rn '<包名>' --exclude-dir={node_modules,lib,tmp,archive}` 会把匹配行所在的整行打出来，而 `lib/` 的声明文件里一行注释可能就有几千字，一次输出几十 KB 只为了几条结果。
-- 判据只读本仓库与本机 DSH 的状态（`package.json`、`docs/rules/`、`$DSH_HOME`、已装内核与它自带的官方 preset、`DSH_SOURCE` 指向的源码 checkout），不联网。
+- 判据只读本仓库与本机 DSH 的状态（`package.json`、`docs/rules/`、`$DSH_HOME`、在用内核与它自带的官方 preset、`DSH_SOURCE` 指向的源码 checkout），不联网。
   会联网的是：`pnpm install` 及其两个内置调用者（`new-plugin.mjs` 默认会在生成的包里跑它、`dsh-baseline.mjs --write` 会在改动的包里跑它）、`tools/ci-check.mjs`、`presets/plugin-upgrade-cordis/check-upstream.mjs`（在线模式）。`dev-link.mjs --write`（`pnpm add --offline`）与 `mutate.mjs` 不联网。
 - 中间产物一律落仓库根的 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`、`tmp/ui-preview/`、`tmp/ui.png` 这类图。`gui-shot.mjs` 的浏览器用户目录 `tmp/chrome-profile/` 每趟自己重建、跑完删掉，不留登录态。各包自检的临时家目录（`chtest-*`、`suite-*`、`reply-*`、`judge-*`）也落在这里，包目录里不新建 `tmp/`。
 - **工具与规则是一件事的两处**：`assert-ledger.mjs` 里的每条判据都要有出处——出处在 `docs/rules/` 里的就同步改两边；出处在实测记录或某份 README 的硬声明里的（判据 14 的「N 个字段、M 条描述」源自插件 README 自己），改那份声明时同样要回来对判据。不允许只改一边。

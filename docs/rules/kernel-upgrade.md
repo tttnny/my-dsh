@@ -80,7 +80,7 @@ node tools/ci-check.mjs
 | 两版之间宿主包改了什么 | `node tools/kernel-diff.mjs <旧> --from-source [--declared]` |
 | 官方 preset 动没动 | `node tools/kernel-diff.mjs <旧> --from-source --declared --presets` |
 | 官方 preset 动在哪几行 | `node tools/preset-copy.mjs <id> --official-diff` |
-| 抄本与已装官方是否一致 | `node tools/preset-copy.mjs <id> --diff` |
+| 抄本与在用内核的官方是否一致 | `node tools/preset-copy.mjs <id> --diff` |
 | 把官方改动合并回抄本 | `node tools/preset-copy.mjs <id> --recopy` |
 | 提示词变量是否还都注册着 | `node tools/preset-copy.mjs <id> --variables` |
 | 随包技能能不能被真装载 | `node tools/probes/preset-skills.mjs --preset <id>` |

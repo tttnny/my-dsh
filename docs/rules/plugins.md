@@ -23,7 +23,7 @@
 - `engines.dsh` 写**大于等于当前版本**的 SemVer 范围（`>=` + 当前 DSH 版本），不写精确版本；当前版本以运行中的 DSH 为准，本文件不复述具体号。
 - 所有 `@deepseek-ai/dsh-*` 的 `peerDependencies` / `devDependencies` 与 `engines.dsh` 写**同一个**范围字符串；改完跑 `pnpm install --lockfile-only` 同步 lock 的 importers 段。
 - `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 是独立基线，照各自现值声明，不参与上面这条。
-- **内核升版后的批量跟随**：`node tools/dsh-baseline.mjs --write` 一次改齐全部包的上面三处（目标值从已装内核读；有依赖声明的包改完跑 `pnpm install`，没有依赖的包跳过安装并删掉空 lock）；`--bump patch` 顺带升版本号。哪一处漂了由 `node tools/assert-ledger.mjs` 抓，落盘前可以先跑一次 `dsh-baseline.mjs --check` 看齐没齐。
+- **内核升版后的批量跟随**：`node tools/dsh-baseline.mjs --write` 一次改齐全部包的上面三处（目标值从运行中内核读，没有运行实例时取最近启动的实例；有依赖声明的包改完跑 `pnpm install`，没有依赖的包跳过安装并删掉空 lock）；`--bump patch` 顺带升版本号。哪一处漂了由 `node tools/assert-ledger.mjs` 抓，落盘前可以先跑一次 `dsh-baseline.mjs --check` 看齐没齐。
 - **手工写死的内核版本也要跟**：自检脚本的断言与注释、`README.md` 与其他非 `DETAILS.md` 的文档、`<id>.patch.yml` 里写到的内核版本，必须与本包 `engines.dsh` 同串。只查这几个「规则面」——`DETAILS.md` 的历史实测记录与 `skills/`、`upstream/` 的 vendored 内容不查，它们记的是当时的版本，改它们等于篡改证据。
 - 兄弟 preset 的同一规则见 [presets.md](./presets.md)「版本与依赖」。
 - **一次完整跟随**（先看宿主变动、再 preset、再 plugins、最后按 CI 重跑）见 [kernel-upgrade.md](./kernel-upgrade.md)；这一节只写声明怎么改。
@@ -63,7 +63,7 @@
 
 本机钩子的两道短板它都补上：钩子只看本次改动的包，且只有装了钩子的机器才有。`node tools/check.mjs` 在仓库根一次跑「台账 + 全部包的 `check` + 产物新鲜度」；CI 在每个有依赖的包目录 `pnpm install --frozen-lockfile` 之后跑同一个脚本，所以「换台机器能不能过」有一份可复现的答案。
 
-三件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 这类要真内核的检查只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收；`assert-ledger.mjs` 的判据 9（开发副本是不是软链）与判据 11（preset 抄本与已装内核比对）都读本机的 `$DSH_HOME` 与已装内核，没装就跳过且退出码仍为 0，这两条不能靠 CI 兜底。
+三件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 这类要真内核的检查只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收；`assert-ledger.mjs` 的判据 9（开发副本是不是软链）与判据 11（preset 抄本与运行中内核比对）都读本机的 `$DSH_HOME` 与内核，没装就跳过且退出码仍为 0，这两条不能靠 CI 兜底。
 
 **每个包的 `pnpm-workspace.yaml` 是安装契约的一部分，别当本机偏好**。pnpm 11 起有两条默认安全策略，干净环境（CI 就是这样）一定生效：拒绝安装发布不满 24 小时的包，并拒绝执行未登记的依赖构建脚本。本仓库刻意跟随内核的 alpha 版本线——升版当天就要装——所以这两条一定撞上，表现是 CI 的 `install` 一步红、而本机全绿。两处各治一半，缺一不可：
 

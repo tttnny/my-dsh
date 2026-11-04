@@ -14,7 +14,7 @@
  *   9. web 开发 profile 里的自有包是软链、指向本仓库、版本号与仓库一致（没装这个 profile 的机器跳过这一项）
  *  10. 规则面（`README.md`、DETAILS 以外的 `.md`、`.patch.yml`、`.mjs` / `.js` / `.ts`）里的内核
  *      版本字面量与本包 `engines.dsh` 同串；历史实测记录（`DETAILS.md`）与 vendored 内容不查
- *  11. 抄自官方 preset 的 `<id>.patch.yml` 与已装内核的官方同名文件逐行一致，只放行已登记的差异
+ *  11. 抄自官方 preset 的 `<id>.patch.yml` 与运行中内核的官方同名文件逐行一致，只放行已登记的差异
  *  12. 每个包钉住 pnpm 版本；有依赖的包另有 `pnpm-workspace.yaml` 放行内核 alpha 版本与构建脚本
  *  13. 归档的包只在 `archive/` 下被提到：除 `archive/`、`tmp/`、构建产物与随包 vendored 内容外，
  *      规则文档、工具脚本、根 README 与各包源码里都不出现它的包名或目录名，`plugins/<dir>` 也必须是活目录

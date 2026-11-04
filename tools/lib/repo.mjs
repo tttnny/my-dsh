@@ -1,5 +1,5 @@
 /**
- * tools/ 各脚本共用的底座：找仓库根、列出包、读 JSON、找已装内核与 profile。
+ * tools/ 各脚本共用的底座：找仓库根、列出包、读 JSON、找在用内核与 profile。
  *
  * 零依赖，只用 node: 内置模块——仓库根不放 package.json，也不放依赖安装（见 AGENTS.md 第 7 条）。
  * 每个工具都 `node tools/<name>.mjs` 直接跑，不需要任何安装步骤。
@@ -163,7 +163,51 @@ export function installedKernels() {
 }
 
 /**
- * 取一个内核：默认取已装的最高版本。
+ * 启动器的配置文件：实例、版本与设置都在这里。
+ * @returns {any|undefined} 解析结果；没有启动器或读不出来时 undefined。
+ */
+export function launcherConfig() {
+  const launcher = launcherDir();
+  if (launcher === undefined) return undefined;
+  const path = join(launcher, 'config.json');
+  if (!existsSync(path)) return undefined;
+  try {
+    return readJson(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 这台机器「在用」的那个内核：先看活动 profile 正在运行的实例，没有再退到最近一次启动的实例。
+ * 内核版本以运行中的 DSH 为准（见 docs/rules/plugins.md「版本与依赖」），不是已装的最高版本。
+ * @param {string} [profile] - profile 名，默认 `$DSH_PROFILE` 或 `web`。
+ * @returns {{version: string, dir: string, bin: string, pkg: any}|undefined} 内核安装树；判断不出来时 undefined。
+ */
+export function runningKernel(profile = process.env.DSH_PROFILE ?? 'web') {
+  const config = launcherConfig();
+  if (config === undefined) return undefined;
+  const instances = Array.isArray(config.instances) ? config.instances : [];
+  const versions = Array.isArray(config.versions) ? config.versions : [];
+  const kernels = installedKernels();
+  /** 实例 → 它启动的那个内核；版本目录不在本机时按版本号找。 */
+  const kernelOf = (instance) => {
+    const version = versions.find((entry) => entry.id === instance?.version_id);
+    if (version === undefined) return undefined;
+    return kernels.find((kernel) => kernel.dir === version.dir)
+      ?? kernels.find((kernel) => kernel.version === version.version);
+  };
+  const live = new Set(runningInstances().filter((instance) => instance.profile === profile).map((instance) => instance.id));
+  const running = kernelOf(instances.find((instance) => live.has(instance.id)));
+  if (running !== undefined) return running;
+  const last = instances.find((instance) => instance.id === config.settings?.last_instance_id);
+  if (last !== undefined && (last.last_profile ?? last.default_profile) === profile) return kernelOf(last);
+  return undefined;
+}
+
+/**
+ * 取一个内核：默认取这台机器在用的那个（运行中实例的内核，没有运行实例时取最近启动的实例），
+ * 都判断不出来才退到已装的最高版本。
  * @param {string} [version] - 指定版本号时必须已装。
  * @returns {{version: string, dir: string, bin: string, pkg: any}} 内核安装树。
  */
@@ -172,7 +216,7 @@ export function currentKernel(version) {
   if (kernels.length === 0) {
     throw new Error(`找不到已装内核：${launcherDir() ?? '（连启动器目录都没有）'}/versions 下没有 node_modules/@deepseek-ai/dsh`);
   }
-  if (version === undefined) return kernels[0];
+  if (version === undefined) return runningKernel() ?? kernels[0];
   const hit = kernels.find((kernel) => kernel.version === version);
   if (hit === undefined) {
     throw new Error(`内核 ${version} 没有安装；已装的是 ${kernels.map((k) => k.version).join('、')}`);

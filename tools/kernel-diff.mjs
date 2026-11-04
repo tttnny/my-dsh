@@ -23,7 +23,7 @@ import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dshSourceDir, git, sourceTag, sourceTags } from './lib/dsh-source.mjs';
-import { currentKernel, declaredRanges, installedKernels, listPackages, repoRoot } from './lib/repo.mjs';
+import { declaredRanges, installedKernels, listPackages, repoRoot } from './lib/repo.mjs';
 
 /** 只出现、不带值的开关。它们后面那个词是位置参数，不能被吃掉。 */
 const FLAGS = new Set(['--from-source', '--declared', '--presets', '--all', '--all-paths', '--list']);
@@ -115,12 +115,12 @@ if (fromSource) {
   }
   let newerVersion = args._[1];
   if (newerVersion === undefined) {
-    try {
-      newerVersion = currentKernel().version;
-    } catch (error) {
-      console.error(`kernel-diff: 没给新版本，也读不到已装内核（${error.message}）`);
+    if (kernels.length === 0) {
+      console.error('kernel-diff: 没给新版本，这台机器也没有已装内核');
       process.exit(2);
     }
+    // 比的是「装上的最新一版」，不是正在运行的那一版：升完还没启动时也要能看差异。
+    newerVersion = kernels[0].version;
   }
   const olderTag = sourceTag(olderVersion);
   const newerTag = sourceTag(newerVersion);

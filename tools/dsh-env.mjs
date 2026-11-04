@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * 一条命令打出这台机器上「跑 DSH」要用到的全部路径与版本：DSH 主目录、profile、已装内核、
- * `dsh` 二进制、内核对齐目标、启动器目录、运行中实例的地址与实例日志，以及 DSH 源码
- * checkout（内核升版时按它的 `dsh-v<版本>` tag 比两版之间的差异）。
+ * 一条命令打出这台机器上「跑 DSH」要用到的全部路径与版本：DSH 主目录、profile、在用的内核
+ * 与已装清单、`dsh` 二进制、内核对齐目标、启动器目录、运行中实例的地址与实例日志，以及 DSH
+ * 源码 checkout（内核升版时按它的 `dsh-v<版本>` tag 比两版之间的差异）。
  *
  * 文档里此前写的是 `<DSH 安装>` 这类占位——每个 agent 都要自己去 Application Support 里翻一遍。
  * 这里把它变成一次查询。
  *
  * 用法：
  *   node tools/dsh-env.mjs            # 人读的一行一项
- *   node tools/dsh-env.mjs --dsh <版本> # 指定内核版本（默认取已装最高版本）
+ *   node tools/dsh-env.mjs --dsh <版本> # 指定内核版本（默认取运行中实例的内核）
  *   node tools/dsh-env.mjs --json     # 机器读
  */
 import { existsSync, realpathSync } from 'node:fs';
@@ -19,6 +19,7 @@ import { dshSourceDir } from './lib/dsh-source.mjs';
 import {
   currentKernel,
   dshHome,
+  installedKernels,
   kernelBaselines,
   kernelPresetsDir,
   launcherDir,
@@ -43,6 +44,7 @@ const args = parseArgs(process.argv.slice(2));
 const root = repoRoot(resolve(join(import.meta.dirname, '..')));
 const home = dshHome();
 const kernel = currentKernel(typeof args.dsh === 'string' ? args.dsh : process.env.DSH_KERNEL_VERSION);
+const installed = installedKernels();
 const baselines = kernelBaselines(kernel);
 const launcher = launcherDir();
 const activeProfile = process.env.DSH_PROFILE ?? 'web';
@@ -58,6 +60,7 @@ const report = {
   profileExists: profile !== undefined,
   kernelVersion: kernel.version,
   kernelDir: kernel.dir,
+  installedKernels: installed.map((entry) => entry.version),
   kernelPkg: join(kernel.dir, 'node_modules/@deepseek-ai/dsh/package.json'),
   kernelReal: realpathSync(join(kernel.dir, 'node_modules/@deepseek-ai/dsh')),
   kernelStore: join(kernel.dir, 'node_modules/.pnpm'),
@@ -78,6 +81,7 @@ if (args.json === true) {
     ['DSH_HOME', report.dshHome],
     ['profile', `${report.profile}${report.profileExists ? '' : '（不存在）'} → ${report.profileDir}`],
     ['内核', `${report.kernelVersion}（${report.kernelDir}）`],
+    ['已装内核', report.installedKernels.map((version) => (version === report.kernelVersion ? `${version} ← 在用` : version)).join('、')],
     ['内核实现', report.kernelReal],
     ['内核包仓', report.kernelStore],
     ['官方 preset', report.kernelPresetsDir ?? '（这台机器没装 @deepseek-ai/dsh-web-app）'],

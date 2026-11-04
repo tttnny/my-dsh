@@ -58,11 +58,11 @@ preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂
 
 ## 抄本基线
 
-抄自官方 `@deepseek-ai/dsh-web-app/presets/<官方 id>.patch.yml` 的 `<id>.patch.yml`，必须与**已装内核**里那一份同版本：官方可能动，也可能一字未动；抄本落后不报错、只静默与官方不一致，唯一会当场炸的是引用了已被删掉的提示词变量（如 `0.2.0-rc.2` 删掉的 `{{cwd}}`：变量严格解析，抛错即整轮请求失败）。官方动了就按该 preset 的 `UPSTREAM.md` 重抄。
+抄自官方 `@deepseek-ai/dsh-web-app/presets/<官方 id>.patch.yml` 的 `<id>.patch.yml`，必须与**运行中内核**里那一份同版本：官方可能动，也可能一字未动；抄本落后不报错、只静默与官方不一致，唯一会当场炸的是引用了已被删掉的提示词变量（如 `0.2.0-rc.2` 删掉的 `{{cwd}}`：变量严格解析，抛错即整轮请求失败）。官方动了就按该 preset 的 `UPSTREAM.md` 重抄。
 
-三件事各有命令：`node tools/preset-copy.mjs <id> --official-diff` 看两版官方动了哪几行；`--recopy` 把官方改动三方合并回抄本并保留登记的差异（base 是抄本顶部 `# from dsh <版本>` 记的那一版）；`--diff` 按登记表的归一规则查抄本与已装官方是否一致（与 `assert-ledger.mjs` 判据 11 同一套规则）。
+三件事各有命令：`node tools/preset-copy.mjs <id> --official-diff` 看两版官方动了哪几行；`--recopy` 把官方改动三方合并回抄本并保留登记的差异（base 是抄本顶部 `# from dsh <版本>` 记的那一版）；`--diff` 按登记表的归一规则查抄本与运行中内核的官方是否一致（与 `assert-ledger.mjs` 判据 11 同一套规则）。
 
-「抄的是哪一个、保留哪些差异」登记在 `tools/lib/preset-copies.json`。没登记会红；已登记的差异之外还有一行不一致，也红。归一规则由 `tools/lib/preset-copies.mjs` 提供，`assert-ledger.mjs` 与 `tools/preset-copy.mjs` 共用一份。比对的对象是已装内核自带的官方文件，所以它跟着内核走——官方目录在哪由 `node tools/dsh-env.mjs` 打出。自己写的、不抄官方的 preset，`official` 写 `null`，只登记「为什么不算抄本」。
+「抄的是哪一个、保留哪些差异」登记在 `tools/lib/preset-copies.json`。没登记会红；已登记的差异之外还有一行不一致，也红。归一规则由 `tools/lib/preset-copies.mjs` 提供，`assert-ledger.mjs` 与 `tools/preset-copy.mjs` 共用一份。比对的对象是运行中内核自带的官方文件，所以它跟着内核走——官方目录在哪由 `node tools/dsh-env.mjs` 打出。自己写的、不抄官方的 preset，`official` 写 `null`，只登记「为什么不算抄本」。
 
 ## order 台账
 

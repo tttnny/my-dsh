@@ -7,7 +7,8 @@
  * `pnpm install` 重写 lock——上一轮 alpha.2 → alpha.3 就是 7 个包各一次手工改动（caret 也是
  * 那么掉的：两个包的 cordis 被写成了精确版本，见 tools/assert-ledger.mjs 抓出来的那两处）。
  *
- * 目标值从**已装内核**读：版本号取 `@deepseek-ai/dsh` 的 version，cordis 与 schemastery 取
+ * 目标值从**运行中内核**读（没有运行实例时取最近启动的实例，再没有才取已装最高版本）：
+ * 版本号取 `@deepseek-ai/dsh` 的 version，cordis 与 schemastery 取
  * 内核自己声明的版本再按本仓库写法组 caret 区间。默认干跑（只报不改），`--write` 才落盘。
  *
  * 用法：
