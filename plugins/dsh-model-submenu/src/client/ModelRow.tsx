@@ -20,6 +20,8 @@ export type StarMode = 'static' | 'interactive'
 export interface ModelRowProps {
   /** The model's catalog name. */
   readonly name: string
+  /** Optional catalog badge shown beside the name. */
+  readonly badge?: ReactNode | undefined
   /** Whether this row is the model in use. */
   readonly selected: boolean
   /** Whether a selection is in flight, which locks the row. */
@@ -52,13 +54,14 @@ export interface ModelRowProps {
  * @returns the row element.
  */
 export function ModelRow({
-  name, selected, busy, star, favorited, meta, starLabel,
+  name, badge, selected, busy, star, favorited, meta, starLabel,
   starTabStop = false, rowTabIndex, onPick, onFocusRow, onToggleFavorite, children,
 }: ModelRowProps) {
   const copy = (
     <>
       <span className={css.rowCopy}>
         <span className={css.rowName}>{name}</span>
+        {badge}
         {meta !== undefined && meta !== '' && <span className={css.rowMeta}>{meta}</span>}
       </span>
     </>

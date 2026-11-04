@@ -53,18 +53,18 @@ function harness(threshold) {
     ctx,
     tool: ctx.tools.get('notify_user'),
     /** 一次模型直接发起的工具调用（根调用）。 */
-    rootCall(agent, name = 'read') {
+    rootCall(agent, name = 'read', result = { isError: false, content: [] }) {
       calls += 1;
-      return ctx.waterfall('tools/post-execute', {
+      return ctx.emit('tools/result', {
         callId: `call-${calls}`, rootCallId: `call-${calls}`, name, arguments: {}, signal, agent,
-      }, { isError: false, content: [] }, async () => ({ kind: 'accept' }));
+      }, result);
     },
     /** 一次 PTC 程序内部的子调用（带 parent）。 */
     nestedCall(agent, name = 'read') {
       calls += 1;
-      return ctx.waterfall('tools/post-execute', {
+      return ctx.emit('tools/result', {
         callId: `sub-${calls}`, rootCallId: 'call-parent', parent: Symbol('parent'), name, arguments: {}, signal, agent,
-      }, { isError: false, content: [] }, async () => ({ kind: 'accept' }));
+      }, { isError: false, content: [] });
     },
     /**
      * 一步开始前；返回这一步真正会进入的决策。
@@ -239,6 +239,22 @@ await test('下游拒绝这一步时不追加消息，也不吞掉这次催办',
   }, async () => ({ kind: 'reject' }));
   assert.equal(decision.kind, 'reject');
   assert.ok(noticeOf(await h.step(agent)) !== undefined, '拒绝后下一次进入应当仍能催');
+});
+
+await test('派发前被取消的调用不计数（tools/result 口径）', async () => {
+  const agent = mainAgent();
+  const h = harness(2);
+  const aborted = {
+    isError: true,
+    error: { message: 'aborted before dispatch', info: { code: 'ABORTED_BEFORE_DISPATCH' } },
+    content: [],
+  };
+  await h.rootCall(agent, 'read', aborted);
+  await h.rootCall(agent, 'read', aborted);
+  await h.rootCall(agent, 'read');
+  assert.equal(noticeOf(await h.step(agent)), undefined, '两次取消 + 一次真实调用，还差一次才到阈值');
+  await h.rootCall(agent, 'read');
+  assert.ok(noticeOf(await h.step(agent)) !== undefined, '第二次真实调用到阈值，应当催');
 });
 
 console.log(`${passed}/${total} passed`);

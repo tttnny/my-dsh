@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import {
   IconChevronDownOutlineRegular,
   IconFlatListOutlineRegular,
   IconWarningOutlineRegular,
   MenuSurface,
+  StateDot,
+  Tag,
   Toast,
+  useAnchoredPosition,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelDirectoryState, ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -53,7 +56,7 @@ const cls = (...parts: readonly (string | false | undefined)[]): string => parts
  * Closing the menu never writes anything, and the picker reads the level the
  * Host already accepted, so its "current" reading is never stale.
  */
-export function ModelSubmenu({ locked, available, directory, load, select, t, factsSource }: ModelSubmenuProps) {
+export function ModelSubmenu({ locked, available, directory, load, select, resolveText, t, factsSource }: ModelSubmenuProps) {
   const state = useSyncExternalStore((fn) => directory.subscribe(fn), () => directory.getSnapshot())
   const [open, setOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -64,7 +67,6 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
-  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null)
   const id = useId()
 
   const groups = state.groups
@@ -85,6 +87,13 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
   const busy = state.status === 'selecting'
   const live = useMemo(() => selectionOf(state), [state])
   const reason = useMemo(() => reasoningOf(groups), [groups])
+  /** Resolve one catalog badge to its localized text and tone, matching the host seat. */
+  const badgeOf = (model: CatalogModel) => model.badge === undefined
+    ? undefined
+    : <Tag tone={model.badge.tone} className={css.rowBadge}>{resolveText(model.badge.text)}</Tag>
+  const triggerBadge = currentModel?.badge === undefined
+    ? null
+    : <Tag tone={currentModel.badge.tone} className={css.triggerBadge}>{resolveText(currentModel.badge.text)}</Tag>
   const facts = useSyncExternalStore((fn) => factsSource.subscribe(fn), () => factsSource.getSnapshot())
 
   const menuRows = useMemo(() => currentGroup === undefined ? [] : orderWithFavorites(
@@ -144,32 +153,16 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
     return () => { cancelAnimationFrame(frame) }
   }, [open])
 
-  useLayoutEffect(() => {
-    if (!open) {
-      setMenuPos(null)
-      return
-    }
-    const place = () => {
-      const rect = triggerRef.current?.getBoundingClientRect()
-      if (rect === undefined) return
-      const MARGIN = 12
-      const lw = menuRef.current?.offsetWidth ?? 0
-      const lh = menuRef.current?.offsetHeight ?? 0
-      // Right edges align, so the card grows leftward from the trigger's corner.
-      let x = rect.right - lw
-      let y = rect.top - 8 - lh
-      if (lw > 0) x = Math.min(Math.max(x, MARGIN), window.innerWidth - lw - MARGIN)
-      if (lh > 0) y = Math.min(Math.max(y, MARGIN), window.innerHeight - lh - MARGIN)
-      setMenuPos({ left: x, top: y })
-    }
-    place()
-    window.addEventListener('scroll', place, true)
-    window.addEventListener('resize', place)
-    return () => {
-      window.removeEventListener('scroll', place, true)
-      window.removeEventListener('resize', place)
-    }
-  }, [open, state])
+  const menuPos = useAnchoredPosition({
+    open: open && available,
+    anchorRef: triggerRef,
+    panelRef: menuRef,
+    side: 'top',
+    align: 'end',
+    gap: 8,
+    margin: 12,
+    layoutKey: `${state.status}:${String(menuRows.length)}:${String(choices.length)}`,
+  })
 
   if (!available) return null
 
@@ -299,9 +292,12 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
         }}
       >
         <IconFlatListOutlineRegular className={css.triggerIcon} size={16} />
+        {triggerBadge}
         <span className={css.triggerLabel}>{modelLabel}</span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
-        <IconChevronDownOutlineRegular className={cls(css.chevron, open && css.chevronOpen)} />
+        {busy
+          ? <StateDot state="ongoing" />
+          : <IconChevronDownOutlineRegular className={cls(css.chevron, open && css.chevronOpen)} />}
       </button>
       {open && createPortal((
         <MenuSurface
@@ -332,6 +328,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
               <ModelRow
                 key={model.id}
                 name={model.name}
+                badge={badgeOf(model)}
                 selected={current !== null && currentGroup !== undefined && current.provider === currentGroup.id && current.model === model.id}
                 busy={busy}
                 star="static"
@@ -384,6 +381,7 @@ export function ModelSubmenu({ locked, available, directory, load, select, t, fa
       ), document.body)}
       <ModelPicker
         open={pickerOpen}
+        resolveText={resolveText}
         state={state}
         live={live}
         facts={facts}

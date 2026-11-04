@@ -128,8 +128,16 @@ export interface AssistantStepProps {
   /** 收尾轮次的文件提及解析；由注册项 inject 提供，缺省时不画提及链接。 */
   readonly fileMentions?: (owner: unknown) => MarkdownFileMentions | undefined;
   readonly usePresentation: <R>(select: (policy: PresentationLike) => R) => R;
+  /**
+   * 宿主每个 keyed 节点渲染器都拿得到的折叠钩子（`ChatNodeSeat` 提供）。缺失时退回
+   * 本文件内的等价实现，避免在没有 hookContext 的渲染路径上整格退位。
+   */
+  readonly useGroupAction?: GroupActionLike;
   readonly t: (key: string, params?: Record<string, unknown>) => string;
 }
+
+/** 折叠钩子的结构镜像：传隐藏态与揭示回调，返回承载 hidden 的稳定 ref。 */
+type GroupActionLike = (hidden: boolean, reveal: () => void) => React.RefObject<HTMLDivElement | null>;
 
 // ---- 与宿主逐字对齐的小件 ----
 
@@ -220,6 +228,11 @@ function useSearchableHidden(hidden: boolean, reveal: () => void): React.RefObje
     };
   }, [reveal]);
   return ref;
+}
+
+/** 缺失宿主折叠钩子时的等价实现：与宿主 useFlowHidden 的非动效路径一致。 */
+function useFallbackGroupAction(hidden: boolean, reveal: () => void): React.RefObject<HTMLDivElement | null> {
+  return useSearchableHidden(hidden, reveal);
 }
 
 const subscribeSettings = (listener: () => void): (() => void) => settingsStore.subscribe(listener);
@@ -534,7 +547,8 @@ function ProseBlock({
 
 export const AssistantStepView = memo(function AssistantStepView(props: AssistantStepProps): ReactElement | null {
   ensureAssistantStyles();
-  const { store, node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderFactorySlot, loadImage, fileMentions, usePresentation, t } = props;
+  const { store, node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderFactorySlot, loadImage, fileMentions, usePresentation, useGroupAction, t } = props;
+  const groupAction: GroupActionLike = typeof useGroupAction === 'function' ? useGroupAction : useFallbackGroupAction;
   const data = node.data;
   const streaming = data.status === 'running';
   const interrupted = data.status === 'interrupted';
@@ -722,6 +736,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
               key: entry.key,
               hidden: reasoningHidden,
               reveal: revealProcess,
+              useGroupAction: groupAction,
               children: React.createElement(ReasoningRow, {
                 text: entry.text,
                 running: streaming && entry.blockIndex === last,
@@ -772,9 +787,12 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
 function ProcessReasoning(props: {
   hidden: boolean;
   reveal: () => void;
+  useGroupAction: GroupActionLike;
   children: ReactNode;
 }): ReactElement {
-  const ref = useSearchableHidden(props.hidden, props.reveal);
+  // 与宿主 `AssistantMarkdown` 的 ProcessReasoning 同形：折叠交给座位下发的钩子，
+  // 它是宿主折叠动效与页内搜索揭示的唯一来源。
+  const ref = props.useGroupAction(props.hidden, props.reveal);
   return React.createElement(
     'div',
     { ref, 'data-turn-process-inline': props.hidden || void 0 },

@@ -10,7 +10,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 这条命令把包名写进 profile 的 `dependencies` 与 `dsh.profile.bundles`，包内 `cordis.patch.yml` 随之插入一条 root loader entry（`id: dsh-notify-user`）。这一行同时承载两个半边：
 
-- 宿主半边注册 `notify_user` 工具，并把催办状态机接到 `tools/post-execute` 与 `agent/pre-step` 两条事件上；
+- 宿主半边注册 `notify_user` 工具，并把催办状态机接到 `tools/result`（纯观察）与 `agent/pre-step` 两条事件上；
 - 浏览器半边注册进度卡（`tool.call.toolview`，key 是 `notify_user`）与插件页配置卡（`plugins.bundle.config`，key 是包名）。
 
 行 id 同时是配置命名空间：宿主 `Config` 与浏览器 `ctx.configForms.get('dsh-notify-user')` 读写的是同一份值。

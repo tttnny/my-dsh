@@ -29,9 +29,11 @@ import {
   reasoningOf,
   rowsForTab,
   searchRows,
+  type CatalogModel,
   type ModelRow as CatalogRow,
   type PickerTab,
 } from './rows.ts'
+import { Tag, isMobileDevice } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelFactsLookup } from './facts-source.ts'
 import type { Selection } from './selection.ts'
 import { planModelCommit } from './selection.ts'
@@ -41,6 +43,8 @@ import css from './ModelSubmenu.module.css'
 export interface ModelPickerProps {
   /** Whether the dialog is showing. */
   readonly open: boolean
+  /** Resolve a catalog badge's localized text for the active language. */
+  readonly resolveText: (text: NonNullable<CatalogModel['badge']>['text']) => string
   /** The shared directory snapshot. */
   readonly state: ModelDirectoryState
   /** The selection in force, null before a first selection resolves. */
@@ -67,7 +71,7 @@ export interface ModelPickerProps {
  * @returns the dialog; nothing while closed.
  */
 export function ModelPicker({
-  open, state, live, facts, favorites, busy, onPick, onToggleFavorite, onReload, onClose, t,
+  open, resolveText, state, live, facts, favorites, busy, onPick, onToggleFavorite, onReload, onClose, t,
 }: ModelPickerProps & PropsLocale<'modelSubmenu'>) {
   const id = useId()
   const searchRef = useRef<HTMLInputElement | null>(null)
@@ -97,7 +101,10 @@ export function ModelPicker({
     setTab(ALL_TAB)
     setHighlight(0)
     if (listRef.current !== null) listRef.current.scrollTop = 0
-    const frame = requestAnimationFrame(() => { searchRef.current?.focus() })
+    // 粗指针设备不自动聚焦文本输入：移动端弹键盘会顶起布局，宿主座位也这样守。
+    const frame = requestAnimationFrame(() => {
+      if (!isMobileDevice()) searchRef.current?.focus()
+    })
     return () => { cancelAnimationFrame(frame) }
   }, [open])
 
@@ -246,6 +253,9 @@ export function ModelPicker({
           <div key={`${row.provider}/${row.model}`} data-row-index={index} id={`${id}-row-${index}`}>
             <ModelRow
               name={row.entry.name}
+              badge={row.entry.badge === undefined
+                ? undefined
+                : <Tag tone={row.entry.badge.tone} className={css.rowBadge}>{resolveText(row.entry.badge.text)}</Tag>}
               selected={live?.provider === row.provider && live.model === row.model}
               busy={busy}
               star="interactive"

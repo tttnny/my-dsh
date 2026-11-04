@@ -2,7 +2,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import type { ContextFormed } from '@deepseek-ai/dsh-llm';
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent';
 import type { UserMessage } from '@deepseek-ai/dsh-session';
-import type { PostToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools';
+import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools';
 import type { Context } from '@deepseek-ai/cordis';
 
 /**
@@ -107,20 +107,24 @@ export function isSubagent(agent: Agent): boolean {
 /**
  * 把状态机接到宿主的两条事件上。
  *
- * `tools/post-execute` 只观察、不改结果：`notify_user` 清零，其余**根调用**计数。
+ * `tools/result` 是纯观察事件（无 `next`），只在结果落定后读一次：`notify_user` 清零，
+ * 其余**根调用**计数。派发前就被取消的调用（`ABORTED_BEFORE_DISPATCH`）没真正执行，
+ * 与旧口径一致、不计数。
  * `agent/pre-step` 在委托下游之后，只往 `enter` 决策的消息列表末尾追加一条；
  * 新回合与用户插话在这里清零。
  * @param ctx - 宿主插件上下文。
  * @param controller - 催办状态机。
  */
 export function installNudge(ctx: Context, controller: NudgeController): void {
-  ctx.on('tools/post-execute', (exec: ToolExecution, _result, next): Promise<PostToolDecision> => {
+  ctx.on('tools/result', (exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): undefined => {
+    // 取消发生在派发前：这次调用没有真正执行，不当作一次「没汇报的工具调用」。
+    if (result.isError && result.error.info?.code === 'ABORTED_BEFORE_DISPATCH') return undefined;
     const agent = exec.agent;
     if (agent !== undefined && !isSubagent(agent)) {
       if (exec.name === NUDGE_TOOL_NAME) controller.notify(agent);
       else if (exec.parent === undefined) controller.toolCall(agent);
     }
-    return next();
+    return undefined;
   });
 
   ctx.on('agent/pre-step', async ({ agent, messages, step }, next): Promise<PreStepDecision> => {

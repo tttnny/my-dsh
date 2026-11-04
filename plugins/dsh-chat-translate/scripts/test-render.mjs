@@ -638,7 +638,7 @@ await test('流式正文不带选区引用源标记', () => {
 act(() => rootF.unmount());
 
 /** 一行思考行，交给 turnProcess 的折叠判据；foldedReplies 决定隐藏公式。 */
-function renderReasoningRow(rowKey, foldedReplies, container) {
+function renderReasoningRow(rowKey, foldedReplies, container, overrides = {}) {
   return renderRow(rowKey, 'thinking...', container, undefined, {
     node: {
       data: { status: 'settled', turn: 1, step: 1, blocks: [{ kind: 'reasoning', text: 'thinking about it' }] },
@@ -652,6 +652,7 @@ function renderReasoningRow(rowKey, foldedReplies, container) {
       spec: { answerStep: 1, inlineReasoning: true },
     },
     usePresentation: (select) => select({ settledReasoningPreview: false, foldedReplies }),
+    ...overrides,
   });
 }
 
@@ -676,6 +677,25 @@ await test('只保留结论时，折叠轮的思考行被隐藏', () => {
   assert.ok(containerH.querySelector('[data-turn-process-inline]'), '与宿主 AssistantNodeView 同形');
 });
 act(() => rootH.unmount());
+
+const containerI = dom.window.document.createElement('div');
+document.body.appendChild(containerI);
+const groupCalls = [];
+const rootI = renderReasoningRow('ax9', 'final', containerI, {
+  useGroupAction: (hidden, reveal) => {
+    groupCalls.push({ hidden, reveal });
+    return { current: null };
+  },
+});
+await act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+await test('座位下发折叠钩子时，思考行的隐藏交给它而不是本地实现', () => {
+  assert.ok(groupCalls.length >= 1, '宿主钩子应当被调用');
+  assert.equal(groupCalls[0].hidden, true, '最终的隐藏态要传给宿主钩子');
+  assert.equal(typeof groupCalls[0].reveal, 'function', '揭示回调也要一并交出');
+});
+act(() => rootI.unmount());
 
 console.log(`${passed}/${total} passed`);
 process.exit(passed === total ? 0 : 1);

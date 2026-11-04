@@ -71,6 +71,16 @@
   display: var(--dsh-composer-model-icon-display, none);
 }
 
+.triggerBadge {
+  flex: none;
+  margin-inline-end: 4px;
+}
+
+.rowBadge {
+  flex: none;
+  margin-inline-start: 6px;
+}
+
 .chevron {
   color: var(--dsw-alias-label-caption);
   flex: none;
@@ -88,7 +98,7 @@
    * opening the menu never reflows the composer. */
   box-sizing: border-box;
   width: min(252px, calc(100vw - 24px));
-  max-height: min(70vh, calc(100vh - 96px));
+  max-height: var(--dsh-anchored-max-height, min(70vh, calc(100vh - 96px)));
   box-shadow: var(--dsw-elevation-prominent);
   color: var(--dsw-alias-label-primary);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);

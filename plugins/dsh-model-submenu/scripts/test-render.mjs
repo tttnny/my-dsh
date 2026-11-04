@@ -41,6 +41,8 @@ const primitives = primitivesStub({
   IconFlatListOutlineRegular: () => createElement('span', null),
   IconWarningOutlineRegular: () => createElement('span', null),
   IconSearchOutlineRegular: () => createElement('span', null),
+  Tag: ({ tone, className, children }) => createElement('span', { 'data-tone': tone, className }, children),
+  StateDot: ({ state }) => createElement('svg', { 'data-state': state }),
   rankByName: (items, query) => {
     const needle = query.toLowerCase()
     return items.filter((item) => item.name.toLowerCase().includes(needle) || item.label.toLowerCase().includes(needle))
@@ -179,6 +181,7 @@ const seatProps = {
       ? text
       : text.replace(/\{(\w+)\}/g, (_all, name) => String(values[name] ?? ''))
   },
+  resolveText: (text) => (typeof text === 'string' ? text : (text.zh ?? text.en)),
   locked: false,
 }
 
@@ -583,6 +586,32 @@ await test('弹窗提交被拒时弹窗保持打开', async () => {
   await flush()
   assert.notEqual(document.querySelector('[role="dialog"]'), null)
   assert.equal(document.querySelector('[role="status"]')?.textContent, '会话被占用')
+})
+
+await test('目录模型带角标时，触发器与菜单行都按 resolveText 画出角标', async () => {
+  setState(snapshot({
+    current: { provider: 'magpie', model: 'a', reasoningEffort: 'high' },
+    groups: [{
+      id: 'magpie', name: 'Magpie', models: [
+        { id: 'a', name: 'Model A', reasoning, badge: { text: 'NEW', tone: 'info' } },
+        { id: 'b', name: 'Model B', reasoning, badge: { text: { en: 'Beta', zh: '内测' }, tone: 'warning' } },
+      ],
+    }],
+  }))
+  await flush()
+  openMenu()
+  await flush()
+  const tagA = [...trigger().querySelectorAll('[data-tone]')]
+  assert.ok(tagA.some((tag) => tag.textContent === 'NEW'), '触发器要画当前模型的角标');
+  const rowB = rows().find((row) => row.getAttribute('title') === 'Model B')
+  const tagB = rowB.querySelector('[data-tone="warning"]')
+  assert.equal(tagB?.textContent, '内测', '对象的 LocalizedText 必须经 resolveText 解析，不能直接渲染');
+})
+
+await test('提交中把下拉箭头换成进行中的状态点', async () => {
+  setState(snapshot({ status: 'selecting' }))
+  await flush()
+  assert.equal(trigger().querySelector('[data-state="ongoing"]') === null, false, '进行中要有状态点');
 })
 
 unmount()
