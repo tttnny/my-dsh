@@ -2,7 +2,7 @@
 
 ## 发完即止
 
-用户下令发布到 npm 后，把该发的包（插件、preset 一视同仁）`npm publish` 发完就结束：**不跑发布后验证**——不装一遍、不解包 tarball、不 boot 加载、不查 registry 传播；也不回头确认、不追问别的包要不要一起发。答复里报包名、版本、`dist-tags.latest` 就够；发布成功的凭据是 `npm publish` 打出的 `+ pkg@ver`。
+用户下令发布到 npm 后（本机 `npm publish`，或在 Actions 里手动触发 `publish` 工作流），把该发的包（插件、preset 一视同仁）发完就结束：**不跑发布后验证**——不装一遍、不解包 tarball、不 boot 加载、不查 registry 传播；也不回头确认、不追问别的包要不要一起发。答复里报包名、版本、`dist-tags.latest` 就够；发布成功的凭据是 `npm publish` 打出的 `+ pkg@ver`。
 
 发布前的门禁照跑，按顺序：
 
@@ -11,6 +11,18 @@
 3. 各包自己的 `check`（见 [plugins.md](./plugins.md)「验证」）、`node tools/assert-ledger.mjs`（清单与目录的一致性）与 `npm pack --dry-run` 清单。
 
 本机绿不等于 CI 绿，发布前再跑一次 `node tools/ci-check.mjs`（干净 HOME 按 CI 的脚本重跑安装与 check，要联网）。`git push` 同样只在用户下令后执行。
+
+## 在 GitHub Actions 里发
+
+Actions 页面手动触发 `publish` 工作流（[.github/workflows/publish.yml](../../.github/workflows/publish.yml)），把上面那串门禁一次跑完：
+
+- `packages` 留空时自动挑「本地版本 registry 上还没有」的包；也可以写包名、目录名或 `plugins/<目录>`，逗号或空格分隔。
+- 第一步是 `node tools/publish-plan.mjs` 挑包：版本号没改（registry 上已有同版本）时在这里就红，不会白跑后面的安装与 check。
+- 然后按 `check.yml` 的装法装依赖、跑 `node tools/check.mjs`，再逐个包 `npm pack --dry-run` 与 `npm publish --access public --tag <dist-tag>`。
+- `dry_run` 勾上时只跑门禁与 `npm pack`，不执行 `npm publish`。
+- 一次性准备：仓库 Settings → Secrets and variables → Actions 加 `NPM_TOKEN`（npm 发布令牌）；缺它时发布那一步报错退出。
+
+版本号不在工作流里改：发布前先改要发的包 `package.json` 的 `version` 并提交，触发时选的分支就是发出去的那份代码。
 
 ## 发布不回装
 

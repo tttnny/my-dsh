@@ -13,6 +13,7 @@
 | 抄本与官方 preset：差异 / 两版官方差异 / 重抄 / 提示词变量 | `node tools/preset-copy.mjs <id> [--diff \| --official-diff \| --recopy \| --variables]` |
 | preset 随包技能的真装载（只装载内核的 skill provider，不起第二实例） | `node tools/probes/preset-skills.mjs --preset <id>`（另有 `--skills <目录>`、`--kernel <内核树>`、`--dsh <版本>`，见脚本头部） |
 | 按 CI 的方式重跑安装与 check（干净 HOME、钉住的 pnpm；要联网） | `node tools/ci-check.mjs [--keep]` |
+| 发布前挑包：列出本地版本 registry 上还没有的包，并说明哪些包发不了（版本没改、缺 `publishConfig.access`）；Actions 的 `publish` 工作流第一步就是它 | `node tools/publish-plan.mjs [--packages <包名或目录>] [--json]` |
 | 变异测试：改一处、跑一条命令、一定还原（未提交的文件也能用） | `node tools/mutate.mjs --file <f> --from <旧> --to <新> -- <命令>`（另有 `--dry-run` 只数命中、`--keep` 留下变异） |
 | 宿主半边能不能装载（不重启正在服务的实例） | `node tools/host-smoke.mjs [--compose-only]` |
 | preset 的组合解析（`--dump-config`） | `node tools/preset-compose.mjs <id \| --all>` |

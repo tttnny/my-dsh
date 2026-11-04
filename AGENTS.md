@@ -6,7 +6,7 @@ DSH 源码已拉取到本地 `/Users/tny/Desktop/work/other/deepseek-harness`，
 
 ## 硬约束
 
-1. **发布听令，发完即止**：`npm publish` / `git push` 只在用户下令后执行；发完不装、不查、不追问。
+1. **发布听令，发完即止**：`npm publish` / `git push` 只在用户下令后执行（`npm publish` 也可以由用户在 Actions 里手动触发 `publish` 工作流，见 [docs/rules/release.md](docs/rules/release.md)）；发完不装、不查、不追问。
 2. **开发副本是 `link:`**：`~/.dsh/profiles/web/node_modules/@lynn123411/dsh-*` 保持软链到本仓库目录；仓库根不放 `node_modules`。
 3. **客户端半边只读已声明的服务**：漏声明不报错，只在页面里消失。
 4. **状态只登记一处**：版本号归各包 `package.json`，功能域清单归根 `README.md`，preset order 归 `docs/rules/presets.md`；其他文件只写规则 + 指针。

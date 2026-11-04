@@ -1,0 +1,117 @@
+name: publish
+
+# 手动发 npm 包：在 Actions 页面点一次 Run workflow，按 docs/rules/release.md 的门禁顺序跑完再发。
+#
+# 版本号不在这里改：发布前先改要发的包 package.json 的 version 并提交（版本号归各包 package.json，
+# 见 AGENTS.md 第 4 条）。本工作流只发「本地版本 registry 上还没有」的包——版本没改就一个都挑不出来，
+# 第一步就红，不会误发。
+#
+# 一次性准备：仓库 Settings → Secrets and variables → Actions 里加 NPM_TOKEN（npm 发布令牌）。
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: '要发的包：包名、目录名或 plugins/<目录>，逗号或空格分隔；留空 = 自动挑本地版本没发过的包'
+        required: false
+        default: ''
+      dist_tag:
+        description: 'npm dist-tag（默认 latest）'
+        required: false
+        default: latest
+      dry_run:
+        description: '只演练：跑完门禁与 npm pack，不执行 npm publish'
+        required: false
+        default: false
+        type: boolean
+
+# 同一时间只跑一个发布：两个任务交错发同一个包会撞 409。
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 版本随各包 engines.node（^22.19 || >=24）；registry-url 同时写好 .npmrc 的鉴权占位。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - run: corepack enable
+
+      # 先挑包再装依赖：版本号没改时在这一步就红，省掉几分钟的安装与 check。
+      - name: plan
+        id: plan
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          mkdir -p tmp
+          node tools/publish-plan.mjs --packages "$PACKAGES" --json > tmp/publish-plan.json
+          node -e '
+            const plan = require("./tmp/publish-plan.json");
+            const fs = require("node:fs");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "packages=" + plan.publish.map((entry) => entry.rel).join(" ") + "\n");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "names=" + plan.publish.map((entry) => entry.name + "@" + entry.version).join(", ") + "\n");
+          '
+
+      # 仓库根不放 package.json、不放依赖（根 AGENTS.md 第 7 条），所以在每个有依赖的包目录里装。
+      # 冻结 lock：CI 不重解版本。
+      - name: install
+        run: |
+          for dir in plugins/* presets/*; do
+            if [ -f "$dir/package.json" ] && grep -qE '"(dependencies|devDependencies|peerDependencies)"' "$dir/package.json"; then
+              echo "== $dir"
+              (cd "$dir" && pnpm install --frozen-lockfile)
+            fi
+          done
+
+      # 与 check.yml 同一道仓库级门禁：台账 + 每个包自己的 check + 产物新鲜度。
+      - name: check
+        run: node tools/check.mjs
+
+      # 先把每个包的清单都过一遍：任何一包打不出来，一个都不发。
+      - name: pack
+        env:
+          PACKAGES: ${{ steps.plan.outputs.packages }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PACKAGES" ]; then
+            echo "::error::没有可发布的包"
+            exit 1
+          fi
+          for dir in $PACKAGES; do
+            echo "::group::npm pack --dry-run ${dir}"
+            (cd "$dir" && npm pack --dry-run)
+            echo "::endgroup::"
+          done
+
+      - name: publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DIST_TAG: ${{ inputs.dist_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PACKAGES: ${{ steps.plan.outputs.packages }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::缺少 NPM_TOKEN secret：在仓库 Settings → Secrets and variables → Actions 里加一个 npm 发布令牌"
+            exit 1
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "dry run：不执行 npm publish（${PACKAGES}）"
+            exit 0
+          fi
+          tag="${DIST_TAG:-latest}"
+          for dir in $PACKAGES; do
+            echo "::group::npm publish ${dir}（tag ${tag}）"
+            (cd "$dir" && npm publish --access public --tag "$tag")
+            echo "::endgroup::"
+          done
