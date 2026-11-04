@@ -34,7 +34,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 ## 设计参照
 
-机制照 Kimi Code CLI 1.2.1 的 `NotifyUser`：普通工具调用负责产出更新，独立的一层 reminder 在模型久不汇报时注入一条指令。阈值与计数口径按 DSH 的两种工具呈现方式调整。
+机制照 Kimi Code 的 `NotifyUser`（[`packages/agent-core-v2/src/features/notify`](https://github.com/MoonshotAI/kimi-code/tree/6974ac880d405d5565a2189925f3bef6daea6892/packages/agent-core-v2/src/features/notify)）：普通工具调用负责产出更新，独立的一层 reminder 在模型久不汇报时注入一条指令。阈值与计数口径按 DSH 的两种工具呈现方式调整。
 
 ## 已知现状
 
