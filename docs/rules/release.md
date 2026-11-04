@@ -14,7 +14,12 @@
 
 ## 在 GitHub Actions 里发
 
-Actions 页面手动触发 `publish` 工作流（[.github/workflows/publish.yml](../../.github/workflows/publish.yml)），把上面那串门禁一次跑完：
+Actions 页面手动触发 `publish` 工作流（[.github/workflows/publish.yml](../../.github/workflows/publish.yml)），把上面那串门禁一次跑完。用户自己点 Run workflow，或让 agent 用 `gh workflow run` 触发（agent 触发同样只在用户下令后）：
+
+```bash
+gh workflow run publish.yml --repo tttnny/my-dsh -f packages=<包名> [-f dry_run=true]
+gh run watch
+```
 
 - `packages` 留空时自动挑「本地版本 registry 上还没有」的包；也可以写包名、目录名或 `plugins/<目录>`，逗号或空格分隔。
 - 第一步是 `node tools/publish-plan.mjs` 挑包：版本号没改（registry 上已有同版本）时在这里就红，不会白跑后面的安装与 check。

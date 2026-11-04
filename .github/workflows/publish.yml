@@ -1,6 +1,7 @@
 name: publish
 
-# 手动发 npm 包：在 Actions 页面点一次 Run workflow，按 docs/rules/release.md 的门禁顺序跑完再发。
+# 手动发 npm 包：用户点 Run workflow，或让 agent 用 gh workflow run 触发，按 docs/rules/release.md
+# 的门禁顺序跑完再发。
 #
 # 版本号不在这里改：发布前先改要发的包 package.json 的 version 并提交（版本号归各包 package.json，
 # 见 AGENTS.md 第 4 条）。本工作流只发「本地版本 registry 上还没有」的包——版本没改就一个都挑不出来，
