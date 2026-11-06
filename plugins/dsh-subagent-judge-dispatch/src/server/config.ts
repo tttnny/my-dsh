@@ -14,6 +14,7 @@
 import type { Volatile } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import type Schema from '@deepseek-ai/schemastery';
+import { resolveEndpointUrl } from './endpoint.ts';
 import { isSelectableRow } from './judge-prompt.ts';
 import type { TypeRow } from './types.ts';
 
@@ -24,12 +25,6 @@ import type { TypeRow } from './types.ts';
  * literal from the npm package name the card is keyed by.
  */
 export const SETTINGS_NAMESPACE = 'dsh-subagent-judge-dispatch';
-
-/** Endpoint the page prefills: one System One example. */
-export const DEFAULT_ENDPOINT_URL = 'http://127.0.0.1:3425/v1/systemone';
-
-/** Judge model the page prefills. */
-export const DEFAULT_JUDGE_MODEL = 'future-jev/jev-latest';
 
 /** One type-list row as the configuration document stores it. */
 const TypeRowSchema = z.object({
@@ -49,10 +44,10 @@ export const Config: Schema = z.object({
   enabled: z.boolean().default(true).volatile(),
   /** Whether judgements are written to the plugin's own log. */
   logEnabled: z.boolean().default(true).volatile(),
-  /** Full judge endpoint URL. */
-  endpointUrl: z.string().default(DEFAULT_ENDPOINT_URL).volatile(),
+  /** Judge service address, as the reader typed it; the path is appended when a call is made. */
+  endpointUrl: z.string().default('').volatile(),
   /** Judge model id. */
-  judgeModel: z.string().default(DEFAULT_JUDGE_MODEL).volatile(),
+  judgeModel: z.string().default('').volatile(),
   /** The task-type list, in page order. */
   rows: z.array(TypeRowSchema).default([]).volatile(),
 });
@@ -78,6 +73,7 @@ export interface StoredRow {
 export interface ResolvedConfig {
   enabled: boolean;
   logEnabled: boolean;
+  /** Full judge URL: the stored address with the service path applied. */
   endpointUrl: string;
   judgeModel: string;
   rows: TypeRow[];
@@ -103,8 +99,8 @@ export function readPluginConfig(refs: PluginConfigRefs): ResolvedConfig {
   return {
     enabled: refs.enabled.get() !== false,
     logEnabled: refs.logEnabled.get() !== false,
-    endpointUrl: typeof refs.endpointUrl.get() === 'string' ? refs.endpointUrl.get() : DEFAULT_ENDPOINT_URL,
-    judgeModel: typeof refs.judgeModel.get() === 'string' ? refs.judgeModel.get() : DEFAULT_JUDGE_MODEL,
+    endpointUrl: resolveEndpointUrl(refs.endpointUrl.get()),
+    judgeModel: typeof refs.judgeModel.get() === 'string' ? refs.judgeModel.get() : '',
     rows,
   };
 }

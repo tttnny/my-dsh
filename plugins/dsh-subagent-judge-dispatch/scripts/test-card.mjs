@@ -19,7 +19,9 @@ import {
   describeChoice,
   describeModel,
   DispatchCardStore,
+  exportJudgeJson,
   exportRowsJson,
+  parseJudgeJson,
   parseRowsJson,
   readRow,
   rowHints,
@@ -56,7 +58,7 @@ function makeForm(initial = {}, accept = true) {
   let value = {
     enabled: true,
     logEnabled: true,
-    endpointUrl: 'http://judge.invalid/v1/systemone',
+    endpointUrl: 'http://judge.invalid',
     judgeModel: 'jev-latest',
     rows: [{ description: '机械修改', provider: 'd1api', model: 'deepseek-v4.1-flash', effort: 'low' }],
     ...initial,
@@ -99,24 +101,16 @@ function makeForm(initial = {}, accept = true) {
 /** 凭据服务的替身：只记账，从不把值读回来。 */
 function makeCredentials(options = {}) {
   const set = [];
-  const unset = [];
   let configured = options.configured ?? false;
   const accept = options.accept ?? true;
   return {
     set,
-    unset,
     credentials: {
       describe: async () => ({ ok: true, value: { [JUDGE_API_KEY_REF]: { configured, writable: true } } }),
       set: async (ref, value) => {
         set.push([ref, value]);
         if (!accept) return { ok: false, error: { message: '凭据被环境变量遮住了' } };
         configured = true;
-        return { ok: true };
-      },
-      unset: async (ref) => {
-        unset.push(ref);
-        if (!accept) return { ok: false, error: { message: '删不掉' } };
-        configured = false;
         return { ok: true };
       },
     },
@@ -292,13 +286,53 @@ await test('密钥值从不进页面状态，只在写入那一刻交给凭据�
   assert.equal(serialized.includes('sk-secret-value'), false, '密钥值不该留在状态里');
 });
 
-await test('已经存了密钥时状态栏说已存，删掉后说没存', async () => {
-  const { store, keys } = makeStore({ keyOptions: { configured: true } });
+await test('已经存了密钥时状态栏说已存', async () => {
+  const { store } = makeStore({ keyOptions: { configured: true } });
   await new Promise((tick) => setTimeout(tick, 0));
   assert.equal(store.getState().key.configured, true);
-  await store.clearKey();
-  assert.deepEqual(keys.unset, [JUDGE_API_KEY_REF]);
-  assert.equal(store.getState().key.configured, false);
+});
+
+await test('判断服务设置：导出就是那两项，不带密钥', () => {
+  const { store } = makeStore();
+  const text = exportJudgeJson(store.getState());
+  assert.deepEqual(JSON.parse(text), {
+    endpointUrl: 'http://judge.invalid',
+    judgeModel: 'jev-latest',
+  });
+  assert.equal(text.includes(JUDGE_API_KEY_REF), false, '密钥不进这份文本');
+  assert.deepEqual(parseJudgeJson(text), {
+    ok: true,
+    value: { endpointUrl: 'http://judge.invalid', judgeModel: 'jev-latest' },
+  });
+});
+
+await test('判断服务设置：导入整份替换并立即写入', async () => {
+  const { store, host } = makeStore();
+  store.replaceJudgeConfig({ endpointUrl: 'http://imported.invalid', judgeModel: 'judge-y' });
+  await store.commit('judge');
+  assert.equal(host.writes.length, 1);
+  assert.deepEqual(host.writes[0].map((op) => op.path[0]).sort(), ['endpointUrl', 'judgeModel']);
+});
+
+await test('判断服务设置：三种坏输入各报各的', () => {
+  assert.deepEqual(parseJudgeJson('{不是 JSON'), { ok: false, error: 'json' });
+  assert.deepEqual(parseJudgeJson('[]'), { ok: false, error: 'shape' });
+  assert.deepEqual(parseJudgeJson('{"endpointUrl":1}'), { ok: false, error: 'shape' });
+  assert.deepEqual(parseJudgeJson('{}'), { ok: false, error: 'empty' });
+  assert.deepEqual(parseJudgeJson('{"endpointUrl":"  ","judgeModel":"  "}'), { ok: false, error: 'empty' });
+});
+
+await test('判断服务设置：缺字段当空串，多出来的字段不管', () => {
+  assert.deepEqual(parseJudgeJson(JSON.stringify({ judgeModel: 'judge-z', extra: 1 })), {
+    ok: true,
+    value: { endpointUrl: '', judgeModel: 'judge-z' },
+  });
+});
+
+await test('判断服务没有预填值：宿主给空就是空', () => {
+  const { store } = makeStore({ config: { endpointUrl: '', judgeModel: '' } });
+  assert.equal(store.getState().endpointUrl, '');
+  assert.equal(store.getState().judgeModel, '');
 });
 
 await test('还没提交的草稿不被宿主的下一次发布冲掉', async () => {
@@ -370,7 +404,7 @@ await test('把值改回已提交的那一份，失败提示跟着消失', async
   await store.commit('judge');
   assert.equal(store.getState().writeFailed, 'judge');
 
-  store.field('endpointUrl', 'http://judge.invalid/v1/systemone');
+  store.field('endpointUrl', 'http://judge.invalid');
   await store.commit('judge');
   assert.equal(store.getState().writeFailed, '', '没有东西可写，错误就不再是当前事实');
 });
@@ -387,7 +421,6 @@ await test('页面没有凭据通道时，密钥格标成不可用', async () =>
     t: (key) => key,
   });
   assert.equal(store.getState().key.unavailable, true);
-  assert.equal(store.getState().key.writable, false);
 });
 
 await test('宿主说不可写时，提交什么也不做', async () => {

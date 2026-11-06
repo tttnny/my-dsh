@@ -24,8 +24,10 @@ import {
   describeChoice,
   describeModel,
   dispatchCardStore,
+  exportJudgeJson,
   exportRowsJson,
   JUDGE_API_KEY_REF,
+  parseJudgeJson,
   parseRowsJson,
   rowHints,
   type CredentialsRemoteLike,
@@ -38,12 +40,22 @@ import {
 } from './store.ts';
 import { NS } from '../locales.ts';
 
-/** 导入被拒时那句话的键：三种坏输入各说各的，不在调用处拼键名。 */
+/** 导入被拒时那句话的键：两节的三种坏输入各说各的，不在调用处拼键名。 */
 const IMPORT_ERROR_KEYS = {
-  json: 'rows.importBadJson',
-  shape: 'rows.importBadShape',
-  empty: 'rows.importEmpty',
+  rows: {
+    json: 'rows.importBadJson',
+    shape: 'rows.importBadShape',
+    empty: 'rows.importEmpty',
+  },
+  judge: {
+    json: 'judge.importBadJson',
+    shape: 'judge.importBadShape',
+    empty: 'judge.importEmpty',
+  },
 } as const;
+
+/** 导入弹窗服务的两节：判断服务设置，与任务类型清单。 */
+type ImportSection = 'judge' | 'rows';
 
 /** Path shown in the key hint; the value itself never reaches the page. */
 const CREDENTIALS_PATH = '~/.dsh/.credentials.yaml';
@@ -215,12 +227,14 @@ export function JudgeDispatchPanel(
   const [detail, setDetail] = useState<LogRow | null>(null);
   /** Which row's dropdown is open, and which of the two. */
   const [openMenu, setOpenMenu] = useState<{ index: number; kind: 'model' | 'effort' } | null>(null);
-  /** The paste box for importing a task-type list; null when it is closed. */
-  const [importText, setImportText] = useState<string | null>(null);
+  /** Which section's paste box is open; null when it is closed. */
+  const [importSection, setImportSection] = useState<ImportSection | null>(null);
+  /** What is pasted into that box. */
+  const [importText, setImportText] = useState('');
   /** Why the last import attempt was refused, or ''. */
   const [importError, setImportError] = useState('');
-  /** What the last export did, shown until the next action. */
-  const [copyNote, setCopyNote] = useState<{ ok: boolean; text: string } | null>(null);
+  /** What the last export did, shown in the section that did it. */
+  const [copyNote, setCopyNote] = useState<{ ok: boolean; text: string; section: ImportSection } | null>(null);
 
   useEffect(() => {
     setState(dispatchCardStore.getState());
@@ -257,26 +271,48 @@ export function JudgeDispatchPanel(
   /** Copy the task-type list out as plain JSON. */
   const exportRows = async (): Promise<void> => {
     const copied = await writeClipboard(exportRowsJson(state.rows));
-    setCopyNote({ ok: copied, text: t(copied ? 'rows.exported' : 'rows.exportFailed') });
+    setCopyNote({ ok: copied, text: t(copied ? 'rows.exported' : 'rows.exportFailed'), section: 'rows' });
   };
 
-  /** Open the paste box, empty and with no leftover complaint. */
-  const openImport = (): void => {
+  /** Copy the judgement service settings out as plain JSON. */
+  const exportJudge = async (): Promise<void> => {
+    const copied = await writeClipboard(exportJudgeJson(state));
+    setCopyNote({ ok: copied, text: t(copied ? 'judge.exported' : 'judge.exportFailed'), section: 'judge' });
+  };
+
+  /** Open one section's paste box, empty and with no leftover complaint. */
+  const openImport = (section: ImportSection): void => {
+    setImportSection(section);
     setImportText('');
     setImportError('');
     setCopyNote(null);
   };
 
-  /** Read the pasted list into the table and write it; the dialog's button is the confirmation. */
-  const applyImport = (): void => {
-    const result = parseRowsJson(importText ?? '');
-    if (!result.ok) {
-      setImportError(t(IMPORT_ERROR_KEYS[result.error] as never));
-      return;
-    }
-    dispatchCardStore.replaceRows(result.rows);
-    setImportText(null);
+  /** Close the paste box without touching what is stored. */
+  const closeImport = (): void => {
+    setImportSection(null);
+    setImportText('');
     setImportError('');
+  };
+
+  /** Read the pasted text into the page and write it; the dialog's button is the confirmation. */
+  const applyImport = (): void => {
+    if (importSection === 'judge') {
+      const result = parseJudgeJson(importText);
+      if (!result.ok) {
+        setImportError(t(IMPORT_ERROR_KEYS.judge[result.error] as never));
+        return;
+      }
+      dispatchCardStore.replaceJudgeConfig(result.value);
+    } else {
+      const result = parseRowsJson(importText);
+      if (!result.ok) {
+        setImportError(t(IMPORT_ERROR_KEYS.rows[result.error] as never));
+        return;
+      }
+      dispatchCardStore.replaceRows(result.rows);
+    }
+    closeImport();
   };
 
   /** 这一节的一次提交：文字格离开输入框、菜单选完时都走它。 */
@@ -423,16 +459,25 @@ export function JudgeDispatchPanel(
       <div className="dsh-judge-section">
         <div className="dsh-judge-head">
           <span className="dsh-judge-title">{t('judge.title')}</span>
-          {/* 试通问的是「这份设置现在能不能用」，与这一节的写入无关：它只读已落地的值，
-              所以写入还在路上时先不给按。 */}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={probing || state.writing !== ''}
-            onClick={() => void runProbe()}
-          >
-            {probing ? t('judge.probing') : t('judge.probe')}
-          </Button>
+          {/* 三件都是这一节的动作：导入与导出是同一份设置的两个方向，试通问的是
+              「这份设置现在能不能用」。试通不落盘、只读已落地的值，所以写入还在
+              路上时先不给按。 */}
+          <div className="dsh-judge-actions-group">
+            <Button variant="outline" size="sm" onClick={() => openImport('judge')}>
+              {t('judge.importOpen')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void exportJudge()}>
+              {t('judge.export')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={probing || state.writing !== ''}
+              onClick={() => void runProbe()}
+            >
+              {probing ? t('judge.probing') : t('judge.probe')}
+            </Button>
+          </div>
         </div>
         <div className="dsh-judge-desc">{t('judge.desc')}</div>
 
@@ -473,7 +518,7 @@ export function JudgeDispatchPanel(
               type="text"
               className="dsh-judge-field"
               value={state.endpointUrl}
-              placeholder="http://127.0.0.1:3425/v1/systemone"
+              placeholder="http://127.0.0.1:3425"
               aria-label={t('judge.endpoint')}
               disabled={!state.writable}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
@@ -511,8 +556,7 @@ export function JudgeDispatchPanel(
             </div>
           </div>
           <div className="dsh-judge-row-field">
-            {/* 密钥格与上面两格同宽：状态与「删掉」放在输入框下面那一行，
-                这样三格的左右边缘对齐。 */}
+            {/* 密钥格与上面几格同宽：状态放在输入框下面那一行，左右边缘才对得齐。 */}
             <Input
               type="password"
               autoComplete="new-password"
@@ -534,16 +578,6 @@ export function JudgeDispatchPanel(
               <Tag tone={state.key.configured ? 'success' : 'warning'}>
                 {t(state.key.configured ? 'judge.keySet' : 'judge.keyUnset')}
               </Tag>
-              {state.key.configured && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={state.key.writing || !state.key.writable}
-                  onClick={() => void dispatchCardStore.clearKey()}
-                >
-                  {t('judge.keyClear')}
-                </Button>
-              )}
               {state.key.unavailable && <span className="dsh-judge-hint">{t('judge.keyUnavailable')}</span>}
               {state.key.failed && (
                 <span className="dsh-judge-note-bad" role="alert">
@@ -562,6 +596,11 @@ export function JudgeDispatchPanel(
           </div>
         )}
 
+        {copyNote !== null && copyNote.section === 'judge' && (
+          <div className={copyNote.ok ? 'dsh-judge-note-ok' : 'dsh-judge-note-bad'} role="status">
+            {copyNote.text}
+          </div>
+        )}
         {failure('judge')}
       </div>
 
@@ -570,7 +609,7 @@ export function JudgeDispatchPanel(
           <span className="dsh-judge-title">{t('rows.title')}</span>
           {/* 三件都是整张表的动作：导入与导出是同一份清单的两个方向，加一行是往表尾续一条。 */}
           <div className="dsh-judge-actions-group">
-            <Button variant="outline" size="sm" onClick={openImport}>
+            <Button variant="outline" size="sm" onClick={() => openImport('rows')}>
               {t('rows.importOpen')}
             </Button>
             <Button variant="outline" size="sm" onClick={() => void exportRows()}>
@@ -600,7 +639,7 @@ export function JudgeDispatchPanel(
             </tbody>
           </table>
         )}
-        {copyNote !== null && (
+        {copyNote !== null && copyNote.section === 'rows' && (
           <div className={copyNote.ok ? 'dsh-judge-note-ok' : 'dsh-judge-note-bad'} role="status">
             {copyNote.text}
           </div>
@@ -705,28 +744,28 @@ export function JudgeDispatchPanel(
 
       {/* 导入只收粘贴：这一步不读文件、不联网，读者看到的和用进去的是同一段文本。 */}
       <Modal
-        open={importText !== null}
-        onClose={() => setImportText(null)}
-        title={t('rows.importTitle')}
-        closeLabel={t('rows.importClose')}
-        description={t('rows.importDesc')}
+        open={importSection !== null}
+        onClose={closeImport}
+        title={t(importSection === 'judge' ? 'judge.importTitle' : 'rows.importTitle')}
+        closeLabel={t(importSection === 'judge' ? 'judge.importClose' : 'rows.importClose')}
+        description={t(importSection === 'judge' ? 'judge.importDesc' : 'rows.importDesc')}
         className="dsh-judge-modal"
         footer={(
           <>
-            <Button variant="outline" size="sm" onClick={() => setImportText(null)}>
-              {t('rows.importCancel')}
+            <Button variant="outline" size="sm" onClick={closeImport}>
+              {t(importSection === 'judge' ? 'judge.importCancel' : 'rows.importCancel')}
             </Button>
             <Button variant="primary" size="sm" onClick={applyImport}>
-              {t('rows.importApply')}
+              {t(importSection === 'judge' ? 'judge.importApply' : 'rows.importApply')}
             </Button>
           </>
         )}
       >
         <textarea
           className="dsh-judge-paste"
-          value={importText ?? ''}
-          aria-label={t('rows.importTitle')}
-          placeholder={t('rows.importPlaceholder')}
+          value={importText}
+          aria-label={t(importSection === 'judge' ? 'judge.importTitle' : 'rows.importTitle')}
+          placeholder={t(importSection === 'judge' ? 'judge.importPlaceholder' : 'rows.importPlaceholder')}
           spellCheck={false}
           data-modal-autofocus
           onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => {

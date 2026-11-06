@@ -22,8 +22,6 @@ export interface CredentialsServiceLike {
   describe(ref: string): Promise<{ configured: boolean; source?: string; writable: boolean }>;
   /** Store a non-empty value under a reference. */
   set(ref: string, value: string): Promise<void>;
-  /** Remove a reference from the document. */
-  unset(ref: string): Promise<void>;
 }
 
 /** Minimal structural shape of the browser's `ctx.remote.credentials` face. */
@@ -33,5 +31,4 @@ export interface CredentialsRemoteLike {
     | { ok: false; error: { message: string } }
   >;
   set(ref: string, value: string): Promise<{ ok: true } | { ok: false; error: { message: string } }>;
-  unset(ref: string): Promise<{ ok: true } | { ok: false; error: { message: string } }>;
 }

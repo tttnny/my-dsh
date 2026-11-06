@@ -104,7 +104,24 @@ const primitives = primitivesStub({
       item.label,
     )),
   ),
-  Menu: ({ anchor }) => anchor,
+  // 真 Menu 把 anchor 渲染在原处、展开时把行挂到浮层上；替身把展开的行渲染在
+  // anchor 后面，让「点开选一项」这条路径在 Node 里也走得通。
+  Menu: ({ anchor, open, items = [], onSelect }) => createElement(
+    'div',
+    { className: 'menu-stub' },
+    anchor,
+    open
+      ? createElement(
+        'div',
+        { role: 'menu' },
+        items.filter((item) => item.type !== 'label').map((item) => createElement(
+          'button',
+          { key: item.id, type: 'button', onClick: () => onSelect?.(item.id) },
+          item.label,
+        )),
+      )
+      : null,
+  ),
   // 真 Tooltip 把锚点原样渲染，气泡另挂在 body 上、用 aria-describedby 指过去。
   // 替身要保住这条：否则「截断时才有气泡」这类断言只能靠猜。
   Tooltip: ({ label, children }) => {
@@ -127,7 +144,7 @@ const exported = await loadClientBundle({ root, primitives });
 let hostValue = {
   enabled: true,
   logEnabled: true,
-  endpointUrl: 'http://127.0.0.1:3425/v1/systemone',
+  endpointUrl: 'http://127.0.0.1:3425',
   judgeModel: 'bailian-decision/decision-model-preview',
   rows: [{ description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' }],
 };
@@ -197,6 +214,11 @@ await render();
 
 const buttons = () => [...container.querySelectorAll('button')];
 const buttonByText = (text) => buttons().find((node) => node.textContent?.trim() === text);
+/** 两节各有一颗「导入」「导出」，按节找按钮，别拿 DOM 顺序当依据。 */
+const buttonIn = (root, text) => [...(root?.querySelectorAll('button') ?? [])]
+  .find((node) => node.textContent?.trim() === text);
+const judgeSection = () => container.querySelector('.dsh-judge-section');
+const rowsSection = () => container.querySelector('.dsh-judge-table')?.closest('.dsh-judge-section');
 const click = async (node) => {
   assert.ok(node !== undefined, '要点的那个控件应当在场');
   await act(async () => { node.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
@@ -247,11 +269,17 @@ await test('没有保存按钮：试通在判断服务标题行，导入导出�
   assert.ok(probe !== undefined, '试通按钮应当在场');
   const judgeHead = probe.closest('.dsh-judge-section')?.querySelector('.dsh-judge-head');
   assert.ok(judgeHead?.contains(probe), '试通落在判断服务那一节的标题行里');
+  // 判断服务那一节的三件动作按「导入、导出、试通」排：前两件是同一份设置的两个方向，
+  // 试通是问一句能不能用。
+  assert.deepEqual(
+    [...(judgeHead?.querySelectorAll('button') ?? [])].map((node) => node.textContent?.trim()),
+    [zh['judge.importOpen'], zh['judge.export'], zh['judge.probe']],
+    '判断服务标题行按「导入、导出、试通」排',
+  );
 
   // 三件都是整张表的动作，排在任务类型那一节的标题行右端；
   // 顺序固定：先导入再导出，最后才是往表尾续一条的「加一行」。
-  const rowsSection = container.querySelector('.dsh-judge-table')?.closest('.dsh-judge-section');
-  const rowsHead = rowsSection?.querySelector('.dsh-judge-head');
+  const rowsHead = rowsSection()?.querySelector('.dsh-judge-head');
   assert.deepEqual(
     [...(rowsHead?.querySelectorAll('button') ?? [])].map((node) => node.textContent?.trim()),
     [zh['rows.importOpen'], zh['rows.export'], zh['rows.add']],
@@ -286,8 +314,67 @@ await test('文字格离开才写，写的是这一格的新值', async () => {
   assert.deepEqual(writes.at(-1), [{ op: 'set', path: ['endpointUrl'], value: 'http://typed.invalid/v1/systemone' }]);
 });
 
+await test('判断服务设置导出为纯 JSON，不带密钥', async () => {
+  clipboard.text = null;
+  clipboardWorks = true;
+  await click(buttonIn(judgeSection(), zh['judge.export']));
+  assert.deepEqual(JSON.parse(clipboard.text ?? 'null'), {
+    endpointUrl: 'http://typed.invalid/v1/systemone',
+    judgeModel: 'bailian-decision/decision-model-preview',
+  }, '导出的是这一节的两项设置');
+  assert.equal(container.textContent?.includes(zh['judge.exported']), true, '复制成功要说一声');
+  clipboardWorks = false;
+  await click(buttonIn(judgeSection(), zh['judge.export']));
+  assert.equal(container.textContent?.includes(zh['judge.exportFailed']), true, '复制失败要如实说');
+  clipboardWorks = true;
+});
+
+await test('判断服务设置的导入是粘贴，粘进来的整份替换并立即写入', async () => {
+  await click(buttonIn(judgeSection(), zh['judge.importOpen']));
+  const box = container.querySelector('textarea.dsh-judge-paste');
+  assert.ok(box !== null, '导入弹窗里应当有一个粘贴框');
+  await type(box, JSON.stringify({
+    endpointUrl: 'http://imported.invalid',
+    judgeModel: 'judge-y',
+  }));
+  await click(buttonByText(zh['judge.importApply']));
+
+  assert.equal(
+    container.querySelector('input[aria-label="' + zh['judge.endpoint'] + '"]').value,
+    'http://imported.invalid',
+    '地址换成了粘进来的那条',
+  );
+  assert.equal(
+    container.querySelector('input[aria-label="' + zh['judge.model'] + '"]').value,
+    'judge-y',
+    '判断模型也跟着换了',
+  );
+  const ops = writes.at(-1) ?? [];
+  assert.deepEqual(ops.map((op) => op.path[0]).sort(), ['endpointUrl', 'judgeModel']);
+  assert.equal(container.querySelector('textarea.dsh-judge-paste'), null, '写入之后弹窗关掉');
+});
+
+await test('判断服务设置粘错时，三种坏输入各说各的话', async () => {
+  await click(buttonIn(judgeSection(), zh['judge.importOpen']));
+  const box = container.querySelector('textarea.dsh-judge-paste');
+  await type(box, '{不是 JSON');
+  await click(buttonByText(zh['judge.importApply']));
+  assert.equal(container.textContent?.includes(zh['judge.importBadJson']), true, '这不是 JSON 就要这么说');
+
+  await type(box, '{"endpointUrl":1}');
+  await click(buttonByText(zh['judge.importApply']));
+  assert.equal(container.textContent?.includes(zh['judge.importBadShape']), true, '字段不是文字就算形状不对');
+
+  await type(box, '{"endpointUrl":"  "}');
+  await click(buttonByText(zh['judge.importApply']));
+  assert.equal(container.textContent?.includes(zh['judge.importEmpty']), true, '既没地址也没模型不算一次导入');
+
+  await click(buttonByText(zh['judge.importCancel']));
+  assert.equal(container.querySelector('textarea.dsh-judge-paste'), null, '取消之后弹窗关掉');
+});
+
 await test('行的问题写在编号列下方', async () => {
-  await click(buttonByText(zh['rows.add']));
+  await click(buttonIn(rowsSection(), zh['rows.add']));
   const rows = [...container.querySelectorAll('.dsh-judge-table tbody tr')];
   const added = rows.at(-1);
   const numberCell = added?.children[0]?.textContent ?? '';
@@ -298,7 +385,7 @@ await test('行的问题写在编号列下方', async () => {
 await test('导出把整份清单按纯 JSON 复制走', async () => {
   clipboard.text = null;
   clipboardWorks = true;
-  await click(buttonByText(zh['rows.export']));
+  await click(buttonIn(rowsSection(), zh['rows.export']));
   const parsed = JSON.parse(clipboard.text ?? 'null');
   assert.deepEqual(parsed, [
     { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
@@ -308,13 +395,13 @@ await test('导出把整份清单按纯 JSON 复制走', async () => {
 
 await test('导出失败时如实报错，不装作复制好了', async () => {
   clipboardWorks = false;
-  await click(buttonByText(zh['rows.export']));
+  await click(buttonIn(rowsSection(), zh['rows.export']));
   assert.equal(container.textContent?.includes(zh['rows.exportFailed']), true);
   clipboardWorks = true;
 });
 
 await test('导入是粘贴，粘进来的清单直接替换并立即写入', async () => {
-  await click(buttonByText(zh['rows.importOpen']));
+  await click(buttonIn(rowsSection(), zh['rows.importOpen']));
   const box = container.querySelector('textarea.dsh-judge-paste');
   assert.ok(box !== null, '导入弹窗里应当有一个粘贴框');
 
@@ -352,7 +439,7 @@ await test('导入是粘贴，粘进来的清单直接替换并立即写入', as
 });
 
 await test('粘进来的不是清单时说清楚是哪一种问题', async () => {
-  await click(buttonByText(zh['rows.importOpen']));
+  await click(buttonIn(rowsSection(), zh['rows.importOpen']));
   const box = container.querySelector('textarea.dsh-judge-paste');
   await type(box, '{不是 JSON');
   await click(buttonByText(zh['rows.importApply']));

@@ -36,7 +36,7 @@ export const name = SETTINGS_NAMESPACE;
  */
 export const inject = ['credentials', 'sessions', 'sessionTitle'];
 
-export { Config, DEFAULT_ENDPOINT_URL, DEFAULT_JUDGE_MODEL } from './server/config.ts';
+export { Config } from './server/config.ts';
 export { JUDGE_API_KEY_REF } from './server/credentials.ts';
 
 /** Minimal structural shape of the `sessionTitle` service. */

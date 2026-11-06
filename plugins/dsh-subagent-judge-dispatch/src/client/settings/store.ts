@@ -70,8 +70,6 @@ export interface KeyState {
   text: string;
   /** Whether the Host reports a stored key under the reference. */
   configured: boolean;
-  /** Whether the credentials document accepts writes. */
-  writable: boolean;
   /**
    * Whether this page has no credentials channel at all — a non-loopback page
    * is served without the namespace, and a field that cannot be written should
@@ -120,10 +118,6 @@ export interface PageState {
   logLoaded: boolean;
   logFailed: boolean;
 }
-
-/** Defaults mirroring the Host schema, so an unserved page still renders. */
-export const DEFAULT_ENDPOINT_URL = 'http://127.0.0.1:3425/v1/systemone';
-export const DEFAULT_JUDGE_MODEL = 'future-jev/jev-latest';
 
 /** Profile entry id (== settings namespace). */
 export const SETTINGS_NAMESPACE = 'dsh-subagent-judge-dispatch';
@@ -477,10 +471,79 @@ export function parseRowsJson(text: string): RowsImport {
   return { ok: true, rows };
 }
 
+/** The judgement service's connection settings, as the page exports and imports them. */
+export interface JudgeConfigDraft {
+  endpointUrl: string;
+  judgeModel: string;
+}
+
+/**
+ * The judgement service's connection settings as plain JSON text, for copying out.
+ *
+ * The key is not part of it: it is write-only, and a copied document that
+ * carried a secret would be a secret in a clipboard.
+ *
+ * @param state - the three settings as the page holds them.
+ * @returns indented JSON text.
+ */
+export function exportJudgeJson(
+  state: Pick<PageState, 'endpointUrl' | 'judgeModel'>,
+): string {
+  return JSON.stringify(
+    {
+      endpointUrl: state.endpointUrl,
+      judgeModel: state.judgeModel,
+    },
+    null,
+    2,
+  );
+}
+
+/** What reading pasted judgement-service JSON produced. */
+export type JudgeImport =
+  | { ok: true; value: JudgeConfigDraft }
+  /** `error` names the fault; the page turns it into its own sentence. */
+  | { ok: false; error: 'json' | 'shape' | 'empty' };
+
+/**
+ * Read pasted judgement-service settings.
+ *
+ * The text is checked before it can reach the page: it must be one JSON object
+ * and the two fields must be strings. An unknown field is ignored rather than
+ * refused, so a document copied from a newer version still loads what it
+ * understands.
+ *
+ * @param text - what the reader pasted.
+ * @returns the settings, or the fault that stopped it.
+ */
+export function parseJudgeJson(text: string): JudgeImport {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, error: 'json' };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: 'shape' };
+  }
+  const record = parsed as Record<string, unknown>;
+  const wrongType = ['endpointUrl', 'judgeModel']
+    .some((key) => record[key] !== undefined && typeof record[key] !== 'string');
+  if (wrongType) return { ok: false, error: 'shape' };
+  const value: JudgeConfigDraft = {
+    endpointUrl: typeof record.endpointUrl === 'string' ? record.endpointUrl : '',
+    judgeModel: typeof record.judgeModel === 'string' ? record.judgeModel : '',
+  };
+  if (value.endpointUrl.trim() === '' && value.judgeModel.trim() === '') {
+    return { ok: false, error: 'empty' };
+  }
+  return { ok: true, value };
+}
+
 /** A key nothing is staged for and nothing is known about. */
 function emptyKey(): KeyState {
   return {
-    text: '', configured: false, writable: false, unavailable: false,
+    text: '', configured: false, unavailable: false,
     writing: false, failed: false, error: '',
   };
 }
@@ -500,16 +563,16 @@ export class DispatchCardStore {
     writable: false,
     enabled: true,
     logEnabled: true,
-    endpointUrl: DEFAULT_ENDPOINT_URL,
-    judgeModel: DEFAULT_JUDGE_MODEL,
+    endpointUrl: '',
+    judgeModel: '',
     rows: [],
     models: [],
     catalogRead: false,
     committed: {
       enabled: true,
       logEnabled: true,
-      endpointUrl: DEFAULT_ENDPOINT_URL,
-      judgeModel: DEFAULT_JUDGE_MODEL,
+      endpointUrl: '',
+      judgeModel: '',
       rows: [],
     },
     writing: '',
@@ -613,11 +676,7 @@ export class DispatchCardStore {
       const info = response.value[JUDGE_API_KEY_REF];
       this.state = {
         ...this.state,
-        key: {
-          ...this.state.key,
-          configured: info?.configured === true,
-          writable: info?.writable === true,
-        },
+        key: { ...this.state.key, configured: info?.configured === true },
       };
       this.notify();
     } catch {
@@ -643,8 +702,8 @@ export class DispatchCardStore {
     const committed = {
       enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
       logEnabled: typeof value.logEnabled === 'boolean' ? value.logEnabled : true,
-      endpointUrl: typeof value.endpointUrl === 'string' ? value.endpointUrl : DEFAULT_ENDPOINT_URL,
-      judgeModel: typeof value.judgeModel === 'string' ? value.judgeModel : DEFAULT_JUDGE_MODEL,
+      endpointUrl: typeof value.endpointUrl === 'string' ? value.endpointUrl : '',
+      judgeModel: typeof value.judgeModel === 'string' ? value.judgeModel : '',
       rows,
     };
     /** Whether the reader's staged value still differs from what this page last saw committed. */
@@ -734,6 +793,23 @@ export class DispatchCardStore {
   replaceRows(rows: readonly TypeRowDraft[]): void {
     this.stage({ rows: rows.map((row) => ({ ...row })) });
     void this.commit('rows');
+  }
+
+  /**
+   * Replace the judgement service's connection settings with an imported set and
+   * write them.
+   *
+   * The import dialog's own button is the confirmation, so the settings it
+   * produces are written at once rather than left as a draft.
+   *
+   * @param draft - the settings read from the pasted JSON.
+   */
+  replaceJudgeConfig(draft: JudgeConfigDraft): void {
+    this.stage({
+      endpointUrl: draft.endpointUrl,
+      judgeModel: draft.judgeModel,
+    });
+    void this.commit('judge');
   }
 
   /** Delete one row and write the rest; the remaining rows renumber themselves. */
@@ -880,53 +956,6 @@ export class DispatchCardStore {
       this.state = { ...this.state, key: { ...this.state.key, writing: false, failed: true, error: message } };
       return { ok: false, error: message };
     }
-  }
-
-  /**
-   * Remove the stored judgement key.
-   *
-   * A separate control rather than "save an empty field": the shared
-   * configuration form's own rule is that a blank draft writes nothing, so an
-   * emptied input cannot mean removal without contradicting it.
-   *
-   * @returns settlement after the credentials read-back.
-   */
-  async clearKey(): Promise<void> {
-    const credentials = this.credentials;
-    if (credentials === null) return;
-    this.state = { ...this.state, key: { ...this.state.key, writing: true, failed: false, error: '' } };
-    this.notify();
-    try {
-      const response = await credentials.unset(JUDGE_API_KEY_REF);
-      if (!response.ok) {
-        this.state = {
-          ...this.state,
-          key: {
-            ...this.state.key,
-            writing: false,
-            failed: true,
-            error: response.error.message || this.translate('key.clearFailed'),
-          },
-        };
-      } else {
-        this.state = {
-          ...this.state,
-          key: { ...this.state.key, writing: false, text: '', failed: false, error: '', configured: false },
-        };
-        await this.refreshKeyStatus();
-      }
-    } catch (error) {
-      this.state = {
-        ...this.state,
-        key: {
-          ...this.state.key,
-          writing: false,
-          failed: true,
-          error: error instanceof Error && error.message !== '' ? error.message : this.translate('key.clearFailed'),
-        },
-      };
-    }
-    this.notify();
   }
 
   /** Read the runtime log from the Host. */

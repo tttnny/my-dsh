@@ -66,7 +66,7 @@ function makeConfig(overrides = {}) {
   const value = {
     enabled: true,
     logEnabled: true,
-    endpointUrl: 'http://judge.invalid/v1/systemone',
+    endpointUrl: 'http://judge.invalid',
     judgeModel: 'jev-latest',
     rows: [
       { description: '机械修改', provider: 'd1api', model: 'deepseek-v4.1-flash', effort: 'low' },

@@ -33,6 +33,7 @@ import {
 import { judgeTaskType, probeJudge } from '../src/server/judge-client.ts';
 import { LogStore, LOG_KEEP, LOG_PAGE_LIMIT } from '../src/server/log-store.ts';
 import { readPluginConfig, isJudgeUsable } from '../src/server/config.ts';
+import { resolveEndpointUrl } from '../src/server/endpoint.ts';
 import {
   createFetchRoutes,
   LOG_ROUTE_PATH,
@@ -484,6 +485,19 @@ await test('日志：读出来的副本改不动内部记录', async () => {
   assert.equal(store.list()[0].prompt, '{"model":"judge-x"}');
 });
 
+await test('端点地址：没带路径时自动补上，已经带了就不再补', () => {
+  assert.equal(resolveEndpointUrl('http://judge.invalid'), 'http://judge.invalid/v1/systemone');
+  assert.equal(resolveEndpointUrl('http://judge.invalid/'), 'http://judge.invalid/v1/systemone');
+  assert.equal(resolveEndpointUrl('  http://judge.invalid  '), 'http://judge.invalid/v1/systemone');
+  assert.equal(resolveEndpointUrl('http://judge.invalid/v1/systemone'), 'http://judge.invalid/v1/systemone');
+  assert.equal(resolveEndpointUrl('http://judge.invalid/v1/systemone/'), 'http://judge.invalid/v1/systemone');
+  assert.equal(resolveEndpointUrl('http://judge.invalid/systemone'), 'http://judge.invalid/systemone');
+  assert.equal(resolveEndpointUrl('http://judge.invalid/v1'), 'http://judge.invalid/v1/systemone', '只差默认路径的后半段');
+  assert.equal(resolveEndpointUrl('http://judge.invalid/api'), 'http://judge.invalid/api/v1/systemone');
+  assert.equal(resolveEndpointUrl(''), '', '没有地址就没有请求地址');
+  assert.equal(resolveEndpointUrl(undefined), '');
+});
+
 await test('配置读取：编号按位置给，永远从 1 连着', () => {
   const refs = {
     enabled: { get: () => true },
@@ -500,6 +514,7 @@ await test('配置读取：编号按位置给，永远从 1 连着', () => {
   const config = readPluginConfig(refs);
   assert.deepEqual(config.rows.map((r) => r.id), [1, 2]);
   assert.equal(config.rows[1].description, 'b');
+  assert.equal(config.endpointUrl, 'http://judge.invalid/v1/systemone', '读出来的是拼好的完整地址');
 });
 
 await test('配置读取：判断可用要求开关开、端点与模型都在、且有一行填全', () => {
