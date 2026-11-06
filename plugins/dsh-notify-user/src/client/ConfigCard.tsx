@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
-import { Input, Switch } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Input, Pill, Switch } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import {
-  DEFAULT_COLLAPSIBLE,
+  CARD_PLACEMENTS,
   DEFAULT_NUDGE_AFTER,
   MAX_NUDGE_AFTER,
   readConfig,
@@ -12,9 +12,9 @@ import {
 import { NS } from './locales.js';
 
 /**
- * 宿主「插件」页上的配置卡：催办阈值与「进度卡带不带折叠键」。
+ * 宿主「插件」页上的配置卡：催办阈值、进度卡位置与「带不带折叠键」。
  *
- * 没有保存按钮：数字框失焦或回车时写一次，打字期间只改草稿；开关在动作发生的那一刻写。
+ * 没有保存按钮：数字框失焦或回车时写一次，打字期间只改草稿；开关与位置在动作发生的那一刻写。
  * 写入交给设置表单自己排队（它按 revision 串行化），卡片只负责把失败就地报出来。
  */
 
@@ -106,6 +106,28 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
             }}
           />
           <span className="dsh-notify-config-unit">{t('config.threshold.unit')}</span>
+        </div>
+      </div>
+      <div className="dsh-notify-config-row">
+        <div className="dsh-notify-config-info">
+          <div className="dsh-notify-config-label">{t('config.placement.label')}</div>
+          <div className="dsh-notify-config-hint">{t('config.placement.hint')}</div>
+        </div>
+        <div className="dsh-notify-config-field" role="group" aria-label={t('config.placement.label')}>
+          {CARD_PLACEMENTS.map((placement) => (
+            <Pill
+              key={placement}
+              active={config.cardPlacement === placement}
+              aria-pressed={config.cardPlacement === placement}
+              onClick={() => {
+                if (config.cardPlacement === placement) return;
+                setConfig({ ...config, cardPlacement: placement });
+                write('cardPlacement', placement);
+              }}
+            >
+              {t(placement === 'boundary' ? 'config.placement.boundary' : 'config.placement.inline')}
+            </Pill>
+          ))}
         </div>
       </div>
       <div className="dsh-notify-config-row">

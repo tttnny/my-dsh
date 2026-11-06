@@ -27,6 +27,22 @@ const registrations = [];
 const definitions = [];
 const whileServedCalls = [];
 const errors = [];
+
+/** 可变的配置表单：改字段会通知订阅者，用来验「位置切换会重挂定义」。 */
+let configValue = { nudgeAfter: 8, collapsible: true, cardPlacement: 'boundary' };
+const configListeners = new Set();
+const configForm = {
+  getSnapshot: () => ({ status: 'ready', value: configValue }),
+  subscribe: (listener) => {
+    configListeners.add(listener);
+    return () => { configListeners.delete(listener); };
+  },
+  set: async (field, value) => {
+    configValue = { ...configValue, [field]: value };
+    for (const listener of configListeners) listener();
+    return true;
+  },
+};
 const services = () => ({
   locale: {
     register: (ns, dictionaries) => { locales.push({ ns, dictionaries }); return () => {}; },
@@ -47,11 +63,7 @@ const services = () => ({
     },
   },
   configForms: {
-    get: () => ({
-      getSnapshot: () => ({ status: 'ready', value: { nudgeAfter: 8 } }),
-      subscribe: () => () => {},
-      set: async () => true,
-    }),
+    get: () => configForm,
     whileServed: (namespaces, register) => {
       whileServedCalls.push([...namespaces]);
       return register(new Set(namespaces));
@@ -59,7 +71,13 @@ const services = () => ({
   },
   uiConversation: {
     events: {
-      register: (definition) => { definitions.push(definition); return () => {}; },
+      register: (definition) => {
+        definitions.push(definition);
+        return () => {
+          const index = definitions.indexOf(definition);
+          if (index >= 0) definitions.splice(index, 1);
+        };
+      },
     },
   },
 });
@@ -125,6 +143,11 @@ const definition = definitions[0];
 check('注册了一个对话节点定义', definitions.length === 1 && definition?.kind === 'notify-user');
 check('定义的目标是 chat', definition?.target === 'chat');
 check('定义会投影节点', typeof definition?.buildViewNode === 'function');
+
+await configForm.set('cardPlacement', 'inline');
+check('切到跟随工具行后撤掉对话节点定义', definitions.length === 0);
+await configForm.set('cardPlacement', 'boundary');
+check('切回步骤组边界后重新注册定义', definitions.length === 1);
 
 const nodeView = registrations.find((entry) => entry.options?.name === 'conversation.chat.node');
 check('进度卡注册在 conversation.chat.node 且 key 是 notify-user', nodeView?.options?.key === 'notify-user');

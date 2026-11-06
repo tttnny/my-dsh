@@ -13,6 +13,7 @@ const primitives = {
   Input: () => null,
   MarkdownDelegateProvider: (props) => props.children,
   MarkdownText: (props) => props.text,
+  Pill: () => null,
   Switch: () => null,
   TextShimmer: (props) => props.children,
 };

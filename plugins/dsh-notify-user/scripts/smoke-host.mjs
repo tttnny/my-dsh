@@ -100,7 +100,7 @@ await test('导出的行身份与包内 cordis.patch.yml 那条装配行同名',
   assert.deepEqual(plugin.inject, ['tools']);
 });
 
-await test('配置形状：阈值默认 8 / 0 合法 / 越界抛错，折叠默认开', () => {
+await test('配置形状：阈值默认 8 / 0 合法 / 越界抛错，折叠默认开，位置默认边界', () => {
   assert.equal(new plugin.Config({}).nudgeAfter.get(), 8);
   assert.equal(new plugin.Config({ nudgeAfter: 0 }).nudgeAfter.get(), 0);
   assert.equal(new plugin.Config({ nudgeAfter: 12 }).nudgeAfter.get(), 12);
@@ -108,6 +108,9 @@ await test('配置形状：阈值默认 8 / 0 合法 / 越界抛错，折叠默�
   assert.throws(() => new plugin.Config({ nudgeAfter: 101 }), /nudgeAfter/);
   assert.equal(new plugin.Config({}).collapsible.get(), true);
   assert.equal(new plugin.Config({ collapsible: false }).collapsible.get(), false);
+  assert.equal(new plugin.Config({}).cardPlacement.get(), 'boundary');
+  assert.equal(new plugin.Config({ cardPlacement: 'inline' }).cardPlacement.get(), 'inline');
+  assert.throws(() => new plugin.Config({ cardPlacement: 'nope' }), /cardPlacement/);
 });
 
 const first = harness(8);

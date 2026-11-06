@@ -1,23 +1,30 @@
 /**
  * 配置卡与宿主配置表单之间的接线：座位、包名，以及「读当前配置」。
  *
- * 卡片（`ConfigCard.tsx`）、进度卡（`NotifyRow.tsx`）与自检（`scripts/smoke-client.mjs`）
- * 都从这里取字面量，所以「key 写歪一个字符」这类静默失败不会两边各写一份。
- * 与宿主共用的命名空间/默认值在 `src/shared/config.ts`，这里只再导出。
+ * 卡片（`ConfigCard.tsx`）、进度卡（`NotifyRow.tsx` / `NotifyNodeView.tsx`）与自检
+ * （`scripts/smoke-client.mjs`）都从这里取字面量，所以「key 写歪一个字符」这类静默失败
+ * 不会两边各写一份。与宿主共用的命名空间/默认值在 `src/shared/config.ts`，这里只再导出。
  */
 
 import {
+  CARD_PLACEMENTS,
+  DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
   DEFAULT_NUDGE_AFTER,
   MAX_NUDGE_AFTER,
+  type CardPlacement,
 } from '../shared/config.js';
 
 export {
+  CARD_PLACEMENTS,
+  DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
   DEFAULT_NUDGE_AFTER,
   MAX_NUDGE_AFTER,
   SETTINGS_NAMESPACE,
 } from '../shared/config.js';
+
+export type { CardPlacement } from '../shared/config.js';
 
 /** 本插件 bundle 的包名：`plugins.bundle.config` 的 key 就是它。 */
 export const BUNDLE_NAME = '@lynn123411/dsh-notify-user';
@@ -28,7 +35,12 @@ export const BUNDLE_CONFIG_SLOT = 'plugins.bundle.config';
 /** 设置表单快照里本卡片读到的那几件。 */
 export interface ConfigFormSnapshot {
   status: 'loading' | 'ready' | 'unavailable';
-  value?: Partial<Record<string, unknown>> | undefined;
+  value?: unknown;
+}
+
+/** 判断一个值是不是普通对象。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -45,6 +57,7 @@ export interface ConfigForm {
 export interface ClientConfig {
   nudgeAfter: number;
   collapsible: boolean;
+  cardPlacement: CardPlacement;
 }
 
 /**
@@ -55,11 +68,14 @@ export interface ClientConfig {
 export function readConfig(form: ConfigForm): ClientConfig | undefined {
   const snapshot = form.getSnapshot();
   if (snapshot.status === 'unavailable') return undefined;
-  const rawThreshold = snapshot.value?.['nudgeAfter'];
+  const value = isRecord(snapshot.value) ? snapshot.value : {};
+  const rawThreshold = value['nudgeAfter'];
   const nudgeAfter = typeof rawThreshold === 'number' && Number.isFinite(rawThreshold)
     ? Math.min(MAX_NUDGE_AFTER, Math.max(0, Math.floor(rawThreshold)))
     : DEFAULT_NUDGE_AFTER;
-  const rawCollapsible = snapshot.value?.['collapsible'];
+  const rawCollapsible = value['collapsible'];
   const collapsible = typeof rawCollapsible === 'boolean' ? rawCollapsible : DEFAULT_COLLAPSIBLE;
-  return { nudgeAfter, collapsible };
+  const rawPlacement = value['cardPlacement'];
+  const cardPlacement = CARD_PLACEMENTS.find(placement => placement === rawPlacement) ?? DEFAULT_CARD_PLACEMENT;
+  return { nudgeAfter, collapsible, cardPlacement };
 }

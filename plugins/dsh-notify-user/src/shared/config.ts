@@ -17,3 +17,12 @@ export const MAX_NUDGE_AFTER = 100;
 
 /** 进度卡默认带折叠按钮；正文始终默认展开。 */
 export const DEFAULT_COLLAPSIBLE = true;
+
+/** 进度卡在对话流里的位置：步骤组边界，或跟随工具行。 */
+export const CARD_PLACEMENTS = ['boundary', 'inline'] as const;
+
+/** 进度卡位置。 */
+export type CardPlacement = typeof CARD_PLACEMENTS[number];
+
+/** 默认把进度卡放在步骤组边界。 */
+export const DEFAULT_CARD_PLACEMENT: CardPlacement = 'boundary';

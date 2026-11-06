@@ -9,7 +9,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-tool/client';
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
 import { NOTIFY_TOOL_NAME } from '../shared/config.js';
 import { ConfigCard } from './ConfigCard.js';
-import { BUNDLE_CONFIG_SLOT, BUNDLE_NAME, SETTINGS_NAMESPACE } from './config.js';
+import {
+  BUNDLE_CONFIG_SLOT,
+  BUNDLE_NAME,
+  DEFAULT_CARD_PLACEMENT,
+  SETTINGS_NAMESPACE,
+  readConfig,
+} from './config.js';
 import { NS, en, zh } from './locales.js';
 import { NOTIFY_NODE_KIND, createNotifyDefinition } from './notify-node.js';
 import { NotifyNodeView } from './NotifyNodeView.js';
@@ -78,7 +84,27 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-notify-user: dictionaries');
 
-  ctx.effect(() => ctx.uiConversation.events.register(createNotifyDefinition()), 'dsh-notify-user: notify node definition');
+  // 位置是 `boundary` 时注册对话节点定义，卡片站在步骤组外；`inline` 时撤掉定义，
+  // 通用工具定义建出的工具行由 toolview 画成同一张卡，卡片随组折叠。
+  ctx.effect(() => {
+    const form = ctx.configForms.get(SETTINGS_NAMESPACE);
+    let dispose: (() => void) | undefined;
+    const sync = (): void => {
+      const placement = readConfig(form)?.cardPlacement ?? DEFAULT_CARD_PLACEMENT;
+      if (placement === 'boundary') {
+        dispose ??= ctx.uiConversation.events.register(createNotifyDefinition());
+        return;
+      }
+      dispose?.();
+      dispose = undefined;
+    };
+    sync();
+    const unsubscribe = form.subscribe(sync);
+    return () => {
+      unsubscribe();
+      dispose?.();
+    };
+  }, 'dsh-notify-user: notify node definition');
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',

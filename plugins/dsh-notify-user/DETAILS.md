@@ -32,12 +32,15 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 认领是 target 级的：同一次调用的事件不再交给别的 chat 定义，回合过程的工具调用计数与助手行的流式块列表因此少这一次，两者都不上屏。
 
+位置设成 `inline` 时不注册这份定义：通用工具定义建出工具行，`tool.call.toolview` 把卡片画在行里，卡片随组折叠。切换位置会重挂定义，对话流当场重排。
+
 ## 配置项
 
 | 字段 | 默认 | 范围 | 说明 |
 | --- | --- | --- | --- |
 | `nudgeAfter` | 8 | 0–100 | 连续多少次根工具调用没有汇报时催一次；0 关闭催办。 |
 | `collapsible` | true | 布尔 | 进度卡标题旁带不带折叠键；带折叠键时正文仍默认展开，关掉后正文始终展开、不显示折叠键。 |
+| `cardPlacement` | `boundary` | `boundary` / `inline` | 进度卡位置：`boundary` 站在步骤组边界，`inline` 跟随工具行、随组折叠。 |
 
 字段都标了 `.volatile()`：改它们不重挂这条 loader entry。催办状态机每次 `pre-step` 现读 `nudgeAfter`；进度卡通过注册项的 `inject` 拿到同一张配置表单并订阅，所以 `collapsible` 改完当前页面的卡片立刻跟着变。配置界面在宿主「插件」页本插件的详情页上；宿主没服务这份配置时卡片整块不出现。插件同时用 `ctx.settings.configure({ auto: false })` 关掉内核按 schema 自动生成的那份设置页。
 
@@ -75,7 +78,7 @@ cd plugins/dsh-notify-user && pnpm check
 
 - `typecheck`：`src` 的类型闸门。
 - `smoke-host.mjs`：真 cordis + 真 `ToolRuntime`，断言配置形状、工具注册与执行、装配行，以及催办接线在真 `ctx.waterfall` 下的行为（满阈值注入、汇报/新回合/用户插话/阈值 0 清零、上下文注入不清零、PTC 子调用不计数、嵌套汇报清零、子代理不注入、下游拒绝时不追加）。
-- `smoke-client.mjs`：按 Web shell 方式装载浏览器 bundle，断言对话节点定义、三处座位注册、字典键集与「未声明服务读取会抛」的守卫。
+- `smoke-client.mjs`：按 Web shell 方式装载浏览器 bundle，断言对话节点定义、位置切换会重挂定义、三处座位注册、字典键集与「未声明服务读取会抛」的守卫。
 - `test-nudge.mjs`：催办状态机的纯逻辑（阈值、清零、现读、按 agent 隔离）。
 - `test-row-model.mjs`：进度卡数据视图的三条来路（`meta` / PTC 参数 / start 参数）与标题回退。
 - `test-notify-node.mjs`：对话节点定义的认领范围、节点位置与卡片数据（原生调用、结果落定、流式增量与块结束、PTC 子调用、结果先到、没有正文时的兜底）。

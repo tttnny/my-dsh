@@ -13,6 +13,10 @@ export const en = {
   'config.threshold.unit': 'calls',
   'config.collapsible.label': 'Collapsible',
   'config.collapsible.hint': 'The update body starts expanded with a collapse button beside the title; turn it off to keep the body always expanded with no button.',
+  'config.placement.label': 'Card placement',
+  'config.placement.hint': 'At the step-group boundary, tool calls between two updates fold into their own sub-folds; following the tool row, the card folds with the group.',
+  'config.placement.boundary': 'Step-group boundary',
+  'config.placement.inline': 'Follow tool row',
   'config.write.failed': "Couldn't save; change it again to retry.",
   'config.unavailable': 'This configuration is unavailable right now.',
 };
@@ -29,6 +33,10 @@ export const zh = {
   'config.threshold.unit': '次',
   'config.collapsible.label': '可折叠',
   'config.collapsible.hint': '进度卡正文默认展开，标题旁带一个折叠键；关掉后正文始终展开、不显示折叠键。',
+  'config.placement.label': '进度卡位置',
+  'config.placement.hint': '放在步骤组边界时，两次汇报之间的工具调用各自折成一个子折叠；跟随工具行时，卡片随工具行一起折进组里。',
+  'config.placement.boundary': '步骤组边界',
+  'config.placement.inline': '跟随工具行',
   'config.write.failed': '没写进去，再改一次试试。',
   'config.unavailable': '这份配置现在读不到。',
 };
