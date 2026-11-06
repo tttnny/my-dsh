@@ -171,6 +171,7 @@ function makeStore(options = {}) {
       probe: async () => ({ ok: true, latencyMs: 1 }),
     },
     credentials: keys.credentials,
+    officialSettingsOpener: options.officialSettingsOpener ?? null,
     t: (key) => key,
   });
   return { store, host, keys };
@@ -335,6 +336,20 @@ await test('判断服务没有预填值：宿主给空就是空', () => {
   assert.equal(store.getState().judgeModel, '');
 });
 
+await test('任务类型那一节能打开它依赖的官方配置', () => {
+  let opened = 0;
+  const { store } = makeStore({ officialSettingsOpener: () => { opened += 1; } });
+  assert.equal(store.canOpenOfficialSettings(), true);
+  store.openOfficialSettings();
+  assert.equal(opened, 1);
+});
+
+await test('页面没有插件页导航时，官方配置入口不给按', () => {
+  const { store } = makeStore();
+  assert.equal(store.canOpenOfficialSettings(), false);
+  store.openOfficialSettings();
+});
+
 await test('还没提交的草稿不被宿主的下一次发布冲掉', async () => {
   const { store, host } = makeStore();
   store.field('endpointUrl', 'http://mid-typing.invalid/v1/sys');
@@ -418,6 +433,7 @@ await test('页面没有凭据通道时，密钥格标成不可用', async () =>
     session: null,
     remote: null,
     credentials: null,
+    officialSettingsOpener: null,
     t: (key) => key,
   });
   assert.equal(store.getState().key.unavailable, true);

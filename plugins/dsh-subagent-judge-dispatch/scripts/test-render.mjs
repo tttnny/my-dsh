@@ -163,8 +163,11 @@ const hostForm = {
 
 /** 本测试直接拿座位组件来画，不关心注册细节。 */
 const registrations = [];
+/** 插件页导航替身：记下「回到插件页列表」被叫了几次。 */
+let openedList = 0;
 const ctx = {
   effect: (fn) => { fn(); return () => {} },
+  get: (name) => (name === 'pluginNavigation' ? { openList: () => { openedList += 1; } } : undefined),
   inject: (_names, fn) => { fn(ctx); return () => {} },
   slots: {
     inject: (_key, register) => { register(); return () => {} },
@@ -297,6 +300,33 @@ await test('没有保存按钮：试通在判断服务标题行，导入导出�
   assert.ok(preview !== undefined, '预览按钮应当在场');
   assert.equal(preview.closest('.dsh-judge-section'), null, '预览不该挂在某一节里面');
   assert.ok(preview.closest('.dsh-judge-footer') !== null, '预览应当落在卡片最下面那条栏里');
+});
+
+await test('任务类型那一节写明依赖的官方配置，点了跳到那张卡片', async () => {
+  const section = rowsSection();
+  assert.equal(
+    section?.textContent?.includes(zh['rows.dependsOn']),
+    true,
+    '写明依赖哪份官方配置',
+  );
+  const open = buttonIn(section, zh['rows.dependsOnOpen']);
+  assert.ok(open !== undefined, '去设置的入口应当在场');
+
+  // 宿主插件页上的那张官方卡片：按下它会打开官方配置页。
+  const card = document.createElement('li');
+  card.setAttribute('data-plugin-item', 'subagent');
+  const cardButton = document.createElement('button');
+  cardButton.textContent = '子智能体';
+  card.appendChild(cardButton);
+  document.body.appendChild(card);
+  let openedCard = 0;
+  cardButton.addEventListener('click', () => { openedCard += 1; });
+
+  const before = openedList;
+  await click(open);
+  assert.equal(openedList, before + 1, '先回到插件页列表');
+  assert.equal(openedCard, 1, '再按下那张官方卡片');
+  card.remove();
 });
 
 await test('文字格离开才写，写的是这一格的新值', async () => {

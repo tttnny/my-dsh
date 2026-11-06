@@ -594,6 +594,7 @@ export class DispatchCardStore {
   private credentials: CredentialsRemoteLike | null = null;
   private offForm: (() => void) | null = null;
   private offAllowed: (() => void) | null = null;
+  private officialSettingsOpener: (() => void) | null = null;
   private translate: (key: string) => string = (key) => key;
 
   /** Bind the Host services; re-binding detaches the previous subscriptions. */
@@ -603,6 +604,8 @@ export class DispatchCardStore {
     session: SessionRemoteLike | null;
     remote: DispatchRemoteLike | null;
     credentials: CredentialsRemoteLike | null;
+    /** Opens the official setting the type list depends on; null when the page cannot navigate. */
+    officialSettingsOpener: (() => void) | null;
     t: (key: string) => string;
   }): void {
     this.offForm?.();
@@ -612,6 +615,7 @@ export class DispatchCardStore {
     this.session = options.session;
     this.remote = options.remote;
     this.credentials = options.credentials;
+    this.officialSettingsOpener = options.officialSettingsOpener;
     this.translate = options.t;
     this.state = {
       ...this.state,
@@ -956,6 +960,16 @@ export class DispatchCardStore {
       this.state = { ...this.state, key: { ...this.state.key, writing: false, failed: true, error: message } };
       return { ok: false, error: message };
     }
+  }
+
+  /** Whether this page can open the official setting the type list depends on. */
+  canOpenOfficialSettings(): boolean {
+    return this.officialSettingsOpener !== null;
+  }
+
+  /** Open the official setting the type list depends on. */
+  openOfficialSettings(): void {
+    this.officialSettingsOpener?.();
   }
 
   /** Read the runtime log from the Host. */

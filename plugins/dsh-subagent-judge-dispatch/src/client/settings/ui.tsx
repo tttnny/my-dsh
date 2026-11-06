@@ -19,6 +19,10 @@ import {
   setupPluginPage,
 } from './plugin-page.ts';
 import {
+  createOfficialSettingsOpener,
+  type PluginNavigationLike,
+} from './official-settings.ts';
+import {
   ALLOWED_MODELS_NAMESPACE,
   createDispatchRemote,
   describeChoice,
@@ -132,6 +136,12 @@ const CARD_CSS = `
 .dsh-judge-off { display: block; color: var(--dsw-alias-state-warn-label); font: var(--dsw-font-xxxs-11); }
 /* 标题行右端的一组动作：试通、导入、导出、加一行都排在这里。 */
 .dsh-judge-actions-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* 任务类型那一节顶部的一行：依赖哪份官方配置，以及去那里的入口。 */
+.dsh-judge-dependency { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
+.dsh-judge-dependency .dsh-judge-desc { max-width: none; }
+/* 入口按链接的样子走：没有按钮的盒子和底色，只在悬停时加下划线。 */
+.dsh-judge-link { height: auto; padding: 0 2px; color: var(--dsw-alias-link); font: var(--dsw-font-xxs-12); }
+.dsh-judge-link:hover { color: var(--dsw-alias-link); background: none; text-decoration: underline; }
 /* 卡片最下面的出口：只有预览这一件跨节的动作，靠右与两节的右边缘对齐。 */
 .dsh-judge-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .dsh-judge-hint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); }
@@ -620,7 +630,20 @@ export function JudgeDispatchPanel(
             </Button>
           </div>
         </div>
-        <div className="dsh-judge-desc">{t('rows.desc')}</div>
+        {/* 这张表能选什么由宿主那份官方配置决定：写明依赖，入口按链接的样子排在句尾。 */}
+        <div className="dsh-judge-dependency">
+          <span className="dsh-judge-desc">{t('rows.dependsOn')}</span>
+          {dispatchCardStore.canOpenOfficialSettings() && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="dsh-judge-link"
+              onClick={() => dispatchCardStore.openOfficialSettings()}
+            >
+              {t('rows.dependsOnOpen')}
+            </Button>
+          )}
+        </div>
         {state.models.length === 0 && <div className="dsh-judge-off">{t('rows.allowedEmpty')}</div>}
         {state.rows.length === 0 && <div className="dsh-judge-desc">{t('rows.empty')}</div>}
         {state.rows.length > 0 && (
@@ -803,6 +826,8 @@ export function JudgeDispatchPanel(
 /** The client context surface this file uses. */
 interface ClientContextLike {
   effect(factory: () => void | (() => void), label?: string): void;
+  /** Reflection read: services this plugin uses without declaring them. */
+  get?(name: string): unknown;
   slots?: {
     inject(name: string, register: () => unknown): () => void;
     register(options: Record<string, unknown>, component: unknown): () => void;
@@ -834,6 +859,11 @@ export function setupSettingsUi(ctx: ClientContextLike): void {
       remote: createDispatchRemote(),
       // The judgement key is written here; its value never rides a response.
       credentials: ctx.remote?.credentials ?? null,
+      // The type list's options come from the host's own official setting; this
+      // is the one jump to it the page can make.
+      officialSettingsOpener: createOfficialSettingsOpener(
+        ctx.get?.('pluginNavigation') as PluginNavigationLike | undefined,
+      ),
       t,
     });
   } catch (error) {
