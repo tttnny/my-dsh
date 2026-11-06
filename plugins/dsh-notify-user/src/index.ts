@@ -2,7 +2,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-settings';
 import { nudgeAfterOf, type PluginConfig } from './config.js';
-import { createNudgeController, installNudge, NUDGE_TOOL_NAME } from './nudge.js';
+import { createNudgeController, installNudge } from './nudge.js';
+import { NOTIFY_TOOL_NAME } from './shared/config.js';
 import { parseUpdate } from './client/row-model.js';
 
 /**
@@ -27,10 +28,10 @@ export { Config } from './config.js';
  * @param config - 本行的配置；阈值每次现读，改配置不重挂插件。
  */
 export function apply(ctx: Context, config: PluginConfig): void {
-  installNudge(ctx, createNudgeController(() => nudgeAfterOf(config)));
+  installNudge(ctx, createNudgeController(() => nudgeAfterOf(config)), NOTIFY_TOOL_NAME);
 
   ctx.tools.register(defineTool({
-    name: NUDGE_TOOL_NAME,
+    name: NOTIFY_TOOL_NAME,
     description: 'Send the user a short progress update without ending your turn. Use it when you have been working through several tool calls, when you finish a stage or change direction, or when you find something the user should know before you finish. Do not use it for the final answer: findings that belong in the reply still go in the reply.',
     parameters: {
       title: {

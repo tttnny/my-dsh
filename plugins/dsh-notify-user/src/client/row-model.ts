@@ -16,6 +16,14 @@ export interface Update {
   message: string;
 }
 
+/** 一张进度卡要画的东西：工具行与对话节点两种座位都整理成这个形状。 */
+export interface NotifyCardData {
+  readonly title?: string;
+  readonly message: string;
+  readonly time: number;
+  readonly settled: boolean;
+}
+
 /**
  * 从任意对象里读汇报内容——宿主半边投影 `presentationMeta` 也走这一份，
  * 两边读的是同一份日志，形状只能有一处定义。
@@ -31,8 +39,12 @@ export function parseUpdate(value: unknown): Update | null {
   return title === undefined ? { message } : { title, message };
 }
 
-/** 从一段 JSON 参数里读汇报内容。 */
-function parseArgs(raw: string | undefined): Update | null {
+/**
+ * 从一段 JSON 参数里读汇报内容。
+ * @param raw - 模型产出的参数 JSON 文本；流式阶段可能是截断的前缀。
+ * @returns 读得到时返回内容，否则 null。
+ */
+export function parseArgs(raw: string | undefined): Update | null {
   if (typeof raw !== 'string' || raw.length === 0) return null;
   try {
     return parseUpdate(JSON.parse(raw));

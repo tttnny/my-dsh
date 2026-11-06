@@ -36,7 +36,7 @@
     "build": "node build.mjs",
     "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node build.mjs && node scripts/smoke-host.mjs && node scripts/smoke-client.mjs && node scripts/test-nudge.mjs && node scripts/test-row-model.mjs",
+    "test": "node build.mjs && node scripts/smoke-host.mjs && node scripts/smoke-client.mjs && node scripts/test-nudge.mjs && node scripts/test-row-model.mjs && node scripts/test-notify-node.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm assert:lib-untracked"
   },
@@ -68,6 +68,8 @@
     "@deepseek-ai/cordis": "^4.1.0",
     "@deepseek-ai/dsh-agent": ">=0.2.2-rc.1",
     "@deepseek-ai/dsh-client-locale": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-chat": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": ">=0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.1",

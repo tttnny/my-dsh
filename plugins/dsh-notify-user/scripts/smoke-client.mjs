@@ -1,6 +1,6 @@
 /**
  * 浏览器半边自检：按 Web shell 的方式装载 lib/client.js（`window.__ModuleLoader__.load` 桩件），
- * 喂假 cordis 服务，断言两处注册与字典。**未声明的服务读取必须抛**——漏声明不会报错，
+ * 喂假 cordis 服务，断言对话节点定义、三处座位注册与字典。**未声明的服务读取必须抛**——漏声明不会报错，
  * 只会让插件在页面里消失（docs/rules/client-wiring.md），守卫自身要有反例断言证明它还能抛。
  *
  * 跑法：pnpm test / node scripts/smoke-client.mjs
@@ -8,6 +8,7 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { loadClientBundle } from './lib/client-bundle.mjs';
 
 const require = createRequire(import.meta.url);
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -19,35 +20,11 @@ const check = (label, ok) => {
   else { console.error(`  FAIL ${label}`); failures.push(label); }
 };
 
-/** ui-primitives 的薄桩：只顶掉本插件真的 import 的那几个名字。 */
-const primitives = {
-  IconChevronDownOutlineRegular: () => null,
-  Input: () => null,
-  MarkdownDelegateProvider: (props) => props.children,
-  MarkdownText: (props) => props.text,
-  Switch: () => null,
-  TextShimmer: (props) => props.children,
-};
-
-let exported;
-const requires = [];
-globalThis.window = {
-  __ModuleLoader__: {
-    load: ({ id, factory }) => {
-      requires.push(id);
-      exported = factory((spec) => {
-        if (spec === 'react') return require('react');
-        if (spec === 'react/jsx-runtime') return require('react/jsx-runtime');
-        if (spec === 'react-dom') return require('react-dom');
-        if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
-        throw new Error(`module table miss: ${spec}`);
-      });
-    },
-  },
-};
+const { exported, requires } = await loadClientBundle(root);
 
 const locales = [];
 const registrations = [];
+const definitions = [];
 const whileServedCalls = [];
 const errors = [];
 const services = () => ({
@@ -78,6 +55,11 @@ const services = () => ({
     whileServed: (namespaces, register) => {
       whileServedCalls.push([...namespaces]);
       return register(new Set(namespaces));
+    },
+  },
+  uiConversation: {
+    events: {
+      register: (definition) => { definitions.push(definition); return () => {}; },
     },
   },
 });
@@ -115,7 +97,7 @@ await import(`${join(root, 'lib/client.js')}?smoke=${Date.now()}`);
 
 check('bundle 以包 id 自注册', requires[0] === pkgName);
 check('导出 name / apply / inject', exported?.name === pkgName && typeof exported?.apply === 'function' && Array.isArray(exported?.inject));
-check('inject 写的就是它真正读的服务', JSON.stringify(exported?.inject) === '["configForms","slots","locale"]');
+check('inject 写的就是它真正读的服务', JSON.stringify(exported?.inject) === '["configForms","slots","locale","uiConversation"]');
 
 try {
   makeCtx('teeth').locale;
@@ -139,11 +121,22 @@ const enKeys = Object.keys(dictionary?.en ?? {}).sort();
 check('zh/en 键集一致且非空', zhKeys.length > 0 && JSON.stringify(zhKeys) === JSON.stringify(enKeys));
 check('每条文案都非空', enKeys.every((key) => typeof dictionary.en[key] === 'string' && dictionary.en[key].length > 0));
 
+const definition = definitions[0];
+check('注册了一个对话节点定义', definitions.length === 1 && definition?.kind === 'notify-user');
+check('定义的目标是 chat', definition?.target === 'chat');
+check('定义会投影节点', typeof definition?.buildViewNode === 'function');
+
+const nodeView = registrations.find((entry) => entry.options?.name === 'conversation.chat.node');
+check('进度卡注册在 conversation.chat.node 且 key 是 notify-user', nodeView?.options?.key === 'notify-user');
+check('节点渲染器带本插件的字典命名空间', nodeView?.options?.locale === 'notifyUser');
+check('节点渲染器是个函数', typeof nodeView?.component === 'function');
+check('节点渲染器注入了一张配置表单', typeof nodeView?.options?.inject === 'function' && nodeView.options.inject().form !== undefined);
+
 const toolview = registrations.find((entry) => entry.options?.name === 'tool.call.toolview');
-check('进度卡注册在 tool.call.toolview 且 key 是 notify_user', toolview?.options?.key === 'notify_user');
-check('进度卡带本插件的字典命名空间', toolview?.options?.locale === 'notifyUser');
-check('进度卡组件是个函数', typeof toolview?.component === 'function');
-check('进度卡注入了一张配置表单', typeof toolview?.options?.inject === 'function' && toolview.options.inject().form !== undefined);
+check('兜底进度卡注册在 tool.call.toolview 且 key 是 notify_user', toolview?.options?.key === 'notify_user');
+check('兜底进度卡带本插件的字典命名空间', toolview?.options?.locale === 'notifyUser');
+check('兜底进度卡组件是个函数', typeof toolview?.component === 'function');
+check('兜底进度卡注入了一张配置表单', typeof toolview?.options?.inject === 'function' && toolview.options.inject().form !== undefined);
 
 const configCard = registrations.find((entry) => entry.options?.name === 'plugins.bundle.config');
 check('配置卡注册在 plugins.bundle.config 且 key 是包名', configCard?.options?.key === pkgName);

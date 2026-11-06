@@ -25,9 +25,6 @@ declare module '@deepseek-ai/dsh-llm' {
   }
 }
 
-/** 汇报工具的名字：与 `src/index.ts` 注册的那条一致。 */
-export const NUDGE_TOOL_NAME = 'notify_user';
-
 /** 注入消息的来源标记；`form: 'notice'` 让它在对话流里只占一行。 */
 const NUDGE_SOURCE = { kind: 'notify-user-nudge' } as const;
 
@@ -114,14 +111,15 @@ export function isSubagent(agent: Agent): boolean {
  * 新回合与用户插话在这里清零。
  * @param ctx - 宿主插件上下文。
  * @param controller - 催办状态机。
+ * @param toolName - 汇报工具的名字；结果事件里出现它时清零。
  */
-export function installNudge(ctx: Context, controller: NudgeController): void {
+export function installNudge(ctx: Context, controller: NudgeController, toolName: string): void {
   ctx.on('tools/result', (exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): undefined => {
     // 取消发生在派发前：这次调用没有真正执行，不当作一次「没汇报的工具调用」。
     if (result.isError && result.error.info?.code === 'ABORTED_BEFORE_DISPATCH') return undefined;
     const agent = exec.agent;
     if (agent !== undefined && !isSubagent(agent)) {
-      if (exec.name === NUDGE_TOOL_NAME) controller.notify(agent);
+      if (exec.name === toolName) controller.notify(agent);
       else if (exec.parent === undefined) controller.toolCall(agent);
     }
     return undefined;

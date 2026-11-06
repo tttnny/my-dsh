@@ -6,6 +6,9 @@
 /** 本插件在 profile 里的 loader 行 id，也是设置的命名空间。 */
 export const SETTINGS_NAMESPACE = 'dsh-notify-user';
 
+/** 汇报工具的名字：宿主注册、客户端认领、催办清零都用这一个字面量。 */
+export const NOTIFY_TOOL_NAME = 'notify_user';
+
 /** 催办阈值：连续多少次根工具调用没有汇报时催一次。 */
 export const DEFAULT_NUDGE_AFTER = 8;
 
