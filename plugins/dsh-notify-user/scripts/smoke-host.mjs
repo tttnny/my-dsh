@@ -100,8 +100,8 @@ await test('导出的行身份与包内 cordis.patch.yml 那条装配行同名',
   assert.deepEqual(plugin.inject, ['tools']);
 });
 
-await test('配置形状：阈值默认 8 / 0 合法 / 越界抛错，折叠默认开，位置默认边界', () => {
-  assert.equal(new plugin.Config({}).nudgeAfter.get(), 8);
+await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默认开，位置默认边界', () => {
+  assert.equal(new plugin.Config({}).nudgeAfter.get(), 10);
   assert.equal(new plugin.Config({ nudgeAfter: 0 }).nudgeAfter.get(), 0);
   assert.equal(new plugin.Config({ nudgeAfter: 12 }).nudgeAfter.get(), 12);
   assert.throws(() => new plugin.Config({ nudgeAfter: -1 }), /nudgeAfter/);

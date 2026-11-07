@@ -29,7 +29,7 @@ const whileServedCalls = [];
 const errors = [];
 
 /** 可变的配置表单：改字段会通知订阅者，用来验「位置切换会重挂定义」。 */
-let configValue = { nudgeAfter: 8, collapsible: true, cardPlacement: 'boundary' };
+let configValue = { nudgeAfter: 10, collapsible: true, cardPlacement: 'boundary' };
 const configListeners = new Set();
 const configForm = {
   getSnapshot: () => ({ status: 'ready', value: configValue }),

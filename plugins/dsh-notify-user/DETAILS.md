@@ -38,7 +38,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 | 字段 | 默认 | 范围 | 说明 |
 | --- | --- | --- | --- |
-| `nudgeAfter` | 8 | 0–100 | 连续多少次根工具调用没有汇报时催一次；0 关闭催办。 |
+| `nudgeAfter` | 10 | 0–100 | 连续多少次根工具调用没有汇报时催一次；0 关闭催办。 |
 | `collapsible` | true | 布尔 | 进度卡标题旁带不带折叠键；带折叠键时正文仍默认展开，关掉后正文始终展开、不显示折叠键。 |
 | `cardPlacement` | `boundary` | `boundary` / `inline` | 进度卡位置：`boundary` 站在步骤组边界，`inline` 跟随工具行、随组折叠。 |
 

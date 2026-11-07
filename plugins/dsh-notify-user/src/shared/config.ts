@@ -10,7 +10,7 @@ export const SETTINGS_NAMESPACE = 'dsh-notify-user';
 export const NOTIFY_TOOL_NAME = 'notify_user';
 
 /** 催办阈值：连续多少次根工具调用没有汇报时催一次。 */
-export const DEFAULT_NUDGE_AFTER = 8;
+export const DEFAULT_NUDGE_AFTER = 10;
 
 /** 阈值上限；0 是关闭催办，其余按次数算。 */
 export const MAX_NUDGE_AFTER = 100;
