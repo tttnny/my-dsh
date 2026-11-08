@@ -10,6 +10,8 @@ description: |
 
 DSH 把这些工具注册为 `mcp__kimi-cu__<name>`（例如 `mcp__kimi-cu__list_apps`）；下文用去掉前缀的短名指代。
 
+如果 `mcp__kimi-cu__*` 工具不存在或连接失败，先调用 DSH 的 `kimi_cu_status` 工具查安装状态与修复步骤，把结论转告用户；不要在缺装时假装能操作。
+
 ## 操作边界
 
 - 默认后台操作，不自行激活应用、抬窗或开启前台 fallback。永不移动真实光标、使用 HID 投递或拦截用户真实点击；不要用 AppleScript / cliclick 等绕过这些限制。

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "KimiCU 桌面操作",
-    "description": "接上本机 KimiCU：把它的 mcp 服务挂成 mcp__kimi-cu__* 工具，并随包带一份操作界面用的 kimi-cu 技能。"
+    "description": "接上本机 KimiCU（macOS / Windows），让模型看见并操作已打开的应用窗口；插件页会检测安装状态并给出对应平台的安装命令。"
   }
 }

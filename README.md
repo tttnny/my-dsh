@@ -70,7 +70,7 @@
     <tr>
       <td><b>🖥️ 桌面操作</b><br><i>读写本机 app 的界面</i></td>
       <td><a href="./plugins/dsh-kimi-cu"><code>@lynn123411/dsh-kimi-cu</code></a></td>
-      <td><b>KimiCU 桌面操作</b><br>接上本机 KimiCU，让模型看见并操作 macOS 上已打开的应用窗口：观察、点击、输入、滚动、拖拽，随包带一份操作技能。</td>
+      <td><b>KimiCU 桌面操作</b><br>接上本机 KimiCU（macOS / Windows），让模型看见并操作已打开的应用窗口；插件页检测安装状态并给出对应平台的安装命令。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-kimi-cu</code></td>
     </tr>
   </tbody>

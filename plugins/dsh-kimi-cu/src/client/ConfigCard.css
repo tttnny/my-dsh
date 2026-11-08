@@ -1,0 +1,95 @@
+/* 插件页上的 KimiCU 状态卡。 */
+
+.dsh-kimi-cu-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dsh-kimi-cu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dsh-kimi-cu-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dsh-kimi-cu-path {
+  word-break: break-all;
+}
+
+.dsh-kimi-cu-note {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dsh-kimi-cu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dsh-kimi-cu-command {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.dsh-kimi-cu-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dsh-kimi-cu-link {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.dsh-kimi-cu-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dsh-kimi-cu-checks li {
+  display: flex;
+  gap: 6px;
+}
+
+.dsh-kimi-cu-check-ok {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-kimi-cu-check-bad {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-kimi-cu-steps {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}

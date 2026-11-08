@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "KimiCU Desktop Access",
-    "description": "Connects the local KimiCU app: exposes its MCP server as mcp__kimi-cu__* tools and ships the kimi-cu skill for operating app interfaces."
+    "title": "KimiCU desktop control",
+    "description": "Connects this machine's KimiCU (macOS / Windows) so the model can see and operate open app windows; the plugin page detects the install and shows the platform's install command."
   }
 }
