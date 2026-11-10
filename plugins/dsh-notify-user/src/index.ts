@@ -28,7 +28,10 @@ export { Config } from './config.js';
  * @param config - 本行的配置；阈值每次现读，改配置不重挂插件。
  */
 export function apply(ctx: Context, config: PluginConfig): void {
-  installNudge(ctx, createNudgeController(() => nudgeAfterOf(config)), NOTIFY_TOOL_NAME);
+  installNudge(ctx, createNudgeController({
+    readThreshold: () => nudgeAfterOf(config),
+    readProseResets: () => config.resetOnProse.get(),
+  }), NOTIFY_TOOL_NAME);
 
   ctx.tools.register(defineTool({
     name: NOTIFY_TOOL_NAME,

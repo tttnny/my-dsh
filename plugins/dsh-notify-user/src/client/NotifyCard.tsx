@@ -11,9 +11,7 @@ import type { OpenFileOptions } from '@deepseek-ai/dsh-client-ui-chat/client';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import { NOTIFY_TOOL_NAME } from '../shared/config.js';
 import {
-  DEFAULT_CARD_PLACEMENT,
-  DEFAULT_COLLAPSIBLE,
-  DEFAULT_NUDGE_AFTER,
+  DEFAULT_CLIENT_CONFIG,
   readConfig,
   type ClientConfig,
   type ConfigForm,
@@ -35,18 +33,11 @@ type NotifyCardProps = {
   readonly t: PropsLocale<typeof NS>['t'];
 };
 
-/** 配置表单还没就绪时的兜底。 */
-const FALLBACK_CONFIG: ClientConfig = {
-  nudgeAfter: DEFAULT_NUDGE_AFTER,
-  collapsible: DEFAULT_COLLAPSIBLE,
-  cardPlacement: DEFAULT_CARD_PLACEMENT,
-};
-
 /** 订阅配置表单，配置一变卡片就跟着变。 */
 function useClientConfig(form: ConfigForm): ClientConfig {
-  const [config, setConfig] = useState<ClientConfig>(() => readConfig(form) ?? FALLBACK_CONFIG);
+  const [config, setConfig] = useState<ClientConfig>(() => readConfig(form) ?? DEFAULT_CLIENT_CONFIG);
   useEffect(() => {
-    const sync = (): void => { setConfig(readConfig(form) ?? FALLBACK_CONFIG); };
+    const sync = (): void => { setConfig(readConfig(form) ?? DEFAULT_CLIENT_CONFIG); };
     sync();
     return form.subscribe(sync);
   }, [form]);

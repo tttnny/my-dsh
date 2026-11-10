@@ -10,7 +10,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 这条命令把包名写进 profile 的 `dependencies` 与 `dsh.profile.bundles`，包内 `cordis.patch.yml` 随之插入一条 root loader entry（`id: dsh-notify-user`）。这一行同时承载两个半边：
 
-- 宿主半边注册 `notify_user` 工具，并把催办状态机接到 `tools/result`（纯观察）与 `agent/pre-step` 两条事件上；
+- 宿主半边注册 `notify_user` 工具，并把催办状态机接到 `tools/result`（纯观察）、`session/event`（助手消息落定）与 `agent/pre-step` 三条事件上；
 - 浏览器半边注册对话节点定义、进度卡渲染器（`conversation.chat.node`，key 是 `notify-user`）、工具行兜底渲染（`tool.call.toolview`，key 是 `notify_user`）与插件页配置卡（`plugins.bundle.config`，key 是包名）。
 
 行 id 同时是配置命名空间：宿主 `Config` 与浏览器 `ctx.configForms.get('dsh-notify-user')` 读写的是同一份值。
@@ -39,6 +39,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 | 字段 | 默认 | 范围 | 说明 |
 | --- | --- | --- | --- |
 | `nudgeAfter` | 10 | 0–100 | 连续多少次根工具调用没有汇报时催一次；0 关闭催办。 |
+| `resetOnProse` | true | 布尔 | 助手消息里写了正文（非空白 `text` 块）就清零计数；关掉后只在 `notify_user`、新回合或用户插话时清零。 |
 | `collapsible` | true | 布尔 | 进度卡标题旁带不带折叠键；带折叠键时正文仍默认展开，关掉后正文始终展开、不显示折叠键。 |
 | `cardPlacement` | `boundary` | `boundary` / `inline` | 进度卡位置：`boundary` 站在步骤组边界，`inline` 跟随工具行、随组折叠。 |
 
@@ -48,6 +49,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 - 只数**根调用**：原生模式下是模型每次直接发起的调用（同一轮里的并行调用各算一次）；PTC 模式下是每次 `run_code`，程序内部的子调用不算。
 - `notify_user` 无论根调用还是 PTC 子调用都清零。
+- 助手消息（`assistant/message`）里带非空白正文时清零，`resetOnProse` 关掉则不算；`reasoning` 块不算正文，失败、重试、取消的尝试（`assistant/attempt`）也不清零。
 - 新回合（`agent/pre-step` 的 `step === 1`，不论由用户、定时提醒、队友消息还是 webhook 触发）或用户插话（收件箱里有 `source.kind === 'user'` 的消息）清零。回合边界取宿主给的 `step`，不按消息来源枚举。
 - 子代理会话不计数、不注入。
 - 催办注入的是**指令**，不是替模型写正文；注入消息的来源是 `notify-user-nudge`、`form: 'notice'`，只进模型上下文，不占对话流正文。
@@ -77,9 +79,9 @@ cd plugins/dsh-notify-user && pnpm check
 `check` 链上每一步：
 
 - `typecheck`：`src` 的类型闸门。
-- `smoke-host.mjs`：真 cordis + 真 `ToolRuntime`，断言配置形状、工具注册与执行、装配行，以及催办接线在真 `ctx.waterfall` 下的行为（满阈值注入、汇报/新回合/用户插话/阈值 0 清零、上下文注入不清零、PTC 子调用不计数、嵌套汇报清零、子代理不注入、下游拒绝时不追加）。
+- `smoke-host.mjs`：真 cordis + 真 `ToolRuntime`，断言配置形状、工具注册与执行、装配行，以及催办接线在真 `ctx.waterfall` 下的行为（满阈值注入、汇报/散文/新回合/用户插话/阈值 0 清零、只有思考块不清零、失败尝试不清零、散文开关关掉不清零、上下文注入不清零、PTC 子调用不计数、嵌套汇报清零、子代理不注入、下游拒绝时不追加）。
 - `smoke-client.mjs`：按 Web shell 方式装载浏览器 bundle，断言对话节点定义、位置切换会重挂定义、三处座位注册、字典键集与「未声明服务读取会抛」的守卫。
-- `test-nudge.mjs`：催办状态机的纯逻辑（阈值、清零、现读、按 agent 隔离）。
+- `test-nudge.mjs`：催办状态机的纯逻辑（阈值、四条清零路径、阈值与散文开关现读、按会话隔离、散文判定）。
 - `test-row-model.mjs`：进度卡数据视图的三条来路（`meta` / PTC 参数 / start 参数）与标题回退。
 - `test-notify-node.mjs`：对话节点定义的认领范围、节点位置与卡片数据（原生调用、结果落定、流式增量与块结束、PTC 子调用、结果先到、没有正文时的兜底）。
 - `assert-lib-untracked.mjs`：`lib/` 是构建镜像，不入 git。

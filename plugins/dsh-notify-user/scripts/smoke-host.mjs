@@ -41,14 +41,16 @@ function host() {
 }
 
 /**
- * 起一份装好本插件的宿主，并给出驱动两条事件的入口。
+ * 起一份装好本插件的宿主，并给出驱动三条事件的入口。
  * @param {number} threshold - 催办阈值。
+ * @param {object} [extra] - 配置里其余的字段（例如 `resetOnProse`）。
  */
-function harness(threshold) {
+function harness(threshold, extra = {}) {
   const ctx = host();
-  plugin.apply(ctx, new plugin.Config({ nudgeAfter: threshold }));
+  plugin.apply(ctx, new plugin.Config({ nudgeAfter: threshold, ...extra }));
   const signal = new AbortController().signal;
   let calls = 0;
+  let seq = 0;
   return {
     ctx,
     tool: ctx.tools.get('notify_user'),
@@ -76,6 +78,33 @@ function harness(threshold) {
       return ctx.waterfall('agent/pre-step', {
         agent, messages, turn: 1, step: stepNumber, signal,
       }, async () => ({ kind: 'enter', messages }));
+    },
+    /**
+     * 一条落定的助手消息（用户看得到的那条）。
+     * @param {object} session - 这条消息落在哪个会话。
+     * @param {object[]} content - 消息的内容块。
+     */
+    assistantMessage(session, content) {
+      seq += 1;
+      return ctx.emit('session/event', session, {
+        type: 'assistant/message',
+        seq,
+        time: Date.now(),
+        data: { turn: 1, step: 2, message: { role: 'assistant', content }, stream: [] },
+      });
+    },
+    /**
+     * 一次没有落成用户可见消息的模型尝试（失败、重试、取消）。
+     * @param {object} session - 这次尝试属于哪个会话。
+     */
+    assistantAttempt(session) {
+      seq += 1;
+      return ctx.emit('session/event', session, {
+        type: 'assistant/attempt',
+        seq,
+        time: Date.now(),
+        data: { turn: 1, step: 2, stream: [] },
+      });
     },
   };
 }
@@ -106,6 +135,8 @@ await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默
   assert.equal(new plugin.Config({ nudgeAfter: 12 }).nudgeAfter.get(), 12);
   assert.throws(() => new plugin.Config({ nudgeAfter: -1 }), /nudgeAfter/);
   assert.throws(() => new plugin.Config({ nudgeAfter: 101 }), /nudgeAfter/);
+  assert.equal(new plugin.Config({}).resetOnProse.get(), true);
+  assert.equal(new plugin.Config({ resetOnProse: false }).resetOnProse.get(), false);
   assert.equal(new plugin.Config({}).collapsible.get(), true);
   assert.equal(new plugin.Config({ collapsible: false }).collapsible.get(), false);
   assert.equal(new plugin.Config({}).cardPlacement.get(), 'boundary');
@@ -187,6 +218,42 @@ await test('PTC 程序里的 notify_user 也能清零', async () => {
   for (let index = 0; index < 8; index += 1) await h.rootCall(agent);
   await h.nestedCall(agent, 'notify_user');
   assert.equal(noticeOf(await h.step(agent)), undefined, '嵌套汇报后不该催');
+});
+
+await test('散文回复清零：落定一条带正文的助手消息后不催', async () => {
+  const agent = mainAgent();
+  const h = harness(8);
+  for (let index = 0; index < 8; index += 1) await h.rootCall(agent);
+  await h.assistantMessage(agent.session, [{ type: 'text', text: '正在读这几个文件。' }]);
+  assert.equal(noticeOf(await h.step(agent)), undefined, '写了正文就不该催');
+  for (let index = 0; index < 7; index += 1) await h.rootCall(agent);
+  assert.equal(noticeOf(await h.step(agent)), undefined, '清零后 7 次还不够');
+  await h.rootCall(agent);
+  assert.ok(noticeOf(await h.step(agent)) !== undefined, '再满 8 次应当催');
+});
+
+await test('只有思考块不算散文', async () => {
+  const agent = mainAgent();
+  const h = harness(8);
+  for (let index = 0; index < 8; index += 1) await h.rootCall(agent);
+  await h.assistantMessage(agent.session, [{ type: 'reasoning', text: '先看看目录结构。' }]);
+  assert.ok(noticeOf(await h.step(agent)) !== undefined, '思考不算汇报，仍应催');
+});
+
+await test('失败尝试（assistant/attempt）不清零', async () => {
+  const agent = mainAgent();
+  const h = harness(8);
+  for (let index = 0; index < 8; index += 1) await h.rootCall(agent);
+  await h.assistantAttempt(agent.session);
+  assert.ok(noticeOf(await h.step(agent)) !== undefined, '失败尝试没有上屏，仍应催');
+});
+
+await test('散文开关关掉时助手消息不清零', async () => {
+  const agent = mainAgent();
+  const h = harness(8, { resetOnProse: false });
+  for (let index = 0; index < 8; index += 1) await h.rootCall(agent);
+  await h.assistantMessage(agent.session, [{ type: 'text', text: '正在读这几个文件。' }]);
+  assert.ok(noticeOf(await h.step(agent)) !== undefined, '关掉后只有 notify_user 清零');
 });
 
 await test('阈值 0 关闭催办', async () => {

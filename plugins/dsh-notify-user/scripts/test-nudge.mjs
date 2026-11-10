@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 
-import { createNudgeController, nudgeSummary, renderNudge } from '../src/nudge.ts';
+import { createNudgeController, hasProse, nudgeSummary, renderNudge } from '../src/nudge.ts';
 
 let passed = 0;
 let total = 0;
@@ -25,14 +25,14 @@ function test(label, fn) {
 const agent = () => ({});
 
 test('未满阈值不催', () => {
-  const controller = createNudgeController(() => 8);
+  const controller = createNudgeController({ readThreshold: () => 8, readProseResets: () => true });
   const who = agent();
   for (let index = 0; index < 7; index += 1) controller.toolCall(who);
   assert.equal(controller.step(who, false), null);
 });
 
 test('满阈值催一条，正文带次数与来源标记', () => {
-  const controller = createNudgeController(() => 8);
+  const controller = createNudgeController({ readThreshold: () => 8, readProseResets: () => true });
   const who = agent();
   for (let index = 0; index < 8; index += 1) controller.toolCall(who);
   const notice = controller.step(who, false);
@@ -45,7 +45,7 @@ test('满阈值催一条，正文带次数与来源标记', () => {
 });
 
 test('催过就清零，再满阈值才再催', () => {
-  const controller = createNudgeController(() => 3);
+  const controller = createNudgeController({ readThreshold: () => 3, readProseResets: () => true });
   const who = agent();
   for (let index = 0; index < 3; index += 1) controller.toolCall(who);
   assert.ok(controller.step(who, false) !== null);
@@ -56,7 +56,7 @@ test('催过就清零，再满阈值才再催', () => {
 });
 
 test('汇报清零', () => {
-  const controller = createNudgeController(() => 3);
+  const controller = createNudgeController({ readThreshold: () => 3, readProseResets: () => true });
   const who = agent();
   for (let index = 0; index < 3; index += 1) controller.toolCall(who);
   controller.notify(who);
@@ -65,8 +65,34 @@ test('汇报清零', () => {
   assert.equal(controller.step(who, false), null);
 });
 
+test('开关打开时散文清零', () => {
+  const controller = createNudgeController({ readThreshold: () => 3, readProseResets: () => true });
+  const who = agent();
+  for (let index = 0; index < 3; index += 1) controller.toolCall(who);
+  controller.prose(who);
+  assert.equal(controller.step(who, false), null);
+});
+
+test('开关关掉时散文不清零', () => {
+  const controller = createNudgeController({ readThreshold: () => 3, readProseResets: () => false });
+  const who = agent();
+  for (let index = 0; index < 3; index += 1) controller.toolCall(who);
+  controller.prose(who);
+  assert.ok(controller.step(who, false) !== null);
+});
+
+test('散文开关现读：中途打开就生效', () => {
+  let resets = false;
+  const controller = createNudgeController({ readThreshold: () => 3, readProseResets: () => resets });
+  const who = agent();
+  for (let index = 0; index < 3; index += 1) controller.toolCall(who);
+  resets = true;
+  controller.prose(who);
+  assert.equal(controller.step(who, false), null);
+});
+
 test('新回合或用户插话清零', () => {
-  const controller = createNudgeController(() => 3);
+  const controller = createNudgeController({ readThreshold: () => 3, readProseResets: () => true });
   const who = agent();
   for (let index = 0; index < 3; index += 1) controller.toolCall(who);
   assert.equal(controller.step(who, true), null);
@@ -75,7 +101,7 @@ test('新回合或用户插话清零', () => {
 });
 
 test('阈值 0 关闭催办', () => {
-  const controller = createNudgeController(() => 0);
+  const controller = createNudgeController({ readThreshold: () => 0, readProseResets: () => true });
   const who = agent();
   for (let index = 0; index < 100; index += 1) controller.toolCall(who);
   assert.equal(controller.step(who, false), null);
@@ -83,7 +109,7 @@ test('阈值 0 关闭催办', () => {
 
 test('阈值现读：改小之后下一步就按新值算', () => {
   let threshold = 8;
-  const controller = createNudgeController(() => threshold);
+  const controller = createNudgeController({ readThreshold: () => threshold, readProseResets: () => true });
   const who = agent();
   for (let index = 0; index < 3; index += 1) controller.toolCall(who);
   assert.equal(controller.step(who, false), null);
@@ -92,7 +118,7 @@ test('阈值现读：改小之后下一步就按新值算', () => {
 });
 
 test('每个 agent 各记各的', () => {
-  const controller = createNudgeController(() => 2);
+  const controller = createNudgeController({ readThreshold: () => 2, readProseResets: () => true });
   const first = agent();
   const second = agent();
   controller.toolCall(first);
@@ -101,6 +127,14 @@ test('每个 agent 各记各的', () => {
   controller.toolCall(first);
   assert.ok(controller.step(first, false) !== null);
   assert.equal(controller.step(second, false), null);
+});
+
+test('散文判定只认非空白的 text 块', () => {
+  assert.equal(hasProse([{ type: 'text', text: 'hi' }]), true);
+  assert.equal(hasProse([{ type: 'reasoning', text: 'thinking' }]), false);
+  assert.equal(hasProse([{ type: 'text', text: '   \n\t' }]), false);
+  assert.equal(hasProse([{ type: 'tool-call', id: 'c1', name: 'read', arguments: '{}' }]), false);
+  assert.equal(hasProse([{ type: 'reasoning', text: 'think' }, { type: 'text', text: 'hi' }]), true);
 });
 
 test('文案随次数变，摘要不超过一行', () => {

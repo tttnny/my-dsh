@@ -5,12 +5,14 @@ import {
   DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
   DEFAULT_NUDGE_AFTER,
+  DEFAULT_RESET_ON_PROSE,
   MAX_NUDGE_AFTER,
 } from './shared/config.js';
 
 /** 宿主拿到的配置：`.volatile()` 的字段是稳定引用，读当前值要 `.get()`。 */
 export interface PluginConfig {
   nudgeAfter: Volatile<number>;
+  resetOnProse: Volatile<boolean>;
   collapsible: Volatile<boolean>;
   cardPlacement: Volatile<string>;
 }
@@ -18,6 +20,7 @@ export interface PluginConfig {
 /** 配置形状；volatile 让改配置不重挂这条 loader entry，当前会话下一步就用新值。 */
 export const Config = z.object({
   nudgeAfter: z.number().min(0).max(MAX_NUDGE_AFTER).default(DEFAULT_NUDGE_AFTER).volatile(),
+  resetOnProse: z.boolean().default(DEFAULT_RESET_ON_PROSE).volatile(),
   collapsible: z.boolean().default(DEFAULT_COLLAPSIBLE).volatile(),
   cardPlacement: z.union(CARD_PLACEMENTS.map(value => z.const(value)))
     .default(DEFAULT_CARD_PLACEMENT)

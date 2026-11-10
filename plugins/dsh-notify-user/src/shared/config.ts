@@ -15,6 +15,9 @@ export const DEFAULT_NUDGE_AFTER = 10;
 /** 阈值上限；0 是关闭催办，其余按次数算。 */
 export const MAX_NUDGE_AFTER = 100;
 
+/** 助手消息里的散文回复算不算一次汇报：默认算。 */
+export const DEFAULT_RESET_ON_PROSE = true;
+
 /** 进度卡默认带折叠按钮；正文始终默认展开。 */
 export const DEFAULT_COLLAPSIBLE = true;
 

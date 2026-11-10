@@ -12,7 +12,7 @@ import {
 import { NS } from './locales.js';
 
 /**
- * 宿主「插件」页上的配置卡：催办阈值、进度卡位置与「带不带折叠键」。
+ * 宿主「插件」页上的配置卡：催办阈值、「散文回复算不算汇报」、进度卡位置与「带不带折叠键」。
  *
  * 没有保存按钮：数字框失焦或回车时写一次，打字期间只改草稿；开关与位置在动作发生的那一刻写。
  * 写入交给设置表单自己排队（它按 revision 串行化），卡片只负责把失败就地报出来。
@@ -106,6 +106,22 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
             }}
           />
           <span className="dsh-notify-config-unit">{t('config.threshold.unit')}</span>
+        </div>
+      </div>
+      <div className="dsh-notify-config-row">
+        <div className="dsh-notify-config-info">
+          <div className="dsh-notify-config-label">{t('config.resetOnProse.label')}</div>
+          <div className="dsh-notify-config-hint">{t('config.resetOnProse.hint')}</div>
+        </div>
+        <div className="dsh-notify-config-field">
+          <Switch
+            checked={config.resetOnProse}
+            label={t('config.resetOnProse.label')}
+            onChange={(next: boolean) => {
+              setConfig({ ...config, resetOnProse: next });
+              write('resetOnProse', next);
+            }}
+          />
         </div>
       </div>
       <div className="dsh-notify-config-row">

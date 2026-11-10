@@ -11,6 +11,7 @@ import {
   DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
   DEFAULT_NUDGE_AFTER,
+  DEFAULT_RESET_ON_PROSE,
   MAX_NUDGE_AFTER,
   type CardPlacement,
 } from '../shared/config.js';
@@ -20,6 +21,7 @@ export {
   DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
   DEFAULT_NUDGE_AFTER,
+  DEFAULT_RESET_ON_PROSE,
   MAX_NUDGE_AFTER,
   SETTINGS_NAMESPACE,
 } from '../shared/config.js';
@@ -56,14 +58,23 @@ export interface ConfigForm {
 /** 本插件在浏览器侧读到的配置。 */
 export interface ClientConfig {
   nudgeAfter: number;
+  resetOnProse: boolean;
   collapsible: boolean;
   cardPlacement: CardPlacement;
 }
 
+/** 字段缺失或配置表单还没就绪时的那份快照；默认值只在这里写一遍。 */
+export const DEFAULT_CLIENT_CONFIG: ClientConfig = {
+  nudgeAfter: DEFAULT_NUDGE_AFTER,
+  resetOnProse: DEFAULT_RESET_ON_PROSE,
+  collapsible: DEFAULT_COLLAPSIBLE,
+  cardPlacement: DEFAULT_CARD_PLACEMENT,
+};
+
 /**
  * 读当前配置。
  * @param form - 本命名空间的配置表单。
- * @returns 宿主还没服务这个命名空间时返回 undefined；字段缺失按默认算。
+ * @returns 宿主还没服务这个命名空间时返回 undefined；字段缺失按 {@link DEFAULT_CLIENT_CONFIG} 算。
  */
 export function readConfig(form: ConfigForm): ClientConfig | undefined {
   const snapshot = form.getSnapshot();
@@ -72,10 +83,12 @@ export function readConfig(form: ConfigForm): ClientConfig | undefined {
   const rawThreshold = value['nudgeAfter'];
   const nudgeAfter = typeof rawThreshold === 'number' && Number.isFinite(rawThreshold)
     ? Math.min(MAX_NUDGE_AFTER, Math.max(0, Math.floor(rawThreshold)))
-    : DEFAULT_NUDGE_AFTER;
+    : DEFAULT_CLIENT_CONFIG.nudgeAfter;
+  const rawResetOnProse = value['resetOnProse'];
+  const resetOnProse = typeof rawResetOnProse === 'boolean' ? rawResetOnProse : DEFAULT_CLIENT_CONFIG.resetOnProse;
   const rawCollapsible = value['collapsible'];
-  const collapsible = typeof rawCollapsible === 'boolean' ? rawCollapsible : DEFAULT_COLLAPSIBLE;
+  const collapsible = typeof rawCollapsible === 'boolean' ? rawCollapsible : DEFAULT_CLIENT_CONFIG.collapsible;
   const rawPlacement = value['cardPlacement'];
-  const cardPlacement = CARD_PLACEMENTS.find(placement => placement === rawPlacement) ?? DEFAULT_CARD_PLACEMENT;
-  return { nudgeAfter, collapsible, cardPlacement };
+  const cardPlacement = CARD_PLACEMENTS.find(placement => placement === rawPlacement) ?? DEFAULT_CLIENT_CONFIG.cardPlacement;
+  return { nudgeAfter, resetOnProse, collapsible, cardPlacement };
 }
