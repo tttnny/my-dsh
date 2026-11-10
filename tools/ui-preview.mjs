@@ -202,6 +202,7 @@ const hostSheets = [
   join(primitivesRoot, 'markdown/MarkdownText.module.css'),
   join(primitivesRoot, 'markdown/CodeBlock.module.css'),
   join(primitivesRoot, 'Tag.module.css'),
+  join(primitivesRoot, 'Pill.module.css'),
   join(primitivesRoot, 'Button.module.css'),
   join(primitivesRoot, 'Input.module.css'),
   join(primitivesRoot, 'Switch.module.css'),

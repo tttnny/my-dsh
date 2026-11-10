@@ -67,6 +67,16 @@ export function Tag(props) {
   return createElement('span', { className: `tag tag-${String(props.tone ?? 'outline')} ${String(props.className ?? '')}`.trim() }, props.children);
 }
 
+/**
+ * 宿主的胶囊薄壳：真组件有 `onClick` 时是 button、否则是 span，类名落在 `pill` /
+ * `interactive` / `active` 上。插件用它做位置切换的那两枚药丸。
+ */
+export function Pill({ active = false, className, children, onClick, ...rest }) {
+  const classes = `pill${onClick === undefined ? '' : ' interactive'}${active === true ? ' active' : ''} ${String(className ?? '')}`.trim();
+  if (onClick === undefined) return createElement('span', { className: classes }, children);
+  return createElement('button', { type: 'button', className: classes, onClick, ...rest }, children);
+}
+
 /** 宿主的输入框薄壳：真组件把 input 包在 `.wrap` 里，类名落在外面那层——插件的宽度规则就是照这个写的。 */
 export function Input({ className, icon, ...rest }) {
   return createElement(
