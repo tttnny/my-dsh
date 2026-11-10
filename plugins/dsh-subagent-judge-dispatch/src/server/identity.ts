@@ -119,13 +119,13 @@ export function readChildLabel(agent: AgentLike): string {
  * snapshot — so the source is what separates the task from the context wrapped
  * around it.
  *
- * Two shapes carry that message, and both are read because the judgement runs
- * before the second one exists. A delegation starts as pending inbox input, so
- * it first appears inside an `agent/inbox/spliced` event; the Host claims it at
- * the step boundary and only then appends the `user/message` carrying it. The
- * judge is asked during the step's request, which is before that append — so
- * reading only `user/message` would find nothing on the very request that
- * matters. From the next step on the `user/message` is there instead.
+ * Two shapes carry that message, and both are read because a log can hold
+ * either: a delegation starts as pending inbox input, so it first appears
+ * inside an `agent/inbox/spliced` event, and the Host appends the
+ * `user/message` carrying it once the message is claimed at the step boundary.
+ * A fresh child has neither when it is created — its delegation is read from the
+ * parent's recorded call instead — so this read is what a resumed child's log
+ * answers.
  *
  * The Host appends its return guidance as one trailing block of that message.
  * It tells the child how to report back, not what the job is, so it is dropped:
@@ -160,13 +160,30 @@ export function readTaskText(agent: AgentLike): string {
 export type ParentSessionLookup = (id: string) => SessionLike | undefined;
 
 /**
+ * The session event types that can carry a delegating tool call.
+ *
+ * A call the model makes directly is recorded as `tool/call`, whose
+ * `arguments` is the raw JSON string the model produced. A call made from
+ * inside a `run_code` program is recorded as `tool/ptc-dispatch-start`, whose
+ * `arguments` is the already-normalized object. Both events are appended when
+ * the call starts, before its body runs, so either one is readable while the
+ * child is being created.
+ */
+const DELEGATION_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'tool/call',
+  'tool/ptc-dispatch-start',
+]);
+
+/**
  * Read the task the parent delegated, at the moment the child is created.
  *
  * A fresh delegation reaches the child only after creation: the Host submits the
  * prompt as queued inbox input once the creation listeners return. So the child's
- * own log has no task yet, and the text is read from the delegating `tool/call`
- * the parent recorded before dispatching. A resumed child does carry the message
- * in its own log, which is why that read is tried first.
+ * own log has no task yet, and the text is read from the delegating call the
+ * parent recorded before dispatching. That call takes one of two shapes:
+ * `tool/call` when the model called the tool directly, `tool/ptc-dispatch-start`
+ * when the call came from inside a `run_code` program. A resumed child does
+ * carry the message in its own log, which is why that read is tried first.
  *
  * The delegating call is identified by the description the parent wrote, which is
  * the same string the child's descriptor keeps as its label; the newest call with
@@ -188,7 +205,7 @@ export function readDelegatedTask(agent: AgentLike, parentSessionOf: ParentSessi
   let fallback = '';
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event.type !== 'tool/call') continue;
+    if (!DELEGATION_EVENT_TYPES.has(event.type)) continue;
     const call = delegatedCallOf(event.data);
     if (call === undefined) continue;
     if (label !== '' && call.description === label) return call.prompt;
@@ -199,15 +216,7 @@ export function readDelegatedTask(agent: AgentLike, parentSessionOf: ParentSessi
 
 /** The task prompt and description of one recorded tool call, when it carries them. */
 function delegatedCallOf(data: unknown): { prompt: string; description?: string } | undefined {
-  if (typeof data !== 'object' || data === null) return undefined;
-  const raw = (data as { arguments?: unknown }).arguments;
-  if (typeof raw !== 'string') return undefined;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
+  const parsed = argumentsOf(data);
   if (typeof parsed !== 'object' || parsed === null) return undefined;
   const record = parsed as { prompt?: unknown; description?: unknown };
   if (typeof record.prompt !== 'string' || record.prompt.trim() === '') return undefined;
@@ -215,6 +224,26 @@ function delegatedCallOf(data: unknown): { prompt: string; description?: string 
     prompt: record.prompt,
     ...(typeof record.description === 'string' ? { description: record.description } : {}),
   };
+}
+
+/**
+ * Decode one recorded call's arguments.
+ *
+ * The two event shapes disagree on purpose: `tool/call` keeps the model's raw
+ * JSON string, while `tool/ptc-dispatch-start` keeps the normalized value.
+ *
+ * @param data - the event payload.
+ * @returns the decoded arguments, or undefined when they cannot be read.
+ */
+function argumentsOf(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return undefined;
+  const raw = (data as { arguments?: unknown }).arguments;
+  if (typeof raw !== 'string') return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
 }
 
 /**

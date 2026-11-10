@@ -233,6 +233,34 @@ function parentWithCalls(calls) {
   };
 }
 
+/** The outer `run_code` call a programmatic delegation leaves in the parent log. */
+const RUN_CODE_CALL = {
+  type: 'tool/call',
+  data: { name: 'run_code', arguments: JSON.stringify({ code: 'await tools.subagent({ ... })' }) },
+};
+
+/** One nested call as the parent records it when it came from inside `run_code`. */
+function ptcCall(name, args) {
+  return { type: 'tool/ptc-dispatch-start', data: { name, arguments: args } };
+}
+
+/**
+ * The parent session as it looks while a delegation made from inside `run_code`
+ * is executing: the nested call is a `tool/ptc-dispatch-start` whose arguments
+ * are already the normalized object, and the outer `tool/call` names only
+ * `run_code`.
+ */
+function parentWithPtcCalls(calls) {
+  return {
+    header: {},
+    snapshotEvents: () => [
+      RUN_CODE_CALL,
+      ptcCall('bash', { description: '先看一眼改动', command: 'git status' }),
+      ...calls.map(({ description, prompt }) => ptcCall('subagent', { description, prompt })),
+    ],
+  };
+}
+
 /** A top-level agent: no delegation depth at all. */
 function mainAgent() {
   return {
@@ -516,6 +544,36 @@ await test('同一批里派了多个子代理时按标签对上自己那次调�
   });
   assert.equal(body.state.message, 'Delegation label: 跑一下测试\n\n把测试跑一遍',
     '必须按子代理自己的标签取那一条，不能取最后一条');
+});
+
+await test('经 run_code 派工时父会话记的是 ptc 事件，正文照样读得到', async () => {
+  // 程序化调用（run_code 里的 tools.subagent）不会留下 tool/call：外层那条是
+  // run_code，嵌套调用记成 tool/ptc-dispatch-start，arguments 已经是对象。
+  const mounted = mount({}, {
+    parentSession: parentWithPtcCalls([{ description: '跑一下测试', prompt: '把测试跑一遍' }]),
+  });
+  let body;
+  await judgeOnce(mounted.handlers, freshChildAgent(), async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.equal(body.state.message, 'Delegation label: 跑一下测试\n\n把测试跑一遍');
+});
+
+await test('同一批 ptc 派工里按标签对上自己那次，别的工具的嵌套调用不算派工', async () => {
+  const mounted = mount({}, {
+    parentSession: parentWithPtcCalls([
+      { description: '别的活', prompt: '别的任务正文' },
+      { description: '跑一下测试', prompt: '把测试跑一遍' },
+    ]),
+  });
+  let body;
+  await judgeOnce(mounted.handlers, freshChildAgent(), async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.equal(body.state.message, 'Delegation label: 跑一下测试\n\n把测试跑一遍',
+    '必须按子代理自己的标签取那一条，不能取最后一条，也不能取 bash 那条');
 });
 
 await test('父会话里读不到派工调用时只拿标签去判，不编造正文', async () => {
