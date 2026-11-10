@@ -12,7 +12,7 @@
 | 两版之间改了什么：默认比已装内核的安装产物；`--from-source` 比源码 tag（旧内核没装也能用），不给新版本就比当前已装内核；`--declared` 只看本仓声明过的包，`--presets` 在包差异之后附加一节官方 preset，`--all` 连 `package.json` 的版本号变动一起列，`--all-paths` 列出 `packages/` 之外的变动，`--list` 只列这台机器装了哪些内核 | `node tools/kernel-diff.mjs <旧版本> [<新版本>] [--from-source] [--declared] [--presets] [--all] [--only <包名>]`、`node tools/kernel-diff.mjs --list` |
 | 抄本与官方 preset：差异 / 两版官方差异 / 重抄 / 提示词变量 | `node tools/preset-copy.mjs <id> [--diff \| --official-diff \| --recopy \| --variables]` |
 | preset 随包技能的真装载（只装载内核的 skill provider，不起第二实例） | `node tools/probes/preset-skills.mjs --preset <id>`（另有 `--skills <目录>`、`--kernel <内核树>`、`--dsh <版本>`，见脚本头部） |
-| 按 CI 的方式重跑安装与 check（干净 HOME、钉住的 pnpm；要联网） | `node tools/ci-check.mjs [--keep]` |
+| 按 CI 的方式重跑安装与 check（干净 HOME、钉住的 pnpm；要联网）。CI 红了要本机复现、或改动动了安装契约时用 | `node tools/ci-check.mjs [--keep]` |
 | 发布前挑包：列出本地版本 registry 上还没有的包，并说明哪些包发不了（版本没改、缺 `publishConfig.access`）；Actions 的 `publish` 工作流第一步就是它 | `node tools/publish-plan.mjs [--packages <包名或目录>] [--json]` |
 | 生成插件索引（DSH「发现」页的索引源）：从 npm registry 取本仓各包已发布的版本，连同图标写到输出目录 | `node tools/market-index.mjs [--out <目录>] [--url <索引 URL>] [--registry <registry>] [--json]` |
 | 变异测试：改一处、跑一条命令、一定还原（未提交的文件也能用） | `node tools/mutate.mjs --file <f> --from <旧> --to <新> -- <命令>`（另有 `--dry-run` 只数命中、`--keep` 留下变异） |

@@ -6,8 +6,12 @@
  * 本机的 pnpm 用户配置可能把安全策略关掉（macOS 上是
  * `~/Library/Preferences/pnpm/config.yaml`），于是「本机全绿、CI 全红」。这个脚本把
  * CI 的环境条件搬到本机：仓库复制到 `tmp/ci-check/repo`（不带 node_modules、.git 与 tmp），
- * HOME 指向 `tmp/ci-check/home`，用空 home 里装出的 corepack 外壳跑 pnpm。发布或推送前跑
- * 一次，才有资格说「换台机器也能过」。
+ * HOME 指向 `tmp/ci-check/home`，用空 home 里装出的 corepack 外壳跑 pnpm。
+ *
+ * 日常不用跑：`check` 与 `publish` 两个工作流在干净 runner 上跑的就是这一套，而且 `publish`
+ * 把它排在 `npm publish` 之前。它留给两种情况——CI 红了要本机复现；或这次改动动了安装契约
+ * （依赖声明、lock、`pnpm-workspace.yaml` 的放行项、`packageManager`），因为本机的 pnpm
+ * 用户配置可能把安全策略关掉。它比工作流多覆盖一处：副本取自工作区，未提交的改动也在里面。
  *
  * 要联网：install 从 registry 取包；空 HOME 意味着 store 也是新的，第一次会慢一点。
  *

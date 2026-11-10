@@ -78,7 +78,7 @@ node tools/host-smoke.mjs
 node tools/ci-check.mjs
 ```
 
-它把工作区复制到 `tmp/ci-check/repo`，用干净 HOME 与钉住的 pnpm 逐包 `pnpm install --frozen-lockfile`，再跑 `node tools/check.mjs`。本机的 pnpm 用户配置可能把安全策略关掉，所以**本机绿不等于 CI 绿**；这一步要联网。
+它把工作区复制到 `tmp/ci-check/repo`，用干净 HOME 与钉住的 pnpm 逐包 `pnpm install --frozen-lockfile`，再跑 `node tools/check.mjs`。本机的 pnpm 用户配置可能把安全策略关掉，所以**本机绿不等于 CI 绿**；这一步要联网。内核升版会改每个包的 `engines.dsh` 与依赖声明，正好落在本地环境能骗过自己的那一类改动上，所以这一步在内核升版里是必做项；日常发版不必跑它（见 [release.md](./release.md)「发完即止」）。
 
 **完成判据**：`ci-check: ok`。然后提交，走 `.githooks/pre-commit`。
 

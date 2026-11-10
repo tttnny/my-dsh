@@ -82,7 +82,7 @@ allowBuilds:
 HOME=./tmp/ci-home COREPACK_HOME=./tmp/ci-home/corepack corepack pnpm install --frozen-lockfile
 ```
 
-整段流程（干净 HOME、corepack 钉版本、逐包 install、仓库级 check）由 `node tools/ci-check.mjs` 一次跑完；发布或推送前跑它，它要联网。这条安装约定由 `assert-ledger.mjs` 判据 12 守着：任何包缺 `packageManager`，或有依赖的包缺 `pnpm-workspace.yaml` 的放行项，提交时就会红。
+整段流程（干净 HOME、corepack 钉版本、逐包 install、仓库级 check）由 `node tools/ci-check.mjs` 一次跑完，它要联网。日常不用跑——`check` 与 `publish` 两个工作流在干净 runner 上跑的就是这一套；只在 CI 红了要本机复现、或改动动了安装契约时才用它。这条安装约定由 `assert-ledger.mjs` 判据 12 守着：任何包缺 `packageManager`，或有依赖的包缺 `pnpm-workspace.yaml` 的放行项，提交时就会红。
 
 ### 类型检查
 

@@ -10,7 +10,7 @@
 2. **scoped 包带 `publishConfig.access: "public"`**：不带就发不出去或发成受限包。`node tools/new-plugin.mjs` 生成的骨架默认写这一项，手写新包时要自己带上；`node tools/assert-ledger.mjs` **不查这一项**，新包或手改 `package.json` 时要自己看一眼。
 3. 各包自己的 `check`（见 [plugins.md](./plugins.md)「验证」）、`node tools/assert-ledger.mjs`（清单与目录的一致性）与 `npm pack --dry-run` 清单。
 
-本机绿不等于 CI 绿，发布前再跑一次 `node tools/ci-check.mjs`（干净 HOME 按 CI 的脚本重跑安装与 check，要联网）。`git push` 同样只在用户下令后执行。
+发布前不必在本机重跑一遍 CI：`publish` 工作流在干净 runner 上跑的就是同一套 `pnpm install --frozen-lockfile` 与 `node tools/check.mjs`，而且它排在 `npm publish` 之前——红了就一个包都不发，代价只是一次红 run。`node tools/ci-check.mjs` 留给两种情况：CI 红了要本机复现；或这次改动动了安装契约（依赖声明、lock、`pnpm-workspace.yaml` 的放行项、`packageManager`），因为本机的 pnpm 用户配置可能把安全策略关掉。`git push` 同样只在用户下令后执行。
 
 ## 在 GitHub Actions 里发
 
