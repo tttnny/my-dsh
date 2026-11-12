@@ -36,6 +36,8 @@
 
 改完在**所在包目录**跑 `pnpm check`：各包自己拼的构建 / 类型 / 测试 / 产物门禁链。漏了 `check` 的包以它自己 `scripts` 里的那几条为准。新克隆的仓库先在该包目录 `pnpm install`（仓库根从不装依赖）：缺 `node_modules` 时 `check.mjs` 回退出码 2，那是「没跑起来」，不是「检查不通过」。`package.json` 里带 `prepack` 的包（`dsh-grilling-form`、`dsh-subagent-judge-dispatch`、`dsh-native-plus`、`dsh-notify-user`、`dsh-kimi-cu`）在 `npm publish` / `npm pack` 时会再构建一次 `lib/`，发布打的不一定是你刚 check 过的那份产物。
 
+**内核基线**由 `node tools/dsh-baseline.mjs --check` 单独把关，它比的是「运行中内核」与「全部包的声明」——台账看不见这个方向：判据 10 拿字面量与本包自己的 `engines.dsh` 比，判据 11 拿 preset 抄本与运行中内核比，两边各自自洽时整仓一起落后一版没有任何一道闸门会红。这条已接进 `.githooks/pre-commit` 的第 0 道闸门；本机没装 DSH 时它回退出码 2，按「跑不起来」跳过。
+
 跨文件的台账（14 项判据，逐条见 `node tools/assert-ledger.mjs` 头部：包名与目录名、`engines.dsh` 与全部 `dsh-*` 同串、cordis / schemastery 基线、许可只由 `license` 声明、`files` 与 bundle patch 指得到、插件 README 的三节（`## 功能` / `## 特性` / `## 安装`）、根 README 与目录互相覆盖、preset order 台账、开发副本还是不是软链、手工写死的内核版本字面量、preset 抄本与内核同版本、安装约定、归档包名不再出现在活文件里、README 写死的工具面数字与产物一致）由 `node tools/assert-ledger.mjs` 一次查完——`check` 只管包内，看不见这些。判据 14 的数字出处是插件 README 自己的那句硬声明，不是另一份独立约定：改了工具 schema 就同步改 README 里那句话。
 
 **仓库级一次跑齐**：`node tools/check.mjs` 跑「台账 + 每个包自己的 `check` + 产物新鲜度（`assert-artifacts`，放在最后）」，CI（[.github/workflows/check.yml](../../.github/workflows/check.yml)）跑的就是它。它不替你在包的目录里 `pnpm install`——缺依赖会明说并回退出码 2，别把「没跑」当成「通过」。

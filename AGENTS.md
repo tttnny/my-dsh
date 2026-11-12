@@ -12,7 +12,7 @@ DSH 源码已拉取到本地 `/Users/tny/Desktop/work/other/deepseek-harness`，
 4. **状态只登记一处**：版本号归各包 `package.json`，功能域清单归根 `README.md`，preset order 归 `docs/rules/presets.md`；其他文件只写规则 + 指针。
 5. **文档只写现状**：旧路径、旧命令、旧结论在改动当场删掉。
 6. **读者是 agent**：给人看的只有根 `README.md` 与各包 `README.md`；本文件、`docs/rules/`、`presets/`、技能都写给 agent。
-7. **验证按本仓库的脚本跑**：改哪个包就在哪个包目录按它 `scripts` 跑验证（多数包是 `pnpm check`）。仓库根不放 `package.json`、不放依赖安装，**仓库级脚本只住 `tools/`，零仓库级依赖**（`node tools/<name>.mjs` 直接跑，索引见 `tools/README.md`）。`.githooks/pre-commit` 是同一件事的闸门：本次改动的包各跑一次 `check`，另加台账与产物新鲜度两道检查；装法、跳法与变异测试的还原陷阱见 `docs/rules/plugins.md`「验证」（变异测试用 `node tools/mutate.mjs`）。
+7. **验证按本仓库的脚本跑**：改哪个包就在哪个包目录按它 `scripts` 跑验证（多数包是 `pnpm check`）。仓库根不放 `package.json`、不放依赖安装，**仓库级脚本只住 `tools/`，零仓库级依赖**（`node tools/<name>.mjs` 直接跑，索引见 `tools/README.md`）。`.githooks/pre-commit` 是同一件事的闸门：本次改动的包各跑一次 `check`，另加内核基线、台账与产物新鲜度三道检查；装法、跳法与变异测试的还原陷阱见 `docs/rules/plugins.md`「验证」（变异测试用 `node tools/mutate.mjs`）。
 
 ## 文档地图
 

@@ -57,7 +57,7 @@ node tools/assert-ledger.mjs
 
 第一条把 `plugins/` 与 `presets/` 下全部包的 `engines.dsh`、peer / dev 里的内核串改到新版本，并给有改动的包各加一位版本号、重写各自的 lock——第 3 步不再手改这两处。第二步会列出所有还没跟齐的手写字面量（自检断言、注释、README、patch 头部），逐个改到新版本。然后各包在自己目录跑 `pnpm check`。
 
-**完成判据**：`tools/assert-ledger.mjs` 通过；每个包的 `pnpm check` 通过。
+**完成判据**：`node tools/dsh-baseline.mjs --check` 通过（这条是「整仓有没有跟上在用内核」的唯一闸门，已接进 `.githooks/pre-commit` 第 0 道）；`tools/assert-ledger.mjs` 通过；每个包的 `pnpm check` 通过。
 
 ## 5. 宿主与浏览器
 

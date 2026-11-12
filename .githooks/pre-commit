@@ -5,7 +5,11 @@
 # pnpm check」，纯靠自觉。本钩子把它变成闸门：只跑本次改动触及的包，没动的包不跑，
 # 所以代价与改动规模成正比。仓库级一次跑齐的是 `node tools/check.mjs`（CI 跑同一个）。
 #
-# 三道闸门，按这个顺序：
+# 四道闸门，按这个顺序：
+#   0. 内核基线：改到 plugins/ 或 presets/ 时跑 `node tools/dsh-baseline.mjs --check`。
+#      **这条不能省**：台账判据 10 拿字面量与本包自己的 engines.dsh 比，判据 11 拿 preset
+#      抄本与运行中内核比——两边各自自洽时，整仓一起落后一版没有任何一道闸门看得见。
+#      本机没装 DSH 时它回退出码 2，那是「跑不起来」，跳过并说明，不当成不通过。
 #   1. 台账：改到 plugins/、presets/、根 README.md、docs/rules/ 或 tools/ 时跑
 #      `node tools/assert-ledger.mjs`（判据见该文件头部）。零依赖、纯读文件，很快。
 #   2. 包：改到的每个包在它自己目录跑 `pnpm check`。**有 check 就跑**——没有 node_modules
@@ -34,6 +38,21 @@ changed=$(git diff --cached --name-only --diff-filter=ACMR) || exit 0
 [ -n "$changed" ] || exit 0
 
 failed=""
+
+# ── 0. 内核基线 ──────────────────────────────────────────────────────────────
+# 放在台账之前：它抓的是「整仓落后一版」，台账抓的是「包内与包间不一致」，前者更根本。
+if printf '%s\n' "$changed" | grep -qE '^(plugins|presets)/'; then
+  echo "pre-commit: 内核基线 -> node tools/dsh-baseline.mjs --check"
+  out=$(node tools/dsh-baseline.mjs --check 2>&1)
+  code=$?
+  if [ "$code" = "2" ]; then
+    echo "pre-commit: 提示：读不到在用的内核，跳过基线检查（本机没装 DSH 时正常）"
+  elif [ "$code" != "0" ]; then
+    echo "pre-commit: 有包没跟到在用内核："
+    printf '%s\n' "$out" | tail -n 20
+    failed="$failed 内核基线"
+  fi
+fi
 
 # ── 1. 仓库级台账 ────────────────────────────────────────────────────────────
 if printf '%s\n' "$changed" | grep -qE '^(plugins|presets)/|^README\.md$|^docs/rules/|^tools/'; then

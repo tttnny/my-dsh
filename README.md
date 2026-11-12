@@ -42,7 +42,7 @@
     <tr>
       <td><b>🎛️ 模型选择</b><br><i>输入框里模型选择器的形态</i></td>
       <td><a href="./plugins/dsh-model-submenu"><code>@lynn123411/dsh-model-submenu</code></a></td>
-      <td><b>模型选择</b><br>把输入框旁的模型选择器换成两层：一层列当前供应商的模型与思考等级，一层弹窗列出所有供应商的模型，可搜可收藏。</td>
+      <td><b>模型选择</b><br>在输入框的模型菜单里加一行「全部供应商的模型」，点开是一张列出所有供应商模型的弹窗，可搜、可收藏，并记住每个模型上次用的思考等级。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-model-submenu</code></td>
     </tr>
     <tr>
