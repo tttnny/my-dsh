@@ -8,10 +8,10 @@
  */
 import { useEffect, useState } from 'react';
 import * as React from 'react';
-import { IconChevronDownOutlineRegular, Input, Switch } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Input } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { readSettings, type ConfigForm } from './binding.ts';
-import { FIELDS, GROUPS, defaultConfig, type Field, type GroupId, type NumberField } from './schema.ts';
+import { FIELDS, defaultConfig, type Field } from './schema.ts';
 import { NS } from './locales.ts';
 
 /** 本地化函数。 */
@@ -48,45 +48,13 @@ function Row({ title, hint, children }: {
 }
 
 /**
- * 一个可折叠分组。
- * @param props.title - 分组标题。
- * @param props.open - 是否展开。
- * @param props.onToggle - 切换展开。
- * @param props.children - 分组内容。
- */
-function Section({ title, open, onToggle, children }: {
-  title: string;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}): React.ReactElement {
-  return (
-    <section className="dsh-np-group">
-      <button
-        type="button"
-        className="dsh-np-group-toggle"
-        aria-expanded={open}
-        onClick={onToggle}
-      >
-        <span className="dsh-np-group-title">{title}</span>
-        <IconChevronDownOutlineRegular
-          className={open ? 'dsh-np-chevron dsh-np-chevron-open' : 'dsh-np-chevron'}
-          size={14}
-        />
-      </button>
-      {open && <div className="dsh-np-group-body">{children}</div>}
-    </section>
-  );
-}
-
-/**
  * 一个数值旋钮：滑块与数字框共用一份本地文本，失焦或回车时提交。
  * @param props.field - 字段定义。
  * @param props.value - 当前值。
  * @param props.onCommit - 提交一个合法值。
  */
 function NumberControl({ field, value, onCommit }: {
-  field: NumberField;
+  field: Field;
   value: number;
   onCommit: (next: number) => void;
 }): React.ReactElement {
@@ -143,7 +111,6 @@ export function NativePlusCard(
   const t: Translate = (key: string) => (props as unknown as { t: (k: string) => string }).t(key);
   const [settings, setSettings] = useState<Record<string, Value> | undefined>(() => readSettings(form));
   const [available, setAvailable] = useState(() => form.getSnapshot().status !== 'unavailable');
-  const [open, setOpen] = useState<Record<GroupId, boolean>>({ typography: true, appearance: true });
 
   useEffect(() => {
     const sync = (): void => {
@@ -161,35 +128,23 @@ export function NativePlusCard(
   const current: Record<string, Value> = settings ?? defaultConfig();
   const write = (key: string, next: Value): void => { void form.set(key, next); };
 
-  const renderField = (field: Field): React.ReactElement => {
-    const hint = field.hint === undefined ? undefined : t(field.hint);
-    if (field.kind === 'number') {
-      return (
-        <Row key={field.key} title={t(field.label)} hint={hint}>
-          <NumberControl field={field} value={Number(valueOf(current, field.key))} onCommit={(next) => { write(field.key, next) }} />
-        </Row>
-      );
-    }
-    return (
-      <Row key={field.key} title={t(field.label)} hint={hint}>
-        <Switch checked={valueOf(current, field.key) === true} label={t(field.label)}
-          onChange={(next) => { write(field.key, next) }} />
-      </Row>
-    );
-  };
-
   return (
     <div className="dsh-np-card">
-      {GROUPS.map((group) => (
-        <Section
-          key={group.id}
-          title={t(group.label)}
-          open={open[group.id]}
-          onToggle={() => { setOpen(prev => ({ ...prev, [group.id]: !prev[group.id] })) }}
-        >
-          {FIELDS.filter(field => field.group === group.id).map(renderField)}
-        </Section>
-      ))}
+      <div className="dsh-np-rows">
+        {FIELDS.map((field) => (
+          <Row
+            key={field.key}
+            title={t(field.label)}
+            hint={field.hint === undefined ? undefined : t(field.hint)}
+          >
+            <NumberControl
+              field={field}
+              value={Number(valueOf(current, field.key))}
+              onCommit={(next) => { write(field.key, next) }}
+            />
+          </Row>
+        ))}
+      </div>
       <div className="dsh-np-note">{t('note.scope')}</div>
     </div>
   );

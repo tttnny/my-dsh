@@ -3,7 +3,7 @@ import z from '@deepseek-ai/schemastery';
 import { FIELDS } from './client/schema.ts';
 
 /**
- * `@lynn123411/dsh-native-plus` —— 在 DSH 原生的蓝白黑之上增强对话正文与外壳观感。
+ * `@lynn123411/dsh-native-plus` —— 在 DSH 原生的蓝白黑之上增强对话正文的排版与装饰。
  *
  * 宿主半边只声明这份配置的形状：界面全部由浏览器半边画（注入样式表 + 插件页上的配置卡片），
  * 这里不碰任何界面，也不注册工具。配置项落进本插件那一行的 config，浏览器半边经
@@ -24,11 +24,7 @@ export const SETTINGS_NAMESPACE = name;
 function buildShape(): Record<string, unknown> {
   const shape: Record<string, unknown> = {};
   for (const field of FIELDS) {
-    if (field.kind === 'number') {
-      shape[field.key] = z.number().step(field.step).min(field.min).max(field.max).default(field.default).volatile();
-      continue;
-    }
-    shape[field.key] = z.boolean().default(field.default).volatile();
+    shape[field.key] = z.number().step(field.step).min(field.min).max(field.max).default(field.default).volatile();
   }
   return shape;
 }

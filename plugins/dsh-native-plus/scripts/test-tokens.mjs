@@ -17,7 +17,6 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 const tokensCss = readFileSync(join(root, 'src/client/styles/tokens.css'), 'utf8');
 const markdownCss = readFileSync(join(root, 'src/client/styles/markdown.css'), 'utf8');
-const shellCss = readFileSync(join(root, 'src/client/styles/shell.css'), 'utf8');
 
 let passed = 0;
 let total = 0;
@@ -62,7 +61,7 @@ function strip(css) {
 
 test('正文层没有写死任何色值', () => {
   const offenders = [];
-  for (const [file, css] of [['tokens.css', tokensCss], ['markdown.css', markdownCss], ['shell.css', shellCss]]) {
+  for (const [file, css] of [['tokens.css', tokensCss], ['markdown.css', markdownCss]]) {
     for (const match of strip(css).matchAll(/(color|background(-color)?|border(-[a-z]+)?-color|outline-color|accent-color)\s*:\s*([^;]+);/g)) {
       const value = match[4].trim();
       if (/^(none|inherit|transparent|currentColor)$/i.test(value)) continue;

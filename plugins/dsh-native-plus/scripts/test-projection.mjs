@@ -5,7 +5,7 @@
  * 字符串、缺字段。投影这一步若不收拢，样式表就会拿到 `--np-line-height: NaN`
  * 这种值，而页面只是「有点怪」，不报错。
  *
- * 另有一条「不写颜色」的断言：本插件一个颜色令牌都不设，投影只能产出属性与两个尺寸变量。
+ * 另有一条「不写颜色」的断言：本插件一个颜色令牌都不设，投影只能产出根属性与两个尺寸变量。
  *
  * 跑法：pnpm test / node scripts/test-projection.mjs
  */
@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import {
-  ATTRIBUTE_NAMES, DEFAULT_SETTINGS, FONT_ATTRIBUTE, ROOT_ATTRIBUTE, ROOT_VARIABLES, SHELL_ATTRIBUTE,
+  DEFAULT_SETTINGS, ROOT_ATTRIBUTE, ROOT_VARIABLES,
   applyProjection, clearProjection, normalizeSettings, projectSettings,
 } from '../src/client/settings.ts';
 import { FIELDS, defaultConfig } from '../src/client/schema.ts';
@@ -52,15 +52,9 @@ test('不是数字的脏值退回出厂值', () => {
   assert.equal(dirty.paragraphGap, DEFAULT_SETTINGS.paragraphGap);
 });
 
-test('布尔开关缺失时按出厂值走，显式 false 才算关', () => {
-  assert.equal(normalizeSettings({}).shellEnabled, true);
-  assert.equal(normalizeSettings({ shellEnabled: false }).shellEnabled, false);
-  assert.equal(normalizeSettings({ embedFont: 'no' }).embedFont, true);
-});
-
-test('投影写的就是三个属性与两个变量，没有别的', () => {
+test('投影写的就是一个根属性与两个变量，没有别的', () => {
   const projection = projectSettings(normalizeSettings({}));
-  assert.deepEqual(Object.keys(projection.attributes).sort(), [...ATTRIBUTE_NAMES].sort());
+  assert.deepEqual(Object.keys(projection.attributes), [ROOT_ATTRIBUTE]);
   assert.deepEqual(Object.keys(projection.variables).sort(), [...ROOT_VARIABLES].sort());
   assert.equal(projection.attributes[ROOT_ATTRIBUTE], 'on');
   assert.equal(projection.variables['--np-p-gap'], '10px');
@@ -73,21 +67,6 @@ test('投影不产生任何颜色', () => {
   for (const [name, value] of Object.entries(projection.variables)) {
     assert.doesNotMatch(String(value), /hsl|rgb|#|color-mix/, `${name} 写了颜色：${value}`);
   }
-});
-
-test('关掉的开关写成 null（调用方删属性），不是写个 off', () => {
-  const projection = projectSettings(normalizeSettings({ shellEnabled: false, embedFont: false }));
-  assert.equal(projection.attributes[SHELL_ATTRIBUTE], null);
-  assert.equal(projection.attributes[FONT_ATTRIBUTE], null);
-});
-
-test('两个开关互不影响', () => {
-  const shellOnly = projectSettings(normalizeSettings({ shellEnabled: true, embedFont: false }));
-  assert.equal(shellOnly.attributes[SHELL_ATTRIBUTE], 'on');
-  assert.equal(shellOnly.attributes[FONT_ATTRIBUTE], null);
-  const fontOnly = projectSettings(normalizeSettings({ shellEnabled: false, embedFont: true }));
-  assert.equal(fontOnly.attributes[SHELL_ATTRIBUTE], null);
-  assert.equal(fontOnly.attributes[FONT_ATTRIBUTE], 'on');
 });
 
 test('整体停用时不留任何生效痕迹', () => {
@@ -104,7 +83,6 @@ test('写到真 DOM 上再撤掉，元素上不留东西', () => {
   assert.equal(root.style.getPropertyValue('--np-p-gap'), '18px');
   clearProjection(root);
   assert.equal(root.getAttribute(ROOT_ATTRIBUTE), null);
-  assert.equal(root.getAttribute(SHELL_ATTRIBUTE), null);
   for (const name of ROOT_VARIABLES) assert.equal(root.style.getPropertyValue(name), '', `${name} 没撤掉`);
 });
 
@@ -119,14 +97,13 @@ test('重复投影是幂等的，不会叠出第二份', () => {
 
 test('字段表里每个字段的默认值都在合法范围内', () => {
   for (const field of FIELDS) {
-    if (field.kind !== 'number') continue;
     assert.ok(field.default >= field.min && field.default <= field.max, `${field.key} 的默认值越界`);
   }
 });
 
-test('配置项保持精简：字段数与分组数都在预期内', () => {
+test('配置项保持精简：字段数在预期内', () => {
   // 这一条挡的是「又长回几十个配色项」那种回退。
-  assert.ok(FIELDS.length <= 6, `字段表长到了 ${FIELDS.length} 条`);
+  assert.ok(FIELDS.length <= 4, `字段表长到了 ${FIELDS.length} 条`);
 });
 
 console.log(`${passed}/${total} passed`);

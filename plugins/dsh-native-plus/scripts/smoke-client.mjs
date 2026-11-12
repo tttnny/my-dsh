@@ -186,12 +186,12 @@ try {
 }
 check('apply 期间没有接线错误', errors.length === 0, errors.join('; '));
 
-/* ---- 样式表：五张都挂上、都带归属键 ---- */
+/* ---- 样式表：三张都挂上、都带归属键 ---- */
 const styleKeys = [...document.head.querySelectorAll('style[data-plugin]')].map((tag) => tag.getAttribute('data-plugin-css'));
-check('五张样式表都注入了', styleKeys.length === 5, JSON.stringify(styleKeys));
+check('三张样式表都注入了', styleKeys.length === 3, JSON.stringify(styleKeys));
 check(
   '样式表的归属键按「包名/文件名」拼',
-  ['tokens.css', 'markdown.css', 'shell.css', 'fonts.css', 'card.css'].every((file) => styleKeys.includes(PKG + '/' + file)),
+  ['tokens.css', 'markdown.css', 'card.css'].every((file) => styleKeys.includes(PKG + '/' + file)),
   JSON.stringify(styleKeys),
 );
 const pluginTags = [...document.head.querySelectorAll('style')].map((tag) => tag.getAttribute('data-plugin'));
@@ -199,20 +199,13 @@ check('每张标签都带 data-plugin（卸载时按它清理）', pluginTags.ev
 
 /* ---- 投影：出厂的几个值真的落到 <html> 上 ---- */
 check('根元素带上了开启属性', rootElement.getAttribute('data-native-plus') === 'on', String(rootElement.getAttribute('data-native-plus')));
-check('外壳美化默认开', rootElement.getAttribute('data-np-shell') === 'on', String(rootElement.getAttribute('data-np-shell')));
-check('字体默认开', rootElement.getAttribute('data-np-font') === 'on', String(rootElement.getAttribute('data-np-font')));
 check('行高写进了行内变量', rootElement.style.getPropertyValue('--np-line-height') === '1.75', rootElement.style.getPropertyValue('--np-line-height'));
 check('段距写进了行内变量', rootElement.style.getPropertyValue('--np-p-gap') === '10px', rootElement.style.getPropertyValue('--np-p-gap'));
 
 /* ---- 投影随配置变化：改值 → 属性跟着换 ---- */
-form.push({ lineHeight: 1.9, paragraphGap: 16, shellEnabled: false, embedFont: false });
+form.push({ lineHeight: 1.9, paragraphGap: 16 });
 check('行高改动传到了行内变量', rootElement.style.getPropertyValue('--np-line-height') === '1.9', rootElement.style.getPropertyValue('--np-line-height'));
 check('段距改动传到了行内变量', rootElement.style.getPropertyValue('--np-p-gap') === '16px', rootElement.style.getPropertyValue('--np-p-gap'));
-check('关掉外壳美化也删属性', rootElement.getAttribute('data-np-shell') === null, String(rootElement.getAttribute('data-np-shell')));
-check('关掉字体也删属性', rootElement.getAttribute('data-np-font') === null, String(rootElement.getAttribute('data-np-font')));
-
-form.push({ shellEnabled: true });
-check('重新打开外壳美化会写回属性', rootElement.getAttribute('data-np-shell') === 'on', String(rootElement.getAttribute('data-np-shell')));
 
 /* ---- 配色：一次都不许碰主题通道 ---- */
 check('主题通道一次都没被碰过', paletteLayers.length === 0, paletteLayers.length + ' 层');
@@ -231,13 +224,13 @@ check('zh/en 键集一致且非空', zhKeys.length > 0 && JSON.stringify(zhKeys)
 check('每条文案都非空', enKeys.every((key) => typeof dictionary.en[key] === 'string' && dictionary.en[key].length > 0));
 
 /* ---- 卸载：痕迹撤干净 ---- */
-form.push({ lineHeight: 1.75, paragraphGap: 10, shellEnabled: true, embedFont: true });
-const beforeUnload = ['data-native-plus', 'data-np-shell', 'data-np-font']
+form.push({ lineHeight: 1.75, paragraphGap: 10 });
+const beforeUnload = ['data-native-plus']
   .filter((name) => rootElement.getAttribute(name) !== null);
-check('卸载前确实写满了属性（否则下面那条是空转）', beforeUnload.length === 3, beforeUnload.join('、'));
+check('卸载前确实写满了属性（否则下面那条是空转）', beforeUnload.length === 1, beforeUnload.join('、'));
 
 for (const dispose of ctx.effects.splice(0)) dispose();
-const PROJECTED_ATTRIBUTES = ['data-native-plus', 'data-np-shell', 'data-np-font'];
+const PROJECTED_ATTRIBUTES = ['data-native-plus'];
 const leftover = PROJECTED_ATTRIBUTES.filter((name) => rootElement.getAttribute(name) !== null);
 check('卸载后根元素不留属性', leftover.length === 0, leftover.join('、'));
 const leftVars = ['--np-line-height', '--np-p-gap'].filter((name) => rootElement.style.getPropertyValue(name) !== '');

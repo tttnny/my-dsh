@@ -3,7 +3,6 @@
  *
  * 这里是纯函数，不碰 document、不读配置源。落点只有两处：
  *   - 一个根属性，样式表全部挂在它下面，关掉整层就整段不匹配；
- *   - 两个开关属性，分别管外壳美化与内嵌字体；
  *   - 两个数值变量，正文行高与段落间距。
  *
  * 这里不产生任何颜色：本插件一个颜色令牌都不写，蓝阶、纸面、语法色都读宿主的。
@@ -12,10 +11,6 @@ import { clampNumber, defaultConfig, normalizeConfig, type Config } from './sche
 
 /** 本插件在 `<html>` 上用的根属性：开着时才加，关掉整层样式一并失效。 */
 export const ROOT_ATTRIBUTE = 'data-native-plus';
-/** 外壳美化的开关属性名。 */
-export const SHELL_ATTRIBUTE = 'data-np-shell';
-/** 内嵌字体的开关属性名。 */
-export const FONT_ATTRIBUTE = 'data-np-font';
 
 /** 一份配置投影出来的结果。 */
 export interface Projection {
@@ -39,9 +34,6 @@ export function normalizeSettings(raw: Partial<Record<string, unknown>> | undefi
 /** 本插件写在 `<html>` 上的全部变量名：撤痕迹时按这张表逐个删，不靠猜。 */
 export const ROOT_VARIABLES: readonly string[] = ['--np-line-height', '--np-p-gap'];
 
-/** 全部属性名。 */
-export const ATTRIBUTE_NAMES = [ROOT_ATTRIBUTE, SHELL_ATTRIBUTE, FONT_ATTRIBUTE] as const;
-
 /**
  * 算出一份配置该在 `<html>` 上留下什么。
  * @param settings - 已收拢的配置。
@@ -50,19 +42,13 @@ export const ATTRIBUTE_NAMES = [ROOT_ATTRIBUTE, SHELL_ATTRIBUTE, FONT_ATTRIBUTE]
  */
 export function projectSettings(settings: Settings, enabled = true): Projection {
   if (!enabled) {
-    const attributes: Record<string, null> = {};
-    for (const name of ATTRIBUTE_NAMES) attributes[name] = null;
     const variables: Record<string, null> = {};
     for (const name of ROOT_VARIABLES) variables[name] = null;
-    return { attributes, variables };
+    return { attributes: { [ROOT_ATTRIBUTE]: null }, variables };
   }
 
   return {
-    attributes: {
-      [ROOT_ATTRIBUTE]: 'on',
-      [SHELL_ATTRIBUTE]: settings.shellEnabled === true ? 'on' : null,
-      [FONT_ATTRIBUTE]: settings.embedFont === true ? 'on' : null,
-    },
+    attributes: { [ROOT_ATTRIBUTE]: 'on' },
     variables: {
       '--np-line-height': String(Number(settings.lineHeight)),
       '--np-p-gap': `${Number(settings.paragraphGap)}px`,

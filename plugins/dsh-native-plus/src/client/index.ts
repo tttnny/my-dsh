@@ -23,8 +23,6 @@ import { NativePlusCard } from './card.tsx';
 import { NS, en, zh } from './locales.ts';
 import tokens from './styles/tokens.css?inline';
 import markdown from './styles/markdown.css?inline';
-import shell from './styles/shell.css?inline';
-import { fontCss } from './styles/font.ts';
 
 export { NS } from './locales.ts';
 export {
@@ -32,10 +30,10 @@ export {
 } from './binding.ts';
 export { NativePlusCard } from './card.tsx';
 export {
-  applyProjection, clearProjection, DEFAULT_SETTINGS, FONT_ATTRIBUTE, normalizeSettings,
-  projectSettings, ROOT_ATTRIBUTE, ROOT_VARIABLES, SHELL_ATTRIBUTE,
+  applyProjection, clearProjection, DEFAULT_SETTINGS, normalizeSettings,
+  projectSettings, ROOT_ATTRIBUTE, ROOT_VARIABLES,
 } from './settings.ts';
-export { FIELDS, GROUPS, clampNumber, defaultConfig, normalizeConfig } from './schema.ts';
+export { FIELDS, clampNumber, defaultConfig, normalizeConfig } from './schema.ts';
 
 /** 包名：样式表标签的归属键，也是浏览器 bundle 的自注册 id。 */
 export const name = '@lynn123411/dsh-native-plus';
@@ -50,8 +48,6 @@ export const inject = ['configForms', 'slots', 'locale'];
 const SHEETS: readonly (readonly [string, string])[] = [
   ['tokens.css', tokens],
   ['markdown.css', markdown],
-  ['shell.css', shell],
-  ['fonts.css', fontCss()],
   ['card.css', CARD_CSS],
 ];
 

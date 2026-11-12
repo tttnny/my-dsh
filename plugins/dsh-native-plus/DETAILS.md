@@ -1,6 +1,6 @@
 # @lynn123411/dsh-native-plus 详情
 
-> 本文档是 [README.md](./README.md) 的补充：装配形态、配置模型、颜色从哪里来、外壳改了什么、开发副本与验证。
+> 本文档是 [README.md](./README.md) 的补充：装配形态、配置模型、颜色从哪里来、开发副本与验证。
 
 ## 装配形态
 
@@ -11,28 +11,24 @@ dsh plugin --profile web add @lynn123411/dsh-native-plus
 这条命令把包名写进 profile 的 `dependencies` 与 `dsh.profile.bundles`，包内 `cordis.patch.yml` 随之插入一条 root loader entry。这一条行同时承载两个半边：
 
 - **宿主半边**（`lib/index.js`）：只声明 `Config` 的形状，并登记 `settings.configure({ auto: false })`——本插件的配置界面在「插件」页上，不让内核按 schema 再生成一份同字段的设置页。
-- **浏览器半边**（`lib/client.js`）：注入五张样式表（tokens / markdown / shell / fonts / card）、把配置投影到 `<html>` 上、在「插件」页上挂配置卡片。
+- **浏览器半边**（`lib/client.js`）：注入三张样式表（tokens / markdown / card）、把配置投影到 `<html>` 上、在「插件」页上挂配置卡片。
 
 声明的服务：宿主半边只要 `settings`；浏览器半边要 `configForms`（读本插件那一行的配置）、`slots` 与 `locale`（画卡片）。本插件**不声明 `theme`**：它不碰宿主的主题通道。`package.json` 的 `dsh.client.inject` 另列了它依赖的插件契约包，两层都要声明，漏一层整条 loader entry 会静默变成 failed。
 
 ## 配置模型
 
-全部 4 个字段写在 [src/client/schema.ts](./src/client/schema.ts) 的一张字段表里。每条声明自己的分组、控件类型与默认值；宿主半边的 schema、投影、卡片与自检都从这张表生成。
+全部 2 个字段写在 [src/client/schema.ts](./src/client/schema.ts) 的一张字段表里。每条声明自己的标题、说明、上下界与默认值；宿主半边的 schema、投影、卡片与自检都从这张表生成。
 
-2 组：
-
-| 组 | 字段 |
+| 字段 | 范围与默认值 |
 | --- | --- |
-| 正文排版 | 行高（1.4–2，默认 1.75）、段落间距（4–24px，默认 10px） |
-| 外观 | 侧栏与标签条与输入卡、内嵌字体 |
+| 行高 | 1.4–2，默认 1.75 |
+| 段落间距 | 4–24px，默认 10px |
 
-投影只写 3 个属性与 2 个变量：
+投影只写一个根属性与两个变量：
 
 | 名字 | 作用 |
 | --- | --- |
-| `data-native-plus` | 根属性，五张样式表全部挂在它下面；关掉整层就整段不匹配 |
-| `data-np-shell` | 外壳美化的开关 |
-| `data-np-font` | 内嵌字体的开关 |
+| `data-native-plus` | 根属性，三张样式表全部挂在它下面；关掉整层就整段不匹配 |
 | `--np-line-height` | 正文行高倍数 |
 | `--np-p-gap` | 段落间距 |
 
@@ -55,19 +51,6 @@ dsh plugin --profile web add @lynn123411/dsh-native-plus
 浅色两端分别是 8.72:1 与 5.17:1，深色两端是 10.11:1 与 4.96:1，都在 WCAG AA 之上；中间的档按等距插值，明度落在两端之间。
 
 蓝阶取饱和的 `--dsw-static-blue-*`，不取 `--dsw-static-deepseek-*`：后者最深的一档停在藏青（#283142），饱和度过低，浅色下看上去接近黑色。
-
-## 外壳改了什么
-
-整层受 `data-np-shell` 控制，关掉就回到宿主原样。只动圆角、留白与分隔线，不动颜色、不动 grid 轨道：
-
-- 中央列四周留 6px 窄缝，看起来像一张浮在侧栏底色上的卡片；
-- 撤掉侧栏与中央列之间那条分隔线，以及会话头部下面那条接缝；
-- 侧栏行与活动标签的圆角收小一档（宿主本就是圆角块），选中的行换成实心的一档；
-- 输入卡沿用宿主自己的面板级圆角与输入区底色，插件不再重复声明。
-
-## 字体
-
-两个字体面（正常 / 斜体）按 data URI 内联进 `lib/client.js`：插件在 registry 上的实际路径是装的时候才知道的，另发字体文件就得拼一个自己不可能知道的 URL。字体族名是 `maplemono`，落在 `--dsw-font-family` 与 `--ds-font-family-code` 上，用户的字体偏好仍排在它前面。
 
 ## 开发副本与验证
 

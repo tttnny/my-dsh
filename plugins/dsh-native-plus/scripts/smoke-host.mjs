@@ -81,7 +81,7 @@ await test('Config 的默认值与浏览器半边那份出厂配置逐字段一�
 await test('每个字段都是 volatile：改值不重挂整条 loader 行', () => {
   const resolved = new plugin.Config({});
   assert.equal(Object.getOwnPropertySymbols(resolved.lineHeight).length, 1, 'volatile 字段应当带写入符号');
-  assert.equal(Object.getOwnPropertySymbols(resolved.shellEnabled).length, 1, '开关字段也应当带写入符号');
+  assert.equal(Object.getOwnPropertySymbols(resolved.paragraphGap).length, 1, '每个字段都应当带写入符号');
 });
 
 await test('Config 直接拒绝越界值：行高 1.4…2、间距 4…24', () => {

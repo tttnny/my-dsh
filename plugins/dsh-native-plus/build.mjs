@@ -31,25 +31,6 @@ const KERNEL_MODULES = [
   '@deepseek-ai/dsh-tools',
 ];
 
-/**
- * 字体按 data URI 内联：`?datauri` 后缀让 esbuild 把 .woff2 读出来转成 base64 字符串。
- * 客户端 bundle 只能带一个能在浏览器里直接跑的产物，字体要是放在旁边另发文件，
- * 插件就得知道自己在 registry 上的实际路径才能拼出 URL——那是不该有也知道不了的依赖。
- */
-const inlineFont = {
-  name: 'dsh-inline-font',
-  setup(build) {
-    build.onResolve({ filter: /\?datauri$/ }, (args) => ({
-      path: fileURLToPath(new URL(args.path.replace(/\?datauri$/, ''), pathToFileURL(args.importer))),
-      namespace: 'inline-font',
-    }));
-    build.onLoad({ filter: /.*/, namespace: 'inline-font' }, (args) => ({
-      contents: `export default ${JSON.stringify(`data:font/woff2;base64,${readFileSync(args.path).toString('base64')}`)};`,
-      loader: 'js',
-    }));
-  },
-};
-
 /** 样式表按文本内联：`?inline` 后缀让 esbuild 把文件内容当字符串模块交给 import。 */
 const inlineCss = {
   name: 'dsh-inline-css',
@@ -99,7 +80,7 @@ await build({
   target: ['es2022'],
   jsx: 'automatic',
   external: PLATFORM_MODULES,
-  plugins: [inlineCss, inlineFont, clientPurity],
+  plugins: [inlineCss, clientPurity],
   sourcemap: true,
   banner: {
     js: `window.__ModuleLoader__.load({ id: ${JSON.stringify(pkgName)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,

@@ -5,38 +5,17 @@
  * 只需要在这里加一条，不会出现「卡片上有、投影里没有」这种对不上。
  *
  * 配色不在这张表里：本插件不改任何颜色，蓝阶、纸面、语法色全部读宿主的令牌。
- * 可调的只有正文的两个尺寸，与外层的两个开关。
+ * 可调的只有正文的两个尺寸。
  */
 
-/** 配置分组。顺序就是卡片上的先后。 */
-export type GroupId = 'typography' | 'appearance';
-
-/** 一个分组的定义。 */
-export interface GroupDef {
-  id: GroupId;
-  /** 词典里的标题键。 */
-  label: string;
-}
-
-/** 卡片上的分组顺序。 */
-export const GROUPS: readonly GroupDef[] = [
-  { id: 'typography', label: 'group.typography' },
-  { id: 'appearance', label: 'group.appearance' },
-];
-
-interface FieldBase {
+/** 一个配置字段：一个带上下界的数值。 */
+export interface Field {
   /** 字段名，也是配置里的键。 */
   key: string;
-  group: GroupId;
   /** 词典里的标题键。 */
   label: string;
   /** 词典里的说明键，可选。 */
   hint?: string;
-}
-
-/** 一个数值字段。 */
-export interface NumberField extends FieldBase {
-  kind: 'number';
   min: number;
   max: number;
   step: number;
@@ -44,22 +23,10 @@ export interface NumberField extends FieldBase {
   default: number;
 }
 
-/** 一个开关字段。 */
-export interface SwitchField extends FieldBase {
-  kind: 'switch';
-  default: boolean;
-}
-
-/** 一个配置字段。 */
-export type Field = NumberField | SwitchField;
-
 /** 全部字段。字段顺序就是卡片上的顺序。 */
 export const FIELDS: readonly Field[] = [
-  { kind: 'number', key: 'lineHeight', group: 'typography', label: 'field.lineHeight', hint: 'hint.lineHeight', min: 1.4, max: 2, step: 0.05, unit: '×', default: 1.75 },
-  { kind: 'number', key: 'paragraphGap', group: 'typography', label: 'field.paragraphGap', hint: 'hint.paragraphGap', min: 4, max: 24, step: 1, unit: 'px', default: 10 },
-
-  { kind: 'switch', key: 'shellEnabled', group: 'appearance', label: 'field.shellEnabled', hint: 'hint.shellEnabled', default: true },
-  { kind: 'switch', key: 'embedFont', group: 'appearance', label: 'field.embedFont', hint: 'hint.embedFont', default: true },
+  { key: 'lineHeight', label: 'field.lineHeight', hint: 'hint.lineHeight', min: 1.4, max: 2, step: 0.05, unit: '×', default: 1.75 },
+  { key: 'paragraphGap', label: 'field.paragraphGap', hint: 'hint.paragraphGap', min: 4, max: 24, step: 1, unit: 'px', default: 10 },
 ];
 
 /** 配置值的类型。 */
@@ -100,12 +67,7 @@ export function normalizeConfig(raw: Partial<Record<string, unknown>> | undefine
   const source = raw ?? {};
   const out: Config = {};
   for (const field of FIELDS) {
-    if (field.kind === 'number') {
-      out[field.key] = clampNumber(source[field.key], field.min, field.max, field.default);
-      continue;
-    }
-    const flag = source[field.key];
-    out[field.key] = typeof flag === 'boolean' ? flag : field.default;
+    out[field.key] = clampNumber(source[field.key], field.min, field.max, field.default);
   }
   return out;
 }

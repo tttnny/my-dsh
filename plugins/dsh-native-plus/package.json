@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-native-plus",
-  "version": "0.1.4",
-  "description": "在 DSH 自带的蓝白黑之上增强对话正文与外壳观感：六级标题的蓝阶、引用与表格、代码块、行高与段距、内嵌字体。",
+  "version": "0.2.0",
+  "description": "在 DSH 自带的蓝白黑之上增强对话正文的排版与装饰：六级标题的蓝阶、引用与表格、代码块、行高与段距。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

@@ -1,8 +1,8 @@
 /**
- * 锚点契约自检：把三张样式表里用到的宿主钩子挑出来，逐个证明「宿主今天确实还在发它们」。
+ * 锚点契约自检：把两张样式表里用到的宿主钩子挑出来，逐个证明「宿主今天确实还在发它们」。
  *
- * 为什么要有这一条：装饰全靠宿主那几样不带哈希的钩子——data-slot、data-chat-flow-kind、
- * md-code-block、data-composer-card、data-conversation-tabs、data-row-key。宿主是内部依赖，
+ * 为什么要有这一条：装饰全靠宿主那几样不带哈希的钩子——data-chat-flow-kind、
+ * data-chat-group-part、data-code-block-banner、data-line-numbers。宿主是内部依赖，
  * 这些名字**不是公开契约**。它哪天改名，样式不会报错，只会静默不生效：页面看着「就是没变」，
  * 而构建、类型检查、其余自检全绿。所以这里直接去宿主源码里查名字还在不在，顺便确认样式表
  * 没有偷偷用上 CSS Modules 的哈希类名。
@@ -34,9 +34,9 @@ function test(label, fn) {
   }
 }
 
-/** 三张样式表的全文，按文件名索引。 */
+/** 两张样式表的全文，按文件名索引。 */
 const sheets = Object.fromEntries(
-  ['tokens.css', 'markdown.css', 'shell.css'].map((file) => [
+  ['tokens.css', 'markdown.css'].map((file) => [
     file,
     readFileSync(join(root, 'src/client/styles', file), 'utf8'),
   ]),
@@ -59,7 +59,6 @@ function strip(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-const shellAttributes = attributeNames(sheets['shell.css']);
 const markdownAttributes = attributeNames(sheets['markdown.css']);
 
 test('样式表里没有 CSS Modules 的哈希类名（一出现就说明抄了宿主内部实现）', () => {
@@ -73,7 +72,7 @@ test('样式表里没有 CSS Modules 的哈希类名（一出现就说明抄了�
 test('每一层都挂在根属性下面（关掉就整段不匹配）', () => {
   // 逐条规则看选择器：把注释与 at-rule 剥掉，剩下的每个「选择器 { … }」都必须以根属性开头。
   const offenders = [];
-  for (const file of ['tokens.css', 'markdown.css', 'shell.css']) {
+  for (const file of ['tokens.css', 'markdown.css']) {
     for (const rule of strip(sheets[file]).matchAll(/([^{}]+)\{[^{}]*\}/g)) {
       const selector = rule[1].trim();
       if (selector === '' || selector.startsWith('@')) continue;
@@ -143,7 +142,6 @@ test('文档里写死的数字与实际一致', () => {
   const details = readFileSync(join(root, 'DETAILS.md'), 'utf8');
   const schema = readFileSync(join(root, 'src/client/schema.ts'), 'utf8');
   const index = readFileSync(join(root, 'src/client/index.ts'), 'utf8');
-  const settings = readFileSync(join(root, 'src/client/settings.ts'), 'utf8');
 
   /** 阿拉伯数字与中文数字都要认：文档里两种写法都在用。 */
   const CN = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
@@ -153,17 +151,12 @@ test('文档里写死的数字与实际一致', () => {
   const compact = (text) => text.replace(/\s+/g, '');
   const says = (text, n, unit) => forms(n).some((x) => compact(text).includes(x + unit));
 
-  const fields = (schema.match(/^\s*\{ kind: '(number|switch)'/gm) ?? []).length;
+  const fields = (schema.match(/^\s*\{ key: '/gm) ?? []).length;
   const sheetsCount = (index.match(/^\s*\['[a-z]+\.css',/gm) ?? []).length;
-  const groups = (schema.match(/^\s*\{ id: '[a-z]+', label: 'group\./gm) ?? []).length;
-  const attrList = /const ATTRIBUTE_NAMES = \[([\s\S]*?)\] as const;/.exec(settings);
-  assert.notEqual(attrList, null, '找不到 ATTRIBUTE_NAMES');
-  const attrs = (attrList[1].match(/[A-Z_]+_ATTRIBUTE/g) ?? []).length;
 
   assert.ok(says(details, fields, '个字段'), 'DETAILS 里的字段数不是 ' + fields);
-  assert.ok(says(readme, groups, '组'), 'README 里的分组数不是 ' + groups);
+  assert.ok(says(readme, fields, '个可调项'), 'README 里的可调项数不是 ' + fields);
   assert.ok(says(details, sheetsCount, '张样式表'), 'DETAILS 里的样式表数不是 ' + sheetsCount);
-  assert.ok(says(details, attrs, '个属性'), 'DETAILS 里的属性数不是 ' + attrs);
 });
 
 /**
@@ -215,38 +208,12 @@ if (source === undefined) {
 } else {
   // 本插件自己写的属性（data-native-plus / data-np-*）不归宿主发，不能拿去宿主源码里找。
   const anchors = new Set(
-    [...shellAttributes, ...markdownAttributes].filter((name) => !name.startsWith('data-native-plus') && !name.startsWith('data-np-')),
+    [...markdownAttributes].filter((name) => !name.startsWith('data-native-plus') && !name.startsWith('data-np-')),
   );
   for (const anchor of [...anchors].sort()) {
     test('宿主还在发 ' + anchor, () => {
       const hit = findLiteral(clientDir, anchor);
       assert.notEqual(hit, undefined, '宿主源码里再也找不到 ' + anchor + '——这条锚点已失效，样式会静默不生效');
-    });
-  }
-}
-
-if (source !== undefined) {
-  // 光有 data-slot 这个属性名不够：每个座位名也都是宿主发的字面量。
-  // 座位名写错一个字符，那条规则就静默不生效，而属性名那一条照样绿。
-  const slotNames = new Set(
-    [...Object.values(sheets).join('\n').matchAll(/data-slot='([^']+)'/g)].map((match) => match[1])
-      .filter((name) => name !== '…'),
-  );
-  // 座位名分散在各自的包里，所以按「谁声明谁负责」逐个查，查不到再退回全量扫描。
-  const declared = {
-    'sidebar': join(source, 'packages/client/ui-sidebar/src/client/index.ts'),
-    'main': join(source, 'packages/client/ui-layout/src/client/index.ts'),
-    'shell.bottom': join(source, 'packages/client/ui-layout/src/client/index.ts'),
-    'conversation.header': join(source, 'packages/client/ui-conversation/src/client/apply.ts'),
-    'conversation.session.header.actions': join(source, 'packages/client/ui-conversation/src/client/contract/slots.ts'),
-  };
-  for (const name of [...slotNames].sort()) {
-    test('宿主仍然声明座位 ' + name, () => {
-      const own = declared[name];
-      const text = own !== undefined && existsSync(own) ? readFileSync(own, 'utf8') : '';
-      if (text.includes("'" + name + "'")) return;
-      const hit = findLiteral(clientDir, "'" + name + "'");
-      assert.notEqual(hit, undefined, '宿主源码里再也找不到座位 ' + name + '——外壳那条规则已失效');
     });
   }
 }
