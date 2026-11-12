@@ -3,8 +3,9 @@
  *
  * Loads the built `lib/client.js` the same way the Web shell does (through a
  * `window.__ModuleLoader__.load` stub), gives it fake cordis services, and
- * asserts the two contributions the composer depends on: the menu row that asks
- * for the picker, and the overlay entry that renders it. Run with:
+ * asserts the two contributions the composer depends on: the redirect that turns
+ * the Host's own model cell into the picker's door, and the overlay entry that
+ * renders the picker. Run with:
  * node scripts/smoke-client.mjs [plugin-dir]
  */
 
@@ -167,6 +168,11 @@ check('the picker renders through the shared Modal', clientBundle.includes('Moda
 check('the plugin paints no surface fill of its own', !clientBundle.includes('--dsw-specific-menu'))
 check('the bundle no longer imports the removed anchoring primitive', !clientBundle.includes('useAnchoredPosition'))
 
+// The redirect only works if it addresses the Host's own menu: the surface it
+// installs its listener on, and the root cell it takes the click from.
+check('the redirect recognizes the Host menu surface', clientBundle.includes('data-menu-material'))
+check('the redirect matches the Host root menu\'s first cell', clientBundle.includes(':scope > button[role='))
+
 // The guard must have teeth, or every case below is vacuous.
 try {
   makeCtx('teeth').modelDirectories
@@ -183,15 +189,15 @@ try {
   console.log(`       ${error.message}`)
 }
 
-check('the row is declared through the model menu\'s options slot', injects.includes('slot:conversation.input.model.options'))
+check('the redirect is declared through the model menu\'s options slot', injects.includes('slot:conversation.input.model.options'))
 check('the dialog is declared through the composer overlay slot', injects.includes('slot:conversation.input.overlay'))
 
-const row = registrations.find((entry) => entry.name === 'conversation.input.model.options')
-check('menu row registered', row !== undefined)
-check('menu row carries a list id', row?.id === 'all-providers')
-check('menu row names its registrant', row?.registrant === '@lynn123411/dsh-model-submenu')
-check('menu row renders through its own dictionary namespace', row?.locale === 'modelSubmenu')
-check('menu row exports a component', typeof row?.component === 'function')
+const redirect = registrations.find((entry) => entry.name === 'conversation.input.model.options')
+check('the redirect is registered', redirect !== undefined)
+check('the redirect carries a list id', redirect?.id === 'model-cell-redirect')
+check('the redirect names its registrant', redirect?.registrant === '@lynn123411/dsh-model-submenu')
+check('the redirect renders no copy of its own', redirect?.locale === undefined)
+check('the redirect exports a component', typeof redirect?.component === 'function')
 
 const host = registrations.find((entry) => entry.name === 'conversation.input.overlay')
 check('overlay dialog registered', host !== undefined)
@@ -199,7 +205,7 @@ check('overlay dialog carries a list id', host?.id === 'model-picker')
 check('overlay dialog renders through its own dictionary namespace', host?.locale === 'modelSubmenu')
 check('overlay dialog exports a component', typeof host?.component === 'function')
 
-check('both entries share one picker store', row?.inject?.('s').picker === host?.inject?.('s').picker)
+check('both entries share one picker store', redirect?.inject?.('s').picker === host?.inject?.('s').picker)
 
 const dictionaries = locales.find((entry) => entry.ns === 'modelSubmenu')?.dictionaries
 check('dictionaries registered on the plugin namespace', dictionaries !== undefined)
@@ -207,11 +213,11 @@ const zhKeys = Object.keys(dictionaries?.zh ?? {}).sort()
 const enKeys = Object.keys(dictionaries?.en ?? {}).sort()
 check('zh/en key sets match', zhKeys.length > 0 && JSON.stringify(zhKeys) === JSON.stringify(enKeys))
 check('every string is non-empty', enKeys.every((key) => typeof dictionaries.en[key] === 'string' && dictionaries.en[key].length > 0))
-check('the row label exists in both dictionaries', typeof dictionaries?.zh['options.row'] === 'string' && typeof dictionaries?.en['options.row'] === 'string')
+check('the dictionaries carry no menu-row label', dictionaries?.zh['options.row'] === undefined && dictionaries?.en['options.row'] === undefined)
 
 // The entries' injected face is what the components read their catalog and
 // their metadata from.
-const face = typeof row?.inject === 'function' ? row.inject('session-1') : undefined
+const face = typeof redirect?.inject === 'function' ? redirect.inject('session-1') : undefined
 check('inject face carries the shared directory store', face?.directory === directoryStore)
 check('inject face names its session', face?.sessionId === 'session-1')
 check('inject face carries the live metadata source', typeof face?.factsSource?.getSnapshot === 'function')
@@ -223,7 +229,7 @@ check('load() reaches the shared directory', directoryCalls.includes('load'))
 await face?.select({ provider: 'aliyun', model: 'deepseek-v4.1-flash' })
 check('select() reaches the shared directory', directoryCalls.includes('select:aliyun/deepseek-v4.1-flash'))
 
-const addressed = typeof row?.inject === 'function' ? row.inject('subagent') : undefined
+const addressed = typeof redirect?.inject === 'function' ? redirect.inject('subagent') : undefined
 check('an addressed subagent session is unavailable', addressed?.available === false)
 directoryCalls.length = 0
 addressed?.load()
@@ -242,7 +248,7 @@ check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 
 // ── the picker store ────────────────────────────────────────────────────────
-// The row and the dialog mount in different slots, so the store is the only
+// The redirect and the dialog mount in different slots, so the store is the only
 // thing carrying the request across the menu's teardown. Its contract is small
 // but load-bearing: a closed store, one open target at a time, and no listener
 // fired for a request that changes nothing.

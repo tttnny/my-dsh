@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-model-submenu",
-  "version": "0.3.6",
-  "description": "给输入框的模型选择器换成两层：一层只列当前供应商的模型与思考等级，一层弹窗列全部供应商的模型。",
+  "version": "0.3.7",
+  "description": "把输入框模型菜单的第一行改成直接打开跨供应商的模型弹窗：可搜、可收藏，并记住每个模型上次用的思考等级。",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
   "publishConfig": {

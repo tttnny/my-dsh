@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Model picker",
-    "description": "The composer's model picker: one menu for the current provider's models and effort, one dialog for every provider's models with search and favorites."
+    "description": "The model menu's first row opens a dialog listing every provider's models, searchable and favoritable."
   }
 }

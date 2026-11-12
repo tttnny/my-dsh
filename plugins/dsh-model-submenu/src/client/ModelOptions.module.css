@@ -1,61 +1,8 @@
 /*
- * The composer model menu's extra row and the picker it opens. The menu surface
- * renders through the primitives' MenuSurface and the dialog through Modal, so
- * neither this file paints a floating fill — it only places content on the
- * surfaces those two own.
+ * The picker and the composer overlay that hosts it. The dialog renders through
+ * the primitives' Modal, so this file paints no floating fill — it only places
+ * content on the surface that component owns.
  */
-
-/* ── the menu row ────────────────────────────────────────────────────────── */
-
-/* The row sits in the Host's root menu beside its own model and effort rows, so
- * it borrows their metrics instead of inventing a shape: one full-width line,
- * the label taking the slack, and a chevron saying it opens another surface. */
-.optionsRow {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 32px;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-  background: 0 0;
-  border: none;
-  border-radius: var(--dsw-radius-md);
-  outline: none;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  font-size: 13px;
-  line-height: 20px;
-  display: flex;
-}
-
-.optionsRow:hover:not(:disabled),
-.optionsRow:focus-visible {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.optionsRow:disabled {
-  color: var(--dsw-alias-label-dimmed);
-  cursor: default;
-}
-
-.optionsIcon {
-  flex: none;
-}
-
-.optionsLabel {
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  overflow: hidden;
-}
-
-.optionsChevron {
-  color: var(--dsw-alias-label-caption);
-  flex: none;
-}
 
 /* The overlay entry is only a mount point for the dialog and its toast; it must
  * not take space inside the composer card. */

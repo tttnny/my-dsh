@@ -1,9 +1,10 @@
 /**
- * 渲染自检：用真 react 把「菜单里那一行」与「常驻浮层里的弹窗」画进 jsdom。
+ * 渲染自检：用真 react 把「菜单改道」与「常驻浮层里的弹窗」画进 jsdom。
  *
- * 锁住这次改动的五件事：
+ * 锁住这几件事：
  *
- *   1. 那一行是菜单项，点它先关菜单、再把开合请求交给常驻的 store；
+ *   1. 宿主根菜单的第一格被拦下：先关菜单、再把开合请求交给常驻的 store，
+ *      宿主自己那格的下钻不执行；第二格与非菜单项一概不动；
  *   2. 弹窗只在 store 指向本会话时出现，会话不可选时整块不渲染；
  *   3. 弹窗列出全部供应商的模型，收藏的排前面，星标是独立控件、点它不换模型；
  *   4. 点模型立即提交并关闭；点当前这个模型不提交；被拒时留在弹窗并弹提示；
@@ -78,9 +79,9 @@ const ctx = {
   sessions: { subagentAddress: () => undefined },
 }
 exported.apply(ctx)
-const rowEntry = registrations.find((entry) => entry.options.name === 'conversation.input.model.options')
+const redirectEntry = registrations.find((entry) => entry.options.name === 'conversation.input.model.options')
 const hostEntry = registrations.find((entry) => entry.options.name === 'conversation.input.overlay')
-assert.ok(rowEntry !== undefined, '菜单行没有注册')
+assert.ok(redirectEntry !== undefined, '菜单改道没有注册')
 assert.ok(hostEntry !== undefined, '浮层弹窗没有注册')
 
 // ── 共享目录：两个供应商，magpie 三个模型，a6api 一个 ─────────────────────────
@@ -138,7 +139,6 @@ const openPicker = () => { act(() => { picker.open('session-1') }) }
 const closePicker = () => { act(() => { picker.close() }) }
 
 const table = {
-  'options.row': '全部供应商的模型…',
   'picker.title': '切换模型',
   'picker.all': '全部',
   'picker.search': '搜索模型或提供商…',
@@ -192,6 +192,10 @@ const face = {
 
 let container
 let viewRoot
+/** The Host menu surface a redirect test mounts into, when there is one. */
+let surface
+/** What the Host's own cells did — the redirect must keep these empty. */
+const hostCellClicks = []
 
 function mount(element) {
   container = document.createElement('div')
@@ -200,17 +204,44 @@ function mount(element) {
   act(() => { viewRoot.render(element) })
 }
 
+/**
+ * Mount the redirect inside a stand-in for the Host's root menu: one surface
+ * holding two `role="menuitem"` cells, each with its own Host handler.
+ */
+function mountRedirect(element) {
+  surface = document.createElement('div')
+  surface.setAttribute('data-menu-material', '')
+  for (const [name, label] of [['model', '模型'], ['effort', '推理等级']]) {
+    const cell = document.createElement('button')
+    cell.type = 'button'
+    cell.setAttribute('role', 'menuitem')
+    cell.setAttribute('data-cell', name)
+    cell.textContent = label
+    cell.addEventListener('click', () => { hostCellClicks.push(name) })
+    surface.append(cell)
+  }
+  document.body.append(surface)
+  container = document.createElement('div')
+  surface.append(container)
+  viewRoot = createRoot(container)
+  act(() => { viewRoot.render(element) })
+}
+
 function unmount() {
   act(() => { viewRoot.unmount() })
   container.remove()
+  surface?.remove()
+  surface = undefined
 }
+
+/** One cell of the stand-in menu surface. */
+const cell = (name) => surface.querySelector(`[data-cell="${name}"]`)
 
 const click = (element) => {
   act(() => { element.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })) })
 }
 const flush = async () => { await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0) }) }) }
 const dialog = () => document.querySelector('[role="dialog"]')
-const rowButton = () => container.querySelector('[role="menuitem"]')
 const rowButtons = () => dialog() === null ? [] : [...dialog().querySelectorAll('[role="menuitemradio"]')]
 const rowByName = (name) => rowButtons().find((row) => row.getAttribute('title') === name)
 const stars = () => dialog() === null ? [] : [...dialog().querySelectorAll('button[aria-pressed]')]
@@ -235,31 +266,50 @@ async function test(name, fn) {
 
 globalThis.localStorage.clear()
 
-const rowProps = {
+const redirectProps = {
   locked: false,
   dismiss: () => { dismissals.push('dismiss') },
+  reportFailure: () => {},
   sessionId: 'session-1',
   picker,
   t,
 }
 
-await test('菜单行写着入口文案，且是菜单项', () => {
-  mount(createElement(rowEntry.component, rowProps))
-  assert.equal(rowButton().getAttribute('role'), 'menuitem')
-  assert.match(rowButton().textContent, /全部供应商的模型/)
-})
-
-await test('点这一行先关菜单，再把开合请求交给 store', () => {
+await test('点宿主的第一格：先关菜单，再把开合请求交给 store，宿主自己的下钻不执行', () => {
+  closePicker()
   dismissals.length = 0
-  click(rowButton())
+  hostCellClicks.length = 0
+  mountRedirect(createElement(redirectEntry.component, redirectProps))
+  click(cell('model'))
   assert.deepEqual(dismissals, ['dismiss'])
   assert.equal(picker.getSnapshot().sessionId, 'session-1')
+  assert.deepEqual(hostCellClicks, [], '宿主那格的下钻必须被拦下')
 })
 
-await test('菜单被锁时这一行不可点', () => {
-  unmount()
-  mount(createElement(rowEntry.component, { ...rowProps, locked: true }))
-  assert.equal(rowButton().disabled, true)
+await test('点第二格推理等级：不拦，宿主照旧下钻', () => {
+  dismissals.length = 0
+  hostCellClicks.length = 0
+  click(cell('effort'))
+  assert.deepEqual(hostCellClicks, ['effort'])
+  assert.deepEqual(dismissals, [])
+  assert.equal(picker.getSnapshot().sessionId, 'session-1', '第二格不该改 store')
+})
+
+await test('点菜单里的非菜单项：一概不动', () => {
+  const plain = document.createElement('div')
+  plain.textContent = '团队协作'
+  surface.append(plain)
+  dismissals.length = 0
+  hostCellClicks.length = 0
+  click(plain)
+  assert.deepEqual(hostCellClicks, [])
+  assert.deepEqual(dismissals, [])
+  plain.remove()
+})
+
+await test('改道不画任何可见内容', () => {
+  assert.equal(container.textContent, '')
+  assert.equal(container.querySelector('span[hidden]') !== null, true, '标记必须留在宿主菜单面板里')
 })
 
 await test('store 没指向本会话时弹窗不渲染', () => {

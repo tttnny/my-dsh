@@ -10,13 +10,13 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import { ModelOptionsRow } from './ModelOptionsRow.tsx'
+import { ModelCellRedirect } from './ModelCellRedirect.tsx'
 import { ModelPickerHost } from './ModelPickerHost.tsx'
 import { createPickerStore } from './picker-state.ts'
 import { createFactsSource, type DescribeFace } from './facts-source.ts'
 import { NS, en, zh } from './locales.ts'
 
-export { ModelOptionsRow } from './ModelOptionsRow.tsx'
+export { ModelCellRedirect } from './ModelCellRedirect.tsx'
 export { ModelPickerHost } from './ModelPickerHost.tsx'
 export { createPickerStore } from './picker-state.ts'
 
@@ -44,7 +44,8 @@ export const inject = [
 
 /**
  * Client plugin body: register this plugin's dictionaries, then contribute the
- * menu row that asks for the picker and the overlay that renders it.
+ * redirect that turns the Host's model cell into the picker's door and the
+ * overlay that renders the picker.
  *
  * The two are separate entries because the Host unmounts the model menu the
  * moment a row is clicked; the overlay slot stays mounted, so the dialog
@@ -90,12 +91,10 @@ export function apply(ctx: ClientContext): void {
     }
     scope.slots.inject('conversation.input.model.options', () => scope.slots.register({
       name: 'conversation.input.model.options',
-      id: 'all-providers',
-      order: 10,
+      id: 'model-cell-redirect',
       registrant: '@lynn123411/dsh-model-submenu',
-      locale: NS,
       inject: faceOf,
-    }, ModelOptionsRow))
+    }, ModelCellRedirect))
     scope.slots.inject('conversation.input.overlay', () => scope.slots.register({
       name: 'conversation.input.overlay',
       id: 'model-picker',

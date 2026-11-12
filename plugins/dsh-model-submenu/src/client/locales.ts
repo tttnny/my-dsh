@@ -1,11 +1,10 @@
-/** Locale bundles for the composer model menu's extra row and the picker it opens. */
+/** Locale bundles for the all-provider model picker. */
 
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'modelSubmenu'
 
-/** Locale keys the menu row and the picker render. */
+/** Locale keys the picker renders. */
 export type ModelSubmenuLocaleKey =
-  | 'options.row'
   | 'status.loading'
   | 'status.empty'
   | 'status.failed'
@@ -28,14 +27,13 @@ export type ModelSubmenuLocaleKey =
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The composer model menu's copy. */
+    /** The all-provider model picker's copy. */
     modelSubmenu: ModelSubmenuLocaleKey
   }
 }
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh: Record<ModelSubmenuLocaleKey, string> = {
-  'options.row': '全部供应商的模型…',
   'status.loading': '正在加载模型…',
   'status.empty': '没有可用的模型。',
   'status.failed': '模型列表加载失败：{message}',
@@ -59,7 +57,6 @@ export const zh: Record<ModelSubmenuLocaleKey, string> = {
 
 /** English dictionary, checked complete against the zh key set. */
 export const en: Record<ModelSubmenuLocaleKey, string> = {
-  'options.row': 'All providers’ models…',
   'status.loading': 'Loading models…',
   'status.empty': 'No models available.',
   'status.failed': 'Model list failed to load: {message}',
