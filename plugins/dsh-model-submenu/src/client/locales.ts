@@ -1,20 +1,11 @@
-/** Locale bundles for the composer model menu and the picker it opens. */
+/** Locale bundles for the composer model menu's extra row and the picker it opens. */
 
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'modelSubmenu'
 
-/** Locale keys the menu and the picker render. */
+/** Locale keys the menu row and the picker render. */
 export type ModelSubmenuLocaleKey =
-  | 'trigger.fallback'
-  | 'trigger.loading'
-  | 'trigger.selectAria'
-  | 'trigger.aria'
-  | 'trigger.ariaEffort'
-  | 'menu.aria'
-  | 'menu.effort'
-  | 'menu.more'
-  | 'menu.hint'
-  | 'effort.providerDefault'
+  | 'options.row'
   | 'status.loading'
   | 'status.empty'
   | 'status.failed'
@@ -44,16 +35,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh: Record<ModelSubmenuLocaleKey, string> = {
-  'trigger.fallback': '选择模型',
-  'trigger.loading': '正在加载模型…',
-  'trigger.selectAria': '选择模型',
-  'trigger.aria': '选择模型，当前 {model}',
-  'trigger.ariaEffort': '选择模型，当前 {model}，思考等级 {effort}',
-  'menu.aria': '模型与思考等级',
-  'menu.effort': '思考',
-  'menu.more': '更多模型…',
-  'menu.hint': '提示：切换模型或思考程度会使既有的提示词缓存失效。建议新建会话，避免额外的 token 消耗。',
-  'effort.providerDefault': '默认',
+  'options.row': '全部供应商的模型…',
   'status.loading': '正在加载模型…',
   'status.empty': '没有可用的模型。',
   'status.failed': '模型列表加载失败：{message}',
@@ -77,16 +59,7 @@ export const zh: Record<ModelSubmenuLocaleKey, string> = {
 
 /** English dictionary, checked complete against the zh key set. */
 export const en: Record<ModelSubmenuLocaleKey, string> = {
-  'trigger.fallback': 'Select model',
-  'trigger.loading': 'Loading models…',
-  'trigger.selectAria': 'Select model',
-  'trigger.aria': 'Select model, current {model}',
-  'trigger.ariaEffort': 'Select model, current {model}, effort {effort}',
-  'menu.aria': 'Model and effort',
-  'menu.effort': 'Effort',
-  'menu.more': 'More models…',
-  'menu.hint': 'Changing the model or the effort invalidates the existing prompt cache. Start a new session to avoid the extra token cost.',
-  'effort.providerDefault': 'Default',
+  'options.row': 'All providers’ models…',
   'status.loading': 'Loading models…',
   'status.empty': 'No models available.',
   'status.failed': 'Model list failed to load: {message}',

@@ -3,7 +3,8 @@
  *
  * Loads the built `lib/client.js` the same way the Web shell does (through a
  * `window.__ModuleLoader__.load` stub), gives it fake cordis services, and
- * asserts the seat takeover the composer depends on. Run with:
+ * asserts the two contributions the composer depends on: the menu row that asks
+ * for the picker, and the overlay entry that renders it. Run with:
  * node scripts/smoke-client.mjs [plugin-dir]
  */
 
@@ -40,7 +41,7 @@ globalThis.window = {
   },
 }
 
-/** Per-session directory stub: records what the seat asked it to do. */
+/** Per-session directory stub: records what the entries asked it to do. */
 const directoryCalls = []
 const directoryStore = {
   getSnapshot: () => ({ current: null, routable: null, groups: [], failures: [], status: 'idle', error: null }),
@@ -71,7 +72,6 @@ const providerDirectory = {
   ],
 }
 
-
 const registrations = []
 const injects = []
 const locales = []
@@ -87,6 +87,8 @@ const services = () => ({
     register: (options, component) => {
       registrations.push({
         name: options.name,
+        id: options.id,
+        order: options.order,
         priority: options.priority,
         registrant: options.registrant,
         locale: options.locale,
@@ -98,7 +100,7 @@ const services = () => ({
   },
   locale: {
     register: (ns, dictionaries) => { locales.push({ ns, dictionaries }); return () => {} },
-    bind: () => (key) => key,
+    resolveText: (text) => (typeof text === 'string' ? text : text?.zh ?? text?.en ?? ''),
   },
   modelDirectories: { directoryFor: (sessionId) => { directoryCalls.push(`directoryFor:${sessionId}`); return directory } },
   sessions: { subagentAddress: (sessionId) => sessionId === 'subagent' ? { agent: 'a' } : undefined },
@@ -158,16 +160,12 @@ check('bundle registers under its package id', requires[0] === '@lynn123411/dsh-
 check('apply/inject exported', typeof exported?.apply === 'function' && Array.isArray(exported?.inject))
 check('declares exactly the services its halves read', JSON.stringify(exported?.inject) === '["configForms","locale","modelDirectories","remote","remote.llm","remote.session","sessions","slots"]')
 
-// The panel's fill, blur, radius and macOS backing live in the primitives'
-// MenuSurface, so the bundle must keep rendering through it and must not paint
-// the surface itself — the regressed build was a bare div with its own fill.
+// The dialog must stay on the primitives' Modal, and this plugin must not paint
+// a floating fill of its own — the shared surfaces own the fill, blur and radius.
 const clientBundle = await readFile(join(root, 'lib/client.js'), 'utf8')
-check('menu renders through the shared MenuSurface', clientBundle.includes('MenuSurface'))
 check('the picker renders through the shared Modal', clientBundle.includes('Modal'))
-check('neither surface paints its own fill', !clientBundle.includes('--dsw-specific-menu'))
-// 交互顺序与无障碍状态由 scripts/test-render.mjs 用真 react 守：先落库档位再换成弹窗、
-// 星标的 aria-pressed、点已选中的模型不提交。产物级这里只钉两件东西：浮层来自共享库，
-// 以及本插件不自己画浮层填充。
+check('the plugin paints no surface fill of its own', !clientBundle.includes('--dsw-specific-menu'))
+check('the bundle no longer imports the removed anchoring primitive', !clientBundle.includes('useAnchoredPosition'))
 
 // The guard must have teeth, or every case below is vacuous.
 try {
@@ -185,26 +183,37 @@ try {
   console.log(`       ${error.message}`)
 }
 
-check('seat declared through the seat\'s own inject key', injects.includes('slot:conversation.input.model'))
+check('the row is declared through the model menu\'s options slot', injects.includes('slot:conversation.input.model.options'))
+check('the dialog is declared through the composer overlay slot', injects.includes('slot:conversation.input.overlay'))
 
-const seat = registrations.find((r) => r.name === 'conversation.input.model')
-check('composer model seat taken over', seat !== undefined)
-check('shadows the built-in occupant below its priority', seat?.priority === -100)
-check('names its registrant', seat?.registrant === '@lynn123411/dsh-model-submenu')
-check('renders through its own dictionary namespace', seat?.locale === 'modelSubmenu')
-check('exports a component', typeof seat?.component === 'function')
+const row = registrations.find((entry) => entry.name === 'conversation.input.model.options')
+check('menu row registered', row !== undefined)
+check('menu row carries a list id', row?.id === 'all-providers')
+check('menu row names its registrant', row?.registrant === '@lynn123411/dsh-model-submenu')
+check('menu row renders through its own dictionary namespace', row?.locale === 'modelSubmenu')
+check('menu row exports a component', typeof row?.component === 'function')
+
+const host = registrations.find((entry) => entry.name === 'conversation.input.overlay')
+check('overlay dialog registered', host !== undefined)
+check('overlay dialog carries a list id', host?.id === 'model-picker')
+check('overlay dialog renders through its own dictionary namespace', host?.locale === 'modelSubmenu')
+check('overlay dialog exports a component', typeof host?.component === 'function')
+
+check('both entries share one picker store', row?.inject?.('s').picker === host?.inject?.('s').picker)
 
 const dictionaries = locales.find((entry) => entry.ns === 'modelSubmenu')?.dictionaries
-check('dictionaries registered on the seat namespace', dictionaries !== undefined)
+check('dictionaries registered on the plugin namespace', dictionaries !== undefined)
 const zhKeys = Object.keys(dictionaries?.zh ?? {}).sort()
 const enKeys = Object.keys(dictionaries?.en ?? {}).sort()
 check('zh/en key sets match', zhKeys.length > 0 && JSON.stringify(zhKeys) === JSON.stringify(enKeys))
 check('every string is non-empty', enKeys.every((key) => typeof dictionaries.en[key] === 'string' && dictionaries.en[key].length > 0))
+check('the row label exists in both dictionaries', typeof dictionaries?.zh['options.row'] === 'string' && typeof dictionaries?.en['options.row'] === 'string')
 
-// The seat's injected face is what the component reads its catalog and its
-// metadata from.
-const face = typeof seat?.inject === 'function' ? seat.inject('session-1') : undefined
+// The entries' injected face is what the components read their catalog and
+// their metadata from.
+const face = typeof row?.inject === 'function' ? row.inject('session-1') : undefined
 check('inject face carries the shared directory store', face?.directory === directoryStore)
+check('inject face names its session', face?.sessionId === 'session-1')
 check('inject face carries the live metadata source', typeof face?.factsSource?.getSnapshot === 'function')
 check('the metadata source subscribes and rebuilds', typeof face?.factsSource?.subscribe === 'function')
 check('the settings mirror is the metadata source', describeCalls.length > 0)
@@ -214,7 +223,7 @@ check('load() reaches the shared directory', directoryCalls.includes('load'))
 await face?.select({ provider: 'aliyun', model: 'deepseek-v4.1-flash' })
 check('select() reaches the shared directory', directoryCalls.includes('select:aliyun/deepseek-v4.1-flash'))
 
-const addressed = typeof seat?.inject === 'function' ? seat.inject('subagent') : undefined
+const addressed = typeof row?.inject === 'function' ? row.inject('subagent') : undefined
 check('an addressed subagent session is unavailable', addressed?.available === false)
 directoryCalls.length = 0
 addressed?.load()
@@ -232,35 +241,27 @@ check('an unanswered settings document answers unknown instead of guessing', JSO
 check('no wiring error during apply', errors.length === 0)
 for (const error of errors) console.log(`       ${error}`)
 
-// ── 座位接管的宿主契约（真 SlotCore，不是桩件） ─────────────────────────────
-// 0.2.1-alpha.5 给 conversation.input.model 加了子座位 conversation.input.model.label。
-// 子座位的声明归声明它的那条注册项，不归座位名：接管方不声明 children 时，第三方仍能
-// 注册进子座位；接管方自己再声明会抛「已被声明」；内置项一卸载，子座位连同别人的贡献被
-// 递归收掉。这三条是本插件接管座位时依赖的宿主行为，宿主一变就红。
-const { SlotCore } = await import('@deepseek-ai/dsh-client-ui-slots')
-const core = new SlotCore()
-const disposeComposer = core.register({ name: 'root', children: { 'conversation.input.model': { kind: 'single', scope: 'session' } } }, () => null)
-const disposeBuiltin = core.register({ name: 'conversation.input.model', children: { 'conversation.input.model.label': { kind: 'single', scope: 'session', inline: true } } }, () => null)
-const disposeTakeOver = core.register({ name: 'conversation.input.model', priority: -100 }, () => null)
-const winners = core.entriesOfSlot('conversation.input.model')
-check('takeover wins the seat from the built-in occupant', winners.length === 1 && winners[0].options.priority === -100)
-check('the built-in occupant still declares the label child', core.specDynamic('conversation.input.model.label') !== undefined)
-const disposeThird = core.register({ name: 'conversation.input.model.label' }, () => null)
-check('a third party can still register into the label child', core.entries('conversation.input.model.label').length === 1)
-let redeclared = false
-try {
-  // 换一个 priority 才绕过座位本身的格子冲突，撞到的是子座位的声明归属。
-  core.register({ name: 'conversation.input.model', priority: -200, children: { 'conversation.input.model.label': { kind: 'single', scope: 'session', inline: true } } }, () => null)
-} catch (error) {
-  redeclared = /already declared/.test(error?.message ?? '')
-}
-check('the takeover entry cannot re-declare the label child', redeclared)
-disposeThird()
-disposeBuiltin()
-check('unloading the built-in occupant reaps the label child', core.specDynamic('conversation.input.model.label') === undefined && core.entries('conversation.input.model.label').length === 0)
-check('the takeover occupant stays after the built-in unloads', core.entriesOfSlot('conversation.input.model').length === 1)
-disposeTakeOver()
-disposeComposer()
+// ── the picker store ────────────────────────────────────────────────────────
+// The row and the dialog mount in different slots, so the store is the only
+// thing carrying the request across the menu's teardown. Its contract is small
+// but load-bearing: a closed store, one open target at a time, and no listener
+// fired for a request that changes nothing.
+const store = exported.createPickerStore()
+check('the store starts closed', store.getSnapshot().sessionId === null)
+let notified = 0
+const unsubscribe = store.subscribe(() => { notified += 1 })
+store.open('session-1')
+check('open() publishes the target session', store.getSnapshot().sessionId === 'session-1')
+check('open() notifies subscribers', notified === 1)
+store.open('session-1')
+check('re-opening the same session does not notify again', notified === 1)
+store.open('session-2')
+check('a second open replaces the target', store.getSnapshot().sessionId === 'session-2' && notified === 2)
+store.close()
+check('close() clears the target', store.getSnapshot().sessionId === null && notified === 3)
+unsubscribe()
+store.open('session-3')
+check('an unsubscribed listener stops hearing changes', notified === 3)
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : `\nsmoke: FAIL (${failures.length})`)
 process.exit(failures.length === 0 ? 0 : 1)

@@ -1,10 +1,13 @@
 /**
- * 渲染自检：用真 react 把输入框旁的模型菜单画进 jsdom，锁住这次改动的四个承诺。
+ * 渲染自检：用真 react 把「菜单里那一行」与「常驻浮层里的弹窗」画进 jsdom。
  *
- *   1. 小菜单只列当前供应商的模型，且收藏的排前面并带星标；
- *   2. 点模型立即提交，选中的还是那个模型就不提交；
- *   3. 改思考等级只改选中态，关闭菜单那一刻才提交；
- *   4. 「更多模型…」在思考等级写入成功之后才换成弹窗，写入失败就留在小菜单。
+ * 锁住这次改动的五件事：
+ *
+ *   1. 那一行是菜单项，点它先关菜单、再把开合请求交给常驻的 store；
+ *   2. 弹窗只在 store 指向本会话时出现，会话不可选时整块不渲染；
+ *   3. 弹窗列出全部供应商的模型，收藏的排前面，星标是独立控件、点它不换模型；
+ *   4. 点模型立即提交并关闭；点当前这个模型不提交；被拒时留在弹窗并弹提示；
+ *   5. 选模型时恢复该模型上次用的思考等级。
  *
  * `@deepseek-ai/dsh-client-ui-primitives` 是替身：真组件是浏览器里的 ESM、带
  * .css 导入，Node 里跑不起来。替身只做「把 children 与 aria 原样渲染出来」，
@@ -27,7 +30,6 @@ const { createRoot } = await import('react-dom/client')
 
 /** ui-primitives 替身：只还原本测试关心的渲染结果。 */
 const primitives = primitivesStub({
-  MenuSurface: ({ children, ...rest }) => createElement('div', rest, children),
   Modal: ({ open, onClose, closeLabel, children }) => open
     ? createElement('div', { role: 'dialog' },
       createElement('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, '×'),
@@ -37,12 +39,12 @@ const primitives = primitivesStub({
   ShortcutKeys: ({ keys }) => createElement('span', null, keys.join('')),
   Toast: ({ text }) => createElement('div', { role: 'status' }, text),
   IconCheckOutlineRegular: () => createElement('span', { className: 'check' }),
-  IconChevronDownOutlineRegular: () => createElement('span', null),
+  IconChevronRightOutlineRegular: () => createElement('span', null),
   IconFlatListOutlineRegular: () => createElement('span', null),
   IconWarningOutlineRegular: () => createElement('span', null),
   IconSearchOutlineRegular: () => createElement('span', null),
   Tag: ({ tone, className, children }) => createElement('span', { 'data-tone': tone, className }, children),
-  StateDot: ({ state }) => createElement('svg', { 'data-state': state }),
+  isMobileDevice: () => false,
   rankByName: (items, query) => {
     const needle = query.toLowerCase()
     return items.filter((item) => item.name.toLowerCase().includes(needle) || item.label.toLowerCase().includes(needle))
@@ -51,7 +53,7 @@ const primitives = primitivesStub({
 
 const exported = await loadClientBundle({ root, primitives })
 
-/** 座位注册项：本测试直接拿它的组件来画。 */
+/** 注册项：本测试直接拿两个组件来画。 */
 const registrations = []
 const ctx = {
   effect: (fn) => { fn(); return () => {} },
@@ -76,8 +78,10 @@ const ctx = {
   sessions: { subagentAddress: () => undefined },
 }
 exported.apply(ctx)
-const seat = registrations.find((entry) => entry.options.name === 'conversation.input.model')
-assert.ok(seat !== undefined, '模型座位没有注册')
+const rowEntry = registrations.find((entry) => entry.options.name === 'conversation.input.model.options')
+const hostEntry = registrations.find((entry) => entry.options.name === 'conversation.input.overlay')
+assert.ok(rowEntry !== undefined, '菜单行没有注册')
+assert.ok(hostEntry !== undefined, '浮层弹窗没有注册')
 
 // ── 共享目录：两个供应商，magpie 三个模型，a6api 一个 ─────────────────────────
 
@@ -127,7 +131,44 @@ const unknownFacts = () => ({ contextWindow: undefined, images: 'unknown' })
 const loads = []
 const selections = []
 const outcomes = []
-const seatProps = {
+const dismissals = []
+const picker = exported.createPickerStore()
+/** Open and close through act, so React flushes the store change inside the test. */
+const openPicker = () => { act(() => { picker.open('session-1') }) }
+const closePicker = () => { act(() => { picker.close() }) }
+
+const table = {
+  'options.row': '全部供应商的模型…',
+  'picker.title': '切换模型',
+  'picker.all': '全部',
+  'picker.search': '搜索模型或提供商…',
+  'picker.close': '关闭',
+  'status.loading': '正在加载模型…',
+  'status.empty': '没有可用的模型。',
+  'status.failed': '模型列表加载失败：{message}',
+  'status.providerFailed': '{name} 加载失败：{message}',
+  'action.reload': '重新加载',
+  'error.action': '模型操作失败：{message}',
+  'error.sessionInUse': '会话被占用',
+  'picker.favorite': '收藏 {model}',
+  'picker.unfavorite': '取消收藏 {model}',
+  'picker.searchEmpty': '没有匹配的模型。',
+  'picker.hintNavigate': '导航',
+  'picker.hintSelect': '选择',
+  'picker.hintClose': '关闭',
+  'meta.effort': '思考',
+  'meta.images': '图片输入',
+}
+const t = (key, values) => {
+  const text = table[key] ?? key
+  return values === undefined
+    ? text
+    : text.replace(/\{(\w+)\}/g, (_all, name) => String(values[name] ?? ''))
+}
+
+const face = {
+  sessionId: 'session-1',
+  picker,
   available: true,
   directory: store,
   load: () => { loads.push('load') },
@@ -140,59 +181,23 @@ const seatProps = {
     return next
   },
   factsSource: {
-    // The lookup identity must be stable: the seat reads it through
+    // The lookup identity must be stable: the host reads it through
     // useSyncExternalStore, which re-renders forever on a fresh reference.
     getSnapshot: () => unknownFacts,
     subscribe: () => () => {},
   },
-  t: (key, values) => {
-    const table = {
-      'menu.effort': '思考',
-      'menu.more': '更多模型…',
-      'menu.hint': '提示文字',
-      'menu.aria': '模型与思考等级',
-      'effort.providerDefault': '默认',
-      'picker.title': '切换模型',
-      'picker.all': '全部',
-      'picker.search': '搜索模型或提供商…',
-      'picker.close': '关闭',
-      'status.loading': '正在加载模型…',
-      'status.empty': '没有可用的模型。',
-      'status.failed': '模型列表加载失败：{message}',
-      'status.providerFailed': '{name} 加载失败：{message}',
-      'trigger.loading': '正在加载模型…',
-      'trigger.fallback': '选择模型',
-      'trigger.aria': '选择模型，当前 {model}',
-      'trigger.ariaEffort': '选择模型，当前 {model}，思考等级 {effort}',
-      'action.reload': '重新加载',
-      'error.action': '模型操作失败：{message}',
-      'error.sessionInUse': '会话被占用',
-      'picker.favorite': '收藏 {model}',
-      'picker.unfavorite': '取消收藏 {model}',
-      'picker.searchEmpty': '没有匹配的模型。',
-      'picker.hintNavigate': '导航',
-      'picker.hintSelect': '选择',
-      'picker.hintClose': '关闭',
-      'meta.effort': '思考',
-      'meta.images': '图片输入',
-    }
-    const text = table[key] ?? key
-    return values === undefined
-      ? text
-      : text.replace(/\{(\w+)\}/g, (_all, name) => String(values[name] ?? ''))
-  },
   resolveText: (text) => (typeof text === 'string' ? text : (text.zh ?? text.en)),
-  locked: false,
+  t,
 }
 
 let container
 let viewRoot
 
-function mount() {
+function mount(element) {
   container = document.createElement('div')
   document.body.append(container)
   viewRoot = createRoot(container)
-  act(() => { viewRoot.render(createElement(seat.component, seatProps)) })
+  act(() => { viewRoot.render(element) })
 }
 
 function unmount() {
@@ -204,22 +209,15 @@ const click = (element) => {
   act(() => { element.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })) })
 }
 const flush = async () => { await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0) }) }) }
-const menu = () => document.querySelector('[role="group"]')
-const trigger = () => container.querySelector('button[aria-haspopup="menu"]')
-const rows = () => menu() === null ? [] : [...menu().querySelectorAll('[role="menuitemradio"]')]
-const moreRow = () => menu() === null ? undefined : [...menu().querySelectorAll('button')].find((button) => button.textContent === '更多模型…')
-const segments = () => menu() === null ? [] : [...menu().querySelectorAll('[role="radio"]')]
-const segment = (label) => segments().find((button) => button.textContent === label)
-
-/** 确保小菜单是开着的那一次点击：已经开着就不再点一次把它关上。 */
-const openMenu = () => {
-  if (menu() === null) click(trigger())
-}
-
-/** 浏览器语义：按下与松手都落在这个元素之外，才算点外面。 */
-const clickOutside = () => {
-  act(() => { document.body.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true })) })
-}
+const dialog = () => document.querySelector('[role="dialog"]')
+const rowButton = () => container.querySelector('[role="menuitem"]')
+const rowButtons = () => dialog() === null ? [] : [...dialog().querySelectorAll('[role="menuitemradio"]')]
+const rowByName = (name) => rowButtons().find((row) => row.getAttribute('title') === name)
+const stars = () => dialog() === null ? [] : [...dialog().querySelectorAll('button[aria-pressed]')]
+const starOf = (row) => row.parentElement.querySelector('button[aria-pressed]')
+const search = () => dialog()?.querySelector('input[role="searchbox"]')
+const tabs = () => dialog() === null ? [] : [...dialog().querySelectorAll('[role="tab"]')]
+const tab = (label) => tabs().find((button) => button.textContent === label)
 
 let passed = 0
 let total = 0
@@ -237,383 +235,204 @@ async function test(name, fn) {
 
 globalThis.localStorage.clear()
 
-await test('触发器写着当前模型与思考等级', () => {
-  mount()
-  assert.match(trigger().textContent, /Model A/)
-  assert.match(trigger().textContent, /High/)
+const rowProps = {
+  locked: false,
+  dismiss: () => { dismissals.push('dismiss') },
+  sessionId: 'session-1',
+  picker,
+  t,
+}
+
+await test('菜单行写着入口文案，且是菜单项', () => {
+  mount(createElement(rowEntry.component, rowProps))
+  assert.equal(rowButton().getAttribute('role'), 'menuitem')
+  assert.match(rowButton().textContent, /全部供应商的模型/)
 })
 
-await test('小菜单只列当前供应商的模型', () => {
-  click(trigger())
-  const names = rows().map((row) => row.getAttribute('title'))
-  assert.deepEqual(names, ['Model A', 'Model B', 'Model C'])
-  assert.ok(!names.includes('Kimi K3'))
+await test('点这一行先关菜单，再把开合请求交给 store', () => {
+  dismissals.length = 0
+  click(rowButton())
+  assert.deepEqual(dismissals, ['dismiss'])
+  assert.equal(picker.getSnapshot().sessionId, 'session-1')
 })
 
-await test('小菜单顶上写着供应商名', () => {
-  assert.ok(menu().textContent.includes('Magpie'))
+await test('菜单被锁时这一行不可点', () => {
+  unmount()
+  mount(createElement(rowEntry.component, { ...rowProps, locked: true }))
+  assert.equal(rowButton().disabled, true)
 })
 
-await test('思考等级按模型配置的档位画成分段', () => {
-  assert.deepEqual(segments().map((button) => button.textContent), ['Low', 'High', 'Max'])
-  assert.equal(segment('High').getAttribute('aria-checked'), 'true')
+await test('store 没指向本会话时弹窗不渲染', () => {
+  closePicker()
+  unmount()
+  mount(createElement(hostEntry.component, face))
+  assert.equal(dialog(), null)
 })
 
-await test('当前模型带勾选', () => {
-  assert.equal(rows()[0].getAttribute('aria-checked'), 'true')
-  assert.equal(rows()[1].getAttribute('aria-checked'), 'false')
-})
-
-await test('点模型立即提交并关菜单', async () => {
-  selections.length = 0
-  click(rows()[1])
+await test('store 指向本会话时弹窗出现，且读了一次目录', async () => {
+  loads.length = 0
+  openPicker()
   await flush()
-  assert.deepEqual(selections, [{ provider: 'magpie', model: 'b' }])
-  assert.equal(menu(), null)
+  assert.notEqual(dialog(), null)
+  assert.ok(loads.includes('load'), '打开弹窗应当重新读一次目录')
 })
 
-await test('点已经选中的模型不提交', async () => {
-  openMenu()
-  selections.length = 0
-  click(rows()[1])
-  await flush()
-  assert.deepEqual(selections, [])
-  assert.equal(menu(), null)
+await test('弹窗列出全部供应商的模型', () => {
+  assert.deepEqual(rowButtons().map((row) => row.getAttribute('title')), ['Model A', 'Model B', 'Model C', 'Kimi K3'])
 })
 
-await test('点思考等级立即提交，菜单保持打开', async () => {
-  setState(snapshot())
-  openMenu()
-  selections.length = 0
-  click(segment('Max'))
-  await flush()
-  assert.deepEqual(selections, [{ provider: 'magpie', model: 'a', reasoningEffort: 'max' }])
-  assert.notEqual(menu(), null)
+await test('供应商标签页各列各的模型', () => {
+  assert.deepEqual(tabs().map((button) => button.textContent), ['全部', 'Magpie', 'A6api'])
+  click(tab('A6api'))
+  assert.deepEqual(rowButtons().map((row) => row.getAttribute('title')), ['Kimi K3'])
+  click(tab('全部'))
 })
 
-await test('提交成功后分段立刻跟着变', async () => {
-  assert.equal(segment('Max').getAttribute('aria-checked'), 'true')
-  assert.equal(segment('High').getAttribute('aria-checked'), 'false')
+await test('搜索按名字过滤', () => {
+  const input = search()
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
+    setter.call(input, 'kimi')
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  })
+  assert.deepEqual(rowButtons().map((row) => row.getAttribute('title')), ['Kimi K3'])
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
+    setter.call(input, '')
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  })
 })
 
-await test('点已在生效的那一档不重复提交', async () => {
-  selections.length = 0
-  click(segment('Max'))
-  await flush()
-  assert.deepEqual(selections, [])
-})
-
-await test('关闭菜单不写任何东西', async () => {
-  selections.length = 0
-  clickOutside()
-  await flush()
-  assert.deepEqual(selections, [])
-  assert.equal(menu(), null)
-})
-
-await test('改档位失败时弹气泡，分段停在原档', async () => {
-  outcomes.push({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
-  setState(snapshot())
-  openMenu()
-  click(segment('Low'))
-  await flush()
-  assert.equal(document.querySelector('[role="status"]')?.textContent, '会话被占用')
-  assert.equal(segment('High').getAttribute('aria-checked'), 'true')
-  clickOutside()
-  await flush()
-})
-
-await test('收藏过的模型排在小菜单前面并带星标', async () => {
+await test('收藏的模型排在前面并带实心星', () => {
   globalThis.localStorage.setItem('dsh-model-submenu.favorites', JSON.stringify([{ provider: 'magpie', model: 'c' }]))
   unmount()
-  mount()
-  openMenu()
-  assert.deepEqual(rows().map((row) => row.getAttribute('title')), ['Model C', 'Model A', 'Model B'])
-  assert.ok(menu().querySelectorAll('svg').length >= 1)
+  mount(createElement(hostEntry.component, face))
+  assert.deepEqual(rowButtons().map((row) => row.getAttribute('title')), ['Model C', 'Model A', 'Model B', 'Kimi K3'])
+  assert.equal(starOf(rowByName('Model C')).getAttribute('aria-pressed'), 'true')
 })
 
-await test('小菜单里的星标不是独立控件', () => {
-  clickOutside()
-  const stars = [...menu()?.querySelectorAll('button[aria-pressed]') ?? []]
-  assert.deepEqual(stars, [])
-})
-
-await test('实心星在行按钮里面，点它等于点这一行', async () => {
-  globalThis.localStorage.setItem('dsh-model-submenu.favorites', JSON.stringify([{ provider: 'magpie', model: 'b' }]))
-  setState(snapshot())
-  unmount()
-  mount()
-  openMenu()
+await test('星标是独立控件，点它只改收藏不换模型', async () => {
   selections.length = 0
-  const rows = [...menu().querySelectorAll('[role="menuitemradio"]')]
-  const favored = rows.find((row) => (row.getAttribute('title') || '').includes('Model B'))
-  assert.notEqual(favored, undefined)
-  const mark = favored.querySelector('[class*="starStatic"]')
-  assert.notEqual(mark, null, '收藏的模型应当带实心星')
-  assert.equal(mark.closest('[role="menuitemradio"]'), favored, '星标必须在行按钮里')
-  click(favored)
+  click(starOf(rowByName('Model A')))
+  await flush()
+  assert.deepEqual(selections, [])
+  assert.equal(starOf(rowByName('Model A')).getAttribute('aria-pressed'), 'true')
+  assert.equal(globalThis.localStorage.getItem('dsh-model-submenu.favorites').includes('"a"'), true)
+})
+
+await test('点模型立即提交并关闭弹窗', async () => {
+  selections.length = 0
+  click(rowByName('Model B'))
   await flush()
   assert.deepEqual(selections, [{ provider: 'magpie', model: 'b' }])
-  assert.equal(menu(), null)
+  assert.equal(picker.getSnapshot().sessionId, null)
+  assert.equal(dialog(), null)
 })
 
-await test('切走再切回来，记得住那个模型调过的档位', async () => {
+await test('点当前这个模型不提交，只关闭', async () => {
+  openPicker()
+  await flush()
+  selections.length = 0
+  click(rowByName('Model B'))
+  await flush()
+  assert.deepEqual(selections, [])
+  assert.equal(dialog(), null)
+})
+
+await test('提交被拒时留在弹窗并弹提示', async () => {
+  outcomes.push({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
+  openPicker()
+  await flush()
+  click(rowByName('Model A'))
+  await flush()
+  assert.equal(document.querySelector('[role="status"]')?.textContent, '会话被占用')
+  assert.notEqual(dialog(), null, '被拒时弹窗必须留着，好让用户换一个')
+  closePicker()
+})
+
+await test('选模型时恢复该模型上次用的思考等级', async () => {
+  globalThis.localStorage.setItem('dsh-model-submenu.efforts', JSON.stringify([{ provider: 'magpie', model: 'b', effort: 'max' }]))
+  setState(snapshot())
+  unmount()
+  mount(createElement(hostEntry.component, face))
+  openPicker()
+  await flush()
+  selections.length = 0
+  click(rowByName('Model B'))
+  await flush()
+  assert.deepEqual(selections, [{ provider: 'magpie', model: 'b', reasoningEffort: 'max' }])
+})
+
+await test('记住的档位不在该模型的可选档里时不强塞', async () => {
+  globalThis.localStorage.setItem('dsh-model-submenu.efforts', JSON.stringify([{ provider: 'magpie', model: 'c', effort: 'max' }]))
+  setState(snapshot())
+  unmount()
+  mount(createElement(hostEntry.component, face))
+  openPicker()
+  await flush()
+  selections.length = 0
+  click(rowByName('Model C'))
+  await flush()
+  assert.deepEqual(selections, [{ provider: 'magpie', model: 'c' }], 'Model C 不声明思考等级，不该带档位')
+})
+
+await test('宿主菜单改的思考等级也记进记忆（写入链，不只是读取）', async () => {
   globalThis.localStorage.removeItem('dsh-model-submenu.efforts')
   setState(snapshot())
   unmount()
-  mount()
-  // 在 A 上调到 Max
-  openMenu()
-  click(segment('Max'))
-  clickOutside()
+  mount(createElement(hostEntry.component, face))
   await flush()
-  // 切到 B（B 有 low/medium/xhigh，没有 max）
-  openMenu()
-  click(rows().find((row) => row.getAttribute('title') === 'Model B'))
+  // 宿主自己的菜单把 A 调到 Max：这次点击本插件没有参与。
+  setState(snapshot({ current: { provider: 'magpie', model: 'a', reasoningEffort: 'max' } }))
   await flush()
-  // 在 B 上调到 Low
-  openMenu()
-  click(segment('Low'))
-  clickOutside()
-  await flush()
-  // 切回 A：应当还是 Max
-  openMenu()
-  click(rows().find((row) => row.getAttribute('title') === 'Model A'))
-  await flush()
-  const trigger = container.querySelector('button[aria-haspopup="menu"]')
-  assert.match(trigger.getAttribute('aria-label'), /思考等级 Max/, trigger.getAttribute('aria-label'))
-  openMenu()
-  assert.equal(segment('Max').getAttribute('aria-checked'), 'true')
-  clickOutside()
-  await flush()
-  // 再切回 B：应当还是 Low
-  openMenu()
-  click(rows().find((row) => row.getAttribute('title') === 'Model B'))
-  await flush()
-  const trigger2 = container.querySelector('button[aria-haspopup="menu"]')
-  assert.match(trigger2.getAttribute('aria-label'), /思考等级 Low/, trigger2.getAttribute('aria-label'))
-  clickOutside()
-  await flush()
+  const stored = JSON.parse(globalThis.localStorage.getItem('dsh-model-submenu.efforts'))
+  assert.deepEqual(stored, [{ provider: 'magpie', model: 'a', effort: 'max' }])
 })
 
-await test('模型不声明思考等级时触发器写默认', async () => {
-  setState(snapshot({ current: { provider: 'magpie', model: 'c' } }))
+await test('同一个选中态重复到达时不重复写记忆', async () => {
+  const before = globalThis.localStorage.getItem('dsh-model-submenu.efforts')
+  setState(snapshot({ current: { provider: 'magpie', model: 'a', reasoningEffort: 'max' } }))
   await flush()
-  const trigger = container.querySelector('button[aria-haspopup="menu"]')
-  assert.match(trigger.getAttribute('aria-label'), /思考等级 默认/, trigger.getAttribute('aria-label'))
-  assert.match(trigger.textContent, /默认/)
+  assert.equal(globalThis.localStorage.getItem('dsh-model-submenu.efforts'), before)
 })
 
-await test('目录里消失的收藏不影响列表', async () => {
-  globalThis.localStorage.setItem('dsh-model-submenu.favorites', JSON.stringify([{ provider: 'gone', model: 'x' }]))
-  unmount()
-  mount()
-  openMenu()
-  assert.deepEqual(rows().map((row) => row.getAttribute('title')), ['Model A', 'Model B', 'Model C'])
-})
-
-await test('档位写入失败时留在小菜单并弹出提示', async () => {
-  globalThis.localStorage.clear()
-  setState(snapshot())
-  await flush()
-  outcomes.push({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
-  openMenu()
-  const before = selections.length
-  click(segment('Low'))
-  await flush()
-  assert.equal(selections.length, before + 1)
-  assert.equal(document.querySelector('[role="status"]')?.textContent, '会话被占用')
-  clickOutside()
-  await flush()
-})
-
-await test('加载中在小菜单里写一行文字', async () => {
-  clickOutside()
-  await flush()
+await test('加载中在弹窗里写一行文字', async () => {
   setState(snapshot({ status: 'loading' }))
-  openMenu()
-  assert.ok(menu().textContent.includes('正在加载模型…'), menu()?.textContent)
-  clickOutside()
+  openPicker()
   await flush()
+  assert.ok(dialog().textContent.includes('正在加载模型…'), dialog()?.textContent)
+  closePicker()
 })
 
-await test('当前供应商加载失败时写一行并带重新加载', async () => {
-  setState(snapshot({
-    status: 'ready',
-    failures: [{ id: 'magpie', name: 'Magpie', message: 'boom' }],
-  }))
-  openMenu()
-  assert.ok(menu().textContent.includes('Magpie 加载失败：boom'), menu()?.textContent ?? '菜单没打开')
-  const reloadsBefore = loads.length
-  const retry = [...menu().querySelectorAll('button')].find((button) => button.textContent === '重新加载')
-  click(retry)
-  assert.ok(loads.length > reloadsBefore)
-  clickOutside()
+await test('供应商加载失败时写一行并带重新加载', async () => {
+  setState(snapshot({ status: 'ready', failures: [{ id: 'a6api', name: 'A6api', message: 'timeout' }] }))
+  openPicker()
   await flush()
+  assert.ok(dialog().textContent.includes('A6api 加载失败：timeout'), dialog()?.textContent)
+  const before = loads.length
+  click([...dialog().querySelectorAll('button')].find((button) => button.textContent === '重新加载'))
+  assert.ok(loads.length > before)
+  closePicker()
 })
 
-await test('弹窗顶部写部分供应商加载失败', async () => {
-  setState(snapshot({
-    status: 'ready',
-    failures: [{ id: 'a6api', name: 'A6api', message: 'timeout' }],
-  }))
-  openMenu()
-  click(moreRow())
-  await flush()
-  const dialog = document.querySelector('[role="dialog"]')
-  assert.ok(dialog.textContent.includes('A6api 加载失败：timeout'))
-  click(dialog.querySelector('button[aria-label="关闭"]'))
-  await flush()
-})
-
-await test('点模型被拒时小菜单重新打开', async () => {
-  setState(snapshot())
-  outcomes.push({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
-  openMenu()
-  assert.notEqual(menu(), null, '小菜单应当已打开')
-  selections.length = 0
-  const target = rows().find((row) => row.getAttribute('title') === 'Model B')
-  click(target)
-  await flush()
-  assert.equal(selections.length, 1)
-  assert.notEqual(menu(), null)
-  assert.equal(document.querySelector('[role="status"]')?.textContent, '会话被占用')
-  clickOutside()
-  await flush()
-})
-
-await test('点更多模型直接换成弹窗，不额外提交', async () => {
-  setState(snapshot())
-  openMenu()
-  await flush()
-  const before = selections.length
-  click(moreRow())
-  await flush()
-  assert.equal(selections.length, before)
-  assert.notEqual(document.querySelector('[role="dialog"]'), null)
-  assert.equal(menu(), null)
-})
-
-await test('弹窗顶部标签页用方向键换页', async () => {
-  const dialog = document.querySelector('[role="dialog"]')
-  const tabs = [...dialog.querySelectorAll('[role="tab"]')]
-  const all = tabs.find((tabItem) => tabItem.textContent === '全部')
-  assert.equal(all.getAttribute('aria-selected'), 'true')
-  act(() => { all.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
-  await flush()
-  const afterRight = [...document.querySelectorAll('[role="tab"]')].find((tabItem) => tabItem.getAttribute('aria-selected') === 'true')
-  assert.equal(afterRight.textContent, 'Magpie')
-  act(() => { afterRight.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
-  await flush()
-  const afterLeft = [...document.querySelectorAll('[role="tab"]')].find((tabItem) => tabItem.getAttribute('aria-selected') === 'true')
-  assert.equal(afterLeft.textContent, '全部')
-})
-
-await test('弹窗列表的角色是菜单，标签页都能被 Tab 走到', () => {
-  const dialog = document.querySelector('[role="dialog"]')
-  assert.notEqual(dialog.querySelector('[role="menu"]'), null)
-  const tabStops = [...dialog.querySelectorAll('[role="tab"]')].filter((tabItem) => tabItem.tabIndex === 0)
-  assert.equal(tabStops.length, dialog.querySelectorAll('[role="tab"]').length)
-})
-
-await test('搜索不会把未收藏的模型顶到收藏之前', async () => {
-  clickOutside()
-  await flush()
-  setState(snapshot())
-  globalThis.localStorage.setItem('dsh-model-submenu.favorites', JSON.stringify([{ provider: 'magpie', model: 'c' }]))
+await test('会话不可选时整块不渲染', () => {
+  openPicker()
   unmount()
-  mount()
-  openMenu()
-  click(moreRow())
-  await flush()
-  const search = document.querySelector('[role="dialog"] input[role="searchbox"]')
-  act(() => {
-    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
-    setter.call(search, 'Model')
-    search.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
-  })
-  await flush()
-  const names = [...document.querySelectorAll('[role="dialog"] [role="menuitemradio"]')].map((row) => row.getAttribute('title'))
-  assert.equal(names[0], 'Model C', `搜索后第一行应是收藏的 Model C，实际：${names.join(',')}`)
+  mount(createElement(hostEntry.component, { ...face, available: false }))
+  assert.equal(dialog(), null)
 })
 
-await test('弹窗列出全部供应商的模型', async () => {
-  const search = document.querySelector('[role="dialog"] input[role="searchbox"]')
-  act(() => {
-    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
-    setter.call(search, '')
-    search.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
-  })
+await test('关闭按钮把 store 清空', async () => {
+  openPicker()
+  unmount()
+  mount(createElement(hostEntry.component, face))
   await flush()
-  const names = [...document.querySelectorAll('[role="dialog"] [role="menuitemradio"]')].map((row) => row.getAttribute('title'))
-  assert.ok(names.includes('Model A'))
-  assert.ok(names.includes('Kimi K3'))
-})
-
-await test('弹窗里点模型立即提交并关闭', async () => {
+  click(dialog().querySelector('button[aria-label="关闭"]'))
   await flush()
-  selections.length = 0
-  const target = [...document.querySelectorAll('[role="dialog"] [role="menuitemradio"]')]
-    .find((row) => row.getAttribute('title') === 'Kimi K3')
-  click(target)
-  await flush()
-  assert.deepEqual(selections, [{ provider: 'a6api', model: 'kimi' }])
-  assert.equal(document.querySelector('[role="dialog"]'), null)
-})
-
-await test('弹窗里的星标只切换收藏，不选中也不关弹窗', async () => {
-  openMenu()
-  click(moreRow())
-  await flush()
-  const before = selections.length
-  const countBefore = (JSON.parse(globalThis.localStorage.getItem('dsh-model-submenu.favorites')) ?? []).length
-  const star = document.querySelector('[role="dialog"] button[aria-pressed]')
-  assert.notEqual(star, null)
-  const pressedBefore = star.getAttribute('aria-pressed')
-  click(star)
-  await flush()
-  assert.equal(selections.length, before)
-  assert.notEqual(document.querySelector('[role="dialog"]'), null)
-  const countAfter = JSON.parse(globalThis.localStorage.getItem('dsh-model-submenu.favorites')).length
-  assert.equal(countAfter, pressedBefore === 'true' ? countBefore - 1 : countBefore + 1)
-})
-
-await test('弹窗提交被拒时弹窗保持打开', async () => {
-  outcomes.push({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
-  const target = [...document.querySelectorAll('[role="dialog"] [role="menuitemradio"]')]
-    .find((row) => row.getAttribute('title') === 'Model B')
-  click(target)
-  await flush()
-  assert.notEqual(document.querySelector('[role="dialog"]'), null)
-  assert.equal(document.querySelector('[role="status"]')?.textContent, '会话被占用')
-})
-
-await test('目录模型带角标时，触发器与菜单行都按 resolveText 画出角标', async () => {
-  setState(snapshot({
-    current: { provider: 'magpie', model: 'a', reasoningEffort: 'high' },
-    groups: [{
-      id: 'magpie', name: 'Magpie', models: [
-        { id: 'a', name: 'Model A', reasoning, badge: { text: 'NEW', tone: 'info' } },
-        { id: 'b', name: 'Model B', reasoning, badge: { text: { en: 'Beta', zh: '内测' }, tone: 'warning' } },
-      ],
-    }],
-  }))
-  await flush()
-  openMenu()
-  await flush()
-  const tagA = [...trigger().querySelectorAll('[data-tone]')]
-  assert.ok(tagA.some((tag) => tag.textContent === 'NEW'), '触发器要画当前模型的角标');
-  const rowB = rows().find((row) => row.getAttribute('title') === 'Model B')
-  const tagB = rowB.querySelector('[data-tone="warning"]')
-  assert.equal(tagB?.textContent, '内测', '对象的 LocalizedText 必须经 resolveText 解析，不能直接渲染');
-})
-
-await test('提交中把下拉箭头换成进行中的状态点', async () => {
-  setState(snapshot({ status: 'selecting' }))
-  await flush()
-  assert.equal(trigger().querySelector('[data-state="ongoing"]') === null, false, '进行中要有状态点');
+  assert.equal(picker.getSnapshot().sessionId, null)
+  assert.equal(dialog(), null)
 })
 
 unmount()
-console.log(passed === total ? `\nrender: PASS (${passed}/${total})` : `\nrender: FAIL (${total - passed} of ${total})`)
+console.log(`\nrender: ${passed}/${total} passed`)
 process.exit(passed === total ? 0 : 1)

@@ -37,7 +37,7 @@ import { Tag, isMobileDevice } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelFactsLookup } from './facts-source.ts'
 import type { Selection } from './selection.ts'
 import { planModelCommit } from './selection.ts'
-import css from './ModelSubmenu.module.css'
+import css from './ModelOptions.module.css'
 
 /** Props the seat hands the picker. */
 export interface ModelPickerProps {
@@ -55,6 +55,13 @@ export interface ModelPickerProps {
   readonly favorites: readonly { readonly provider: string; readonly model: string }[]
   /** Whether a selection is in flight. */
   readonly busy: boolean
+  /**
+   * The reasoning level this browser last used for one model, if any.
+   * @param provider - the provider route key.
+   * @param model - the model id inside that provider.
+   * @returns the remembered level, or undefined when none is remembered.
+   */
+  readonly rememberedOf?: (provider: string, model: string) => string | undefined
   /** Submit one selection. */
   readonly onPick: (selection: Selection) => void
   /** Toggle one model's favorite. */
@@ -71,7 +78,7 @@ export interface ModelPickerProps {
  * @returns the dialog; nothing while closed.
  */
 export function ModelPicker({
-  open, resolveText, state, live, facts, favorites, busy, onPick, onToggleFavorite, onReload, onClose, t,
+  open, resolveText, state, live, facts, favorites, busy, rememberedOf, onPick, onToggleFavorite, onReload, onClose, t,
 }: ModelPickerProps & PropsLocale<'modelSubmenu'>) {
   const id = useId()
   const searchRef = useRef<HTMLInputElement | null>(null)
@@ -137,7 +144,7 @@ export function ModelPicker({
     }
   }
   const pick = (row: CatalogRow) => {
-    const selection = planModelCommit(live, row.provider, row.model, reason)
+    const selection = planModelCommit(live, row.provider, row.model, reason, rememberedOf?.(row.provider, row.model))
     if (selection === null) {
       onClose()
       return
@@ -258,7 +265,6 @@ export function ModelPicker({
                 : <Tag tone={row.entry.badge.tone} className={css.rowBadge}>{resolveText(row.entry.badge.text)}</Tag>}
               selected={live?.provider === row.provider && live.model === row.model}
               busy={busy}
-              star="interactive"
               favorited={isFavorite(favorites, row.provider, row.model)}
               meta={metaLine({
                 row,

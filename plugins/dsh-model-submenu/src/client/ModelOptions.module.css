@@ -1,0 +1,322 @@
+/*
+ * The composer model menu's extra row and the picker it opens. The menu surface
+ * renders through the primitives' MenuSurface and the dialog through Modal, so
+ * neither this file paints a floating fill — it only places content on the
+ * surfaces those two own.
+ */
+
+/* ── the menu row ────────────────────────────────────────────────────────── */
+
+/* The row sits in the Host's root menu beside its own model and effort rows, so
+ * it borrows their metrics instead of inventing a shape: one full-width line,
+ * the label taking the slack, and a chevron saying it opens another surface. */
+.optionsRow {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: var(--dsw-radius-md);
+  outline: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  line-height: 20px;
+  display: flex;
+}
+
+.optionsRow:hover:not(:disabled),
+.optionsRow:focus-visible {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.optionsRow:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.optionsIcon {
+  flex: none;
+}
+
+.optionsLabel {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+}
+
+.optionsChevron {
+  color: var(--dsw-alias-label-caption);
+  flex: none;
+}
+
+/* The overlay entry is only a mount point for the dialog and its toast; it must
+ * not take space inside the composer card. */
+.pickerHost {
+  display: contents;
+}
+
+/* ── the picker rows ─────────────────────────────────────────────────────── */
+
+.rowBadge {
+  flex: none;
+  margin-inline-start: 6px;
+}
+
+.row {
+  align-items: center;
+  gap: 2px;
+  display: flex;
+}
+
+.rowPick {
+  box-sizing: border-box;
+  /* A slightly tighter side padding buys the name a few more characters, which
+   * is what keeps a long provider suffix readable inside a narrow card. */
+  padding-inline: 6px;
+  /* The scroll list is a block container, so a flex item's `flex: 1` does
+   * nothing here: the row must claim the full width or a long model name pushes
+   * the favorite mark and the check past the card's edge, where overflow clips
+   * them. */
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: var(--dsw-radius-md);
+  outline: none;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 7px;
+  display: flex;
+}
+
+.rowPick:hover:not(:disabled),
+.rowPick:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowPick:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.rowCopy {
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.rowName {
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 17px;
+  overflow: hidden;
+}
+
+.rowMeta {
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+}
+
+.check {
+  color: var(--dsw-alias-label-primary);
+  flex: 0 0 15px;
+  place-items: center;
+  display: grid;
+}
+
+/* The picker's star is a real control: outline until hover or focus, solid and
+ * gold once favorited, and visible without hover on touch screens. */
+.starButton {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  outline: none;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  opacity: 0;
+}
+
+.starButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l3);
+}
+
+.row:hover .starButton,
+.row:focus-within .starButton {
+  opacity: 1;
+}
+
+.starButton[aria-pressed='true'] {
+  color: var(--dsw-alias-state-warn-primary);
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .starButton {
+    opacity: 1;
+  }
+}
+
+.star {
+  flex: none;
+}
+
+/* ── shared status lines ─────────────────────────────────────────────────── */
+
+.notice {
+  color: var(--dsw-alias-label-tertiary);
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  display: flex;
+}
+
+.retry {
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  flex: none;
+  padding: 0;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* ── the picker dialog ───────────────────────────────────────────────────── */
+
+.pickerDialog {
+  width: min(680px, 100%);
+  height: min(640px, 80vh);
+  gap: 0;
+  padding: 0;
+}
+
+.pickerContent {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Modal wraps children in a body row of its own; that row — the content
+ * region's last child — is what has to carry the column and give the list its
+ * remaining height, so the footer stays put while the list scrolls. */
+.pickerContent > :last-child {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.pickerSearch {
+  padding: 0 20px 12px;
+}
+
+.pickerSearchInput {
+  width: 100%;
+}
+
+/* The tabs scroll sideways rather than wrap: the dialog keeps one row of
+ * providers however many the catalog has, so the list below starts at the same
+ * height every time. The bar keeps its hairline and hides its scrollbar. */
+.pickerTabs {
+  border-bottom: .5px solid var(--dsw-alias-border-l2);
+  gap: 2px;
+  padding: 0 16px;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.pickerTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.pickerTab {
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  background: 0 0;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  outline: none;
+  flex: none;
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.pickerTab:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pickerTab[aria-selected='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  font-weight: 600;
+}
+
+.pickerTab:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l3);
+}
+
+.pickerList {
+  min-height: 0;
+  flex: 1;
+  padding: 8px 12px;
+  overflow-y: auto;
+}
+
+.pickerFooter {
+  border-top: .5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  font-size: 12px;
+  line-height: 18px;
+  display: flex;
+}
+
+.footerHint {
+  align-items: center;
+  gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.footerDot {
+  color: var(--dsw-alias-label-dimmed);
+}
