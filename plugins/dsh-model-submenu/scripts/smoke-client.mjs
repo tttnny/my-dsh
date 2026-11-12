@@ -3,9 +3,10 @@
  *
  * Loads the built `lib/client.js` the same way the Web shell does (through a
  * `window.__ModuleLoader__.load` stub), gives it fake cordis services, and
- * asserts the two contributions the composer depends on: the bridge that turns
- * the Host's own model cell into the picker's door and its effort cell into the
- * reasoning-level slider, and the overlay entry that renders the picker. Run with:
+ * asserts the contributions the composer depends on: the bridge that turns the
+ * Host's own model cell into the picker's door and its effort cell into the
+ * reasoning-level slider, the overlay entry that renders the picker, and the
+ * overlay entry that tints the collapsed trigger's effort caption. Run with:
  * node scripts/smoke-client.mjs [plugin-dir]
  */
 
@@ -175,6 +176,7 @@ check('the bridge recognizes the Host menu surface', clientBundle.includes('data
 check('the bridge matches the Host root menu\'s cells', clientBundle.includes(':scope > button[role='))
 check('the bridge finds the Host value span by class substring', clientBundle.includes("span[class*='cellValue']"))
 check('the slider is a slider to assistive technology', clientBundle.includes('role: "slider"'))
+check('the tint finds the Host trigger caption by class substring', clientBundle.includes('span[class*=\\"triggerEffort\\"]'))
 
 // The guard must have teeth, or every case below is vacuous.
 try {
@@ -202,13 +204,19 @@ check('the bridge names its registrant', bridge?.registrant === '@lynn123411/dsh
 check('the bridge renders through its own dictionary namespace', bridge?.locale === 'modelSubmenu')
 check('the bridge exports a component', typeof bridge?.component === 'function')
 
-const host = registrations.find((entry) => entry.name === 'conversation.input.overlay')
+const host = registrations.find((entry) => entry.id === 'model-picker')
 check('overlay dialog registered', host !== undefined)
 check('overlay dialog carries a list id', host?.id === 'model-picker')
 check('overlay dialog renders through its own dictionary namespace', host?.locale === 'modelSubmenu')
 check('overlay dialog exports a component', typeof host?.component === 'function')
 
+const tint = registrations.find((entry) => entry.id === 'model-effort-tint')
+check('trigger tint registered', tint !== undefined)
+check('trigger tint names its registrant', tint?.registrant === '@lynn123411/dsh-model-submenu')
+check('trigger tint exports a component', typeof tint?.component === 'function')
+
 check('both entries share one picker store', bridge?.inject?.('s').picker === host?.inject?.('s').picker)
+check('the tint reads the same catalog store', tint?.inject?.('s').directory === bridge?.inject?.('s').directory)
 
 const dictionaries = locales.find((entry) => entry.ns === 'modelSubmenu')?.dictionaries
 check('dictionaries registered on the plugin namespace', dictionaries !== undefined)
@@ -218,6 +226,7 @@ check('zh/en key sets match', zhKeys.length > 0 && JSON.stringify(zhKeys) === JS
 check('every string is non-empty', enKeys.every((key) => typeof dictionaries.en[key] === 'string' && dictionaries.en[key].length > 0))
 check('the dictionaries carry the slider copy', typeof dictionaries?.zh['effort.label'] === 'string' && typeof dictionaries?.en['effort.label'] === 'string')
 check('the dictionaries carry the provider-default label', typeof dictionaries?.zh['effort.providerDefault'] === 'string' && typeof dictionaries?.en['effort.providerDefault'] === 'string')
+check('the dictionaries carry the use-default hint', typeof dictionaries?.zh['effort.useDefault'] === 'string' && typeof dictionaries?.en['effort.useDefault'] === 'string')
 
 // The entries' injected face is what the components read their catalog and
 // their metadata from.

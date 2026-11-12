@@ -43,25 +43,24 @@ const four = { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' 
 const three = { efforts: [{ id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'xhigh', name: 'XHigh' }] }
 const models = { 'magpie/a': four, 'magpie/b': three, 'magpie/c': undefined }
 
-await test('a model with a default offers one segment per advertised level', () => {
-  assert.deepEqual(effortChoices(four, 'Default'), [
+await test('a model with a default offers one detent per advertised level', () => {
+  assert.deepEqual(effortChoices(four), [
     { key: 'low', effort: 'low', label: 'Low' },
     { key: 'high', effort: 'high', label: 'High' },
     { key: 'max', effort: 'max', label: 'Max' },
   ])
 })
 
-await test('a model without a default prepends the provider-default segment', () => {
-  assert.deepEqual(effortChoices(three, 'Default'), [
-    { key: 'provider-default', effort: undefined, label: 'Default' },
+await test('the provider default is not a detent', () => {
+  assert.deepEqual(effortChoices(three), [
     { key: 'low', effort: 'low', label: 'Low' },
     { key: 'medium', effort: 'medium', label: 'Medium' },
     { key: 'xhigh', effort: 'xhigh', label: 'XHigh' },
   ])
 })
 
-await test('a model with no reasoning offers no segments', () => {
-  assert.deepEqual(effortChoices(undefined, 'Default'), [])
+await test('a model with no reasoning offers no detents', () => {
+  assert.deepEqual(effortChoices(undefined), [])
 })
 
 await test('clicking another level submits it at once', () => {

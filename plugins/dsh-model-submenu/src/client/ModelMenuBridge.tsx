@@ -14,14 +14,20 @@
  * its own wrapper, so other plugins' rows never join that list. When the second
  * cell is missing the model declares no reasoning levels and the row is left
  * alone; when the first is missing the click falls through to the Host.
+ *
+ * Clicking the cell's label switches to the provider default, which is a state
+ * rather than a detent: the slider shows it as an empty track under a hollow
+ * knob, so it never reads as the weakest level.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { EffortSlider } from './EffortSlider.tsx';
+import { levelColor } from './level-color.ts';
 import type { PickerStore } from './picker-state.ts';
-import { effortChoices, planEffortCommit, selectionOf } from './selection.ts';
+import { effortChoices, liveReasoning, planEffortCommit, selectionOf, type Selection } from './selection.ts';
+import { offsetOf } from './slider.ts';
 import css from './ModelOptions.module.css';
 
 /** Props of the bridge: menu state, the owning session, and the seat's injected face. */
@@ -54,17 +60,22 @@ export function ModelMenuBridge({
     () => directory.getSnapshot(),
   );
   const current = state.current;
-  const reasoning = current === null
-    ? undefined
-    : state.groups
-      .find((group) => group.id === current.provider)
-      ?.models.find((model) => model.id === current.model)?.reasoning;
-  const steps = useMemo(() => effortChoices(reasoning, t('effort.providerDefault')), [reasoning, t]);
-  const effective = current?.reasoningEffort ?? reasoning?.defaultEffort;
-  const found = steps.findIndex((step) => step.effort === effective);
+  const reasoning = liveReasoning(state);
+  const levels = useMemo(() => effortChoices(reasoning), [reasoning]);
+  const declared = levels.findIndex((level) => level.effort === reasoning?.defaultEffort);
+  const chosen = current?.reasoningEffort === undefined
+    ? -1
+    : levels.findIndex((level) => level.effort === current.reasoningEffort);
+  // The provider default is a state, not a detent: it is in force whenever the
+  // session carries no explicit level.
+  const defaultActive = current !== null && current.reasoningEffort === undefined;
+  const currentIndex = chosen >= 0 ? chosen : declared >= 0 ? declared : 0;
+  const defaultIndex = declared >= 0 ? declared : 0;
+  const textColor = defaultActive ? null : levelColor(offsetOf(currentIndex, levels.length));
+  const canDefault = !defaultActive;
   const busy = state.pending !== null;
   // One detent is not a choice: leave the Host's row exactly as it is.
-  const showSlider = available && steps.length >= 2 && effortRow !== null;
+  const showSlider = available && levels.length >= 2 && effortRow !== null;
 
   // The Host rebuilds its cells on every render, so the surface and the effort
   // cell are re-read after each one; the identity guards keep that from looping.
@@ -81,10 +92,31 @@ export function ModelMenuBridge({
     if (nextLabel !== (rowLabel ?? '')) setRowLabel(nextLabel);
   });
 
+  const submit = (selection: Selection | null): void => {
+    if (selection === null) return;
+    void select(selection).then((result) => {
+      if (result === undefined || result.ok) return;
+      reportFailure(result.error.code === 'session/writer-held'
+        ? t('error.sessionInUse')
+        : t('error.action', { message: `${result.error.code}: ${result.error.message}` }));
+    });
+  };
+  const commit = (index: number): void => {
+    const live = selectionOf(state);
+    const level = levels[index];
+    if (live === null || level === undefined) return;
+    submit(planEffortCommit(live, level.effort));
+  };
+  const commitDefault = (): void => {
+    const live = selectionOf(state);
+    if (live === null) return;
+    submit(planEffortCommit(live, undefined));
+  };
+
   // The Host rebuilds `dismiss` on every render, so the listener reads the
   // current one through a ref instead of being torn down and reinstalled.
-  const latest = useRef({ sessionId, picker, dismiss, showSlider });
-  latest.current = { sessionId, picker, dismiss, showSlider };
+  const latest = useRef({ sessionId, picker, dismiss, showSlider, canDefault, commitDefault });
+  latest.current = { sessionId, picker, dismiss, showSlider, canDefault, commitDefault };
 
   useEffect(() => {
     if (surface === null) return;
@@ -109,6 +141,11 @@ export function ModelMenuBridge({
       if (sliderRef.current?.contains(target) === true) return;
       event.preventDefault();
       event.stopPropagation();
+      const label = row.querySelector("span[class*='cellLabel']");
+      if (latest.current.canDefault && label !== null && label.contains(target)) {
+        latest.current.commitDefault();
+        return;
+      }
       sliderRef.current?.querySelector<HTMLElement>('[role="slider"]')?.focus();
     };
     surface.addEventListener('click', redirect, true);
@@ -117,53 +154,57 @@ export function ModelMenuBridge({
     };
   }, [surface]);
 
-  // The slider takes the slack between the Host's label and value, and the
-  // chevron goes because the row no longer drills anywhere. Every write is
-  // recorded and put back when the entry unmounts or the slider steps aside.
+  // The slider takes the slack between the Host's label and value, the value
+  // takes the level's color, and the chevron goes because the row no longer
+  // drills anywhere. Every write is recorded and put back on unmount.
   useLayoutEffect(() => {
     if (effortRow === null || !showSlider) return;
+    const label = effortRow.querySelector<HTMLElement>("span[class*='cellLabel']");
     const value = effortRow.querySelector<HTMLElement>("span[class*='cellValue']");
     const chevron = effortRow.querySelector<SVGElement>("svg[class*='cellChevron']");
     const saved = {
       flex: value?.style.flex ?? '',
       order: value?.style.order ?? '',
+      color: value?.style.color ?? '',
       display: chevron?.style.display ?? '',
+      cursor: label?.style.cursor ?? '',
+      title: label?.getAttribute('title') ?? null,
     };
     if (value !== null) {
       value.style.flex = '0 0 auto';
       value.style.order = '1';
+      if (textColor !== null) value.style.color = textColor;
     }
     if (chevron !== null) chevron.style.display = 'none';
+    if (label !== null && canDefault) {
+      label.style.cursor = 'pointer';
+      label.title = t('effort.useDefault');
+    }
     return () => {
       if (value !== null) {
         value.style.flex = saved.flex;
         value.style.order = saved.order;
+        value.style.color = saved.color;
       }
       if (chevron !== null) chevron.style.display = saved.display;
+      if (label !== null) {
+        label.style.cursor = saved.cursor;
+        if (saved.title === null) label.removeAttribute('title');
+        else label.title = saved.title;
+      }
     };
-  }, [effortRow, showSlider]);
-
-  const commit = (index: number): void => {
-    const live = selectionOf(state);
-    const step = steps[index];
-    if (live === null || step === undefined) return;
-    const selection = planEffortCommit(live, step.effort);
-    if (selection === null) return;
-    void select(selection).then((result) => {
-      if (result === undefined || result.ok) return;
-      reportFailure(result.error.code === 'session/writer-held'
-        ? t('error.sessionInUse')
-        : t('error.action', { message: `${result.error.code}: ${result.error.message}` }));
-    });
-  };
+  }, [effortRow, showSlider, textColor, canDefault, t]);
 
   return <>
     <span ref={markerRef} hidden />
     {showSlider && effortRow !== null && createPortal(
       <div ref={sliderRef} className={css.sliderCell}>
         <EffortSlider
-          steps={steps}
-          current={found >= 0 ? found : 0}
+          steps={levels}
+          current={currentIndex}
+          defaultActive={defaultActive}
+          defaultIndex={defaultIndex}
+          defaultLabel={t('effort.providerDefault')}
           busy={busy}
           label={rowLabel !== null && rowLabel !== '' ? rowLabel : t('effort.label')}
           onCommit={commit}

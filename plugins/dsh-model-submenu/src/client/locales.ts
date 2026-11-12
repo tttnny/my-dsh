@@ -26,6 +26,7 @@ export type ModelSubmenuLocaleKey =
   | 'meta.images'
   | 'effort.label'
   | 'effort.providerDefault'
+  | 'effort.useDefault'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -56,7 +57,8 @@ export const zh: Record<ModelSubmenuLocaleKey, string> = {
   'meta.effort': '思考',
   'meta.images': '图片输入',
   'effort.label': '推理等级',
-  'effort.providerDefault': '默认',
+  'effort.providerDefault': 'Default',
+  'effort.useDefault': '切换为默认档位',
 }
 
 /** English dictionary, checked complete against the zh key set. */
@@ -82,4 +84,5 @@ export const en: Record<ModelSubmenuLocaleKey, string> = {
   'meta.images': 'Images',
   'effort.label': 'Reasoning effort',
   'effort.providerDefault': 'Default',
+  'effort.useDefault': 'Switch to the provider default',
 }

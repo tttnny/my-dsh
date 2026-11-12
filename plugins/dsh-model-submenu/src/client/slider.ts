@@ -8,7 +8,24 @@
  */
 
 /** Knob diameter in CSS pixels; the centre stops half of it from each end. */
-export const KNOB_SIZE = 14;
+export const KNOB_SIZE = 18;
+
+/**
+ * The star field painted over the filled part of the track.
+ *
+ * Positions are a cheap deterministic scatter rather than a random draw: a drag
+ * re-renders on every detent, and the dots must not jump around while the knob
+ * moves. `x` and `y` are percentages inside the fill.
+ */
+export const SLIDER_STARS: readonly { x: number; y: number; size: number; delay: number }[] = Array.from(
+  { length: 14 },
+  (_, index) => ({
+    x: 6 + ((index * 37) % 88),
+    y: 12 + ((index * 53) % 76),
+    size: 1 + ((index * 7) % 3) * 0.4,
+    delay: (index * 0.37) % 2.4,
+  }),
+);
 
 /**
  * @param index - detent index.

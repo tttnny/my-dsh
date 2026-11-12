@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Model picker",
-    "description": "Enhances the composer model menu: the model row opens a cross-provider dialog, and the reasoning row becomes a slider."
+    "description": "Enhances the composer model menu: the model row opens a cross-provider dialog, and the reasoning row becomes a colored slider with stardust."
   }
 }

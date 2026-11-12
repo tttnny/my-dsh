@@ -159,6 +159,9 @@ const table = {
   'picker.hintClose': '关闭',
   'meta.effort': '思考',
   'meta.images': '图片输入',
+  'effort.label': '推理等级',
+  'effort.providerDefault': 'Default',
+  'effort.useDefault': '切换为默认档位',
 }
 const t = (key, values) => {
   const text = table[key] ?? key
@@ -322,9 +325,20 @@ await test('点宿主的第一格：先关菜单，再把开合请求交给 stor
   assert.deepEqual(hostCellClicks, [], '宿主那格的下钻必须被拦下')
 })
 
-await test('第二行不再下钻：点标签只把焦点交给滑块', () => {
+await test('点「推理等级」四个字切回 provider default', async () => {
+  mountFreshBridge()
   hostCellClicks.length = 0
+  selections.length = 0
   click(cell('effort').querySelector("span[class*='cellLabel']"))
+  await flush()
+  assert.deepEqual(hostCellClicks, [], '推理等级那一行不该再弹档位列表')
+  assert.deepEqual(selections, [{ provider: 'magpie', model: 'a' }], '默认档位不带 reasoningEffort')
+})
+
+await test('点第二行的数值：不下钻，焦点交给滑块', () => {
+  mountFreshBridge()
+  hostCellClicks.length = 0
+  click(cellValue('effort'))
   assert.deepEqual(hostCellClicks, [], '推理等级那一行不该再弹档位列表')
   assert.equal(document.activeElement, slider(), '焦点必须落在滑块上，否则键盘够不到')
 })
@@ -341,6 +355,38 @@ await test('数值让出空档、箭头隐藏，滑块占住中间', () => {
   assert.equal(cellValue('effort').style.flex, '0 0 auto')
   assert.equal(cellValue('effort').style.order, '1')
   assert.equal(cellChevron('effort').style.display, 'none')
+})
+
+await test('数值跟着档位变色，标签在可切回默认时是可点的', () => {
+  const label = cell('effort').querySelector("span[class*='cellLabel']")
+  // 三档模型的中间档：蓝紫各半。
+  assert.equal(cellValue('effort').style.color, 'rgb(112, 99, 241)')
+  assert.equal(label.style.cursor, 'pointer')
+  assert.equal(label.getAttribute('title'), '切换为默认档位')
+})
+
+await test('provider default 不是档位：轨道空、旋钮空心、读作默认', () => {
+  mountFreshBridge()
+  setState(snapshot({ current: { provider: 'magpie', model: 'a' } }))
+  assert.equal(slider().hasAttribute('data-default'), true)
+  assert.equal(slider().getAttribute('aria-valuetext'), 'Default', '与宿主自己写的档位文字一致')
+  assert.equal(ticks().length, 3, '默认不该多出一个档位')
+  assert.equal(cellValue('effort').style.color, '', '默认态数值不跟着档位变色')
+  const label = cell('effort').querySelector("span[class*='cellLabel']")
+  assert.equal(label.style.cursor, '', '已经在默认态时标签不再是可点的')
+})
+
+await test('从默认态拖到同一个刻度也算离开默认', async () => {
+  mountFreshBridge()
+  setState(snapshot({ current: { provider: 'magpie', model: 'a' } }))
+  selections.length = 0
+  withTrack()
+  // 默认停在 'high'（第 2 档），圆心 50px；拖到同一处也必须提交，否则用户
+  // 会卡在默认态里出不来。
+  pointer('pointerdown', slider(), 50)
+  pointer('pointerup', slider(), 50)
+  await flush()
+  assert.deepEqual(selections, [{ provider: 'magpie', model: 'a', reasoningEffort: 'high' }])
 })
 
 await test('拖到另一档松手才提交一次', async () => {

@@ -44,12 +44,14 @@
 .sliderTrack {
   position: relative;
   width: 100%;
-  height: 6px;
+  height: 10px;
   border-radius: 999px;
   corner-shape: round;
   background: var(--dsw-alias-border-l3);
 }
 
+/* The gradient spans the whole track and is clipped to the filled part, so the
+ * color under the knob is the color the level's text takes. */
 .sliderFill {
   position: absolute;
   top: 0;
@@ -57,8 +59,45 @@
   left: 0;
   border-radius: 999px;
   corner-shape: round;
-  background: var(--dsw-alias-state-business-primary);
+  overflow: hidden;
   pointer-events: none;
+}
+
+.sliderStars {
+  position: absolute;
+  inset: 0;
+  transition: opacity 160ms ease;
+}
+
+/* Stardust over the filled part: the field fades in as the level rises, and the
+ * dots twinkle out of phase so the track never looks like a static pattern. */
+.sliderStar {
+  position: absolute;
+  border-radius: 50%;
+  corner-shape: round;
+  background: #fff;
+  opacity: 0.75;
+  animation: dsh-effort-twinkle 2.4s ease-in-out infinite;
+}
+
+@keyframes dsh-effort-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+
+  50% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sliderStar {
+    opacity: 0.6;
+    animation: none;
+  }
 }
 
 /* One detent per level: the dot is the only thing that says the levels are
@@ -66,31 +105,40 @@
 .sliderTick {
   position: absolute;
   top: 50%;
-  width: 3px;
-  height: 3px;
-  margin: -1.5px 0 0 -1.5px;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
   border-radius: 50%;
   corner-shape: round;
-  background: var(--dsw-alias-label-dimmed);
+  background: var(--dsw-alias-label-tertiary);
   pointer-events: none;
 }
 
+/* On the filled part the detent goes dark: white would read as one more grain
+ * of stardust, and the dot has to stay the thing that says "levels". */
 .sliderTick[data-on] {
-  background: var(--dsw-alias-label-primary-foreground);
-  opacity: 0.7;
+  background: rgba(0, 0, 0, 0.28);
 }
 
 .sliderKnob {
   position: absolute;
   top: 50%;
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
   border-radius: 50%;
   corner-shape: round;
   background: var(--dsw-alias-label-primary-foreground);
   box-shadow: var(--dsw-elevation-soft);
   pointer-events: none;
+}
+
+/* Provider default: nothing is filled and the knob is a hollow ring, so the
+ * state never reads as the weakest level. */
+.slider[data-default] .sliderKnob {
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1.5px solid var(--dsw-alias-label-tertiary);
+  box-shadow: none;
 }
 
 .slider[data-busy] .sliderKnob {

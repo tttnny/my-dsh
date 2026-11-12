@@ -24,14 +24,15 @@ dsh plugin --profile web add @lynn123411/dsh-model-submenu
 
 客户端半边读的 cordis 服务（源码 `src/client/index.ts` 的 `inject`）与上表是两层声明，缺一层整条 loader entry 静默变 failed：`configForms` 提供设置页那份共享缓存，`remote` 与 `remote.llm` 回答每个供应商的设置在哪个命名空间，`remote.session` 与 `modelDirectories` 供模型目录，`sessions` 判断子代理会话，`slots` 与 `locale` 各自是本插件的贡献与文案。
 
-## 两处贡献与一个 store
+## 三处贡献与一个 store
 
-宿主渲染模型菜单是 `{open && createPortal(...)}`：菜单一关，整棵子树卸载。所以本插件拆成两处贡献，中间用一个插件自己的 store 传递「哪个会话要开弹窗」：
+宿主渲染模型菜单是 `{open && createPortal(...)}`：菜单一关，整棵子树卸载。所以本插件拆成三处贡献，前两处之间用一个插件自己的 store 传递「哪个会话要开弹窗」：
 
 | 贡献 | 槽位 | 职责 |
 | --- | --- | --- |
-| `ModelMenuBridge` | `conversation.input.model.options`（list，`id: model-menu-bridge`） | 渲染一个隐藏标记；在根菜单打开期间于菜单面板上装捕获阶段的点击监听：命中第一格就拦下、调宿主的 `dismiss()`、写 store，命中第二格就拦下下钻并把焦点交给滑块；同时把 `EffortSlider` 挂进第二格 |
+| `ModelMenuBridge` | `conversation.input.model.options`（list，`id: model-menu-bridge`） | 渲染一个隐藏标记；在根菜单打开期间于菜单面板上装捕获阶段的点击监听：命中第一格就拦下、调宿主的 `dismiss()`、写 store；命中第二格就拦下下钻——点标签切回 provider default，点别处把焦点交给滑块；同时把 `EffortSlider` 挂进第二格 |
 | `ModelPickerHost` | `conversation.input.overlay`（list，`id: model-picker`） | 常驻；store 指向本会话时渲染弹窗、收藏、思考等级记忆与提交 |
+| `EffortTint` | `conversation.input.overlay`（list，`id: model-effort-tint`） | 常驻；把输入框触发器上的档位文字染成当前档位的颜色。它必须常驻，因为那处文字在菜单之外 |
 
 `picker-state.ts` 的 store 只有 `open` / `close` / `getSnapshot` / `subscribe` 四个动作，重复 open 同一会话不重复通知。这一形态与宿主自己的 `ui-commands`（`PopupSelectController` + `PopupSelectView`）一致。
 
@@ -52,8 +53,10 @@ dsh plugin --profile web add @lynn123411/dsh-model-submenu
 | --- | --- |
 | 菜单面板 | 标记 span 的 `closest('[data-menu-material]')` |
 | 两格 | `panel.querySelectorAll(':scope > button[role="menuitem"]')`：`[0]` 模型格、`[1]` 推理等级格。槽位输出在各自的 `[data-slot]` 包裹层里，别的插件往 options 槽加行不会混进这个列表 |
-| 档位文字 | `span[class*='cellValue']`（哈希前缀随构建变，局部名不变） |
+| 标签 | `span[class*='cellLabel']`（哈希前缀随构建变，局部名不变） |
+| 档位文字 | `span[class*='cellValue']` |
 | 箭头 | `svg[class*='cellChevron']` |
+| 触发器上的档位文字 | 从 `closest('[data-composer-card]')` 往下找 `[data-slot="conversation.input.model"] button[aria-haspopup="menu"] span[class*="triggerEffort"]` |
 
 挂上滑块时对宿主那一行做三处内联样式改动，改前存原值、卸载时写回：
 
@@ -64,6 +67,16 @@ dsh plugin --profile web add @lynn123411/dsh-model-submenu
 | 滑块根节点 | `flex: 1 1 auto`、`min-width: 96px` | 落在标签与数值之间，铺满空档 |
 
 模型只声明一档（或没有档位）时整条链不启用，宿主那一行原样保留。滑块本身是 `role="slider"` 的独立焦点节点，键盘左右/上下/Home/End 逐档调整；它与宿主那一行同排，因此技术上属于 `<button role="menuitem">` 里的交互子元素——宿主没给这一行留注入点，同线插件 `Microqian2th/dsh-codex-effort-slider` 也采用同一形态。
+
+## 滑块的三种状态
+
+| 状态 | 轨道 | 旋钮 | 文字 |
+| --- | --- | --- | --- |
+| 明确档位 | 蓝→紫渐变填充到旋钮，高档位带星尘 | 实心白 | 该档名字，取该档颜色 |
+| provider default | 空 | 空心环，停在模型声明的默认档（没声明就停最左） | 宿主自己写的 `Default`，不着色 |
+| 拖动中 | 跟着指针吸附 | 实心白 | 松手才提交，文字仍是已生效的那一档 |
+
+provider default 不是档位：`effortChoices` 只返回模型声明的真实等级，默认态由 `state.current.reasoningEffort === undefined` 判定，点标签提交 `reasoningEffort: undefined` 切回去。颜色由 `level-color.ts` 的 `levelColor(fraction)` 给出，填充的 `linear-gradient` 用同两个端点，所以旋钮底下的颜色与文字颜色严格相等。
 
 ## 开发副本
 
@@ -86,8 +99,8 @@ cd plugins/dsh-model-submenu && pnpm check
 
 `check` = `typecheck` + `build`（tsdown）+ `smoke` + `test` + `assert:lib-untracked`。
 
-- `scripts/smoke-client.mjs` 按 Web shell 的方式装载构建产物 `lib/client.js`（`window.__ModuleLoader__.load` 桩件），喂假 cordis 服务，断言导出身份、`inject` 表逐字相等、两处贡献各自的 list `id`（`model-menu-bridge` 与 `model-picker`）、两处共用同一个 store、产物里走的是共享的 `Modal`、产物里带着认宿主菜单面板（`data-menu-material`）与两格（`:scope > button[role=`）与档位文字（`span[class*='cellValue']`）的三段选择器、滑块以 `role="slider"` 暴露给辅助技术、字典键集中英对齐且带着滑块那两条文案、元信息取数确实问过设置镜像与供应商目录，以及「设置没答案时答未知而不猜」。末尾 7 条是 store 自身的契约：起始关闭、open 发布目标、重复 open 不通知、第二次 open 替换目标、close 清空、退订后静默。
-- `scripts/test-favorites.mjs`：收藏表的键名、读写、坏值降级、跨供应商靠前排序。`scripts/test-facts.mjs`：设置值到上下文窗口与图片输入的映射、两类适配器的字段差异、缺字段整段略去。`scripts/test-commit.mjs`：点模型立即提交、已选中的模型不重复提交、记住的档位不在可选档里时不强塞。`scripts/test-rows.mjs`：目录拍平、标签页派生、搜索的两把钥匙。`scripts/test-slider.mjs`：滑块几何——档位到轨道比例、指针到最近档、两端夹取、单档与零宽轨道的退路。`scripts/test-render.mjs`：用真 react 把菜单桥与弹窗画进 jsdom，34 条用例锁住「点宿主第一格 → 关菜单 → store → 弹窗」这条链、宿主那两格的下钻确实没执行、点第二行标签把焦点交给滑块、刻度数与旋钮位置、拖动松手才提交一次、按下与松手同任务也不丢提交、末档与进行中不提交、被拒走宿主提示、单档与无档位不挂滑块、卸载后样式写回，以及弹窗侧的收藏置顶、星标独立、提交与拒绝、思考等级记忆、加载与失败、会话不可选时整块不渲染。
+- `scripts/smoke-client.mjs` 按 Web shell 的方式装载构建产物 `lib/client.js`（`window.__ModuleLoader__.load` 桩件），喂假 cordis 服务，断言导出身份、`inject` 表逐字相等、三处贡献各自的 list `id`（`model-menu-bridge`、`model-picker`、`model-effort-tint`）、前两处共用同一个 store、着色那条读同一个目录、产物里走的是共享的 `Modal`、产物里带着认宿主菜单面板（`data-menu-material`）、两格（`:scope > button[role=`）、档位文字（`span[class*='cellValue']`）与触发器档位文字（`span[class*="triggerEffort"]`）的四段选择器、滑块以 `role="slider"` 暴露给辅助技术、字典键集中英对齐且带着滑块那三条文案、元信息取数确实问过设置镜像与供应商目录，以及「设置没答案时答未知而不猜」。末尾 7 条是 store 自身的契约：起始关闭、open 发布目标、重复 open 不通知、第二次 open 替换目标、close 清空、退订后静默。
+- `scripts/test-favorites.mjs`：收藏表的键名、读写、坏值降级、跨供应商靠前排序。`scripts/test-facts.mjs`：设置值到上下文窗口与图片输入的映射、两类适配器的字段差异、缺字段整段略去。`scripts/test-commit.mjs`：点模型立即提交、已选中的模型不重复提交、记住的档位不在可选档里时不强塞。`scripts/test-rows.mjs`：目录拍平、标签页派生、搜索的两把钥匙。`scripts/test-slider.mjs`：滑块几何与配色——档位到轨道比例、指针到最近档、两端夹取、单档与零宽轨道的退路、档位颜色的两端与越界、星尘位置固定且落在填充区内。`scripts/test-render.mjs`：用真 react 把菜单桥与弹窗画进 jsdom，37 条用例锁住「点宿主第一格 → 关菜单 → store → 弹窗」这条链、宿主那两格的下钻确实没执行、点标签切回默认、点数值把焦点交给滑块、刻度数与旋钮位置、数值与标签随档位变色、默认态空轨道与空心旋钮、拖动松手才提交一次、按下与松手同任务也不丢提交、末档与进行中不提交、被拒走宿主提示、单档与无档位不挂滑块、卸载后样式写回，以及弹窗侧的收藏置顶、星标独立、提交与拒绝、思考等级记忆、加载与失败、会话不可选时整块不渲染。
 - `lib/` 是构建镜像，`assert:lib-untracked` 判它没被 git 跟踪。
 
 要肉眼确认页面上的形态，用仓库的 `node tools/verify-client.mjs dsh-model-submenu --needle '<你新写的类名或文案>'`。

@@ -26,26 +26,21 @@ export interface EffortChoice {
 }
 
 /**
- * Build the segments for one model's reasoning row.
+ * Build the slider's detents for one model.
+ *
+ * The provider default is deliberately absent: it is a state, not a level, and
+ * giving it a detent would read as the weakest reasoning instead of "let the
+ * provider decide". The label above the track switches to it.
  * @param reasoning - the catalog's reasoning metadata, undefined when the model has none.
- * @param providerDefaultLabel - the localized label for the "follow the provider" segment.
- * @returns the segments in catalog order; the provider-default one leads when the model declares no default.
+ * @returns one detent per advertised level, in catalog order.
  */
-export function effortChoices(
-  reasoning: ModelReasoning | undefined,
-  providerDefaultLabel: string,
-): readonly EffortChoice[] {
+export function effortChoices(reasoning: ModelReasoning | undefined): readonly EffortChoice[] {
   if (reasoning === undefined) return []
-  return [
-    ...reasoning.defaultEffort === undefined
-      ? [{ key: 'provider-default', effort: undefined, label: providerDefaultLabel }]
-      : [],
-    ...reasoning.efforts.map((level) => ({
-      key: level.id,
-      effort: level.id as string | undefined,
-      label: level.name,
-    })),
-  ]
+  return reasoning.efforts.map((level) => ({
+    key: level.id,
+    effort: level.id as string | undefined,
+    label: level.name,
+  }))
 }
 
 /**
@@ -91,6 +86,20 @@ export function planModelCommit(
     model,
     ...carried ? { reasoningEffort: remembered } : {},
   }
+}
+
+/**
+ * The reasoning metadata the catalog advertises for the model in force.
+ * @param state - the session's directory snapshot.
+ * @returns the metadata, or undefined when no model is live or it advertises none.
+ */
+export function liveReasoning(state: ModelDirectoryState): ModelReasoning | undefined {
+  const current = state.current
+  if (current === null) return undefined
+  return state.groups
+    .find((group) => group.id === current.provider)
+    ?.models.find((model) => model.id === current.model)
+    ?.reasoning
 }
 
 /**

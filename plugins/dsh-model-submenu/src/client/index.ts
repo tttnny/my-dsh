@@ -10,12 +10,14 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import { EffortTint } from './EffortTint.tsx'
 import { ModelMenuBridge } from './ModelMenuBridge.tsx'
 import { ModelPickerHost } from './ModelPickerHost.tsx'
 import { createPickerStore } from './picker-state.ts'
 import { createFactsSource, type DescribeFace } from './facts-source.ts'
 import { NS, en, zh } from './locales.ts'
 
+export { EffortTint } from './EffortTint.tsx'
 export { ModelMenuBridge } from './ModelMenuBridge.tsx'
 export { ModelPickerHost } from './ModelPickerHost.tsx'
 export { createPickerStore } from './picker-state.ts'
@@ -45,7 +47,8 @@ export const inject = [
 /**
  * Client plugin body: register this plugin's dictionaries, then contribute the
  * bridge that turns the Host's model cell into the picker's door and its effort
- * cell into the reasoning-level slider, plus the overlay that renders the picker.
+ * cell into the reasoning-level slider, the overlay that renders the picker, and
+ * the tint that keeps the collapsed trigger's effort caption on the same color.
  *
  * The two are separate entries because the Host unmounts the model menu the
  * moment a row is clicked; the overlay slot stays mounted, so the dialog
@@ -103,5 +106,13 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: faceOf,
     }, ModelPickerHost))
+    // The trigger's effort caption lives outside the menu, so its tint needs an
+    // entry that stays mounted for the whole session.
+    scope.slots.inject('conversation.input.overlay', () => scope.slots.register({
+      name: 'conversation.input.overlay',
+      id: 'model-effort-tint',
+      registrant: '@lynn123411/dsh-model-submenu',
+      inject: faceOf,
+    }, EffortTint))
   })
 }
