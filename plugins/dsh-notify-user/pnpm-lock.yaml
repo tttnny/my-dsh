@@ -18,7 +18,7 @@ importers:
         specifier: '>=0.2.2-rc.2'
         version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-client-store':
-        specifier: 0.2.2-rc.2
+        specifier: '>=0.2.2-rc.2'
         version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-client-ui-chat':
         specifier: '>=0.2.2-rc.2'
@@ -27,7 +27,7 @@ importers:
         specifier: '>=0.2.2-rc.2'
         version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-client-ui-model-selection':
-        specifier: 0.2.2-rc.2
+        specifier: '>=0.2.2-rc.2'
         version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-client-ui-plugin-manager':
         specifier: '>=0.2.2-rc.2'
@@ -39,7 +39,7 @@ importers:
         specifier: '>=0.2.2-rc.2'
         version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-client-ui-session':
-        specifier: 0.2.2-rc.2
+        specifier: '>=0.2.2-rc.2'
         version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: '>=0.2.2-rc.2'
