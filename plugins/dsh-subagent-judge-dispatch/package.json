@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-subagent-judge-dispatch",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "用一个判断模型从你写的任务类型清单里挑一个编号，据此改写子代理使用的模型与思考强度。",
   "type": "module",
   "main": "lib/index.js",
@@ -57,19 +57,19 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-client-connection": ">=0.2.2-rc.1"
+    "@deepseek-ai/dsh-client-connection": ">=0.2.2-rc.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-agent": ">=0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-connection": ">=0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-locale": ">=0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.1",
-    "@deepseek-ai/dsh-home-paths": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-agent": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.2-rc.2",
     "@deepseek-ai/schemastery": "^3.19.0",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.18",
@@ -81,7 +81,7 @@
     "typescript": "^6.0.0"
   },
   "engines": {
-    "dsh": ">=0.2.2-rc.1",
+    "dsh": ">=0.2.2-rc.2",
     "node": "^22.19 || >=24"
   },
   "packageManager": "pnpm@11.7.0",

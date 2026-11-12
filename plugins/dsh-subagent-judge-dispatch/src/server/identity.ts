@@ -79,8 +79,26 @@ export function isSubagent(agent: AgentLike): boolean {
   return depth >= 1;
 }
 
-/** Opening words of the return guidance the Host appends to a delegation. */
-export const RETURN_GUIDANCE_PREFIX = 'Your parent agent id is ';
+/**
+ * Opening words of every return guidance the Host has appended to a delegation.
+ *
+ * The Host changed the wording in 0.2.2-rc.2. The block used to name the parent
+ * session id and ask for an explicit `send_message`; it now only promises that
+ * the final answer is delivered. A log written by either release stays readable,
+ * so both openings are recognized.
+ */
+export const RETURN_GUIDANCE_PREFIXES = [
+  'Your parent agent id is ',
+  'Your final answer is delivered automatically if your ',
+] as const;
+
+/**
+ * @param text - one trailing text block of a delegation message.
+ * @returns whether it opens like the Host's return guidance.
+ */
+export function isReturnGuidance(text: string): boolean {
+  return RETURN_GUIDANCE_PREFIXES.some((prefix) => text.startsWith(prefix));
+}
 
 /**
  * Read the child's delegation description.
@@ -144,7 +162,7 @@ export function readTaskText(agent: AgentLike): string {
       const blocks = textBlocksOf(data);
       // The guidance is appended last; a task that happens to open with the same
       // words is still honored because only the trailing block is examined.
-      if (blocks.length > 1 && blocks[blocks.length - 1].startsWith(RETURN_GUIDANCE_PREFIX)) {
+      if (blocks.length > 1 && isReturnGuidance(blocks[blocks.length - 1])) {
         blocks.pop();
       }
       const text = blocks.join('\n').trim();

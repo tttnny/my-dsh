@@ -84,18 +84,24 @@ function makeConfig(overrides = {}) {
   };
 }
 
-/** The return guidance the Host appends to a continuable delegation's task. */
+/** The return guidance the Host appends to a continuable delegation's task, up to 0.2.2-rc.1. */
 const RETURN_GUIDANCE =
   'Your parent agent id is "session-main". Before you finish, send your result to that agent with '
   + 'send_message({ agent_id: "session-main", message: "<self-contained result>" }).';
 
+/** The same block from 0.2.2-rc.2 on: it promises delivery instead of naming the parent. */
+const RESULT_DELIVERY_GUIDANCE =
+  'Your final answer is delivered automatically if your parent is still online. Include the result '
+  + 'and relevant evidence in that answer; the parent does not receive your full transcript, tool '
+  + 'output, or reasoning.';
+
 /** The delegation message itself, in the shape the Host builds it. */
-function delegationMessage(taskText) {
+function delegationMessage(taskText, guidance = RETURN_GUIDANCE) {
   return {
     source: { kind: 'user' },
     content: [
       { type: 'text', text: taskText },
-      { type: 'text', text: RETURN_GUIDANCE },
+      { type: 'text', text: guidance },
     ],
   };
 }
@@ -115,11 +121,12 @@ function delegationMessage(taskText) {
  * source, and dropping the appended guidance.
  *
  * @param taskText - the delegated task.
- * @param options - `committed` selects the committed shape.
+ * @param options - `committed` selects the committed shape; `guidance` picks the
+ *   release's return-guidance wording.
  * @returns the child-owned events, in log order.
  */
-function delegatedMessages(taskText, { committed = false } = {}) {
-  const message = delegationMessage(taskText);
+function delegatedMessages(taskText, { committed = false, guidance = RETURN_GUIDANCE } = {}) {
+  const message = delegationMessage(taskText, guidance);
   const notice = {
     type: 'user/message',
     data: {
@@ -488,6 +495,21 @@ await test('宿主追加的返回指引不送给判断模型', async () => {
   });
   assert.doesNotMatch(body.state.message, /Your parent agent id is/,
     '怎么回报讲的是交作业，不是这次干什么');
+});
+
+await test('0.2.2-rc.2 换过措辞的返回指引同样不送给判断模型', async () => {
+  let body;
+  await judgeOnce(
+    handlers,
+    childAgent('child-guidance-rc2', '跑一下测试', '把测试跑一遍', { guidance: RESULT_DELIVERY_GUIDANCE }),
+    async (_url, init) => {
+      body = JSON.parse(init.body);
+      return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+    },
+  );
+  assert.match(body.state.message, /把测试跑一遍/);
+  assert.doesNotMatch(body.state.message, /Your final answer is delivered automatically/,
+    '新措辞的回报指引同样只是交作业说明');
 });
 
 await test('任务正文很长时只取开头与结尾，中间被省掉的字数写明白', async () => {
