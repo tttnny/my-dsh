@@ -1,5 +1,5 @@
 /**
- * 宿主半边自检：把承重点放在 **真实的 0.2.2-rc.1 内核服务** 上跑，而不是桩件——
+ * 宿主半边自检：把承重点放在 **真实的 0.2.2-rc.2 内核服务** 上跑，而不是桩件——
  * 每条断言的全部意义就是「DSH 换了实现，本插件立刻挂」：
  *
  * 1. 「登录地址」工具真的注册进真 `ctx.tools`（@deepseek-ai/dsh-tools 的 ToolRuntime），
@@ -119,16 +119,16 @@ await test('本插件不贡献提示词：导出里没有 Config，也没有段�
 });
 
 await test('内核基线声明齐整（engines / peer / dev 同串）', () => {
-  assert.equal(manifest.engines.dsh, '>=0.2.2-rc.1', 'engines.dsh 必须声明不低于基线 0.2.2-rc.1 的支持范围');
+  assert.equal(manifest.engines.dsh, '>=0.2.2-rc.2', 'engines.dsh 必须声明不低于基线 0.2.2-rc.2 的支持范围');
   assert.equal(manifest.peerDependencies['@deepseek-ai/cordis'], '^4.1.0');
   assert.equal(installedVersion('@deepseek-ai/cordis'), '4.1.0', 'cordis 必须对齐安装版本');
   assert.equal(manifest.dependencies, undefined, '本插件不导出 Config，因此不再需要 schemastery');
   assert.equal(manifest.peerDependencies['@deepseek-ai/dsh-tools'], manifest.engines.dsh, '工具表是硬依赖，peer 要与 engines 同串');
-  // engines.dsh 写成 >=0.2.2-rc.1（大于等于当前版本），而 devDependencies 仍定向
-  // 安装基线版本 0.2.2-rc.1，两者刻意不同：声明层写同一个范围，安装层钉住基线。
+  // 声明层写「大于等于当前内核」的范围，安装层钉住同一个版本：范围只表达兼容下界，
+  // 自检跑的是钉住的那一份，两者各管一件事。
   for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env', '@deepseek-ai/dsh-tool-executor-native', '@deepseek-ai/dsh-tools']) {
     assert.equal(manifest.devDependencies[pkg], manifest.engines.dsh, `${pkg} 的 devDependency 必须与 engines.dsh 同串`);
-    assert.equal(installedVersion(pkg), '0.2.2-rc.1', '自检跑的内核包必须仍是基线版本 0.2.2-rc.1');
+    assert.equal(installedVersion(pkg), '0.2.2-rc.2', '自检跑的内核包必须仍是基线版本 0.2.2-rc.2');
   }
 });
 
@@ -183,12 +183,15 @@ await test('内核基线声明齐整（engines / peer / dev 同串）', () => {
 {
   const { ctx } = await host({ originFails: true });
   await mount(ctx);
-  await test('监听器未 bind 时抛 WEB_GUI_LOGIN_NOT_READY，并说明等实例服务后重调', async () => {
+  await test('监听器未 bind 时抛带 code 的 HarnessError，并说明等实例服务后重调', async () => {
     const error = await ctx.tools.get(TOOL_NAME).execute({}, {}).then(
       () => assert.fail('这个分支必须失败'),
       (reason) => reason,
     );
-    assert.match(error.message, /WEB_GUI_LOGIN_NOT_READY/u);
+    // 可预期失败要带稳定 code，工具结果才会保留 error.info.code；
+    // 只把码写进消息文本的话，调用方只能去解析人话。
+    assert.equal(error.code, 'WEB_GUI_LOGIN_NOT_READY');
+    assert.equal(error.name, 'WebGuiLoginNotReadyError');
     assert.equal(error.message.includes('listener bound a port'), false, '不要把内核的原始异常原样抛给模型');
   });
 }

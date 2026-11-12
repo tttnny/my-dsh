@@ -15,6 +15,7 @@
  * @module dsh-web-auth-url
  */
 
+import { HarnessError } from '@deepseek-ai/dsh-error'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 /** Cordis 插件名（= patch 行 id）。 */
@@ -35,8 +36,23 @@ const CONTRIBUTOR_NAME = 'dsh-web-auth-url'
 /** 模型看到的工具名。 */
 const TOOL_NAME = 'web_gui_login'
 
-/** 监听器未 bind 时错误文本的前缀：稳定、可 grep，模型也读得懂。 */
+/** 监听器未 bind 时的错误码：稳定、可路由，模型与日志都按它认这一类失败。 */
 const NOT_READY_CODE = 'WEB_GUI_LOGIN_NOT_READY'
+
+/**
+ * 监听器还没 bind 时抛的错。
+ *
+ * 这是「等一会儿再试」这类可预期失败，不是缺陷：带上稳定 code 之后，工具结果
+ * 会保留 `error.info.code`，调用方与日志都不必去解析消息文本。
+ */
+class WebGuiLoginNotReadyError extends HarnessError {
+  /**
+   * @param message - 给模型看的说明。
+   */
+  constructor(message) {
+    super(message, NOT_READY_CODE)
+  }
+}
 
 /**
  * 解析本进程当前的登录地址：对外公布的那个根交给 connection 加 token。
@@ -91,7 +107,7 @@ function loginTool(ctx) {
     async execute() {
       const url = resolveAuthenticatedUrl(ctx)
       if (url === undefined) {
-        throw new Error(`${NOT_READY_CODE}: this Web GUI has not bound its listener yet, so there is no login address.`
+        throw new WebGuiLoginNotReadyError('This Web GUI has not bound its listener yet, so there is no login address.'
           + ' Call again once the instance is serving')
       }
       return { url }
