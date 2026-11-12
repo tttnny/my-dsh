@@ -62,6 +62,17 @@ plugin-upgrade-cordis/
 | `dsh-v0.1.7-rc.1 → dsh-v0.1.7-rc.2` | ❌ 未成卡（卡文件内自带声明） |
 | `dsh-v0.2.0-rc.1 → dsh-v0.2.0-rc.2` | ⚠️ 只有同文件末尾两条 field notes，未成卡 |
 | `dsh-v0.2.0-rc.2 → dsh-v0.2.1-alpha.1` | ❌ 上游尚无（DSH 已发布 0.2.2-rc.2） |
+| `dsh-v0.2.2-rc.1 → dsh-v0.2.2-rc.2` | ❌ 未成卡；实测契约变更见下 |
+
+`0.2.2-rc.1 → 0.2.2-rc.2`（1568 个提交、4645 个文件）实测到的插件侧契约变更，供没有卡时直接用：
+
+- `@deepseek-ai/dsh-client-ui-primitives` 删掉 `useAnchoredPosition` / `AnchoredPositionOptions` 导出，改用 CSS 锚点定位；静态引用的插件在页面上静默失效（keyed slot 接管项抛错会整格退位）。
+- `Menu` 原生支持二级菜单：`MenuItem.submenu`、`submenuBackLabel`、`useMenuSubmenu`、`SubmenuPanel`、`MenuRow`。
+- `ui-model-selection` 新增 list 插槽 `conversation.input.model.options`（owner props：`locked` / `dismiss` / `reportFailure`）；它的宿主菜单在关闭时卸载子树，所以从这一行打开的浮层必须住在常驻插槽里。
+- `ui-chat` 新增 hoc 插槽 `conversation.chat.markdown.fence`（按语言分发）与 `MarkdownDelegate.renderCode`（可选）；`FenceCodeBlock` / `FenceMathBlock` 从 primitives 导出。
+- `withContinuableReturnGuidance(parentId, prompt)` 换成 `withResultDeliveryGuidance(prompt)`，尾块开头从 `Your parent agent id is ` 变成 `Your final answer is delivered automatically if your `；按旧前缀剥离任务正文的插件会把整段回传指令当成任务。
+- `Session.append()` 收批次；`dsh-tools` 新增 `ToolContextUnavailableError` 与 `APPROVAL_*` 常量，取消归类新增 `ABORTED`。
+- 新增六个包：`tool-office`、`experimental/terminal-panel`、`mcp/mcp-manager`、`client/ui-account-notifications`、`util/error`（`HarnessError` 基类）、`util/ripgrep`；删除五个：`account-controller`、`deepseek-account-platform`、`agent-team-profile`、`web-search-exa`、`web-search-perplexity`。
 
 完整索引在 [references/README.md](skills/plugin-upgrade/references/README.md)，**按 `from → to` 走廊读，不按文件名顺序**。目标版本没有卡时，**同步上游解决不了**——那正是随包 `dsh-upgrade-audit`（对比两个版本、产证据）与 `plugin-workflow`（编排）的用武之地；产出的证据可以回馈成上游的一张新卡。
 
