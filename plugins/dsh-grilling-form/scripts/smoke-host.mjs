@@ -1,5 +1,5 @@
 /**
- * 宿主半边自检：**真实的 0.2.2-rc.1 内核服务**，断言这个工具「投出表单就结束本轮」的每一步，
+ * 宿主半边自检：**真实的 0.2.2-rc.2 内核服务**，断言这个工具「投出表单就结束本轮」的每一步，
  * 以及闸门那三分支。承重点全在真货上：真 cordis Context、真 ctx.tools（ToolRuntime：工具经它
  * 注册、再经它取回）、真会话投影（SessionProjectionRegistry：闸门就是挂在它上面的一个单元）。
  * 假的只有两处：**执行上下文**（真 DSH 里 exec.concludeTurn() 把本轮标记为结束，这里换成假件
@@ -285,32 +285,43 @@ await test('老开关 multi_select、题型与选项不搭都不再是拒收项'
   assert.equal(result.ok, true);
 });
 
-/** 被本插件拒掉的一轮：ok:false、不结束本轮，把那段说明交回来。 */
+/**
+ * 被本插件拒掉的一轮：抛带 INVALID_ARGS 的 ToolArgsError、不结束本轮。
+ * @param {unknown} questions - 这次要投的表。
+ * @returns {Promise<Error & { violations: string[] }>} 抛出来的那个错误。
+ */
 async function notShown(questions) {
   const { tool } = await assemble();
   const { exec, concluded } = makeExec();
-  const result = await tool.execute({ questions }, exec);
-  assert.equal(result.ok, false);
+  const error = await tool.execute({ questions }, exec).then(
+    () => assert.fail('这一轮必须被拒'),
+    (reason) => reason,
+  );
+  // 参数不合规要带稳定 code：只把说明写进返回体的话，结果会被当成成功，
+  // 调用方与日志都没有可路由的失败身份。
+  assert.equal(error.name, 'ToolArgsError');
+  assert.equal(error.code, 'INVALID_ARGS');
+  assert.ok(Array.isArray(error.violations) && error.violations.length > 0, '违规要逐条交回');
   assert.deepEqual(concluded, [], '没投出的轮次绝不能让本轮就此结束');
-  return result.message;
+  return error;
 }
 
 await test('空题干被拒（schema 只保证字段存在，不保证有内容）', async () => {
-  assert.match(await notShown([{ question: '   ' }]), /empty question text/);
+  assert.match((await notShown([{ question: '   ' }])).message, /empty question text/);
 });
 
 await test('空选项文字被拒', async () => {
-  assert.match(await notShown([{ question: '？', options: [{ label: ' ' }] }]), /option 1 has an empty label/);
+  assert.match((await notShown([{ question: '？', options: [{ label: ' ' }] }])).message, /option 1 has an empty label/);
 });
 
 await test('同一题里两段只差推荐标记的文字被拒（界面看着一模一样，选的是哪一项就分不出来了）', async () => {
-  const message = await notShown([{ question: '？', options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] }]);
-  assert.match(message, /same label "A：移走"/);
+  const error = await notShown([{ question: '？', options: [{ label: 'A：移走；推荐' }, { label: 'A：移走（推荐）' }] }]);
+  assert.match(error.message, /same label "A：移走"/);
 });
 
-await test('多条违规一条一行地交回去，不另写一份规则清单', async () => {
-  const message = await notShown([{ question: '  ' }, { question: '？', options: [{ label: ' ' }] }]);
-  assert.equal(message.split('\n').length, 2);
+await test('多条违规逐条交回去，不另写一份规则清单', async () => {
+  const error = await notShown([{ question: '  ' }, { question: '？', options: [{ label: ' ' }] }]);
+  assert.equal(error.violations.length, 2);
 });
 
 await test('缺题干、缺 label、questions 不是数组、题型越界都由 defineTool 的入参校验拦住', async () => {

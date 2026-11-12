@@ -1,4 +1,4 @@
-import { defineTool } from '@deepseek-ai/dsh-tools';
+import { ToolArgsError, defineTool } from '@deepseek-ai/dsh-tools';
 import { FORM_GATE_UNIT, QUESTION_TYPES, pendingFormOf, validateRound } from './form-model.js';
 
 /**
@@ -189,7 +189,9 @@ async function apply(ctx, config) {
       // 1. 入参校验：只留表单表示不了的三件事（见 validateRound）。被拒的这一轮**不结束**——
       //    模型必须能当场改一改重投。说明就是那几条违规，一条一行。
       const violations = validateRound(args.questions);
-      if (violations.length > 0) return { ok: false, message: violations.join('\n') };
+      // 参数不合规是可预期失败：抛带 INVALID_ARGS 的 ToolArgsError，工具结果才会保留
+      // error.info.code，调用方与日志不必去解析那几句人话。
+      if (violations.length > 0) throw new ToolArgsError(violations);
 
       // 2. 闸门：已经有一张表在等用户作答时，不带 replace 的重调不投出、也不结束本轮。
       const pending = pendingForm(exec);
