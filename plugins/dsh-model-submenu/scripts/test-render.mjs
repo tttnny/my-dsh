@@ -445,6 +445,28 @@ await test('按下与松手落在同一个任务里也不丢提交', async () =>
   assert.deepEqual(selections, [{ provider: 'magpie', model: 'a', reasoningEffort: 'max' }])
 })
 
+await test('拖动时旋钮跟着指针走，不停在刻度上', () => {
+  mountFreshBridge()
+  withTrack()
+  // 100px 轨道、20px 旋钮：行程 80px，指针 42px → 40% 行程，落在第 1、2 档之间。
+  pointer('pointerdown', slider(), 42)
+  const knob = slider().querySelector('[class*="sliderKnob"]')
+  assert.equal(knob.style.left, 'calc(10px + 0.4 * (100% - 20px))', '旋钮必须停在指针处，而不是吸到刻度')
+  assert.equal(slider().getAttribute('aria-valuenow'), '1', '档位报最近的那个')
+})
+
+await test('拖动中旋钮连续跟手，不被档位吸住', () => {
+  withTrack()
+  const knob = slider().querySelector('[class*="sliderKnob"]')
+  const seen = new Set()
+  for (const x of [20, 26, 32, 38, 44]) {
+    pointer('pointermove', slider(), x)
+    seen.add(knob.style.left)
+  }
+  assert.equal(seen.size, 5, '每 6px 的移动都必须让旋钮动一次')
+  pointer('pointerup', slider(), 44)
+})
+
 await test('松手停在原档不提交', async () => {
   mountFreshBridge()
   selections.length = 0

@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-model-submenu",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "description": "增强输入框的模型菜单：第一行直接打开跨供应商的模型弹窗，第二行的推理等级是可拖动的滑块，档位带配色。",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",

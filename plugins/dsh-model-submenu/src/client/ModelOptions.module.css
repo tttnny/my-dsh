@@ -41,17 +41,22 @@
   cursor: default;
 }
 
+/* The track is a capsule and the knob a larger circle riding on it: the knob
+ * overhangs at both ends, so it reads as a knob rather than as the track's own
+ * end cap. */
 .sliderTrack {
   position: relative;
   width: 100%;
-  height: 20px;
+  height: 16px;
   border-radius: 999px;
   corner-shape: round;
   background: var(--dsw-alias-border-l3);
 }
 
-/* The fill takes the level's color and is clipped to the filled part, so the
- * color under the knob is the color the level's text takes. */
+/* The fill is the track's own shape cut at the knob: its right cap carries the
+ * track's radius and ends under the knob, so the color runs into the knob
+ * instead of stopping at a straight edge, and the last detent reaches the
+ * track's end. */
 .sliderFill {
   position: absolute;
   top: 0;
@@ -59,8 +64,10 @@
   left: 0;
   border-radius: 999px;
   corner-shape: round;
-  overflow: hidden;
   pointer-events: none;
+  /* A level change eases the color to its new width; the drag turns this off so
+   * the edge stays under the pointer. */
+  transition: width 160ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* One detent per level: the dot is the only thing that says the levels are
@@ -86,6 +93,9 @@
 .sliderKnob {
   position: absolute;
   top: 50%;
+  /* The provider default draws a 1.5px ring; border-box keeps that ring inside
+   * the 20px circle the travel is computed for. */
+  box-sizing: border-box;
   width: 20px;
   height: 20px;
   margin: -10px 0 0 -10px;
@@ -94,6 +104,21 @@
   background: var(--dsw-alias-label-primary-foreground);
   box-shadow: var(--dsw-elevation-soft);
   pointer-events: none;
+  /* Letting go eases the knob onto the detent it settled on; the drag turns this
+   * off so the knob sits exactly under the pointer. */
+  transition: left 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.slider[data-dragging] .sliderKnob,
+.slider[data-dragging] .sliderFill {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sliderKnob,
+  .sliderFill {
+    transition: none;
+  }
 }
 
 /* Provider default: nothing is filled and the knob is a hollow ring, so the

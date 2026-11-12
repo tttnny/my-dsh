@@ -3,9 +3,10 @@
  *
  * The Host's second menu cell is a button that drills into a list of levels.
  * This slider sits inside that same cell, between the Host's label and value, so
- * the levels are reachable without leaving the menu. Levels are discrete: the
- * knob snaps to one detent per level, the drag only moves the knob, and the
- * release commits once. Keyboard arrows step and commit immediately.
+ * the levels are reachable without leaving the menu. The levels are discrete but
+ * the drag is not: the knob follows the pointer continuously, the level it
+ * reports is the detent nearest that position, and letting go eases the knob onto
+ * that detent and commits once. Keyboard arrows step and commit immediately.
  *
  * The fill takes the level's color, so the track and the two captions read as
  * one signal: "off" is neutral, the levels above it walk a blue-to-violet ramp,
@@ -14,10 +15,10 @@
  * "Provider default" is not a detent: it is a state, drawn as an empty track
  * with a hollow knob, so it never reads as the lowest level.
  */
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { EffortChoice } from './selection.ts';
 import { LEVEL_GRADIENT, isTopLevel, levelColor } from './level-color.ts';
-import { knobOffset, offsetOf, stepAt } from './slider.ts';
+import { detentAt, fillWidth, fractionAt, knobOffset, offsetOf } from './slider.ts';
 import css from './ModelOptions.module.css';
 
 /** Props of the slider: the levels, the one in force, and the commit path. */
@@ -49,22 +50,41 @@ export function EffortSlider({
   steps, current, defaultActive, defaultIndex, defaultLabel, busy, label, onCommit,
 }: EffortSliderProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
-  // The drag index lives in a ref as well as in state: a press and a release can
-  // arrive in one task, and the release must not read a render that never ran.
+  // The drag position lives in a ref as well as in state: a press and a release
+  // can arrive in one task, and the release must not read a render that never ran.
   const dragRef = useRef<number | null>(null);
+  // While dragging this is where the pointer is along the travel, not a level:
+  // the knob has to move with the pointer, or the drag reads as a series of jumps.
   const [drag, setDrag] = useState<number | null>(null);
+  // After a release that submits, the knob waits on the detent it settled on
+  // instead of springing back to the old level while the write is in flight.
+  const [hold, setHold] = useState<number | null>(null);
+  const dragging = drag !== null;
   const resting = defaultActive ? defaultIndex : current;
-  const active = drag ?? resting;
-  const beginDrag = (index: number | null): void => {
-    dragRef.current = index;
-    setDrag(index);
+  const active = dragging ? detentAt(drag, steps.length) : resting;
+  const knobFraction = drag ?? hold ?? offsetOf(resting, steps.length);
+  // The color and the ticks follow the knob, not the level in force: during a
+  // drag, and while a commit is in flight, the knob has already gone ahead.
+  const shown = dragging || hold !== null ? detentAt(knobFraction, steps.length) : resting;
+  const beginDrag = (fraction: number | null): void => {
+    dragRef.current = fraction;
+    setDrag(fraction);
   };
 
-  const indexAt = (clientX: number): number => {
+  // The hold ends as soon as the write does, whether it landed on the new level
+  // or was rejected: the displayed level is the truth again either way.
+  useEffect(() => {
+    if (!busy) setHold(null);
+  }, [busy]);
+  useEffect(() => {
+    setHold(null);
+  }, [current, defaultActive]);
+
+  const fractionAtPointer = (clientX: number): number => {
     const track = trackRef.current;
-    if (track === null) return active;
+    if (track === null) return dragRef.current ?? knobFraction;
     const rect = track.getBoundingClientRect();
-    return stepAt(clientX, rect.left, rect.width, steps.length);
+    return fractionAt(clientX, rect.left, rect.width);
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
@@ -73,7 +93,8 @@ export function EffortSlider({
     // also settle the cell and pull focus out of the slider.
     event.preventDefault();
     event.stopPropagation();
-    beginDrag(indexAt(event.clientX));
+    setHold(null);
+    beginDrag(fractionAtPointer(event.clientX));
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
@@ -84,18 +105,20 @@ export function EffortSlider({
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
     if (dragRef.current === null || busy) return;
-    const next = indexAt(event.clientX);
-    if (next !== dragRef.current) beginDrag(next);
+    beginDrag(fractionAtPointer(event.clientX));
   };
 
   const settle = (event: PointerEvent<HTMLDivElement>, commit: boolean): void => {
     if (dragRef.current === null) return;
-    const next = indexAt(event.clientX);
+    const next = detentAt(fractionAtPointer(event.clientX), steps.length);
     beginDrag(null);
     if (!commit) return;
     // Leaving the provider default is a change even when the knob lands where
     // the default already pointed.
-    if (next !== current || defaultActive) onCommit(next);
+    if (next !== current || defaultActive) {
+      setHold(offsetOf(next, steps.length));
+      onCommit(next);
+    }
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -117,13 +140,12 @@ export function EffortSlider({
     if (next !== current || defaultActive) onCommit(next);
   };
 
-  const knobFraction = offsetOf(active, steps.length);
   const offset = knobOffset(knobFraction);
   // The provider default fills nothing: the knob shows where it lands, the
   // track stays empty so it never reads as a chosen level.
-  const idle = defaultActive && drag === null;
+  const idle = defaultActive && !dragging && hold === null;
   const filled = idle ? 0 : knobFraction;
-  const fill = isTopLevel(active, steps.length) ? LEVEL_GRADIENT : levelColor(active, steps.length);
+  const fill = isTopLevel(shown, steps.length) ? LEVEL_GRADIENT : levelColor(shown, steps.length);
   return <div
     ref={trackRef}
     className={css.slider}
@@ -133,11 +155,11 @@ export function EffortSlider({
     aria-valuemin={0}
     aria-valuemax={Math.max(0, steps.length - 1)}
     aria-valuenow={active}
-    aria-valuetext={defaultActive && drag === null ? defaultLabel : steps[active]?.label}
+    aria-valuetext={defaultActive && !dragging ? defaultLabel : steps[active]?.label}
     aria-disabled={busy || undefined}
     data-busy={busy ? '' : undefined}
-    data-dragging={drag === null ? undefined : ''}
-    data-default={defaultActive && drag === null ? '' : undefined}
+    data-dragging={dragging ? '' : undefined}
+    data-default={idle ? '' : undefined}
     onPointerDown={onPointerDown}
     onPointerMove={onPointerMove}
     onPointerUp={(event) => { settle(event, true); }}
@@ -146,11 +168,11 @@ export function EffortSlider({
     onClick={(event) => { event.stopPropagation(); }}
   >
     <div className={css.sliderTrack} aria-hidden="true">
-      <div className={css.sliderFill} style={{ width: knobOffset(filled), background: fill }} />
+      <div className={css.sliderFill} style={{ width: fillWidth(filled), background: fill }} />
       {steps.map((step, index) => <span
         key={step.key}
         className={css.sliderTick}
-        data-on={index <= active && !idle ? '' : undefined}
+        data-on={index <= shown && !idle ? '' : undefined}
         style={{ left: knobOffset(offsetOf(index, steps.length)) }}
       />)}
       <div className={css.sliderKnob} style={{ left: offset }} />
