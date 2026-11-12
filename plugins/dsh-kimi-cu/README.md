@@ -10,16 +10,16 @@
 
 ## 特性
 
-- **装配按平台分流**：patch 里五条根层行——本包自己的宿主/浏览器半边、macOS MCP 行、Windows MCP 行、macOS 技能行、Windows 技能行；平台守卫保证同一时刻只有一条 MCP 行与一条技能行启用。
+- **装配按平台分流**：patch 里三条根层行——本包自己的宿主/浏览器半边、macOS 技能行、Windows 技能行；平台守卫保证同一时刻只有一条技能行启用。MCP 连接不占 patch 行，由宿主半边按探测结果注册。
 - **Windows 走旧 13 工具 MCP**：`kimi-cu.exe mcp`，不需要 Node；工具面与 macOS 同族，但没有 `paste`、`drag_paths`、`js`、`list_windows`、`get_window`，多一个 `turn_ended`。
 - **检测只看本机事实**：二进制是否存在、版本号、`doctor` 结果；缓存 10 秒，并发调用共用一次探测，`refresh` 绕过缓存。
-- **只给命令，不执行安装**：卡片给官方命令与复制，不静默运行远程脚本；装好后在插件页把本插件关一次再开一次（或重启 DSH）让 MCP 行重连。
-- **连不上就当场报错**：MCP 行 `failOnStartupError: true`，二进制缺失或 `mcp` 子命令没响应时那一行激活失败并报错，而不是静默少掉一整排工具。
-- **长任务按 5 分钟计**：MCP 行把单次工具调用上限设成 5 分钟。
-- **一条连接服务所有 session**：MCP 行在根层，宿主只起一个 KimiCU MCP 连接；两个 session 同时操作同一个应用时要错开。
+- **只给命令，不执行安装**：卡片给官方命令与复制，不静默运行远程脚本；装好后在插件页把本插件关一次再开一次（或重启 DSH）让 MCP 连接重建。
+- **连不上有据可查**：MCP 连接由宿主的 `mcpManager` 管，连接状态、重启与探测都在它那一处；二进制缺失时插件启动会写一条带安装命令的 warning，`kimi_cu_status` 也照常回答。
+- **长任务按 5 分钟计**：注册给管理器的条目把单次工具调用上限设成 5 分钟。
+- **一条连接服务所有 session**：宿主只起一个 KimiCU MCP 连接；两个 session 同时操作同一个应用时要错开。
 - **技能行另立门户**：`providerName: kimi-cu` + `includeDefaultRoots: false`，只扫本包对应平台的 `skills/`；项目与用户技能目录仍归内核那条默认行。
 - **技能目录按包名解析**：bundle patch 的 `!!js` 以 profile 目录为 `baseUrl`，所以技能路径用 `createRequire(baseUrl).resolve(...)` 算成绝对路径。
-- **自检盯着内核契约**：`pnpm check` 用内核自带 include 的 YAML 方言读 patch，拿内核两个包的真 `Config` schema 校验两条 MCP 行与两条技能行，再照 Loader 的方式求值技能目录表达式；随包技能的真发现与真装载交给 `tools/probes/preset-skills.mjs`。装配、验证与实测记录见 [DETAILS.md](./DETAILS.md)。
+- **自检盯着内核契约**：`pnpm check` 用内核自带 include 的 YAML 方言读 patch，拿内核 `skill-filesystem` 的真 `Config` schema 校验两条技能行，再照 Loader 的方式求值技能目录表达式；MCP 注册那条链断言命令取自探测器、管理器走可选注入；随包技能的真发现与真装载交给 `tools/probes/preset-skills.mjs`。装配、验证与实测记录见 [DETAILS.md](./DETAILS.md)。
 
 ## 安装
 

@@ -84,19 +84,19 @@ await test('状态路由路径固定', () => {
   assert.equal(STATUS_ROUTE_PATH, '/api/dsh-kimi-cu/status');
 });
 
-await test('patch 有五行，根层行 id 与包名对得上', () => {
+await test('patch 有三行，根层行 id 与包名对得上', () => {
   const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
     .split('\n')
     .map((line) => line.replace(/(^|\s)#.*$/, ''))
     .filter((line) => line.trim() !== '')
     .join('\n');
   const rows = [...patch.matchAll(/-\s*id:\s*(\S+)\s*\n\s*name:\s*'([^']+)'/g)].map((match) => [match[1], match[2]]);
-  assert.equal(rows.length, 5, 'patch 应当有五条装配行');
+  assert.equal(rows.length, 3, 'patch 应当有三条装配行：本包自己与两份技能 provider');
   assert.deepEqual(rows[0], ['dsh-kimi-cu', pkgName]);
-  assert.deepEqual(rows[1], ['mcp-kimi-cu-macos', '@deepseek-ai/dsh-mcp-client']);
-  assert.deepEqual(rows[2], ['mcp-kimi-cu-windows', '@deepseek-ai/dsh-mcp-client']);
-  assert.deepEqual(rows[3], ['skill-kimi-cu-macos', '@deepseek-ai/dsh-skill-filesystem']);
-  assert.deepEqual(rows[4], ['skill-kimi-cu-windows', '@deepseek-ai/dsh-skill-filesystem']);
+  assert.deepEqual(rows[1], ['skill-kimi-cu-macos', '@deepseek-ai/dsh-skill-filesystem']);
+  assert.deepEqual(rows[2], ['skill-kimi-cu-windows', '@deepseek-ai/dsh-skill-filesystem']);
+  // MCP 连接由宿主半边注册，patch 里不该再有 mcp-client 行。
+  assert.equal(patch.includes('dsh-mcp-client'), false, 'MCP 连接已交给 mcpManager，patch 里不该再出现静态行');
 });
 
 console.log('\nsmoke-host: ' + passed + '/' + total + ' 条断言通过');

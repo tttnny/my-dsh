@@ -30,7 +30,7 @@ const PACKAGE_NAME = '@lynn123411/dsh-kimi-cu';
 const MACOS_BINARY = '/Applications/KimiCU.app/Contents/MacOS/kimi-cu';
 const MACOS_GUARD = "process.platform !== 'darwin'";
 const WINDOWS_GUARD = "process.platform !== 'win32'";
-const ROW_IDS = ['dsh-kimi-cu', 'mcp-kimi-cu-macos', 'mcp-kimi-cu-windows', 'skill-kimi-cu-macos', 'skill-kimi-cu-windows'];
+const ROW_IDS = ['dsh-kimi-cu', 'skill-kimi-cu-macos', 'skill-kimi-cu-windows'];
 const SKILL_DIRS = { 'skill-kimi-cu-macos': 'macos', 'skill-kimi-cu-windows': 'windows' };
 
 const packageDir = resolve(import.meta.dirname, '..');
@@ -125,20 +125,27 @@ await test('两份技能都在，frontmatter 的 name 与目录名一致且带�
 });
 
 // ── 2. 文本面 ─────────────────────────────────────────────────────────────────
-await test('patch 只插五行，id 就是约定的那五个', () => {
+await test('patch 只插三行，id 就是约定的那三个', () => {
   const ids = [...patchText.matchAll(/^\s*-\s*id:\s*(\S+)\s*$/gm)].map((match) => match[1]);
-  assert.deepEqual([...ids].sort(), [...ROW_IDS].sort(), 'patch 里该有的行只有这五条，多一条就说明装配形状变了');
-  assert.match(patchText, /name: '@deepseek-ai\/dsh-mcp-client'/, 'MCP 行要挂内核的 mcp-client');
+  assert.deepEqual([...ids].sort(), [...ROW_IDS].sort(), 'patch 里该有的行只有这三条，多一条就说明装配形状变了');
+  assert.equal(patchText.includes('dsh-mcp-client'), false, 'MCP 连接改由宿主半边注册，patch 里不该再有静态行');
   assert.match(patchText, /name: '@deepseek-ai\/dsh-skill-filesystem'/, '技能行要挂内核的 skill-filesystem');
 });
 
-await test('四条平台行各带自己的守卫，根层行没有守卫', () => {
+await test('两条平台行各带自己的守卫，根层行没有守卫', () => {
   const guards = [...patchText.matchAll(/^\s*disabled:\s*(.+)$/gm)].map((match) => match[1].trim());
-  assert.equal(guards.length, 4, '只有四条平台行需要 disabled 守卫');
-  assert.deepEqual(
-    [...guards].sort(),
-    ['!!js ' + MACOS_GUARD, '!!js ' + MACOS_GUARD, '!!js ' + WINDOWS_GUARD, '!!js ' + WINDOWS_GUARD].sort(),
-  );
+  assert.equal(guards.length, 2, '只有两条平台行需要 disabled 守卫');
+  assert.deepEqual([...guards].sort(), ['!!js ' + MACOS_GUARD, '!!js ' + WINDOWS_GUARD].sort());
+});
+
+await test('MCP 连接由宿主半边注册给 mcpManager，命令取自探测器', () => {
+  const source = readFileSync(join(packageDir, 'src', 'index.ts'), 'utf8');
+  assert.match(source, /ctx\.inject\(\['mcpManager'\]/, '管理器走可选注入，没有它插件照常加载');
+  assert.match(source, /mcpManager\.register\(MCP_SERVER_NAME/, '要注册到管理器，而不是自己起一条 mcp-client');
+  assert.match(source, /command: status\.mcp\.command/, '命令必须取自探测器，与状态卡、工具同源');
+  assert.match(source, /args: status\.mcp\.args/, '参数同样取自探测器');
+  const timeout = Number(/MCP_TOOL_TIMEOUT_MS = ([\d_]+)/.exec(source)?.[1].replaceAll('_', ''));
+  assert.ok(timeout >= 120000, '工具调用上限要覆盖长任务，现为 ' + timeout);
 });
 
 /**
@@ -159,31 +166,19 @@ await test('根层行挂本包，不带平台守卫', () => {
   assert.doesNotMatch(block, /disabled:/, '根层行在别的平台上也要加载，卡片负责说明不支持');
 });
 
-await test('macOS MCP 行指向 app 内二进制，参数带 -s user', () => {
-  const block = rowBlock('mcp-kimi-cu-macos');
-  assert.ok(block.includes('serverName: kimi-cu'), 'serverName 决定模型看到的 mcp__kimi-cu__* 前缀');
-  assert.ok(block.includes('transport: stdio'));
-  assert.ok(block.includes('command: ' + MACOS_BINARY), 'KimiCU 的命令行在 app 包里，不是 PATH 上的命令');
-  assert.ok(block.includes('args: [mcp, -s, user]'), 'macOS 的 MCP 需要 -s user');
-  assert.ok(block.includes('failOnStartupError: true'), '缺装 KimiCU 时要当场报错，而不是静默少掉一排工具');
-});
-
-await test('Windows MCP 行指向 runtime 安装目录，参数只有 mcp', () => {
-  const block = rowBlock('mcp-kimi-cu-windows');
-  assert.ok(block.includes('serverName: kimi-cu'));
-  assert.ok(block.includes('KIMI_CU_WINDOWS_EXE'), '自定义安装路径要能覆盖默认目录');
-  assert.ok(block.includes('Kimi Computer Use'), '默认目录是 0.3.8 起的 Kimi Computer Use');
-  assert.ok(block.includes('kimi-cu.exe'), 'Windows 的可执行文件名是 kimi-cu.exe');
-  assert.ok(block.includes('args: [mcp]'), 'Windows 的 MCP 只传 mcp');
-  assert.ok(block.includes('failOnStartupError: true'));
-});
-
-await test('两条 MCP 行共用 serverName，缺装时当场报错并留足超时', () => {
-  for (const id of ['mcp-kimi-cu-macos', 'mcp-kimi-cu-windows']) {
-    const block = rowBlock(id);
-    const timeout = Number(/toolCallTimeoutMs:\s*(\d+)/.exec(block)?.[1]);
-    assert.ok(timeout >= 120000, id + ' 的工具调用上限要覆盖长任务，现为 ' + timeout);
-  }
+await test('探测器给出的 MCP 命令就是各平台的真实路径', () => {
+  const mac = resolveInstall({ platform: 'darwin', env: {}, exists: (path) => path === MACOS_BINARY });
+  assert.equal(mac.mcp.command, MACOS_BINARY, 'KimiCU 的命令行在 app 包里，不是 PATH 上的命令');
+  assert.deepEqual(mac.mcp.args, ['mcp', '-s', 'user'], 'macOS 的 MCP 需要 -s user');
+  const win = resolveInstall({
+    platform: 'win32',
+    env: { LOCALAPPDATA: 'C:\\Users\\t\\AppData\\Local' },
+    exists: () => false,
+  });
+  assert.equal(win.mcp.command, 'C:\\Users\\t\\AppData\\Local\\Kimi Computer Use\\kimi-cu.exe');
+  assert.deepEqual(win.mcp.args, ['mcp'], 'Windows 的 MCP 只传 mcp');
+  const other = resolveInstall({ platform: 'linux', env: {}, exists: () => false });
+  assert.equal(other.mcp, null, '不受支持的平台上探测器给 null，宿主半边就不注册');
 });
 
 await test('两条技能行另取 providerName、关掉默认目录，各扫自己的目录', () => {
@@ -285,38 +280,8 @@ const dirs = kernel === undefined ? undefined : contractDirs(kernel);
 if (kernel !== undefined && dirs !== undefined) {
   const rows = await parseRows(dirs.include);
 
-  await test('patch 能被内核 ' + kernel.version + ' 装载时用的 YAML 方言读懂，五行都在', () => {
-    assert.deepEqual([...rows.keys()].sort(), [...ROW_IDS].sort(), '解析出来该只有这五行');
-  });
-
-  await test('macOS MCP 行的 config 通过内核 mcp-client 的真 Config schema', async () => {
-    const { Config } = await import(pathToFileURL(join(dirs.client, 'lib/index.js')).href);
-    const resolved = Config(rows.get('mcp-kimi-cu-macos').config);
-    assert.equal(resolved.transport, 'stdio');
-    assert.equal(resolved.serverName, 'kimi-cu');
-    assert.equal(resolved.command, MACOS_BINARY);
-    assert.deepEqual(resolved.args, ['mcp', '-s', 'user']);
-    assert.equal(resolved.failOnStartupError, true);
-    assert.ok(resolved.toolCallTimeoutMs >= 120000, '真 schema 解析出来的工具调用上限要覆盖长任务');
-  });
-
-  await test('Windows MCP 行的 config 通过内核 mcp-client 的真 Config schema，且与 resolveInstall 一致', async () => {
-    const { Config } = await import(pathToFileURL(join(dirs.client, 'lib/index.js')).href);
-    const row = rows.get('mcp-kimi-cu-windows');
-    const fakeWindows = { platform: 'win32', env: { LOCALAPPDATA: 'C:\\Users\\t\\AppData\\Local' } };
-    const baseUrl = pathToFileURL(join(packageDir, 'index.js')).href;
-    const command = typeof row.config.command === 'string'
-      ? row.config.command
-      : evaluateExpression(row.config.command.__jsExpr, baseUrl, fakeWindows);
-    const args = Array.isArray(row.config.args)
-      ? row.config.args
-      : evaluateExpression(row.config.args.__jsExpr, baseUrl, fakeWindows);
-    const resolved = Config({ ...row.config, command, args });
-    assert.equal(resolved.command, 'C:\\Users\\t\\AppData\\Local\\Kimi Computer Use\\kimi-cu.exe');
-    assert.deepEqual(resolved.args, ['mcp']);
-    assert.equal(resolved.failOnStartupError, true);
-    const expected = resolveInstall({ platform: 'win32', env: fakeWindows.env, exists: () => false });
-    assert.equal(resolved.command, expected.mcp.command, 'patch 表达式与宿主检测必须用同一套路径规则');
+  await test('patch 能被内核 ' + kernel.version + ' 装载时用的 YAML 方言读懂，三行都在', () => {
+    assert.deepEqual([...rows.keys()].sort(), [...ROW_IDS].sort(), '解析出来该只有这三行');
   });
 
   await test('两条技能行的 config 通过内核 skill-filesystem 的真 Config schema，表达式落回对应目录', async () => {

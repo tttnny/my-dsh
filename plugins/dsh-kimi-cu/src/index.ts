@@ -1,9 +1,13 @@
 /**
  * @lynn123411/dsh-kimi-cu 的宿主半边。
  *
- * 做三件事：注册 `kimi_cu_status` 工具、把状态路由挂到 Connection 的 /api 通道、
- * 启动时做一次探测并在缺装时写一条带安装命令的 warning。MCP 连接本身不在这里，
- * 它由 patch 里那两条带平台守卫的 `dsh-mcp-client` 行负责。
+ * 做四件事：注册 `kimi_cu_status` 工具、把状态路由挂到 Connection 的 /api 通道、
+ * 启动时做一次探测并在缺装时写一条带安装命令的 warning、把 KimiCU 的 MCP 连接
+ * 交给宿主的 `mcpManager` 注册。
+ *
+ * MCP 连接走管理器而不是 patch 里的静态行：命令由探测器给出，与状态卡、工具说的是
+ * 同一份路径；管理器还统一提供状态、重启与探测。管理器不可用时插件照常加载，只是
+ * 没有 `mcp__kimi-cu__*` 工具。
  */
 
 import { defineTool } from '@deepseek-ai/dsh-tools';
@@ -21,6 +25,33 @@ export const inject = ['tools'];
 
 /** 模型看到的工具名。 */
 const TOOL_NAME = 'kimi_cu_status';
+
+/** 注册给 MCP 管理器的服务器名，同时是 `mcp__kimi-cu__*` 的工具命名空间。 */
+const MCP_SERVER_NAME = 'kimi-cu';
+
+/** KimiCU 的 js 里可能跑长循环；内核默认 60 秒就取消一次调用，这里留 5 分钟。 */
+const MCP_TOOL_TIMEOUT_MS = 300_000;
+
+/**
+ * 管理器里本插件用到的那一面。
+ *
+ * 只写形状不引包：本插件不依赖 `@deepseek-ai/dsh-mcp-manager`，管理器缺失时整块
+ * 注入不激活，插件其余部分照常工作。
+ */
+interface McpManagerFace {
+  /**
+   * 注册一个随插件生命周期存在的服务器。
+   * @param name - 服务器名与工具命名空间。
+   * @param entry - 传输方式、命令与预算。
+   * @returns 撤销这次注册的函数。
+   */
+  register: (name: string, entry: {
+    transport: 'stdio';
+    command: string;
+    args: string[];
+    toolCallTimeoutMs: number;
+  }) => () => void;
+}
 
 /**
  * 插件本体。
@@ -65,6 +96,27 @@ export function apply(ctx: Context): void {
       .connection.fetch.register(route);
     return () => {
       void Promise.resolve(dispose()).catch(() => {});
+    };
+  });
+
+  // MCP 连接交给管理器：命令取自同一次探测，平台不受支持时探测器给 null，这里就不注册。
+  ctx.inject(['mcpManager'], (mcpCtx) => {
+    let dispose: (() => void) | undefined;
+    let stopped = false;
+    void detect()
+      .then((status) => {
+        if (stopped || status.mcp === null) return;
+        dispose = (mcpCtx as Context & { mcpManager: McpManagerFace }).mcpManager.register(MCP_SERVER_NAME, {
+          transport: 'stdio',
+          command: status.mcp.command,
+          args: status.mcp.args,
+          toolCallTimeoutMs: MCP_TOOL_TIMEOUT_MS,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      stopped = true;
+      dispose?.();
     };
   });
 

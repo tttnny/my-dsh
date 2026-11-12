@@ -2,23 +2,27 @@
 
 写给维护者。用户面向的说明在 [README.md](./README.md)。
 
-## 五行落在哪
+## 三行落在哪
 
-`cordis.patch.yml` 只有一层 `insert`，五行都在根层：
+`cordis.patch.yml` 只有一层 `insert`，三行都在根层：
 
 | 行 id | 挂的包 | 作用 |
 | --- | --- | --- |
-| `dsh-kimi-cu` | 本包 | 宿主半边（`kimi_cu_status` 工具 + `/api/dsh-kimi-cu/status` 路由）与浏览器半边（插件页状态卡） |
-| `mcp-kimi-cu-macos` | `@deepseek-ai/dsh-mcp-client` | stdio 连 `/Applications/KimiCU.app/Contents/MacOS/kimi-cu mcp -s user` |
-| `mcp-kimi-cu-windows` | `@deepseek-ai/dsh-mcp-client` | stdio 连 `%LOCALAPPDATA%\Kimi Computer Use\kimi-cu.exe mcp`（`KIMI_CU_WINDOWS_EXE` 可覆盖） |
+| `dsh-kimi-cu` | 本包 | 宿主半边（`kimi_cu_status` 工具 + `/api/dsh-kimi-cu/status` 路由 + MCP 注册）与浏览器半边（插件页状态卡） |
 | `skill-kimi-cu-macos` | `@deepseek-ai/dsh-skill-filesystem` | 只扫本包 `skills/macos` |
 | `skill-kimi-cu-windows` | `@deepseek-ai/dsh-skill-filesystem` | 只扫本包 `skills/windows` |
 
 根层的意思是「进全局层」：profile 里每个 preset 的 agent 都能看到这批工具与这个技能。`dsh plugin --profile web add` 之后，本包名同时进 profile 的 `dependencies` 与 `dsh.profile.bundles`，`dsh.bundle.patch` 声明的这份 patch 随即并入层栈。
 
-## 为什么 MCP 要按平台分两条
+## MCP 连接为什么不在 patch 里
 
-KimiCU 在 macOS 与 Windows 是两条产品线：macOS 只有 app 包，命令是 app 内的二进制，参数 `mcp -s user`；Windows 只有独立 runtime，默认装在 `%LOCALAPPDATA%\Kimi Computer Use`（0.3.8 起；旧目录 `%LOCALAPPDATA%\KimiCU` 由安装器建 junction 兼容），参数只有 `mcp`。两条行共用 `serverName: kimi-cu`，平台守卫保证同一时刻只有一条启用，模型看到的仍是 `mcp__kimi-cu__*`。
+宿主半边探测到可执行文件之后调用 `mcpManager.register('kimi-cu', …)`，命令与参数取自同一次探测。这样只有一处决定「连什么」：状态卡、`kimi_cu_status` 与真正的连接都读 `resolve.ts` 的同一份结果，不会出现 patch 表达式与检测逻辑各写一遍、改一处忘另一处的漂移。
+
+管理器还统一提供连接状态、重启与探测，KimiCU 的连接因此出现在与其他 MCP 服务器同一张表里。管理器缺失时 `ctx.inject(['mcpManager'])` 整块不激活，插件其余部分照常加载，只是没有 `mcp__kimi-cu__*` 工具。
+
+## 为什么 MCP 要按平台分
+
+KimiCU 在 macOS 与 Windows 是两条产品线：macOS 只有 app 包，命令是 app 内的二进制，参数 `mcp -s user`；Windows 只有独立 runtime，默认装在 `%LOCALAPPDATA%\Kimi Computer Use`（0.3.8 起；旧目录 `%LOCALAPPDATA%\KimiCU` 由安装器建 junction 兼容），参数只有 `mcp`。平台判断在 `resolve.ts`：不受支持的平台给出 `mcp: null`，宿主半边就不注册，模型看到的仍是 `mcp__kimi-cu__*`。
 
 Windows 走的是旧 13 工具 MCP，不是上游主推的 code-mode 插件：code-mode 要求用户先装 Kimi Code 插件包、宿主 PATH 有 Node 24.15+，与本插件「装完即用」的目标冲突；旧 MCP 由 runtime 自带，不需要 Node，工具面与 macOS 同族。
 
@@ -30,11 +34,11 @@ Windows 走的是旧 13 工具 MCP，不是上游主推的 code-mode 插件：co
 
 宿主半边在 `src/server/`：
 
-- `resolve.ts`：纯函数，解析安装位置与安装计划；与 patch 里的平台表达式共用同一套规则（`check-bundle` 会断言两边一致）。
+- `resolve.ts`：纯函数，解析安装位置、MCP 命令与安装计划；MCP 注册与状态卡都读它这一份（`check-bundle` 会逐平台断言）。
 - `doctor.ts`：跑 `kimi-cu doctor` 并解析。macOS 解析 `✅`/`❌` 行；Windows 解析 `version=` 与 `mcp=true`。
 - `status.ts`：把上面两样合成 `KimiCuStatus`，缓存 10 秒、并发单飞、`refresh` 绕过缓存；所有失败落进状态字段，不抛。探测整体失败时返回 `notes: ['detection-failed']` 的状态，路由与工具拿到的是状态而不是异常。
 
-Windows 的路径公式在 patch 表达式与 `resolve.ts` 的 `windowsMcpCommand` 里各有一份，必须逐字一致；`test-status` 与 `check-bundle` 会逐 env 断言。覆盖值存在时只用覆盖值，不回退到默认/旧目录；旧目录安装会同时标 `legacy-install` 与 `mcp-command-missing`，卡片按「未就绪」处理，不会在 MCP 行启动的文件不存在时报「已就绪」。
+Windows 的路径公式只在 `resolve.ts` 的 `windowsMcpCommand` 里有一份；`test-status` 与 `check-bundle` 会逐 env 断言。覆盖值存在时只用覆盖值，不回退到默认/旧目录；旧目录安装会同时标 `legacy-install` 与 `mcp-command-missing`，卡片按「未就绪」处理，不会在连接指向的文件不存在时报「已就绪」。
 
 浏览器半边在 `src/client/`：注册 `plugins.bundle.config`（key 是包名），卡片按「未安装 / 未就绪 / 已就绪 / 不支持」四种状态渲染，给官方命令、复制、重新检测与文档链接。卡片只给命令，不执行安装脚本。
 
@@ -47,11 +51,15 @@ Windows 的路径公式在 patch 表达式与 `resolve.ts` 的 `windowsMcpComman
 - Windows 安装器会替换正在使用的运行时；如果宿主正连着它，更新与连接状态都会被打断。
 - 因此卡片只给官方命令与复制，由用户在终端里执行；装好后按提示开关插件。
 
-## 为什么 MCP 那行要 failOnStartupError: true
+## 连不上时看什么
 
-KimiCU 的二进制不在 PATH 上。不设 `failOnStartupError` 时，初次连不上只写一行日志，模型看不到任何工具——用户侧的表现是「插件装了但没用」。设成 `true` 让那一行的 fiber 在激活时回滚并报错，故障当场看得见。
+KimiCU 的二进制不在 PATH 上，所以「装了但没连上」是常见状态。三条信号各管一段：
 
-代价要讲清楚：激活失败会连带销毁这条连接的重连监督器，所以装好 KimiCU 之后，要在插件页里把这个插件关一次再开一次（或重启），那一行才会重新连。宿主本身照常启动：`mcp-kimi-cu-*` 不在内核的必需启动行清单里。
+- 插件启动时探测一次，缺装就写一条带官方安装命令的 warning；
+- `kimi_cu_status` 工具随时可查，返回安装位置、版本、`doctor` 结果与安装计划；
+- 宿主的 `mcpManager` 记录这条连接的状态，重启与探测都在它那一处。
+
+注册发生在探测之后，所以装好 KimiCU 之后要在插件页里把本插件关一次再开一次（或重启），注册才会重新跑一次。
 
 ## 为什么把工具调用上限设成 5 分钟
 
@@ -59,7 +67,7 @@ KimiCU 的二进制不在 PATH 上。不设 `failOnStartupError` 时，初次连
 
 ## 一条连接服务所有 session
 
-两条 MCP 行都在根层，宿主只起一个 KimiCU MCP 连接，所有 session 共用。KimiCU 的快照与 index 缓存是连接级的：两个 session 同时操作同一个应用，后一次观察会顶掉前一次的参照。技能要求每次动作前重新观察。
+宿主只起一个 KimiCU MCP 连接，所有 session 共用。KimiCU 的快照与 index 缓存是连接级的：两个 session 同时操作同一个应用，后一次观察会顶掉前一次的参照。技能要求每次动作前重新观察。
 
 ## 技能目录为什么不能写相对路径
 
