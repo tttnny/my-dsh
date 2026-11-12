@@ -12,7 +12,8 @@ import {
 import { NS } from './locales.js';
 
 /**
- * 宿主「插件」页上的配置卡：催办阈值、「散文回复算不算汇报」、进度卡位置与「带不带折叠键」。
+ * 宿主「插件」页上的配置卡：主动汇报的默认开关、催办阈值、「散文回复算不算汇报」、
+ * 进度卡位置与「带不带折叠键」。
  *
  * 没有保存按钮：数字框失焦或回车时写一次，打字期间只改草稿；开关与位置在动作发生的那一刻写。
  * 写入交给设置表单自己排队（它按 revision 串行化），卡片只负责把失败就地报出来。
@@ -84,6 +85,22 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
 
   return (
     <div className="dsh-notify-config">
+      <div className="dsh-notify-config-row">
+        <div className="dsh-notify-config-info">
+          <div className="dsh-notify-config-label">{t('config.defaultEnabled.label')}</div>
+          <div className="dsh-notify-config-hint">{t('config.defaultEnabled.hint')}</div>
+        </div>
+        <div className="dsh-notify-config-field">
+          <Switch
+            checked={config.defaultEnabled}
+            label={t('config.defaultEnabled.label')}
+            onChange={(next: boolean) => {
+              setConfig({ ...config, defaultEnabled: next });
+              write('defaultEnabled', next);
+            }}
+          />
+        </div>
+      </div>
       <div className="dsh-notify-config-row">
         <div className="dsh-notify-config-info">
           <div className="dsh-notify-config-label">{t('config.threshold.label')}</div>

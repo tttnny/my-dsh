@@ -17,6 +17,9 @@ import type { Context } from '@deepseek-ai/cordis';
  * 散文正文也清零（开关见 `resetOnProse`）；新回合（`step === 1`）或用户插话也清零
  * ——回合边界取宿主给的 `step`，不按消息来源枚举。
  *
+ * 会话关掉主动汇报时（`readEnabled` 为假）不催，计数也一并清零：重新打开时从零
+ * 开始算，不会一开就催。
+ *
  * 注入走 `agent/pre-step` 的 `enter.messages`：消息落进该步的 user 批次并被日志
  * 记录，来源不是 `user`，所以对话流里画成一行 context 而不是用户发言。
  */
@@ -61,26 +64,28 @@ export function nudgeSummary(count: number): string {
 /** 每个会话的催办状态机；纯内存，不碰 cordis。 */
 export interface NudgeController {
   /** 模型汇报过了：清零。 */
-  notify(session: object): void;
+  notify(session: Session): void;
   /** 模型写了一段散文回复：开关打开时清零。 */
-  prose(session: object): void;
+  prose(session: Session): void;
   /** 一次根工具调用：计数 +1。 */
-  toolCall(session: object): void;
+  toolCall(session: Session): void;
   /**
    * 一步开始前问一次要不要催。
    * @param session - 这一步所属的会话。
    * @param freshInput - 这一步是否重新计时：新回合的第一步，或收件箱里有用户插话。
    * @returns 要注入的消息；不催时 `null`。
    */
-  step(session: object, freshInput: boolean): UserMessage | null;
+  step(session: Session, freshInput: boolean): UserMessage | null;
 }
 
-/** 造一个催办状态机要现读的两件事。 */
+/** 造一个催办状态机要现读的三件事。 */
 export interface NudgeOptions {
   /** 现读阈值；0 表示关闭。 */
   readThreshold: () => number;
   /** 现读「散文回复算不算汇报」。 */
   readProseResets: () => boolean;
+  /** 现读这个会话是否开启主动汇报。 */
+  readEnabled: (session: Session) => boolean;
 }
 
 /**
@@ -89,7 +94,7 @@ export interface NudgeOptions {
  * @returns 状态机。
  */
 export function createNudgeController(options: NudgeOptions): NudgeController {
-  const counts = new WeakMap<object, number>();
+  const counts = new WeakMap<Session, number>();
 
   return {
     notify(session) {
@@ -103,6 +108,11 @@ export function createNudgeController(options: NudgeOptions): NudgeController {
       counts.set(session, (counts.get(session) ?? 0) + 1);
     },
     step(session, freshInput) {
+      // 关掉的会话不催，也不留计数：重新打开时从零开始，不会一开就催。
+      if (!options.readEnabled(session)) {
+        counts.set(session, 0);
+        return null;
+      }
       const threshold = options.readThreshold();
       if (freshInput || threshold <= 0) {
         counts.set(session, 0);

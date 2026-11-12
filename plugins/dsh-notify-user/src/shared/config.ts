@@ -29,3 +29,56 @@ export type CardPlacement = typeof CARD_PLACEMENTS[number];
 
 /** 默认把进度卡放在步骤组边界。 */
 export const DEFAULT_CARD_PLACEMENT: CardPlacement = 'boundary';
+
+/** 会话没有自己的选择时，主动汇报默认开着。 */
+export const DEFAULT_ENABLED = true;
+
+/**
+ * 按会话的选择：只记与默认值不同的那些会话，缺一条表示跟随默认值。
+ * 键是会话 id，值是那个会话开关的落定值。
+ */
+export type SessionOverrides = Readonly<Record<string, boolean>>;
+
+/**
+ * 一个会话是否开启主动汇报：会话有自己的选择就用它，否则用默认值。
+ * @param overrides - 按会话的选择。
+ * @param fallback - 会话没有自己的选择时用的默认值。
+ * @param sessionId - 会话 id。
+ * @returns 这个会话是否开启主动汇报。
+ */
+export function enabledFor(
+  overrides: SessionOverrides | undefined,
+  fallback: boolean,
+  sessionId: string,
+): boolean {
+  const explicit = overrides?.[sessionId];
+  return typeof explicit === 'boolean' ? explicit : fallback;
+}
+
+/**
+ * 算出写入一个会话的选择之后的那份字典。
+ *
+ * 切回默认值就删掉那条：字典里只留与默认值不同的会话，配置不会随会话数一直长。
+ * @param overrides - 当前的选择。
+ * @param sessionId - 改的是哪个会话。
+ * @param enabled - 这个会话改成开还是关。
+ * @param fallback - 默认值；改成的值与它相同时不留记录。
+ * @returns 新的选择；没有变化时返回同一个对象，调用方据此跳过写入。
+ */
+export function overridesAfterWrite(
+  overrides: SessionOverrides | undefined,
+  sessionId: string,
+  enabled: boolean,
+  fallback: boolean,
+): SessionOverrides {
+  const current = overrides ?? {};
+  const hasEntry = Object.hasOwn(current, sessionId);
+  if (enabled === fallback) {
+    if (!hasEntry) return current;
+    const next = { ...current };
+    delete next[sessionId];
+    return next;
+  }
+  if (hasEntry && current[sessionId] === enabled) return current;
+  return { ...current, [sessionId]: enabled };
+}

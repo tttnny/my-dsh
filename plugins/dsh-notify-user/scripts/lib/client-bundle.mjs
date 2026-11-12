@@ -9,13 +9,16 @@ const require = createRequire(import.meta.url);
 
 /** ui-primitives 的薄桩：只顶掉 bundle 真的 require 的那几个名字。 */
 const primitives = {
+  Button: () => null,
   IconChevronDownOutlineRegular: () => null,
+  IconInfoOutlineRegular: () => null,
   Input: () => null,
   MarkdownDelegateProvider: (props) => props.children,
   MarkdownText: (props) => props.text,
   Pill: () => null,
   Switch: () => null,
   TextShimmer: (props) => props.children,
+  Tooltip: (props) => props.children,
 };
 
 /**

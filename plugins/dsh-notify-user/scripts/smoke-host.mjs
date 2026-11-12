@@ -44,15 +44,17 @@ function host() {
  * 起一份装好本插件的宿主，并给出驱动三条事件的入口。
  * @param {number} threshold - 催办阈值。
  * @param {object} [extra] - 配置里其余的字段（例如 `resetOnProse`）。
+ * @param {object} [config] - 直接给一份配置替身，用来验「现读」；省略时按前两个参数造。
  */
-function harness(threshold, extra = {}) {
+function harness(threshold, extra = {}, config = new plugin.Config({ nudgeAfter: threshold, ...extra })) {
   const ctx = host();
-  plugin.apply(ctx, new plugin.Config({ nudgeAfter: threshold, ...extra }));
+  plugin.apply(ctx, config);
   const signal = new AbortController().signal;
   let calls = 0;
   let seq = 0;
   return {
     ctx,
+    signal,
     tool: ctx.tools.get('notify_user'),
     /** 一次模型直接发起的工具调用（根调用）。 */
     rootCall(agent, name = 'read', result = { isError: false, content: [] }) {
@@ -110,13 +112,13 @@ function harness(threshold, extra = {}) {
 }
 
 /** 一个顶层会话的假 agent。 */
-function mainAgent() {
-  return { id: 'main', session: { header: {} } };
+function mainAgent(id = 'session-main') {
+  return { id: 'main', session: { header: { id } } };
 }
 
 /** 一个子代理会话的假 agent。 */
 function childAgent() {
-  return { id: 'child', session: { header: { origin: 'subagent' } } };
+  return { id: 'child', session: { header: { origin: 'subagent', id: 'session-child' } } };
 }
 
 /** 从一步的决策里取出催办消息。 */
@@ -129,7 +131,7 @@ await test('导出的行身份与包内 cordis.patch.yml 那条装配行同名',
   assert.deepEqual(plugin.inject, ['tools']);
 });
 
-await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默认开，位置默认边界', () => {
+await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默认开，位置默认边界，主动汇报默认开', () => {
   assert.equal(new plugin.Config({}).nudgeAfter.get(), 10);
   assert.equal(new plugin.Config({ nudgeAfter: 0 }).nudgeAfter.get(), 0);
   assert.equal(new plugin.Config({ nudgeAfter: 12 }).nudgeAfter.get(), 12);
@@ -142,6 +144,11 @@ await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默
   assert.equal(new plugin.Config({}).cardPlacement.get(), 'boundary');
   assert.equal(new plugin.Config({ cardPlacement: 'inline' }).cardPlacement.get(), 'inline');
   assert.throws(() => new plugin.Config({ cardPlacement: 'nope' }), /cardPlacement/);
+  assert.equal(new plugin.Config({}).defaultEnabled.get(), true);
+  assert.equal(new plugin.Config({ defaultEnabled: false }).defaultEnabled.get(), false);
+  assert.deepEqual(new plugin.Config({}).sessionOverrides.get(), {});
+  assert.deepEqual(new plugin.Config({ sessionOverrides: { 'session-main': false } }).sessionOverrides.get(), { 'session-main': false });
+  assert.throws(() => new plugin.Config({ sessionOverrides: { 'session-main': 'no' } }), /sessionOverrides/);
 });
 
 const first = harness(8);
@@ -298,6 +305,58 @@ await test('子代理不计数、不注入', async () => {
   const h = harness(8);
   for (let index = 0; index < 20; index += 1) await h.rootCall(agent);
   assert.equal(noticeOf(await h.step(agent)), undefined);
+});
+
+await test('关掉的会话不催，开着的会话照常催', async () => {
+  const off = mainAgent();
+  const on = mainAgent('session-other');
+  const h = harness(2, { sessionOverrides: { 'session-main': false } });
+  for (let index = 0; index < 5; index += 1) await h.rootCall(off);
+  assert.equal(noticeOf(await h.step(off)), undefined, '关掉的会话不该催');
+  for (let index = 0; index < 2; index += 1) await h.rootCall(on);
+  assert.ok(noticeOf(await h.step(on)) !== undefined, '开着的会话照常催');
+});
+
+await test('默认关掉时新会话不催，显式打开的会话照常催', async () => {
+  const fresh = mainAgent();
+  const optedIn = mainAgent('session-other');
+  const h = harness(2, { defaultEnabled: false, sessionOverrides: { 'session-other': true } });
+  for (let index = 0; index < 5; index += 1) await h.rootCall(fresh);
+  assert.equal(noticeOf(await h.step(fresh)), undefined, '默认关掉时不催');
+  for (let index = 0; index < 2; index += 1) await h.rootCall(optedIn);
+  assert.ok(noticeOf(await h.step(optedIn)) !== undefined, '显式打开的会话照常催');
+});
+
+await test('开关现读：会话中途打开后下一步就催', async () => {
+  let enabled = false;
+  const live = {
+    nudgeAfter: { get: () => 2 },
+    resetOnProse: { get: () => true },
+    collapsible: { get: () => true },
+    cardPlacement: { get: () => 'boundary' },
+    defaultEnabled: { get: () => enabled },
+    sessionOverrides: { get: () => ({}) },
+  };
+  const agent = mainAgent();
+  const h = harness(2, {}, live);
+  for (let index = 0; index < 5; index += 1) await h.rootCall(agent);
+  assert.equal(noticeOf(await h.step(agent)), undefined, '关着的时候不催');
+  enabled = true;
+  for (let index = 0; index < 2; index += 1) await h.rootCall(agent);
+  assert.ok(noticeOf(await h.step(agent)) !== undefined, '打开后按新的计数催');
+});
+
+await test('关掉的会话里没有 notify_user 工具，开着的会话里有', async () => {
+  const off = mainAgent();
+  const on = mainAgent('session-other');
+  const h = harness(8, { sessionOverrides: { 'session-main': false } });
+  const modelSelection = { provider: 'test', model: 'test' };
+  const offSet = await h.ctx.tools.resolve({ agent: off, modelSelection, signal: h.signal });
+  assert.equal(offSet.view(off).has('notify_user'), false, '关掉的会话不该有这个工具');
+  offSet.dispose();
+  const onSet = await h.ctx.tools.resolve({ agent: on, modelSelection, signal: h.signal });
+  assert.equal(onSet.view(on).has('notify_user'), true, '开着的会话应当有这个工具');
+  onSet.dispose();
 });
 
 await test('下游拒绝这一步时不追加消息，也不吞掉这次催办', async () => {

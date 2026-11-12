@@ -1,38 +1,47 @@
 /**
- * 配置卡与宿主配置表单之间的接线：座位、包名，以及「读当前配置」。
+ * 配置卡、菜单开关与宿主配置表单之间的接线：座位、包名，以及「读当前配置」。
  *
- * 卡片（`ConfigCard.tsx`）、进度卡（`NotifyRow.tsx` / `NotifyNodeView.tsx`）与自检
- * （`scripts/smoke-client.mjs`）都从这里取字面量，所以「key 写歪一个字符」这类静默失败
- * 不会两边各写一份。与宿主共用的命名空间/默认值在 `src/shared/config.ts`，这里只再导出。
+ * 卡片（`ConfigCard.tsx`）、菜单开关（`EnabledToggle.tsx`）、进度卡（`NotifyRow.tsx` /
+ * `NotifyNodeView.tsx`）与自检（`scripts/smoke-client.mjs`）都从这里取字面量，所以
+ * 「key 写歪一个字符」这类静默失败不会两边各写一份。与宿主共用的命名空间/默认值/
+ * 按会话的判定在 `src/shared/config.ts`，这里只再导出。
  */
 
 import {
   CARD_PLACEMENTS,
   DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
+  DEFAULT_ENABLED,
   DEFAULT_NUDGE_AFTER,
   DEFAULT_RESET_ON_PROSE,
   MAX_NUDGE_AFTER,
   type CardPlacement,
+  type SessionOverrides,
 } from '../shared/config.js';
 
 export {
   CARD_PLACEMENTS,
   DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
+  DEFAULT_ENABLED,
   DEFAULT_NUDGE_AFTER,
   DEFAULT_RESET_ON_PROSE,
   MAX_NUDGE_AFTER,
   SETTINGS_NAMESPACE,
+  enabledFor,
+  overridesAfterWrite,
 } from '../shared/config.js';
 
-export type { CardPlacement } from '../shared/config.js';
+export type { CardPlacement, SessionOverrides } from '../shared/config.js';
 
 /** 本插件 bundle 的包名：`plugins.bundle.config` 的 key 就是它。 */
 export const BUNDLE_NAME = '@lynn123411/dsh-notify-user';
 
 /** 宿主「插件」页上的配置座位。 */
 export const BUNDLE_CONFIG_SLOT = 'plugins.bundle.config';
+
+/** 模型与推理等级菜单里的会话选项座位：菜单开关注册在这里。 */
+export const MODEL_OPTIONS_SLOT = 'conversation.input.model.options';
 
 /** 设置表单快照里本卡片读到的那几件。 */
 export interface ConfigFormSnapshot {
@@ -61,6 +70,8 @@ export interface ClientConfig {
   resetOnProse: boolean;
   collapsible: boolean;
   cardPlacement: CardPlacement;
+  defaultEnabled: boolean;
+  sessionOverrides: SessionOverrides;
 }
 
 /** 字段缺失或配置表单还没就绪时的那份快照；默认值只在这里写一遍。 */
@@ -69,7 +80,23 @@ export const DEFAULT_CLIENT_CONFIG: ClientConfig = {
   resetOnProse: DEFAULT_RESET_ON_PROSE,
   collapsible: DEFAULT_COLLAPSIBLE,
   cardPlacement: DEFAULT_CARD_PLACEMENT,
+  defaultEnabled: DEFAULT_ENABLED,
+  sessionOverrides: {},
 };
+
+/**
+ * 读按会话的选择：只收布尔值，别的脏数据当没写。
+ * @param value - 配置里的 `sessionOverrides` 字段。
+ * @returns 会话 id 到开关值的字典。
+ */
+function readOverrides(value: unknown): Record<string, boolean> {
+  if (!isRecord(value)) return {};
+  const overrides: Record<string, boolean> = {};
+  for (const [sessionId, enabled] of Object.entries(value)) {
+    if (typeof enabled === 'boolean') overrides[sessionId] = enabled;
+  }
+  return overrides;
+}
 
 /**
  * 读当前配置。
@@ -90,5 +117,8 @@ export function readConfig(form: ConfigForm): ClientConfig | undefined {
   const collapsible = typeof rawCollapsible === 'boolean' ? rawCollapsible : DEFAULT_CLIENT_CONFIG.collapsible;
   const rawPlacement = value['cardPlacement'];
   const cardPlacement = CARD_PLACEMENTS.find(placement => placement === rawPlacement) ?? DEFAULT_CLIENT_CONFIG.cardPlacement;
-  return { nudgeAfter, resetOnProse, collapsible, cardPlacement };
+  const rawDefaultEnabled = value['defaultEnabled'];
+  const defaultEnabled = typeof rawDefaultEnabled === 'boolean' ? rawDefaultEnabled : DEFAULT_CLIENT_CONFIG.defaultEnabled;
+  const sessionOverrides = readOverrides(value['sessionOverrides']);
+  return { nudgeAfter, resetOnProse, collapsible, cardPlacement, defaultEnabled, sessionOverrides };
 }

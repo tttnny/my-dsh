@@ -1,0 +1,54 @@
+/* 模型与推理等级菜单里的「主动汇报」开关。 */
+
+.dsh-notify-toggle-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.dsh-notify-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dsh-notify-toggle-info {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* 开关的点击区铺满整行，但不包住信息按钮。 */
+.dsh-notify-toggle-row .dsh-notify-toggle-switch {
+  position: static;
+}
+
+.dsh-notify-toggle-switch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--dsw-radius-md);
+}
+
+.dsh-notify-toggle-row:has(.dsh-notify-toggle-switch:focus-visible) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+@media (hover: hover) {
+  .dsh-notify-toggle-row:has(.dsh-notify-toggle-switch:not(:disabled)):hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}

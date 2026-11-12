@@ -29,7 +29,13 @@ const whileServedCalls = [];
 const errors = [];
 
 /** 可变的配置表单：改字段会通知订阅者，用来验「位置切换会重挂定义」。 */
-let configValue = { nudgeAfter: 10, collapsible: true, cardPlacement: 'boundary' };
+let configValue = {
+  nudgeAfter: 10,
+  collapsible: true,
+  cardPlacement: 'boundary',
+  defaultEnabled: true,
+  sessionOverrides: {},
+};
 const configListeners = new Set();
 const configForm = {
   getSnapshot: () => ({ status: 'ready', value: configValue }),
@@ -160,6 +166,12 @@ check('兜底进度卡注册在 tool.call.toolview 且 key 是 notify_user', too
 check('兜底进度卡带本插件的字典命名空间', toolview?.options?.locale === 'notifyUser');
 check('兜底进度卡组件是个函数', typeof toolview?.component === 'function');
 check('兜底进度卡注入了一张配置表单', typeof toolview?.options?.inject === 'function' && toolview.options.inject().form !== undefined);
+
+const menuToggle = registrations.find((entry) => entry.options?.name === 'conversation.input.model.options');
+check('菜单开关注册在模型与推理等级菜单的选项座位', menuToggle?.options?.id === 'notify-user-enabled');
+check('菜单开关带本插件的字典命名空间', menuToggle?.options?.locale === 'notifyUser');
+check('菜单开关组件是个函数', typeof menuToggle?.component === 'function');
+check('菜单开关注入了一张配置表单', typeof menuToggle?.options?.inject === 'function' && menuToggle.options.inject().form !== undefined);
 
 const configCard = registrations.find((entry) => entry.options?.name === 'plugins.bundle.config');
 check('配置卡注册在 plugins.bundle.config 且 key 是包名', configCard?.options?.key === pkgName);

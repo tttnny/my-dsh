@@ -13,27 +13,32 @@ import {
   BUNDLE_CONFIG_SLOT,
   BUNDLE_NAME,
   DEFAULT_CARD_PLACEMENT,
+  MODEL_OPTIONS_SLOT,
   SETTINGS_NAMESPACE,
   readConfig,
 } from './config.js';
+import { EnabledToggle } from './EnabledToggle.js';
 import { NS, en, zh } from './locales.js';
 import { NOTIFY_NODE_KIND, createNotifyDefinition } from './notify-node.js';
 import { NotifyNodeView } from './NotifyNodeView.js';
 import { NotifyRow } from './NotifyRow.js';
 import configCss from './ConfigCard.css';
 import cardCss from './NotifyCard.css';
+import toggleCss from './EnabledToggle.css';
 
 export { NS } from './locales.js';
 
 /**
- * @lynn123411/dsh-notify-user 的浏览器半边：进度卡 + 插件页配置卡。
+ * @lynn123411/dsh-notify-user 的浏览器半边：进度卡 + 菜单开关 + 插件页配置卡。
  *
- * 三件事各有归属：
+ * 四件事各有归属：
  *   1. 对话节点定义把 `notify_user` 的每次调用投影成声明了 `process` 位置的节点，
  *      卡片因此站在步骤组外，前后各断一个原生子折叠。
  *   2. `tool.call.toolview` 保留同一张卡片的兜底渲染：通用工具定义拿得到工具名时
  *      （例如节点定义没注册上），它补建的工具行由这里画成同一张卡。
- *   3. `plugins.bundle.config` 画催办阈值的配置卡；宿主没服务这份配置时整块不出现，
+ *   3. `conversation.input.model.options` 画按会话的「主动汇报」开关，与官方智能体
+ *      团队开关同处一个菜单；写回的是本插件配置里的按会话字典。
+ *   4. `plugins.bundle.config` 画配置卡；宿主没服务这份配置时整块不出现，
  *      所以注册包在 `configForms.whileServed` + `slots.inject` 里。
  *
  * 样式在 `apply()` 里注入，标签带 `data-plugin` / `data-plugin-css`：client-modules
@@ -50,6 +55,7 @@ export const inject = ['configForms', 'slots', 'locale', 'uiConversation'];
 const SHEETS: readonly (readonly [string, string])[] = [
   ['NotifyCard.css', cardCss],
   ['ConfigCard.css', configCss],
+  ['EnabledToggle.css', toggleCss],
 ];
 
 /** 注入本插件的样式表；同一个键已存在时替换内容而不是再插一张。 */
@@ -119,6 +125,14 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({ form: ctx.configForms.get(SETTINGS_NAMESPACE) }),
   }, NotifyRow));
+
+  // 按会话的开关住在模型与推理等级菜单里，与官方智能体团队开关同处一个菜单。
+  ctx.slots.inject(MODEL_OPTIONS_SLOT, () => ctx.slots.register({
+    name: MODEL_OPTIONS_SLOT,
+    id: 'notify-user-enabled',
+    locale: NS,
+    inject: () => ({ form: ctx.configForms.get(SETTINGS_NAMESPACE) }),
+  }, EnabledToggle));
 
   ctx.effect(() => ctx.configForms.whileServed([SETTINGS_NAMESPACE], () => ctx.slots.inject(
     BUNDLE_CONFIG_SLOT,
