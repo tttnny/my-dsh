@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Model picker",
-    "description": "The model menu's first row opens a dialog listing every provider's models, searchable and favoritable."
+    "description": "Enhances the composer model menu: the model row opens a cross-provider dialog, and the reasoning row becomes a slider."
   }
 }

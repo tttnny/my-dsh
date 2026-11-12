@@ -24,6 +24,8 @@ export type ModelSubmenuLocaleKey =
   | 'picker.hintClose'
   | 'meta.effort'
   | 'meta.images'
+  | 'effort.label'
+  | 'effort.providerDefault'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -53,6 +55,8 @@ export const zh: Record<ModelSubmenuLocaleKey, string> = {
   'picker.hintClose': '关闭',
   'meta.effort': '思考',
   'meta.images': '图片输入',
+  'effort.label': '推理等级',
+  'effort.providerDefault': '默认',
 }
 
 /** English dictionary, checked complete against the zh key set. */
@@ -76,4 +80,6 @@ export const en: Record<ModelSubmenuLocaleKey, string> = {
   'picker.hintClose': 'close',
   'meta.effort': 'Effort',
   'meta.images': 'Images',
+  'effort.label': 'Reasoning effort',
+  'effort.providerDefault': 'Default',
 }

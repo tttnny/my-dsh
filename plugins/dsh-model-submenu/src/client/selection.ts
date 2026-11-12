@@ -9,6 +9,7 @@
  */
 
 import type { ModelReasoning } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 
 /** One complete selection, as the directory's `select` takes it. */
 export interface Selection {
@@ -90,6 +91,22 @@ export function planModelCommit(
     model,
     ...carried ? { reasoningEffort: remembered } : {},
   }
+}
+
+/**
+ * The selection in force, or null while the Host has not resolved one.
+ * @param state - the session's directory snapshot.
+ * @returns the live selection, with the effort only when one is set.
+ */
+export function selectionOf(state: ModelDirectoryState): Selection | null {
+  if (state.current === null) return null
+  return state.current.reasoningEffort === undefined
+    ? { provider: state.current.provider, model: state.current.model }
+    : {
+      provider: state.current.provider,
+      model: state.current.model,
+      reasoningEffort: state.current.reasoningEffort,
+    }
 }
 
 /**

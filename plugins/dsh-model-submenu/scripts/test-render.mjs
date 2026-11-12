@@ -1,10 +1,10 @@
 /**
- * 渲染自检：用真 react 把「菜单改道」与「常驻浮层里的弹窗」画进 jsdom。
+ * 渲染自检：用真 react 把「菜单桥」与「常驻浮层里的弹窗」画进 jsdom。
  *
  * 锁住这几件事：
  *
  *   1. 宿主根菜单的第一格被拦下：先关菜单、再把开合请求交给常驻的 store，
- *      宿主自己那格的下钻不执行；第二格与非菜单项一概不动；
+ *      宿主自己那格的下钻不执行；第二格改成滑块，点标签只把焦点交给滑块；
  *   2. 弹窗只在 store 指向本会话时出现，会话不可选时整块不渲染；
  *   3. 弹窗列出全部供应商的模型，收藏的排前面，星标是独立控件、点它不换模型；
  *   4. 点模型立即提交并关闭；点当前这个模型不提交；被拒时留在弹窗并弹提示；
@@ -79,9 +79,9 @@ const ctx = {
   sessions: { subagentAddress: () => undefined },
 }
 exported.apply(ctx)
-const redirectEntry = registrations.find((entry) => entry.options.name === 'conversation.input.model.options')
+const bridgeEntry = registrations.find((entry) => entry.options.name === 'conversation.input.model.options')
 const hostEntry = registrations.find((entry) => entry.options.name === 'conversation.input.overlay')
-assert.ok(redirectEntry !== undefined, '菜单改道没有注册')
+assert.ok(bridgeEntry !== undefined, '菜单桥没有注册')
 assert.ok(hostEntry !== undefined, '浮层弹窗没有注册')
 
 // ── 共享目录：两个供应商，magpie 三个模型，a6api 一个 ─────────────────────────
@@ -133,6 +133,7 @@ const loads = []
 const selections = []
 const outcomes = []
 const dismissals = []
+const failures = []
 const picker = exported.createPickerStore()
 /** Open and close through act, so React flushes the store change inside the test. */
 const openPicker = () => { act(() => { picker.open('session-1') }) }
@@ -192,9 +193,9 @@ const face = {
 
 let container
 let viewRoot
-/** The Host menu surface a redirect test mounts into, when there is one. */
+/** The Host menu surface a bridge test mounts into, when there is one. */
 let surface
-/** What the Host's own cells did — the redirect must keep these empty. */
+/** What the Host's own cells did — the bridge must keep these empty. */
 const hostCellClicks = []
 
 function mount(element) {
@@ -204,22 +205,28 @@ function mount(element) {
   act(() => { viewRoot.render(element) })
 }
 
+/** One Host cell: label, value, chevron, and the Host's own click handler. */
+function hostCell(name, label, value) {
+  const cell = document.createElement('button')
+  cell.type = 'button'
+  cell.setAttribute('role', 'menuitem')
+  cell.setAttribute('data-cell', name)
+  cell.innerHTML = `<span class="_host_cellLabel">${label}</span>`
+    + `<span class="_host_cellValue">${value}</span>`
+    + '<svg class="_host_cellChevron"></svg>'
+  cell.addEventListener('click', () => { hostCellClicks.push(name) })
+  return cell
+}
+
 /**
- * Mount the redirect inside a stand-in for the Host's root menu: one surface
- * holding two `role="menuitem"` cells, each with its own Host handler.
+ * Mount the bridge inside a stand-in for the Host's root menu: one surface
+ * holding the two cells the Host draws itself, with the effort cell carrying
+ * the same three children the Host renders.
  */
-function mountRedirect(element) {
+function mountBridge(element) {
   surface = document.createElement('div')
   surface.setAttribute('data-menu-material', '')
-  for (const [name, label] of [['model', '模型'], ['effort', '推理等级']]) {
-    const cell = document.createElement('button')
-    cell.type = 'button'
-    cell.setAttribute('role', 'menuitem')
-    cell.setAttribute('data-cell', name)
-    cell.textContent = label
-    cell.addEventListener('click', () => { hostCellClicks.push(name) })
-    surface.append(cell)
-  }
+  surface.append(hostCell('model', '模型', 'Model A'), hostCell('effort', '推理等级', 'High'))
   document.body.append(surface)
   container = document.createElement('div')
   surface.append(container)
@@ -227,18 +234,49 @@ function mountRedirect(element) {
   act(() => { viewRoot.render(element) })
 }
 
+/** Fresh bridge on a fresh stand-in menu, with the catalog reset to the default. */
+function mountFreshBridge(props) {
+  unmount()
+  setState(snapshot())
+  mountBridge(createElement(bridgeEntry.component, props ?? bridgeProps))
+}
+
 function unmount() {
-  act(() => { viewRoot.unmount() })
-  container.remove()
+  if (viewRoot !== undefined) act(() => { viewRoot.unmount() })
+  viewRoot = undefined
+  container?.remove()
+  container = undefined
   surface?.remove()
   surface = undefined
 }
 
 /** One cell of the stand-in menu surface. */
 const cell = (name) => surface.querySelector(`[data-cell="${name}"]`)
+const cellValue = (name) => cell(name).querySelector("span[class*='cellValue']")
+const cellChevron = (name) => cell(name).querySelector("svg[class*='cellChevron']")
+const slider = () => cell('effort').querySelector('[role="slider"]')
+const ticks = () => slider() === null ? [] : [...slider().querySelectorAll('[class*="sliderTick"]')]
 
 const click = (element) => {
   act(() => { element.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })) })
+}
+// jsdom has no PointerEvent; React dispatches by native event type, so a
+// MouseEvent carrying the pointer type drives the same handler.
+const pointer = (type, element, clientX) => {
+  act(() => {
+    element.dispatchEvent(new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX }))
+  })
+}
+const key = (element, name) => {
+  act(() => {
+    element.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
+  })
+}
+/** jsdom does no layout: give the slider the 100px track it would have on screen. */
+const withTrack = () => {
+  slider().getBoundingClientRect = () => ({
+    left: 0, width: 100, top: 0, height: 20, right: 100, bottom: 20, x: 0, y: 0, toJSON: () => ({}),
+  })
 }
 const flush = async () => { await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0) }) }) }
 const dialog = () => document.querySelector('[role="dialog"]')
@@ -266,36 +304,156 @@ async function test(name, fn) {
 
 globalThis.localStorage.clear()
 
-const redirectProps = {
+const bridgeProps = {
+  ...face,
   locked: false,
   dismiss: () => { dismissals.push('dismiss') },
-  reportFailure: () => {},
-  sessionId: 'session-1',
-  picker,
-  t,
+  reportFailure: (message) => { failures.push(message) },
 }
 
 await test('点宿主的第一格：先关菜单，再把开合请求交给 store，宿主自己的下钻不执行', () => {
   closePicker()
   dismissals.length = 0
   hostCellClicks.length = 0
-  mountRedirect(createElement(redirectEntry.component, redirectProps))
+  mountFreshBridge()
   click(cell('model'))
   assert.deepEqual(dismissals, ['dismiss'])
   assert.equal(picker.getSnapshot().sessionId, 'session-1')
   assert.deepEqual(hostCellClicks, [], '宿主那格的下钻必须被拦下')
 })
 
-await test('点第二格推理等级：不拦，宿主照旧下钻', () => {
-  dismissals.length = 0
+await test('第二行不再下钻：点标签只把焦点交给滑块', () => {
   hostCellClicks.length = 0
-  click(cell('effort'))
-  assert.deepEqual(hostCellClicks, ['effort'])
-  assert.deepEqual(dismissals, [])
-  assert.equal(picker.getSnapshot().sessionId, 'session-1', '第二格不该改 store')
+  click(cell('effort').querySelector("span[class*='cellLabel']"))
+  assert.deepEqual(hostCellClicks, [], '推理等级那一行不该再弹档位列表')
+  assert.equal(document.activeElement, slider(), '焦点必须落在滑块上，否则键盘够不到')
+})
+
+await test('滑块按档位画刻度，旋钮停在当前档', () => {
+  assert.notEqual(slider(), null)
+  assert.equal(ticks().length, 3)
+  assert.equal(slider().getAttribute('aria-valuenow'), '1')
+  assert.equal(slider().getAttribute('aria-valuetext'), 'High')
+  assert.equal(slider().getAttribute('aria-label'), '推理等级')
+})
+
+await test('数值让出空档、箭头隐藏，滑块占住中间', () => {
+  assert.equal(cellValue('effort').style.flex, '0 0 auto')
+  assert.equal(cellValue('effort').style.order, '1')
+  assert.equal(cellChevron('effort').style.display, 'none')
+})
+
+await test('拖到另一档松手才提交一次', async () => {
+  selections.length = 0
+  withTrack()
+  pointer('pointerdown', slider(), 75)
+  pointer('pointerup', slider(), 75)
+  await flush()
+  assert.deepEqual(selections, [{ provider: 'magpie', model: 'a', reasoningEffort: 'max' }])
+})
+
+await test('按下与松手落在同一个任务里也不丢提交', async () => {
+  mountFreshBridge()
+  selections.length = 0
+  withTrack()
+  // No flush between the two: the release must read the drag it just started
+  // rather than a render that has not run yet.
+  act(() => {
+    slider().dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 75 }))
+    slider().dispatchEvent(new dom.window.MouseEvent('pointerup', { bubbles: true, cancelable: true, clientX: 75 }))
+  })
+  await flush()
+  assert.deepEqual(selections, [{ provider: 'magpie', model: 'a', reasoningEffort: 'max' }])
+})
+
+await test('松手停在原档不提交', async () => {
+  mountFreshBridge()
+  selections.length = 0
+  withTrack()
+  // 第 2 档的圆心在 7 + 43 = 50px。
+  pointer('pointerdown', slider(), 50)
+  pointer('pointerup', slider(), 50)
+  await flush()
+  assert.deepEqual(selections, [])
+})
+
+await test('键盘右移一档立即提交', async () => {
+  mountFreshBridge()
+  selections.length = 0
+  key(slider(), 'ArrowRight')
+  await flush()
+  assert.deepEqual(selections, [{ provider: 'magpie', model: 'a', reasoningEffort: 'max' }])
+})
+
+await test('末档再按右键不提交', async () => {
+  setState(snapshot({ current: { provider: 'magpie', model: 'a', reasoningEffort: 'max' } }))
+  selections.length = 0
+  key(slider(), 'ArrowRight')
+  await flush()
+  assert.deepEqual(selections, [])
+})
+
+await test('提交进行中时拖动与按键都不提交', async () => {
+  mountFreshBridge()
+  setState(snapshot({ pending: { provider: 'magpie', model: 'a', reasoningEffort: 'max' } }))
+  selections.length = 0
+  withTrack()
+  pointer('pointerdown', slider(), 75)
+  pointer('pointerup', slider(), 75)
+  key(slider(), 'ArrowRight')
+  await flush()
+  assert.deepEqual(selections, [])
+})
+
+await test('提交被拒时走宿主的提示气泡', async () => {
+  mountFreshBridge()
+  outcomes.push({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
+  failures.length = 0
+  withTrack()
+  pointer('pointerdown', slider(), 75)
+  pointer('pointerup', slider(), 75)
+  await flush()
+  assert.deepEqual(failures, ['会话被占用'])
+})
+
+await test('模型只声明一档时不挂滑块，宿主那一行原样保留', () => {
+  unmount()
+  // The snapshot identity must be stable: useSyncExternalStore re-renders forever
+  // on a fresh object per read.
+  const singleState = snapshot({
+    groups: [{
+      id: 'magpie',
+      name: 'Magpie',
+      models: [{ id: 'a', name: 'Model A', reasoning: { efforts: [{ id: 'only', name: 'Only' }], defaultEffort: 'only' } }],
+    }],
+  })
+  const single = { getSnapshot: () => singleState, subscribe: () => () => {} }
+  mountBridge(createElement(bridgeEntry.component, { ...bridgeProps, directory: single }))
+  assert.equal(slider(), null)
+  assert.equal(cellChevron('effort').style.display, '')
+  assert.equal(cellValue('effort').style.flex, '')
+})
+
+await test('模型不声明推理等级时同样不挂滑块', () => {
+  mountFreshBridge()
+  setState(snapshot({ current: { provider: 'magpie', model: 'c' } }))
+  assert.equal(slider(), null)
+  assert.equal(cellChevron('effort').style.display, '')
+})
+
+await test('卸载后把宿主那一行的样式写回去', () => {
+  mountFreshBridge()
+  const chevron = cellChevron('effort')
+  const value = cellValue('effort')
+  assert.equal(chevron.style.display, 'none')
+  unmount()
+  assert.equal(chevron.style.display, '')
+  assert.equal(value.style.flex, '')
+  assert.equal(value.style.order, '')
 })
 
 await test('点菜单里的非菜单项：一概不动', () => {
+  mountFreshBridge()
   const plain = document.createElement('div')
   plain.textContent = '团队协作'
   surface.append(plain)
@@ -307,7 +465,7 @@ await test('点菜单里的非菜单项：一概不动', () => {
   plain.remove()
 })
 
-await test('改道不画任何可见内容', () => {
+await test('桥本身不画任何可见内容', () => {
   assert.equal(container.textContent, '')
   assert.equal(container.querySelector('span[hidden]') !== null, true, '标记必须留在宿主菜单面板里')
 })

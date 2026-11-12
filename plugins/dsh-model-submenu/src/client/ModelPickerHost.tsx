@@ -7,7 +7,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { IconWarningOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives';
-import type { ModelDirectoryState, ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client';
+import type { ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import { ModelPicker } from './ModelPicker.tsx';
 import type { FactsSource } from './facts-source.ts';
@@ -23,7 +23,7 @@ import {
   rememberEffort,
   type RememberedEffort,
 } from './effort-memory.ts';
-import type { Selection } from './selection.ts';
+import { selectionOf, type Selection } from './selection.ts';
 import type { PickerStore } from './picker-state.ts';
 import css from './ModelOptions.module.css';
 
@@ -134,18 +134,6 @@ export function ModelPickerHost({
       }}
     />}
   </div>;
-}
-
-/** The selection in force, or null while the Host has not resolved one. */
-function selectionOf(state: ModelDirectoryState): Selection | null {
-  if (state.current === null) return null;
-  return state.current.reasoningEffort === undefined
-    ? { provider: state.current.provider, model: state.current.model }
-    : {
-      provider: state.current.provider,
-      model: state.current.model,
-      reasoningEffort: state.current.reasoningEffort,
-    };
 }
 
 /** Isolate the browser's storage so a locked-down browser reads as "no favorites". */
