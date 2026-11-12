@@ -24,10 +24,8 @@ import { createPortal } from 'react-dom';
 import type { ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { EffortSlider } from './EffortSlider.tsx';
-import { levelColor } from './level-color.ts';
 import type { PickerStore } from './picker-state.ts';
 import { effortChoices, liveReasoning, planEffortCommit, selectionOf, type Selection } from './selection.ts';
-import { offsetOf } from './slider.ts';
 import css from './ModelOptions.module.css';
 
 /** Props of the bridge: menu state, the owning session, and the seat's injected face. */
@@ -71,7 +69,6 @@ export function ModelMenuBridge({
   const defaultActive = current !== null && current.reasoningEffort === undefined;
   const currentIndex = chosen >= 0 ? chosen : declared >= 0 ? declared : 0;
   const defaultIndex = declared >= 0 ? declared : 0;
-  const textColor = defaultActive ? null : levelColor(offsetOf(currentIndex, levels.length));
   const canDefault = !defaultActive;
   const busy = state.pending !== null;
   // One detent is not a choice: leave the Host's row exactly as it is.
@@ -154,46 +151,36 @@ export function ModelMenuBridge({
     };
   }, [surface]);
 
-  // The slider takes the slack between the Host's label and value, the value
-  // takes the level's color, and the chevron goes because the row no longer
-  // drills anywhere. Every write is recorded and put back on unmount.
+  // The slider takes the whole slack beside the label: the value and the
+  // chevron go, because the level is already written under the composer and the
+  // row no longer drills anywhere. Every write is recorded and put back.
   useLayoutEffect(() => {
     if (effortRow === null || !showSlider) return;
     const label = effortRow.querySelector<HTMLElement>("span[class*='cellLabel']");
     const value = effortRow.querySelector<HTMLElement>("span[class*='cellValue']");
     const chevron = effortRow.querySelector<SVGElement>("svg[class*='cellChevron']");
     const saved = {
-      flex: value?.style.flex ?? '',
-      order: value?.style.order ?? '',
-      color: value?.style.color ?? '',
-      display: chevron?.style.display ?? '',
+      value: value?.style.display ?? '',
+      chevron: chevron?.style.display ?? '',
       cursor: label?.style.cursor ?? '',
       title: label?.getAttribute('title') ?? null,
     };
-    if (value !== null) {
-      value.style.flex = '0 0 auto';
-      value.style.order = '1';
-      if (textColor !== null) value.style.color = textColor;
-    }
+    if (value !== null) value.style.display = 'none';
     if (chevron !== null) chevron.style.display = 'none';
     if (label !== null && canDefault) {
       label.style.cursor = 'pointer';
       label.title = t('effort.useDefault');
     }
     return () => {
-      if (value !== null) {
-        value.style.flex = saved.flex;
-        value.style.order = saved.order;
-        value.style.color = saved.color;
-      }
-      if (chevron !== null) chevron.style.display = saved.display;
+      if (value !== null) value.style.display = saved.value;
+      if (chevron !== null) chevron.style.display = saved.chevron;
       if (label !== null) {
         label.style.cursor = saved.cursor;
         if (saved.title === null) label.removeAttribute('title');
         else label.title = saved.title;
       }
     };
-  }, [effortRow, showSlider, textColor, canDefault, t]);
+  }, [effortRow, showSlider, canDefault, t]);
 
   return <>
     <span ref={markerRef} hidden />

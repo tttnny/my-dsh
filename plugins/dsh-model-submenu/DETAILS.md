@@ -62,21 +62,23 @@ dsh plugin --profile web add @lynn123411/dsh-model-submenu
 
 | 节点 | 改动 | 效果 |
 | --- | --- | --- |
-| `cellValue` | `flex: 0 0 auto`、`order: 1` | 让出中间的空档，文字仍靠右 |
+| `cellValue` | `display: none` | 档位文字在输入框下面已经有一份，这一行不再重复 |
 | `cellChevron` | `display: none` | 去掉已经不存在下钻的箭头 |
-| 滑块根节点 | `flex: 1 1 auto`、`min-width: 96px` | 落在标签与数值之间，铺满空档 |
+| 滑块根节点 | `flex: 1 1 auto`、`min-width: 96px` | 落在标签右边，铺满整条空档 |
 
 模型只声明一档（或没有档位）时整条链不启用，宿主那一行原样保留。滑块本身是 `role="slider"` 的独立焦点节点，键盘左右/上下/Home/End 逐档调整；它与宿主那一行同排，因此技术上属于 `<button role="menuitem">` 里的交互子元素——宿主没给这一行留注入点，同线插件 `Microqian2th/dsh-codex-effort-slider` 也采用同一形态。
 
 ## 滑块的三种状态
 
-| 状态 | 轨道 | 旋钮 | 文字 |
-| --- | --- | --- | --- |
-| 明确档位 | 蓝→紫渐变填充到旋钮，高档位带星尘 | 实心白 | 该档名字，取该档颜色 |
-| provider default | 空 | 空心环，停在模型声明的默认档（没声明就停最左） | 宿主自己写的 `Default`，不着色 |
-| 拖动中 | 跟着指针吸附 | 实心白 | 松手才提交，文字仍是已生效的那一档 |
+| 状态 | 轨道 | 旋钮 |
+| --- | --- | --- |
+| Off | 灰色，只填到旋钮 | 实心白 |
+| 中间档 | 该档的纯色，只填到旋钮 | 实心白 |
+| 最高档 | 整条蓝→紫渐变 | 实心白 |
+| provider default | 空 | 空心环，停在模型声明的默认档（没声明就停最左） |
+| 拖动中 | 跟着指针吸附 | 实心白，松手才提交 |
 
-provider default 不是档位：`effortChoices` 只返回模型声明的真实等级，默认态由 `state.current.reasoningEffort === undefined` 判定，点标签提交 `reasoningEffort: undefined` 切回去。颜色由 `level-color.ts` 的 `levelColor(fraction)` 给出，填充的 `linear-gradient` 用同两个端点，所以旋钮底下的颜色与文字颜色严格相等。
+轨道高度取这一行的文字行高（20px），旋钮与轨道同高。provider default 不是档位：`effortChoices` 只返回模型声明的真实等级，默认态由 `state.current.reasoningEffort === undefined` 判定，点标签提交 `reasoningEffort: undefined` 切回去。颜色由 `level-color.ts` 的 `levelColor(index, count)` 给出：`0` 是中性灰，其余档位把「Off 以上」均匀铺在蓝→紫的斜坡上，最高档固定取紫端并用整条渐变填充。
 
 ## 开发副本
 
@@ -100,7 +102,7 @@ cd plugins/dsh-model-submenu && pnpm check
 `check` = `typecheck` + `build`（tsdown）+ `smoke` + `test` + `assert:lib-untracked`。
 
 - `scripts/smoke-client.mjs` 按 Web shell 的方式装载构建产物 `lib/client.js`（`window.__ModuleLoader__.load` 桩件），喂假 cordis 服务，断言导出身份、`inject` 表逐字相等、三处贡献各自的 list `id`（`model-menu-bridge`、`model-picker`、`model-effort-tint`）、前两处共用同一个 store、着色那条读同一个目录、产物里走的是共享的 `Modal`、产物里带着认宿主菜单面板（`data-menu-material`）、两格（`:scope > button[role=`）、档位文字（`span[class*='cellValue']`）与触发器档位文字（`span[class*="triggerEffort"]`）的四段选择器、滑块以 `role="slider"` 暴露给辅助技术、字典键集中英对齐且带着滑块那三条文案、元信息取数确实问过设置镜像与供应商目录，以及「设置没答案时答未知而不猜」。末尾 7 条是 store 自身的契约：起始关闭、open 发布目标、重复 open 不通知、第二次 open 替换目标、close 清空、退订后静默。
-- `scripts/test-favorites.mjs`：收藏表的键名、读写、坏值降级、跨供应商靠前排序。`scripts/test-facts.mjs`：设置值到上下文窗口与图片输入的映射、两类适配器的字段差异、缺字段整段略去。`scripts/test-commit.mjs`：点模型立即提交、已选中的模型不重复提交、记住的档位不在可选档里时不强塞。`scripts/test-rows.mjs`：目录拍平、标签页派生、搜索的两把钥匙。`scripts/test-slider.mjs`：滑块几何与配色——档位到轨道比例、指针到最近档、两端夹取、单档与零宽轨道的退路、档位颜色的两端与越界、星尘位置固定且落在填充区内。`scripts/test-render.mjs`：用真 react 把菜单桥与弹窗画进 jsdom，37 条用例锁住「点宿主第一格 → 关菜单 → store → 弹窗」这条链、宿主那两格的下钻确实没执行、点标签切回默认、点数值把焦点交给滑块、刻度数与旋钮位置、数值与标签随档位变色、默认态空轨道与空心旋钮、拖动松手才提交一次、按下与松手同任务也不丢提交、末档与进行中不提交、被拒走宿主提示、单档与无档位不挂滑块、卸载后样式写回，以及弹窗侧的收藏置顶、星标独立、提交与拒绝、思考等级记忆、加载与失败、会话不可选时整块不渲染。
+- `scripts/test-favorites.mjs`：收藏表的键名、读写、坏值降级、跨供应商靠前排序。`scripts/test-facts.mjs`：设置值到上下文窗口与图片输入的映射、两类适配器的字段差异、缺字段整段略去。`scripts/test-commit.mjs`：点模型立即提交、已选中的模型不重复提交、记住的档位不在可选档里时不强塞。`scripts/test-rows.mjs`：目录拍平、标签页派生、搜索的两把钥匙。`scripts/test-slider.mjs`：滑块几何与配色——档位到轨道比例、指针到最近档、两端夹取、单档与零宽轨道的退路、Off 的中性灰、蓝到紫的两端、只有最高档用渐变。`scripts/test-render.mjs`：用真 react 把菜单桥、触发器着色与弹窗画进 jsdom，40 条用例锁住「点宿主第一格 → 关菜单 → store → 弹窗」这条链、宿主那两格的下钻确实没执行、点标签切回默认、点滑块以外的位置把焦点交给滑块、刻度数与旋钮位置、数值与箭头隐藏、Off 灰/中间纯色/最高档渐变、触发器档位文字跟着变色且默认态交还宿主颜色、默认态空轨道与空心旋钮、拖动松手才提交一次、按下与松手同任务也不丢提交、末档与进行中不提交、被拒走宿主提示、单档与无档位不挂滑块、卸载后样式写回，以及弹窗侧的收藏置顶、星标独立、提交与拒绝、思考等级记忆、加载与失败、会话不可选时整块不渲染。
 - `lib/` 是构建镜像，`assert:lib-untracked` 判它没被 git 跟踪。
 
 要肉眼确认页面上的形态，用仓库的 `node tools/verify-client.mjs dsh-model-submenu --needle '<你新写的类名或文案>'`。

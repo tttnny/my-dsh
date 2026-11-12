@@ -7,17 +7,17 @@
  * knob snaps to one detent per level, the drag only moves the knob, and the
  * release commits once. Keyboard arrows step and commit immediately.
  *
- * The fill is a blue-to-violet gradient and the color under the knob is the one
- * the level's text takes, so the track and the two captions read as one signal.
- * A star field fades in over the filled part as the level rises.
+ * The fill takes the level's color, so the track and the two captions read as
+ * one signal: "off" is neutral, the levels above it walk a blue-to-violet ramp,
+ * and only the top level fills with the whole gradient.
  *
  * "Provider default" is not a detent: it is a state, drawn as an empty track
  * with a hollow knob, so it never reads as the lowest level.
  */
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { EffortChoice } from './selection.ts';
-import { LEVEL_GRADIENT } from './level-color.ts';
-import { SLIDER_STARS, knobOffset, offsetOf, stepAt } from './slider.ts';
+import { LEVEL_GRADIENT, isTopLevel, levelColor } from './level-color.ts';
+import { knobOffset, offsetOf, stepAt } from './slider.ts';
 import css from './ModelOptions.module.css';
 
 /** Props of the slider: the levels, the one in force, and the commit path. */
@@ -121,8 +121,9 @@ export function EffortSlider({
   const offset = knobOffset(knobFraction);
   // The provider default fills nothing: the knob shows where it lands, the
   // track stays empty so it never reads as a chosen level.
-  const filled = defaultActive && drag === null ? 0 : knobFraction;
-  const stars = Math.max(0, (filled - 0.2) / 0.8) ** 1.5;
+  const idle = defaultActive && drag === null;
+  const filled = idle ? 0 : knobFraction;
+  const fill = isTopLevel(active, steps.length) ? LEVEL_GRADIENT : levelColor(active, steps.length);
   return <div
     ref={trackRef}
     className={css.slider}
@@ -145,25 +146,11 @@ export function EffortSlider({
     onClick={(event) => { event.stopPropagation(); }}
   >
     <div className={css.sliderTrack} aria-hidden="true">
-      <div className={css.sliderFill} style={{ width: knobOffset(filled), backgroundImage: LEVEL_GRADIENT }}>
-        {stars > 0.02 && <div className={css.sliderStars} style={{ opacity: stars }}>
-          {SLIDER_STARS.map((star, index) => <span
-            key={index}
-            className={css.sliderStar}
-            style={{
-              left: `${star.x}%`,
-              top: `${star.y}%`,
-              width: `${star.size}px`,
-              height: `${star.size}px`,
-              animationDelay: `${star.delay}s`,
-            }}
-          />)}
-        </div>}
-      </div>
+      <div className={css.sliderFill} style={{ width: knobOffset(filled), background: fill }} />
       {steps.map((step, index) => <span
         key={step.key}
         className={css.sliderTick}
-        data-on={index <= active && !(defaultActive && drag === null) ? '' : undefined}
+        data-on={index <= active && !idle ? '' : undefined}
         style={{ left: knobOffset(offsetOf(index, steps.length)) }}
       />)}
       <div className={css.sliderKnob} style={{ left: offset }} />

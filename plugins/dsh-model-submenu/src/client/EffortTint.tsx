@@ -14,7 +14,6 @@ import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import { levelColor } from './level-color.ts';
 import { effortChoices, liveReasoning } from './selection.ts';
-import { offsetOf } from './slider.ts';
 
 /** Props of the tint: the shared catalog face. */
 export type EffortTintProps = Pick<ModelSelectInjected, 'available' | 'directory'>;
@@ -36,7 +35,7 @@ export function EffortTint({ available, directory }: EffortTintProps) {
   const chosen = effort === undefined ? -1 : levels.findIndex((level) => level.effort === effort);
   // The provider default has no color of its own: the caption keeps the Host's.
   const color = available && chosen >= 0 && levels.length >= 2
-    ? levelColor(offsetOf(chosen, levels.length))
+    ? levelColor(chosen, levels.length)
     : null;
 
   // The Host rebuilds the trigger on every model change, so the caption is

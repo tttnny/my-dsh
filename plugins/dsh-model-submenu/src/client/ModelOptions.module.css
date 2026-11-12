@@ -44,13 +44,13 @@
 .sliderTrack {
   position: relative;
   width: 100%;
-  height: 10px;
+  height: 20px;
   border-radius: 999px;
   corner-shape: round;
   background: var(--dsw-alias-border-l3);
 }
 
-/* The gradient spans the whole track and is clipped to the filled part, so the
+/* The fill takes the level's color and is clipped to the filled part, so the
  * color under the knob is the color the level's text takes. */
 .sliderFill {
   position: absolute;
@@ -61,43 +61,6 @@
   corner-shape: round;
   overflow: hidden;
   pointer-events: none;
-}
-
-.sliderStars {
-  position: absolute;
-  inset: 0;
-  transition: opacity 160ms ease;
-}
-
-/* Stardust over the filled part: the field fades in as the level rises, and the
- * dots twinkle out of phase so the track never looks like a static pattern. */
-.sliderStar {
-  position: absolute;
-  border-radius: 50%;
-  corner-shape: round;
-  background: #fff;
-  opacity: 0.75;
-  animation: dsh-effort-twinkle 2.4s ease-in-out infinite;
-}
-
-@keyframes dsh-effort-twinkle {
-  0%,
-  100% {
-    opacity: 0.25;
-    transform: scale(0.8);
-  }
-
-  50% {
-    opacity: 0.9;
-    transform: scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sliderStar {
-    opacity: 0.6;
-    animation: none;
-  }
 }
 
 /* One detent per level: the dot is the only thing that says the levels are
@@ -123,9 +86,9 @@
 .sliderKnob {
   position: absolute;
   top: 50%;
-  width: 18px;
-  height: 18px;
-  margin: -9px 0 0 -9px;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
   border-radius: 50%;
   corner-shape: round;
   background: var(--dsw-alias-label-primary-foreground);

@@ -42,7 +42,7 @@
     <tr>
       <td><b>🎛️ 模型选择</b><br><i>输入框里模型选择器的形态</i></td>
       <td><a href="./plugins/dsh-model-submenu"><code>@lynn123411/dsh-model-submenu</code></a></td>
-      <td><b>模型选择</b><br>增强输入框的模型菜单：第一行「模型」直接打开一张列出所有供应商模型的弹窗，可搜、可收藏；第二行「推理等级」是可拖动的滑块，档位带颜色与星尘。</td>
+      <td><b>模型选择</b><br>增强输入框的模型菜单：第一行「模型」直接打开一张列出所有供应商模型的弹窗，可搜、可收藏；第二行「推理等级」是可拖动的滑块，档位带配色。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-model-submenu</code></td>
     </tr>
     <tr>

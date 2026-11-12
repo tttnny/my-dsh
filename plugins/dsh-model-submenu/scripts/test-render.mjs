@@ -80,9 +80,11 @@ const ctx = {
 }
 exported.apply(ctx)
 const bridgeEntry = registrations.find((entry) => entry.options.name === 'conversation.input.model.options')
-const hostEntry = registrations.find((entry) => entry.options.name === 'conversation.input.overlay')
+const hostEntry = registrations.find((entry) => entry.options.id === 'model-picker')
+const tintEntry = registrations.find((entry) => entry.options.id === 'model-effort-tint')
 assert.ok(bridgeEntry !== undefined, '菜单桥没有注册')
 assert.ok(hostEntry !== undefined, '浮层弹窗没有注册')
+assert.ok(tintEntry !== undefined, '触发器着色没有注册')
 
 // ── 共享目录：两个供应商，magpie 三个模型，a6api 一个 ─────────────────────────
 
@@ -237,6 +239,30 @@ function mountBridge(element) {
   act(() => { viewRoot.render(element) })
 }
 
+/**
+ * Mount the tint inside a stand-in composer card holding the Host's collapsed
+ * trigger: the caption it colors lives outside the menu.
+ */
+function mountTint(element) {
+  unmount()
+  surface = document.createElement('div')
+  surface.setAttribute('data-composer-card', '')
+  const seat = document.createElement('div')
+  seat.setAttribute('data-slot', 'conversation.input.model')
+  const trigger = document.createElement('button')
+  trigger.type = 'button'
+  trigger.setAttribute('aria-haspopup', 'menu')
+  trigger.innerHTML = '<span class="_host_triggerLabel">Model A</span>'
+    + '<span class="_host_triggerEffort">High</span>'
+  seat.append(trigger)
+  surface.append(seat)
+  document.body.append(surface)
+  container = document.createElement('div')
+  surface.append(container)
+  viewRoot = createRoot(container)
+  act(() => { viewRoot.render(element) })
+}
+
 /** Fresh bridge on a fresh stand-in menu, with the catalog reset to the default. */
 function mountFreshBridge(props) {
   unmount()
@@ -335,10 +361,10 @@ await test('点「推理等级」四个字切回 provider default', async () => 
   assert.deepEqual(selections, [{ provider: 'magpie', model: 'a' }], '默认档位不带 reasoningEffort')
 })
 
-await test('点第二行的数值：不下钻，焦点交给滑块', () => {
+await test('点第二行滑块以外的位置：不下钻，焦点交给滑块', () => {
   mountFreshBridge()
   hostCellClicks.length = 0
-  click(cellValue('effort'))
+  click(cell('effort'))
   assert.deepEqual(hostCellClicks, [], '推理等级那一行不该再弹档位列表')
   assert.equal(document.activeElement, slider(), '焦点必须落在滑块上，否则键盘够不到')
 })
@@ -351,18 +377,25 @@ await test('滑块按档位画刻度，旋钮停在当前档', () => {
   assert.equal(slider().getAttribute('aria-label'), '推理等级')
 })
 
-await test('数值让出空档、箭头隐藏，滑块占住中间', () => {
-  assert.equal(cellValue('effort').style.flex, '0 0 auto')
-  assert.equal(cellValue('effort').style.order, '1')
+await test('数值与箭头都隐藏，滑块占住整条空档', () => {
+  assert.equal(cellValue('effort').style.display, 'none')
   assert.equal(cellChevron('effort').style.display, 'none')
 })
 
-await test('数值跟着档位变色，标签在可切回默认时是可点的', () => {
+await test('标签在可切回默认时是可点的', () => {
   const label = cell('effort').querySelector("span[class*='cellLabel']")
-  // 三档模型的中间档：蓝紫各半。
-  assert.equal(cellValue('effort').style.color, 'rgb(112, 99, 241)')
   assert.equal(label.style.cursor, 'pointer')
   assert.equal(label.getAttribute('title'), '切换为默认档位')
+})
+
+await test('Off 档灰色、中间档纯色、Max 档渐变', () => {
+  mountFreshBridge()
+  const fill = () => slider().querySelector('[class*="sliderFill"]').getAttribute('style') ?? ''
+  assert.match(fill(), /background: rgb\(77, 147, 248\)/, '第一档是纯蓝')
+  setState(snapshot({ current: { provider: 'magpie', model: 'a', reasoningEffort: 'max' } }))
+  assert.match(fill(), /linear-gradient/, '最高档才是渐变')
+  setState(snapshot({ current: { provider: 'magpie', model: 'a', reasoningEffort: 'low' } }))
+  assert.match(fill(), /var\(--dsw-alias-label-dimmed\)/, 'Off 不着色')
 })
 
 await test('provider default 不是档位：轨道空、旋钮空心、读作默认', () => {
@@ -371,7 +404,7 @@ await test('provider default 不是档位：轨道空、旋钮空心、读作默
   assert.equal(slider().hasAttribute('data-default'), true)
   assert.equal(slider().getAttribute('aria-valuetext'), 'Default', '与宿主自己写的档位文字一致')
   assert.equal(ticks().length, 3, '默认不该多出一个档位')
-  assert.equal(cellValue('effort').style.color, '', '默认态数值不跟着档位变色')
+  assert.equal(cellValue('effort').style.display, 'none', '默认态数值同样隐藏')
   const label = cell('effort').querySelector("span[class*='cellLabel']")
   assert.equal(label.style.cursor, '', '已经在默认态时标签不再是可点的')
 })
@@ -494,8 +527,7 @@ await test('卸载后把宿主那一行的样式写回去', () => {
   assert.equal(chevron.style.display, 'none')
   unmount()
   assert.equal(chevron.style.display, '')
-  assert.equal(value.style.flex, '')
-  assert.equal(value.style.order, '')
+  assert.equal(value.style.display, '')
 })
 
 await test('点菜单里的非菜单项：一概不动', () => {
@@ -514,6 +546,17 @@ await test('点菜单里的非菜单项：一概不动', () => {
 await test('桥本身不画任何可见内容', () => {
   assert.equal(container.textContent, '')
   assert.equal(container.querySelector('span[hidden]') !== null, true, '标记必须留在宿主菜单面板里')
+})
+
+await test('触发器上的档位文字染成档位色，默认态交还宿主的颜色', () => {
+  mountTint(createElement(tintEntry.component, { available: true, directory: store }))
+  const caption = surface.querySelector("span[class*='triggerEffort']")
+  // 三档模型的第一档（Off 之上）：蓝端。
+  assert.equal(caption.style.color, 'rgb(77, 147, 248)')
+  setState(snapshot({ current: { provider: 'magpie', model: 'a', reasoningEffort: 'max' } }))
+  assert.equal(caption.style.color, 'rgb(147, 51, 234)')
+  setState(snapshot({ current: { provider: 'magpie', model: 'a' } }))
+  assert.equal(caption.style.color, '', '默认态不着色')
 })
 
 await test('store 没指向本会话时弹窗不渲染', () => {
