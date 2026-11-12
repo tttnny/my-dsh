@@ -13,7 +13,7 @@
 - **接重依赖**：`plugin-heavy-dep` 给轻量 Web 插件接重依赖，含懒加载 chunk、宿主路由包含防护与 SVG 白名单。
 - **跨阶段编排**：`plugin-workflow` 用能力菜单与阶段账本编排插件生命周期，一次授权贯穿。
 - **把经验做成考题**：`dsh-benchmark-case` 把真实升级经验提取成可自动判分的 Harbor 考题；`generic-migration` 给 benchmark 侧做框架无关的迁移方法论对照。
-- **官方技能照旧在列**：官方随附的 4 个技能（`agent-experience` / `cordis-composition-reference` / `cordis-plugin-development` / `editing-cordis-compositions`）与这 11 个同时在列。
+- **官方技能照旧在列**：官方随附的 `dsh-doc`（DSH 自身的功能、配置、插件与 preset 的事实入口）与这 11 个同时在列。
 
 ## 特性
 
