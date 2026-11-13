@@ -23,7 +23,7 @@
 | 直接拍某个会话的页面（会话页没有 URL 路由，它替你展开侧栏组再点进去） | `node tools/gui-shot.mjs --session session-<id> --shot tmp/session.png` |
 | 不碰正在服务的实例，把**真的**插件组件单独渲染出来拍图（ui-primitives 用薄壳替身、样式取宿主真表） | `node tools/ui-preview.mjs --pkg <plugins/dsh-xxx> --entry src/client/X.jsx --mount Xxx --props tmp/p.json --shot tmp/x.png`（`--props` 收 JSON，也收 `.mjs` 模块） |
 | 要在用户自己那个浏览器引擎下、或按用户已登录的站点验界面（`gui-shot` 起的是 Playwright 缓存里的 Chrome for Testing，每趟清掉临时用户目录） | 换 `ego-browser`，用法先跑 `ego-browser skill`；条件与要守的硬要求见 [plugin-ui.md](../docs/rules/plugin-ui.md)「换用 ego-browser 的条件」 |
-| 查开发软链、bundle 登记与孤儿软链；日常写入限 `--profile web`，修复范围见 [dev-copy.md](../docs/rules/dev-copy.md)「建立与校验」 | `node tools/dev-link.mjs [--profile <name>] [--write] [--package <包名或目录名>]` |
+| 查开发软链、bundle 登记与孤儿软链；默认只查开发 profile `web`（本仓库只管它），`--all-profiles` 看全部，修复范围见 [dev-copy.md](../docs/rules/dev-copy.md)「建立与校验」 | `node tools/dev-link.mjs [--all-profiles \| --profile <name>] [--write] [--package <包名或目录名>]` |
 | 一个会话（连同它派出去的子会话）改过哪些文件、提交过什么 | `node tools/session-changes.mjs [<会话 id>] [--json] [--since <毫秒>]` |
 
 ## 约定

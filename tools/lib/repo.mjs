@@ -12,6 +12,15 @@ import { dirname, join, resolve } from 'node:path';
 const ROOT_MARKERS = ['.githooks', 'AGENTS.md'];
 
 /**
+ * 本仓库管的那个 profile：`web`。
+ *
+ * 自有包只在它里面是 `link:` 开发副本，改完即生效。其他 profile（`desktop`、`headless`、
+ * `acp`、`diagnose`）按 npm 包安装，不跟随本仓库——把它们物化成 registry 版本当成漂移报出来，
+ * 只会让每次检查都红。约定见 `docs/rules/dev-copy.md`。
+ */
+export const DEV_PROFILE = 'web';
+
+/**
  * 从 start 逐级向上找仓库根。
  * @param {string} [start] - 起点目录，默认当前工作目录。
  * @returns {string} 仓库根的绝对路径。
@@ -184,7 +193,7 @@ export function launcherConfig() {
  * @param {string} [profile] - profile 名，默认 `$DSH_PROFILE` 或 `web`。
  * @returns {{version: string, dir: string, bin: string, pkg: any}|undefined} 内核安装树；判断不出来时 undefined。
  */
-export function runningKernel(profile = process.env.DSH_PROFILE ?? 'web') {
+export function runningKernel(profile = process.env.DSH_PROFILE ?? DEV_PROFILE) {
   const config = launcherConfig();
   if (config === undefined) return undefined;
   const instances = Array.isArray(config.instances) ? config.instances : [];

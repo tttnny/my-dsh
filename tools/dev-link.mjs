@@ -15,9 +15,13 @@
  * 不会碰它（它不在 `dependencies` 里了），于是它一直挂到某次手工清理为止。这里逐条扫
  * `node_modules/@lynn123411/` 下的软链，断的报出来并给出删除命令。
  *
+ * 默认只查开发 profile（`web`）：本仓库只管它，其他 profile 按 npm 包安装、不跟随本仓库
+ * （docs/rules/dev-copy.md）。要看别的 profile 加 `--all-profiles` 或 `--profile <名字>`。
+ *
  * 用法：
- *   node tools/dev-link.mjs                        # 查全部 profile（只读）
- *   node tools/dev-link.mjs --profile web
+ *   node tools/dev-link.mjs                        # 查开发 profile（只读）
+ *   node tools/dev-link.mjs --all-profiles         # 查全部 profile
+ *   node tools/dev-link.mjs --profile desktop
  *   node tools/dev-link.mjs --write                # 有问题的重连回仓库
  *   node tools/dev-link.mjs --write --package dsh-model-submenu
  *   node tools/dev-link.mjs --json
@@ -28,7 +32,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, unlinkSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 
-import { devCopyState, dshHome, listPackages, profiles, repoRoot } from './lib/repo.mjs';
+import { DEV_PROFILE, devCopyState, dshHome, listPackages, profiles, repoRoot } from './lib/repo.mjs';
 
 /** 逐个解析 `--k v` 与 `--flag`。 */
 function parseArgs(argv) {
@@ -45,7 +49,10 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 const root = repoRoot(resolve(join(import.meta.dirname, '..')));
 const write = args.write === true;
-const onlyProfile = typeof args.profile === 'string' ? args.profile : undefined;
+// 默认只查开发 profile：其他 profile 按 npm 包安装，物化成 registry 版本是设计如此，不是漂移。
+const onlyProfile = typeof args.profile === 'string'
+  ? args.profile
+  : (args['all-profiles'] === true ? undefined : DEV_PROFILE);
 const home = typeof args.home === 'string' ? resolve(args.home) : dshHome();
 const onlyPackage = typeof args.package === 'string' ? args.package : undefined;
 
@@ -60,7 +67,7 @@ if (onlyPackage !== undefined) {
 let list = profiles(home);
 if (onlyProfile !== undefined) list = list.filter((profile) => profile.name === onlyProfile);
 if (list.length === 0) {
-  console.error(`dev-link: ${home}/profiles 下没有${onlyProfile === undefined ? '' : ` ${onlyProfile}`} profile`);
+  console.error(`dev-link: ${home}/profiles 下没有${onlyProfile === undefined ? '' : ` ${onlyProfile}`} profile${onlyProfile === undefined ? '' : '（默认只查开发 profile，查全部加 --all-profiles）'}`);
   process.exit(2);
 }
 
@@ -75,7 +82,9 @@ function inspect(profile, entry) {
     return { profile: profile.name, package: entry.name, state: 'absent', declared, problems };
   }
   if (state.state === 'missing') problems.push(`profile 的 dependencies 里写着 ${declared}，node_modules 里却没有——跑 pnpm install`);
-  if (state.state === 'materialized') {
+  // 只有开发 profile 要求软链。其他 profile 按 npm 包安装，物化成 registry 版本正是设计如此，
+  // 报成问题会让每次检查都红（docs/rules/dev-copy.md）。
+  if (state.state === 'materialized' && profile.name === DEV_PROFILE) {
     problems.push(`开发副本被物化成 registry 版本（${state.version ?? '版本不明'}）${declared === undefined ? '' : `，spec 现在是 ${declared}`}——不再跟随仓库`);
   }
   if (state.state === 'dangling') problems.push(`软链断了（${state.target}）——这个 profile 装载时解析不到它`);

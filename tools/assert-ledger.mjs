@@ -31,6 +31,7 @@ import { join, resolve } from 'node:path';
 
 import { firstDifference, loadCopies, normalize } from './lib/preset-copies.mjs';
 import {
+  DEV_PROFILE,
   currentKernel,
   declaredRanges,
   devCopyState,
@@ -381,10 +382,9 @@ for (const [id, order] of declaredOrders) {
   seenOrders.set(order, id);
 }
 
-// ── 9. 开发副本（只查 web 这个开发 profile，装了才查） ────────────────────────
-// desktop 等其他 profile 装的是发布版，不跟随本仓库；把它们的实体副本也当漂移报出来
-// 只会让提交前的门禁一直红。开发副本的约定只落在 web 上。
-const DEV_PROFILE = 'web';
+// ── 9. 开发副本（只查开发 profile，装了才查） ────────────────────────────────
+// desktop 等其他 profile 按 npm 包安装、不跟随本仓库；把它们的实体副本也当漂移报出来
+// 只会让提交前的门禁一直红。开发副本的约定只落在 DEV_PROFILE 上。
 const localProfiles = profiles(dshHome()).filter((profile) => profile.name === DEV_PROFILE);
 for (const profile of localProfiles) {
   for (const entry of packages) {

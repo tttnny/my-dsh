@@ -2,13 +2,13 @@
 
 开发 profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就是已安装内容**，改完即生效。**界面是新的、路由 404** 或撞 `Cannot find package '…'` 时查这一份。
 
-提交门禁只在 `web`（开发 profile）里校验这条；`desktop` 等其他 profile 装的是发布版、不跟随本仓库，不在它的检查范围内。
+**本仓库只管 `web` 这个开发 profile。** 自有包只在它里面是 `link:` 开发副本；`desktop`、`headless`、`acp`、`diagnose` 按 npm 包安装、不跟随本仓库，**物化成 registry 版本是设计如此，不是漂移**。这条约定登记在 `tools/lib/repo.mjs` 的 `DEV_PROFILE` 一处：`dev-link.mjs` 默认只查它，`assert-ledger.mjs` 判据 9 只查它，提交门禁因此不会被别的 profile 拖红。
 
 ## 建立与校验
 
-`node tools/dev-link.mjs` 默认只读检查全部 profile × 全部自有包：软链、目标版本、被物化成 registry 版本的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包。另扫 `node_modules/@lynn123411/` 下已断开或指向 `archive/` 的孤儿软链。
+`node tools/dev-link.mjs` 默认只读检查开发 profile × 全部自有包：软链、目标版本、被物化成 registry 版本的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包。要看别的 profile 加 `--all-profiles` 或 `--profile <名字>`——那里「物化成 registry 版本」不算问题，只有软链断了、依赖缺失、bundle 没登记才算。另扫 `node_modules/@lynn123411/` 下已断开或指向 `archive/` 的孤儿软链。
 
-日常只修开发 profile，用 `node tools/dev-link.mjs --write --profile web`。不带 `--profile` 的写入模式会遍历全部 profile，把有问题的自有包重连到仓库，也会把其他 profile 的发布副本换成开发软链；只重连某个包时另加 `--package <包名或目录名>`；该参数只筛选在维护的包，孤儿软链仍按选中的 profile 全部清理。
+日常只修开发 profile，用 `node tools/dev-link.mjs --write`（默认就是 `web`）。要动别的 profile 必须显式写 `--profile <名字>` 或 `--all-profiles`——那会把那里的发布副本换成开发软链，只在有意为之的时候用。只重连某个包时另加 `--package <包名或目录名>`；该参数只筛选在维护的包，孤儿软链仍按选中的 profile 全部清理。
 
 `--write` 执行 `pnpm add "link:<实际包绝对路径>" --offline` 并删除孤儿软链，**不登记 `dsh.profile.bundles`**。只缺 bundle 登记时它不重连依赖，要按输出执行 `dsh plugin --profile <name> add <实际包目录>`。
 
