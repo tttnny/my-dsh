@@ -2,7 +2,9 @@
 // Vendor check for presets/plugin-upgrade-cordis.
 //
 //   node check-upstream.mjs            online: did upstream change anything under the vendored paths
-//                                      since the commit pinned in upstream-lock.json?
+//                                      since the commit pinned in upstream-lock.json? Compares the
+//                                      directory's git tree sha, so a large window cannot hide a change
+//                                      behind the compare endpoint's 300-file cap.
 //   node check-upstream.mjs --verify   offline: does this tree still match the lock, and is it shaped
 //                                      like a skill root (every dir has SKILL.md, name == dir, no stray .md)?
 //   node check-upstream.mjs --write    offline: rewrite upstream-lock.json from the current tree.
@@ -196,6 +198,44 @@ function write(opts) {
   return 0
 }
 
+const HEADERS = {
+  accept: 'application/vnd.github+json',
+  'user-agent': 'dsh-preset-plugin-upgrade-cordis-check-upstream',
+  ...(process.env.GITHUB_TOKEN ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
+}
+
+/** One GitHub API GET; transport failures and rate limits exit 2, everything else comes back to the caller. */
+async function apiGet(url) {
+  let response
+  try {
+    response = await fetch(url, { headers: HEADERS })
+  } catch (error) {
+    console.error(`cannot reach the GitHub API: ${error.message}`)
+    process.exit(2)
+  }
+  if (response.status === 403 || response.status === 429) {
+    console.error(`GitHub API refused the request (${response.status}) — likely the unauthenticated rate limit; set GITHUB_TOKEN`)
+    process.exit(2)
+  }
+  if (!response.ok && response.status !== 404) {
+    console.error(`GitHub API returned ${response.status}`)
+    process.exit(2)
+  }
+  return { status: response.status, data: response.ok ? await response.json() : undefined }
+}
+
+/**
+ * Tree sha of one top-level directory at `treeish`, or undefined when that revision or directory is gone.
+ * A subtree sha is the authoritative drift signal: the compare endpoint caps its file list at 300 entries,
+ * so filtering that list can report "no changes" for a window that did change the vendored paths.
+ */
+async function subtreeSha(repo, treeish, path) {
+  const { status, data } = await apiGet(`https://api.github.com/repos/${repo}/git/trees/${treeish}`)
+  if (status === 404) return undefined
+  const entry = (data?.tree ?? []).find((node) => node.path === path && node.type === 'tree')
+  return entry?.sha
+}
+
 async function check(opts) {
   const lock = readLock()
   if (lock === undefined) {
@@ -205,56 +245,46 @@ async function check(opts) {
   const repo = opts.repo ?? lock.source?.repo ?? DEFAULT_REPO
   const vendored = lock.vendored ?? DEFAULT_VENDORED
   const ref = opts.ref ?? lock.ref ?? DEFAULT_REF
-  const url = `https://api.github.com/repos/${repo}/compare/${lock.commit}...${ref}`
-  let response
-  try {
-    response = await fetch(url, {
-      headers: {
-        accept: 'application/vnd.github+json',
-        'user-agent': 'dsh-preset-plugin-upgrade-cordis-check-upstream',
-        ...(process.env.GITHUB_TOKEN ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
-      },
-    })
-  } catch (error) {
-    console.error(`cannot reach the GitHub API: ${error.message}`)
+  const short = String(lock.commit).slice(0, 8)
+
+  const pinnedTree = await subtreeSha(repo, lock.commit, vendored)
+  const upstreamTree = await subtreeSha(repo, ref, vendored)
+  if (pinnedTree === undefined || upstreamTree === undefined) {
+    const missing = pinnedTree === undefined ? `${short}:${vendored}` : `${ref}:${vendored}`
+    console.error(`cannot read ${missing} — was the pinned commit rewritten, or did the vendored path move?`)
     return 2
   }
-  if (response.status === 403 || response.status === 429) {
-    console.error(`GitHub API refused the request (${response.status}) — likely the unauthenticated rate limit; set GITHUB_TOKEN`)
+  if (pinnedTree === upstreamTree) {
+    if (opts.json) console.log(JSON.stringify({ repo, ref, status: 'identical', tree: pinnedTree, changed: [] }, null, 2))
+    else console.log(`${repo}: ${short}...${ref} -> identical (${vendored}/ tree ${pinnedTree.slice(0, 8)})`)
+    return 0
+  }
+
+  const { status, data } = await apiGet(`https://api.github.com/repos/${repo}/compare/${lock.commit}...${ref}`)
+  if (status === 404) {
+    console.error(`unknown comparison ${repo}@${short}...${ref} — was the pinned commit rewritten?`)
     return 2
   }
-  if (response.status === 404) {
-    console.error(`unknown comparison ${repo}@${String(lock.commit).slice(0, 8)}...${ref} — was the pinned commit rewritten?`)
-    return 2
-  }
-  if (!response.ok) {
-    console.error(`GitHub API returned ${response.status}`)
-    return 2
-  }
-  const data = await response.json()
   const prefix = `${vendored}/`
-  const files = data.files ?? []
+  const files = data?.files ?? []
   const changed = files.filter((f) => f.filename === vendored || f.filename.startsWith(prefix))
   const truncated = files.length >= 300
   if (opts.json) {
-    console.log(JSON.stringify({ repo, ref, status: data.status, aheadBy: data.ahead_by, totalCommits: data.total_commits, truncated, changed: changed.map((f) => `${f.status} ${f.filename}`) }, null, 2))
+    console.log(JSON.stringify({ repo, ref, status: data?.status, aheadBy: data?.ahead_by, totalCommits: data?.total_commits, treeChanged: true, truncated, changed: changed.map((f) => `${f.status} ${f.filename}`) }, null, 2))
   } else {
-    console.log(`${repo}: ${String(lock.commit).slice(0, 8)}...${ref} -> ${data.status} (ahead_by=${data.ahead_by}, ${vendored}/ changed=${changed.length})`)
+    console.log(`${repo}: ${short}...${ref} -> ${data?.status ?? 'diverged'} (ahead_by=${data?.ahead_by}, ${vendored}/ tree ${pinnedTree.slice(0, 8)} -> ${upstreamTree.slice(0, 8)})`)
     for (const file of changed) console.log(`  ${file.status} ${file.filename}`)
-    if (truncated) console.log('  note: the compare response is capped at 300 files; re-run after syncing to see the rest')
+    if (truncated) console.log('  note: the compare response is capped at 300 files; the tree shas above are the authoritative signal')
+    if (changed.length === 0) console.log(`  the changed files are beyond the compare cap — confirm with: git clone --depth 1 --filter=blob:none --sparse <upstream> && diff -rq <upstream>/${vendored} ${vendored}`)
   }
-  if (changed.length > 0) {
-    if (!opts.json) console.error(`\nupstream moved inside ${vendored}/ — sync per UPSTREAM.md, then: node check-upstream.mjs --write --commit <new sha>`)
-    return 1
-  }
-  if (!opts.json) console.log(`no changes under ${vendored}/ — nothing to sync${data.ahead_by > 0 ? ` (${data.ahead_by} commit(s) ahead, all outside the vendored paths)` : ''}`)
-  return 0
+  if (!opts.json) console.error(`\nupstream moved inside ${vendored}/ — sync per UPSTREAM.md, then: node check-upstream.mjs --write --commit <new sha>`)
+  return 1
 }
 
 function usage() {
   console.log(`usage: node check-upstream.mjs [--verify | --write] [options]
 
-  (default)        compare the pinned commit against upstream and list changes under the vendored paths
+  (default)        compare the pinned commit's vendored tree against upstream and list changed files
   --verify         offline: local tree matches upstream-lock.json and is shaped like a skill root
   --write          offline: rewrite upstream-lock.json from the local tree
   --commit <sha>   with --write: pin the new upstream commit
@@ -262,7 +292,7 @@ function usage() {
   --ref <branch>   upstream branch to compare against (default: main)
   --json           machine-readable output (check mode)
 
-exit: 0 up to date, 1 drift or shape problem, 2 could not determine`)
+exit: 0 up to date, 1 drift or shape problem, 2 could not determine (network, rate limit, unknown commit)`)
 }
 
 const opts = parseArgs(process.argv.slice(2))

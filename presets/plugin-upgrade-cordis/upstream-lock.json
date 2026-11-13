@@ -5,20 +5,21 @@
     "type": "github"
   },
   "ref": "main",
-  "commit": "ef075767b476e8000c716a18f848028eebcd5aef",
+  "commit": "8bd1848a18ceb3b8708b26bbf4b02237b23b58a4",
   "vendored": "skills",
   "license": "MIT",
-  "hash": "sha256-27140ad94c77e716dbd6061d70c9efbe5297bc6551fb05ff4745fa37db2a3c79",
+  "hash": "sha256-e30fa89a1f67b0c80a989627b8bb53ea6281d6f8ea522314bbf15ca374c61777",
   "skills": {
     "dsh-benchmark-case": "sha256-3f65bf3a253146bbdc5eb9dde6295715d629249764e4a8702ce6ead9a4db185a",
     "dsh-upgrade-audit": "sha256-0d58ae9d240a8e43e71ba1340076877c834435b6eb1ae69d76beaa8f9c7e7f08",
     "generic-migration": "sha256-7c7b1deda9f13ed53493806ed161c140a0ac411cef61402becef741170d612e3",
+    "plugin-fast-adapt": "sha256-1502424b3ed391c9eb0787293569aa2cc40f0e6026c07c41829498d221f4c20f",
     "plugin-fleet-sweep": "sha256-b7b7f55f830279d675a034258c6949d283403ef129557b77a21c06d86935a11b",
     "plugin-heavy-dep": "sha256-117197f4374cfe23c11cbea607915c3c50479722ed4ec80f2f500f7daf2ce8d5",
-    "plugin-release": "sha256-4571b2a56e9696a6e2b8cabcda71d8f37017cf340a3a40b8abd9c5ca6478c354",
+    "plugin-release": "sha256-55756217fcfd6dd9331ae2afa8a1ae6071ce0078425c8f32ea02dd05c5db29d1",
     "plugin-runtime-debug": "sha256-8202c7f15b96dc94e29b100c1173b33d308adfb6c4fb237c4d797bee58bb6e7e",
     "plugin-test": "sha256-b9434f8f49f9a3f1263d770ab34275b0a24fde9c80aed3b4f9ecf8c0a3aa116c",
-    "plugin-upgrade": "sha256-cd2a0953d1f9bd7a027341fb702302e8a4644717dc04e6fa4fce19bae8e990b1",
+    "plugin-upgrade": "sha256-388e731705659b6d7b21ba99abd4800503bdb981202e90ae043218c4ecf55e9b",
     "plugin-workflow": "sha256-8b47acf108f2ccf752e26823f278a7146178324f008221bff9487d4ed5c07c82",
     "plugin-write": "sha256-c6e0f9d32a074e02a0f84022dc3ad8a4d48f6322130efa6929b1ff90161f3bc5"
   }

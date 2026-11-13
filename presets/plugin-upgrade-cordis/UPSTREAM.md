@@ -12,7 +12,7 @@
 | | |
 | --- | --- |
 | 仓库 | [oh-my-dsh/dsh-plugin-upgrade-skill](https://github.com/oh-my-dsh/dsh-plugin-upgrade-skill) |
-| 钉住的提交 | `ef075767b476e8000c716a18f848028eebcd5aef`（2026-10-05，`main`）——以 `upstream-lock.json` 的 `commit` 为准，本表只是人读的副本 |
+| 钉住的提交 | `8bd1848a18ceb3b8708b26bbf4b02237b23b58a4`（2026-11-05，`main`）——以 `upstream-lock.json` 的 `commit` 为准，本表只是人读的副本 |
 | 许可证 | MIT（`Copyright (c) 2026 dsh-plugin-upgrade-skill contributors`），原文随包在 `skills/LICENSE` |
 
 **为什么是复制而不是 `dependencies`**：上游 `package.json` 是 `"private": true`，未发布到 registry，preset 行按包名 `createRequire(baseUrl).resolve(...)` 解析时够不到它；复制成随包目录后 preset 自带全部技能，`files` 里带上 `skills` 即可发布。
@@ -22,11 +22,13 @@
 只看**收录范围内**的变更：`skills/**`（含版本卡 `skills/plugin-upgrade/references/v*.md`）与 `skills/README*.md`。上游的 `benchmark/`、`paper/`、`output/`、`scripts/`、CI 与本包无关。
 
 ```bash
-node presets/plugin-upgrade-cordis/check-upstream.mjs          # 在线：钉住提交 → 上游 main，只列 skills/ 下的变更
+node presets/plugin-upgrade-cordis/check-upstream.mjs          # 在线：钉住提交的 skills/ 树 → 上游 main，列出变更文件
 node presets/plugin-upgrade-cordis/check-upstream.mjs --verify # 离线：本地树是否仍与锁一致（抓本地被改过）
 ```
 
 exit 0 = 无需动作，1 = 该同步 / 本地漂了，2 = 问不到（网络、限流可设 `GITHUB_TOKEN`、提交被改写）。
+
+在线模式比的是 `skills/` 目录在钉住提交与上游 `main` 上的 **git tree sha**，不看 compare 接口的文件清单——那个清单上限 300 个文件，窗口一大就会把 `skills/` 下的改动截掉、报成「没有变更」。树 sha 不同即判定该同步；文件清单只用来告诉你改了哪些，超出上限时提示改走下面的 `diff -rq`。
 
 **版本卡缺口不属于同步问题**：目标 DSH 版本在上游没有对应卡时，同步也变不出卡来——那要用随包的 `dsh-upgrade-audit` 自己产证据（见 [DETAILS.md](./DETAILS.md)「版本卡覆盖」）。
 
@@ -34,12 +36,12 @@ exit 0 = 无需动作，1 = 该同步 / 本地漂了，2 = 问不到（网络、
 
 | 上游路径 | 本包去处 |
 | --- | --- |
-| `skills/<11 个技能目录>/**` | `skills/<同名目录>/**`（逐字） |
+| `skills/<12 个技能目录>/**` | `skills/<同名目录>/**`（逐字） |
 | `skills/LICENSE`（仓库根 `LICENSE` 同文） | `skills/LICENSE` |
 | `skills/README.md`、`skills/README.en.md` | `upstream/README.md`、`upstream/README.en.md`（原文；不能留在 `skills/` 根，否则被当成扁平技能解析并报 `missing YAML frontmatter`） |
 | `scripts/`、`benchmark/`、`paper/`、`output/`、`.agents/`、`.claude-plugin/`、`.codex-plugin/`、`CONTRIBUTING*.md` | **不收录** |
 
-11 个技能目录：`dsh-benchmark-case`、`dsh-upgrade-audit`、`generic-migration`、`plugin-fleet-sweep`、`plugin-heavy-dep`、`plugin-release`、`plugin-runtime-debug`、`plugin-test`、`plugin-upgrade`、`plugin-workflow`、`plugin-write`。
+12 个技能目录：`dsh-benchmark-case`、`dsh-upgrade-audit`、`generic-migration`、`plugin-fast-adapt`、`plugin-fleet-sweep`、`plugin-heavy-dep`、`plugin-release`、`plugin-runtime-debug`、`plugin-test`、`plugin-upgrade`、`plugin-workflow`、`plugin-write`。
 
 ## 再同步步骤
 
@@ -51,7 +53,7 @@ cd dsh-plugin-upgrade-skill && git sparse-checkout set skills
 NEW=$(git rev-parse HEAD)    # 新提交号
 
 # 2) 复制。注意 macOS 的 `cp -R src/ dest/` 会把 src 的「内容」摊进 dest，
-#    必须显式给出目标目录名，否则 11 个技能会被合并成一层共享的根
+#    必须显式给出目标目录名，否则 12 个技能会被合并成一层共享的根
 ID=plugin-upgrade-cordis
 SRC=$PWD/skills
 cd /Users/tny/Desktop/work/my-dsh
@@ -69,12 +71,12 @@ node presets/$ID/check-upstream.mjs --verify
 
 ## 同步判据
 
-1. `check-upstream.mjs --verify` PASS（= 11 个技能的树哈希与锁逐一对上，`skills/` 根无散 `.md`，每个 `SKILL.md` 的 `name` 等于目录名）；
+1. `check-upstream.mjs --verify` PASS（= 12 个技能的树哈希与锁逐一对上，`skills/` 根无散 `.md`，每个 `SKILL.md` 的 `name` 等于目录名）；
 2. `diff -rq <上游>/skills/<n> presets/<id>/skills/<n>`（外加 `LICENSE`）逐目录全绿——第 1 条只证明「和锁一致」，这一条才证明「和上游一致」；
 3. `check-upstream.mjs` 在线模式报 `identical`（钉的提交就是当前上游该路径的状态）；
-4. **真实发现**：`node tools/probes/preset-skills.mjs --preset plugin-upgrade-cordis` 报 11 个候选、0 条警告（真内核的 `FileSystemSkillProvider`，见 [DETAILS.md](./DETAILS.md)「验证」）；
+4. **真实发现**：`node tools/probes/preset-skills.mjs --preset plugin-upgrade-cordis` 报 12 个候选、0 条警告（真内核的 `FileSystemSkillProvider`，见 [DETAILS.md](./DETAILS.md)「验证」）；
 5. **组合仍能解析**：`--dump-config` exit 0 且出现 `preset-plugin-upgrade-cordis` 行；
-6. **真装载**：隔离 `DSH_HOME` boot 后在 `/` 菜单「技能」段看到 11 个技能（步骤见 [DETAILS.md](./DETAILS.md)「验证」）。
+6. **真装载**：隔离 `DSH_HOME` boot 后在 `/` 菜单「技能」段看到 12 个技能（步骤见 [DETAILS.md](./DETAILS.md)「验证」）。
 
 上游 `skills/README.md` 的表若增删了技能，本 preset 的 [DETAILS.md](./DETAILS.md)「随包技能」表、`package.json` 的 `description`、`upstream-lock.json`（`--write` 自动）一起改；内容变了就把 `package.json` 的 `version` 加一位。
 

@@ -1,5 +1,5 @@
 # Agent preset plugin-upgrade-cordis: the shipped `cordis` row copied verbatim
-# from dsh 0.2.2-rc.2 (`@deepseek-ai/dsh-web-app/presets/cordis.patch.yml`) —
+# from dsh 0.2.2-rc.3 (`@deepseek-ai/dsh-web-app/presets/cordis.patch.yml`) —
 # same persona, same tool matrix, same sub-agent/compaction groups — plus the
 # 11 plugin-engineering skills vendored under ./skills/. See README.md.
 - insert:
@@ -8,7 +8,7 @@
       config:
         id: plugin-upgrade-cordis
         name: 插件升级创造模式
-        description: '官方创造模式（cordis）原样：同样的 persona、工具矩阵、计划 / 压缩 / 子代理编排与动态插件工具。另并入 dsh-plugin-upgrade-skill 的 11 个插件工程技能——插件升级迁移、编写、测试、发布、运行时排障、整队巡检、重依赖接入、DSH 版本兼容审计、benchmark 考题提取、通用迁移方法与生命周期编排。'
+        description: '官方创造模式（cordis）原样：同样的 persona、工具矩阵、计划 / 压缩 / 子代理编排与动态插件工具。另并入 dsh-plugin-upgrade-skill 的 12 个插件工程技能——插件升级迁移、一键适配与破坏性变更核查、编写、测试、发布、运行时排障、整队巡检、重依赖接入、DSH 版本兼容审计、benchmark 考题提取、通用迁移方法与生命周期编排。'
         order: 6
         plugins:
           # The dsh-doc skill owns plugin implementation and authorization guidance.

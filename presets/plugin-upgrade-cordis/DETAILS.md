@@ -7,7 +7,7 @@
 | | 官方 `cordis`（创造模式） | 本 preset（插件升级创造模式） |
 | --- | --- | --- |
 | persona / 工具矩阵 / 计划 / 压缩 / 子代理 | — | **逐字相同**（`plugin-upgrade-cordis.patch.yml` 是官方 `presets/cordis.patch.yml` 抄一份，只改行 id、`config.id`、显示名与说明、`config.order`，再在 `skill-filesystem` 行加一个 custom root） |
-| 技能目录 | 官方随附 1 个（`dsh-doc`） | **同一行再加一个 custom root**，多出本包的 11 个插件工程技能（官方那个照旧在列） |
+| 技能目录 | 官方随附 1 个（`dsh-doc`） | **同一行再加一个 custom root**，多出本包的 12 个插件工程技能（官方那个照旧在列） |
 | 显示名 / order | 创造模式 / 4 | 插件升级创造模式 / 6 |
 
 `skill-filesystem` 那一行只改了 `customSkillDirs`：在官方那条之前插入本包的根，其余字段一字未动。
@@ -24,23 +24,24 @@ plugin-upgrade-cordis/
 ├── DETAILS.md                         # 本文件
 ├── UPSTREAM.md                        # 上游来源、钉住的 commit、再同步步骤与哈希配方
 ├── check-upstream.mjs                 # 上游同步检查：在线看漂移，--verify 查完整性，--write 重建锁
-├── upstream-lock.json                 # 钉住的 commit ＋ 11 个技能的树哈希（v1）
-├── skills/                            # 11 个技能目录（上游逐字，各带自己的 references/ scripts/ examples/）
-│   ├── plugin-upgrade/  plugin-workflow/  plugin-write/  plugin-test/
-│   ├── plugin-release/  plugin-runtime-debug/  plugin-fleet-sweep/
-│   ├── plugin-heavy-dep/  dsh-upgrade-audit/  dsh-benchmark-case/
-│   ├── generic-migration/
+├── upstream-lock.json                 # 钉住的 commit ＋ 12 个技能的树哈希（v1）
+├── skills/                            # 12 个技能目录（上游逐字，各带自己的 references/ scripts/ examples/）
+│   ├── plugin-upgrade/  plugin-fast-adapt/  plugin-workflow/  plugin-write/
+│   ├── plugin-test/  plugin-release/  plugin-runtime-debug/
+│   ├── plugin-fleet-sweep/  plugin-heavy-dep/  dsh-upgrade-audit/
+│   ├── dsh-benchmark-case/  generic-migration/
 │   └── LICENSE                        # 上游 MIT 许可原文
 └── upstream/                          # 上游 skills/README.md、README.en.md（原文，不参与技能发现）
 ```
 
-`skills/` 根下**只有 11 个技能目录与一个非 `.md` 文件**（`LICENSE`）。技能发现对根下的每个目录找 `<dir>/SKILL.md`、对根下的每个 `.md` 文件当扁平技能解析——上游那两份 `skills/README*.md` 因此挪到 `upstream/`，否则每次装载都会各报一条 `missing YAML frontmatter` 警告。
+`skills/` 根下**只有 12 个技能目录与一个非 `.md` 文件**（`LICENSE`）。技能发现对根下的每个目录找 `<dir>/SKILL.md`、对根下的每个 `.md` 文件当扁平技能解析——上游那两份 `skills/README*.md` 因此挪到 `upstream/`，否则每次装载都会各报一条 `missing YAML frontmatter` 警告。
 
 ## 随包技能
 
 | 技能 | 做什么 |
 | --- | --- |
 | `plugin-upgrade` | 只读检查、已装插件升级、宿主版本兼容迁移；七类触点 + 版本卡 + 安全回滚 |
+| `plugin-fast-adapt` | 直连官方 `docs/upgrade-guide/` 与 npm dist-tags：探环境、定目标版本、扫插件代码命中哪几条破坏性变更并给官方修法；带插件脚手架、性能体检、宿主启动日志诊断 |
 | `plugin-workflow` | 跨阶段编排插件生命周期：能力菜单、阶段账本、一次授权贯穿 |
 | `plugin-write` | 写 DSH 插件：仓库模式与扩展形态选择、命名校验、版本适配 |
 | `plugin-test` | 为插件变更选最小充分测试层级；含版本迁移的七触点测试流程 |
@@ -54,15 +55,14 @@ plugin-upgrade-cordis/
 
 ### 版本卡覆盖
 
-`plugin-upgrade` 的正文只留决策流程，版本事实全在 `skills/plugin-upgrade/references/v*.md`——**卡覆盖到哪，技能就能可靠用到哪**。随包（上游 `ef07576`，查于 2026-10-06）的现状：
+`plugin-upgrade` 的正文只留决策流程，版本事实全在 `skills/plugin-upgrade/references/v*.md`——**卡覆盖到哪，技能就能可靠用到哪**。随包（上游 `8bd1848`，查于 2026-11-13）的现状：
 
 | 走廊（`from → to`） | 覆盖 |
 | --- | --- |
-| `dsh-v0.1.7-rc.2 → dsh-v0.2.0-rc.1` | ✅ 6 张卡（[v0.2.0-rc.1.md](skills/plugin-upgrade/references/v0.2.0-rc.1.md)） |
-| `dsh-v0.1.7-rc.1 → dsh-v0.1.7-rc.2` | ❌ 未成卡（卡文件内自带声明） |
-| `dsh-v0.2.0-rc.1 → dsh-v0.2.0-rc.2` | ⚠️ 只有同文件末尾两条 field notes，未成卡 |
-| `dsh-v0.2.0-rc.2 → dsh-v0.2.1-alpha.1` | ❌ 上游尚无（DSH 已发布 0.2.2-rc.2） |
-| `dsh-v0.2.2-rc.1 → dsh-v0.2.2-rc.2` | ❌ 未成卡；实测契约变更见下 |
+| `dsh-v0.1.1-rc.1 → dsh-v0.2.2-alpha.3` | ✅ 32 个走廊逐边成卡，索引见 [references/README.md](skills/plugin-upgrade/references/README.md) |
+| `dsh-v0.1.7-rc.1 → dsh-v0.1.7-rc.2` | ❌ 未成卡（上游在 `v0.2.0-rc.1` 卡内声明） |
+| `dsh-v0.2.0-rc.2 → dsh-v0.2.1-alpha.5`、`dsh-v0.2.1-alpha.5 → dsh-v0.2.2-alpha.2` | ✅ 跳版卡 20 张与 6 张（跳版视图，不是走廊边） |
+| `dsh-v0.2.2-alpha.3 → dsh-v0.2.2-rc.3` | ❌ 上游尚无（在用的 0.2.2-rc.3 未成卡）；实测契约变更见下 |
 
 `0.2.2-rc.1 → 0.2.2-rc.2`（1568 个提交、4645 个文件）实测到的插件侧契约变更，供没有卡时直接用：
 
@@ -120,31 +120,47 @@ node "<DSH 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js" \
 
 `--dump-config` 只组合、不装载、**不求值 `!!js`**，所以它证明 patch 能解析，不证明技能根算得对。
 
-**随包完整性与形态（离线，必跑）**——`check-upstream.mjs --verify` 一次查三件事：`skills/` 根下只有 11 个技能目录与 `LICENSE`（没有会被当成扁平技能的散 `.md`）、每个目录的 `SKILL.md` frontmatter `name` 等于目录名且带 `description`、11 个技能的树哈希与 `upstream-lock.json` 逐一对上：
+**随包完整性与形态（离线，必跑）**——`check-upstream.mjs --verify` 一次查三件事：`skills/` 根下只有 12 个技能目录与 `LICENSE`（没有会被当成扁平技能的散 `.md`）、每个目录的 `SKILL.md` frontmatter `name` 等于目录名且带 `description`、12 个技能的树哈希与 `upstream-lock.json` 逐一对上：
 
 ```bash
 node presets/plugin-upgrade-cordis/check-upstream.mjs --verify
-# 期望：PASS 11 skills match the lock (oh-my-dsh/dsh-plugin-upgrade-skill@ef075767)
+# 期望：PASS 12 skills match the lock (oh-my-dsh/dsh-plugin-upgrade-skill@8bd1848a)
 # exit 0=一致；1=本地内容/形态漂了；2=锁缺失或读不到
 ```
 
-**该不该同步上游（在线）**——比对钉住的 commit 与上游当前 `skills/`，只认收录范围内的变更：
+**该不该同步上游（在线）**——比对钉住提交与上游当前 `main` 上 `skills/` 的 git tree sha，只认收录范围内的变更：
 
 ```bash
 node presets/plugin-upgrade-cordis/check-upstream.mjs
-# identical 或只列出 skills/ 下的变更；exit 1=该同步，exit 2=问不到（网络 / 限流，可设 GITHUB_TOKEN）
+# identical，或列出 skills/ 下的变更文件；exit 1=该同步，exit 2=问不到（网络 / 限流，可设 GITHUB_TOKEN）
 ```
 
-`--verify` 只查形态与完整性，**不查技能发现**。要查发现跑 `node tools/probes/preset-skills.mjs --preset plugin-upgrade-cordis`：它用真实的 `@deepseek-ai/dsh-skill-filesystem`，以 `customSkillDirs=[<本目录>/skills]`、`includeDefaultRoots: false`、`watch: false` 构造 `FileSystemSkillProvider`，`list({ cwd })` 应给 11 个 `source=custom` 候选、0 条 `logger.warn`，逐个 `get()` 都能取到正文——这正是 preset 那一行在宿主里跑的同一条代码路径。
+比树 sha 而不是比 compare 接口的文件清单，是因为那个清单上限 300 个文件：窗口一大，`skills/` 下的改动会被截掉、报成「无需同步」。清单只用来告诉你改了哪些，超出上限时改走稀疏克隆 + `diff -rq`。
+
+`--verify` 只查形态与完整性，**不查技能发现**。要查发现跑 `node tools/probes/preset-skills.mjs --preset plugin-upgrade-cordis`：它用真实的 `@deepseek-ai/dsh-skill-filesystem`，以 `customSkillDirs=[<本目录>/skills]`、`includeDefaultRoots: false`、`watch: false` 构造 `FileSystemSkillProvider`，`list({ cwd })` 应给 12 个 `source=custom` 候选、0 条 `logger.warn`，逐个 `get()` 都能取到正文——这正是 preset 那一行在宿主里跑的同一条代码路径。
 
 **真装载**——隔离 `DSH_HOME` 的 profile 里 `dsh plugin add` 本目录后 boot（`--port 0 --no-open`），在新会话里选中本 preset，打开 `/` 菜单的「技能」段：应与官方的 `dsh-doc` 同时在列。实测记录见下。
+
+### 适配实测记录（0.2.2-rc.3，2026-11-13）
+
+运行中的 DSH 升到 0.2.2-rc.3。官方 `cordis.patch.yml` 在 rc.2 → rc.3 之间一字未动，抄本按 `--recopy` 只把顶部基线标注跟到 rc.3；这一版的动作在随包技能：上游从 `ef07576` 走到 `8bd1848`（2026-11-05），`skills/` 有实质改动。
+
+- 新增技能 `plugin-fast-adapt`（直连官方 `docs/upgrade-guide/` 与 npm dist-tags，不依赖人工卡片），收录 12 个技能。
+- `plugin-upgrade` 的版本卡从 20 张补到 32 张：新增 `v0.2.0-rc.2`、`v0.2.1-alpha.1..5`、`v0.2.1-rc.1/3/4/5`、`v0.2.2-alpha.2/3` 与两张跳版卡，走廊覆盖到 `0.2.2-alpha.3`；`SKILL.md`、`pre-flight`、`troubleshooting`、`verify-runtime.mjs` 一并更新。
+- `--official-diff`：官方 `cordis.patch.yml` 在 0.2.2-rc.2 → 0.2.2-rc.3 之间一字未动；`--recopy` 后 `--diff` ok（归一后与已装 0.2.2-rc.3 的官方一致）。
+- `check-upstream.mjs --verify` PASS（12 个技能的树哈希与锁一致，集合哈希 `sha256-e30fa89a…`）；在线模式报 `identical`。
+- `--dump-config` exit 0，组合 23 行，`preset-plugin-upgrade-cordis` 行与它的 `config.plugins` 齐全，`order` 6。
+- `--variables` PASS：提示词变量仍只落在 `{{model}}`，0.2.2-rc.3 的 `agent-loop` 注册表里有它。
+- 真装载探针（真实 0.2.2-rc.3 的 `FileSystemSkillProvider` + `customSkillDirs=[skills/]`）：12 个候选、`source=custom`、0 条警告、12 个 `SKILL.md` 正文全部可加载。
+- `tools/host-smoke.mjs` PASS（0.2.2-rc.3 上组合解析通过、首页 200、七个客户端 bundle 取得到、启动日志无装载异常）。
+- `assert-ledger.mjs` 判据 11（抄本与已装官方一致）通过。
 
 ### 适配实测记录（0.2.2-rc.2，2026-11-12）
 
 运行中的 DSH 升到 0.2.2-rc.2 后按 [UPSTREAM.md](./UPSTREAM.md)「再抄官方 preset」重抄一遍。这版官方动了三处，抄本都已跟上：persona 前缀补一句「You help the user customize DeepSeek Harness itself.」、`tool-subagent-control` 加 `config.interrupt: false`、persona 上方那条注释改写。同一版官方 `@deepseek-ai/dsh-agent-preset` 随附的技能从 4 个并成 1 个 `dsh-doc`，本 preset 的 `skill-filesystem` 行照旧在它之前插本包的技能根。
 
 - `--diff` ok：归一后与已装 0.2.2-rc.2 的官方 `cordis.patch.yml` 一致。
-- `check-upstream.mjs --verify` PASS（11 个技能的树哈希与锁一致）；在线模式报 `no changes under skills/`（上游 119 个提交全在收录范围外）。
+- `check-upstream.mjs --verify` PASS（11 个技能的树哈希与锁一致）。
 - `--dump-config` exit 0，组合 23 行，`preset-plugin-upgrade-cordis` 行与它的 `config.plugins` 齐全，`order` 6。
 - `--variables` PASS：提示词变量仍只落在 `{{model}}`，0.2.2-rc.2 的 `agent-loop` 注册表里有它。
 - 真装载探针（真实 0.2.2-rc.2 的 `FileSystemSkillProvider` + `customSkillDirs=[skills/]`）：11 个候选、`source=custom`、0 条警告、11 个 `SKILL.md` 正文全部可加载。
@@ -238,8 +254,8 @@ node presets/plugin-upgrade-cordis/check-upstream.mjs
 ## 已知边界
 
 - **上游技能正文按上游仓库根写**：`dsh-benchmark-case` 提到 `benchmark/tasks/`、`scripts/validate.mjs`，`plugin-release` / `plugin-test` 提到上游的 cohort 与快照目录。这些**不是本包内容**，本包只随 `skills/`——用到那些技能时按上游仓库（或用户自己的插件仓库）的实际布局走。上游的 `scripts/`、`benchmark/`、`paper/` 一律未收录。
-- **抄本的基线会随 DSH 漂**：`plugin-upgrade-cordis.patch.yml` 抄自 0.2.2-rc.2 的官方 `cordis`，官方每版都可能改它。升级 DSH 后要按新版官方文件重抄一遍（步骤见 [UPSTREAM.md](./UPSTREAM.md)「再抄官方 preset」）。抄本落后不会报错，只会静默地少几个插件行；**唯一会当场炸的是引用已被删掉的提示词变量**——那种情况下这一轮的请求会以 `unknown prompt variable` 失败，而 preset 照旧出现在选择器里。
-- **`engines.dsh` 按 semver 管不到预发布版**：`>=0.2.2-rc.2` 只容得下三位号完全相同的预发布版本；更旧的 `>=0.2.0-rc.2` 根本不收 `0.2.2-rc.2`（预发布只在 `[major, minor, patch]` 全等时进范围）。所以这个字段是**声明与文档**，不是闸门——真正强制的是插件的 `peerDependencies`。
+- **抄本的基线会随 DSH 漂**：`plugin-upgrade-cordis.patch.yml` 抄自 0.2.2-rc.3 的官方 `cordis`，官方每版都可能改它。升级 DSH 后要按新版官方文件重抄一遍（步骤见 [UPSTREAM.md](./UPSTREAM.md)「再抄官方 preset」）。抄本落后不会报错，只会静默地少几个插件行；**唯一会当场炸的是引用已被删掉的提示词变量**——那种情况下这一轮的请求会以 `unknown prompt variable` 失败，而 preset 照旧出现在选择器里。
+- **`engines.dsh` 按 semver 管不到预发布版**：`>=0.2.2-rc.3` 只容得下三位号完全相同的预发布版本；更旧的 `>=0.2.0-rc.2` 根本不收 `0.2.2-rc.3`（预发布只在 `[major, minor, patch]` 全等时进范围）。所以这个字段是**声明与文档**，不是闸门——真正强制的是插件的 `peerDependencies`。
 - **技能正文逐字复制、不做本地改写**：要改内容就改上游，再按 [UPSTREAM.md](./UPSTREAM.md) 重新同步，否则下次同步会把本地改动冲掉。`check-upstream.mjs --verify` 就是用来抓这种「本地被改过」的。
 - **上游更新了要不要跟**：只看 `skills/` 下的变更——`node check-upstream.mjs` 说了算；上游的 `benchmark/` / `paper/` / CI 再热闹也与此无关。**卡缺口（见上「版本卡覆盖」）不是同步能解决的**，那种目标版本要用 `dsh-upgrade-audit` 自己产证据。
 - 上游 `skills/README.md` 的收录清单与作者表保留在 `upstream/`，便于对照。
