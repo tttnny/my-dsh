@@ -117,5 +117,6 @@ bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `b
 
 - 2026-11-08，内核 0.2.2-rc.1，macOS：`pnpm check` 全通过（typecheck、4 个测试脚本、check-bundle 16 条、两个技能根的 probe）；`kimi-cu doctor` 五项全绿，`kimi_cu_status` 返回 0.6.8 与已就绪。
 - 2026-11-08，内核 0.2.2-rc.1，macOS：`node tools/host-smoke.mjs` 装载通过，插件页能取到本包的 `client.js`。
-- 2026-11-13，内核 0.2.2-rc.3，macOS：`pnpm check` 全通过（typecheck、6 个测试脚本、check-bundle 13 条、两个技能根的 probe）；更新链路只在替身上验过，真机升级未执行。
+- 2026-11-13，内核 0.2.2-rc.3，macOS：`pnpm check` 全通过（typecheck、6 个测试脚本、check-bundle 13 条、两个技能根的 probe）。
+- 2026-11-13，真机更新链路：清单检查得出 0.7.5 已是最新，`run()` 直接返回 upToDate；`upgrade --force-reinstall` 6.7 秒退出 0，走完下载、签名与公证校验、替换与重启服务，`==>` 行依次映射到 checking、downloading、verifying，签名通过后映射到 installing；装完仍是 0.7.5，`doctor` 五项全绿，服务仍 enabled，`mcp__kimi-cu__*` 连接未中断。
 - Windows 真机验收待补：卡片未安装 → 运行官方命令 → 重新检测 → 开关插件 → `mcp__kimi-cu__*` 工具出现 → `list_apps` 可用。

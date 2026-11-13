@@ -80,7 +80,7 @@ await test('parseStage 把 ==> 行映射成阶段，认不出的行不报错', (
   assert.equal(parseStage('==> 当前版本 0.7.5，线上最新 0.7.6'), 'checking');
   assert.equal(parseStage('==> 下载 KimiCU.app.zip'), 'downloading');
   assert.equal(parseStage('==> 替换 /Applications/KimiCU.app'), 'installing');
-  assert.equal(parseStage('✓ 签名 + 公证校验通过。'), null);
+  assert.equal(parseStage('✓ 签名 + 公证校验通过。'), 'installing');
   assert.equal(parseStage(''), null);
 });
 

@@ -137,10 +137,14 @@ const STAGE_RULES: ReadonlyArray<readonly [RegExp, UpdateStage]> = [
  */
 export function parseStage(line: string): UpdateStage | null {
   const text = line.trim();
-  if (!text.startsWith('==>')) return null;
-  for (const [pattern, stage] of STAGE_RULES) {
-    if (pattern.test(text)) return stage;
+  if (text.startsWith('==>')) {
+    for (const [pattern, stage] of STAGE_RULES) {
+      if (pattern.test(text)) return stage;
+    }
+    return null;
   }
+  // macOS 的替换段没有 `==>` 行：签名与公证校验通过之后紧接着就是替换安装。
+  if (text.startsWith('✓') && /签名|公证/.test(text)) return 'installing';
   return null;
 }
 
