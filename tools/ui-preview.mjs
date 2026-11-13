@@ -159,8 +159,8 @@ if (typeof args.mount === 'string') {
   const propsSource = propsIsModule
     ? 'propsFromModule'
     : (propsPath === undefined ? '{}' : readFileSync(propsPath, 'utf8'));
-  // 同目录、同名的那份 .css（GrillingForm.jsx → GrillingForm.css）存在就带上。
-  const siblingCss = entry.replace(/\.jsx?$/, '.css');
+  // 同目录、同名的那份 .css（GrillingForm.jsx → GrillingForm.css、ConfigCard.tsx → ConfigCard.css）存在就带上。
+  const siblingCss = entry.replace(/\.(jsx?|tsx?)$/, '.css');
   const cssImport = existsSync(siblingCss) ? `import ${JSON.stringify(siblingCss)};\n` : '';
   writeFileSync(join(outDir, 'entry.jsx'), `import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';

@@ -1,4 +1,4 @@
-/* 插件页上的 KimiCU 状态卡。 */
+/* 插件页上的 KimiCU 状态卡：每行都是「标签 | 内容 | 动作」三列，动作永远在最右列。 */
 
 .dsh-kimi-cu-card {
   display: flex;
@@ -6,36 +6,59 @@
   gap: 12px;
 }
 
-.dsh-kimi-cu-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.dsh-kimi-cu-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 12px;
 }
 
-.dsh-kimi-cu-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+.dsh-kimi-cu-label {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
-  line-height: 18px;
+  line-height: 20px;
 }
 
-.dsh-kimi-cu-path {
-  word-break: break-all;
+.dsh-kimi-cu-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
 }
 
-.dsh-kimi-cu-note {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.dsh-kimi-cu-section {
+.dsh-kimi-cu-span {
+  grid-column: 2 / -1;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+}
+
+.dsh-kimi-cu-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dsh-kimi-cu-hint {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dsh-kimi-cu-error {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-kimi-cu-path {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-all;
 }
 
 .dsh-kimi-cu-command {
@@ -59,6 +82,7 @@
 .dsh-kimi-cu-link {
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
+  line-height: 18px;
   text-decoration: underline;
 }
 
@@ -92,16 +116,6 @@
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
-}
-.dsh-kimi-cu-version {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.dsh-kimi-cu-error {
-  color: var(--dsw-alias-state-error-primary);
 }
 
 .dsh-kimi-cu-raw summary {

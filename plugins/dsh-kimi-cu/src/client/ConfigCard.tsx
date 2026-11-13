@@ -79,10 +79,10 @@ function docsUrl(install: InstallPlan): string {
 }
 
 /**
- * 插件页上的 KimiCU 状态卡：检测结果、安装命令、复制、重新检测与更新。
+ * 插件页上的 KimiCU 状态卡。
  *
- * 更新按钮只在已安装时出现：点一下先读清单比版本，有新版才执行 upgrade；执行期间按钮
- * 显示阶段文字，失败就地给出分类原因与可展开的原始输出。
+ * 每一行都是「标签 | 内容 | 动作」三列：状态、版本、路径、更新各自成行，动作永远在最右列，
+ * 说明文字跟着它那一行，不再是一列从上到下堆着的散句。
  * @param props - 座位给的 t。
  * @returns 卡片的元素树。
  */
@@ -158,7 +158,7 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
   if (state.kind === 'loading') {
     return (
       <div className="dsh-kimi-cu-card">
-        <div className="dsh-kimi-cu-note">{t('status.loading')}</div>
+        <div className="dsh-kimi-cu-hint">{t('status.loading')}</div>
       </div>
     );
   }
@@ -166,9 +166,14 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
   if (state.kind === 'error') {
     return (
       <div className="dsh-kimi-cu-card">
-        <div className="dsh-kimi-cu-note">{t('status.error')}</div>
-        <div className="dsh-kimi-cu-actions">
-          <Button variant="outline" size="sm" onClick={recheck}>{t('status.retry')}</Button>
+        <div className="dsh-kimi-cu-row">
+          <div className="dsh-kimi-cu-label">{t('status.state')}</div>
+          <div className="dsh-kimi-cu-value">
+            <div className="dsh-kimi-cu-hint dsh-kimi-cu-error">{t('status.error')}</div>
+          </div>
+          <div className="dsh-kimi-cu-control">
+            <Button variant="outline" size="sm" onClick={recheck}>{t('status.retry')}</Button>
+          </div>
         </div>
       </div>
     );
@@ -179,7 +184,7 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
   if (!status.supported) {
     return (
       <div className="dsh-kimi-cu-card">
-        <div className="dsh-kimi-cu-note">{t('status.unsupported')}</div>
+        <div className="dsh-kimi-cu-hint">{t('status.unsupported')}</div>
       </div>
     );
   }
@@ -197,8 +202,21 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
       ? t('status.notReady.title')
       : t('status.ready.title');
 
+  const updateHint = ((): string => {
+    if (run.kind === 'running') return tr('update.stage.' + run.stage);
+    if (run.kind === 'failed') return tr('update.failed.' + run.failure);
+    if (run.kind === 'done') {
+      if (run.upToDate || run.version === null) return t('update.hint.latest');
+      return t('update.done') + ' ' + run.version;
+    }
+    if (update.kind === 'checking') return t('update.hint.checking');
+    if (update.kind === 'unavailable') return t('update.hint.unavailable');
+    return update.check.hasUpdate ? t('update.hint.available') : t('update.hint.latest');
+  })();
+
   const updateLabel = ((): string => {
     if (run.kind === 'running') return t('update.running');
+    if (run.kind === 'failed') return t('status.retry');
     if (run.kind === 'done') return t('update.latest');
     if (update.kind === 'ready') {
       return update.check.hasUpdate
@@ -208,6 +226,7 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
     if (update.kind === 'unavailable') return t('update.action');
     return t('update.check');
   })();
+
   const updateDisabled = run.kind === 'running'
     || run.kind === 'done'
     || update.kind === 'checking'
@@ -217,118 +236,124 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
 
   return (
     <div className="dsh-kimi-cu-card">
-      <div className="dsh-kimi-cu-head">
-        <Tag tone={!status.installed || notReady ? 'danger' : 'info'}>{badge}</Tag>
-        <Button variant="ghost" size="sm" disabled={run.kind === 'running'} onClick={recheck}>
-          {t('status.recheck')}
-        </Button>
+      <div className="dsh-kimi-cu-row">
+        <div className="dsh-kimi-cu-label">{t('status.state')}</div>
+        <div className="dsh-kimi-cu-value">
+          <Tag tone={!status.installed || notReady ? 'danger' : 'info'}>{badge}</Tag>
+          {status.installed ? null : <div className="dsh-kimi-cu-hint">{t('status.missing.hint')}</div>}
+          {status.installed && !notReady && !legacy ? (
+            <div className="dsh-kimi-cu-hint">{t('status.ready.hint')}</div>
+          ) : null}
+          {status.notes.map((note) => (
+            NOTE_KEYS[note] === undefined
+              ? null
+              : <div key={note} className="dsh-kimi-cu-hint">{tr(NOTE_KEYS[note])}</div>
+          ))}
+        </div>
+        <div className="dsh-kimi-cu-control">
+          <Button variant="ghost" size="sm" disabled={run.kind === 'running'} onClick={recheck}>
+            {t('status.recheck')}
+          </Button>
+        </div>
       </div>
 
       {status.installed ? (
         <>
-          <div className="dsh-kimi-cu-version">
-            <span className="dsh-kimi-cu-meta">
-              {status.version === null ? null : <span>{t('status.version')}: {status.version}</span>}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={updateDisabled}
-              onClick={updateAction}
-            >
-              {updateLabel}
-            </Button>
+          <div className="dsh-kimi-cu-row">
+            <div className="dsh-kimi-cu-label">{t('status.version')}</div>
+            <div className="dsh-kimi-cu-value">{status.version ?? '—'}</div>
           </div>
           {status.path === null ? null : (
-            <div className="dsh-kimi-cu-meta">
-              <span className="dsh-kimi-cu-path">{t('status.path')}: {status.path}</span>
+            <div className="dsh-kimi-cu-row">
+              <div className="dsh-kimi-cu-label">{t('status.path')}</div>
+              <div className="dsh-kimi-cu-value dsh-kimi-cu-path">{status.path}</div>
             </div>
           )}
-          {run.kind === 'running' ? (
-            <div className="dsh-kimi-cu-note">{tr('update.stage.' + run.stage)}</div>
-          ) : null}
-          {run.kind === 'done' ? (
-            <div className="dsh-kimi-cu-note">
-              {run.upToDate || run.version === null ? t('update.latest') : t('update.done') + ' ' + run.version}
-              {run.reconnect === 'failed' ? ' ' + t('update.reconnectFailed') : ''}
-            </div>
-          ) : null}
-          {run.kind === 'failed' ? (
-            <div className="dsh-kimi-cu-section">
-              <div className="dsh-kimi-cu-note dsh-kimi-cu-error">{tr('update.failed.' + run.failure)}</div>
-              <div className="dsh-kimi-cu-actions">
-                <Button variant="outline" size="sm" onClick={updateNow}>{t('status.retry')}</Button>
+          <div className="dsh-kimi-cu-row">
+            <div className="dsh-kimi-cu-label">{t('update.label')}</div>
+            <div className="dsh-kimi-cu-value">
+              <div className={run.kind === 'failed' ? 'dsh-kimi-cu-hint dsh-kimi-cu-error' : 'dsh-kimi-cu-hint'}>
+                {updateHint}
               </div>
-              <details className="dsh-kimi-cu-raw">
-                <summary>{t('update.raw')}</summary>
-                <pre className="dsh-kimi-cu-command"><code>{run.raw}</code></pre>
-              </details>
+              {run.kind === 'done' && run.reconnect === 'failed' ? (
+                <div className="dsh-kimi-cu-hint">{t('update.reconnectFailed')}</div>
+              ) : null}
             </div>
-          ) : null}
-          {update.kind === 'unavailable' ? (
-            <div className="dsh-kimi-cu-note">{t('update.unavailable')}</div>
+            <div className="dsh-kimi-cu-control">
+              <Button variant="outline" size="sm" disabled={updateDisabled} onClick={updateAction}>
+                {updateLabel}
+              </Button>
+            </div>
+          </div>
+          {run.kind === 'failed' ? (
+            <div className="dsh-kimi-cu-row">
+              <div className="dsh-kimi-cu-label" />
+              <div className="dsh-kimi-cu-span">
+                <details className="dsh-kimi-cu-raw">
+                  <summary>{t('update.raw')}</summary>
+                  <pre className="dsh-kimi-cu-command"><code>{run.raw}</code></pre>
+                </details>
+              </div>
+            </div>
           ) : null}
         </>
-      ) : (
-        <div className="dsh-kimi-cu-note">{t('status.missing.hint')}</div>
-      )}
-
-      {status.notes.map((note) => (
-        NOTE_KEYS[note] === undefined
-          ? null
-          : <div key={note} className="dsh-kimi-cu-note">{tr(NOTE_KEYS[note])}</div>
-      ))}
+      ) : null}
 
       {notReady ? (
-        <div className="dsh-kimi-cu-section">
-          <div className="dsh-kimi-cu-note">{t('status.notReady.hint')}</div>
-          {status.doctor.checks.length === 0 ? null : (
-            <ul className="dsh-kimi-cu-checks">
-              {status.doctor.checks.map((check) => (
-                <li key={check.id} className={check.ok ? 'dsh-kimi-cu-check-ok' : 'dsh-kimi-cu-check-bad'}>
-                  <span>{check.ok ? '✅' : '❌'}</span>
-                  <span>{checkLabel(tr, check)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {doctorFailed ? (
-            <div className="dsh-kimi-cu-note">
-              {status.platform === 'darwin' ? t('fix.macos') : t('fix.windows')}
-            </div>
-          ) : null}
+        <div className="dsh-kimi-cu-row">
+          <div className="dsh-kimi-cu-label">{t('status.checks')}</div>
+          <div className="dsh-kimi-cu-span">
+            <div className="dsh-kimi-cu-hint">{t('status.notReady.hint')}</div>
+            {status.doctor.checks.length === 0 ? null : (
+              <ul className="dsh-kimi-cu-checks">
+                {status.doctor.checks.map((check) => (
+                  <li key={check.id} className={check.ok ? 'dsh-kimi-cu-check-ok' : 'dsh-kimi-cu-check-bad'}>
+                    <span>{check.ok ? '✅' : '❌'}</span>
+                    <span>{checkLabel(tr, check)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {doctorFailed ? (
+              <div className="dsh-kimi-cu-hint">
+                {status.platform === 'darwin' ? t('fix.macos') : t('fix.windows')}
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
-      {status.installed && !notReady && !legacy ? (
-        <div className="dsh-kimi-cu-note">{t('status.ready.hint')}</div>
-      ) : null}
-
       {showInstall && install !== null ? (
-        <div className="dsh-kimi-cu-section">
-          <pre className="dsh-kimi-cu-command"><code>{install.command}</code></pre>
-          <div className="dsh-kimi-cu-actions">
-            <Button variant="outline" size="sm" onClick={() => copy(install.command)}>
-              {copied ? t('status.copied') : t('status.copy')}
-            </Button>
+        <div className="dsh-kimi-cu-row">
+          <div className="dsh-kimi-cu-label">{t('status.install')}</div>
+          <div className="dsh-kimi-cu-span">
+            <pre className="dsh-kimi-cu-command"><code>{install.command}</code></pre>
+            <div className="dsh-kimi-cu-actions">
+              <Button variant="outline" size="sm" onClick={() => copy(install.command)}>
+                {copied ? t('status.copied') : t('status.copy')}
+              </Button>
+              {docs === null ? null : (
+                <a className="dsh-kimi-cu-link" href={docs} target="_blank" rel="noreferrer">
+                  {t('status.docs')}
+                </a>
+              )}
+            </div>
+            {copyFailed ? <div className="dsh-kimi-cu-hint">{t('status.copyFailed')}</div> : null}
+            <ol className="dsh-kimi-cu-steps">
+              {install.steps.map((step) => <li key={step}>{tr('step.' + step)}</li>)}
+            </ol>
+          </div>
+        </div>
+      ) : (
+        <div className="dsh-kimi-cu-row">
+          <div className="dsh-kimi-cu-label">{t('status.docs.label')}</div>
+          <div className="dsh-kimi-cu-span">
             {docs === null ? null : (
               <a className="dsh-kimi-cu-link" href={docs} target="_blank" rel="noreferrer">
                 {t('status.docs')}
               </a>
             )}
           </div>
-          {copyFailed ? <div className="dsh-kimi-cu-note">{t('status.copyFailed')}</div> : null}
-          <ol className="dsh-kimi-cu-steps">
-            {install.steps.map((step) => <li key={step}>{tr('step.' + step)}</li>)}
-          </ol>
-        </div>
-      ) : (
-        <div className="dsh-kimi-cu-actions">
-          {docs === null ? null : (
-            <a className="dsh-kimi-cu-link" href={docs} target="_blank" rel="noreferrer">
-              {t('status.docs')}
-            </a>
-          )}
         </div>
       )}
     </div>
