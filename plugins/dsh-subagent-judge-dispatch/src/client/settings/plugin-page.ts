@@ -14,7 +14,7 @@
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client';
 
 /** npm package name of this plugin's bundle — the whole `plugins.bundle.config` key. */
-export const BUNDLE_NAME = '@lynn123411/dsh-subagent-judge-dispatch';
+const BUNDLE_NAME = '@lynn123411/dsh-subagent-judge-dispatch';
 
 /** The Plugins page slot a bundle's own configuration registers into. */
 export const BUNDLE_CONFIG_SLOT = 'plugins.bundle.config';

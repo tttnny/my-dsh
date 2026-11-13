@@ -7,7 +7,7 @@
  *
  * 这里不产生任何颜色：本插件一个颜色令牌都不写，蓝阶、纸面、语法色都读宿主的。
  */
-import { clampNumber, defaultConfig, normalizeConfig, type Config } from './schema.ts';
+import { defaultConfig, normalizeConfig, type Config } from './schema.ts';
 
 /** 本插件在 `<html>` 上用的根属性：开着时才加，关掉整层样式一并失效。 */
 export const ROOT_ATTRIBUTE = 'data-native-plus';
@@ -72,6 +72,3 @@ export function applyProjection(root: HTMLElement, projection: Projection): void
 export function clearProjection(root: HTMLElement): void {
   applyProjection(root, projectSettings(normalizeSettings(undefined), false));
 }
-
-/** 把数值夹进区间的工具，转手自 schema，保持旧的导出名。 */
-export { clampNumber };

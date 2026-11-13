@@ -18,7 +18,7 @@ import {
 import type { FallbackReason, JudgeOutcome, ProbeOutcome, TypeRow } from './types.ts';
 
 /** How long a judgement may take before it is abandoned. */
-export const JUDGE_TIMEOUT_MS = 5000;
+const JUDGE_TIMEOUT_MS = 5000;
 
 /** What the judge client needs from the Host to make one call. */
 export interface JudgeEndpoint {

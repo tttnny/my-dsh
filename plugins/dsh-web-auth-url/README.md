@@ -1,11 +1,11 @@
 # @lynn123411/dsh-web-auth-url
 
-DSH Web GUI 的登录补位：给模型一个 `web_gui_login` 工具，一次调用就拿到本进程带 launch token 的 GUI 地址。`dsh-web-app` 有意只把干净地址交给模型（`app:web-surface` 段落）和 shell（`DSH_WEB_URL`），带 token 的地址只打印到 stdout——于是模型自测这个 GUI（抓页面、探路由、确认客户端插件有没有生效）时第一枪必然 401。本插件把这半补上。
+DSH Web GUI 的登录补位：给模型一个 `web_gui_login` 工具，一次调用就拿到本进程带 launch token 的 GUI 地址。`dsh-web-app` 有意只把干净地址交给模型（`app:web-surface` 段落）和 shell（`DSH_WEB_URL`），带 token 的地址只打印到 stdout——没有已有有效 cookie、且只使用干净 URL 的新客户端（模型自测这个 GUI：抓页面、探路由、确认客户端插件有没有生效）会收到 401。本插件把这半补上。
 
 ## 功能
 
 - **一次调用拿到登录地址**：`web_gui_login` 即时解析本进程的带 token 地址（`http://127.0.0.1:<端口>/?token=…`），原样交给模型。
-- **地址拿来就能登录**：`render` 里给出两条命令——第一条用这个地址换会话 cookie 到 jar，第二条用 jar 访问 `$DSH_WEB_URL`。
+- **地址拿来就能登录**：`render` 先给出由调用者在项目 `./tmp` 下选定的 cookie jar 路径，再给出两条命令——第一条用这个地址把会话 cookie 换进 jar，第二条用 jar 访问 `$DSH_WEB_URL`。
 - **跟随 token 轮换**：每次调用都重新向 `connection` 取一次，不缓存；DSH 重启换了 token，重调一次就是新地址。
 - **同时托管 `DSH_WEB_AUTH_URL`**：每次 shell 调用即时解析的同一条地址，与工具结果逐字相同，供仓库里的 `tools/gui-shot.mjs` 与 `tools/verify-client.mjs` 驱动浏览器与校验产物。
 

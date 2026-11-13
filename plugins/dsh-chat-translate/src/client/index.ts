@@ -25,12 +25,23 @@ export const name = 'dsh-chat-translate';
  * any service not declared here; `locale` is declared rather than sampled
  * because `ctx.get('locale')` at apply time can beat the locale plugin's
  * `provide`, which silently left the card's dictionary unregistered.
+ *
+ * `chatFileMentions` is deliberately absent from this list: the service is
+ * optional (the Host's `ui-deliverables` provides it), and a name listed here
+ * keeps the whole entry pending on a page without that package. The row
+ * renderer declares it through `ctx.inject` in `apply` instead, whose lifecycle
+ * runs only while the service is provided.
  */
 export const inject = ['slots', 'configForms', 'remote', 'remote.credentials', 'locale'];
 
+/** Structural mirror of the Host's optional `ChatFileMentions` service. */
+interface FileMentionsService {
+  forClosing(owner: unknown, sessionId: string): unknown;
+}
+
 interface ClientContext {
   effect(factory: () => void | (() => void), label?: string): void;
-  get?(serviceName: string): any;
+  inject(deps: readonly string[], callback: (scope: ClientContext) => void): unknown;
   slots?: {
     inject(name: string, register: () => unknown): () => void;
     register(options: Record<string, unknown>, component: unknown): () => void;
@@ -38,6 +49,7 @@ interface ClientContext {
   configForms?: { get(namespace: string): any };
   locale?: any;
   remote?: { credentials?: any };
+  chatFileMentions?: FileMentionsService;
 }
 
 /**
@@ -48,6 +60,23 @@ interface ClientContext {
  */
 export function apply(ctx: ClientContext): void {
   ensureAssistantStyles();
+
+  // 0. 文件提及解析（`chatFileMentions`）由宿主 ui-deliverables 提供，是可选的：
+  //    它缺席时提及链接停用，助手行接管与其余功能照常。这份依赖经 ctx.inject 声明，
+  //    缺席交给宿主生命周期——服务到位时回调运行、服务消失时回调被拆掉。助手行的
+  //    注册项从回调维护的这一份读：服务缺席时它返回 undefined，正文里的提及链接
+  //    随之停用。
+  let fileMentions: FileMentionsService | undefined;
+  ctx.inject(['chatFileMentions'], (scope) => {
+    const service = scope.chatFileMentions;
+    fileMentions = service;
+    scope.effect(
+      () => () => {
+        if (fileMentions === service) fileMentions = undefined;
+      },
+      'dsh-chat-translate: file mentions'
+    );
+  });
 
   // 1. 接管助手行：keyed slot 的替换语义，priority -1 排在宿主默认注册（0）之前
   //    渲染；本渲染器抛错时按框架退位规则退出 cell，宿主原渲染器回位。
@@ -64,17 +93,11 @@ export function apply(ctx: ClientContext): void {
           locale: 'chat',
           priority: -1,
           // 思考行的 settledReasoningPreview 与 foldedReplies 来自活的工作细节模式；
-          // fileMentions 由这条注册项自己提供（0.2.2 起不再走 owner props）。
+          // fileMentions 由这条注册项自己提供（0.2.2 起不再走 owner props），
+          // 服务缺席时返回 undefined，正文里的提及链接随之停用。
           inject: (sessionId: string) => ({
             hooks: { presentation: chatPresentation },
-            fileMentions: (owner: unknown) => {
-              try {
-                const service = ctx.get?.('chatFileMentions');
-                return service?.forClosing?.(owner, sessionId);
-              } catch {
-                return undefined;
-              }
-            },
+            fileMentions: (owner: unknown) => fileMentions?.forClosing(owner, sessionId),
           }),
         },
         AssistantStepView

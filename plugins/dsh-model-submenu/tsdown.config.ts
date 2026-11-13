@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises'
 import { basename, resolve as resolvePath, dirname } from 'node:path'
-import { existsSync } from 'node:fs'
 import { defineConfig, type UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
@@ -11,12 +10,10 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
 /**
  * Specifiers resolved from the Web shell module table. Everything else is
  * inlined so a require() the table cannot answer never reaches the browser.
- * On 0.1.7-rc.2 the shell seeds the react/react-dom family plus
- * `@deepseek-ai/cordis`, `@deepseek-ai/dsh-client-store`,
- * `@deepseek-ai/dsh-client-ui-slots` and `@deepseek-ai/dsh-client-ui-primitives`;
- * every other `@deepseek-ai/*` row is a composed graph edge instead. This
- * bundle requests only the baseline rows below, so its manifest needs no
- * `dsh.client.external` entry.
+ * The shell's `PLATFORM_MODULES` (`@deepseek-ai/dsh-client-web`) is the source
+ * of truth for which specifiers it seeds; every `@deepseek-ai/*` row outside
+ * that table is a composed graph edge instead. This bundle requests only the
+ * baseline rows below, so its manifest needs no `dsh.client.external` entry.
  */
 const CLIENT_EXTERNALS: readonly string[] = [
   'react',
@@ -31,12 +28,6 @@ const CLIENT_EXTERNALS: readonly string[] = [
 const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
 const VENDORED_LIBRARY = /^@deepseek-ai\/(cosmokit|schemastery)(\/|$)/
 const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
-
-function sourceAssetPath(source: string, importer: string): string {
-  const emitted = resolvePath(dirname(importer), source)
-  if (existsSync(emitted)) return emitted
-  return emitted
-}
 
 const nodeLibrary: UserConfig = {
   name: PACKAGE_ID,
@@ -82,7 +73,7 @@ const clientBundle: UserConfig = {
     name: 'dsh-css-modules-inline',
     resolveId(source: string, importer: string | undefined) {
       if (!source.endsWith('.module.css')) return null
-      const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
+      const abs = importer !== undefined ? resolvePath(dirname(importer), source) : source
       return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
     },
     async load(virtualId: string) {

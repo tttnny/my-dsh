@@ -3,7 +3,8 @@
  *
  * connection 的浏览器会话鉴权只有一个入口：带本进程 launch token 的根地址。
  * `dsh-web-app` 有意只把干净地址交给模型与 shell，带 token 的地址仅打印到
- * stdout。于是模型自测这个 GUI 时第一枪必然 401。
+ * stdout。于是没有已有有效 cookie、又只拿到干净地址的模型自测这个 GUI 时会
+ * 收到 401。
  *
  * 本插件补上这一半：工具 `web_gui_login` 每次调用即时解析出带 token 的地址并
  * 原样交给模型；同时托管 `DSH_WEB_AUTH_URL`，每次 shell 调用即时解析，跟随
@@ -100,8 +101,12 @@ function loginTool(ctx) {
       render: (_args, value) => [{
         type: 'text',
         text: `Tokenized URL: ${value.url}\n`
-          + `Exchange it once for the session cookie: curl -s -c "$JAR" -o /dev/null "${value.url}"\n`
-          + 'Then use the jar instead of the token: curl -s -b "$JAR" "$DSH_WEB_URL/"',
+          + 'Pick a cookie jar path under the project\'s ./tmp (create the directory if it is missing), e.g.:\n'
+          + '  JAR=./tmp/dsh-web-cookie.jar\n'
+          + 'Exchange the token once for the session cookie:\n'
+          + `  curl -s -c "$JAR" -o /dev/null "${value.url}"\n`
+          + 'Then use the jar instead of the token:\n'
+          + '  curl -s -b "$JAR" "$DSH_WEB_URL/"',
       }],
     },
     async execute() {

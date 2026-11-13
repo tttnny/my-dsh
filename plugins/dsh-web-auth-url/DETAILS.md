@@ -33,7 +33,7 @@ dsh plugin --profile web add @lynn123411/dsh-web-auth-url
 工具只做一件事：解析地址并把地址交出去。
 
 1. 取对外公布的那个根（`webApp.getAdvertisedUrl()`，没有该服务时用 `webServer.getOrigin()`），交 `connection.authenticatedUrl()` 加本进程的 launch token。
-2. 返回 `{ url }`，`render` 同时给出两条命令：`curl -s -c "$JAR" -o /dev/null "<url>"` 换 cookie，`curl -s -b "$JAR" "$DSH_WEB_URL/"` 之后走干净地址。
+2. 返回 `{ url }`，`render` 先给出由调用者在项目 `./tmp` 下选定的 cookie jar 路径，再给出两条命令：`curl -s -c "$JAR" -o /dev/null "<url>"` 换 cookie，`curl -s -b "$JAR" "$DSH_WEB_URL/"` 之后走干净地址。
 
 token 只对 `GET /` 有效：`connection` 的 `authorizeIndex` 只在这一个请求上换 cookie 并回 303，其余路径带 token 一律 401。所以模型必须先用这条地址换一次 cookie，之后的请求带 cookie、不带 token。
 
@@ -71,10 +71,10 @@ cd plugins/dsh-web-auth-url && pnpm check
 
 - **真工具表**：工具注册进真 `ctx.tools`（`@deepseek-ai/dsh-tools` 的 `ToolRuntime`），参数面为空、输出面只有一个 `url` 字段。
 - **地址口径**：返回值就是公布根加进程 token；公布根与监听根不同时跟公布根走；token 轮换后重调一次就拿到新地址。
-- **文案**：`render` 里有地址与两条 `curl` 命令，后续请求挂到 `$DSH_WEB_URL` 上。
+- **文案**：`render` 里有地址、项目 `./tmp` 下的 jar 路径定义与两条 `curl` 命令，后续请求挂到 `$DSH_WEB_URL` 上。
 - **未 bind**：抛的是 `WEB_GUI_LOGIN_NOT_READY`，不是内核原话。
 - **托管环境变量**：真 `ctx.shellEnv` 的 `collect()` 每次调用都重新执行 `resolve`，且与工具结果逐字相同。
 - **不碰提示词**：插件没有 `Config`，导出面只有 `apply` / `inject` / `name`。
 - **不激活**：没有 `connection` / `webServer` 时工具与变量都不出现。
 
-文案断言只钉承重的那几件事（给出地址、两条命令、指向 `$DSH_WEB_URL`），不钉整句原文。内核包是本插件的 devDependencies（与 `engines.dsh` 同版本），`pnpm install` 后离线可跑，不指向任何 DSH 安装副本。文件末尾另有一段守卫反例，证明 cordis 对未声明服务的属性读取真的抛错。
+文案断言只钉承重的那几件事（给出地址、jar 路径定义在换 cookie 之前、两条命令、指向 `$DSH_WEB_URL`），不钉整句原文。内核包是本插件的 devDependencies（与 `engines.dsh` 同版本），`pnpm install` 后离线可跑，不指向任何 DSH 安装副本。文件末尾另有一段守卫反例，证明 cordis 对未声明服务的属性读取真的抛错。

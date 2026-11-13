@@ -1,13 +1,17 @@
 /**
  * @lynn123411/dsh-kimi-cu 的宿主半边。
  *
- * 做四件事：注册 `kimi_cu_status` 工具、把状态路由挂到 Connection 的 /api 通道、
- * 启动时做一次探测并在缺装时写一条带安装命令的 warning、把 KimiCU 的 MCP 连接
- * 交给宿主的 `mcpManager` 注册。
+ * 做五件事：注册 `kimi_cu_status` 工具、把状态路由挂到 Connection 的 /api 通道、
+ * 启动时做一次探测并在缺装时写一条带安装命令的 warning、占用宿主的桌面操作独占槽位、
+ * 把 KimiCU 的 MCP 连接交给宿主的 `mcpManager` 注册。
  *
  * MCP 连接走管理器而不是 patch 里的静态行：命令由探测器给出，与状态卡、工具说的是
  * 同一份路径；管理器还统一提供状态、重启与探测。管理器不可用时插件照常加载，只是
  * 没有 `mcp__kimi-cu__*` 工具。
+ *
+ * 桌面操作是宿主的独占能力：官方 CUA 与 Cua Driver 都经 `computerUse.register()` 占位。
+ * 本插件同样占位，否则两套后端会同时控制同一台机器而宿主看不见。占位失败就撤掉 MCP
+ * 连接——模型拿不到 `mcp__kimi-cu__*`，比两套工具抢同一台机器安全。
  */
 
 import { defineTool } from '@deepseek-ai/dsh-tools';
@@ -28,6 +32,9 @@ const TOOL_NAME = 'kimi_cu_status';
 
 /** 注册给 MCP 管理器的服务器名，同时是 `mcp__kimi-cu__*` 的工具命名空间。 */
 const MCP_SERVER_NAME = 'kimi-cu';
+
+/** 桌面操作独占槽位里本插件占的名字，出现在冲突诊断里。 */
+const COMPUTER_USE_PROVIDER = 'kimi-cu';
 
 /** KimiCU 的 js 里可能跑长循环；内核默认 60 秒就取消一次调用，这里留 5 分钟。 */
 const MCP_TOOL_TIMEOUT_MS = 300_000;
@@ -51,6 +58,21 @@ interface McpManagerFace {
     args: string[];
     toolCallTimeoutMs: number;
   }) => () => void;
+}
+
+/**
+ * 桌面操作独占槽位里本插件用到的那一面。
+ *
+ * 只写形状不引包：本插件不依赖 `@deepseek-ai/dsh-computer-use`，服务缺失时整块注入
+ * 不激活，插件其余部分照常工作。
+ */
+interface ComputerUseFace {
+  /**
+   * 占用唯一的提供方槽位，直到返回的清理函数被调用。
+   * @param name - 提供方名字，出现在冲突诊断里。
+   * @returns 释放这次占位的函数。
+   */
+  register: (name: string) => () => Promise<void>;
 }
 
 /**
@@ -100,23 +122,59 @@ export function apply(ctx: Context): void {
   });
 
   // MCP 连接交给管理器：命令取自同一次探测，平台不受支持时探测器给 null，这里就不注册。
-  ctx.inject(['mcpManager'], (mcpCtx) => {
-    let dispose: (() => void) | undefined;
-    let stopped = false;
-    void detect()
-      .then((status) => {
-        if (stopped || status.mcp === null) return;
-        dispose = (mcpCtx as Context & { mcpManager: McpManagerFace }).mcpManager.register(MCP_SERVER_NAME, {
-          transport: 'stdio',
-          command: status.mcp.command,
-          args: status.mcp.args,
-          toolCallTimeoutMs: MCP_TOOL_TIMEOUT_MS,
-        });
-      })
-      .catch(() => {});
+  // 两个可选服务谁先到不确定，所以注册动作收进 syncMcp：条件齐了才动手，条件变了再算一次。
+  let mcpCtx: (Context & { mcpManager: McpManagerFace }) | undefined;
+  let disposeMcp: (() => void) | undefined;
+  let desktopDenied = false;
+
+  const syncMcp = async (): Promise<void> => {
+    if (desktopDenied || mcpCtx === undefined || disposeMcp !== undefined) return;
+    const status = await detect();
+    // 探测是异步的，回来时条件可能已经变了，再判一次。
+    if (desktopDenied || mcpCtx === undefined || disposeMcp !== undefined) return;
+    if (status.mcp === null) return;
+    disposeMcp = mcpCtx.mcpManager.register(MCP_SERVER_NAME, {
+      transport: 'stdio',
+      command: status.mcp.command,
+      args: status.mcp.args,
+      toolCallTimeoutMs: MCP_TOOL_TIMEOUT_MS,
+    });
+  };
+
+  // 桌面操作是独占能力：先占位，占到了才有资格把工具交出去。
+  ctx.inject(['computerUse'], (cuCtx) => {
+    const registry = (cuCtx as Context & { computerUse: ComputerUseFace }).computerUse;
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = registry.register(COMPUTER_USE_PROVIDER);
+    } catch (error) {
+      // 别的后端已经在控制桌面：撤掉自己的工具，别让两套后端抢同一台机器。
+      desktopDenied = true;
+      disposeMcp?.();
+      disposeMcp = undefined;
+      ctx.logger.warn(
+        'KimiCU 没有占用桌面操作槽位（'
+        + (error instanceof Error ? error.message : String(error))
+        + '）；已停用 mcp__kimi-cu__* 工具，避免两套后端同时控制桌面。',
+      );
+      return () => {
+        desktopDenied = false;
+        void syncMcp().catch(() => {});
+      };
+    }
+    void syncMcp().catch(() => {});
     return () => {
-      stopped = true;
-      dispose?.();
+      void Promise.resolve(release?.()).catch(() => {});
+    };
+  });
+
+  ctx.inject(['mcpManager'], (injectedCtx) => {
+    mcpCtx = injectedCtx as Context & { mcpManager: McpManagerFace };
+    void syncMcp().catch(() => {});
+    return () => {
+      mcpCtx = undefined;
+      disposeMcp?.();
+      disposeMcp = undefined;
     };
   });
 

@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-chat-translate",
-  "version": "3.9.4",
+  "version": "3.9.5",
   "description": "Assistant reply-body translation for the DeepSeek Harness Web UI (OpenAI-compatible channel)",
   "license": "MIT",
   "author": "lynn123411",
@@ -72,17 +72,17 @@
   },
   "engines": {
     "node": "^22.19 || >=24",
-    "dsh": ">=0.2.2-rc.2"
+    "dsh": ">=0.2.2-rc.3"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-client-connection": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-home-paths": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.2-rc.3",
     "@deepseek-ai/schemastery": "^3.19.0",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.18",
@@ -94,8 +94,8 @@
     "typescript": "^6.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-home-paths": ">=0.2.2-rc.2"
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.2-rc.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-client-ui-primitives": {

@@ -16,10 +16,12 @@
  * 带子上移动，鼠标离开带子就收起。正文整块不是点击目标，所以单击落字、拖选复制
  * 都不会误触。补跑在途时 ↻ 原位转圈、暂不可重复点。
  *
- * 除正文外的行内容与宿主逐分支等价：reasoning 行走折叠（含 Turn-process
- * 隐藏与 beforematch 揭示）、连续 image 组交回宿主的图片画廊 Factory、
- * 未知块落 JsonBlock、tool-call 在助手行内跳过（工具行由宿主独立渲染）、
- * 中断前缀行尾带「已停止」。props 形状是宿主 contract 的结构性镜像：值边
+ * 整行接管：除正文外的行内容由本文件按宿主的分支自己画——reasoning 行走折叠
+ * （含 Turn-process 隐藏与 beforematch 揭示）、连续 image 组经
+ * `conversation.images.content` Factory 渲染、未知块落 JsonBlock、tool-call 在
+ * 助手行内跳过（工具行由宿主独立渲染）、中断前缀行尾带「已停止」。宿主
+ * `conversation.chat.reasoning.body` 与 `conversation.chat.message.images` 两个
+ * 单槽上的扩展因此不参与本行。props 形状是宿主 contract 的结构性镜像：值边
  * 不跨包（客户端 bundle 纯净门禁），类型注释指明对应声明。
  * 本渲染器抛错时按 keyed slot 的退位语义退出该 cell，宿主原渲染器回位。
  */
@@ -683,19 +685,14 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     });
   }, []);
 
-  // 手动补跑：点失败块的 ↻ 只重发**失败的那些块**（无限次、不设额度）；已经
-  // 成功的块原地不动、连请求都不再发。在途的块再点是空操作——↻ 自己转着圈
-  // 就是「已在跑」的答复。
-  const retryBlock = useCallback(() => {
-    const failed: number[] = [];
-    const outcomes = rowState?.outcomes;
-    if (outcomes === undefined) return;
-    for (let index = 0; index < outcomes.length; index++) {
-      const outcome = outcomes[index];
-      if (outcome !== null && outcome !== undefined && !outcome.ok) failed.push(index);
-    }
-    if (failed.length === 0) return;
-    translate.ensure(rowKey, plan.texts, { frozen: frozenCount, retries: failed });
+  // 手动补跑：点某一块的 ↻ 只重发**被点的那一块**（无限次、不设额度）；同一行
+  // 里别的失败块与已经成功的块原地不动、连请求都不再发。在途的块再点是空操作——
+  // ↻ 自己转着圈就是「已在跑」的答复。没有失败结果的块（例如「设置没配好」，那一类
+  // 根本没发过请求）点了同样什么都不发。
+  const retryBlock = useCallback((textIndex: number) => {
+    const outcome = rowState?.outcomes?.[textIndex];
+    if (outcome === null || outcome === undefined || outcome.ok) return;
+    translate.ensure(rowKey, plan.texts, { frozen: frozenCount, retries: [textIndex] });
   }, [frozenCount, plan, rowKey, rowState, translate]);
 
   // 早退在所有 hook 之后：行形态在 null 与可见之间切换时 hook 序列不变。
@@ -719,7 +716,7 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
             failKind: entry.failKind,
             retryBusy: entry.retryBusy,
             onToggle: () => toggleBlock(entry.key),
-            onRetry: retryBlock,
+            onRetry: () => retryBlock(entry.textIndex),
             streaming,
             labels,
             mentions,

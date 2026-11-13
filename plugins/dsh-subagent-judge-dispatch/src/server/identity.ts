@@ -49,7 +49,7 @@ export interface AgentLike {
  * @param session - the child's session.
  * @returns the child-owned events, in log order.
  */
-export function ownEventsOf(session: SessionLike): readonly SessionEventLike[] {
+function ownEventsOf(session: SessionLike): readonly SessionEventLike[] {
   if (typeof session.ownEvents === 'function') return session.ownEvents();
   const inherited = session.inheritedEventCount;
   if (typeof inherited === 'number' && Number.isSafeInteger(inherited) && inherited > 0) {
@@ -87,7 +87,7 @@ export function isSubagent(agent: AgentLike): boolean {
  * the final answer is delivered. A log written by either release stays readable,
  * so both openings are recognized.
  */
-export const RETURN_GUIDANCE_PREFIXES = [
+const RETURN_GUIDANCE_PREFIXES = [
   'Your parent agent id is ',
   'Your final answer is delivered automatically if your ',
 ] as const;
@@ -96,7 +96,7 @@ export const RETURN_GUIDANCE_PREFIXES = [
  * @param text - one trailing text block of a delegation message.
  * @returns whether it opens like the Host's return guidance.
  */
-export function isReturnGuidance(text: string): boolean {
+function isReturnGuidance(text: string): boolean {
   return RETURN_GUIDANCE_PREFIXES.some((prefix) => text.startsWith(prefix));
 }
 
@@ -155,7 +155,7 @@ export function readChildLabel(agent: AgentLike): string {
  * @param agent - the subagent.
  * @returns the delegated task text, or '' when no delegation message exists.
  */
-export function readTaskText(agent: AgentLike): string {
+function readTaskText(agent: AgentLike): string {
   for (const event of ownEventsOf(agent.session)) {
     const candidates = delegationMessagesOf(event);
     for (const data of candidates) {

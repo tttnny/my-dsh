@@ -63,12 +63,10 @@ export function apply(ctx) {
     id: PACKAGE_ID,
     locale: NS,
     inject: (/** @type {unknown} */ sessionId) => ({
-      /** @param {number} seq - 本轮结束位置。 */
-      forkAt: (seq) => {
-        ctx.sessions.fork({ sessionId, atSeq: seq, increaseTitle: true })
-          .then((/** @type {unknown} */ childId) => { ctx.uiWorkspace.openSession(childId); })
-          .catch(() => {});
-      },
+      /** @param {number} seq - 本轮结束位置。
+       * @returns {Promise<unknown>} 分叉与打开子会话都完成；失败原样抛给调用方，由它画失败提示。 */
+      forkAt: (seq) => ctx.sessions.fork({ sessionId, atSeq: seq, increaseTitle: true })
+        .then((/** @type {unknown} */ childId) => { ctx.uiWorkspace.openSession(childId); }),
     }),
   }, GrillingFormTail));
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({

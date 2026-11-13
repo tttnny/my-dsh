@@ -2,8 +2,8 @@
  * 状态卡渲染自检：用真 react 把卡片画进 jsdom，锁住四种状态与两个动作。
  *
  *   1. 未安装：命令、复制按钮、步骤都在；
- *   2. 已就绪：版本与恢复提示在，安装命令不再出现；
- *   3. 已安装但未就绪：失败项与修复提示在；
+ *   2. 本机检查通过：版本与恢复提示在，安装命令不再出现；
+ *   3. 已安装但本机检查未通过：失败项与修复提示在；
  *   4. 平台不支持 / 读取失败：各自给出明确说明；
  *   5. 复制把命令写进剪贴板，重新检测请求带 refresh=1。
  *
@@ -149,7 +149,7 @@ await test('未安装：显示安装命令、复制按钮与步骤', async () =>
   assert.ok(buttonByText(container, '复制命令') !== undefined);
 });
 
-await test('已就绪：显示版本与恢复提示，不再展示安装命令', async () => {
+await test('本机检查通过：显示版本与恢复提示，不再展示安装命令', async () => {
   const { container } = await mount({
     ...BASE,
     installed: true,
@@ -158,13 +158,13 @@ await test('已就绪：显示版本与恢复提示，不再展示安装命令',
     doctor: { ran: true, ok: true, checks: [{ id: 'accessibility', label: 'Accessibility (AX)', ok: true }], raw: '' },
   });
   const text = container.textContent ?? '';
-  assert.match(text, /KimiCU 已就绪/);
+  assert.match(text, /本机检查通过/);
   assert.match(text, /0\.6\.8/);
   assert.match(text, /如果模型看不到/);
   assert.doesNotMatch(text, /setup_macos\.sh/);
 });
 
-await test('已安装但未就绪：列出失败项与修复提示', async () => {
+await test('已安装但本机检查未通过：列出失败项与修复提示', async () => {
   const { container } = await mount({
     ...BASE,
     installed: true,
@@ -178,7 +178,7 @@ await test('已安装但未就绪：列出失败项与修复提示', async () =>
     },
   });
   const text = container.textContent ?? '';
-  assert.match(text, /已安装 KimiCU，但还没就绪/);
+  assert.match(text, /已安装 KimiCU，但本机检查未通过/);
   assert.match(text, /屏幕录制/);
   assert.match(text, /打开系统设置/);
 });
@@ -221,7 +221,7 @@ await test('覆盖路径缺失：显示 override-missing 附注', async () => {
   assert.match(text, /KIMI_CU_WINDOWS_EXE 指向的文件不存在/);
 });
 
-await test('MCP 命令缺失：即使 doctor 全绿也显示未就绪', async () => {
+await test('MCP 命令缺失：即使 doctor 全绿也显示本机检查未通过', async () => {
   const { container } = await mount({
     ...BASE,
     installed: true,
@@ -231,7 +231,7 @@ await test('MCP 命令缺失：即使 doctor 全绿也显示未就绪', async ()
     notes: ['legacy-install', 'mcp-command-missing'],
   });
   const text = container.textContent ?? '';
-  assert.match(text, /已安装 KimiCU，但还没就绪/);
+  assert.match(text, /已安装 KimiCU，但本机检查未通过/);
   assert.match(text, /MCP 行要启动的文件不存在/);
 });
 

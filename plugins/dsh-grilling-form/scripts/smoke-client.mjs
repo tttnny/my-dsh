@@ -31,6 +31,8 @@ const locales = [];
 const dictionaries = [];
 const forkCalls = [];
 const opened = [];
+/** 置 true 时假 sessions.fork 回一个会被拒的 Promise，用来验失败路径。 */
+let forkRejects = false;
 
 /** 假 <style>：只记 data-plugin-css 与内容。 */
 function makeStyleTag() {
@@ -97,7 +99,7 @@ function makeCtx(declared = []) {
       },
     },
     locale: { register: (ns, dictionary) => { locales.push(ns); dictionaries.push(dictionary); return () => {}; } },
-    sessions: { fork: (opts) => { forkCalls.push(opts); return Promise.resolve('child-1'); } },
+    sessions: { fork: (opts) => { forkCalls.push(opts); return forkRejects ? Promise.reject(new Error('fork failed')) : Promise.resolve('child-1'); } },
     uiWorkspace: { openSession: (sessionId) => { opened.push(sessionId); } },
   };
   const base = {
@@ -177,11 +179,25 @@ test('槽位条目声明的注入在守卫下拿得到会话与工作台服务',
 });
 await testAsync('注入的分叉动作：按本轮结束点分叉，然后把子会话打开', async () => {
   const tail = registrations.find((entry) => entry.name === 'conversation.chat.turnTail');
-  tail.inject('sess-1').forkAt(8);
+  // 组件拿这个返回值当 Promise 用（`.catch` 画失败提示），所以这里必须断言它真是 thenable：
+  // 只断言「分叉被调到了」的话，返回 undefined 也能过，而页面上点一下就是 TypeError。
+  const pending = tail.inject('sess-1').forkAt(8);
+  assert.equal(typeof pending?.then, 'function', 'forkAt 必须把分叉的 Promise 交出来');
   assert.deepEqual(forkCalls, [{ sessionId: 'sess-1', atSeq: 8, increaseTitle: true }]);
-  await Promise.resolve();
-  await Promise.resolve();
+  await pending;
   assert.deepEqual(opened, ['child-1']);
+});
+await testAsync('分叉失败原样抛给调用方，不在这一层吞掉', async () => {
+  const tail = registrations.find((entry) => entry.name === 'conversation.chat.turnTail');
+  const before = forkCalls.length;
+  forkRejects = true;
+  try {
+    await assert.rejects(() => tail.inject('sess-1').forkAt(9), /fork failed/);
+  } finally {
+    forkRejects = false;
+  }
+  assert.equal(forkCalls.length, before + 1, '失败那次也要真的发起过分叉');
+  assert.deepEqual(opened, ['child-1'], '分叉失败时不该去开子会话');
 });
 test('字典注册在本插件名字空间下', () => assert.deepEqual(locales, ['grillingForm']));
 test('中英文字典键集逐条对齐（丢一条就是页面上某一处空白，而渲染自检只跑中文）', () => {

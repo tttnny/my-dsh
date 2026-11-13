@@ -12,6 +12,11 @@
  * context that carries every service as a plain property cannot see that bug,
  * which is why the guard is modelled here instead of stubbed away.
  *
+ * The optional `chatFileMentions` service is declared through `ctx.inject`, so
+ * the same guard covers it: the row takeover reads it only inside that scoped
+ * lifecycle, and a page without the provider keeps the takeover with mention
+ * links disabled instead of leaving the whole entry pending.
+ *
  * Run with: node scripts/test-client-wiring.mjs [plugin-dir]
  */
 
@@ -91,6 +96,8 @@ const locales = []
 const formLookups = []
 /** Namespaces the plugin gated its page on (`configForms.whileServed`). */
 const servedWatches = []
+/** Service lists the plugin declared through the `ctx.inject` lifecycle. */
+const optionalInjections = []
 const errors = []
 
 /** Client shape of `ConfigForm<T>`: the per-entry read/write face of the config. */
@@ -147,6 +154,10 @@ const services = {
   },
   remote: tolerant,
   'remote.credentials': tolerant,
+  // Optional prose file-mention provider (the Host's ui-deliverables). The
+  // plugin declares it through `ctx.inject`, so the scoped context may read it
+  // as a property; the top-level context may not.
+  chatFileMentions: { forClosing: (owner, sessionId) => ({ owner, sessionId }) },
 }
 
 /**
@@ -159,6 +170,7 @@ function makeCtx(declared = []) {
     effect: (fn) => { fn(); return () => {} },
     inject: (names, callback) => {
       const list = Array.isArray(names) ? names : [names]
+      optionalInjections.push([...list])
       try {
         const dispose = callback(makeCtx([...declared, ...list]))
         if (typeof dispose === 'function') dispose()
@@ -250,6 +262,18 @@ check('takeover injects the live presentation hook',
 check('presentation defaults to the standard policy',
   injected?.hooks?.presentation?.getSnapshot() === exported.policyForMode('standard'))
 
+// 文件提及解析：可选服务经 ctx.inject 声明，注册项的 fileMentions 从那份生命周期
+// 里读。它不在入口 inject 数组里——列进去会让整条 entry 在没有 ui-deliverables
+// 的页面上一直 pending，翻译功能随之整个消失。
+check('file mentions declared through the ctx.inject lifecycle',
+  optionalInjections.some(list => list.includes('chatFileMentions')))
+check('file mentions are not a required entry dependency',
+  !(exported.inject ?? []).includes('chatFileMentions'))
+const mentionsOwner = { seq: 7 }
+const mentions = takeover?.entryInject?.('session-1')?.fileMentions?.(mentionsOwner)
+check('row inject resolves file mentions through the declared service',
+  mentions?.owner === mentionsOwner && mentions?.sessionId === 'session-1')
+
 // 「工作细节」模式跟随宿主：apply 读 ui-chat 的配置面。
 check('chat presentation reads the ui-chat config form', formLookups.includes('ui-chat'))
 
@@ -264,6 +288,19 @@ check('bundle config registers', registrations.some(r => r.name === 'plugins.bun
 check('dock registers independently of the bundle config', registrations.some(r => r.name === 'conversation.composer.dock'))
 check('takeover registers independently of the bundle config', registrations.some(r => r.name === 'conversation.chat.node'))
 check('independent path stays error-free', errors.length === 0)
+
+// 服务真缺席（页面没装 ui-deliverables）：助手行接管照常注册，提及链接停用。
+const savedMentions = services.chatFileMentions
+delete services.chatFileMentions
+registrations.length = 0
+errors.length = 0
+exported.apply(makeCtx(exported.inject ?? []))
+const takeoverWithoutMentions = registrations.find(r => r.name === 'conversation.chat.node')
+check('takeover still registers without the optional service', takeoverWithoutMentions !== undefined)
+check('file mentions degrade to undefined when the service is absent',
+  takeoverWithoutMentions?.entryInject?.('session-1')?.fileMentions?.({ seq: 7 }) === undefined)
+check('absent optional service raises no wiring error', errors.length === 0)
+services.chatFileMentions = savedMentions
 
 // Disposal: the dock contribution carries a disposer that tears its registration down.
 registrations.length = 0

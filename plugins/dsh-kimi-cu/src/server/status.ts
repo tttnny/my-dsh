@@ -44,7 +44,7 @@ export function parseMacosVersion(plist: string): string | null {
  * @param binaryPath - app 内的二进制路径。
  * @returns 版本号；读不到是 null。
  */
-export function readMacosVersion(binaryPath: string): string | null {
+function readMacosVersion(binaryPath: string): string | null {
   try {
     return parseMacosVersion(readFileSync(join(dirname(dirname(binaryPath)), 'Info.plist'), 'utf8'));
   } catch {

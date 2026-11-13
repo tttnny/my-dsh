@@ -9,7 +9,7 @@
  */
 
 /** Paths the service is reached at; the first is the one appended by default. */
-export const ENDPOINT_PATHS = ['/v1/systemone', '/systemone'] as const;
+const ENDPOINT_PATHS = ['/v1/systemone', '/systemone'] as const;
 
 /**
  * Turn the typed address into the URL a request is sent to.

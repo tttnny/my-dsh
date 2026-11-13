@@ -134,7 +134,7 @@ export function createNudgeController(options: NudgeOptions): NudgeController {
  * @param session - 待判定的会话。
  * @returns 子代理会话为真。
  */
-export function isSubagentSession(session: Session): boolean {
+function isSubagentSession(session: Session): boolean {
   return session.header.origin === 'subagent';
 }
 

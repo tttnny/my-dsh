@@ -94,7 +94,7 @@ function windowsPrimary(env: Record<string, string | undefined>): string {
  * @param env - 环境变量。
  * @returns 命令；KIMI_CU_WINDOWS_EXE 优先。
  */
-export function windowsMcpCommand(env: Record<string, string | undefined>): string {
+function windowsMcpCommand(env: Record<string, string | undefined>): string {
   return (env.KIMI_CU_WINDOWS_EXE || '') || windowsPrimary(env);
 }
 
@@ -139,7 +139,7 @@ export function resolveInstall(input: ResolveInput): ResolvedInstall {
     const notes: string[] = [];
     if (path !== null && path === legacy) notes.push('legacy-install');
     if (override !== '' && path === null) notes.push('override-missing');
-    // 找到的运行时不是 MCP 行会启动的那个（旧目录安装）：状态不能报「已就绪」。
+    // 找到的运行时不是 MCP 行会启动的那个（旧目录安装）：状态不能报「本机检查通过」。
     if (path !== null && command !== '' && !input.exists(command)) notes.push('mcp-command-missing');
 
     const install = installPlan('win32');

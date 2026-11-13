@@ -27,10 +27,6 @@ html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-cha
   margin: 4px 0;
 }
 
-html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :where(strong) {
-  font-weight: 600;
-}
-
 /* 行内代码：宿主的底几乎与纸面同色，这里换成一层薄薄的蓝，让它在段落里一眼能认出来。 */
 html[data-native-plus='on'] [data-chat-flow-kind='assistant-step']:not([data-chat-group-part='reasoning']) :not(pre) > code {
   background-color: var(--np-inline-code-bg);

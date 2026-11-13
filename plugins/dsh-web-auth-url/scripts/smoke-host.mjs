@@ -1,5 +1,5 @@
 /**
- * 宿主半边自检：把承重点放在 **真实的 0.2.2-rc.2 内核服务** 上跑，而不是桩件——
+ * 宿主半边自检：把承重点放在 **真实的 0.2.2-rc.3 内核服务** 上跑，而不是桩件——
  * 每条断言的全部意义就是「DSH 换了实现，本插件立刻挂」：
  *
  * 1. 「登录地址」工具真的注册进真 `ctx.tools`（@deepseek-ai/dsh-tools 的 ToolRuntime），
@@ -119,7 +119,7 @@ await test('本插件不贡献提示词：导出里没有 Config，也没有段�
 });
 
 await test('内核基线声明齐整（engines / peer / dev 同串）', () => {
-  assert.equal(manifest.engines.dsh, '>=0.2.2-rc.2', 'engines.dsh 必须声明不低于基线 0.2.2-rc.2 的支持范围');
+  assert.equal(manifest.engines.dsh, '>=0.2.2-rc.3', 'engines.dsh 必须声明不低于基线 0.2.2-rc.3 的支持范围');
   assert.equal(manifest.peerDependencies['@deepseek-ai/cordis'], '^4.1.0');
   assert.equal(installedVersion('@deepseek-ai/cordis'), '4.1.0', 'cordis 必须对齐安装版本');
   assert.equal(manifest.dependencies, undefined, '本插件不导出 Config，因此不再需要 schemastery');
@@ -128,7 +128,7 @@ await test('内核基线声明齐整（engines / peer / dev 同串）', () => {
   // 自检跑的是钉住的那一份，两者各管一件事。
   for (const pkg of ['@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-shell-env', '@deepseek-ai/dsh-tool-executor-native', '@deepseek-ai/dsh-tools']) {
     assert.equal(manifest.devDependencies[pkg], manifest.engines.dsh, `${pkg} 的 devDependency 必须与 engines.dsh 同串`);
-    assert.equal(installedVersion(pkg), '0.2.2-rc.2', '自检跑的内核包必须仍是基线版本 0.2.2-rc.2');
+    assert.equal(installedVersion(pkg), '0.2.2-rc.3', '自检跑的内核包必须仍是基线版本 0.2.2-rc.3');
   }
 });
 
@@ -153,11 +153,16 @@ await test('内核基线声明齐整（engines / peer / dev 同串）', () => {
     assert.equal(value.url, `${ORIGIN}/?token=${TOKEN}`);
   });
 
-  await test('render 把地址与两条 curl 交出来：先用它换 cookie，再用 jar 访问 $DSH_WEB_URL', () => {
+  await test('render 把地址与两条 curl 交出来：先定 jar 路径，再用它换 cookie、复用 cookie', () => {
     const rendered = tool.output.render({}, value).map((block) => block.text).join('\n');
     assert.ok(rendered.includes(value.url), '地址必须出现在 render 里，否则模型读不到它');
     assert.ok(rendered.includes('curl -s -c "$JAR"'), '要给出换 cookie 的命令');
     assert.ok(rendered.includes('curl -s -b "$JAR" "$DSH_WEB_URL/"'), '后续请求要挂到干净地址上');
+    // 两条命令都引用 $JAR：不先给出它的定义，复制出去就执行不了。
+    const jarDefined = rendered.indexOf('JAR=./tmp/');
+    assert.ok(jarDefined !== -1, 'jar 路径必须由调用者在项目 ./tmp 下选定，并写进 render');
+    assert.ok(jarDefined < rendered.indexOf('curl -s -c "$JAR"'), 'jar 的定义必须排在换 cookie 的命令之前');
+    assert.equal(rendered.includes('JAR=/tmp/'), false, '不要引导使用系统 /tmp');
   });
 }
 

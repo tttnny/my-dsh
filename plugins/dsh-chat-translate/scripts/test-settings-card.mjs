@@ -41,6 +41,8 @@ const ctx = {
     const disposer = fn();
     return typeof disposer === 'function' ? disposer : () => {};
   },
+  // 这一页没有 ui-deliverables：可选的文件提及服务缺席，回调不运行。
+  inject: () => ({}),
   get: () => undefined,
   slots: {
     inject: (_key, register) => {

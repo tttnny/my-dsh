@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-native-plus",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "在 DSH 自带的蓝白黑之上增强对话正文的排版与装饰：六级标题的蓝阶、引用与表格、代码块、行高与段距。",
   "type": "module",
   "main": "lib/index.js",
@@ -10,8 +10,7 @@
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/en.json": "./locale/en.json",
     "./locale/zh.json": "./locale/zh.json",
-    "./package.json": "./package.json",
-    "./src/*": "./src/*"
+    "./package.json": "./package.json"
   },
   "files": [
     "lib",
@@ -59,25 +58,22 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.3",
     "@deepseek-ai/schemastery": "^3.19.0",
     "react": "^18.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-client-locale": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-system-prompt": ">=0.2.2-rc.2",
-    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.3",
     "@deepseek-ai/schemastery": "^3.19.0",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.3.0",
     "esbuild": "^0.25.0",
     "jsdom": "^26.1.0",
     "react": "^18.3.1",
@@ -85,7 +81,7 @@
     "typescript": "^6.0.0"
   },
   "engines": {
-    "dsh": ">=0.2.2-rc.2",
+    "dsh": ">=0.2.2-rc.3",
     "node": "^22.19 || >=24"
   },
   "packageManager": "pnpm@11.7.0",

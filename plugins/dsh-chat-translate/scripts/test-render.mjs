@@ -5,7 +5,7 @@
  *   1. 成功块：一条 10px 透明窄带（`.dsh-ct-hotspot`）承载译文/原文切换；鼠标停在
  *      它上面时，光标右边出一条气泡（`.dsh-ct-hint`，投在 body 下）跟着光标走；
  *      点正文（单击落字）不切换，拖选择字也不切换；
- *   2. 失败块：一个真 ↻ 按钮（`.dsh-ct-retry`）承载整行补跑，没有窄带；
+ *   2. 失败块：一个真 ↻ 按钮（`.dsh-ct-retry`）承载这一块的补跑，没有窄带；
  *      补跑在途时它原地转圈、不重挂载（键盘焦点不掉），再点是空操作。
  *
  * `@deepseek-ai/dsh-client-ui-primitives` 是替身：真组件是浏览器里的 ESM、带
@@ -54,6 +54,9 @@ const ctx = {
     fn();
     return () => {};
   },
+  // 这一页没有 ui-deliverables：可选的文件提及服务缺席，回调不运行，
+  // 正文里的提及链接因此停用（与宿主生命周期同形）。
+  inject: () => ({}),
   get: () => undefined,
   slots: {
     inject: (_key, register) => {
@@ -549,7 +552,7 @@ await act(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
-await test('失败块：键盘 Enter 在 ↻ 上补跑整行，且只发一次请求', () => {
+await test('失败块：键盘 Enter 在 ↻ 上补跑这一块，且只发一次请求', () => {
   const retry = containerC.querySelector('.dsh-ct-retry');
   assert.match(containerC.querySelector('.dsh-ct-prose').className, /dsh-ct-prose-failed/, '前置：首跑应已落定为失败');
   const before = replyCalls;
@@ -563,6 +566,47 @@ await test('失败块：键盘 Enter 在 ↻ 上补跑整行，且只发一次�
 });
 
 act(() => rootC.unmount());
+
+// 一行两块都失败：↻ 只重发被点的那一块（README「点它只重发这一块」）。
+const containerJ = document.createElement('div');
+document.body.appendChild(containerJ);
+const sentBatchesJ = [];
+const storeJ = createTranslateStore(async (blocks) => {
+  sentBatchesJ.push([...blocks]);
+  return blocks.map((block) => ({ translated: block, ok: false, detail: 'channel timed out after 20000ms' }));
+});
+const rootJ = renderRow('ax10', 'ignored', containerJ, storeJ, {
+  node: {
+    data: {
+      status: 'settled',
+      turn: 1,
+      step: 1,
+      blocks: [
+        { kind: 'text', text: 'Two failed blocks: first' },
+        { kind: 'text', text: 'Two failed blocks: second' },
+      ],
+    },
+    anchorSeq: '10',
+  },
+});
+await act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+await test('一行两块失败：点哪一块的 ↻ 就只重发那一块', async () => {
+  const retries = containerJ.querySelectorAll('.dsh-ct-retry');
+  assert.equal(retries.length, 2, '两块失败各留一个 ↻');
+  sentBatchesJ.length = 0;
+  clickAt(retries[1]);
+  assert.equal(sentBatchesJ.length, 1, '点一次 ↻ 只发一次补跑请求');
+  assert.deepEqual(sentBatchesJ[0], ['Two failed blocks: second'], '补跑只带被点的那一块，另一块原地不动');
+  // 补跑的结果落回池里会触发一次渲染：收进 act，别把测试输出刷成告警。
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+});
+
+act(() => rootJ.unmount());
 
 // --- 0.2.2 契约：图片组走宿主 Factory、选区引用源随落定态、折叠回复影响思考行隐藏 ---
 

@@ -20,6 +20,14 @@
 
 管理器还统一提供连接状态、重启与探测，KimiCU 的连接因此出现在与其他 MCP 服务器同一张表里。管理器缺失时 `ctx.inject(['mcpManager'])` 整块不激活，插件其余部分照常加载，只是没有 `mcp__kimi-cu__*` 工具。
 
+## 为什么要占桌面操作的独占槽位
+
+宿主把「控制桌面」当成独占能力：`@deepseek-ai/dsh-computer-use` 只放行一个提供方，第二个 `computerUse.register()` 直接抛错并报出已占位的名字。官方 CUA 与 Cua Driver 都经这个登记占位。
+
+KimiCU 同样是桌面操作后端，但它的工具走 MCP，宿主看不见它在控制桌面。所以本插件也占位（名字 `kimi-cu`），并且**占到了才注册 MCP 连接**：槽位已被别的后端占着时不抢、也不交出工具，只写一条 warning。两套后端同时控制同一台机器，比少一套工具更危险。
+
+两个可选服务谁先到不确定，所以注册动作收在 `syncMcp()` 里：条件齐了才动手，条件变了再算一次。组合里没有 `computerUse` 服务时行为不变，照常注册。槽位后来空出来要重启 DSH 才会补位——宿主的登记没有变更事件可订阅。
+
 ## 为什么 MCP 要按平台分
 
 KimiCU 在 macOS 与 Windows 是两条产品线：macOS 只有 app 包，命令是 app 内的二进制，参数 `mcp -s user`；Windows 只有独立 runtime，默认装在 `%LOCALAPPDATA%\Kimi Computer Use`（0.3.8 起；旧目录 `%LOCALAPPDATA%\KimiCU` 由安装器建 junction 兼容），参数只有 `mcp`。平台判断在 `resolve.ts`：不受支持的平台给出 `mcp: null`，宿主半边就不注册，模型看到的仍是 `mcp__kimi-cu__*`。
@@ -38,9 +46,9 @@ Windows 走的是旧 13 工具 MCP，不是上游主推的 code-mode 插件：co
 - `doctor.ts`：跑 `kimi-cu doctor` 并解析。macOS 解析 `✅`/`❌` 行；Windows 解析 `version=` 与 `mcp=true`。
 - `status.ts`：把上面两样合成 `KimiCuStatus`，缓存 10 秒、并发单飞、`refresh` 绕过缓存；所有失败落进状态字段，不抛。探测整体失败时返回 `notes: ['detection-failed']` 的状态，路由与工具拿到的是状态而不是异常。
 
-Windows 的路径公式只在 `resolve.ts` 的 `windowsMcpCommand` 里有一份；`test-status` 与 `check-bundle` 会逐 env 断言。覆盖值存在时只用覆盖值，不回退到默认/旧目录；旧目录安装会同时标 `legacy-install` 与 `mcp-command-missing`，卡片按「未就绪」处理，不会在连接指向的文件不存在时报「已就绪」。
+Windows 的路径公式只在 `resolve.ts` 的 `windowsMcpCommand` 里有一份；`test-status` 与 `check-bundle` 会逐 env 断言。覆盖值存在时只用覆盖值，不回退到默认/旧目录；旧目录安装会同时标 `legacy-install` 与 `mcp-command-missing`，卡片按「本机检查未通过」处理，不会在连接指向的文件不存在时报「本机检查通过」。
 
-浏览器半边在 `src/client/`：注册 `plugins.bundle.config`（key 是包名），卡片按「未安装 / 未就绪 / 已就绪 / 不支持」四种状态渲染，给官方命令、复制、重新检测与文档链接。卡片只给命令，不执行安装脚本。
+浏览器半边在 `src/client/`：注册 `plugins.bundle.config`（key 是包名），卡片按「未安装 / 本机检查未通过 / 本机检查通过 / 不支持」四种状态渲染，给官方命令、复制、重新检测与文档链接。卡片只给命令，不执行安装脚本。
 
 `kimi_cu_status` 工具返回同一份 JSON；MCP 工具缺失或连接失败时，技能要求模型先查它，再把安装/修复步骤转告用户。
 

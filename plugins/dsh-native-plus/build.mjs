@@ -28,7 +28,6 @@ const PLATFORM_MODULES = [
 const KERNEL_MODULES = [
   '@deepseek-ai/cordis',
   '@deepseek-ai/schemastery',
-  '@deepseek-ai/dsh-tools',
 ];
 
 /** 样式表按文本内联：`?inline` 后缀让 esbuild 把文件内容当字符串模块交给 import。 */

@@ -6,7 +6,7 @@
 //    空白块不送译、不占位、永不标记；reasoning 分组不送译，texts 与 outcomes
 //    同域对齐；
 // 3. 翻译池：同键同文本幂等、文本换代重请求、逐批落定逐批可见、落定后无任何
-//    自动重走、manual ensure 整行补跑且成功块结果保持、LRU 行数上限；
+//    自动重走、manual ensure 只补跑点名的块且成功块结果保持、LRU 行数上限；
 // 4. 呈现策略：ui-chat 的 transcriptView 值（含 legacy 值）映射到策略表；
 // 5. 正文左缘没有任何线标：成功块的切换归一条 10px 透明窄带，悬停时在光标右边
 //    出一条气泡；失败块归一个真 ↻ 按钮（补跑在途原位转圈）；样式表里不存在任何
@@ -891,7 +891,7 @@ await test('标记名单点：只有成功/失败两种，正文里不存在任�
 
 await test('动作单点：mark 唯一决定 toggle / retry / 没有可点物', () => {
   assert.equal(proseAction('translated'), 'toggle', '有译文：窄带在译文与原文间切换');
-  assert.equal(proseAction('failed'), 'retry', '失败：只有 ↻ 能点，整行补跑');
+  assert.equal(proseAction('failed'), 'retry', '失败：只有 ↻ 能点，补跑这一块');
   assert.equal(proseAction(null), null, '没有结果：左缘没有任何可点物');
 });
 

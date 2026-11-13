@@ -19,7 +19,7 @@
 import type { TypeRow } from './types.ts';
 
 /** The one question key the plugin asks. */
-export const QUESTION_KEY = 'task_type';
+const QUESTION_KEY = 'task_type';
 
 /**
  * The question's instructions line.
@@ -37,7 +37,7 @@ export const QUESTION_INSTRUCTIONS =
 export const PROBE_OPTION_ID = '1';
 
 /** The task text the connectivity check sends. */
-export const PROBE_TASK_TEXT = '连接测试：这是一次判断服务的连通性检查。';
+const PROBE_TASK_TEXT = '连接测试：这是一次判断服务的连通性检查。';
 
 /**
  * The connectivity check's instructions.
@@ -46,11 +46,11 @@ export const PROBE_TASK_TEXT = '连接测试：这是一次判断服务的连通
  * protocol at all can answer it: answering it wrong is a failure of the
  * protocol, not of the reader's task list.
  */
-export const PROBE_INSTRUCTIONS =
+const PROBE_INSTRUCTIONS =
   'Answer with the number of the one option listed below.';
 
 /** The single criterion the connectivity check offers. */
-export const PROBE_CRITERION = '确认这次调用可以完成。';
+const PROBE_CRITERION = '确认这次调用可以完成。';
 
 /** One option of the judge's question. */
 export interface JudgeChoice {
@@ -114,7 +114,7 @@ export const SUBJECT_HEAD_CHARS = 1400;
 export const SUBJECT_TAIL_CHARS = 400;
 
 /** Opening words of the label line the judge reads above the task. */
-export const LABEL_PREFIX = 'Delegation label: ';
+const LABEL_PREFIX = 'Delegation label: ';
 
 /**
  * Build the subject the judge is asked to classify.
