@@ -66,7 +66,7 @@ preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂
 
 ## order 台账
 
-`config.order` 决定 preset 在会话选择器里的次序。取值只登记在这里：
+`config.order` 决定 preset 在会话选择器里的次序。本表分配自有 preset 的 order，patch 保存运行时配置：
 
 | preset | order |
 | --- | --- |
@@ -76,7 +76,7 @@ preset 自己的 `check` 应当是上面三条的**可执行子集**，别只挂
 | （官方）cordis | 4 |
 | plugin-upgrade-cordis | 6 |
 
-官方四条随 `@deepseek-ai/dsh-web-app` 的 `presets/*.patch.yml` 发布；自有 preset 排在它们之后，新取值取本表已占用最大值 +1。取值以各 preset 的 `<id>.patch.yml` 为准，增删 preset 或改 `config.order` 后同步本表。
+官方四条随 `@deepseek-ai/dsh-web-app` 的 `presets/*.patch.yml` 发布；自有 preset 排在它们之后，新取值取本表已占用最大值 +1。新增、删除或调整自有 preset 的 order 时，同步本表与对应 `<id>.patch.yml`，由 `assert-ledger.mjs` 判据 8 校验一致。
 
 ## 按分支取细则
 

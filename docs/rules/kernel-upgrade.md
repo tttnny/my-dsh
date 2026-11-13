@@ -28,8 +28,11 @@ node tools/kernel-diff.mjs <上一版> --from-source --declared --presets
 另有一条只在复核源码时才会踩：本机 checkout 的 HEAD **不保证**等于目标 `dsh-v<版本>` tag——它可能领先若干提交，也可能尚未合入该发布线。凡是从**工作树**读宿主源码的自检（`plugins/*/scripts/test-host-parity.mjs`、`plugins/*/scripts/test-anchors.mjs`）默认验的是 HEAD 而不是目标版本，绿灯不代表契约在目标版本上成立。复核时先把 tag 抽成目录再指过去：
 
 ```bash
-git -C <源码目录> archive dsh-v<版本> packages | tar -x -C tmp/<目录>
-DSH_SOURCE_DIR=tmp/<目录> pnpm test    # 在包目录里跑
+# 在仓库根创建导出目录，再读取目标 tag
+mkdir -p tmp/host-source
+git -C <源码目录> archive dsh-v<版本> packages | tar -x -C tmp/host-source
+# 在目标包目录执行；两个变量都填上面导出目录的绝对路径
+DSH_SOURCE=<仓库绝对路径>/tmp/host-source DSH_SOURCE_DIR=<仓库绝对路径>/tmp/host-source pnpm test
 ```
 
 ## 3. 跟 preset
@@ -78,7 +81,7 @@ node tools/host-smoke.mjs
 node tools/ci-check.mjs
 ```
 
-它把工作区复制到 `tmp/ci-check/repo`，用干净 HOME 与钉住的 pnpm 逐包 `pnpm install --frozen-lockfile`，再跑 `node tools/check.mjs`。本机的 pnpm 用户配置可能把安全策略关掉，所以**本机绿不等于 CI 绿**；这一步要联网。内核升版会改每个包的 `engines.dsh` 与依赖声明，正好落在本地环境能骗过自己的那一类改动上，所以这一步在内核升版里是必做项；日常发版不必跑它（见 [release.md](./release.md)「发完即止」）。
+内核升版会改各包的 `engines.dsh` 与依赖声明，属于安装契约改动，因此这一步是必做项。安装契约、干净环境重跑的流程与适用条件见 [plugins.md](./plugins.md)「仓库级 check 与 CI」；此命令要联网。
 
 **完成判据**：`ci-check: ok`。然后提交，走 `.githooks/pre-commit`。
 

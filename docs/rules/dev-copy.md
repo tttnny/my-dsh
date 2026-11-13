@@ -1,14 +1,18 @@
 # 开发副本（`link:` 软链接）
 
-profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就是已安装内容**，改完即生效。**界面是新的、路由 404** 或撞 `Cannot find package '…'` 时查这一份。
+开发 profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就是已安装内容**，改完即生效。**界面是新的、路由 404** 或撞 `Cannot find package '…'` 时查这一份。
 
 提交门禁只在 `web`（开发 profile）里校验这条；`desktop` 等其他 profile 装的是发布版、不跟随本仓库，不在它的检查范围内。
 
 ## 建立与校验
 
-`node tools/dev-link.mjs` 一次查全部 profile × 全部自有包：软链还在不在、指得对不对、读到的版本号对不对、被市场顶掉的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包（客户端半边因此不会被服务）。它另外扫 `node_modules/@lynn123411/` 下的软链本体，把断了和指向 `archive/` 的孤儿软链报出来——归档只搬仓库目录，profile 的 `dependencies` 与 `dsh.profile.bundles` 仍留着那个包名：软链因此是孤儿（`--write` 会删掉），而 registry 装的那份会被下一次 profile 同步按清单物化回来。要连清单一起清掉，得在每个装过它的 profile 里卸载：`dsh plugin --profile <name> remove <包名>`（见 [release.md](./release.md)「退役（归档）」）。`--write` 把有问题的连回仓库，并删掉孤儿软链。
+`node tools/dev-link.mjs` 默认只读检查全部 profile × 全部自有包：软链、目标版本、被物化成 registry 版本的入口，以及声明了 `dsh.client` 却没登记进 `dsh.profile.bundles` 的包。另扫 `node_modules/@lynn123411/` 下已断开或指向 `archive/` 的孤儿软链。
 
-它跑的就是手工那一条：`cd ~/.dsh/profiles/web && pnpm add "link:<my-dsh 绝对路径>/plugins/dsh-<name>" --offline`（包不在目录根部时链接实际包目录）；建成后 `pnpm install` 幂等，可随时重跑。
+日常只修开发 profile，用 `node tools/dev-link.mjs --write --profile web`。不带 `--profile` 的写入模式会遍历全部 profile，把有问题的自有包重连到仓库，也会把其他 profile 的发布副本换成开发软链；只重连某个包时另加 `--package <包名或目录名>`；该参数只筛选在维护的包，孤儿软链仍按选中的 profile 全部清理。
+
+`--write` 执行 `pnpm add "link:<实际包绝对路径>" --offline` 并删除孤儿软链，**不登记 `dsh.profile.bundles`**。只缺 bundle 登记时它不重连依赖，要按输出执行 `dsh plugin --profile <name> add <实际包目录>`。
+
+归档包要先在每个装过它的 profile 里卸载，清掉 `dependencies` 与 `dsh.profile.bundles`，再用工具清孤儿软链；仅删除软链不能阻止 profile 同步再次物化清单中的包。顺序与完成判据见 [release.md](./release.md)「退役（归档）」。
 
 ## 保持软链
 

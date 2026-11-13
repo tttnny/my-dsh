@@ -2,7 +2,7 @@
 
 ## 发完即止
 
-用户下令发布到 npm 后（本机 `npm publish`，或在 Actions 里手动触发 `publish` 工作流），把该发的包（插件、preset 一视同仁）发完就结束：**不跑发布后验证**——不装一遍、不解包 tarball、不 boot 加载、不查 registry 传播；也不回头确认、不追问别的包要不要一起发。答复里报包名、版本、`dist-tags.latest` 就够；发布成功的凭据是 `npm publish` 打出的 `+ pkg@ver`。
+用户下令发布到 npm 后，按「在 GitHub Actions 里发」触发 `publish` 工作流，把该发的包（插件、preset 一视同仁）发完就结束：**不跑发布后验证**——不装一遍、不解包 tarball、不 boot 加载、不查 registry 传播；也不回头确认、不追问别的包要不要一起发。答复里报包名、版本、`dist-tags.latest` 就够；发布成功的凭据是 `npm publish` 打出的 `+ pkg@ver`。
 
 发布前的门禁照跑，按顺序：
 
@@ -10,7 +10,7 @@
 2. **scoped 包带 `publishConfig.access: "public"`**：不带就发不出去或发成受限包。`node tools/new-plugin.mjs` 生成的骨架默认写这一项，手写新包时要自己带上；`node tools/assert-ledger.mjs` **不查这一项**，新包或手改 `package.json` 时要自己看一眼。
 3. 各包自己的 `check`（见 [plugins.md](./plugins.md)「验证」）、`node tools/assert-ledger.mjs`（清单与目录的一致性）与 `npm pack --dry-run` 清单。
 
-发布前不必在本机重跑一遍 CI：`publish` 工作流在干净 runner 上跑的就是同一套 `pnpm install --frozen-lockfile` 与 `node tools/check.mjs`，而且它排在 `npm publish` 之前——红了就一个包都不发，代价只是一次红 run。`node tools/ci-check.mjs` 留给两种情况：CI 红了要本机复现；或这次改动动了安装契约（依赖声明、lock、`pnpm-workspace.yaml` 的放行项、`packageManager`），因为本机的 pnpm 用户配置可能把安全策略关掉。`git push` 同样只在用户下令后执行。
+`publish` 工作流在干净 runner 上先执行 `pnpm install --frozen-lockfile` 与 `node tools/check.mjs`，通过后才执行 `npm publish`。本机是否补跑 `node tools/ci-check.mjs`，按 [plugins.md](./plugins.md)「仓库级 check 与 CI」的适用条件判断。`git push` 同样只在用户下令后执行。
 
 ## 在 GitHub Actions 里发
 
@@ -42,7 +42,7 @@ gh run watch
 
 - **产物不入库**：`build` 生成的镜像目录（`lib/` 这类与 `src/` 对应的副本）由包的 `.gitignore` 挡住、留在 `files` 里、并由 `check` 的产物门禁断言未被 git 跟踪——`files` 不含产物目录时 npm 会漏打运行入口。手写源码形式的 `lib/` 属源码，不受这条约束。
 - **镜像与 `src/` 一一对应**：`build` 必须在 emit 前清掉上一轮的声明产物（`rmSync('lib/types')`，见 `dsh-chat-translate` 的 `build.mjs`），因为 `tsc` 从不清理 `outDir`：删掉或改名的模块会把它旧的 `.d.ts` 一直留在 `lib/types` 里，而 `files` 含 `lib`，旧声明会随发布包发出去。这条只能由「清镜像」保证——`lib` 是 gitignore 的、`git status` 不显示，「产物未被跟踪」那道门禁也看不见陈旧文件。目前只有 `dsh-chat-translate` 发声明产物，它靠 `build.mjs` 的两处保证一致：先 `rmSync('lib/types')`，再让 `tsc` 重新 emit，emit 失败置 `process.exitCode = 1`（只 `warn` 会让整个声明镜像静默消失）。要再加一道逐文件对账的闸门（陈旧与缺失两个方向都查），`archive/` 下某个已归档插件的 `scripts/assert-lib-mirror.mjs` 就是现成实现，抄一份进该包的 `check` 即可。
-- 发布产物由包自己的 `build` 出：`dsh-grilling-form`、`dsh-subagent-judge-dispatch`、`dsh-native-plus`、`dsh-notify-user` 与 `dsh-kimi-cu` 另有 `prepack`（发布时现打一次），其余包靠发布前跑过的 `check`。新增 `prepack` 的包要把这一行同步到这里。
+- 构建产物由包自己的 `build` 生成。带 `scripts.prepack` 的包会在 `npm pack` / `npm publish` 时重建，发布产物可能不同于先前 `check` 验过的那份；其余包使用发布前 `check` 构建的产物。是否带 `prepack` 以本包 `package.json` 为准。
 - 内核升版后各包声明的批量跟随与版本号，一次做完：`node tools/dsh-baseline.mjs --write --bump patch`（见 [plugins.md](./plugins.md)「版本与依赖」）。
 - 删掉任何文件时当场同步 `files`、`scripts` 与镜像断言，清单只写还存在的条目。许可声明见 [plugins.md](./plugins.md)「许可」。
 

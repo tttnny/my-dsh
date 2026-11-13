@@ -39,6 +39,16 @@
 
 验 DSH 的界面一律走浏览器这一侧（`tools/gui-shot.mjs`，或用 `ego-browser`），不要用 kimi-cu 的桌面点击与截图代劳：cu 驱动的是本机窗口像素，读不到 DOM 与几何，界面状态也容易和页面里的实际渲染对不上。
 
+### 用 gui-shot 验真实例
+
+**gui-shot 的交互会修改真实会话**：它连接正在服务的实例，`--click` 与 `--eval` 里的一次点击就是一次真实操作——点模型会换掉会话使用的模型，点收藏会写入 localStorage。工具在交互前后各记一份会话状态（模型选择、两个存储键），不同就逐条打出「改动前 → 改动后」并以退出码 1 结束；确认这次要改状态才加 `--allow-mutation`。看到报警就按「改动前」恢复。
+
+调用示例与参数索引见 [tools/README.md](../../tools/README.md)。`--wait '<选择器>'` 轮询到插件挂载，`--eval` 可读取 `getBoundingClientRect()`，`--shot` 保存截图；页面报错由 `window.addEventListener('error', …)` 收集。验证内容增高后是否被裁时，在滚动容器里加入 `height: 2000px; flex: none` 的方块；保留 `flex: none` 才不会让方块被压缩。其余参数与常量见 [gui-shot.mjs](../../tools/gui-shot.mjs) 头部。
+
+**等待、点击或求值失败都不算通过**：`--wait` 超时、`--click` 找不到元素、`--eval` 抛错或页面报错，工具以退出码 1 结束并保存截图；同一个参数重复传入时以 2 退出。
+
+**拍指定会话用 `--session session-<id>`**：会话页没有 URL 路由，参数会展开工作区组、点击会话、等待 `aria-selected` 为 true 和输入框挂载。交互前后的状态快照必须取自同一个会话；草稿页与会话各自保存模型选择，跨页面比较会误判为状态改动。
+
 ## 换用 ego-browser 的条件
 
 上面这些量几何、拍图的活，默认走 `tools/gui-shot.mjs`。换 `ego-browser` 只有三条：用户明确要求用它；要复现的现象只在**用户日常在用的那个浏览器**上出现（`gui-shot` 起的是 Playwright 缓存里的 Chrome for Testing，查不到 Safari 与旧版 Chromium 的差异）；要按**用户已登录的站点**走一遍真实流程（`gui-shot` 每趟清掉自己那个临时用户目录，没有可复用的登录态）。
@@ -49,9 +59,7 @@
 
 ## 只想看一个组件的长相
 
-`gui-shot` 要有一个真的轮次把那块界面渲染出来，代价是一次模型调用。做界面时更常用的是
-`node tools/ui-preview.mjs`：它把**插件自己的真组件**打进一个独立页面去拍图，不连正在服务的
-实例，也不改任何会话状态。
+`node tools/ui-preview.mjs` 把插件自己的组件打进独立页面拍图，不连接正在服务的实例，不改会话状态：
 
 ```bash
 node tools/ui-preview.mjs --pkg plugins/dsh-grilling-form \
@@ -59,35 +67,12 @@ node tools/ui-preview.mjs --pkg plugins/dsh-grilling-form \
   --props tmp/ui-preview-props.mjs --shot tmp/form.png
 ```
 
-props 走一个 `.mjs` 模块（default 导出那个对象）：组件的 props 常常带函数（取词、订阅、动作），
-JSON 表达不了。产物落 `tmp/ui-preview/`，HTML 留着，想看交互就自己开。
+`--props` 收 JSON 或 default 导出 props 对象的 `.mjs`；对象含取词、订阅、动作等函数时用后者。产物落 `tmp/ui-preview/`，保留的 HTML 可单独打开交互。
 
-两件它会替你做、但要知道为什么的事：
+预览有三条边界：
 
-- **ui-primitives 用薄壳替身**（`tools/ui-preview/primitives.jsx`）。真包在自己 bundle 里塞了
-  shiki、simple-icons、katex，本仓装不下来。替身只顶掉组件本身；样式取它安装副本里的真实 CSS，
-  所以 markdown 段落间距、Tag、Button 的长相都是宿主那一份。**插件新引一个 ui-primitives 名字，
-  就要在那个替身里补一个**，否则那一处是 `undefined`，React 只打一行 warning、预览页上静默少一块。
-  替身导出了哪些名字以 `tools/ui-preview/primitives.jsx` 为准。新加一个时照它真组件的类名与 DOM 层数写
-  （`Input` 的类名落在外面那层 `.wrap` 上，`Switch` 的外观键在 `aria-checked` 上），并在
-  `ui-preview.mjs` 的 `hostSheets` 里补上那份 `.module.css`——替身只有类名，样式不会自己跟过来。
-- **主题变量取宿主 checkout 里的真表**（`design-platform.css`、`gradient-shadow-text.css`、
-  `base.css`、`corner-shape.css`、`focus.css`、`scrollbar.css`，路径随 `DSH_SOURCE`）。色板在
-  `design-platform.css`，而圆角、字号与卡片材料那几组 `--dsw-*` 在 `base.css` 里——只取前者，
-  预览图上所有圆角都会消失，看着像样式写坏了。所以深浅色、字号档位、圆角都跟着宿主走，
-  不在这里另抄一份。
-- **预览只画组件，不跑 `apply()`**：插件在 `apply()` 里注入的那份 `<style>`（见上文「覆盖宿主控件的
-  样式」）不会出现在预览页上。预览图据此刻读结构，布局与观感仍要回真实例上看。
+- **ui-primitives 使用替身组件**，样式取安装副本的真实 CSS。替身导出面见 [primitives.jsx](../../tools/ui-preview/primitives.jsx)。插件新引一个控件时，在替身中补齐导出，按真组件的类名、DOM 层级与状态属性实现，并在 [ui-preview.mjs](../../tools/ui-preview.mjs) 的 `hostSheets` 中补对应样式表。
+- **主题变量取宿主 checkout**，路径随 `DSH_SOURCE`；实际样式清单以 `hostSheets` 为准。维护清单时同时保留色板、圆角、字号、卡片材料等变量，不能只取色板。
+- **预览只渲染组件，不运行 `apply()`**，其中注入的样式不会出现。布局在真实对话流中是否受挤压、滚动归属与遮挡，仍按「看一眼界面」用真实例验证。
 
-它验的是「这块界面长什么样」；布局在真实对话流里会不会被挤、滚动归属、遮挡，仍然要
-`gui-shot` 在真实例上看。
-
-**它会改真东西**：这个浏览器连的是正在服务的那个实例，`--click` 与 `--eval` 里的一次点击就是一次真实操作——点模型会换掉这个会话正在用的模型，点收藏会写进 localStorage。工具自己在进入交互前后各记一份会话状态（模型选择、两个存储键），两边不同就逐条打出「改动前 → 改动后」并以退出码 1 结束；确认这次就是要改状态才加 `--allow-mutation`。看到报警就照「改动前」那列改回去。
-
-本机工具：`node tools/gui-shot.mjs --click 'button[aria-haspopup="menu"]' --shot tmp/ui.png`（已入库，索引见 `tools/README.md`）。它把跑着的 GUI 拉进无头浏览器：`--wait '<选择器>'` 轮询到插件挂上为止（插件是启动后台预热的，别用固定 sleep 赌）、`--eval` 带一段 JS 直接读 `getBoundingClientRect()` 回传（比截图更硬）、`--shot` 落一张图、页面报错用 `window.addEventListener('error', …)` 收（浏览器 console 在这一侧看不见）。想验「内容变高时会不会被裁」，往滚动容器里塞一个 `height: 2000px; flex: none` 的方块再看——`flex: none` 不能省，否则它自己会被压扁，量出来的是假的。其余非显然的常量与坑写在 `tools/gui-shot.mjs` 头部。
-
-**等不到、点不到都是失败**：`--wait` 没等到选择器、`--click` 找不到元素、`--eval` 抛异常、页面报了错，都以退出码 1 结束并照样落图——图留着看清当时页面上有什么，但别把这一趟当成验过的证据。同一个参数写两次直接以退出码 2 结束。
-
-**要拍某个会话的页面，用 `--session session-<id>`**：会话页没有 URL 路由，首页是「新会话草稿」，侧栏里那个会话还要先展开它所在的工作区组。这个参数把展开、点行、等 `aria-selected` 转 true 与输入框挂上一起做了。会话状态的前后快照也因此取自同一个会话的页面：草稿与各个会话各带自己的模型选择，在首页与会话之间比较会把模型标签的变化读成改动。
-
-改完 `lib/` 想确认页面真的换上了新 bundle（「刷新即生效」的查法）见 [dev-copy.md](./dev-copy.md)「生效时机」。
+改完 `lib/` 想确认页面真的换上了新 bundle，见 [dev-copy.md](./dev-copy.md)「生效时机」。

@@ -1,21 +1,19 @@
 #!/usr/bin/env node
 /**
- * 变异测试的机械部分：把文件里唯一一处文本换掉，跑一条命令，最后**一定**还原。
+ * 变异测试：替换文件里唯一一处文本，执行命令，默认在收尾还原并核对内容。
+ * 何时运行与完成判据见 `docs/rules/plugins.md`「证明断言有牙齿」。
  *
- * 为什么要有这条命令：仓库要求新增或翻转断言后做变异测试（`docs/rules/plugins.md`
- * 「证明断言有牙齿」），而手工做有四件事容易出错——文件没提交导致 `git checkout` 还原不了、
- * 替换命中不止一处、命令跑完忘了还原、还原被静默忽略。这里把它们一次做对：
- *
- *   - 文件必须是 git 跟踪的，且当前干净（否则先提交或还原）；
  *   - `--from` 必须恰好命中一处（多了就把上下文写长一点）；
- *   - 命令无论通过、失败还是被信号打断，收尾都跑 `git checkout -- <文件>`；
- *   - 收尾核对 `git status --short`，别的改动也一并报出来。
+ *   - 干净且已跟踪的文件用 `git checkout -- <文件>` 还原；
+ *   - 未提交或未跟踪的文件按运行前保存在内存里的原文写回；
+ *   - 两个分支都核对还原后的内容；git 还原分支另报工作区的其他改动；
+ *   - `--keep` 保留变异，不执行还原。
  *
  * 用法：
- *   node tools/mutate.mjs --file tools/assert-ledger.mjs --from '0.2.1-alpha.5' --to '0.2.1-alpha.4' -- node tools/assert-ledger.mjs
+ *   node tools/mutate.mjs --file <路径> --from <旧文本> --to <新文本> -- <命令>
  *   node tools/mutate.mjs --file <路径> --from <旧文本> --to <新文本> --dry-run   # 只数命中
  *   node tools/mutate.mjs --file <路径> --from <旧文本> --to <新文本> --keep      # 留下变异（调试用）
- * 退出码：0 命令通过，1 命令失败（变异被测出来了，这是常态），2 跑不起来（文件不干净、命中数不对等）。
+ * 默认返回被执行命令的退出码；参数或命中数不对、命令无法启动、还原失败时退出码为 2。
  * 文本以 `--` 开头时用 `--from=...` / `--to=...` 的写法。
  */
 import { readFileSync, writeFileSync } from 'node:fs';

@@ -12,10 +12,11 @@
  * 这个脚本不替你 install，缺 node_modules 就报出来。CI 的装法见 `.github/workflows/check.yml`。
  *
  * 用法：
- *   node tools/check.mjs                 # 台账 + 全部包的 check
- *   node tools/check.mjs --ledger-only   # 只跑台账（快，不需要任何依赖）
- *   node tools/check.mjs --json          # 机器读；`--json --ledger-only` 时只跑台账
- * 退出码：0 全通过，1 有判据不过，2 跑不起来（缺依赖、缺 pnpm、参数不对）。
+ *   node tools/check.mjs                 # 台账 + 全部包的 check + 产物新鲜度
+ *   node tools/check.mjs --ledger-only   # 台账 + 产物新鲜度，跳过包级 check，不安装依赖
+ *   node tools/check.mjs --json          # 机器读；可与 --ledger-only 同用
+ * 退出码：0 全通过，1 有检查返回非零，2 有包因缺 node_modules 被跳过或参数不对。
+ * 子命令无法启动会记录状态 2；未触发上述缺依赖标记时，汇总退出码仍为 1。
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
