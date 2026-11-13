@@ -23,7 +23,8 @@
  * `--props` 指向一个 JSON 文件，内容直接成为那个组件的 props（可以是函数占位不了的对象）。
  * 不给 `--shot` 时只产出 HTML 与 bundle，交给别的浏览器去看。
  *
- * 退出码：0 出图，1 构建或截图失败，2 参数或环境不对（没装 Chrome、包缺 esbuild）。
+ * 退出码：0 出图，1 构建或截图失败（含「入口的同名 CSS 存在却没被收进预览」），
+ * 2 参数或环境不对（没装 Chrome、包缺 esbuild）。
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -147,6 +148,8 @@ const stubPlugin = {
 // 组件文件旁边的样式表一并 import —— 它会在构建期被读成文本收进 preview.css，
 // 于是「看这个组件」不要求它自己恰好 import 了样式。
 let buildEntry = entry;
+/** 入口旁边同名的样式表；存在时会被带进预览，见下面的断言。 */
+let siblingCss;
 if (typeof args.mount === 'string') {
   // props 可以是 JSON，也可以是一个 `.mjs` 模块（default 导出那个对象）——组件的 props
   // 常常带函数（取词、订阅、动作），JSON 表达不了，所以模块这条路是常用的那条。
@@ -160,7 +163,7 @@ if (typeof args.mount === 'string') {
     ? 'propsFromModule'
     : (propsPath === undefined ? '{}' : readFileSync(propsPath, 'utf8'));
   // 同目录、同名的那份 .css（GrillingForm.jsx → GrillingForm.css、ConfigCard.tsx → ConfigCard.css）存在就带上。
-  const siblingCss = entry.replace(/\.(jsx?|tsx?)$/, '.css');
+  siblingCss = entry.replace(/\.(jsx?|tsx?)$/, '.css');
   const cssImport = existsSync(siblingCss) ? `import ${JSON.stringify(siblingCss)};\n` : '';
   writeFileSync(join(outDir, 'entry.jsx'), `import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -219,6 +222,15 @@ writeFileSync(join(outDir, 'preview.css'), [
   ...hostSheets.map((path) => `/* ${path} */\n${flatten(readFileSync(path, 'utf8'))}`),
   ...sheets,
 ].join('\n\n'));
+
+// 样式没进去时预览图仍然出得来，只是布局全错。把份数打出来，并在同名 CSS
+// 明明存在却没被收进来时直接失败。
+const pluginSheets = sheets.length;
+console.log(`ui-preview: 样式表 宿主 ${hostSheets.length} 份，插件 ${pluginSheets} 份`);
+if (siblingCss !== undefined && existsSync(siblingCss) && pluginSheets === 0) {
+  console.error(`ui-preview: ${siblingCss} 存在，但没被收进预览——布局会失真`);
+  process.exit(1);
+}
 
 writeFileSync(join(outDir, 'index.html'), `<!doctype html>
 <html lang="zh-CN">
