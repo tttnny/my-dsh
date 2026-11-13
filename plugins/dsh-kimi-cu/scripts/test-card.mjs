@@ -60,11 +60,32 @@ exported.apply(ctx);
 const card = registrations.find((entry) => entry.options.name === 'plugins.bundle.config').component;
 const t = (key) => zh[key] ?? key;
 
+/** 默认的更新检查结果：已是最新。 */
+const DEFAULT_UPDATE = { current: '0.7.5', latest: '0.7.5', hasUpdate: false, error: null, checkedAt: 1 };
+
 let fetchUrl = '';
+let fetchMethod = 'GET';
 let fetchBody = null;
 let fetchCode = 200;
-globalThis.fetch = async (url) => {
+let updateBody = DEFAULT_UPDATE;
+let updateCode = 200;
+let postController = null;
+
+globalThis.fetch = async (url, init = {}) => {
   fetchUrl = String(url);
+  fetchMethod = init.method ?? 'GET';
+  if (fetchUrl.includes('/dsh-kimi-cu/update')) {
+    if (fetchMethod === 'POST') {
+      const stream = new ReadableStream({
+        start(controller) { postController = controller; },
+      });
+      return new Response(stream, { status: 200 });
+    }
+    return new Response(JSON.stringify(updateBody), {
+      status: updateCode,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   return new Response(JSON.stringify(fetchBody), {
     status: fetchCode,
     headers: { 'Content-Type': 'application/json' },
@@ -118,15 +139,28 @@ async function test(label, fn) {
 async function mount(status, options = {}) {
   fetchBody = status;
   fetchCode = options.httpStatus ?? 200;
+  updateBody = options.update ?? DEFAULT_UPDATE;
+  updateCode = options.updateStatus ?? 200;
   fetchUrl = '';
+  fetchMethod = 'GET';
+  postController = null;
   const container = document.createElement('div');
   document.body.appendChild(container);
   const reactRoot = createRoot(container);
   await act(async () => {
     reactRoot.render(createElement(card, { t }));
     await new Promise((done) => setTimeout(done, 0));
+    await new Promise((done) => setTimeout(done, 0));
   });
   return { container, reactRoot };
+}
+
+/** 让挂起的 promise 链跑完一轮。 */
+async function flush() {
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, 0));
+    await new Promise((done) => setTimeout(done, 0));
+  });
 }
 
 /**
@@ -244,6 +278,104 @@ await test('重新检测请求带 refresh=1', async () => {
     await new Promise((done) => setTimeout(done, 0));
   });
   assert.match(fetchUrl, /refresh=1/);
+});
+
+const INSTALLED = {
+  ...BASE,
+  installed: true,
+  path: '/Applications/KimiCU.app/Contents/MacOS/kimi-cu',
+  version: '0.7.5',
+  doctor: { ran: true, ok: true, checks: [{ id: 'accessibility', label: 'Accessibility (AX)', ok: true }], raw: '' },
+};
+
+const NEWER = { current: '0.7.5', latest: '0.7.6', hasUpdate: true, error: null, checkedAt: 1 };
+
+await test('已安装且有新版：按钮显示「更新到 0.7.6」', async () => {
+  const { container } = await mount(INSTALLED, { update: NEWER });
+  const button = buttonByText(container, '更新到 0.7.6');
+  assert.ok(button !== undefined, '有新版时按钮要带上目标版本');
+  assert.equal(button.disabled, false);
+});
+
+await test('已是最新：按钮显示「已是最新」且不可点', async () => {
+  const { container } = await mount(INSTALLED);
+  const button = buttonByText(container, '已是最新');
+  assert.ok(button !== undefined);
+  assert.equal(button.disabled, true);
+});
+
+await test('未安装：卡片上没有更新按钮', async () => {
+  const { container } = await mount(BASE);
+  assert.equal(buttonByText(container, '更新'), undefined);
+});
+
+await test('点更新：发出 POST，阶段文字与完成文案就地更新', async () => {
+  const { container } = await mount(INSTALLED, { update: NEWER });
+  const button = buttonByText(container, '更新到 0.7.6');
+  await act(async () => {
+    button.click();
+    await new Promise((done) => setTimeout(done, 0));
+  });
+  assert.equal(fetchMethod, 'POST');
+  assert.match(fetchUrl, /\/dsh-kimi-cu\/update$/);
+  assert.ok(postController !== null, 'POST 应当开出一条事件流');
+
+  await act(async () => {
+    postController.enqueue(new TextEncoder().encode(JSON.stringify({ type: 'stage', stage: 'downloading' }) + '\n'));
+    await new Promise((done) => setTimeout(done, 0));
+  });
+  assert.match(container.textContent ?? '', /正在下载/);
+  assert.equal(buttonByText(container, '重新检测').disabled, true, '更新进行中要禁用重新检测');
+
+  await act(async () => {
+    postController.enqueue(new TextEncoder().encode(JSON.stringify({
+      type: 'done', upToDate: false, version: '0.7.6', reconnect: 'done', raw: '✓ 升级完成',
+    }) + '\n'));
+    postController.close();
+    await new Promise((done) => setTimeout(done, 0));
+  });
+  await flush();
+  assert.match(container.textContent ?? '', /已更新到 0\.7\.6/);
+});
+
+await test('重连没发生时不提示重启 DSH', async () => {
+  const { container } = await mount(INSTALLED, { update: NEWER });
+  const button = buttonByText(container, '更新到 0.7.6');
+  await act(async () => {
+    button.click();
+    await new Promise((done) => setTimeout(done, 0));
+  });
+  await act(async () => {
+    postController.enqueue(new TextEncoder().encode(JSON.stringify({
+      type: 'done', upToDate: true, version: '0.7.5', reconnect: 'skipped', raw: '',
+    }) + '\n'));
+    postController.close();
+    await new Promise((done) => setTimeout(done, 0));
+  });
+  await flush();
+  assert.doesNotMatch(container.textContent ?? '', /重启 DSH 后生效/);
+});
+
+await test('更新失败：显示分类文案、可展开原始输出与重试', async () => {
+  const { container } = await mount(INSTALLED, { update: NEWER });
+  const button = buttonByText(container, '更新到 0.7.6');
+  await act(async () => {
+    button.click();
+    await new Promise((done) => setTimeout(done, 0));
+  });
+  await act(async () => {
+    postController.enqueue(new TextEncoder().encode(JSON.stringify({
+      type: 'error', kind: 'verify', raw: '✗ 下载包 SHA-256 与版本清单不一致，已中止。',
+    }) + '\n'));
+    postController.close();
+    await new Promise((done) => setTimeout(done, 0));
+  });
+  await flush();
+  const text = container.textContent ?? '';
+  assert.match(text, /下载的安装包校验没通过/);
+  assert.match(text, /查看原始输出/);
+  assert.match(text, /SHA-256/);
+  assert.ok(buttonByText(container, '重试') !== undefined);
 });
 
 console.log('\ntest-card: ' + passed + '/' + total + ' 条断言通过');

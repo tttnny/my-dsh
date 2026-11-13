@@ -93,3 +93,24 @@
   font-size: 12px;
   line-height: 18px;
 }
+.dsh-kimi-cu-version {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dsh-kimi-cu-error {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-kimi-cu-raw summary {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.dsh-kimi-cu-raw pre {
+  margin-top: 8px;
+}

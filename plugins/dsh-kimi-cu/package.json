@@ -41,7 +41,7 @@
     "build": "node build.mjs",
     "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node build.mjs && node scripts/smoke-host.mjs && node scripts/smoke-client.mjs && node scripts/test-exclusivity.mjs && node scripts/test-status.mjs && node scripts/test-card.mjs",
+    "test": "node build.mjs && node scripts/smoke-host.mjs && node scripts/smoke-client.mjs && node scripts/test-exclusivity.mjs && node scripts/test-status.mjs && node scripts/test-update.mjs && node scripts/test-card.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm assert:lib-untracked && node scripts/check-bundle.mjs && node ../../tools/probes/preset-skills.mjs --skills skills/macos && node ../../tools/probes/preset-skills.mjs --skills skills/windows"
   },

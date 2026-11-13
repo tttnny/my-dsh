@@ -19,7 +19,11 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
 
 import { createStatusRoute } from './server/router.ts';
+import { toPlatform } from './server/resolve.ts';
 import { defaultStatusDetector } from './server/status.ts';
+import { createUpdater } from './server/update.ts';
+import { createUpdateRoute } from './server/update-router.ts';
+import { fetchManifestText, runUpgradeProcess } from './server/update-runtime.ts';
 
 /** 稳定 Cordis loader 名：与 cordis.patch.yml 里那条根层行的 id 同字面量。 */
 export const name = 'dsh-kimi-cu';
@@ -58,6 +62,12 @@ interface McpManagerFace {
     args: string[];
     toolCallTimeoutMs: number;
   }) => () => void;
+  /**
+   * 重建一个已注册的服务器：dispose 旧实例再挂新实例。
+   * @param name - 服务器名。
+   * @returns 重建完成时 resolve。
+   */
+  restart?: (name: string) => Promise<void>;
 }
 
 /**
@@ -81,6 +91,35 @@ interface ComputerUseFace {
  */
 export function apply(ctx: Context): void {
   const detect = defaultStatusDetector();
+
+  // MCP 连接交给管理器；更新成功后要用它重连，所以这几样先声明再交给更新器。
+  let mcpCtx: (Context & { mcpManager: McpManagerFace }) | undefined;
+  let disposeMcp: (() => void) | undefined;
+  let desktopDenied = false;
+
+  /** 更新成功后重建 MCP 连接；没有管理器或它不支持重启时返回 false。 */
+  const reconnect = async (): Promise<boolean> => {
+    const manager = mcpCtx?.mcpManager;
+    if (manager?.restart === undefined) return false;
+    await manager.restart(MCP_SERVER_NAME);
+    return true;
+  };
+
+  const updater = createUpdater({
+    platform: toPlatform(process.platform),
+    current: async (refresh) => {
+      const status = await detect(refresh);
+      return { path: status.path, version: status.version };
+    },
+    fetchManifest: fetchManifestText,
+    runUpgrade: (input) => runUpgradeProcess({
+      binaryPath: input.binaryPath,
+      // Windows 的 upgrade 必须带目标版本；macOS 交给 KimiCU 自己判断。
+      args: input.version === null ? ['upgrade'] : ['upgrade', input.version],
+      onLine: input.onLine,
+    }),
+    reconnect,
+  });
 
   ctx.tools.register(defineTool({
     name: TOOL_NAME,
@@ -111,22 +150,20 @@ export function apply(ctx: Context): void {
     },
   }));
 
-  // 状态路由只读；Connection 的 /api 通道由 Web 载体组合，没有它时插件照常加载。
+  // 状态路由只读，更新路由可写；Connection 的 /api 通道由 Web 载体组合，没有它时插件照常加载。
   ctx.inject(['connection'], (connectionCtx) => {
-    const route = createStatusRoute(detect);
-    const dispose = (connectionCtx as Context & { connection: HostConnectionHandle })
-      .connection.fetch.register(route);
+    const connection = (connectionCtx as Context & { connection: HostConnectionHandle }).connection;
+    const disposers = [
+      connection.fetch.register(createStatusRoute(detect)),
+      connection.fetch.register(createUpdateRoute(updater)),
+    ];
     return () => {
-      void Promise.resolve(dispose()).catch(() => {});
+      for (const dispose of disposers) void Promise.resolve(dispose()).catch(() => {});
     };
   });
 
   // MCP 连接交给管理器：命令取自同一次探测，平台不受支持时探测器给 null，这里就不注册。
   // 两个可选服务谁先到不确定，所以注册动作收进 syncMcp：条件齐了才动手，条件变了再算一次。
-  let mcpCtx: (Context & { mcpManager: McpManagerFace }) | undefined;
-  let disposeMcp: (() => void) | undefined;
-  let desktopDenied = false;
-
   const syncMcp = async (): Promise<void> => {
     if (desktopDenied || mcpCtx === undefined || disposeMcp !== undefined) return;
     const status = await detect();

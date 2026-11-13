@@ -8,7 +8,7 @@
 
 | 行 id | 挂的包 | 作用 |
 | --- | --- | --- |
-| `dsh-kimi-cu` | 本包 | 宿主半边（`kimi_cu_status` 工具 + `/api/dsh-kimi-cu/status` 路由 + MCP 注册）与浏览器半边（插件页状态卡） |
+| `dsh-kimi-cu` | 本包 | 宿主半边（`kimi_cu_status` 工具 + `/api/dsh-kimi-cu/status` 与 `/api/dsh-kimi-cu/update` 两条路由 + MCP 注册）与浏览器半边（插件页状态卡） |
 | `skill-kimi-cu-macos` | `@deepseek-ai/dsh-skill-filesystem` | 只扫本包 `skills/macos` |
 | `skill-kimi-cu-windows` | `@deepseek-ai/dsh-skill-filesystem` | 只扫本包 `skills/windows` |
 
@@ -48,16 +48,32 @@ Windows 走的是旧 13 工具 MCP，不是上游主推的 code-mode 插件：co
 
 Windows 的路径公式只在 `resolve.ts` 的 `windowsMcpCommand` 里有一份；`test-status` 与 `check-bundle` 会逐 env 断言。覆盖值存在时只用覆盖值，不回退到默认/旧目录；旧目录安装会同时标 `legacy-install` 与 `mcp-command-missing`，卡片按「本机检查未通过」处理，不会在连接指向的文件不存在时报「本机检查通过」。
 
-浏览器半边在 `src/client/`：注册 `plugins.bundle.config`（key 是包名），卡片按「未安装 / 本机检查未通过 / 本机检查通过 / 不支持」四种状态渲染，给官方命令、复制、重新检测与文档链接。卡片只给命令，不执行安装脚本。
+浏览器半边在 `src/client/`：注册 `plugins.bundle.config`（key 是包名），卡片按「未安装 / 本机检查未通过 / 本机检查通过 / 不支持」四种状态渲染，给官方命令、复制、重新检测与文档链接。卡片只给安装命令，不执行安装脚本；已安装时版本行右侧多一个更新按钮，它只触发 KimiCU 自己的 `upgrade`。
 
 `kimi_cu_status` 工具返回同一份 JSON；MCP 工具缺失或连接失败时，技能要求模型先查它，再把安装/修复步骤转告用户。
 
-## 为什么卡片不自动执行安装
+## 为什么安装不执行、更新却执行
 
-- 宿主静默执行远程脚本会绕过 DSH 的审批模型：安装器从 CDN 下载并替换运行时，失败时难以回滚。
-- macOS 安装器需要交互式权限授予（辅助功能、屏幕录制），后台执行拿不到用户在系统设置里的确认。
-- Windows 安装器会替换正在使用的运行时；如果宿主正连着它，更新与连接状态都会被打断。
-- 因此卡片只给官方命令与复制，由用户在终端里执行；装好后按提示开关插件。
+- 安装器需要交互式权限授予：macOS 的辅助功能与屏幕录制只能在系统设置里由用户确认，后台执行拿不到。所以安装只给官方命令与复制，由用户在终端里执行。
+- 更新走 KimiCU 自带的 `upgrade`：它自己下载、校验 SHA-256 与 Apple 公证或 Authenticode、替换安装、重启服务并自检，失败回滚；不需要交互式密码，也不要求退出 app。
+- 因此更新可以由卡片触发，安装仍只给命令。装好后按提示开关插件。
+
+## 更新链路
+
+宿主半边在 `src/server/`：
+
+- `update.ts`：清单解析、按数字段比版本、`==>` 行映射阶段、失败分类，以及带单飞锁的更新器。
+- `update-runtime.ts`：读清单（5 秒超时）与跑 `upgrade` 子进程并逐行回调。
+- `update-router.ts`：`GET /api/dsh-kimi-cu/update` 返回检查结果，`POST` 返回 NDJSON 事件流。
+
+macOS 与 Windows 各有一份更新清单，版本号互不可比：macOS 读 `kimi-computer-use/latest/version.json`，Windows 读 `kimi-computer-use-windows/latest/version.json`。页面打开时静默读一次清单（与本地检测解耦），只用来决定按钮文案；点按钮时服务端重新比对，已是最新就直接返回，否则执行。
+
+- **命令**：macOS 跑 `kimi-cu upgrade`（不带版本号，让 KimiCU 自己判断）；Windows 的 `upgrade` 必须带目标版本，所以传清单里的版本号。
+- **清单读不到**：macOS 照常跑，交给 KimiCU 判断；Windows 报网络错误，不执行。
+- **阶段**：`==>` 开头的行映射成「正在下载／校验／替换／重连」，认不出的行保持上一个阶段。
+- **失败分类**：只看错误行（跳过 `==>` 与 `✓` 进度行），分网络、校验失败、权限不足、已有升级在跑、超时五类，另有 unknown 兜底。
+- **单飞锁与超时**：同一时刻只允许一次更新；5 分钟超时只放弃等待，不 kill 子进程，锁留到它真的退出。
+- **重连**：升级后读到新版本号才调 `mcpManager.restart('kimi-cu')`；重启失败时卡片提示重启 DSH。
 
 ## 连不上时看什么
 
@@ -90,7 +106,7 @@ bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `b
 包目录里跑 `pnpm check`，它由这几段组成：
 
 1. `pnpm typecheck`。
-2. `pnpm test`：构建 + `smoke-host`（真 cordis + 真 ToolRuntime）+ `smoke-client`（假 Web shell）+ `test-status`（纯逻辑）+ `test-card`（jsdom 渲染）。
+2. `pnpm test`：构建 + `smoke-host`（真 cordis + 真 ToolRuntime）+ `smoke-client`（假 Web shell）+ `test-status`（纯逻辑）+ `test-update`（更新链路纯逻辑与更新器行为）+ `test-card`（jsdom 渲染）。
 3. `assert:lib-untracked`。
 4. `check-bundle.mjs`：清单面、文本面与契约面（内核真 `Config` schema、两平台分支、技能目录）。
 5. `tools/probes/preset-skills.mjs --skills skills/macos` 与 `--skills skills/windows`。
@@ -101,4 +117,5 @@ bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `b
 
 - 2026-11-08，内核 0.2.2-rc.1，macOS：`pnpm check` 全通过（typecheck、4 个测试脚本、check-bundle 16 条、两个技能根的 probe）；`kimi-cu doctor` 五项全绿，`kimi_cu_status` 返回 0.6.8 与已就绪。
 - 2026-11-08，内核 0.2.2-rc.1，macOS：`node tools/host-smoke.mjs` 装载通过，插件页能取到本包的 `client.js`。
+- 2026-11-13，内核 0.2.2-rc.3，macOS：`pnpm check` 全通过（typecheck、6 个测试脚本、check-bundle 13 条、两个技能根的 probe）；更新链路只在替身上验过，真机升级未执行。
 - Windows 真机验收待补：卡片未安装 → 运行官方命令 → 重新检测 → 开关插件 → `mcp__kimi-cu__*` 工具出现 → `list_apps` 可用。

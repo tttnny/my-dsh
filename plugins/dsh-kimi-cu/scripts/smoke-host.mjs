@@ -15,6 +15,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools';
 
 import * as plugin from '../lib/index.js';
 import { STATUS_ROUTE_PATH } from '../src/shared/status.ts';
+import { UPDATE_ROUTE_PATH } from '../src/shared/update.ts';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 const pkgName = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name;
@@ -82,6 +83,10 @@ await test('只读工具标记为并发安全', () => {
 
 await test('状态路由路径固定', () => {
   assert.equal(STATUS_ROUTE_PATH, '/api/dsh-kimi-cu/status');
+});
+
+await test('更新路由路径固定', () => {
+  assert.equal(UPDATE_ROUTE_PATH, '/api/dsh-kimi-cu/update');
 });
 
 await test('patch 有三行，根层行 id 与包名对得上', () => {
