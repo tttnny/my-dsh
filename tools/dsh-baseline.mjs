@@ -17,6 +17,7 @@
  *   node tools/dsh-baseline.mjs --write                # 落盘 + 在改动的包里跑 pnpm install
  *   node tools/dsh-baseline.mjs --write --bump patch   # 顺带把版本号加一位
  *   node tools/dsh-baseline.mjs --only dsh-chat-translate  # 只动一个包
+ *   node tools/dsh-baseline.mjs --only dsh-chat-translate,dsh-kimi-cu  # 只动这几个包（逗号分隔）
  *   node tools/dsh-baseline.mjs --check                # 门禁：全部对齐才回 0（不落盘）
  * 退出码：0 已对齐或改写成功，1 有包改写失败或有包没跟上，2 跑不起来。
  */
@@ -121,11 +122,20 @@ function apply(pkg, changes) {
   }
 }
 
-let packages = listPackages(root);
+const allPackages = listPackages(root);
+let packages = allPackages;
+/** 一个 `--only` 记号认包名、`plugins/<目录>`、`presets/<目录>` 或裸目录名。 */
+const matchesOnly = (entry, token) => entry.name === token || entry.rel === token
+  || entry.rel === `plugins/${token}` || entry.rel === `presets/${token}`;
 if (typeof args.only === 'string') {
-  packages = packages.filter((entry) => entry.name === args.only || entry.rel === `plugins/${args.only}` || entry.rel === `presets/${args.only}`);
+  const tokens = args.only.split(',').map((token) => token.trim()).filter((token) => token !== '');
+  const unknown = tokens.filter((token) => !allPackages.some((entry) => matchesOnly(entry, token)));
+  if (unknown.length > 0) {
+    console.error(`dsh-baseline: 认不出这些包，已跳过：${unknown.join('、')}`);
+  }
+  packages = allPackages.filter((entry) => tokens.some((token) => matchesOnly(entry, token)));
   if (packages.length === 0) {
-    console.error(`dsh-baseline: 认不出这个包：${args.only}`);
+    console.error(`dsh-baseline: --only 一个包都没认出来：${args.only}`);
     process.exit(2);
   }
 }
@@ -151,8 +161,15 @@ function emptyLocks() {
 if (check) {
   const locks = emptyLocks();
   for (const rel of locks) console.error(`dsh-baseline: ${rel}/pnpm-lock.yaml 是空 lock——没有依赖的包不入库 lock，删掉它`);
+  // 只选了部分包时，把没选中的落后包打一行提示：提交闸门按改动包比较，整仓的落后仍要看得见。
+  const outside = allPackages
+    .filter((entry) => !packages.includes(entry))
+    .filter((entry) => plan(entry).length > 0);
+  if (outside.length > 0) {
+    console.log(`dsh-baseline: 另有 ${outside.length} 个包仍停在旧内核（本次未选）：${outside.map((entry) => entry.rel).join('、')}`);
+  }
   if (touched.length === 0 && locks.length === 0) {
-    console.log('\ndsh-baseline: --check 通过，全部包已对齐');
+    console.log(`\ndsh-baseline: --check 通过，${typeof args.only === 'string' ? '选中的包' : '全部包'}已对齐`);
     process.exit(0);
   }
   console.error(`\ndsh-baseline: --check 不通过——${touched.length} 个包要改${locks.length === 0 ? '' : `，${locks.length} 个空 lock 要删`}；落盘跑 node tools/dsh-baseline.mjs --write --bump patch`);

@@ -3,9 +3,12 @@
 #
 #
 # 四道闸门，按这个顺序：
-#   0. 内核基线：改到 plugins/ 或 presets/ 时跑 `node tools/dsh-baseline.mjs --check`。
+#   0. 内核基线：改到 plugins/ 或 presets/ 时跑 `node tools/dsh-baseline.mjs --check --only <改动的包>`。
 #      **这条不能省**：台账判据 10 拿字面量与本包自己的 engines.dsh 比，判据 11 拿 preset
 #      抄本与运行中内核比——两边各自自洽时，整仓一起落后一版没有任何一道闸门看得见。
+#      只比本次改动的包：升级顺序是「先 preset、再 plugins」，中间那次提交里其余包必然
+#      还落后，整仓比较会把它拦下，逼人用 SKIP_CHECK=1 连另外三道闸门一起跳过。未触及的
+#      落后包由 --check 打一行提示，不拦提交。
 #      本机没装 DSH 时它回退出码 2，那是「跑不起来」，跳过并说明，不当成不通过。
 #   1. 台账：改到 plugins/、presets/、根 README.md、docs/rules/ 或 tools/ 时跑
 #      `node tools/assert-ledger.mjs`（判据见该文件头部）。零依赖、纯读文件，很快。
@@ -37,13 +40,31 @@ cd "$root" || exit 0
 changed=$(git diff --cached --name-only --diff-filter=ACMRD) || exit 0
 [ -n "$changed" ] || exit 0
 
+# 本次改动触及的包目录（plugins/<dir>、presets/<dir>），去重。
+pkgs=$(printf '%s\n' "$changed" \
+  | grep -E '^(plugins|presets)/[^/]+/' \
+  | cut -d/ -f1,2 \
+  | sort -u)
+
 failed=""
 
 # ── 0. 内核基线 ──────────────────────────────────────────────────────────────
 # 放在台账之前：它抓的是「整仓落后一版」，台账抓的是「包内与包间不一致」，前者更根本。
+# 只比本次改动的包，理由见文件头。
 if printf '%s\n' "$changed" | grep -qE '^(plugins|presets)/'; then
-  echo "pre-commit: 内核基线 -> node tools/dsh-baseline.mjs --check"
-  out=$(node tools/dsh-baseline.mjs --check 2>&1)
+  # 已删除的包目录不在 listPackages 里，别传给 --only：删包提交要能过。
+  baseline_pkgs=$(printf '%s\n' "$pkgs" | while IFS= read -r pkg; do
+    [ -n "$pkg" ] && [ -f "$pkg/package.json" ] && printf '%s\n' "$pkg"
+  done)
+  if [ -n "$baseline_pkgs" ]; then
+    only=$(printf '%s' "$baseline_pkgs" | tr '\n' ',')
+    only=${only%,}
+    echo "pre-commit: 内核基线 -> node tools/dsh-baseline.mjs --check --only $only"
+    out=$(node tools/dsh-baseline.mjs --check --only "$only" 2>&1)
+  else
+    echo "pre-commit: 内核基线 -> node tools/dsh-baseline.mjs --check"
+    out=$(node tools/dsh-baseline.mjs --check 2>&1)
+  fi
   code=$?
   if [ "$code" = "2" ]; then
     echo "pre-commit: 提示：读不到在用的内核，跳过基线检查（本机没装 DSH 时正常）"
@@ -65,12 +86,6 @@ if printf '%s\n' "$changed" | grep -qE '^(plugins|presets)/|^README\.md$|^docs/r
 fi
 
 # ── 2. 本次改动触及的包 ──────────────────────────────────────────────────────
-# 只认 plugins/<dir> 与 presets/<dir> 这两层的包目录，去重。
-pkgs=$(printf '%s\n' "$changed" \
-  | grep -E '^(plugins|presets)/[^/]+/' \
-  | cut -d/ -f1,2 \
-  | sort -u)
-
 for pkg in $pkgs; do
   [ -f "$pkg/package.json" ] || continue
 
