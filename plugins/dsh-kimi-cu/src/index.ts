@@ -18,6 +18,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import type { Context } from '@deepseek-ai/cordis';
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
 
+import type { KimiCuStatus } from './shared/status.ts';
+
 import { createStatusRoute } from './server/router.ts';
 import { toPlatform } from './server/resolve.ts';
 import { defaultStatusDetector } from './server/status.ts';
@@ -85,12 +87,16 @@ interface ComputerUseFace {
   register: (name: string) => () => Promise<void>;
 }
 
+/** 探测器签名：状态卡、工具与 MCP 注册共用同一份。 */
+type Detector = (refresh?: boolean) => Promise<KimiCuStatus>;
+
 /**
  * 插件本体。
  * @param ctx - 宿主插件上下文（`tools` 由 inject 声明）。
+ * @param options - 可选注入；只给测试换探测器用，宿主调用时不传。
  */
-export function apply(ctx: Context): void {
-  const detect = defaultStatusDetector();
+export function apply(ctx: Context, options?: { detect?: Detector }): void {
+  const detect = options?.detect ?? defaultStatusDetector();
 
   // MCP 连接交给管理器；更新成功后要用它重连，所以这几样先声明再交给更新器。
   let mcpCtx: (Context & { mcpManager: McpManagerFace }) | undefined;
