@@ -1,4 +1,7 @@
-/* `notify_user` 的进度卡：圆点 + 标题 + 折叠键 + 时间，正文默认展开。 */
+/* `notify_user` 的进度卡：圆点 + 标题 + 折叠键 + 时间，正文默认展开。
+ *
+ * 行首取宿主 `DisclosureRow` 的同一套几何：16px 图标框 + 6px 间距，标题文字因此落在
+ * 行左边缘 +22px，与过程行、工具行的文字列对齐；框宽跟随宿主的字号轴，改字号后仍对齐。 */
 
 .dsh-notify-card {
   padding: 2px 0 8px;
@@ -7,14 +10,23 @@
 .dsh-notify-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-height: 24px;
 }
 
 .dsh-notify-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: calc(16px + var(--dsh-content-font-delta, 0px));
+  height: calc(16px + var(--dsh-content-font-delta, 0px));
+}
+
+.dsh-notify-dot::before {
+  content: '';
   width: 7px;
   height: 7px;
-  flex: none;
   border-radius: 50%;
   corner-shape: round;
   background: var(--dsw-alias-state-business-primary);
@@ -59,9 +71,10 @@
   line-height: 18px;
 }
 
+/* 竖线落在圆点的圆心上（行左边缘 +8px），正文文字与标题同列（+22px）。 */
 .dsh-notify-body {
-  margin: 2px 0 0 3px;
-  padding-left: 14px;
+  margin: 2px 0 0 calc(8px + var(--dsh-content-font-delta, 0px) * 0.5);
+  padding-left: calc(13px + var(--dsh-content-font-delta, 0px) * 0.5);
   border-left: 1px solid var(--dsw-alias-border-l1);
   color: var(--dsw-alias-label-primary);
 }

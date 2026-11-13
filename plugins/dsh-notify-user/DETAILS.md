@@ -79,6 +79,8 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 菜单开关的形态照官方智能体团队开关（内核 `packages/client/ui-agent-team` 的 `TeamModeToggle`）：同一行结构、同一套悬停高亮与整行点击区。
 
+进度卡的行首照宿主的 `DisclosureRow`：16px 图标框 + 6px 间距，标题文字因此落在行左边缘 +22px，与过程行、工具行的文字列同列；圆点居中放进那个图标框，正文竖线落在圆点圆心上（+8px），正文文字与标题同列。框宽跟随宿主的字号轴（`--dsh-content-font-delta`），改字号后仍对齐。卡片按行的左边缘定位，所以步骤组边界与跟随工具行两种位置、原生与 PTC 两种呈现方式都落在同一列上。
+
 ## 已知现状
 
 节点数据优先读 `tool/result` 的 `meta`（原生调用）；PTC 子调用读 `tool/ptc-dispatch` 的 `meta`；没有 `meta` 的旧日志退回调用参数。三条来路都来自会话日志，直播与重放画出来一样。
