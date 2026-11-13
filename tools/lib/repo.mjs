@@ -4,7 +4,7 @@
  * 零依赖，只用 node: 内置模块——仓库根不放 package.json，也不放依赖安装（见 AGENTS.md 第 7 条）。
  * 每个工具都 `node tools/<name>.mjs` 直接跑，不需要任何安装步骤。
  */
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -290,8 +290,11 @@ export function profiles(home = dshHome()) {
 }
 
 /**
- * 启动器记着的运行中实例（URL 与实例日志路径）。
- * @returns {Array<{id: string, profile: string, url: string, logPath: string}>} 运行中的实例。
+ * 启动器记着的运行中实例（URL、实例日志路径与启动时间）。
+ *
+ * 启动时间取实例日志的创建时间：launcher 的 `running.json` 不记时间，日志是它启动时建的第一份文件。
+ * 文件系统不给创建时间（部分 Linux 文件系统）时为 `undefined`，调用方按「不知道」处理。
+ * @returns {Array<{id: string, profile: string, url: string, logPath: string, startedAt?: number}>} 运行中的实例。
  */
 export function runningInstances() {
   const launcher = launcherDir();
@@ -304,12 +307,16 @@ export function runningInstances() {
   } catch {
     return [];
   }
-  return Object.entries(parsed).map(([id, entry]) => ({
-    id,
-    profile: entry.profile,
-    url: entry.url,
-    logPath: join(launcher, 'logs', `${id}.log`),
-  }));
+  return Object.entries(parsed).map(([id, entry]) => {
+    const logPath = join(launcher, 'logs', `${id}.log`);
+    let startedAt;
+    try {
+      startedAt = statSync(logPath).birthtimeMs;
+    } catch {
+      startedAt = undefined;
+    }
+    return { id, profile: entry.profile, url: entry.url, logPath, startedAt };
+  });
 }
 
 /**

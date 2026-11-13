@@ -12,17 +12,19 @@
  *   node tools/dsh-env.mjs --dsh <版本> # 指定内核版本（默认取运行中实例的内核）
  *   node tools/dsh-env.mjs --json     # 机器读
  */
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { dshSourceDir } from './lib/dsh-source.mjs';
 import {
   currentKernel,
+  devCopyState,
   dshHome,
   installedKernels,
   kernelBaselines,
   kernelPresetsDir,
   launcherDir,
+  listPackages,
   profiles,
   repoRoot,
   runningInstances,
@@ -52,6 +54,33 @@ const profile = profiles(home).find((entry) => entry.name === activeProfile);
 const running = runningInstances().filter((instance) => instance.profile === activeProfile);
 const sourceDir = dshSourceDir(root);
 
+/** 目录树里最新的修改时间；目录不存在时回 0。 */
+function newestMtime(dir) {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    newest = Math.max(newest, entry.isDirectory() ? newestMtime(path) : statSync(path).mtimeMs);
+  }
+  return newest;
+}
+
+/**
+ * 开发副本里比实例启动更新的产物。
+ *
+ * 宿主半边在进程里，改 `lib/` 之后要触发一次 profile 重新组合才换上新代码；客户端半边刷新页面就生效。
+ * 这里只回答「有没有比实例新的产物」，不判断该不该重启——见 docs/rules/dev-copy.md「生效时机」。
+ */
+function stalePackages(instance) {
+  if (instance.startedAt === undefined || profile === undefined) return [];
+  return listPackages(root)
+    .filter((entry) => devCopyState(profile.dir, entry.name).state === 'link')
+    .filter((entry) => {
+      const lib = join(entry.dir, 'lib');
+      return existsSync(lib) && newestMtime(lib) > instance.startedAt;
+    })
+    .map((entry) => entry.rel);
+}
+
 const report = {
   repo: root,
   dshHome: home,
@@ -70,7 +99,12 @@ const report = {
   baselines,
   launcherDir: launcher ?? null,
   sourceDir: sourceDir ?? null,
-  running: running.map((instance) => ({ url: instance.url, log: instance.logPath })),
+  running: running.map((instance) => ({
+    url: instance.url,
+    log: instance.logPath,
+    startedAt: instance.startedAt ?? null,
+    stale: stalePackages(instance),
+  })),
 };
 
 if (args.json === true) {
@@ -92,6 +126,9 @@ if (args.json === true) {
   ];
   for (const instance of report.running) {
     lines.push(['运行中实例', `${instance.url}\n${' '.repeat(16)}实例日志 ${instance.log}`]);
+    if (instance.stale.length > 0) {
+      lines.push(['实例产物', `${instance.stale.length} 个包的 lib/ 比实例启动新（宿主半边要重新组合才生效，见 docs/rules/dev-copy.md「生效时机」）`]);
+    }
   }
   // 中文按两列宽算，才排得整齐。
   const columns = (text) => [...text].reduce((sum, char) => sum + (char.codePointAt(0) > 0x2e80 ? 2 : 1), 0);
