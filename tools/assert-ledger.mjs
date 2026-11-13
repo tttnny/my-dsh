@@ -19,6 +19,7 @@
  *  13. 归档的包只在 `archive/` 下被提到：除 `archive/`、`tmp/`、构建产物与随包 vendored 内容外，
  *      规则文档、工具脚本、根 README 与各包源码里都不出现它的包名或目录名，`plugins/<dir>` 也必须是活目录
  *  14. 插件 README/DETAILS 里写死的「N 个字段、M 条描述」与构建产物里实际注册的工具面一致
+ *  15. scoped 包声明 `publishConfig.access: "public"`（`release.md`「发完即止」第 2 条）
  *
  * 判据来自 docs/rules/plugins.md、release.md、presets.md、to-readme.md 与 AGENTS.md；
  * 改了那些约定就同步改这里，两边是同一件事的两个位置，不允许只改一边。
@@ -686,8 +687,21 @@ if (pins.size > 1) {
   fail('package.json', `packageManager 各包不一致（${[...pins].sort().join('、')}）：全仓钉同一个 pnpm 版本`);
 }
 
+// ── 15. scoped 包声明公开发布 ────────────────────────────────────────────────
+// 见 docs/rules/release.md「发完即止」第 2 条：不带这一项会发不出去或发成受限包。
+// 它只在 npm publish 那一刻生效，本地 check 与 CI 都不碰，所以放进台账。
+for (const entry of packages) {
+  if (!entry.pkg.name.startsWith('@')) continue;
+  if (entry.pkg.publishConfig?.access !== 'public') {
+    fail(
+      `${entry.rel}/package.json`,
+      '缺 publishConfig.access: "public"——scoped 包不带这一项会发不出去或发成受限包；见 docs/rules/release.md「发完即止」',
+    );
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────────────────────
-const checks = 14;
+const checks = 15;
 if (findings.length === 0) {
   if (!quiet) {
     console.log(`assert-ledger: ok（${packages.length} 个包，${checks} 项判据；开发副本 ${localProfiles.length} 个 profile）`);
