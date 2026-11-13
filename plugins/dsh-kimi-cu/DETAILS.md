@@ -99,7 +99,9 @@ bundle patch 里的 `!!js` 表达式以**声明这份 patch 的那棵树**的 `b
 
 ## 随包技能从哪来
 
-`skills/macos/kimi-cu/SKILL.md` 以 KimiCU 自带技能为底稿，另加 DSH 适配（工具前缀、窗口级工具、`activate_window` / `debug_tap` 的边界、`kimi_cu_status`）。`skills/windows/kimi-cu/SKILL.md` 按 Windows runtime 的旧 13 工具 MCP 与官方 `INSTALL.md` 写。上游改了要人工同步一次。
+`skills/macos/kimi-cu/SKILL.md` 按 KimiCU MCP 的 18 个直接工具写，另加 DSH 适配（工具前缀、窗口级工具、`activate_window` / `debug_tap` 的边界、`kimi_cu_status`）。`skills/windows/kimi-cu/SKILL.md` 按 Windows runtime 的旧 13 工具 MCP 与官方 `INSTALL.md` 写。
+
+上游随 Kimi Code 插件发的那份 `skills/kimi-cu/SKILL.md` 已经改成 CodeAct 优先（`cua.listApps`、`js` / `js_reset`、浏览器标签页），而 DSH 注册的 MCP 只暴露 18 个直接工具，没有 `js` 与浏览器工具。所以同步时只能取它的工具语义与边界，不能整篇照搬；参数以当前工具 schema 为准。
 
 ## 验证
 

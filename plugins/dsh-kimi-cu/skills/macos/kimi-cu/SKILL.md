@@ -32,7 +32,7 @@ DSH 把这些工具注册为 `mcp__kimi-cu__<name>`（例如 `mcp__kimi-cu__list
 - `click` / `scroll` / `drag` / 定向 `type_text` 的 x/y 是所用截图的像素坐标，不是屏幕坐标。不要自行换算缩放比例。`mode:"ax"` 的 bbox 是窗口内点坐标，不能直接当作截图像素点击；用 index 或重新取图。
 - 多窗口及浮层从 `screenshots[]` 选正确图片，传其 `window_id`；支持 `screenshot_id` 的动作同时传图片标识（主图为响应的 `screenshot_id`，数组项为 `id`）。浮窗必须用浮窗自己的图和窗口，不能省略窗口让路由猜测，也不能借用主图坐标。
 - `rect:{x,y,width,height}` 使用窗口内点坐标，并把该窗口的当前截图锚点切到局部区域。区域图内的操作直接使用区域图像素；改回全窗坐标前重新取全窗图。歧义、过期或越界报错时重新观察，不强行换算重试。
-- 正常观察使用 MCP（包括其 JS facade）；不要用 shell 的 `kimi-cu shot` / `app-state` / `windows` 代替。开发调试 CLI 不刷新 MCP 快照缓存。
+- 正常观察使用 MCP；不要用 shell 的 `kimi-cu shot` / `app-state` / `windows` 代替。开发调试 CLI 不刷新 MCP 快照缓存。
 
 ## 输入与编辑
 
@@ -49,25 +49,11 @@ DSH 把这些工具注册为 `mcp__kimi-cu__<name>`（例如 `mcp__kimi-cu__list
 - `effect:"unverifiable"` + `verified:false` 表示投递完成但效果未验证（遮挡窗口或 CEF 原生 chrome 目标；点击已不做像素校验）；不能当作任务已完成，要重新观察核对是否达到预期。
 - 动作未生效时先重新观察目标和状态，再选择界面提供的等价操作。不要连续盲重试，也不要为了绕过失败改做会产生不同结果的动作。
 - 全遮挡且已节流的 Chromium/CEF 窗口会静默吞掉或分钟级延迟窗口路由事件：自动通道点击无效时，可用 `click(channel:"public")`——整段序列（hover/primer/down/up）以带窗口号的 NSEvent 工厂事件经 postToPid 投递，导航、聚焦、按钮全有效。被吞事件可能分钟级后才执行，不要因此盲目重发同一点位；先重新观察再按次决定。
-- 目标稳定、后续步骤能用代码判断的循环或批量操作适合 KimiCU 自带 `js`；不按步数强制合并。下一步需要模型读新截图时，先返回观察结果，再写下一段代码。同一窗口的多条笔画可用 `drag_paths`。具体用法见下文。
+- 目标稳定、后续步骤能用代码判断的批量操作逐个 `await`；DSH 注册的 KimiCU MCP 只有 18 个直接工具，没有 `js` / `js_reset`。下一步需要模型读新截图时，先返回观察结果再决定下一步。同一窗口的多条笔画用 `drag_paths`，见下文。
 
-## JS 与批量操作
+## 批量操作
 
-### KimiCU 自带 REPL
-
-先确认工具列表包含 **KimiCU MCP 提供的** `js` / `js_reset`。这是随 KimiCU 打包的运行时，不能把同名的其他插件 JS 工具或系统 Node 当作此入口。未提供 JS 时使用普通 MCP 工具；不为简单操作临时搭建运行时。
-
-```js
-var { kimiCU } = await import("@kimi/cu");
-nodeRepl.write(await kimiCU.list_apps({ running_only: true }));
-```
-
-- 顶层变量和函数跨 cell 持久；输出文本/对象需 `nodeRepl.write(value)`，裸表达式不显示。观察产生的图片会作为 image content 返回。
-- 方法对应普通工具，但 facade 有独立参数校验和别名；不要假定所有参数完全相同。例如 JS `press_key` 用 `key`，普通工具用 `keys`；窗口可写成 `window:{app,id,title}`，index 可用 `element_index`。未知参数应检查当前接口和版本，不静默删掉有语义的参数继续操作。
-- JS 调用失败会抛带 `code` 的异常。用 `try/catch` 输出错误并停止依赖该结果的后续动作；抛异常不代表此前动作已回滚。成功返回也仍须按前文验证实际效果。
-- 同一 cell 对同一应用窗口连续读取非空 AX 树时可读 `tree_diff` / `state_diff`；检查 `mode` 和基准信息。首次观察、新窗口、禁用 diff 或纯图片观察不能假定有增量补丁。
-- 批量只合并目标已知且稳定的动作，逐个 `await`。新菜单、页面或截图需要模型辨认时，在该观察后结束 cell，不能预写未观察界面的坐标/index。
-- `js_reset` 会清空 REPL 变量并重建内核，不会清理 app 草稿、撤销动作或恢复窗口。仅在运行时异常、明确提示或升级后使用。
+DSH 注册的是 KimiCU MCP 的 18 个直接工具：`list_apps`、`launch_app`、`list_windows`、`get_window`、`activate_window`、`get_app_state`、`get_window_state`、`click`、`type_text`、`paste`、`press_key`、`scroll`、`set_value`、`perform_secondary_action`、`select_text`、`drag`、`drag_paths`、`debug_tap`。没有 CodeAct 的 `js` / `js_reset`，也没有浏览器标签页工具；需要批量就逐个 `await`，不要临时搭一个运行时。
 
 ### drag_paths
 
@@ -77,7 +63,7 @@ nodeRepl.write(await kimiCU.list_apps({ running_only: true }));
 - 必须显式传 `window_id`，并使用该窗口最近一次图像观察的像素坐标。当前服务的该路径不消费 `screenshot_id`，不能靠它单独选窗或恢复旧截图锚点。批内不切换窗口/坐标系。
 - 传 `abort_if_cursor_in_window:true` 保持用户操作守卫。用户在窗口内移动真实鼠标或按住鼠标时会拒投或中途停止；光标静止在窗口内本身不触发。触发后等待用户停止相关操作，重新观察再继续，不关闭守卫硬投。
 - 批量不是事务，已投笔画不回滚。普通工具返回 `results`、`delivered`、`total`，中断时可能带 `cursor_in_window:true`。结合界面核对后，仅处理未完成路径；中途止投可从第一个 false 位置续作，其他失败须逐项检查，不能整批重放。
-- 当前 JS 异常只保留错误码和文字，未必包含失败响应的 `results`。无法确定哪些笔画已完成时，先核对画面和错误信息；不能猜测断点或重新提交整个批次。需要程序化读取失败明细时使用普通 `drag_paths` 工具。
+- 无法确定哪些笔画已完成时，先核对画面和错误信息；不能猜测断点或重新提交整个批次。
 
 ## 排障与升级
 
@@ -110,8 +96,8 @@ ls /Applications/KimiCU.app/Contents/MacOS/kimi-cu
 
 ### 升级后的连接
 
-收到新版本提示时转告用户，已有升级授权时可运行 `kimi-cu upgrade`。不要仅因有新版就中断任务或自行升级。
+收到新版本提示时转告用户：插件页的 KimiCU 卡片上有更新按钮，也可以运行 `kimi-cu upgrade`。不要仅因有新版就中断任务或自行升级。
 
-服务升级不会自动替换长寿的 MCP 桥和 NodeRepl 内核。升级后在客户端重连 KimiCU MCP（支持 `/mcp` 的客户端可用该入口）；JS 用户还需 `js_reset`，然后重新 import 和观察。reset 不代替 MCP 重连，也不会清掉应用内容。
+服务升级不会自动替换长寿的 MCP 桥。插件页的更新按钮在升级成功后会自动重连 MCP；手动升级后在客户端重连 KimiCU MCP（支持 `/mcp` 的客户端可用该入口）即可。
 
 CLI 只用于排障/安装维护；日常取图、取坐标和操作仍用 MCP。
