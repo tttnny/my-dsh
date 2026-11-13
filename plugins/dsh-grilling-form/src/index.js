@@ -117,7 +117,7 @@ async function apply(ctx, config) {
   };
   ctx.tools.register(defineTool({
     name: 'grilling_form',
-    description: "Put this round's questions to the user as a form, then end your turn. Make it the round's only tool call.",
+    description: "Put this round's questions to the user as a form, then end your turn. Make it the round's only tool call. If new information changes questions already shown and unanswered, call again with replace: true instead of waiting for the user to fill them.",
     parameters: {
       questions: {
         type: 'array',
