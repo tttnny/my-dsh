@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-kimi-cu",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "接上本机 KimiCU（macOS / Windows）：把它的 mcp 服务挂成 mcp__kimi-cu__* 工具，随包带操作技能，并在插件页给出安装检测与引导。",
   "type": "module",
   "main": "lib/index.js",
