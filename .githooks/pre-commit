@@ -1,9 +1,6 @@
 #!/bin/sh
 # my-dsh pre-commit：**改了哪个包就在哪个包里跑它自己的 check**，外加一道仓库级台账检查。
 #
-# 为什么在提交这一侧：`docs/rules/plugins.md`「验证」只写了「改完在所在包目录跑
-# pnpm check」，纯靠自觉。本钩子把它变成闸门：只跑本次改动触及的包，没动的包不跑，
-# 所以代价与改动规模成正比。仓库级一次跑齐的是 `node tools/check.mjs`（CI 跑同一个）。
 #
 # 四道闸门，按这个顺序：
 #   0. 内核基线：改到 plugins/ 或 presets/ 时跑 `node tools/dsh-baseline.mjs --check`。
@@ -34,7 +31,10 @@ root=$(git rev-parse --show-toplevel) || exit 0
 cd "$root" || exit 0
 
 # 暂存区里改动的路径（新增/修改/删除都算）。
-changed=$(git diff --cached --name-only --diff-filter=ACMR) || exit 0
+# **必须带上 D**：只删不增的提交（删包、删文件）如果被过滤掉，`changed` 就是空的，下面
+# 直接 exit 0——台账与产物新鲜度两道闸门一次都不跑，删了包却留着根 README 那行这类事
+# 会静默放行。包检查那一节对已删目录本来就有 `[ -f "$pkg/package.json" ] || continue` 兜着。
+changed=$(git diff --cached --name-only --diff-filter=ACMRD) || exit 0
 [ -n "$changed" ] || exit 0
 
 failed=""
