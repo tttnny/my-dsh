@@ -71,6 +71,7 @@ DSH 注册的是 KimiCU MCP 的 18 个直接工具：`list_apps`、`launch_app`�
 
 - 歧义窗口、坐标越界或旧 index：按前文重新绑定窗口和观察，不重装或抢前台。
 - 缺图/黑图：先看 `screenshot_diagnosis`，区分最小化、窗口关闭、其他 Space、锁屏、未渲染和权限问题。需要用户恢复窗口或切回所在桌面时明确说明，不自行切 Space。
+- 窗口在另一个 Space 或另一块屏幕上时，AX 树照常可读、动作照常可投递，但截图取不到（`screenshot_diagnosis` 报 `not on-screen` 或 `no shareable content`）。这时用 AX 文本验证结果，不要据此判断权限丢失或动作失败；`activate_window` 的 `foreground_changed:true` 也不证明窗口已经来到当前 Space。
 - 空 AX 树也可能是自绘或远程渲染控件；有可用截图时可按图操作，不直接认定权限丢失。
 - `unknown field` / `KIMI_CU_UNKNOWN_FIELD`：先核对当前入口的 schema；刚升级时优先排查旧 MCP 桥和 JS 内核，不能据此直接断言新功能不存在。
 - 怀疑某个进程收不到事件时，用 `debug_tap` 在服务侧记录它的投递事件；它不改变界面，也不是常规操作入口。排查完如实报告结论，不要靠反复投递试探。
