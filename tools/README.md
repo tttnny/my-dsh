@@ -34,4 +34,5 @@
   会联网的是：`publish-plan.mjs`（调用 `npm view`）、`market-index.mjs`（读 npm registry）、`pnpm install` 及其两个内置调用者（`new-plugin.mjs` 默认会在生成的包里跑它、`dsh-baseline.mjs --write` 会在改动的包里跑它）、`tools/ci-check.mjs`、`presets/plugin-upgrade-cordis/check-upstream.mjs`（在线模式）。`dev-link.mjs --write`（`pnpm add --offline`）与 `mutate.mjs` 不联网。
 - 中间产物一律落仓库根的 `tmp/`（已 gitignore）：`tmp/host-smoke/`、`tmp/preset-compose/`、`tmp/preset-copy/`、`tmp/ci-check/`、`tmp/ui-preview/`、`tmp/ui.png` 这类图。`gui-shot.mjs` 的浏览器用户目录 `tmp/chrome-profile/` 每趟自己重建、跑完删掉，不留登录态。各包自检的临时家目录（`chtest-*`、`suite-*`、`reply-*`、`judge-*`）也落在这里，包目录里不新建 `tmp/`。
 - **判据必须有出处**：`assert-ledger.mjs` 的每条判据都要对应规则或硬声明，改约定时同步对应的检查；判据与编号只在脚本头部列举。
+- **判据必须能证明覆盖范围**：拿有上限的接口做全量判断时，上限之外的变化会被静默漏掉。compare 接口的文件清单上限是 300 个，用它判断「上游有没有变」时，`skills/` 的改动会被截在外面，报成「无需同步」。改成能证明覆盖的判据（目录 tree sha），或在上限命中时失败关闭。
 - 新增或翻转断言后的验证，见 [plugins.md](../docs/rules/plugins.md)「证明断言有牙齿」；变异工具的参数与还原策略见 [mutate.mjs](./mutate.mjs) 头部。

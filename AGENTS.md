@@ -20,7 +20,7 @@ DSH 源码已拉取到本地 `/Users/tny/Desktop/work/other/deepseek-harness`，
 | --- | --- |
 | 改 / 发 / 排障 `plugins/` 下的插件 | `docs/rules/plugins.md`（前门） |
 | `npm publish`、产物与 `files` 门禁、镜像陈旧、退役归档 | `docs/rules/release.md` |
-| 建 / 校验开发副本，或撞 `Cannot find package` | `docs/rules/dev-copy.md` |
+| 建 / 校验开发副本、问「改完多久生效」、撞 `Cannot find package` | `docs/rules/dev-copy.md` |
 | 插件从页面消失、宿主日志无异常 | `docs/rules/client-wiring.md` |
 | 插件配置界面放哪、key 怎么来、静默失败 | `docs/rules/plugin-config-page.md` |
 | `presets/` | `docs/rules/presets.md` |

@@ -55,6 +55,13 @@
 - **探针的锚点要唯一**：往源码里塞临时探针时，别拿 `str.replace(x, y, 1)` 打在「文件里第一个 `  return (`」这类到处都有的形状上——它会插进另一个函数，报出来的还是 `Invalid hook call` 这种看不懂的错。锚点带上上下文，或改用 `git apply` 的补丁。
 - **收尾核对 `git status --short`**：与变异前的工作区状态比较，确认没有留下变异或引入任务外改动，原有未提交内容仍在。多数包的 `pnpm check` 会重写已被 `.gitignore` 忽略的 `lib/`，这些构建产物不进 `git status`。
 
+### 自检不能依赖跑它的那台机器
+
+`process.platform`、真实探测器、`/Applications` 路径这类宿主事实，会让同一份断言在 macOS 与 CI 的 ubuntu 上给出不同结果：本机绿、CI 红，而那时已经推上去了。
+
+- **要验平台分支，把探测结果做成可注入的替身**，不要在断言里读真环境。样本：`plugins/dsh-kimi-cu/scripts/test-exclusivity.mjs` 的 `fakeDetect`——真探测器在 Linux 上给 `mcp: null`，注册那条链根本跑不到。
+- **拿不准会不会只在 macOS 上过时，推之前跑一次** `node tools/ci-check.mjs`：它按 CI 的方式在干净 HOME 里装依赖并跑 `check`。
+
 ### 提交闸门（`.githooks/pre-commit`）
 
 提交闸门的检查顺序、触发路径、缺 `check` 脚本时的处理、安装与跳过方法，以 [.githooks/pre-commit](../../.githooks/pre-commit) 头部为准。

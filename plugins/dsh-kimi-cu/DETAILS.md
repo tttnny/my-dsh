@@ -69,6 +69,7 @@ Windows 的路径公式只在 `resolve.ts` 的 `windowsMcpCommand` 里有一份�
 macOS 与 Windows 各有一份更新清单，版本号互不可比：macOS 读 `kimi-computer-use/latest/version.json`，Windows 读 `kimi-computer-use-windows/latest/version.json`。页面打开时静默读一次清单（与本地检测解耦），只用来决定按钮文案；点按钮时服务端重新比对，已是最新就直接返回，否则执行。
 
 - **命令**：macOS 跑 `kimi-cu upgrade`（不带版本号，让 KimiCU 自己判断）；Windows 的 `upgrade` 必须带目标版本，所以传清单里的版本号。
+- **CLI 不解析 `--help`**：`kimi-cu` 没有帮助与版本开关，任何子命令都会真的执行；探参数不要用 `--help`，版本从 `Info.plist`（macOS）或 `doctor` 的 `version=` 行（Windows）读。
 - **清单读不到**：macOS 照常跑，交给 KimiCU 判断；Windows 报网络错误，不执行。
 - **阶段**：`==>` 开头的行映射成「正在下载／校验／替换／重连」，认不出的行保持上一个阶段。
 - **失败分类**：只看错误行（跳过 `==>` 与 `✓` 进度行），分网络、校验失败、权限不足、已有升级在跑、超时五类，另有 unknown 兜底。
