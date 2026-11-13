@@ -27,14 +27,8 @@ export interface ModelRowProps {
   readonly meta?: string | undefined;
   /** Localized accessible name for the star control. */
   readonly starLabel?: string | undefined;
-  /** Whether the star is a Tab stop right now (the picker's roving highlight). */
-  readonly starTabStop?: boolean;
-  /** Tab order of the row itself; the picker keeps rows out of it so ↑/↓ own the walk. */
-  readonly rowTabIndex?: number;
   /** Pick this row. */
   readonly onPick: () => void;
-  /** The row took the keyboard, so its star becomes reachable. */
-  readonly onFocusRow?: (() => void) | undefined;
   /** Toggle this row's favorite. */
   readonly onToggleFavorite: () => void;
   /** Extra row content, such as the picker's disabled reason. */
@@ -48,7 +42,7 @@ export interface ModelRowProps {
  */
 export function ModelRow({
   name, badge, selected, busy, favorited, meta, starLabel,
-  starTabStop = false, rowTabIndex, onPick, onFocusRow, onToggleFavorite, children,
+  onPick, onToggleFavorite, children,
 }: ModelRowProps) {
   return <div
     className={css.row}
@@ -57,14 +51,11 @@ export function ModelRow({
   >
     <button
       type="button"
-      role="menuitemradio"
-      aria-checked={selected}
-      tabIndex={rowTabIndex}
+      aria-current={selected ? 'true' : undefined}
       className={css.rowPick}
       title={name}
       disabled={busy}
       onClick={onPick}
-      onFocus={onFocusRow}
     >
       <span className={css.rowCopy}>
         <span className={css.rowName}>{name}</span>
@@ -77,7 +68,6 @@ export function ModelRow({
       className={css.starButton}
       aria-pressed={favorited}
       aria-label={starLabel}
-      tabIndex={starTabStop ? 0 : -1}
       disabled={busy}
       onClick={onToggleFavorite}
     >

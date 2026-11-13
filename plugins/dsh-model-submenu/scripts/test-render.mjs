@@ -156,8 +156,6 @@ const table = {
   'picker.favorite': '收藏 {model}',
   'picker.unfavorite': '取消收藏 {model}',
   'picker.searchEmpty': '没有匹配的模型。',
-  'picker.hintNavigate': '导航',
-  'picker.hintSelect': '选择',
   'picker.hintClose': '关闭',
   'meta.effort': '思考',
   'meta.images': '图片输入',
@@ -309,7 +307,7 @@ const withTrack = () => {
 }
 const flush = async () => { await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0) }) }) }
 const dialog = () => document.querySelector('[role="dialog"]')
-const rowButtons = () => dialog() === null ? [] : [...dialog().querySelectorAll('[role="menuitemradio"]')]
+const rowButtons = () => dialog() === null ? [] : [...dialog().querySelectorAll('button[title]')]
 const rowByName = (name) => rowButtons().find((row) => row.getAttribute('title') === name)
 const stars = () => dialog() === null ? [] : [...dialog().querySelectorAll('button[aria-pressed]')]
 const starOf = (row) => row.parentElement.querySelector('button[aria-pressed]')

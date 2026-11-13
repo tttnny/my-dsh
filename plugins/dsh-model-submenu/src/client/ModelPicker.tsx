@@ -31,7 +31,6 @@ import {
   searchRows,
   type CatalogModel,
   type ModelRow as CatalogRow,
-  type PickerTab,
 } from './rows.ts'
 import { Tag, isMobileDevice } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelFactsLookup } from './facts-source.ts'
@@ -85,8 +84,6 @@ export function ModelPicker({
   const listRef = useRef<HTMLDivElement | null>(null)
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState(ALL_TAB)
-  const [highlight, setHighlight] = useState(0)
-  const tabRefs = useRef(new Map<string, HTMLButtonElement>())
 
   const tabs = useMemo(() => pickerTabs(state.groups, t('picker.all')), [state.groups, t])
   const reason = useMemo(() => reasoningOf(state.groups), [state.groups])
@@ -106,7 +103,6 @@ export function ModelPicker({
     if (!open) return
     setQuery('')
     setTab(ALL_TAB)
-    setHighlight(0)
     if (listRef.current !== null) listRef.current.scrollTop = 0
     // 粗指针设备不自动聚焦文本输入：移动端弹键盘会顶起布局，宿主座位也这样守。
     const frame = requestAnimationFrame(() => {
@@ -115,34 +111,8 @@ export function ModelPicker({
     return () => { cancelAnimationFrame(frame) }
   }, [open])
 
-  useEffect(() => {
-    setHighlight((current) => visible.length === 0 ? 0 : Math.min(current, visible.length - 1))
-  }, [visible.length])
-
-  useEffect(() => {
-    const row = listRef.current?.querySelector<HTMLElement>(`[data-row-index="${highlight}"]`)
-    row?.scrollIntoView({ block: 'nearest' })
-  }, [highlight])
-
   if (!open) return null
 
-  const activeRow = visible[highlight]
-  const activeId = activeRow === undefined ? undefined : `${id}-row-${highlight}`
-  const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      if (visible.length === 0) return
-      setHighlight((current) => {
-        const next = current + (event.key === 'ArrowDown' ? 1 : -1)
-        return (next + visible.length) % visible.length
-      })
-      return
-    }
-    if (event.key === 'Enter' && activeRow !== undefined && !busy) {
-      event.preventDefault()
-      pick(activeRow)
-    }
-  }
   const pick = (row: CatalogRow) => {
     const selection = planModelCommit(live, row.provider, row.model, reason, rememberedOf?.(row.provider, row.model))
     if (selection === null) {
@@ -151,27 +121,6 @@ export function ModelPicker({
     }
     onPick(selection)
   }
-  /** Move to another tab and hand it the keyboard, in one step. */
-  const goTab = (next: PickerTab | undefined) => {
-    if (next === undefined || next.id === tab) return
-    setTab(next.id)
-    setHighlight(0)
-    tabRefs.current.get(next.id)?.focus()
-  }
-  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    const index = tabs.findIndex((candidate) => candidate.id === tab)
-    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
-      event.preventDefault()
-      const step = event.key === 'ArrowRight' ? 1 : -1
-      goTab(tabs[((index === -1 ? 0 : index) + step + tabs.length) % tabs.length])
-      return
-    }
-    if (event.key === 'Home' || event.key === 'End') {
-      event.preventDefault()
-      goTab(tabs[event.key === 'Home' ? 0 : tabs.length - 1])
-    }
-  }
-
   const failures = state.failures.filter((failure) => tab === ALL_TAB || failure.id === tab)
   const failed = state.error !== null && state.status === 'error'
   const loading = state.status === 'loading'
@@ -192,13 +141,11 @@ export function ModelPicker({
           role="searchbox"
           aria-label={t('picker.search')}
           aria-controls={`${id}-list`}
-          aria-activedescendant={activeId}
           placeholder={t('picker.search')}
           icon={<IconSearchOutlineRegular size={14} />}
           value={query}
           readOnly={busy}
           onChange={(event) => { setQuery(event.target.value) }}
-          onKeyDown={onSearchKeyDown}
           data-modal-autofocus=""
         />
       </div>
@@ -206,10 +153,6 @@ export function ModelPicker({
         {tabs.map((entry) => (
           <button
             key={entry.id}
-            ref={(node) => {
-              if (node === null) tabRefs.current.delete(entry.id)
-              else tabRefs.current.set(entry.id, node)
-            }}
             type="button"
             role="tab"
             id={`${id}-tab-${entry.id}`}
@@ -217,29 +160,13 @@ export function ModelPicker({
             aria-controls={`${id}-list`}
             tabIndex={0}
             className={css.pickerTab}
-            onClick={() => {
-              setTab(entry.id)
-              setHighlight(0)
-            }}
-            onKeyDown={onTabKeyDown}
-            onFocus={() => {
-              if (entry.id !== tab) {
-                setTab(entry.id)
-                setHighlight(0)
-              }
-            }}
+            onClick={() => { setTab(entry.id) }}
           >
             {entry.label}
           </button>
         ))}
       </div>
-      <div
-        ref={listRef}
-        id={`${id}-list`}
-        className={css.pickerList}
-        role="menu"
-        aria-label={t('picker.title')}
-      >
+      <div ref={listRef} id={`${id}-list`} className={css.pickerList}>
         {loading && <div className={css.notice}>{t('status.loading')}</div>}
         {failed && (
           <div className={css.notice}>
@@ -256,8 +183,8 @@ export function ModelPicker({
         {visible.length === 0 && !loading && !failed && (
           <div className={css.notice}>{state.groups.length === 0 ? t('status.empty') : t('picker.searchEmpty')}</div>
         )}
-        {visible.map((row, index) => (
-          <div key={`${row.provider}/${row.model}`} data-row-index={index} id={`${id}-row-${index}`}>
+        {visible.map((row) => (
+          <div key={`${row.provider}/${row.model}`}>
             <ModelRow
               name={row.entry.name}
               badge={row.entry.badge === undefined
@@ -277,10 +204,7 @@ export function ModelPicker({
               starLabel={isFavorite(favorites, row.provider, row.model)
                 ? t('picker.unfavorite', { model: row.entry.name })
                 : t('picker.favorite', { model: row.entry.name })}
-              starTabStop={index === highlight}
-              rowTabIndex={-1}
               onPick={() => { pick(row) }}
-              onFocusRow={() => { setHighlight(index) }}
               onToggleFavorite={() => { onToggleFavorite(row.provider, row.model) }}
             />
           </div>
@@ -288,12 +212,6 @@ export function ModelPicker({
       </div>
       <div className={css.pickerFooter}>
         <span className={css.footerHint}>
-          <ShortcutKeys keys={['↑', '↓']} />
-          <span>{t('picker.hintNavigate')}</span>
-          <span className={css.footerDot}>·</span>
-          <ShortcutKeys keys={['Enter']} />
-          <span>{t('picker.hintSelect')}</span>
-          <span className={css.footerDot}>·</span>
           <ShortcutKeys keys={['Esc']} />
           <span>{t('picker.hintClose')}</span>
         </span>
