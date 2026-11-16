@@ -84,27 +84,12 @@ const SUMMARY_ONLY_DESCRIPTION = 'Send the user a one-line progress update witho
  * @returns 这一次注册用的工具定义。
  */
 function notifyTool(summaryOnly: boolean): ToolDefinition {
-  if (summaryOnly) {
-    return defineTool({
-      name: NOTIFY_TOOL_NAME,
-      description: SUMMARY_ONLY_DESCRIPTION,
-      parameters: {
-        title: { ...TITLE_PARAMETER, required: true },
-      },
-      output: OUTPUT,
-      isConcurrencySafe: () => true,
-      async execute() {
-        return { ok: true };
-      },
-    });
-  }
   return defineTool({
     name: NOTIFY_TOOL_NAME,
-    description: DETAILED_DESCRIPTION,
-    parameters: {
-      title: TITLE_PARAMETER,
-      message: MESSAGE_PARAMETER,
-    },
+    description: summaryOnly ? SUMMARY_ONLY_DESCRIPTION : DETAILED_DESCRIPTION,
+    parameters: summaryOnly
+      ? { title: { ...TITLE_PARAMETER, required: true } }
+      : { title: TITLE_PARAMETER, message: MESSAGE_PARAMETER },
     output: OUTPUT,
     isConcurrencySafe: () => true,
     async execute() {

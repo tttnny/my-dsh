@@ -21,7 +21,7 @@ export const DEFAULT_RESET_ON_PROSE = true;
 /** 进度卡默认带折叠按钮。 */
 export const DEFAULT_COLLAPSIBLE = true;
 
-/** 模型只写一行标题、卡片只画标题行：默认关，照旧写正文。 */
+/** 模型只写一行标题、卡片只画标题行：默认关，模型写标题与正文。 */
 export const DEFAULT_SUMMARY_ONLY = false;
 
 /** 结构化正文模式下卡片是否默认展开：默认关，点标题展开。 */

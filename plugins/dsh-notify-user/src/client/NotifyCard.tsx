@@ -63,7 +63,8 @@ function markdownLabels(t: NotifyCardProps['t']): MarkdownLabels {
  */
 export function NotifyCard({ data, form, openFile, t, seat }: NotifyCardProps): ReactElement {
   const config = useClientConfig(form);
-  const [open, setOpen] = useState(config.bodyExpandedByDefault);
+  // 配置可能晚于卡片到达：没手动切过之前跟随配置的默认值，切过之后保持用户的选择。
+  const [open, setOpen] = useState<boolean | null>(null);
 
   const title = titleOf({ title: data.title, message: data.message }, t('row.fallbackTitle'));
 
@@ -80,7 +81,7 @@ export function NotifyCard({ data, form, openFile, t, seat }: NotifyCardProps): 
 
   const hasBody = !config.summaryOnly && data.message.trim().length > 0;
   const collapsible = config.collapsible && hasBody;
-  const expanded = collapsible ? open : true;
+  const expanded = collapsible ? open ?? config.bodyExpandedByDefault : true;
   const time = formatClock(data.time);
   const titleNode = data.settled ? title : <TextShimmer active>{title}</TextShimmer>;
 
@@ -98,7 +99,7 @@ export function NotifyCard({ data, form, openFile, t, seat }: NotifyCardProps): 
             type="button"
             className="dsh-notify-toggle"
             aria-expanded={expanded}
-            onClick={() => { setOpen((value) => !value); }}
+            onClick={() => { setOpen(!expanded); }}
           >
             <span className="dsh-notify-dot" data-open={expanded || undefined} aria-hidden="true">
               <span className="dsh-notify-dot-idle" />

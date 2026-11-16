@@ -4,7 +4,7 @@
  * 锁住这几件事：
  *
  *   1. 只报摘要时卡片只有标题行，没有正文、没有折叠键；
- *   2. 折叠键长在圆点里：收起时默认不显示，展开时常驻并朝上；
+ *   2. 折叠键长在圆点里，两个状态都只在悬停时出现；展开时箭头朝上；
  *   3. 正文默认收起时正文不出现，点圆点出现；默认展开时直接出现；
  *   4. 「始终展开」没有折叠键，正文始终展开；
  *   5. 配置卡的汇报形态是两选一、正文显示是三选一，写入各自的字段；
@@ -77,15 +77,25 @@ let configValue = {
 };
 const writes = [];
 const listeners = new Set();
+/** 表单状态：`loading` 用来验配置晚到的顺序。 */
+let configStatus = 'ready';
+/** 每次写入的延时：用来验写入队列不并行。 */
+let setDelay = 0;
+let inFlight = 0;
+let maxInFlight = 0;
 const form = {
-  getSnapshot: () => ({ status: 'ready', value: configValue }),
+  getSnapshot: () => ({ status: configStatus, value: configStatus === 'ready' ? configValue : undefined }),
   subscribe: (listener) => {
     listeners.add(listener);
     return () => { listeners.delete(listener); };
   },
   set: async (field, value) => {
+    inFlight += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    if (setDelay > 0) await new Promise((resolve) => { setTimeout(resolve, setDelay); });
     writes.push([field, value]);
     configValue = { ...configValue, [field]: value };
+    inFlight -= 1;
     for (const listener of listeners) listener();
     return true;
   },
@@ -185,6 +195,9 @@ function reset(value = {}) {
     ...value,
   };
   writes.length = 0;
+  configStatus = 'ready';
+  setDelay = 0;
+  maxInFlight = 0;
 }
 
 /** 画一张进度卡；默认是一张落定的、带标题与正文的卡。 */
@@ -319,20 +332,20 @@ await test('配置卡：结构化正文时没有摘要呈现', () => {
   assert.equal(groupOf('摘要呈现'), undefined);
 });
 
-await test('配置卡：切到默认展开只写 bodyExpandedByDefault', async () => {
+await test('配置卡：切到默认展开两个字段一起写', async () => {
   reset();
   renderConfigCard();
   click(pillOf('正文显示', '默认展开'));
   await flush();
-  assert.deepEqual(writes, [['bodyExpandedByDefault', true]]);
+  assert.deepEqual(writes, [['collapsible', true], ['bodyExpandedByDefault', true]]);
 });
 
-await test('配置卡：切到始终展开写 collapsible', async () => {
+await test('配置卡：切到始终展开两个字段一起写', async () => {
   reset();
   renderConfigCard();
   click(pillOf('正文显示', '始终展开'));
   await flush();
-  assert.deepEqual(writes, [['collapsible', false]]);
+  assert.deepEqual(writes, [['collapsible', false], ['bodyExpandedByDefault', false]]);
 });
 
 await test('配置卡：从始终展开切到默认展开，两个字段按顺序写', async () => {
@@ -341,6 +354,27 @@ await test('配置卡：从始终展开切到默认展开，两个字段按顺�
   click(pillOf('正文显示', '默认展开'));
   await flush();
   assert.deepEqual(writes, [['collapsible', true], ['bodyExpandedByDefault', true]]);
+});
+
+await test('配置卡：写入排成一条队列，不并行', async () => {
+  reset();
+  setDelay = 5;
+  maxInFlight = 0;
+  renderConfigCard();
+  click(switchOf('默认开启'));
+  click(pillOf('正文显示', '默认展开'));
+  await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 80); }); });
+  assert.equal(maxInFlight, 1, '写入不该并行');
+});
+
+await test('配置晚到：默认展开在配置就绪后生效', () => {
+  reset({ bodyExpandedByDefault: true });
+  configStatus = 'loading';
+  renderCard();
+  assert.equal(bodyText(), undefined, '加载中先按收起');
+  configStatus = 'ready';
+  act(() => { for (const listener of listeners) listener(); });
+  assert.equal(bodyText(), '正文');
 });
 
 act(() => { viewRoot.unmount(); });

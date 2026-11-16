@@ -16,11 +16,12 @@ import { NS, type NotifyKey } from './locales.js';
 
 /**
  * 宿主「插件」页上的配置卡：主动汇报的默认开关、催办阈值、「散文回复算不算汇报」、
- * 汇报形态（结构化正文 / 只报摘要）、正文显示（始终展开 / 默认收起 / 默认展开）与
- * 进度卡位置。
+ * 汇报形态（结构化正文 / 只报摘要）、摘要呈现（进度卡 / 散文）、正文显示
+ * （始终展开 / 默认收起 / 默认展开）与进度卡位置。
  *
- * 没有保存按钮：数字框失焦或回车时写一次，打字期间只改草稿；开关与位置在动作发生的那一刻写。
- * 写入交给设置表单自己排队（它按 revision 串行化），卡片只负责把失败就地报出来。
+ * 没有保存按钮：数字框失焦或回车时写一次，打字期间只改草稿；开关、切换按钮与位置在
+ * 动作发生的那一刻写。写入排成一条队列，一次只发一个：宿主按 revision 给每次写入设
+ * 栅栏，并行发出会让后一次撞上前一次刚换掉的 revision。
  */
 
 /** 座位给的取词，加上本插件在 `inject` 里投出去的那张表单。 */
@@ -34,6 +35,12 @@ const BODY_MODES = ['always', 'collapsed', 'expanded'] as const;
 
 /** 正文显示的一档。 */
 type BodyMode = typeof BODY_MODES[number];
+
+/** 切换按钮的一项。 */
+interface Choice<T extends string> {
+  readonly id: T;
+  readonly label: string;
+}
 
 /** 汇报形态的文案键。 */
 const REPORT_MODE_LABELS = {
@@ -65,6 +72,33 @@ function bodyModeOf(config: ClientConfig): BodyMode {
 }
 
 /**
+ * 一组切换按钮：标签、当前值与选中回调；点当前项不做事。
+ * @param props - 组标签、可选项、当前值与选中回调。
+ * @returns 一组 Pill。
+ */
+function ChoiceGroup<T extends string>({ label, options, value, onSelect }: {
+  readonly label: string;
+  readonly options: readonly Choice<T>[];
+  readonly value: T;
+  readonly onSelect: (id: T) => void;
+}): ReactElement {
+  return (
+    <div className="dsh-notify-config-field" role="group" aria-label={label}>
+      {options.map((option) => (
+        <Pill
+          key={option.id}
+          active={value === option.id}
+          aria-pressed={value === option.id}
+          onClick={() => { if (value !== option.id) onSelect(option.id); }}
+        >
+          {option.label}
+        </Pill>
+      ))}
+    </div>
+  );
+}
+
+/**
  * 渲染配置卡。
  * @param props - 座位给的 `t` 与配置表单。
  * @returns 卡片的元素树；宿主没服务这份配置时只有一行说明。
@@ -77,6 +111,24 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
   // 离开页面时把还没失焦的草稿写下去（切标签/关页面会直接卸载这张卡）。
   const draftRef = useRef(text);
   const committedRef = useRef(config?.nudgeAfter);
+
+  /** 写入队列：一次只发一个，后一次读到最新草稿。 */
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueue = (pairs: readonly (readonly [string, unknown])[]): void => {
+    queueRef.current = queueRef.current.then(async () => {
+      try {
+        for (const [field, value] of pairs) {
+          if (!await form.set(field, value)) {
+            setError(t('config.write.failed'));
+            return;
+          }
+        }
+        setError(null);
+      } catch {
+        setError(t('config.write.failed'));
+      }
+    });
+  };
 
   useEffect(() => {
     const sync = (): void => {
@@ -94,7 +146,7 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
     const parsed = Number(draftRef.current);
     if (!Number.isFinite(parsed)) return;
     const next = Math.min(MAX_NUDGE_AFTER, Math.max(0, Math.floor(parsed)));
-    if (next !== committedRef.current) void form.set('nudgeAfter', next);
+    if (next !== committedRef.current) enqueue([['nudgeAfter', next]]);
   }, [form]);
 
   if (config === undefined) {
@@ -107,35 +159,16 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
 
   const bodyMode = bodyModeOf(config);
 
-  const write = (field: string, value: unknown): void => {
-    void form.set(field, value).then(
-      (accepted) => { setError(accepted ? null : t('config.write.failed')); },
-      () => { setError(t('config.write.failed')); },
-    );
-  };
+  /** 写一个字段：排进队列。 */
+  const write = (field: string, value: unknown): void => { enqueue([[field, value]]); };
 
-  /** 三选一写回两个布尔：只写真正变了的字段，按顺序排队。 */
+  /** 三选一写回两个布尔：两个字段一起写，队列里最后一次选择赢。 */
   const chooseBodyMode = (mode: BodyMode): void => {
     if (mode === bodyMode) return;
     const collapsible = mode !== 'always';
     const bodyExpandedByDefault = mode === 'expanded';
-    const pairs: [string, unknown][] = [];
-    if (collapsible !== config.collapsible) pairs.push(['collapsible', collapsible]);
-    if (bodyExpandedByDefault !== config.bodyExpandedByDefault) pairs.push(['bodyExpandedByDefault', bodyExpandedByDefault]);
     setConfig({ ...config, collapsible, bodyExpandedByDefault });
-    void (async () => {
-      try {
-        for (const [field, value] of pairs) {
-          if (!await form.set(field, value)) {
-            setError(t('config.write.failed'));
-            return;
-          }
-        }
-        setError(null);
-      } catch {
-        setError(t('config.write.failed'));
-      }
-    })();
+    enqueue([['collapsible', collapsible], ['bodyExpandedByDefault', bodyExpandedByDefault]]);
   };
 
   const commitThreshold = (): void => {
@@ -214,47 +247,34 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
           <div className="dsh-notify-config-label">{t('config.placement.label')}</div>
           <div className="dsh-notify-config-hint">{t('config.placement.hint')}</div>
         </div>
-        <div className="dsh-notify-config-field" role="group" aria-label={t('config.placement.label')}>
-          {CARD_PLACEMENTS.map((placement) => (
-            <Pill
-              key={placement}
-              active={config.cardPlacement === placement}
-              aria-pressed={config.cardPlacement === placement}
-              onClick={() => {
-                if (config.cardPlacement === placement) return;
-                setConfig({ ...config, cardPlacement: placement });
-                write('cardPlacement', placement);
-              }}
-            >
-              {t(placement === 'boundary' ? 'config.placement.boundary' : 'config.placement.inline')}
-            </Pill>
-          ))}
-        </div>
+        <ChoiceGroup
+          label={t('config.placement.label')}
+          value={config.cardPlacement}
+          options={CARD_PLACEMENTS.map((id) => ({
+            id,
+            label: t(id === 'boundary' ? 'config.placement.boundary' : 'config.placement.inline'),
+          }))}
+          onSelect={(id) => {
+            setConfig({ ...config, cardPlacement: id });
+            write('cardPlacement', id);
+          }}
+        />
       </div>
       <div className="dsh-notify-config-row">
         <div className="dsh-notify-config-info">
           <div className="dsh-notify-config-label">{t('config.reportMode.label')}</div>
           <div className="dsh-notify-config-hint">{t('config.reportMode.hint')}</div>
         </div>
-        <div className="dsh-notify-config-field" role="group" aria-label={t('config.reportMode.label')}>
-          {REPORT_MODES.map((mode) => {
-            const summary = mode === 'summary';
-            return (
-              <Pill
-                key={mode}
-                active={config.summaryOnly === summary}
-                aria-pressed={config.summaryOnly === summary}
-                onClick={() => {
-                  if (config.summaryOnly === summary) return;
-                  setConfig({ ...config, summaryOnly: summary });
-                  write('summaryOnly', summary);
-                }}
-              >
-                {t(REPORT_MODE_LABELS[mode])}
-              </Pill>
-            );
-          })}
-        </div>
+        <ChoiceGroup
+          label={t('config.reportMode.label')}
+          value={config.summaryOnly ? 'summary' : 'structured'}
+          options={REPORT_MODES.map((id) => ({ id, label: t(REPORT_MODE_LABELS[id]) }))}
+          onSelect={(id) => {
+            const summary = id === 'summary';
+            setConfig({ ...config, summaryOnly: summary });
+            write('summaryOnly', summary);
+          }}
+        />
       </div>
       {config.summaryOnly ? (
         <div className="dsh-notify-config-row">
@@ -262,22 +282,15 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
             <div className="dsh-notify-config-label">{t('config.summaryRender.label')}</div>
             <div className="dsh-notify-config-hint">{t('config.summaryRender.hint')}</div>
           </div>
-          <div className="dsh-notify-config-field" role="group" aria-label={t('config.summaryRender.label')}>
-            {SUMMARY_RENDERS.map((render) => (
-              <Pill
-                key={render}
-                active={config.summaryRender === render}
-                aria-pressed={config.summaryRender === render}
-                onClick={() => {
-                  if (config.summaryRender === render) return;
-                  setConfig({ ...config, summaryRender: render });
-                  write('summaryRender', render);
-                }}
-              >
-                {t(SUMMARY_RENDER_LABELS[render])}
-              </Pill>
-            ))}
-          </div>
+          <ChoiceGroup
+            label={t('config.summaryRender.label')}
+            value={config.summaryRender}
+            options={SUMMARY_RENDERS.map((id) => ({ id, label: t(SUMMARY_RENDER_LABELS[id]) }))}
+            onSelect={(id) => {
+              setConfig({ ...config, summaryRender: id });
+              write('summaryRender', id);
+            }}
+          />
         </div>
       ) : null}
       {config.summaryOnly ? null : (
@@ -286,18 +299,12 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
             <div className="dsh-notify-config-label">{t('config.bodyMode.label')}</div>
             <div className="dsh-notify-config-hint">{t('config.bodyMode.hint')}</div>
           </div>
-          <div className="dsh-notify-config-field" role="group" aria-label={t('config.bodyMode.label')}>
-            {BODY_MODES.map((mode) => (
-              <Pill
-                key={mode}
-                active={bodyMode === mode}
-                aria-pressed={bodyMode === mode}
-                onClick={() => { chooseBodyMode(mode); }}
-              >
-                {t(BODY_MODE_LABELS[mode])}
-              </Pill>
-            ))}
-          </div>
+          <ChoiceGroup
+            label={t('config.bodyMode.label')}
+            value={bodyMode}
+            options={BODY_MODES.map((id) => ({ id, label: t(BODY_MODE_LABELS[id]) }))}
+            onSelect={(id) => { chooseBodyMode(id); }}
+          />
         </div>
       )}
       {error === null ? null : <div className="dsh-notify-config-error" role="status">{error}</div>}
