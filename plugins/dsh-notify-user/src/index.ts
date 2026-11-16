@@ -17,6 +17,8 @@ import { parseUpdate } from './client/row-model.js';
  *
  * 主动汇报按会话开关：会话自己的选择优先，没有就用配置里的默认值。关掉的会话
  * 既不催，也不给它提供 `notify_user` 工具。
+ *
+ * `notify_user` 在计数第一次到阈值之前不声明；催办那一步放行，之后本会话一直可用。
  */
 
 /** 稳定 Cordis loader 名：与 cordis.patch.yml 那条行的 id、配置命名空间同字面量。 */
@@ -107,16 +109,18 @@ export function apply(ctx: Context, config: PluginConfig): void {
   /** 这个会话是否开启主动汇报；催办与工具可用性问的是同一个问题。 */
   const enabledIn = (session: Session): boolean => isEnabledFor(config, session.header.id);
 
-  installNudge(ctx, createNudgeController({
+  const controller = createNudgeController({
     readThreshold: () => nudgeAfterOf(config),
     readProseResets: () => config.resetOnProse.get(),
     readSummaryOnly: () => config.summaryOnly.get(),
     readEnabled: enabledIn,
-  }), NOTIFY_TOOL_NAME);
+  });
+  installNudge(ctx, controller, NOTIFY_TOOL_NAME);
 
-  // 会话关掉主动汇报时，这一步的声明与派发都没有这个工具。
+  // 计数第一次到阈值之前不声明；放行之后本会话一直可用。
+  // 关掉主动汇报的会话始终没有这个工具。
   const registerTool = (): (() => void) => ctx.tools.register(notifyTool(config.summaryOnly.get()), {
-    when: ({ agent }) => enabledIn(agent.session),
+    when: ({ agent }) => enabledIn(agent.session) && controller.isUnlocked(agent.session),
   });
   let disposeTool = registerTool();
 

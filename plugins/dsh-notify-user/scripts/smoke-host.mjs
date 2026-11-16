@@ -56,6 +56,13 @@ function harness(threshold, extra = {}, config = new plugin.Config({ nudgeAfter:
     ctx,
     signal,
     tool: ctx.tools.get('notify_user'),
+    /** 某一步真正能用的工具名：`when` 在 resolve 时求值。 */
+    async admitted(agent, modelSelection = {}) {
+      const set = await ctx.tools.resolve({ agent, modelSelection, signal });
+      const names = [...set.view(agent).keys()];
+      set.dispose();
+      return names;
+    },
     /** 一次模型直接发起的工具调用（根调用）。 */
     rootCall(agent, name = 'read', result = { isError: false, content: [] }) {
       calls += 1;
@@ -164,6 +171,60 @@ await test('工具注册得上，名字与两个参数字段齐全', () => {
   assert.equal(first.tool.parameters.properties.message.type, 'string');
   assert.deepEqual(first.tool.parameters.required, ['message']);
   assert.equal(first.tool.isConcurrencySafe({ message: 'M' }), true);
+});
+
+await test('工具在首次到阈值前不声明，到阈值那一步放行，之后一直可用', async () => {
+  const h = harness(3);
+  const agent = mainAgent();
+  assert.equal((await h.admitted(agent)).includes('notify_user'), false);
+  await h.rootCall(agent);
+  await h.rootCall(agent);
+  assert.equal((await h.admitted(agent)).includes('notify_user'), false);
+  await h.rootCall(agent);
+  assert.equal((await h.admitted(agent)).includes('notify_user'), true);
+  await h.step(agent);
+  assert.equal((await h.admitted(agent)).includes('notify_user'), true);
+});
+
+await test('运行中调小阈值：工具解析就认出该放行，与催办同一步到位', async () => {
+  let threshold = 10;
+  const live = {
+    nudgeAfter: { get: () => threshold },
+    resetOnProse: { get: () => true },
+    collapsible: { get: () => true },
+    summaryOnly: { get: () => false },
+    bodyExpandedByDefault: { get: () => false },
+    cardPlacement: { get: () => 'boundary' },
+    defaultEnabled: { get: () => true },
+    sessionOverrides: { get: () => ({}) },
+  };
+  const agent = mainAgent();
+  const h = harness(10, {}, live);
+  for (let index = 0; index < 5; index += 1) await h.rootCall(agent);
+  assert.equal((await h.admitted(agent)).includes('notify_user'), false, '旧阈值下不放行');
+  threshold = 3;
+  assert.equal((await h.admitted(agent)).includes('notify_user'), true, '调小后工具解析就该放行');
+  assert.ok(noticeOf(await h.step(agent)) !== undefined, '同一步收到催办');
+  assert.equal((await h.admitted(agent)).includes('notify_user'), true, '催过后仍可用');
+});
+
+await test('散文一直清零时不催办，工具也不放行', async () => {
+  const h = harness(3);
+  const agent = mainAgent();
+  for (let index = 0; index < 5; index += 1) {
+    await h.rootCall(agent);
+    h.assistantMessage(agent.session, [{ type: 'text', text: 'progress' }]);
+  }
+  assert.equal(noticeOf(await h.step(agent)), undefined);
+  assert.equal((await h.admitted(agent)).includes('notify_user'), false);
+});
+
+await test('关掉的会话到阈值也不放行工具', async () => {
+  const config = new plugin.Config({ nudgeAfter: 3, sessionOverrides: { 'session-main': false } });
+  const h = harness(3, {}, config);
+  const agent = mainAgent();
+  for (let index = 0; index < 5; index += 1) await h.rootCall(agent);
+  assert.equal((await h.admitted(agent)).includes('notify_user'), false);
 });
 
 await test('只报摘要：工具参数只剩标题，描述只要求一行', () => {
@@ -395,17 +456,17 @@ await test('开关现读：会话中途打开后下一步就催', async () => {
   assert.ok(noticeOf(await h.step(agent)) !== undefined, '打开后按新的计数催');
 });
 
-await test('关掉的会话里没有 notify_user 工具，开着的会话里有', async () => {
+await test('关掉的会话里没有 notify_user 工具，开着的会话到阈值后才有', async () => {
   const off = mainAgent();
   const on = mainAgent('session-other');
-  const h = harness(8, { sessionOverrides: { 'session-main': false } });
+  const h = harness(3, { sessionOverrides: { 'session-main': false } });
   const modelSelection = { provider: 'test', model: 'test' };
-  const offSet = await h.ctx.tools.resolve({ agent: off, modelSelection, signal: h.signal });
-  assert.equal(offSet.view(off).has('notify_user'), false, '关掉的会话不该有这个工具');
-  offSet.dispose();
-  const onSet = await h.ctx.tools.resolve({ agent: on, modelSelection, signal: h.signal });
-  assert.equal(onSet.view(on).has('notify_user'), true, '开着的会话应当有这个工具');
-  onSet.dispose();
+  assert.equal((await h.admitted(off, modelSelection)).includes('notify_user'), false, '关掉的会话不该有这个工具');
+  assert.equal((await h.admitted(on, modelSelection)).includes('notify_user'), false, '开着的会话到阈值前也不该有');
+  for (let index = 0; index < 3; index += 1) await h.rootCall(on);
+  assert.equal((await h.admitted(on, modelSelection)).includes('notify_user'), true, '开着的会话到阈值后才有');
+  for (let index = 0; index < 3; index += 1) await h.rootCall(off);
+  assert.equal((await h.admitted(off, modelSelection)).includes('notify_user'), false, '关掉的会话到阈值也没有');
 });
 
 await test('下游拒绝这一步时不追加消息，也不吞掉这次催办', async () => {

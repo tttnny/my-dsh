@@ -20,6 +20,9 @@ import type { Context } from '@deepseek-ai/cordis';
  * 会话关掉主动汇报时（`readEnabled` 为假）不催，计数也一并清零：重新打开时从零
  * 开始算，不会一开就催。
  *
+ * `notify_user` 工具在计数第一次到阈值之前不向模型声明；到阈值那一步放行，之后
+ * 本会话一直可用。散文清零照常生效，所以一直写散文的会话既不会催办，也不放行工具。
+ *
  * 注入走 `agent/pre-step` 的 `enter.messages`：消息落进该步的 user 批次并被日志
  * 记录，来源不是 `user`，所以对话流里画成一行 context 而不是用户发言。
  */
@@ -74,6 +77,8 @@ export interface NudgeController {
   prose(session: Session): void;
   /** 一次根工具调用：计数 +1。 */
   toolCall(session: Session): void;
+  /** 工具是否已放行：计数到过阈值，或当前现读阈值已被计数达到；放行后一直为真。 */
+  isUnlocked(session: Session): boolean;
   /**
    * 一步开始前问一次要不要催。
    * @param session - 这一步所属的会话。
@@ -102,6 +107,7 @@ export interface NudgeOptions {
  */
 export function createNudgeController(options: NudgeOptions): NudgeController {
   const counts = new WeakMap<Session, number>();
+  const unlocked = new WeakSet<Session>();
 
   return {
     notify(session) {
@@ -112,7 +118,17 @@ export function createNudgeController(options: NudgeOptions): NudgeController {
       counts.set(session, 0);
     },
     toolCall(session) {
-      counts.set(session, (counts.get(session) ?? 0) + 1);
+      const count = (counts.get(session) ?? 0) + 1;
+      counts.set(session, count);
+      const threshold = options.readThreshold();
+      if (threshold > 0 && options.readEnabled(session) && count >= threshold) unlocked.add(session);
+    },
+    isUnlocked(session) {
+      if (unlocked.has(session)) return true;
+      // 阈值现读：运行中调小阈值后，工具解析发生在 pre-step 之前，
+      // 这里必须认出当前计数已经够催办，否则模型收到催办却拿不到工具。
+      const threshold = options.readThreshold();
+      return threshold > 0 && options.readEnabled(session) && (counts.get(session) ?? 0) >= threshold;
     },
     step(session, freshInput) {
       // 关掉的会话不催，也不留计数：重新打开时从零开始，不会一开就催。
@@ -128,6 +144,9 @@ export function createNudgeController(options: NudgeOptions): NudgeController {
       const count = counts.get(session) ?? 0;
       if (count < threshold) return null;
       counts.set(session, 0);
+      // 催办真发出去才置粘性标志：阈值运行中调小的情况在这里补上，
+      // 否则下一步计数归零后工具又会消失。
+      unlocked.add(session);
       return createUserMessage({
         content: [{ type: 'text', text: renderNudge(count, options.readSummaryOnly()) }],
         source: { ...NUDGE_SOURCE, form: 'notice', summary: nudgeSummary(count) },

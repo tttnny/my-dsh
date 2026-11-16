@@ -54,6 +54,42 @@ test('满阈值催一条，正文带次数与来源标记', () => {
   assert.match(notice.content[0].text, /notify_user/);
 });
 
+test('计数第一次到阈值就放行工具，之后清零也一直放行', () => {
+  const nudge = controller(() => 8);
+  const who = session();
+  assert.equal(nudge.isUnlocked(who), false);
+  for (let index = 0; index < 7; index += 1) nudge.toolCall(who);
+  assert.equal(nudge.isUnlocked(who), false);
+  nudge.toolCall(who);
+  assert.equal(nudge.isUnlocked(who), true);
+  assert.ok(nudge.step(who, false) !== null);
+  assert.equal(nudge.isUnlocked(who), true);
+});
+
+test('运行中调小阈值：工具解析就认出该放行，与催办同一步到位', () => {
+  let threshold = 10;
+  const nudge = controller(() => threshold);
+  const who = session();
+  for (let index = 0; index < 5; index += 1) nudge.toolCall(who);
+  assert.equal(nudge.isUnlocked(who), false);
+  threshold = 3;
+  assert.equal(nudge.isUnlocked(who), true, '工具解析发生在 pre-step 之前，此时就该放行');
+  assert.ok(nudge.step(who, false) !== null);
+  assert.equal(nudge.isUnlocked(who), true);
+});
+
+test('关掉的会话与阈值 0 都不放行工具', () => {
+  const off = controller(() => 2, () => true, () => false);
+  const who = session();
+  for (let index = 0; index < 3; index += 1) off.toolCall(who);
+  assert.equal(off.isUnlocked(who), false);
+
+  const zero = controller(() => 0);
+  const other = session();
+  for (let index = 0; index < 3; index += 1) zero.toolCall(other);
+  assert.equal(zero.isUnlocked(other), false);
+});
+
 test('只报摘要时只要一行标题', () => {
   const text = renderNudge(3, true);
   assert.match(text, /3 tool calls without a notify_user update/);
