@@ -1,7 +1,7 @@
 {
   "name": "@lynn123411/dsh-grilling-form",
   "version": "0.12.15",
-  "description": "Grilling-round question tool: puts the whole round of questions into the conversation as one interactive form and ends the turn there — the user answers it in the native composer, and their next message carries the answers back. The plugin numbers every question (1. 2. …), and the answer block holds only those numbers plus one \"- \" line per chosen option or typed text. Types are single (one-choice rows drawn as a circle), multi (checkboxes) and free (one box the user types into); an omitted type falls back to multi when options are present and free when they are not, and each question is labelled with the type it is actually drawn as. Recommended options (a label ending with （推荐）) get a badge and start checked. The form's import-to-composer button is always enabled, so an empty answer can be submitted as one; a form freezes when its own answer block arrives, and shows one line when a later replace: true form took its place.",
+  "description": "Grilling-round question tool: puts the whole round of questions into the conversation as one interactive form and ends the turn there — the user answers it in the native composer, and their next message carries the answers back. The plugin numbers every question (1. 2. …), and the answer block holds only those numbers plus one \"- \" line per chosen option or typed text. Types are single (one-choice rows drawn as a circle), multi (checkboxes) and free (one box the user types into); an omitted type falls back to multi when options are present and free when they are not, and each question is labelled with the type it is actually drawn as. Recommended options (a label ending with （推荐）) get a badge and start checked. The form's import-to-composer button is always enabled, so an empty answer can be submitted as one; a form freezes when its own answer block arrives, and shows one line when a later replace: true form took its place. Enabling the plugin also swaps the grilling, implement-spec and code-review skills for the DSH-adapted copies shipped in the package.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -18,6 +18,7 @@
     "README.md",
     "locale",
     "assets",
+    "skills",
     "DETAILS.md"
   ],
   "license": "MIT",
@@ -36,7 +37,7 @@
     "build": "node build.mjs",
     "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node build.mjs && node scripts/test-recommendation.mjs && node scripts/test-form-model.mjs && node scripts/test-form-session.mjs && node scripts/smoke-host.mjs && node scripts/test-render.mjs && node scripts/smoke-client.mjs",
+    "test": "node build.mjs && node scripts/test-recommendation.mjs && node scripts/test-form-model.mjs && node scripts/test-form-session.mjs && node scripts/test-skill-provider.mjs && node scripts/smoke-host.mjs && node scripts/test-render.mjs && node scripts/smoke-client.mjs",
     "assert:lib-untracked": "node scripts/assert-lib-untracked.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm assert:lib-untracked"
   },
@@ -48,6 +49,7 @@
     "@deepseek-ai/cordis": "^4.1.0",
     "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
     "@deepseek-ai/dsh-session-projection": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-skill": ">=0.2.2-rc.3",
     "@deepseek-ai/dsh-system-prompt": ">=0.2.2-rc.3",
     "@deepseek-ai/dsh-tools": ">=0.2.2-rc.3",
     "@types/node": "^22.20.0",

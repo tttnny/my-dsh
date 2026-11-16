@@ -1,5 +1,6 @@
 import { ToolArgsError, defineTool } from '@deepseek-ai/dsh-tools';
 import { FORM_GATE_UNIT, QUESTION_TYPES, pendingFormOf, validateRound } from './form-model.js';
+import { createSkillProvider, loadSkills } from './skill-provider.js';
 
 /**
  * @lynn123411/dsh-grilling-form — grilling 轮的逐题拷问工具。
@@ -23,6 +24,10 @@ import { FORM_GATE_UNIT, QUESTION_TYPES, pendingFormOf, validateRound } from './
  * 住那儿就看不见），那条按 wire 工具名注册的 tool.call.toolview 行按结果画被拦下的说明。
  * 作答由用户点表单底部的「导入输入框」写进原生草稿、再用原生发送键发出；表单旁边的
  * 「从这里分叉」按本轮结束点开一条新会话。插件不碰输入框。
+ *
+ * 随包技能：本包 skills/ 下带三份 DSH 适配版正文（grilling / implement-spec / code-review），
+ * 启用时以 rank 0 的 provider 盖过安装的同名技能，停用即退场。provider 走 ctx.inject(['skills'])
+ * 的可选依赖，服务不在的组合里这一层不注册，工具照常注册。
  *
  * 半边只有一条行：本包 cordis.patch.yml 里那条根层 - id: tool-grilling-form 插入行，
  * 由 dsh plugin --profile web add 随 dsh.profile.bundles 一起并进 profile 层栈。宿主半边在
@@ -105,8 +110,16 @@ async function apply(ctx, config) {
     gateHandle = await projections.register(FORM_GATE_UNIT);
     return () => { gateHandle = undefined; };
   });
-  // 服务已经就位时等句柄交回再注册工具：工具一出现，闸门读的就是已就位的句柄。
+  // 随包技能：rank 0 的 provider 盖过安装的同名技能。服务缺席时这段不跑，工具照常注册；
+  // 插件卸下时 provider 随这个子上下文退场。
+  const skillBinding = ctx.inject(['skills'], (scoped) => {
+    const skills = /** @type {import('@deepseek-ai/dsh-skill').SkillRegistry} */ (scoped.get('skills'));
+    skills.registerProvider(() => createSkillProvider(loadSkills()));
+  });
+  // 服务已经就位时等句柄交回再注册工具：工具一出现，闸门读的就是已就位的句柄，
+  // 技能目录里也已经换成了随包正文。
   if (ctx.get('sessionProjections') !== undefined) await binding;
+  if (ctx.get('skills') !== undefined) await skillBinding;
   /** 那张投出去还没等到作答的表；拿不到句柄或拿不到会话时按没有算。
    * @param {{ agent?: { session?: unknown } }} exec - 执行上下文；只有会话那一件是这里要的。
    * @returns {import('./form-model.js').FormCall|null} 待答的那张表。 */

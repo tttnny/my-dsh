@@ -19,6 +19,7 @@ import { Context } from '@deepseek-ai/cordis';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection';
+import SkillRegistry from '@deepseek-ai/dsh-skill';
 
 import * as plugin from '../lib/index.js';
 import { GATE_KEY, TOOL_NAME, importBlockStart } from '../src/form-model.js';
@@ -47,6 +48,7 @@ function host(options = {}) {
   new SystemPrompt(ctx, {});
   new ToolRuntime(ctx);
   if (options.projections !== false) new SessionProjectionRegistry(ctx);
+  if (options.skills !== false) new SkillRegistry(ctx);
   return ctx;
 }
 
@@ -479,6 +481,72 @@ await test('闸门：投影服务比这个插件晚挂上也接得上（单元�
   const blocked = await tool.execute({ questions: [{ question: '第二张问的？' }] }, makeExec(world.session).exec);
   assert.equal(blocked.ok, false);
   assert.match(blocked.message, /It asked: 1. 第一张问的？/);
+});
+
+// --- 随包技能覆盖：rank 0 的 provider 盖过安装的同名技能 ---
+
+await test('技能覆盖：三个技能以随包正文出现，implement-spec 只给用户调', async () => {
+  const { ctx } = await assemble();
+  const list = await ctx.skills.list({});
+  for (const name of ['grilling', 'implement-spec', 'code-review']) {
+    const summary = list.find((skill) => skill.name === name);
+    assert.ok(summary, name + ' 应当在目录里');
+    assert.equal(summary.provider, 'dsh-grilling-form');
+    assert.equal(summary.source, 'plugin');
+  }
+  const grilling = await ctx.skills.get('grilling', {});
+  assert.match(grilling.content, /grilling_form/);
+  assert.equal((await ctx.skills.get('implement-spec', {})).invocation.modelInvocable, false);
+  assert.equal((await ctx.skills.get('code-review', {})).invocation.modelInvocable, true);
+});
+
+await test('技能覆盖：同名的项目级技能（rank 200）盖不过随包那份', async () => {
+  const { ctx } = await assemble();
+  ctx.skills.registerProvider(() => ({
+    name: 'fake-project',
+    list: async () => ['grilling', 'implement-spec', 'code-review'].map((name) => ({
+      name,
+      description: 'fake project ' + name,
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'project-agents',
+      provider: 'fake-project',
+      rank: 200,
+      locator: name,
+    })),
+    get: async (candidate) => ({
+      name: candidate.name,
+      description: 'fake project ' + candidate.name,
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'project-agents',
+      provider: 'fake-project',
+      content: 'fake project body',
+    }),
+  }));
+  const list = await ctx.skills.list({});
+  for (const name of ['grilling', 'implement-spec', 'code-review']) {
+    const skill = list.find((entry) => entry.name === name);
+    assert.ok(skill, name + ' 应当在目录里');
+    assert.equal(skill.description, (await ctx.skills.get(name, {})).description);
+    assert.notEqual(skill.description, 'fake project ' + name);
+  }
+});
+
+await test('技能覆盖：没挂技能服务的组合里退化成不注册，工具照常注册', async () => {
+  const { ctx, tool } = await assemble(undefined, { skills: false });
+  assert.equal(ctx.get('skills'), undefined);
+  assert.equal(tool.name, 'grilling_form');
+});
+
+await test('技能覆盖：插件卸下时 provider 跟着退场', async () => {
+  const ctx = host();
+  const fiber = ctx.plugin(plugin);
+  await fiber.await();
+  const names = ['grilling', 'implement-spec', 'code-review'];
+  const before = await ctx.skills.list({});
+  for (const name of names) assert.ok(before.some((skill) => skill.name === name), name + ' 应当在目录里');
+  await fiber.dispose();
+  const after = await ctx.skills.list({});
+  for (const name of names) assert.equal(after.some((skill) => skill.name === name), false, name + ' 应当随插件退场');
 });
 
 // --- 一条行的形状：bundle 行既注册工具，又承载浏览器半边 ---

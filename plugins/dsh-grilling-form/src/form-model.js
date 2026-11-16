@@ -140,8 +140,8 @@ export const GATE_KEY = 'grillingFormPending';
  *      `scripts/test-render.mjs`、`scripts/smoke-host.mjs`；
  *   3. 本包 `README.md`、`DETAILS.md` 与仓库根 `README.md` 的插件表；
  *   4. 仓库根 `GLOSSARY.md` 的「拷问作答块」词条；
- *   5. matt-skills-dsh 的 grilling 技能正文：工具改名时正文里那句工具名要跟着改。它不随本包发布、
- *      也没有任何测试看得见它，漂移只会以模型行为静默表现出来。
+ *   5. 本包 `skills/grilling/SKILL.md`：工具改名时正文里那句工具名要跟着改。它随包发布，
+ *      `scripts/test-skill-provider.mjs` 看得见它。
  * 新增任何写死这些字面量的测试或文档，都要补进这份清单。 */
 export const IMPORT_BLOCK_END = '【/拷问作答】';
 
