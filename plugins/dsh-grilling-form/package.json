@@ -48,6 +48,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
     "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-scope": ">=0.2.2-rc.3",
     "@deepseek-ai/dsh-session-projection": ">=0.2.2-rc.3",
     "@deepseek-ai/dsh-skill": ">=0.2.2-rc.3",
     "@deepseek-ai/dsh-system-prompt": ">=0.2.2-rc.3",

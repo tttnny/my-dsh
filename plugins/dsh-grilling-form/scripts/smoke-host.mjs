@@ -20,6 +20,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection';
 import SkillRegistry from '@deepseek-ai/dsh-skill';
+import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope';
 
 import * as plugin from '../lib/index.js';
 import { GATE_KEY, TOOL_NAME, importBlockStart } from '../src/form-model.js';
@@ -483,51 +484,91 @@ await test('闸门：投影服务比这个插件晚挂上也接得上（单元�
   assert.match(blocked.message, /It asked: 1. 第一张问的？/);
 });
 
-// --- 随包技能覆盖：rank 0 的 provider 盖过安装的同名技能 ---
+// --- 随包技能覆盖：注册进 agent 自己的层，盖过预设层里的同名技能 ---
 
-await test('技能覆盖：三个技能以随包正文出现，implement-spec 只给用户调', async () => {
+/**
+ * 造一个带自己层的 agent：agent 的 ctx 是 scope 链上的一层，父层模拟 preset。
+ * @param {Context} ctx - 根上下文。
+ * @returns {{ agent: { ctx: Context }, agentKey: object, presetScope: object }} agent、它的 scope 键与父层。
+ */
+function makeAgentScope(ctx) {
+  const presetKey = {};
+  const presetScope = createScope(ctx, presetKey);
+  const agentKey = {};
+  const agentScope = createScope(ctx, agentKey, { parent: presetKey });
+  return { agent: { ctx: agentScope.ctx }, agentKey, presetScope };
+}
+
+/**
+ * 按 agent 的 scope 派发一次 agent/created；插件就是在这条事件上挂 provider。
+ * @param {Context} ctx - 根上下文。
+ * @param {{ ctx: Context }} agent - 假 agent。
+ * @param {object} agentKey - agent 的 scope 键。
+ * @returns {Promise<void>} 派发完成。
+ */
+async function announceAgent(ctx, agent, agentKey) {
+  await ctx.serial(scopeTarget(agent, agentKey), 'agent/created', { agent });
+}
+
+/**
+ * 一个假 provider：三个同名技能，description 带自己的名字。
+ * @param {string} name - provider 名。
+ * @param {number} rank - 候选 rank。
+ * @returns {object} provider。
+ */
+function fakeProvider(name, rank) {
+  const names = ['grilling', 'implement-spec', 'code-review'];
+  const invocation = { modelInvocable: true, userInvocable: true };
+  return {
+    name,
+    list: async () => names.map((skill) => ({
+      name: skill,
+      description: name + ' ' + skill,
+      invocation,
+      source: 'project-agents',
+      provider: name,
+      rank,
+      locator: skill,
+    })),
+    get: async (candidate) => ({
+      name: candidate.name,
+      description: name + ' ' + candidate.name,
+      invocation,
+      source: 'project-agents',
+      provider: name,
+      content: name + ' body',
+    }),
+  };
+}
+
+await test('技能覆盖：agent 层注册后，三个技能以随包正文出现', async () => {
   const { ctx } = await assemble();
-  const list = await ctx.skills.list({});
+  const { agent, agentKey } = makeAgentScope(ctx);
+  await announceAgent(ctx, agent, agentKey);
+  const list = await ctx.skills.list({ scope: agentKey });
   for (const name of ['grilling', 'implement-spec', 'code-review']) {
     const summary = list.find((skill) => skill.name === name);
     assert.ok(summary, name + ' 应当在目录里');
     assert.equal(summary.provider, 'dsh-grilling-form');
     assert.equal(summary.source, 'plugin');
   }
-  const grilling = await ctx.skills.get('grilling', {});
+  const grilling = await ctx.skills.get('grilling', { scope: agentKey });
   assert.match(grilling.content, /grilling_form/);
-  assert.equal((await ctx.skills.get('implement-spec', {})).invocation.modelInvocable, false);
-  assert.equal((await ctx.skills.get('code-review', {})).invocation.modelInvocable, true);
+  assert.equal((await ctx.skills.get('implement-spec', { scope: agentKey })).invocation.modelInvocable, false);
+  assert.equal((await ctx.skills.get('code-review', { scope: agentKey })).invocation.modelInvocable, true);
 });
 
-await test('技能覆盖：同名的项目级技能（rank 200）盖不过随包那份', async () => {
+await test('技能覆盖：预设层里的同名技能（rank 200）也盖不过 agent 层', async () => {
   const { ctx } = await assemble();
-  ctx.skills.registerProvider(() => ({
-    name: 'fake-project',
-    list: async () => ['grilling', 'implement-spec', 'code-review'].map((name) => ({
-      name,
-      description: 'fake project ' + name,
-      invocation: { modelInvocable: true, userInvocable: true },
-      source: 'project-agents',
-      provider: 'fake-project',
-      rank: 200,
-      locator: name,
-    })),
-    get: async (candidate) => ({
-      name: candidate.name,
-      description: 'fake project ' + candidate.name,
-      invocation: { modelInvocable: true, userInvocable: true },
-      source: 'project-agents',
-      provider: 'fake-project',
-      content: 'fake project body',
-    }),
-  }));
-  const list = await ctx.skills.list({});
+  const { agent, agentKey, presetScope } = makeAgentScope(ctx);
+  presetScope.ctx.skills.registerProvider(() => fakeProvider('fake-preset', 200));
+  await announceAgent(ctx, agent, agentKey);
+  const list = await ctx.skills.list({ scope: agentKey });
   for (const name of ['grilling', 'implement-spec', 'code-review']) {
     const skill = list.find((entry) => entry.name === name);
     assert.ok(skill, name + ' 应当在目录里');
-    assert.equal(skill.description, (await ctx.skills.get(name, {})).description);
-    assert.notEqual(skill.description, 'fake project ' + name);
+    assert.equal(skill.description, (await ctx.skills.get(name, { scope: agentKey })).description);
+    assert.notEqual(skill.description, 'fake-preset ' + name);
   }
 });
 
@@ -535,18 +576,22 @@ await test('技能覆盖：没挂技能服务的组合里退化成不注册，�
   const { ctx, tool } = await assemble(undefined, { skills: false });
   assert.equal(ctx.get('skills'), undefined);
   assert.equal(tool.name, 'grilling_form');
+  const { agent, agentKey } = makeAgentScope(ctx);
+  await announceAgent(ctx, agent, agentKey);
 });
 
-await test('技能覆盖：插件卸下时 provider 跟着退场', async () => {
+await test('技能覆盖：插件卸下时 provider 跟着退场，预设层那份回来', async () => {
   const ctx = host();
   const fiber = ctx.plugin(plugin);
   await fiber.await();
-  const names = ['grilling', 'implement-spec', 'code-review'];
-  const before = await ctx.skills.list({});
-  for (const name of names) assert.ok(before.some((skill) => skill.name === name), name + ' 应当在目录里');
+  const { agent, agentKey, presetScope } = makeAgentScope(ctx);
+  presetScope.ctx.skills.registerProvider(() => fakeProvider('fake-preset', 200));
+  await announceAgent(ctx, agent, agentKey);
+  assert.equal((await ctx.skills.get('code-review', { scope: agentKey })).provider, 'dsh-grilling-form');
   await fiber.dispose();
-  const after = await ctx.skills.list({});
-  for (const name of names) assert.equal(after.some((skill) => skill.name === name), false, name + ' 应当随插件退场');
+  const after = await ctx.skills.list({ scope: agentKey });
+  assert.equal(after.some((skill) => skill.provider === 'dsh-grilling-form'), false);
+  assert.equal(after.find((skill) => skill.name === 'code-review').provider, 'fake-preset');
 });
 
 // --- 一条行的形状：bundle 行既注册工具，又承载浏览器半边 ---

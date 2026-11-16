@@ -1,8 +1,9 @@
-// 随包技能：三份 DSH 适配版正文，启用本插件时以 rank 0 的 provider 盖过安装的同名技能。
+// 随包技能：三份 DSH 适配版正文。启用本插件时，provider 注册进每个 agent 自己的层，
+// 盖过预设层里的同名技能；停用即退场。
 //
-// 为什么不是 ctx.skills.register()：运行时注册的候选 rank 是 250，压不过项目级
-// `.agents/skills` 的 200；provider 的候选可以自己写 rank，0 才稳定盖住全部同名技能。
-// 为什么不是第二条 dsh-skill-filesystem 行：它的 customSkillDirs 是 300，同样压不过 200。
+// 为什么不是根层的一个 provider：预设把 skill-filesystem 挂在 preset 层，注册表按 scope 链
+// 覆盖，近的层直接赢，rank 只在同一层里比；根层 rank 0 也压不过 preset 层。所以注册走
+// agent.ctx（见 src/index.js）。
 //
 // 正文是 matt-skills-lynn 里三个技能的适配版副本（含与 harness 无关的增强）。那边改动后
 // 要把正文同步回本包 skills/；scripts/test-skill-provider.mjs 守着正文里必须出现的那几句。
@@ -13,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 /** provider 在技能注册表里的名字。 */
 export const SKILL_PROVIDER_NAME = 'dsh-grilling-form';
-/** 候选的 rank：低于项目级 200、运行时 250、用户级 400/500 与随包 600，同名技能一律被盖住。 */
+/** 同一层里的去重优先级；跨层由层的远近决定，所以 provider 要注册到 agent 层。 */
 export const SKILL_RANK = 0;
 /** 候选的来源标签；只作元数据，不参与优先级。 */
 export const SKILL_SOURCE = 'plugin';

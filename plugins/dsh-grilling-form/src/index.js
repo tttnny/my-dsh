@@ -26,8 +26,8 @@ import { createSkillProvider, loadSkills } from './skill-provider.js';
  * 「从这里分叉」按本轮结束点开一条新会话。插件不碰输入框。
  *
  * 随包技能：本包 skills/ 下带三份 DSH 适配版正文（grilling / implement-spec / code-review），
- * 启用时以 rank 0 的 provider 盖过安装的同名技能，停用即退场。provider 走 ctx.inject(['skills'])
- * 的可选依赖，服务不在的组合里这一层不注册，工具照常注册。
+ * 启用时注册进每个 agent 自己的层，盖过预设层里的同名技能，停用即退场。注册走 agent.ctx；
+ * 技能服务缺席的组合里这一层不注册，工具照常注册。
  *
  * 半边只有一条行：本包 cordis.patch.yml 里那条根层 - id: tool-grilling-form 插入行，
  * 由 dsh plugin --profile web add 随 dsh.profile.bundles 一起并进 profile 层栈。宿主半边在
@@ -110,16 +110,37 @@ async function apply(ctx, config) {
     gateHandle = await projections.register(FORM_GATE_UNIT);
     return () => { gateHandle = undefined; };
   });
-  // 随包技能：rank 0 的 provider 盖过安装的同名技能。服务缺席时这段不跑，工具照常注册；
-  // 插件卸下时 provider 随这个子上下文退场。
-  const skillBinding = ctx.inject(['skills'], (scoped) => {
-    const skills = /** @type {import('@deepseek-ai/dsh-skill').SkillRegistry} */ (scoped.get('skills'));
-    skills.registerProvider(() => createSkillProvider(loadSkills()));
+  // 随包技能：注册进每个 agent 自己的层，而不是全局层。预设把 skill-filesystem 挂在 preset 层
+  // （rank 200），注册表先合并全局层、再按 scope 链覆盖，近的层直接赢，rank 只在同一层里比；
+  // 根层注册的 rank 0 仍然输给 preset 层。agent 层比 preset 更近，才盖得住。
+  /** @type {Map<object, () => void>} */
+  const agentSkillDisposers = new Map();
+  /** @param {{ ctx: import('@deepseek-ai/cordis').Context }} agent - 新挂上的 agent。 */
+  const registerAgentSkills = (agent) => {
+    if (agentSkillDisposers.has(agent)) return;
+    const skills = /** @type {import('@deepseek-ai/dsh-skill').SkillRegistry|undefined} */ (agent.ctx.get('skills'));
+    if (skills === undefined) return;
+    agentSkillDisposers.set(agent, skills.registerProvider(() => createSkillProvider(loadSkills())));
+  };
+  /** @param {{ ctx: import('@deepseek-ai/cordis').Context }} agent - 正在退场的 agent。 */
+  const unregisterAgentSkills = (agent) => {
+    const dispose = agentSkillDisposers.get(agent);
+    if (dispose === undefined) return;
+    agentSkillDisposers.delete(agent);
+    dispose();
+  };
+  // 新 agent 在创建时挂上；插件比 agent 晚挂上时，把已经存在的 agent 补一遍。
+  ctx.on('agent/created', ({ agent }) => { registerAgentSkills(agent); });
+  ctx.on('agent/disposed', ({ agent }) => { unregisterAgentSkills(agent); });
+  const agents = /** @type {{ list: () => { ctx: import('@deepseek-ai/cordis').Context }[] }|undefined} */ (ctx.get('agents'));
+  if (agents !== undefined) for (const agent of agents.list()) registerAgentSkills(agent);
+  // 插件卸下时把还挂着的 provider 一起退掉：agent 自己的层随 agent 退场，插件卸下不会等它。
+  ctx.effect(() => () => {
+    for (const dispose of agentSkillDisposers.values()) dispose();
+    agentSkillDisposers.clear();
   });
-  // 服务已经就位时等句柄交回再注册工具：工具一出现，闸门读的就是已就位的句柄，
-  // 技能目录里也已经换成了随包正文。
+  // 服务已经就位时等句柄交回再注册工具：工具一出现，闸门读的就是已就位的句柄。
   if (ctx.get('sessionProjections') !== undefined) await binding;
-  if (ctx.get('skills') !== undefined) await skillBinding;
   /** 那张投出去还没等到作答的表；拿不到句柄或拿不到会话时按没有算。
    * @param {{ agent?: { session?: unknown } }} exec - 执行上下文；只有会话那一件是这里要的。
    * @returns {import('./form-model.js').FormCall|null} 待答的那张表。 */
