@@ -24,8 +24,8 @@ import { formatClock, titleOf, type NotifyCardData } from './row-model.js';
  *
  * 正文默认收起，点圆点展开；「带不带折叠键」由插件页的配置项决定（`collapsible`），
  * 「正文默认展开」决定初始状态（`bodyExpandedByDefault`），「只报摘要」时没有正文
- * （`summaryOnly`）。工具行与对话节点两种座位都把数据整理成 {@link NotifyCardData}
- * 再交给这里，卡片的形态只有一份。
+ * （`summaryOnly`），标题行右侧的时间由 `showTime` 决定画不画。工具行与对话节点两种
+ * 座位都把数据整理成 {@link NotifyCardData} 再交给这里，卡片的形态只有一份。
  */
 
 type NotifyCardProps = {
@@ -82,7 +82,7 @@ export function NotifyCard({ data, form, openFile, t, seat }: NotifyCardProps): 
   const hasBody = !config.summaryOnly && data.message.trim().length > 0;
   const collapsible = config.collapsible && hasBody;
   const expanded = collapsible ? open ?? config.bodyExpandedByDefault : true;
-  const time = formatClock(data.time);
+  const time = config.showTime ? formatClock(data.time) : null;
   const titleNode = data.settled ? title : <TextShimmer active>{title}</TextShimmer>;
 
   return (

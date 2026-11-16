@@ -17,7 +17,7 @@ import { NS, type NotifyKey } from './locales.js';
 /**
  * 宿主「插件」页上的配置卡：主动汇报的默认开关、催办阈值、「散文回复算不算汇报」、
  * 汇报形态（结构化正文 / 只报摘要）、摘要呈现（进度卡 / 散文）、正文显示
- * （始终展开 / 默认收起 / 默认展开）与进度卡位置。
+ * （始终展开 / 默认收起 / 默认展开）、标题行时间与进度卡位置。
  *
  * 没有保存按钮：数字框失焦或回车时写一次，打字期间只改草稿；开关、切换按钮与位置在
  * 动作发生的那一刻写。写入排成一条队列，一次只发一个：宿主按 revision 给每次写入设
@@ -158,6 +158,8 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
   }
 
   const bodyMode = bodyModeOf(config);
+  // 摘要按散文渲染时根本不画卡片，标题行时间也就没有落点。
+  const drawsCard = !(config.summaryOnly && config.summaryRender === 'prose');
 
   /** 写一个字段：排进队列。 */
   const write = (field: string, value: unknown): void => { enqueue([[field, value]]); };
@@ -307,6 +309,24 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
           />
         </div>
       )}
+      {drawsCard ? (
+        <div className="dsh-notify-config-row">
+          <div className="dsh-notify-config-info">
+            <div className="dsh-notify-config-label">{t('config.showTime.label')}</div>
+            <div className="dsh-notify-config-hint">{t('config.showTime.hint')}</div>
+          </div>
+          <div className="dsh-notify-config-field">
+            <Switch
+              checked={config.showTime}
+              label={t('config.showTime.label')}
+              onChange={(next: boolean) => {
+                setConfig({ ...config, showTime: next });
+                write('showTime', next);
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
       {error === null ? null : <div className="dsh-notify-config-error" role="status">{error}</div>}
     </div>
   );

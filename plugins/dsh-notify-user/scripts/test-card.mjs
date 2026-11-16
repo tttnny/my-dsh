@@ -8,7 +8,8 @@
  *   3. 正文默认收起时正文不出现，点圆点出现；默认展开时直接出现；
  *   4. 「始终展开」没有折叠键，正文始终展开；
  *   5. 配置卡的汇报形态是两选一、正文显示是三选一，写入各自的字段；
- *      只报摘要时正文显示整行不出现。
+ *      只报摘要时正文显示整行不出现；
+ *   6. 标题行时间默认不画，打开 `showTime` 才画；摘要按散文渲染时没有这一行。
  *
  * 断言只比布尔或文本，不比 DOM 节点：失败信息里 `util.inspect` 一个 jsdom 元素
  * 会顺着 ownerDocument 爬进整个窗口，慢到看起来像卡死。
@@ -71,6 +72,7 @@ let configValue = {
   summaryOnly: false,
   summaryRender: 'card',
   bodyExpandedByDefault: false,
+  showTime: false,
   cardPlacement: 'boundary',
   defaultEnabled: true,
   sessionOverrides: {},
@@ -150,6 +152,7 @@ const table = {
   'config.bodyMode.always': '始终展开',
   'config.bodyMode.collapsed': '默认收起',
   'config.bodyMode.expanded': '默认展开',
+  'config.showTime.label': '显示时间',
   'config.write.failed': '没写进去，再改一次试试。',
   'config.unavailable': '这份配置现在读不到。',
 };
@@ -189,6 +192,7 @@ function reset(value = {}) {
     summaryOnly: false,
     summaryRender: 'card',
     bodyExpandedByDefault: false,
+    showTime: false,
     cardPlacement: 'boundary',
     defaultEnabled: true,
     sessionOverrides: {},
@@ -219,6 +223,8 @@ function renderConfigCard() {
 
 /** 卡片正文的文本；没有正文时为 undefined。 */
 const bodyText = () => container.querySelector('.dsh-notify-body')?.textContent ?? undefined;
+/** 标题行右侧的时间文本；没有时为 undefined。 */
+const timeText = () => container.querySelector('.dsh-notify-time')?.textContent ?? undefined;
 /** 折叠键在不在（不管长在哪儿）。 */
 const hasChevron = () => container.querySelector('.dsh-notify-chevron') !== null;
 /** 折叠键在不在圆点里。 */
@@ -294,6 +300,42 @@ await test('始终展开：没有折叠按钮与折叠键，正文始终展开',
   assert.equal(hasToggle(), false, '始终展开不该有折叠按钮');
   assert.equal(hasChevron(), false, '始终展开不该有折叠键');
   assert.equal(bodyText(), '正文');
+});
+
+await test('标题行时间默认不画，只剩圆点与标题', () => {
+  reset();
+  renderCard();
+  assert.equal(timeText(), undefined, '默认不该画时间');
+  assert.equal(container.querySelector('.dsh-notify-title').textContent, '标题');
+});
+
+await test('打开显示时间后画出 MM-DD HH:mm', () => {
+  reset({ showTime: true });
+  renderCard();
+  assert.match(timeText() ?? '', /^\d{2}-\d{2} \d{2}:\d{2}$/, '应当画出格式化后的时间');
+});
+
+await test('配置卡：显示时间默认关，点开关写入 showTime', async () => {
+  reset();
+  renderConfigCard();
+  const toggle = switchOf('显示时间');
+  assert.ok(toggle !== undefined, '缺显示时间开关');
+  assert.equal(toggle.getAttribute('aria-checked'), 'false', '默认应当是关的');
+  click(toggle);
+  await flush();
+  assert.deepEqual(writes, [['showTime', true]]);
+});
+
+await test('配置卡：摘要按散文渲染时没有显示时间这一行', () => {
+  reset({ summaryOnly: true, summaryRender: 'prose' });
+  renderConfigCard();
+  assert.equal(switchOf('显示时间') === undefined, true, '不画卡片就不该有这一行');
+});
+
+await test('配置卡：摘要仍画进度卡时有显示时间这一行', () => {
+  reset({ summaryOnly: true, summaryRender: 'card' });
+  renderConfigCard();
+  assert.ok(switchOf('显示时间') !== undefined, '摘要卡也带时间');
 });
 
 await test('配置卡：汇报形态两选一，正文显示三选一', () => {

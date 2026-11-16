@@ -8,6 +8,7 @@ import {
   DEFAULT_ENABLED,
   DEFAULT_NUDGE_AFTER,
   DEFAULT_RESET_ON_PROSE,
+  DEFAULT_SHOW_TIME,
   DEFAULT_SUMMARY_ONLY,
   DEFAULT_SUMMARY_RENDER,
   MAX_NUDGE_AFTER,
@@ -24,6 +25,7 @@ export interface PluginConfig {
   summaryOnly: Volatile<boolean>;
   summaryRender: Volatile<string>;
   bodyExpandedByDefault: Volatile<boolean>;
+  showTime: Volatile<boolean>;
   cardPlacement: Volatile<string>;
   defaultEnabled: Volatile<boolean>;
   sessionOverrides: Volatile<SessionOverrides>;
@@ -39,6 +41,7 @@ export const Config = z.object({
     .default(DEFAULT_SUMMARY_RENDER)
     .volatile(),
   bodyExpandedByDefault: z.boolean().default(DEFAULT_BODY_EXPANDED_BY_DEFAULT).volatile(),
+  showTime: z.boolean().default(DEFAULT_SHOW_TIME).volatile(),
   cardPlacement: z.union(CARD_PLACEMENTS.map(value => z.const(value)))
     .default(DEFAULT_CARD_PLACEMENT)
     .volatile(),

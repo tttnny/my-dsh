@@ -34,6 +34,7 @@ let configValue = {
   collapsible: true,
   summaryOnly: false,
   bodyExpandedByDefault: false,
+  showTime: false,
   cardPlacement: 'boundary',
   defaultEnabled: true,
   sessionOverrides: {},

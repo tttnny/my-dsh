@@ -27,6 +27,9 @@ export const DEFAULT_SUMMARY_ONLY = false;
 /** 结构化正文模式下卡片是否默认展开：默认关，点标题展开。 */
 export const DEFAULT_BODY_EXPANDED_BY_DEFAULT = false;
 
+/** 标题行右侧的汇报时间：默认不显示，标题行只留圆点与标题。 */
+export const DEFAULT_SHOW_TIME = false;
+
 /** 配置里「只报摘要」的字段名：宿主重注册工具时按它认路径。 */
 export const SUMMARY_ONLY_FIELD = 'summaryOnly';
 

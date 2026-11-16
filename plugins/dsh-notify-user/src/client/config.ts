@@ -15,6 +15,7 @@ import {
   DEFAULT_ENABLED,
   DEFAULT_NUDGE_AFTER,
   DEFAULT_RESET_ON_PROSE,
+  DEFAULT_SHOW_TIME,
   DEFAULT_SUMMARY_ONLY,
   DEFAULT_SUMMARY_RENDER,
   MAX_NUDGE_AFTER,
@@ -32,6 +33,7 @@ export {
   DEFAULT_ENABLED,
   DEFAULT_NUDGE_AFTER,
   DEFAULT_RESET_ON_PROSE,
+  DEFAULT_SHOW_TIME,
   DEFAULT_SUMMARY_ONLY,
   DEFAULT_SUMMARY_RENDER,
   MAX_NUDGE_AFTER,
@@ -81,6 +83,7 @@ export interface ClientConfig {
   summaryOnly: boolean;
   summaryRender: SummaryRender;
   bodyExpandedByDefault: boolean;
+  showTime: boolean;
   cardPlacement: CardPlacement;
   defaultEnabled: boolean;
   sessionOverrides: SessionOverrides;
@@ -94,6 +97,7 @@ export const DEFAULT_CLIENT_CONFIG: ClientConfig = {
   summaryOnly: DEFAULT_SUMMARY_ONLY,
   summaryRender: DEFAULT_SUMMARY_RENDER,
   bodyExpandedByDefault: DEFAULT_BODY_EXPANDED_BY_DEFAULT,
+  showTime: DEFAULT_SHOW_TIME,
   cardPlacement: DEFAULT_CARD_PLACEMENT,
   defaultEnabled: DEFAULT_ENABLED,
   sessionOverrides: {},
@@ -136,10 +140,12 @@ export function readConfig(form: ConfigForm): ClientConfig | undefined {
   const summaryRender = SUMMARY_RENDERS.find(render => render === rawSummaryRender) ?? DEFAULT_CLIENT_CONFIG.summaryRender;
   const rawBodyExpanded = value['bodyExpandedByDefault'];
   const bodyExpandedByDefault = typeof rawBodyExpanded === 'boolean' ? rawBodyExpanded : DEFAULT_CLIENT_CONFIG.bodyExpandedByDefault;
+  const rawShowTime = value['showTime'];
+  const showTime = typeof rawShowTime === 'boolean' ? rawShowTime : DEFAULT_CLIENT_CONFIG.showTime;
   const rawPlacement = value['cardPlacement'];
   const cardPlacement = CARD_PLACEMENTS.find(placement => placement === rawPlacement) ?? DEFAULT_CLIENT_CONFIG.cardPlacement;
   const rawDefaultEnabled = value['defaultEnabled'];
   const defaultEnabled = typeof rawDefaultEnabled === 'boolean' ? rawDefaultEnabled : DEFAULT_CLIENT_CONFIG.defaultEnabled;
   const sessionOverrides = readOverrides(value['sessionOverrides']);
-  return { nudgeAfter, resetOnProse, collapsible, summaryOnly, summaryRender, bodyExpandedByDefault, cardPlacement, defaultEnabled, sessionOverrides };
+  return { nudgeAfter, resetOnProse, collapsible, summaryOnly, summaryRender, bodyExpandedByDefault, showTime, cardPlacement, defaultEnabled, sessionOverrides };
 }

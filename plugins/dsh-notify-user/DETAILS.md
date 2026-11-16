@@ -48,9 +48,10 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 | `summaryOnly` | false | 布尔 | 模型只写一行标题，卡片只显示标题行；工具描述、参数与催办文案同步改。 |
 | `summaryRender` | `card` | `card` / `prose` | 只报摘要时的呈现：进度卡，或按普通段落渲染（看起来像助手写的正文）。 |
 | `bodyExpandedByDefault` | false | 布尔 | 结构化正文模式下卡片是否默认展开；`collapsible` 关掉时不起作用。 |
+| `showTime` | false | 布尔 | 标题行右侧画不画汇报时间；关掉后标题行只剩圆点与标题。 |
 | `cardPlacement` | `boundary` | `boundary` / `inline` | 进度卡位置：`boundary` 站在步骤组边界，`inline` 跟随工具行、随组折叠。 |
 
-配置卡把 `summaryOnly` 画成「结构化正文 / 只报摘要」两选一，把 `collapsible` 与 `bodyExpandedByDefault` 合成「始终展开 / 默认收起 / 默认展开」三选一；只报摘要时「正文显示」整行不出现，改出现「摘要呈现」（进度卡 / 散文）。
+配置卡把 `summaryOnly` 画成「结构化正文 / 只报摘要」两选一，把 `collapsible` 与 `bodyExpandedByDefault` 合成「始终展开 / 默认收起 / 默认展开」三选一，把 `showTime` 画成一个开关；只报摘要时「正文显示」整行不出现，改出现「摘要呈现」（进度卡 / 散文），摘要按散文渲染时根本不画卡片，「显示时间」整行随之不出现。
 
 字段都标了 `.volatile()`：改它们不重挂这条 loader entry。催办状态机每次 `pre-step` 现读 `nudgeAfter`、`summaryOnly` 与 `defaultEnabled`/`sessionOverrides`；进度卡与菜单开关通过注册项的 `inject` 拿到同一张配置表单并订阅，所以改完当前页面的卡片与开关立刻跟着变。`summaryOnly` 还要换工具定义，见下一节。配置界面在宿主「插件」页本插件的详情页上；宿主没服务这份配置时卡片整块不出现。插件同时用 `ctx.settings.configure({ auto: false })` 关掉内核按 schema 自动生成的那份设置页。
 

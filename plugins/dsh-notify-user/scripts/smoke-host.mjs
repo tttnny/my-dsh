@@ -138,7 +138,7 @@ await test('导出的行身份与包内 cordis.patch.yml 那条装配行同名',
   assert.deepEqual(plugin.inject, ['tools']);
 });
 
-await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默认开，只报摘要默认关，正文默认收起，位置默认边界，主动汇报默认开', () => {
+await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默认开，只报摘要默认关，正文默认收起，时间默认关，位置默认边界，主动汇报默认开', () => {
   assert.equal(new plugin.Config({}).nudgeAfter.get(), 10);
   assert.equal(new plugin.Config({ nudgeAfter: 0 }).nudgeAfter.get(), 0);
   assert.equal(new plugin.Config({ nudgeAfter: 12 }).nudgeAfter.get(), 12);
@@ -152,6 +152,8 @@ await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默
   assert.equal(new plugin.Config({ summaryOnly: true }).summaryOnly.get(), true);
   assert.equal(new plugin.Config({}).bodyExpandedByDefault.get(), false);
   assert.equal(new plugin.Config({ bodyExpandedByDefault: true }).bodyExpandedByDefault.get(), true);
+  assert.equal(new plugin.Config({}).showTime.get(), false);
+  assert.equal(new plugin.Config({ showTime: true }).showTime.get(), true);
   assert.equal(new plugin.Config({}).cardPlacement.get(), 'boundary');
   assert.equal(new plugin.Config({ cardPlacement: 'inline' }).cardPlacement.get(), 'inline');
   assert.throws(() => new plugin.Config({ cardPlacement: 'nope' }), /cardPlacement/);
@@ -194,6 +196,7 @@ await test('运行中调小阈值：工具解析就认出该放行，与催办�
     collapsible: { get: () => true },
     summaryOnly: { get: () => false },
     bodyExpandedByDefault: { get: () => false },
+    showTime: { get: () => false },
     cardPlacement: { get: () => 'boundary' },
     defaultEnabled: { get: () => true },
     sessionOverrides: { get: () => ({}) },
@@ -252,6 +255,7 @@ await test('只报摘要开关合并进来后重注册工具，无关路径不�
     resetOnProse: { get: () => true },
     summaryOnly: { get: () => summaryOnly },
     bodyExpandedByDefault: { get: () => false },
+    showTime: { get: () => false },
     cardPlacement: { get: () => 'boundary' },
     defaultEnabled: { get: () => true },
     sessionOverrides: { get: () => ({}) },
@@ -443,6 +447,7 @@ await test('开关现读：会话中途打开后下一步就催', async () => {
     collapsible: { get: () => true },
     summaryOnly: { get: () => false },
     bodyExpandedByDefault: { get: () => true },
+    showTime: { get: () => false },
     cardPlacement: { get: () => 'boundary' },
     defaultEnabled: { get: () => enabled },
     sessionOverrides: { get: () => ({}) },
