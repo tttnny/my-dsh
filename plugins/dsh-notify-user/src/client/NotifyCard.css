@@ -1,10 +1,15 @@
-/* `notify_user` 的进度卡：圆点 + 标题 + 折叠键 + 时间，正文默认展开。
+/* `notify_user` 的进度卡：圆点 + 标题 + 时间，正文默认收起；悬停时圆点变成折叠键。
  *
  * 行首取宿主 `DisclosureRow` 的同一套几何：16px 图标框 + 6px 间距，标题文字因此落在
  * 行左边缘 +22px，与过程行、工具行的文字列对齐；框宽跟随宿主的字号轴，改字号后仍对齐。 */
 
 .dsh-notify-card {
   padding: 2px 0 8px;
+}
+
+/* 对话节点座位：上下间距交给宿主的流间距（见文件末尾的 --dsh-chat-flow-gap），卡片本身不加内边距。 */
+.dsh-notify-card[data-seat="node"] {
+  padding: 0;
 }
 
 .dsh-notify-head {
@@ -15,6 +20,7 @@
 }
 
 .dsh-notify-dot {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -23,7 +29,16 @@
   height: calc(16px + var(--dsh-content-font-delta, 0px));
 }
 
-.dsh-notify-dot::before {
+/* 圆点是平时的样子；悬停标题行时让位给折叠键，与宿主 DisclosureRow 的 leading 同构。 */
+.dsh-notify-dot-idle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 100ms ease;
+}
+
+.dsh-notify-dot-idle::before {
   content: '';
   width: 7px;
   height: 7px;
@@ -54,13 +69,36 @@
 }
 
 .dsh-notify-chevron {
-  flex: none;
+  position: absolute;
+  inset: 0;
+  margin: auto;
   color: var(--dsw-alias-state-business-primary);
-  transition: transform 0.15s ease;
+  opacity: 0;
+  transition: transform 0.15s ease, opacity 100ms ease;
 }
 
-.dsh-notify-chevron[data-open] {
+/* 悬停时按展开状态给方向：收起朝下，展开朝上。 */
+.dsh-notify-dot[data-open] .dsh-notify-chevron {
   transform: rotate(180deg);
+}
+
+/* 展开与收起都显示圆点；折叠键只在悬停标题行时出现，不随展开状态常驻。 */
+@media (hover: hover) {
+  /* 只有带折叠键的卡片才在悬停时让圆点让位；摘要模式没有折叠键，圆点保持不动。 */
+  .dsh-notify-card[data-collapsible] .dsh-notify-head:hover .dsh-notify-dot-idle {
+    opacity: 0;
+  }
+
+  .dsh-notify-card[data-collapsible] .dsh-notify-head:hover .dsh-notify-chevron {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-notify-dot-idle,
+  .dsh-notify-chevron {
+    transition: none;
+  }
 }
 
 .dsh-notify-time {
@@ -69,6 +107,11 @@
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
+}
+
+/* 摘要按散文渲染：不加卡片内边距，排版交给宿主的正文样式。 */
+.dsh-notify-prose {
+  padding: 0;
 }
 
 /* 竖线落在圆点的圆心上（行左边缘 +8px），正文文字与标题同列（+22px）。 */
@@ -82,4 +125,14 @@
 /* 宿主的 compact markdown 自带灰字，这里按散文黑覆盖到它的根节点。 */
 .dsh-notify-body > div {
   color: var(--dsw-alias-label-primary);
+}
+
+/* 折叠态的汇报行与散文块同距：宿主按 --dsh-chat-flow-gap 给流节点留白，默认 4px；
+   这里把汇报行自己与它后面那一行都提到散文的 12px。 */
+[data-chat-flow-kind="notify-user"] {
+  --dsh-chat-flow-gap: 12px;
+}
+
+[data-chat-flow-kind="notify-user"] + * {
+  --dsh-chat-flow-gap: 12px;
 }

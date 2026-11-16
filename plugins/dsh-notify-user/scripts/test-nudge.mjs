@@ -30,8 +30,8 @@ const session = () => ({ header: { id: 'main' } });
  * @param {() => boolean} [readProseResets] - 散文算不算汇报。
  * @param {(session: object) => boolean} [readEnabled] - 这个会话开没开主动汇报。
  */
-function controller(readThreshold, readProseResets = () => true, readEnabled = () => true) {
-  return createNudgeController({ readThreshold, readProseResets, readEnabled });
+function controller(readThreshold, readProseResets = () => true, readEnabled = () => true, readSummaryOnly = () => false) {
+  return createNudgeController({ readThreshold, readProseResets, readSummaryOnly, readEnabled });
 }
 
 test('未满阈值不催', () => {
@@ -52,6 +52,22 @@ test('满阈值催一条，正文带次数与来源标记', () => {
   assert.equal(notice.source.summary, '8 tool calls without a notify_user update');
   assert.match(notice.content[0].text, /8 tool calls without a notify_user update/);
   assert.match(notice.content[0].text, /notify_user/);
+});
+
+test('只报摘要时只要一行标题', () => {
+  const text = renderNudge(3, true);
+  assert.match(text, /3 tool calls without a notify_user update/);
+  assert.match(text, /one-line title/);
+  assert.doesNotMatch(text, /structured, chat-style message/);
+});
+
+test('只报摘要的状态机注入同样短的文案', () => {
+  const nudge = controller(() => 2, () => true, () => true, () => true);
+  const who = session();
+  for (let index = 0; index < 2; index += 1) nudge.toolCall(who);
+  const notice = nudge.step(who, false);
+  assert.ok(notice !== null);
+  assert.doesNotMatch(notice.content[0].text, /structured, chat-style message/);
 });
 
 test('催过就清零，再满阈值才再催', () => {

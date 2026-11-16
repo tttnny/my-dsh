@@ -18,8 +18,26 @@ export const MAX_NUDGE_AFTER = 100;
 /** 助手消息里的散文回复算不算一次汇报：默认算。 */
 export const DEFAULT_RESET_ON_PROSE = true;
 
-/** 进度卡默认带折叠按钮；正文始终默认展开。 */
+/** 进度卡默认带折叠按钮。 */
 export const DEFAULT_COLLAPSIBLE = true;
+
+/** 模型只写一行标题、卡片只画标题行：默认关，照旧写正文。 */
+export const DEFAULT_SUMMARY_ONLY = false;
+
+/** 结构化正文模式下卡片是否默认展开：默认关，点标题展开。 */
+export const DEFAULT_BODY_EXPANDED_BY_DEFAULT = false;
+
+/** 配置里「只报摘要」的字段名：宿主重注册工具时按它认路径。 */
+export const SUMMARY_ONLY_FIELD = 'summaryOnly';
+
+/** 只报摘要时的呈现方式：进度卡，或按普通段落渲染。 */
+export const SUMMARY_RENDERS = ['card', 'prose'] as const;
+
+/** 只报摘要时默认仍画进度卡。 */
+export const DEFAULT_SUMMARY_RENDER = 'card';
+
+/** 摘要呈现方式。 */
+export type SummaryRender = typeof SUMMARY_RENDERS[number];
 
 /** 进度卡在对话流里的位置：步骤组边界，或跟随工具行。 */
 export const CARD_PLACEMENTS = ['boundary', 'inline'] as const;

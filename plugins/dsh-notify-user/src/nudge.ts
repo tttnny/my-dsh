@@ -36,10 +36,15 @@ const NUDGE_SOURCE = { kind: 'notify-user-nudge' } as const;
 /**
  * 催办正文：只给指令，不替模型写更新。
  * @param count - 距上次汇报的根工具调用次数。
+ * @param summaryOnly - 只报摘要时只要求一行标题，不再要结构化正文。
  * @returns 注入给模型的那段话。
  */
-export function renderNudge(count: number): string {
-  return `You have gone ${String(count)} tool calls without a notify_user update — the user has seen no progress from you since. `
+export function renderNudge(count: number, summaryOnly = false): string {
+  const head = `You have gone ${String(count)} tool calls without a notify_user update — the user has seen no progress from you since. `;
+  if (summaryOnly) {
+    return head + 'Send one now: a one-line title with what you have concluded so far, batched with your next tool calls.';
+  }
+  return head
     + 'Send one now: a one-line title with what you have concluded so far, and a structured, chat-style message '
     + '(a well structured paragraph with a few bullet points, under ~1000 characters) with the details and what you will do next, '
     + 'batched with your next tool calls.';
@@ -84,6 +89,8 @@ export interface NudgeOptions {
   readThreshold: () => number;
   /** 现读「散文回复算不算汇报」。 */
   readProseResets: () => boolean;
+  /** 现读「只报摘要」：催办文案跟着变。 */
+  readSummaryOnly: () => boolean;
   /** 现读这个会话是否开启主动汇报。 */
   readEnabled: (session: Session) => boolean;
 }
@@ -122,7 +129,7 @@ export function createNudgeController(options: NudgeOptions): NudgeController {
       if (count < threshold) return null;
       counts.set(session, 0);
       return createUserMessage({
-        content: [{ type: 'text', text: renderNudge(count) }],
+        content: [{ type: 'text', text: renderNudge(count, options.readSummaryOnly()) }],
         source: { ...NUDGE_SOURCE, form: 'notice', summary: nudgeSummary(count) },
       });
     },

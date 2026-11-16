@@ -20,10 +20,12 @@ import { NS } from './locales.js';
 import { formatClock, titleOf, type NotifyCardData } from './row-model.js';
 
 /**
- * 进度卡的展示件：一行标题（圆点 + 标题 + 折叠键 + 时间），下面是模型写的正文。
+ * 进度卡的展示件：一行标题（圆点 + 标题 + 时间；悬停时圆点变成折叠键），下面是模型写的正文。
  *
- * 正文默认展开；「带不带折叠键」由插件页的配置项决定（`collapsible`）。工具行与
- * 对话节点两种座位都把数据整理成 {@link NotifyCardData} 再交给这里，卡片的形态只有一份。
+ * 正文默认收起，点圆点展开；「带不带折叠键」由插件页的配置项决定（`collapsible`），
+ * 「正文默认展开」决定初始状态（`bodyExpandedByDefault`），「只报摘要」时没有正文
+ * （`summaryOnly`）。工具行与对话节点两种座位都把数据整理成 {@link NotifyCardData}
+ * 再交给这里，卡片的形态只有一份。
  */
 
 type NotifyCardProps = {
@@ -31,6 +33,8 @@ type NotifyCardProps = {
   readonly form: ConfigForm;
   readonly openFile: (path: string, options?: OpenFileOptions) => void;
   readonly t: PropsLocale<typeof NS>['t'];
+  /** 座位：对话节点（间距交给流间距），或工具行（卡片自带内边距）。 */
+  readonly seat: 'node' | 'row';
 };
 
 /** 订阅配置表单，配置一变卡片就跟着变。 */
@@ -57,12 +61,24 @@ function markdownLabels(t: NotifyCardProps['t']): MarkdownLabels {
  * @param props - 卡片数据、配置表单、文件打开动作与取词函数。
  * @returns 进度卡。
  */
-export function NotifyCard({ data, form, openFile, t }: NotifyCardProps): ReactElement {
+export function NotifyCard({ data, form, openFile, t, seat }: NotifyCardProps): ReactElement {
   const config = useClientConfig(form);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(config.bodyExpandedByDefault);
 
   const title = titleOf({ title: data.title, message: data.message }, t('row.fallbackTitle'));
-  const hasBody = data.message.trim().length > 0;
+
+  // 只报摘要 + 散文呈现：不画卡片，按普通段落渲染，看起来像助手写的正文。
+  if (config.summaryOnly && config.summaryRender === 'prose') {
+    return (
+      <div className="dsh-notify-prose" data-tool={NOTIFY_TOOL_NAME} data-state={data.settled ? 'settled' : 'running'}>
+        <MarkdownDelegateProvider openFile={openFile}>
+          <MarkdownText text={title} labels={markdownLabels(t)} />
+        </MarkdownDelegateProvider>
+      </div>
+    );
+  }
+
+  const hasBody = !config.summaryOnly && data.message.trim().length > 0;
   const collapsible = config.collapsible && hasBody;
   const expanded = collapsible ? open : true;
   const time = formatClock(data.time);
@@ -71,12 +87,12 @@ export function NotifyCard({ data, form, openFile, t }: NotifyCardProps): ReactE
   return (
     <div
       className="dsh-notify-card"
+      data-seat={seat}
       data-tool={NOTIFY_TOOL_NAME}
       data-state={data.settled ? 'settled' : 'running'}
       data-collapsible={collapsible || undefined}
     >
       <div className="dsh-notify-head">
-        <span className="dsh-notify-dot" aria-hidden="true" />
         {collapsible ? (
           <button
             type="button"
@@ -84,15 +100,19 @@ export function NotifyCard({ data, form, openFile, t }: NotifyCardProps): ReactE
             aria-expanded={expanded}
             onClick={() => { setOpen((value) => !value); }}
           >
+            <span className="dsh-notify-dot" data-open={expanded || undefined} aria-hidden="true">
+              <span className="dsh-notify-dot-idle" />
+              <IconChevronDownOutlineRegular className="dsh-notify-chevron" size={14} />
+            </span>
             <span className="dsh-notify-title">{titleNode}</span>
-            <IconChevronDownOutlineRegular
-              className="dsh-notify-chevron"
-              data-open={expanded || undefined}
-              size={14}
-            />
           </button>
         ) : (
-          <span className="dsh-notify-title">{titleNode}</span>
+          <>
+            <span className="dsh-notify-dot" aria-hidden="true">
+              <span className="dsh-notify-dot-idle" />
+            </span>
+            <span className="dsh-notify-title">{titleNode}</span>
+          </>
         )}
         {time === null ? null : <span className="dsh-notify-time">{time}</span>}
       </div>

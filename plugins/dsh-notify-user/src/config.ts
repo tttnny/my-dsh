@@ -2,12 +2,16 @@ import z from '@deepseek-ai/schemastery';
 import type { Volatile } from '@deepseek-ai/cordis';
 import {
   CARD_PLACEMENTS,
+  DEFAULT_BODY_EXPANDED_BY_DEFAULT,
   DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
   DEFAULT_ENABLED,
   DEFAULT_NUDGE_AFTER,
   DEFAULT_RESET_ON_PROSE,
+  DEFAULT_SUMMARY_ONLY,
+  DEFAULT_SUMMARY_RENDER,
   MAX_NUDGE_AFTER,
+  SUMMARY_RENDERS,
   enabledFor,
   type SessionOverrides,
 } from './shared/config.js';
@@ -17,6 +21,9 @@ export interface PluginConfig {
   nudgeAfter: Volatile<number>;
   resetOnProse: Volatile<boolean>;
   collapsible: Volatile<boolean>;
+  summaryOnly: Volatile<boolean>;
+  summaryRender: Volatile<string>;
+  bodyExpandedByDefault: Volatile<boolean>;
   cardPlacement: Volatile<string>;
   defaultEnabled: Volatile<boolean>;
   sessionOverrides: Volatile<SessionOverrides>;
@@ -27,6 +34,11 @@ export const Config = z.object({
   nudgeAfter: z.number().min(0).max(MAX_NUDGE_AFTER).default(DEFAULT_NUDGE_AFTER).volatile(),
   resetOnProse: z.boolean().default(DEFAULT_RESET_ON_PROSE).volatile(),
   collapsible: z.boolean().default(DEFAULT_COLLAPSIBLE).volatile(),
+  summaryOnly: z.boolean().default(DEFAULT_SUMMARY_ONLY).volatile(),
+  summaryRender: z.union(SUMMARY_RENDERS.map(value => z.const(value)))
+    .default(DEFAULT_SUMMARY_RENDER)
+    .volatile(),
+  bodyExpandedByDefault: z.boolean().default(DEFAULT_BODY_EXPANDED_BY_DEFAULT).volatile(),
   cardPlacement: z.union(CARD_PLACEMENTS.map(value => z.const(value)))
     .default(DEFAULT_CARD_PLACEMENT)
     .volatile(),

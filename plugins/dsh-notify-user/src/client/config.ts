@@ -9,30 +9,39 @@
 
 import {
   CARD_PLACEMENTS,
+  DEFAULT_BODY_EXPANDED_BY_DEFAULT,
   DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
   DEFAULT_ENABLED,
   DEFAULT_NUDGE_AFTER,
   DEFAULT_RESET_ON_PROSE,
+  DEFAULT_SUMMARY_ONLY,
+  DEFAULT_SUMMARY_RENDER,
   MAX_NUDGE_AFTER,
+  SUMMARY_RENDERS,
   type CardPlacement,
   type SessionOverrides,
+  type SummaryRender,
 } from '../shared/config.js';
 
 export {
   CARD_PLACEMENTS,
+  DEFAULT_BODY_EXPANDED_BY_DEFAULT,
   DEFAULT_CARD_PLACEMENT,
   DEFAULT_COLLAPSIBLE,
   DEFAULT_ENABLED,
   DEFAULT_NUDGE_AFTER,
   DEFAULT_RESET_ON_PROSE,
+  DEFAULT_SUMMARY_ONLY,
+  DEFAULT_SUMMARY_RENDER,
   MAX_NUDGE_AFTER,
   SETTINGS_NAMESPACE,
+  SUMMARY_RENDERS,
   enabledFor,
   overridesAfterWrite,
 } from '../shared/config.js';
 
-export type { CardPlacement, SessionOverrides } from '../shared/config.js';
+export type { CardPlacement, SessionOverrides, SummaryRender } from '../shared/config.js';
 
 /** 本插件 bundle 的包名：`plugins.bundle.config` 的 key 就是它。 */
 export const BUNDLE_NAME = '@lynn123411/dsh-notify-user';
@@ -69,6 +78,9 @@ export interface ClientConfig {
   nudgeAfter: number;
   resetOnProse: boolean;
   collapsible: boolean;
+  summaryOnly: boolean;
+  summaryRender: SummaryRender;
+  bodyExpandedByDefault: boolean;
   cardPlacement: CardPlacement;
   defaultEnabled: boolean;
   sessionOverrides: SessionOverrides;
@@ -79,6 +91,9 @@ export const DEFAULT_CLIENT_CONFIG: ClientConfig = {
   nudgeAfter: DEFAULT_NUDGE_AFTER,
   resetOnProse: DEFAULT_RESET_ON_PROSE,
   collapsible: DEFAULT_COLLAPSIBLE,
+  summaryOnly: DEFAULT_SUMMARY_ONLY,
+  summaryRender: DEFAULT_SUMMARY_RENDER,
+  bodyExpandedByDefault: DEFAULT_BODY_EXPANDED_BY_DEFAULT,
   cardPlacement: DEFAULT_CARD_PLACEMENT,
   defaultEnabled: DEFAULT_ENABLED,
   sessionOverrides: {},
@@ -115,10 +130,16 @@ export function readConfig(form: ConfigForm): ClientConfig | undefined {
   const resetOnProse = typeof rawResetOnProse === 'boolean' ? rawResetOnProse : DEFAULT_CLIENT_CONFIG.resetOnProse;
   const rawCollapsible = value['collapsible'];
   const collapsible = typeof rawCollapsible === 'boolean' ? rawCollapsible : DEFAULT_CLIENT_CONFIG.collapsible;
+  const rawSummaryOnly = value['summaryOnly'];
+  const summaryOnly = typeof rawSummaryOnly === 'boolean' ? rawSummaryOnly : DEFAULT_CLIENT_CONFIG.summaryOnly;
+  const rawSummaryRender = value['summaryRender'];
+  const summaryRender = SUMMARY_RENDERS.find(render => render === rawSummaryRender) ?? DEFAULT_CLIENT_CONFIG.summaryRender;
+  const rawBodyExpanded = value['bodyExpandedByDefault'];
+  const bodyExpandedByDefault = typeof rawBodyExpanded === 'boolean' ? rawBodyExpanded : DEFAULT_CLIENT_CONFIG.bodyExpandedByDefault;
   const rawPlacement = value['cardPlacement'];
   const cardPlacement = CARD_PLACEMENTS.find(placement => placement === rawPlacement) ?? DEFAULT_CLIENT_CONFIG.cardPlacement;
   const rawDefaultEnabled = value['defaultEnabled'];
   const defaultEnabled = typeof rawDefaultEnabled === 'boolean' ? rawDefaultEnabled : DEFAULT_CLIENT_CONFIG.defaultEnabled;
   const sessionOverrides = readOverrides(value['sessionOverrides']);
-  return { nudgeAfter, resetOnProse, collapsible, cardPlacement, defaultEnabled, sessionOverrides };
+  return { nudgeAfter, resetOnProse, collapsible, summaryOnly, summaryRender, bodyExpandedByDefault, cardPlacement, defaultEnabled, sessionOverrides };
 }

@@ -131,7 +131,7 @@ await test('导出的行身份与包内 cordis.patch.yml 那条装配行同名',
   assert.deepEqual(plugin.inject, ['tools']);
 });
 
-await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默认开，位置默认边界，主动汇报默认开', () => {
+await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默认开，只报摘要默认关，正文默认收起，位置默认边界，主动汇报默认开', () => {
   assert.equal(new plugin.Config({}).nudgeAfter.get(), 10);
   assert.equal(new plugin.Config({ nudgeAfter: 0 }).nudgeAfter.get(), 0);
   assert.equal(new plugin.Config({ nudgeAfter: 12 }).nudgeAfter.get(), 12);
@@ -141,6 +141,10 @@ await test('配置形状：阈值默认 10 / 0 合法 / 越界抛错，折叠默
   assert.equal(new plugin.Config({ resetOnProse: false }).resetOnProse.get(), false);
   assert.equal(new plugin.Config({}).collapsible.get(), true);
   assert.equal(new plugin.Config({ collapsible: false }).collapsible.get(), false);
+  assert.equal(new plugin.Config({}).summaryOnly.get(), false);
+  assert.equal(new plugin.Config({ summaryOnly: true }).summaryOnly.get(), true);
+  assert.equal(new plugin.Config({}).bodyExpandedByDefault.get(), false);
+  assert.equal(new plugin.Config({ bodyExpandedByDefault: true }).bodyExpandedByDefault.get(), true);
   assert.equal(new plugin.Config({}).cardPlacement.get(), 'boundary');
   assert.equal(new plugin.Config({ cardPlacement: 'inline' }).cardPlacement.get(), 'inline');
   assert.throws(() => new plugin.Config({ cardPlacement: 'nope' }), /cardPlacement/);
@@ -160,6 +164,49 @@ await test('工具注册得上，名字与两个参数字段齐全', () => {
   assert.equal(first.tool.parameters.properties.message.type, 'string');
   assert.deepEqual(first.tool.parameters.required, ['message']);
   assert.equal(first.tool.isConcurrencySafe({ message: 'M' }), true);
+});
+
+await test('只报摘要：工具参数只剩标题，描述只要求一行', () => {
+  const h = harness(10, { summaryOnly: true });
+  assert.deepEqual(h.tool.parameters.required, ['title']);
+  assert.equal(h.tool.parameters.properties.message, undefined);
+  assert.match(h.tool.description, /one-line progress update/);
+  assert.match(h.tool.description, /Write only the title/);
+});
+
+await test('只报摘要：催办只要一行标题', async () => {
+  const agent = mainAgent();
+  const h = harness(2, { summaryOnly: true });
+  for (let index = 0; index < 2; index += 1) await h.rootCall(agent);
+  const notice = noticeOf(await h.step(agent));
+  assert.ok(notice !== undefined);
+  assert.match(notice.content[0].text, /one-line title/);
+  assert.doesNotMatch(notice.content[0].text, /structured, chat-style message/);
+});
+
+await test('只报摘要开关合并进来后重注册工具，无关路径不动', () => {
+  let summaryOnly = false;
+  const live = {
+    nudgeAfter: { get: () => 10 },
+    resetOnProse: { get: () => true },
+    summaryOnly: { get: () => summaryOnly },
+    bodyExpandedByDefault: { get: () => false },
+    cardPlacement: { get: () => 'boundary' },
+    defaultEnabled: { get: () => true },
+    sessionOverrides: { get: () => ({}) },
+  };
+  const h = harness(10, {}, live);
+  const before = h.ctx.tools.get('notify_user');
+  assert.deepEqual(before.parameters.required, ['message']);
+  summaryOnly = true;
+  h.ctx.emit('loader/volatile-update', [['summaryOnly']]);
+  const after = h.ctx.tools.get('notify_user');
+  assert.notEqual(after, before);
+  assert.deepEqual(after.parameters.required, ['title']);
+  assert.equal(after.parameters.properties.message, undefined);
+  assert.match(after.description, /one-line progress update/);
+  h.ctx.emit('loader/volatile-update', [['nudgeAfter']]);
+  assert.equal(h.ctx.tools.get('notify_user'), after);
 });
 
 await test('执行返回 ok，render 与 presentationMeta 对得上', async () => {
@@ -333,6 +380,8 @@ await test('开关现读：会话中途打开后下一步就催', async () => {
     nudgeAfter: { get: () => 2 },
     resetOnProse: { get: () => true },
     collapsible: { get: () => true },
+    summaryOnly: { get: () => false },
+    bodyExpandedByDefault: { get: () => true },
     cardPlacement: { get: () => 'boundary' },
     defaultEnabled: { get: () => enabled },
     sessionOverrides: { get: () => ({}) },

@@ -19,6 +19,8 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 `notify_user` 的每次调用在对话流里是一个 `notify-user` 节点，位置是 `process`：它站在步骤组外，客户端的分组逻辑遇到它就结束当前组，于是两次汇报之间的工具调用各自折成一个原生子折叠。
 
+节点座位不自带上下内边距：上下留白由宿主的 `--dsh-chat-flow-gap` 给，本插件把它提到 12px，与助手散文块同距；工具行座位保留卡片自己的内边距。
+
 通用工具定义也会匹配同一次调用的全部事件，所以定义用 `exclusive` 认领它们，通用定义不再为这次调用建节点：
 
 | 事件 | 认领条件 |
@@ -42,10 +44,23 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 | `sessionOverrides` | `{}` | 会话 id → 布尔 | 按会话的选择；只留与默认值不同的会话，切回默认值就删掉那条。 |
 | `nudgeAfter` | 10 | 0–100 | 连续多少次根工具调用没有汇报时催一次；0 关闭催办。 |
 | `resetOnProse` | true | 布尔 | 助手消息里写了正文（非空白 `text` 块）就清零计数；关掉后只在 `notify_user`、新回合或用户插话时清零。 |
-| `collapsible` | true | 布尔 | 进度卡标题旁带不带折叠键；带折叠键时正文仍默认展开，关掉后正文始终展开、不显示折叠键。 |
+| `collapsible` | true | 布尔 | 卡片带不带折叠键；关掉后正文始终展开、不显示折叠键。 |
+| `summaryOnly` | false | 布尔 | 模型只写一行标题，卡片只显示标题行；工具描述、参数与催办文案同步改。 |
+| `summaryRender` | `card` | `card` / `prose` | 只报摘要时的呈现：进度卡，或按普通段落渲染（看起来像助手写的正文）。 |
+| `bodyExpandedByDefault` | false | 布尔 | 结构化正文模式下卡片是否默认展开；`collapsible` 关掉时不起作用。 |
 | `cardPlacement` | `boundary` | `boundary` / `inline` | 进度卡位置：`boundary` 站在步骤组边界，`inline` 跟随工具行、随组折叠。 |
 
-字段都标了 `.volatile()`：改它们不重挂这条 loader entry。催办状态机每次 `pre-step` 现读 `nudgeAfter` 与 `defaultEnabled`/`sessionOverrides`；进度卡与菜单开关通过注册项的 `inject` 拿到同一张配置表单并订阅，所以改完当前页面的卡片与开关立刻跟着变。配置界面在宿主「插件」页本插件的详情页上；宿主没服务这份配置时卡片整块不出现。插件同时用 `ctx.settings.configure({ auto: false })` 关掉内核按 schema 自动生成的那份设置页。
+配置卡把 `summaryOnly` 画成「结构化正文 / 只报摘要」两选一，把 `collapsible` 与 `bodyExpandedByDefault` 合成「始终展开 / 默认收起 / 默认展开」三选一；只报摘要时「正文显示」整行不出现，改出现「摘要呈现」（进度卡 / 散文）。
+
+字段都标了 `.volatile()`：改它们不重挂这条 loader entry。催办状态机每次 `pre-step` 现读 `nudgeAfter`、`summaryOnly` 与 `defaultEnabled`/`sessionOverrides`；进度卡与菜单开关通过注册项的 `inject` 拿到同一张配置表单并订阅，所以改完当前页面的卡片与开关立刻跟着变。`summaryOnly` 还要换工具定义，见下一节。配置界面在宿主「插件」页本插件的详情页上；宿主没服务这份配置时卡片整块不出现。插件同时用 `ctx.settings.configure({ auto: false })` 关掉内核按 schema 自动生成的那份设置页。
+
+## 只报摘要
+
+开启后宿主半边把 `notify_user` 换成另一份定义：描述只要一行标题，参数只剩 `title`（必填），不再声明 `message`；催办注入的文案同步改成只要标题。浏览器半边只画标题行，没有正文也没有折叠键；摘要呈现选「散文」时连卡片也不画，标题按普通段落渲染，看起来像助手写的正文。
+
+开关只改工具面，不重挂插件：配置的 volatile 字段合并进运行中的插件后，loader 在拥有它的 fiber 上发 `loader/volatile-update`，宿主按路径里的 `summaryOnly` 换一份定义。在途调用持有旧定义，下一步用新定义。
+
+历史卡片按新配置重画：摘要模式隐藏正文，标题仍按「模型给的标题 → 正文首行 → 兜底文案」取，所以旧卡片不会只剩一句「更新」。关掉摘要后，旧卡片没有正文可展开，只画标题行。
 
 ## 按会话开关
 

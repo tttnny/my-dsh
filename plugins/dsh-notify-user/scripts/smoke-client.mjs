@@ -32,6 +32,8 @@ const errors = [];
 let configValue = {
   nudgeAfter: 10,
   collapsible: true,
+  summaryOnly: false,
+  bodyExpandedByDefault: false,
   cardPlacement: 'boundary',
   defaultEnabled: true,
   sessionOverrides: {},

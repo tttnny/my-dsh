@@ -30,5 +30,5 @@ export function NotifyRow(props: NotifyRowProps): ReactElement {
     time: props.block.time,
     settled: props.phase === 'result',
   };
-  return <NotifyCard data={data} form={form} openFile={props.openFile} t={t} />;
+  return <NotifyCard data={data} form={form} openFile={props.openFile} t={t} seat="row" />;
 }

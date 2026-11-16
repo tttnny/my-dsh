@@ -245,9 +245,9 @@ export async function writeClipboard(_text) {
 
 /** 图标薄壳：真的图标是路径很长的 SVG；预览里只需要占位与尺寸，颜色跟 currentColor 走。 */
 function icon(name) {
-  const Icon = ({ size = 16 }) => createElement(
+  const Icon = ({ size = 16, className }) => createElement(
     'svg',
-    { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', 'data-icon': name },
+    { className, width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', 'data-icon': name },
     createElement('circle', { cx: 8, cy: 8, r: 6, stroke: 'currentColor', strokeWidth: 1.2 }),
   );
   return Icon;
@@ -257,9 +257,9 @@ export const IconQuestionOutlineRegular = icon('question');
 export const IconInspectOutlineRegular = icon('inspect');
 export const IconDownloadOutlineRegular = icon('download');
 export const IconBranchOutlineRegular = icon('branch');
-export const IconChevronDownOutlineRegular = ({ size = 14 }) => createElement(
+export const IconChevronDownOutlineRegular = ({ size = 14, className }) => createElement(
   'svg',
-  { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', 'data-icon': 'chevron-down' },
+  { className, width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', 'data-icon': 'chevron-down' },
   createElement('path', { d: 'M4 6.5 8 10.5 12 6.5', stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round', strokeLinejoin: 'round' }),
 );
 export const IconCheckOutlineRegular = ({ size = 16 }) => createElement(

@@ -21,5 +21,5 @@ type NotifyNodeViewProps = PropsRuntime<'conversation.chat.node', 'notify-user'>
  * @returns 进度卡。
  */
 export function NotifyNodeView({ node, openFile, t, form }: NotifyNodeViewProps): ReactElement {
-  return <NotifyCard data={node.data} form={form} openFile={openFile} t={t} />;
+  return <NotifyCard data={node.data} form={form} openFile={openFile} t={t} seat="node" />;
 }
