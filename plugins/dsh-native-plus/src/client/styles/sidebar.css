@@ -1,0 +1,53 @@
+/* 侧边栏层：工作区行的「里面有会话在跑」标记。
+ *
+ * 信号不是从 DOM 推出来的：宿主折叠工作区时不渲染里面的会话行，纯 CSS 拿不到。
+ * 判据在 src/client/workspace-activity.ts 里算，行上只留本插件自己的 data-np-running，
+ * 这张表只认那个属性。行键的形状（workspace:<id>）归宿主，锚点自检盯着 data-row-key。
+ *
+ * 颜色只取宿主令牌：点用 label-tertiary，与会话行行首那个运行中的圆环同色。
+ */
+
+html[data-native-plus='on'] [data-row-key^='workspace:'][data-np-running] {
+  position: relative;
+}
+
+html[data-native-plus='on'] [data-row-key^='workspace:'][data-np-running]::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 8px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-label-tertiary);
+  animation: dsh-np-breathe 2.4s ease-in-out infinite;
+}
+
+/* 让位给同一位置的操作条（更多 / 新建会话）：悬停时宿主展开操作条，
+ * 菜单打开时操作条也一直显示。用 visibility 而不是 opacity——运行中的动画会盖过
+ * 普通声明里的 opacity，点不会真的消失。
+ * 不跟 :focus-within：工作区行本身可聚焦（role=treeitem + tabindex），点一下就会
+ * 聚焦，而那时操作条并没有展开，点先消失会让人以为标记丢了。 */
+@media (hover: hover) {
+  html[data-native-plus='on'] [data-row-key^='workspace:'][data-np-running]:hover::after {
+    visibility: hidden;
+  }
+}
+
+html[data-native-plus='on'] [data-row-key^='workspace:'][data-np-running]:has([aria-expanded='true'])::after {
+  visibility: hidden;
+}
+
+/* 减少动态效果时不呼吸，留一个静止的点。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-native-plus='on'] [data-row-key^='workspace:'][data-np-running]::after {
+    animation: none;
+  }
+}
+
+@keyframes dsh-np-breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}

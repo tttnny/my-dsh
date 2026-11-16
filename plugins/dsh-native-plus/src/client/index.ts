@@ -1,13 +1,16 @@
 /**
- * 浏览器半边：注入样式表、把配置投影到 `<html>`、在宿主「插件」页上挂配置卡片。
+ * 浏览器半边：注入样式表、把配置投影到 `<html>`、在宿主「插件」页上挂配置卡片、
+ * 给侧边栏工作区行打运行标记。
  *
- * 三件事各有归属：
+ * 四件事各有归属：
  *   1. 样式表在 `apply()` 里注入，标签带 `data-plugin` / `data-plugin-css`：client-modules
  *      按前者在卸载与热更时删掉它们。
  *   2. 投影订阅本插件那一行的配置表单，值变了只改 `<html>` 上的属性与变量，样式表不重建。
  *   3. 卡片走 `plugins.bundle.config`，key 是 bundle 的 npm 包名；宿主「插件」页没挂载时
  *      这个座位不存在，所以注册必须包在 `slots.inject` 里，并与 `configForms.whileServed`
  *      串起来——宿主没服务这份配置，就一个字的界面都不出现。
+ *   4. 侧边栏工作区行的运行标记走 `ctx.inject` 的两个可选服务：服务缺席时回调不运行，
+ *      其余三件事照常。
  *
  * 本插件不改任何颜色：没有主题通道、没有色板覆盖，底色与文字色全是宿主自己的。
  */
@@ -23,6 +26,13 @@ import { NativePlusCard } from './card.tsx';
 import { NS, en, zh } from './locales.ts';
 import tokens from './styles/tokens.css?inline';
 import markdown from './styles/markdown.css?inline';
+import sidebar from './styles/sidebar.css?inline';
+import {
+  watchWorkspaceActivity,
+  type SessionListLike,
+  type SnapshotSource,
+  type WorkspaceListLike,
+} from './workspace-activity.ts';
 
 export { NS } from './locales.ts';
 export {
@@ -34,6 +44,9 @@ export {
   projectSettings, ROOT_ATTRIBUTE, ROOT_VARIABLES,
 } from './settings.ts';
 export { FIELDS, clampNumber, defaultConfig, normalizeConfig } from './schema.ts';
+export {
+  ACTIVITY_ATTRIBUTE, applyActivity, runningWorkspaceKeys, watchWorkspaceActivity,
+} from './workspace-activity.ts';
 
 /** 包名：样式表标签的归属键，也是浏览器 bundle 的自注册 id。 */
 export const name = '@lynn123411/dsh-native-plus';
@@ -41,6 +54,7 @@ export const name = '@lynn123411/dsh-native-plus';
 /**
  * 声明的服务：`configForms` 读本插件那一行的配置，`slots` 与 `locale` 画配置卡片。
  * 漏声明不会报错，只会让整个浏览器半边在页面里消失（docs/rules/client-wiring.md）。
+ * 侧边栏那两个服务不写在这里：它们是可选的，经 `ctx.inject` 单独声明。
  */
 export const inject = ['configForms', 'slots', 'locale'];
 
@@ -49,6 +63,7 @@ const SHEETS: readonly (readonly [string, string])[] = [
   ['tokens.css', tokens],
   ['markdown.css', markdown],
   ['card.css', CARD_CSS],
+  ['sidebar.css', sidebar],
 ];
 
 /**
@@ -87,6 +102,10 @@ interface ClientServices {
   locale: {
     register(namespace: string, dictionaries: { zh: unknown; en: unknown }): () => void;
   };
+  /** 工作区列表：侧边栏工作区行的归属来源。 */
+  workspaces: { list: SnapshotSource<WorkspaceListLike> };
+  /** 会话列表：回合与子代理的运行状态、子代理目录都在这里。 */
+  sessions: { list: SnapshotSource<SessionListLike> };
 }
 
 /**
@@ -125,4 +144,19 @@ export function apply(ctx: ClientContext): void {
     )),
     'dsh-native-plus: plugins page config',
   );
+
+  // 侧边栏工作区行的运行标记。两个服务都是可选的：ctx.inject 的回调在它们到位时才运行，
+  // 缺席时只少这一个功能，正文排版与配置卡片照常（硬写进 inject 会让整条 loader entry 变 failed）。
+  ctx.inject(['workspaces', 'sessions'], (scope) => {
+    const injected = scope as unknown as ClientServices;
+    scope.effect(
+      () => typeof document === 'undefined'
+        ? () => {}
+        : watchWorkspaceActivity(document, {
+          workspaces: injected.workspaces.list,
+          sessions: injected.sessions.list,
+        }),
+      'dsh-native-plus: workspace activity',
+    );
+  });
 }

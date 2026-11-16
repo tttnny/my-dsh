@@ -28,9 +28,9 @@
   </thead>
   <tbody>
     <tr>
-      <td><b>🎨 外观</b><br><i>对话正文的排版与装饰</i></td>
+      <td><b>🎨 外观</b><br><i>对话正文的排版与装饰、侧边栏运行标记</i></td>
       <td><a href="./plugins/dsh-native-plus"><code>@lynn123411/dsh-native-plus</code></a></td>
-      <td><b>原生增强</b><br>在 DSH 自带的蓝白黑之上整理对话正文：六级标题的蓝阶、引用与表格、代码块、行高与段距。配色一个字不改。</td>
+      <td><b>原生增强</b><br>在 DSH 自带的蓝白黑之上整理对话正文：六级标题的蓝阶、引用与表格、代码块、行高与段距；某个工作区里有会话在跑时，侧边栏的工作区行给出标记。配色一个字不改。</td>
       <td><code>dsh plugin --profile web add @lynn123411/dsh-native-plus</code></td>
     </tr>
     <tr>

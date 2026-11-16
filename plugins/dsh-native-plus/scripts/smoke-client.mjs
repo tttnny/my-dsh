@@ -1,7 +1,8 @@
 /**
  * 浏览器半边自检：按 Web shell 的方式装载 lib/client.js（window.__ModuleLoader__.load 桩件），
- * 喂假 cordis 服务，断言三件事——样式表带归属键挂上去了、配置投影真的写到了 <html> 上、
- * 配置卡片注册进了 plugins.bundle.config 且 key 是包名。
+ * 喂假 cordis 服务，断言四件事——样式表带归属键挂上去了、配置投影真的写到了 <html> 上、
+ * 配置卡片注册进了 plugins.bundle.config 且 key 是包名、侧边栏工作区行的运行标记
+ * 按会话状态落到正确的行上（回合在跑、子代理在跑、未分组桶、行重建、卸载）。
  *
  * **未声明的服务读取必须抛**（docs/rules/client-wiring.md）：漏声明不会报错，只会让插件在
  * 页面里消失。所以这个文件自己也带一条反例断言，证明那层守卫还在响。
@@ -90,6 +91,49 @@ function fakeForm(initial) {
   };
 }
 
+/**
+ * 一张假快照源：形状与宿主 `getSnapshot` / `subscribe` 一致，测试自己推值。
+ * @param initial - 初始快照。
+ */
+function snapshotStore(initial) {
+  let value = initial;
+  const listeners = new Set();
+  return {
+    getSnapshot: () => value,
+    subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    push(next) {
+      value = next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+/** 侧边栏那两个可选服务的快照：工作区归属与会话列表。 */
+const workspaceStore = snapshotStore({
+  items: [
+    { workspaceId: 'ws-running', sessionIds: ['s-running'] },
+    { workspaceId: 'ws-idle', sessionIds: ['s-idle'] },
+  ],
+});
+/**
+ * 造一份会话列表快照：`running` 列出正在跑的会话 id。
+ * `s-sub` 是 `s-running` 的子代理，只出现在父会话的 `subagentCatalog` 里。
+ * @param running - 正在跑的会话 id。
+ */
+function sessionsWith(running) {
+  return {
+    ids: ['s-running', 's-idle', 's-loose'],
+    byId: {
+      's-running': { running: running.includes('s-running') },
+      's-idle': { running: running.includes('s-idle') },
+      's-loose': { running: running.includes('s-loose') },
+      's-sub': { running: running.includes('s-sub') },
+    },
+    projectionsBySession: { 's-running': { values: { subagentCatalog: [{ id: 's-sub' }] } } },
+  };
+}
+const sessionStore = snapshotStore(sessionsWith([]));
+
 const form = fakeForm({});
 const localeRegistrations = [];
 const slotRegistrations = [];
@@ -130,13 +174,21 @@ function services() {
         return () => {};
       },
     },
+    workspaces: { list: workspaceStore },
+    sessions: { list: sessionStore },
   };
 }
 
-/** cordis 忠实的上下文：读未声明的服务抛 cannot get property "x" without inject。 */
-function makeCtx(label, declared = []) {
+/**
+ * cordis 忠实的上下文：读未声明的服务抛 cannot get property "x" without inject。
+ * `effects` 由父子共享：`ctx.inject` 的回调在子上下文里注册的副作用，
+ * 卸载断言要能一起拆掉，否则那条断言是空转。
+ * @param label - 调试用的上下文名。
+ * @param declared - 已声明的服务名。
+ * @param effects - 共享的副作用数组。
+ */
+function makeCtx(label, declared = [], effects = []) {
   const table = services();
-  const effects = [];
   const base = {
     label,
     effects,
@@ -144,7 +196,7 @@ function makeCtx(label, declared = []) {
     on: () => () => {},
     inject: (names, callback) => {
       const list = Array.isArray(names) ? names : [names];
-      const dispose = callback(makeCtx(label + '/' + list.join(','), [...declared, ...list]));
+      const dispose = callback(makeCtx(label + '/' + list.join(','), [...declared, ...list], effects));
       return typeof dispose === 'function' ? dispose : () => {};
     },
     get: (name) => table[name],
@@ -176,6 +228,15 @@ try {
   check('守卫拒绝未声明的服务读取', /cannot get property "locale" without inject/.test(error.message));
 }
 
+/* ---- 侧边栏：两行有归属的工作区行，一行归未分组桶 ---- */
+document.body.innerHTML = [
+  '<div data-sidebar-scrollport>',
+  '<div data-row-key="workspace:ws-running">token额度计算</div>',
+  '<div data-row-key="workspace:ws-idle">笔记</div>',
+  '<div data-row-key="workspace:">未分组</div>',
+  '</div>',
+].join('');
+
 const rootElement = document.documentElement;
 const ctx = makeCtx('root', exported.inject ?? []);
 try {
@@ -186,12 +247,12 @@ try {
 }
 check('apply 期间没有接线错误', errors.length === 0, errors.join('; '));
 
-/* ---- 样式表：三张都挂上、都带归属键 ---- */
+/* ---- 样式表：四张都挂上、都带归属键 ---- */
 const styleKeys = [...document.head.querySelectorAll('style[data-plugin]')].map((tag) => tag.getAttribute('data-plugin-css'));
-check('三张样式表都注入了', styleKeys.length === 3, JSON.stringify(styleKeys));
+check('四张样式表都注入了', styleKeys.length === 4, JSON.stringify(styleKeys));
 check(
   '样式表的归属键按「包名/文件名」拼',
-  ['tokens.css', 'markdown.css', 'card.css'].every((file) => styleKeys.includes(PKG + '/' + file)),
+  ['tokens.css', 'markdown.css', 'card.css', 'sidebar.css'].every((file) => styleKeys.includes(PKG + '/' + file)),
   JSON.stringify(styleKeys),
 );
 const pluginTags = [...document.head.querySelectorAll('style')].map((tag) => tag.getAttribute('data-plugin'));
@@ -223,6 +284,33 @@ const enKeys = Object.keys(dictionary?.en ?? {}).sort();
 check('zh/en 键集一致且非空', zhKeys.length > 0 && JSON.stringify(zhKeys) === JSON.stringify(enKeys));
 check('每条文案都非空', enKeys.every((key) => typeof dictionary.en[key] === 'string' && dictionary.en[key].length > 0));
 
+/* ---- 侧边栏运行标记：判据与宿主会话行一致 ---- */
+/** 取一行工作区行；不存在时返回 null。 */
+const rowOf = (key) => document.querySelector('[data-row-key="' + key + '"]');
+/** 该行是否带着运行标记。 */
+const marked = (key) => rowOf(key)?.hasAttribute('data-np-running') === true;
+
+sessionStore.push(sessionsWith(['s-running']));
+check('回合在跑：命中所属工作区行', marked('workspace:ws-running'));
+check('回合在跑：别的工作区不受影响', !marked('workspace:ws-idle'));
+
+sessionStore.push(sessionsWith(['s-sub']));
+check('子代理在跑也算（父会话的 subagentCatalog）', marked('workspace:ws-running'));
+
+sessionStore.push(sessionsWith([]));
+check('都停了：标记撤掉', !marked('workspace:ws-running'));
+
+sessionStore.push(sessionsWith(['s-loose']));
+check('不在任何工作区的会话归未分组桶', marked('workspace:'));
+
+sessionStore.push(sessionsWith(['s-running']));
+const rebuiltRow = rowOf('workspace:ws-running');
+rebuiltRow.remove();
+await new Promise((resolve) => setTimeout(resolve, 0));
+document.querySelector('[data-sidebar-scrollport]').append(rebuiltRow);
+await new Promise((resolve) => setTimeout(resolve, 0));
+check('行被重建后标记补回来', marked('workspace:ws-running'));
+
 /* ---- 卸载：痕迹撤干净 ---- */
 form.push({ lineHeight: 1.75, paragraphGap: 10 });
 const beforeUnload = ['data-native-plus']
@@ -236,6 +324,7 @@ check('卸载后根元素不留属性', leftover.length === 0, leftover.join('�
 const leftVars = ['--np-line-height', '--np-p-gap'].filter((name) => rootElement.style.getPropertyValue(name) !== '');
 check('卸载后根元素不留变量', leftVars.length === 0, leftVars.join('、'));
 check('卸载后样式标签全删了', document.head.querySelectorAll('style[data-plugin]').length === 0);
+check('卸载后行上的运行标记全清', document.querySelectorAll('[data-np-running]').length === 0);
 
 console.log(failures.length === 0 ? '\nsmoke: PASS' : '\nsmoke: FAIL (' + failures.length + ')');
 process.exit(failures.length === 0 ? 0 : 1);

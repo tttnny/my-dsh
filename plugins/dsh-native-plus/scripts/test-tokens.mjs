@@ -1,7 +1,7 @@
 /**
  * 配色自检：本插件不拥有任何颜色，所以这里查的不是「色值好不好看」，而是两件事——
  *
- *   1. 正文层一个色值都没写死：所有颜色必须是 var(--dsw-*) 或由它们混出来的。
+ *   1. 样式表里一个色值都没写死：所有颜色必须是 var(--dsw-*) 或由它们混出来的。
  *      写死一个 hsl(...)，宿主的深浅两套主题就会在那一条上失灵。
  *   2. 标题六档的蓝阶在宿主的两套纸面上都读得清。端点取自宿主的 --dsw-static-deepseek-*，
  *      中间的档由 color-mix 插值，插值后的明度落在两端之间，所以两端过 4.5:1 就够了。
@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 const tokensCss = readFileSync(join(root, 'src/client/styles/tokens.css'), 'utf8');
 const markdownCss = readFileSync(join(root, 'src/client/styles/markdown.css'), 'utf8');
+const sidebarCss = readFileSync(join(root, 'src/client/styles/sidebar.css'), 'utf8');
 
 let passed = 0;
 let total = 0;
@@ -59,9 +60,9 @@ function strip(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-test('正文层没有写死任何色值', () => {
+test('样式表里没有写死任何色值', () => {
   const offenders = [];
-  for (const [file, css] of [['tokens.css', tokensCss], ['markdown.css', markdownCss]]) {
+  for (const [file, css] of [['tokens.css', tokensCss], ['markdown.css', markdownCss], ['sidebar.css', sidebarCss]]) {
     for (const match of strip(css).matchAll(/(color|background(-color)?|border(-[a-z]+)?-color|outline-color|accent-color)\s*:\s*([^;]+);/g)) {
       const value = match[4].trim();
       if (/^(none|inherit|transparent|currentColor)$/i.test(value)) continue;

@@ -34,9 +34,9 @@ function test(label, fn) {
   }
 }
 
-/** 两张样式表的全文，按文件名索引。 */
+/** 三张样式表的全文，按文件名索引。 */
 const sheets = Object.fromEntries(
-  ['tokens.css', 'markdown.css'].map((file) => [
+  ['tokens.css', 'markdown.css', 'sidebar.css'].map((file) => [
     file,
     readFileSync(join(root, 'src/client/styles', file), 'utf8'),
   ]),
@@ -59,7 +59,55 @@ function strip(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-const markdownAttributes = attributeNames(sheets['markdown.css']);
+/**
+ * 剥掉 @keyframes 块：里面的 `0%, 100% { … }` 是帧，不是选择器规则，
+ * 留着会被规则遍历当成「没挂在根属性下」。
+ * @param css - 一份样式表。
+ * @returns 去掉关键帧块之后的样式表。
+ */
+function withoutKeyframes(css) {
+  let out = css;
+  for (;;) {
+    const start = out.indexOf('@keyframes');
+    if (start === -1) return out;
+    const open = out.indexOf('{', start);
+    if (open === -1) return out;
+    let depth = 0;
+    let end = -1;
+    for (let i = open; i < out.length; i += 1) {
+      if (out[i] === '{') depth += 1;
+      else if (out[i] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+    }
+    if (end === -1) return out;
+    out = out.slice(0, start) + out.slice(end);
+  }
+}
+
+/**
+ * 挑出没有挂在根属性下的规则。
+ * @param css - 一份样式表。
+ * @returns 违规的选择器。
+ */
+function ungatedRules(css) {
+  const offenders = [];
+  for (const rule of withoutKeyframes(strip(css)).matchAll(/([^{}]+)\{[^{}]*\}/g)) {
+    const selector = rule[1].trim();
+    if (selector === '' || selector.startsWith('@')) continue;
+    if (!selector.startsWith("html[data-native-plus='on']")) offenders.push(selector);
+  }
+  return offenders;
+}
+
+/** 三张样式表里用到的宿主属性名（本插件自己的 data-native-plus / data-np-* 另算）。 */
+const hostAttributes = new Set(
+  Object.values(sheets).flatMap((css) => [...attributeNames(css)]),
+);
 
 test('样式表里没有 CSS Modules 的哈希类名（一出现就说明抄了宿主内部实现）', () => {
   for (const [file, css] of Object.entries(sheets)) {
@@ -70,16 +118,17 @@ test('样式表里没有 CSS Modules 的哈希类名（一出现就说明抄了�
 });
 
 test('每一层都挂在根属性下面（关掉就整段不匹配）', () => {
-  // 逐条规则看选择器：把注释与 at-rule 剥掉，剩下的每个「选择器 { … }」都必须以根属性开头。
+  // 逐条规则看选择器：把注释、at-rule 与关键帧剥掉，剩下的每个「选择器 { … }」都必须以根属性开头。
   const offenders = [];
-  for (const file of ['tokens.css', 'markdown.css']) {
-    for (const rule of strip(sheets[file]).matchAll(/([^{}]+)\{[^{}]*\}/g)) {
-      const selector = rule[1].trim();
-      if (selector === '' || selector.startsWith('@')) continue;
-      if (!selector.startsWith("html[data-native-plus='on']")) offenders.push(file + ': ' + selector.slice(0, 60));
-    }
+  for (const [file, css] of Object.entries(sheets)) {
+    for (const selector of ungatedRules(css)) offenders.push(file + ': ' + selector.slice(0, 60));
   }
   assert.deepEqual(offenders, [], '这些规则没挂在根属性下：' + offenders.join(' | '));
+});
+
+test('规则遍历器抓得住漏挂根属性的规则，也认得关键帧（否则上一条是空转）', () => {
+  assert.deepEqual(ungatedRules("[data-y] { color: red; }"), ['[data-y]']);
+  assert.deepEqual(ungatedRules('@keyframes k { 0%, 100% { opacity: 0.4; } }'), []);
 });
 
 test('段落间距落在 p 的 margin 上（宿主就是用它给段落分段的）', () => {
@@ -98,10 +147,10 @@ test('段落间距落在 p 的 margin 上（宿主就是用它给段落分段的
   );
 });
 
-test('正文层不写颜色，只引用 --np-* 或 --dsw-* 令牌', () => {
+test('样式表里不写颜色，只引用 --np-* 或 --dsw-* 令牌', () => {
   // 本插件的配色承诺是「就是 DSH 那一套」。样式表里出现字面色值，就是悄悄多出了一套。
   const offenders = [];
-  for (const file of ['tokens.css', 'markdown.css']) {
+  for (const file of Object.keys(sheets)) {
     for (const match of strip(sheets[file]).matchAll(/(color|background(-color)?|border(-[a-z]+)?-color)\s*:\s*([^;]+);/g)) {
       const value = match[4].trim();
       if (/^(none|inherit|transparent|currentColor)$/i.test(value)) continue;
@@ -208,7 +257,7 @@ if (source === undefined) {
 } else {
   // 本插件自己写的属性（data-native-plus / data-np-*）不归宿主发，不能拿去宿主源码里找。
   const anchors = new Set(
-    [...markdownAttributes].filter((name) => !name.startsWith('data-native-plus') && !name.startsWith('data-np-')),
+    [...hostAttributes].filter((name) => !name.startsWith('data-native-plus') && !name.startsWith('data-np-')),
   );
   for (const anchor of [...anchors].sort()) {
     test('宿主还在发 ' + anchor, () => {
