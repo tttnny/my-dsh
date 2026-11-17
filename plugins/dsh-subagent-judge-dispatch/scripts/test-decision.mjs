@@ -23,6 +23,8 @@ import {
   buildPreview,
   buildProbeRequest,
   composeJudgeSubject,
+  isRowEnabled,
+  numberTypeRows,
   QUESTION_INSTRUCTIONS,
   readChoice,
   readJudgeAnswer,
@@ -82,10 +84,11 @@ async function test(label, fn) {
   }
 }
 
-/** One row, filled in unless a field is overridden. */
+/** One row, filled in and switched on unless a field is overridden. */
 function row(overrides = {}) {
   return {
     id: 1,
+    enabled: true,
     description: '机械修改',
     provider: 'd1api',
     model: 'deepseek-v4.1-flash',
@@ -144,6 +147,111 @@ await test('只把填全的行交给判断模型', () => {
   ];
   const usable = selectableRows(rows);
   assert.deepEqual(usable.map((r) => r.id), [1, 5]);
+});
+
+await test('关掉的行不交给判断模型，哪怕它填得全', () => {
+  const rows = [
+    row({ id: 1 }),
+    row({ id: 0, enabled: false, description: '暂时关掉的' }),
+    row({ id: 2, description: '评审代码' }),
+  ];
+  assert.deepEqual(selectableRows(rows).map((r) => r.description), ['机械修改', '评审代码']);
+});
+
+await test('缺 enabled 的行当作打开，只有显式 false 才算关掉', () => {
+  assert.equal(isRowEnabled({}), true);
+  assert.equal(isRowEnabled({ enabled: undefined }), true);
+  assert.equal(isRowEnabled({ enabled: true }), true);
+  assert.equal(isRowEnabled({ enabled: false }), false);
+});
+
+await test('编号只数交给判断模型的行，按清单顺序从 1 连续', () => {
+  const numbered = numberTypeRows([
+    { enabled: true, description: 'a', provider: 'p', model: 'm1', effort: 'low' },
+    { enabled: false, description: 'b', provider: 'p', model: 'm2', effort: 'low' },
+    { enabled: true, description: 'c', provider: 'p', model: 'm3', effort: 'low' },
+    { description: 'd', provider: 'p', model: 'm4', effort: 'low' },
+  ]);
+  assert.deepEqual(numbered.map((r) => r.id), [1, 0, 2, 3], '关掉的行不带编号，后面的行接上');
+  assert.deepEqual(numbered.map((r) => r.description), ['a', 'b', 'c', 'd'], '顺序就是清单顺序');
+});
+
+await test('编号跳过没填全的行，有效列表没有缺号', () => {
+  const numbered = numberTypeRows([
+    { enabled: true, description: 'a', provider: 'p', model: 'm1', effort: 'low' },
+    { enabled: true, description: 'b', provider: 'p', model: '', effort: 'low' },
+    { enabled: true, description: 'c', provider: 'p', model: 'm3', effort: 'low' },
+  ]);
+  assert.deepEqual(numbered.map((r) => r.id), [1, 0, 2], '没填全的行同样不带编号');
+  const offered = selectableRows(numbered);
+  assert.deepEqual(offered.map((r) => r.id), [1, 2], '交给判断模型的编号连续，没有缺号');
+  assert.deepEqual(
+    Object.keys(buildJudgeRequest(offered, 'judge-x', '任务正文').questions.task_type.criteria),
+    ['1', '2'],
+  );
+});
+
+await test('一行都没打开时没有任何编号', () => {
+  assert.deepEqual(numberTypeRows([
+    { enabled: false, provider: 'p', model: 'm', effort: 'low' },
+    { enabled: false, provider: 'p', model: 'm', effort: 'low' },
+  ]).map((r) => r.id), [0, 0]);
+  assert.deepEqual(numberTypeRows([]).map((r) => r.id), []);
+});
+
+await test('判断请求的编号连续，关掉的行不在 criteria 里', () => {
+  const rows = numberTypeRows([
+    { enabled: true, description: '机械修改', provider: 'd1api', model: 'm1', effort: 'low' },
+    { enabled: false, description: '暂时关掉的', provider: 'd1api', model: 'm2', effort: 'low' },
+    { enabled: true, description: '评审代码', provider: 'a6api', model: 'k3', effort: 'high' },
+  ]);
+  const request = buildJudgeRequest(selectableRows(rows), 'judge-x', '任务正文');
+  assert.deepEqual(request.questions.task_type.criteria, { '1': '机械修改', '2': '评审代码' });
+});
+
+await test('预览同样只列打开的行，编号与判断请求一致', () => {
+  const rows = numberTypeRows([
+    { enabled: false, description: '暂时关掉的', provider: 'd1api', model: 'm2', effort: 'low' },
+    { enabled: true, description: '机械修改', provider: 'd1api', model: 'm1', effort: 'low' },
+  ]);
+  const preview = JSON.parse(buildPreview(selectableRows(rows), 'judge-x'));
+  assert.deepEqual(preview.questions.task_type.criteria, { '1': '机械修改' });
+});
+
+await test('预览、判断请求与答复读取用的是同一份编号', () => {
+  const offered = selectableRows(numberTypeRows([
+    { enabled: true, description: 'a', provider: 'p', model: 'm1', effort: 'low' },
+    { enabled: false, description: 'b', provider: 'p', model: 'm2', effort: 'low' },
+    { enabled: true, description: 'c', provider: 'p', model: '', effort: 'low' },
+    { enabled: true, description: 'd', provider: 'p', model: 'm4', effort: 'low' },
+  ]));
+  const request = buildJudgeRequest(offered, 'judge-x', '任务正文');
+  const preview = JSON.parse(buildPreview(offered, 'judge-x'));
+  assert.deepEqual(request.questions.task_type.criteria, { '1': 'a', '2': 'd' });
+  assert.deepEqual(preview.questions.task_type.criteria, request.questions.task_type.criteria);
+  const decision = readJudgeAnswer({ answers: { task_type: { choice: '2' } } }, offered);
+  assert.equal(decision.kind, 'row');
+  assert.equal(decision.row.description, 'd', '答复的 2 就是预览里编号 2 的那行');
+});
+
+await test('答复按打开行的编号认，关掉的行原来的位置由后面的行接上', () => {
+  const offered = selectableRows(numberTypeRows([
+    { enabled: true, description: 'A', provider: 'p', model: 'm1', effort: 'low' },
+    { enabled: false, description: 'B', provider: 'p', model: 'm2', effort: 'low' },
+    { enabled: true, description: 'C', provider: 'p', model: 'm3', effort: 'low' },
+  ]));
+  const decision = readJudgeAnswer({ answers: { task_type: { choice: '2' } } }, offered);
+  assert.equal(decision.kind, 'row');
+  assert.equal(decision.row.description, 'C');
+  // 关掉的那一行原来的位置已经没有编号了，答复它算对不上清单。
+  assert.equal(readJudgeAnswer({ answers: { task_type: { choice: '3' } } }, offered).kind, 'unmatched');
+});
+
+await test('判断选中一个被关掉的行时不改写', () => {
+  const outcome = { kind: 'matched', row: row({ enabled: false }), latencyMs: 1 };
+  const decision = decideRewrite(outcome);
+  assert.equal(decision.kind, 'none');
+  assert.equal(outcomeReason(outcome, decision), 'incomplete');
 });
 
 await test('改写成功时日志不记原因', () => {
@@ -498,7 +606,7 @@ await test('端点地址：没带路径时自动补上，已经带了就不再�
   assert.equal(resolveEndpointUrl(undefined), '');
 });
 
-await test('配置读取：编号按位置给，永远从 1 连着', () => {
+await test('配置读取：编号按清单顺序给，永远从 1 连着', () => {
   const refs = {
     enabled: { get: () => true },
     logEnabled: { get: () => true },
@@ -513,8 +621,28 @@ await test('配置读取：编号按位置给，永远从 1 连着', () => {
   };
   const config = readPluginConfig(refs);
   assert.deepEqual(config.rows.map((r) => r.id), [1, 2]);
+  assert.deepEqual(config.rows.map((r) => r.enabled), [true, true], '存储里没写 enabled 的行当作打开');
   assert.equal(config.rows[1].description, 'b');
   assert.equal(config.endpointUrl, 'http://judge.invalid/v1/systemone', '读出来的是拼好的完整地址');
+});
+
+await test('配置读取：关掉的行留在清单里但不占编号', () => {
+  const refs = {
+    enabled: { get: () => true },
+    logEnabled: { get: () => true },
+    endpointUrl: { get: () => 'http://judge.invalid' },
+    judgeModel: { get: () => 'judge-x' },
+    rows: {
+      get: () => [
+        { description: 'a', provider: 'p', model: 'm1', effort: 'low' },
+        { enabled: false, description: 'b', provider: 'p', model: 'm2', effort: 'high' },
+        { enabled: true, description: 'c', provider: 'p', model: 'm3', effort: 'low' },
+      ],
+    },
+  };
+  const config = readPluginConfig(refs);
+  assert.deepEqual(config.rows.map((r) => [r.id, r.enabled]), [[1, true], [0, false], [2, true]]);
+  assert.deepEqual(config.rows.map((r) => r.description), ['a', 'b', 'c'], '顺序就是清单顺序');
 });
 
 await test('配置读取：判断可用要求开关开、端点与模型都在、且有一行填全', () => {
@@ -529,6 +657,8 @@ await test('配置读取：判断可用要求开关开、端点与模型都在�
   assert.equal(isJudgeUsable({ ...base, judgeModel: '' }), false);
   assert.equal(isJudgeUsable({ ...base, rows: [row({ id: 1, model: '' })] }), false);
   assert.equal(isJudgeUsable({ ...base, rows: [] }), false);
+  // 行都在、也填得全，但全被关掉：没有可选项，判断无从谈起。
+  assert.equal(isJudgeUsable({ ...base, rows: [row({ id: 0, enabled: false })] }), false);
 });
 
 // 连通性检查问的是「这个地址与模型能不能答」，不是「能不能在你写的清单里挑一行」，

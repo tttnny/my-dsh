@@ -8,8 +8,14 @@
 
 /** One row of the task-type list: what the judge reads, and what it selects. */
 export interface TypeRow {
-  /** Sequence number the page assigns and the judge answers with. */
+  /**
+   * Sequence number the page assigns and the judge answers with, counted over
+   * the rows the judge is offered — switched on and filled in. 0 for a row that
+   * is not offered, which has no number.
+   */
   id: number;
+  /** Whether this type takes part in judgements at all. */
+  enabled: boolean;
   /** Free-form description the judge reads as this type's criterion. */
   description: string;
   /** Provider route of the model this type runs on. */

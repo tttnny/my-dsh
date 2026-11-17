@@ -293,7 +293,9 @@ await test('没有保存按钮：试通在判断服务标题行，导入导出�
   // 行上只剩「删掉」：说明放不下时点进格子看，不再单开一个弹窗。
   const rowButtons = [...(container.querySelector('.dsh-judge-table tbody tr')?.querySelectorAll('button') ?? [])]
     .map((node) => node.textContent?.trim());
-  assert.deepEqual(rowButtons, [zh['rows.remove']], '行上不再有「查看」');
+  assert.deepEqual(rowButtons, ['⠿', zh['rows.remove']]);
+  assert.equal(container.querySelector('.dsh-judge-table thead')?.textContent?.includes('编号'), false);
+  assert.ok(container.querySelector('.dsh-judge-table tbody input[type=checkbox]'));
 
   // 预览同时用到判断模型与类型清单，哪一节都不独占，单独排在两节之外。
   const preview = buttonByText(zh['preview.open']);
@@ -407,7 +409,7 @@ await test('行的问题写在编号列下方', async () => {
   await click(buttonIn(rowsSection(), zh['rows.add']));
   const rows = [...container.querySelectorAll('.dsh-judge-table tbody tr')];
   const added = rows.at(-1);
-  const numberCell = added?.children[0]?.textContent ?? '';
+  const numberCell = added?.children[1]?.textContent ?? '';
   assert.ok(numberCell.includes(zh['rows.incomplete']), '新行还没填全，编号列要说「不生效」');
   assert.ok(numberCell.includes(zh['rows.hintNoDescription']), '新行没有描述，编号列要说出来');
 });
@@ -418,7 +420,7 @@ await test('导出把整份清单按纯 JSON 复制走', async () => {
   await click(buttonIn(rowsSection(), zh['rows.export']));
   const parsed = JSON.parse(clipboard.text ?? 'null');
   assert.deepEqual(parsed, [
-    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low', enabled: true },
   ], '导出的是清单本身，不带编号');
   assert.equal(container.textContent?.includes(zh['rows.exported']), true, '复制成功要说一声');
 });
@@ -463,9 +465,27 @@ await test('导入是粘贴，粘进来的清单直接替换并立即写入', as
   const rowsWrite = writes.at(-1)?.find((op) => op.path[0] === 'rows');
   assert.ok(rowsWrite !== undefined, '导入之后应当已经写了一次 rows');
   assert.deepEqual(rowsWrite.value, [
-    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
-    { description: '跑测试', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
+    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high', enabled: true },
+    { description: '跑测试', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low', enabled: true },
   ]);
+});
+
+await test('每行开关和拖拽排序写入清单', async () => {
+  const getRows = () => [...container.querySelectorAll('.dsh-judge-table tbody tr')];
+  const first = getRows()[0];
+  await click(first.querySelector('input[type=checkbox]'));
+  await act(async () => { await new Promise((tick) => setTimeout(tick, 0)); });
+  assert.equal(writes.at(-1)[0].value[0].enabled, false);
+  const handle = first.querySelector('.dsh-judge-drag');
+  const dataTransfer = { effectAllowed: '', setData() {} };
+  await act(async () => {
+    const start = new dom.window.Event('dragstart', { bubbles: true });
+    Object.defineProperty(start, 'dataTransfer', { value: dataTransfer });
+    handle.dispatchEvent(start);
+    getRows()[1].dispatchEvent(new dom.window.Event('drop', { bubbles: true, cancelable: true }));
+    await new Promise((tick) => setTimeout(tick, 0));
+  });
+  assert.deepEqual(writes.at(-1)[0].value.map(row => [row.description, row.enabled]), [['跑测试', true], ['评审代码', false]]);
 });
 
 await test('粘进来的不是清单时说清楚是哪一种问题', async () => {

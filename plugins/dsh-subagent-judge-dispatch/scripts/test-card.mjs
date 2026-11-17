@@ -384,8 +384,24 @@ await test('导入整份清单后立即写入', async () => {
   await store.commit('rows');
   assert.equal(host.writes.length, 1);
   assert.deepEqual(host.writes[0][0].value, [
-    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high', enabled: true },
   ]);
+});
+
+await test('排序与开关立即保存并保留行内容', async () => {
+  const { store, host } = makeStore();
+  store.replaceRows([
+    { description: '甲', provider: 'p', model: 'a', effort: 'low', enabled: true },
+    { description: '乙', provider: 'p', model: 'b', effort: 'high', enabled: true },
+  ]);
+  await store.commit('rows');
+  store.toggleRow(1, false);
+  await store.commit('rows');
+  store.moveRow(1, 0);
+  await store.commit('rows');
+  const rows = host.writes.at(-1)[0].value;
+  assert.deepEqual(rows.map(row => [row.description, row.enabled]), [['乙', false], ['甲', true]]);
+  assert.deepEqual(parseRowsJson(exportRowsJson(rows)).rows, rows);
 });
 
 await test('加一行与删一行都当场写入', async () => {
@@ -509,35 +525,35 @@ await test('模型选项只列宿主允许的路由，并带上它声明的强�
 
 await test('存下来的行读得回来，缺字段当空串', () => {
   assert.deepEqual(readRow({ description: 'a', provider: 'p' }), {
-    description: 'a', provider: 'p', model: '', effort: '',
+    description: 'a', provider: 'p', model: '', effort: '', enabled: true,
   });
-  assert.deepEqual(readRow(null), { description: '', provider: '', model: '', effort: '' });
+  assert.deepEqual(readRow(null), { description: '', provider: '', model: '', effort: '', enabled: true });
 });
 
 await test('「选择」一列写模型与强度，供应商留给悬停的整段路', () => {
-  const row = { provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'high' };
+  const row = { provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'high', enabled: true };
   assert.equal(describeModel(row), 'deepseek/deepseek-flash · high');
   assert.equal(describeChoice(row), 'magpie · deepseek/deepseek-flash · high');
 });
 
 await test('两条路都不留下悬空的分隔点', () => {
-  assert.equal(describeModel({ model: 'm', effort: '' }), 'm');
-  assert.equal(describeChoice({ provider: 'magpie', model: 'm', effort: '' }), 'magpie · m');
-  assert.equal(describeChoice({ provider: '', model: 'm', effort: 'low' }), 'm · low');
-  assert.equal(describeChoice({ provider: '  ', model: '  ', effort: '  ' }), '');
-  assert.equal(describeModel({ model: '  ', effort: '  ' }), '');
+  assert.equal(describeModel({ model: 'm', effort: '', enabled: true }), 'm');
+  assert.equal(describeChoice({ provider: 'magpie', model: 'm', effort: '', enabled: true }), 'magpie · m');
+  assert.equal(describeChoice({ provider: '', model: 'm', effort: 'low', enabled: true }), 'm · low');
+  assert.equal(describeChoice({ provider: '  ', model: '  ', effort: '  ', enabled: true }), '');
+  assert.equal(describeModel({ model: '  ', effort: '  ', enabled: true }), '');
 });
 
 await test('带一条没填完的行也能读了再粘回来（导出与导入往返）', () => {
   const rows = [
-    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
-    { description: '', provider: '', model: '', effort: '' },
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low', enabled: true },
+    { description: '', provider: '', model: '', effort: '', enabled: true },
   ];
   const text = exportRowsJson(rows);
   assert.deepEqual(JSON.parse(text), [rows[0]], '空白行不写进 JSON');
   assert.deepEqual(parseRowsJson(text), { ok: true, rows: [rows[0]] });
 
-  const pasted = JSON.stringify([rows[0], { description: '', provider: '', model: '', effort: '' }]);
+  const pasted = JSON.stringify([rows[0], { description: '', provider: '', model: '', effort: '', enabled: true }]);
   assert.deepEqual(parseRowsJson(pasted), { ok: true, rows: [rows[0]] });
 });
 
@@ -549,19 +565,19 @@ await test('整份都是空行时算空清单', () => {
 
 await test('导出就是清单本身，不带编号', () => {
   const text = exportRowsJson([
-    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
-    { description: '评审代码', provider: '', model: '', effort: '' },
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low', enabled: true },
+    { description: '评审代码', provider: '', model: '', effort: '', enabled: true },
   ]);
   assert.deepEqual(JSON.parse(text), [
-    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
-    { description: '评审代码', provider: '', model: '', effort: '' },
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low', enabled: true },
+    { description: '评审代码', provider: '', model: '', effort: '', enabled: true },
   ]);
 });
 
 await test('导出的文本读回来还是那几条', () => {
   const rows = [
-    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' },
-    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+    { description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low', enabled: true },
+    { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high', enabled: true },
   ];
   assert.deepEqual(parseRowsJson(exportRowsJson(rows)), { ok: true, rows });
 });
@@ -578,12 +594,12 @@ await test('导入认不出 JSON、不是数组、字段不是文字，各报各
 await test('导入认得缺字段与多出来的字段', () => {
   const result = parseRowsJson(JSON.stringify([
     { description: '只有描述' },
-    { description: '多一个字段', provider: 'p', model: 'm', effort: 'low', extra: '不认识的' },
+    { description: '多一个字段', provider: 'p', model: 'm', effort: 'low', enabled: true, extra: '不认识的' },
   ]));
   assert.equal(result.ok, true);
   assert.deepEqual(result.rows, [
-    { description: '只有描述', provider: '', model: '', effort: '' },
-    { description: '多一个字段', provider: 'p', model: 'm', effort: 'low' },
+    { description: '只有描述', provider: '', model: '', effort: '', enabled: true },
+    { description: '多一个字段', provider: 'p', model: 'm', effort: 'low', enabled: true },
   ]);
 });
 

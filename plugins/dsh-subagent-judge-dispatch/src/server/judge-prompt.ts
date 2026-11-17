@@ -10,6 +10,10 @@
  *   every malformed, empty or off-list answer as "no decision" rather than
  *   inventing one.
  *
+ * The list rules live here as well, because the criteria map IS the list: which
+ * rows are offered ({@link selectableRows}) and what number each carries
+ * ({@link numberTypeRows}).
+ *
  * The protocol is the System One one: POST a body of `{ model, state,
  * questions }`, where each question is a `choice` carrying an `instructions`
  * line and a `criteria` map of option id to the text that option means. The
@@ -87,12 +91,69 @@ export function isSelectableRow(row: Pick<TypeRow, 'provider' | 'model' | 'effor
 }
 
 /**
+ * Whether one row is switched on.
+ *
+ * A row that is switched off stays in the list — the reader keeps it there to
+ * turn it back on later — but takes no part in a judgement and carries no
+ * number. A missing value counts as switched on, so a row written before the
+ * switch existed keeps working.
+ *
+ * The parameter is narrowed to the one field the rule reads, so a stored row, a
+ * numbered row and the page's draft row all satisfy it.
+ *
+ * @param row - one row, stored or drafted.
+ * @returns whether the row takes part in judgements.
+ */
+export function isRowEnabled(row: { enabled?: boolean }): boolean {
+  return row.enabled !== false;
+}
+
+/** The fields a row must carry to be judged: the switch, and the route it runs on. */
+type RowOffering = { enabled?: boolean } & Pick<TypeRow, 'provider' | 'model' | 'effort'>;
+
+/**
+ * Whether one row is offered to the judge: switched on, and its route filled in.
+ *
+ * The two conditions are one rule because the judge's list is exactly the rows
+ * that pass both — a row switched off is one the reader does not want judged,
+ * and a half-filled row could be chosen and then have nothing to write.
+ *
+ * @param row - one row, stored, numbered or drafted.
+ * @returns whether the judge may choose it.
+ */
+export function isOfferedRow(row: RowOffering): boolean {
+  return isRowEnabled(row) && isSelectableRow(row);
+}
+
+/**
  * Which rows may be offered to the judge.
  * @param rows - every row on the page, in page order.
  * @returns the rows the judge may choose, in page order.
  */
 export function selectableRows(rows: readonly TypeRow[]): TypeRow[] {
-  return rows.filter(isSelectableRow);
+  return rows.filter(isOfferedRow);
+}
+
+/**
+ * Number the rows the judge is offered, in list order.
+ *
+ * The number is positional and never stored: switching a row off, filling one
+ * in, or moving it renumbers the rest. A row that is not offered carries 0 — it
+ * has no number to be answered with — so the criteria map is numbered 1..n with
+ * no gaps, and the preview, the request and the answer all read the same list.
+ *
+ * @param rows - the rows as the page holds them, in page order.
+ * @returns the rows with their numbers applied, in the same order.
+ */
+export function numberTypeRows<T extends RowOffering>(
+  rows: readonly T[],
+): (T & { id: number })[] {
+  let next = 0;
+  return rows.map((row) => {
+    if (!isOfferedRow(row)) return { ...row, id: 0 };
+    next += 1;
+    return { ...row, id: next };
+  });
 }
 
 /**

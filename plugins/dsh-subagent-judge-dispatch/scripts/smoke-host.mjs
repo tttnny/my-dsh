@@ -452,6 +452,105 @@ await test('清单里没有填全的行时不判断', async () => {
   assert.equal(called, false);
 });
 
+await test('关掉的任务类型不发给判断模型，编号由后面的行接上', async () => {
+  const mounted = mount({
+    rows: [
+      { description: '机械修改', provider: 'd1api', model: 'deepseek-v4.1-flash', effort: 'low' },
+      { enabled: false, description: '暂时关掉的', provider: 'g1api', model: 'gpt-x', effort: 'high' },
+      { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+    ],
+  });
+  let body;
+  const result = await judgeOnce(mounted.handlers, childAgent('child-disabled'), async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.deepEqual(Object.keys(body.questions.task_type.criteria), ['1', '2'], '编号连续，关掉的行不占号');
+  assert.equal(body.questions.task_type.criteria['2'], '评审代码');
+  assert.equal(result.model, 'kimi-k3', '答复的 2 是清单里第三条那行');
+});
+
+await test('没填全的行不占编号，判断模型收到的编号连续', async () => {
+  const mounted = mount({
+    rows: [
+      { description: '机械修改', provider: 'd1api', model: 'deepseek-v4.1-flash', effort: 'low' },
+      { description: '还没填完的', provider: 'g1api', model: '', effort: 'high' },
+      { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+    ],
+  });
+  let body;
+  const result = await judgeOnce(mounted.handlers, childAgent('child-incomplete'), async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.deepEqual(Object.keys(body.questions.task_type.criteria), ['1', '2']);
+  assert.equal(body.questions.task_type.criteria['2'], '评审代码');
+  assert.equal(result.model, 'kimi-k3', '答复的 2 是第三条那行，不是第二条');
+});
+
+await test('预览路由与判断请求读同一份编号', async () => {
+  const mounted = mount({
+    rows: [
+      { description: '机械修改', provider: 'd1api', model: 'deepseek-v4.1-flash', effort: 'low' },
+      { enabled: false, description: '关掉的', provider: 'g1api', model: 'gpt-x', effort: 'high' },
+      { description: '还没填完的', provider: 'g1api', model: '', effort: 'high' },
+      { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+    ],
+  });
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+  const previewRoute = mounted.routes.find((route) => route.path === '/api/dsh-subagent-judge-dispatch/preview');
+  const previewBody = await (await previewRoute.fetch(new Request('http://host/api/preview'), {})).json();
+  const criteria = JSON.parse(previewBody.preview).questions.task_type.criteria;
+  assert.deepEqual(criteria, { '1': '机械修改', '2': '评审代码' });
+
+  let sent;
+  const result = await judgeOnce(mounted.handlers, childAgent('child-preview-match'), async (_url, init) => {
+    sent = JSON.parse(init.body);
+    return new Response(JSON.stringify({ answers: { task_type: { choice: '2' } } }), { status: 200 });
+  });
+  assert.deepEqual(sent.questions.task_type.criteria, criteria, '预览的就是真正发出去的那份');
+  assert.equal(result.model, 'kimi-k3');
+});
+
+await test('答复指向关掉那行原来的位置时一个字段都不写', async () => {
+  const mounted = mount({
+    rows: [
+      { description: '机械修改', provider: 'd1api', model: 'deepseek-v4.1-flash', effort: 'low' },
+      { enabled: false, description: '暂时关掉的', provider: 'g1api', model: 'gpt-x', effort: 'high' },
+    ],
+  });
+  const result = await judgeOnce(mounted.handlers, childAgent('child-disabled-gap'), answer('2'));
+  assert.equal(result, undefined, '只开了一行，答复 2 对不上清单');
+});
+
+await test('所有任务类型都关掉时不判断', async () => {
+  const mounted = mount({
+    rows: [{ enabled: false, description: '关掉的', provider: 'd1api', model: 'deepseek-v4.1-flash', effort: 'low' }],
+  });
+  let called = false;
+  const result = await judgeOnce(mounted.handlers, childAgent('child-all-off'), async () => {
+    called = true;
+    return new Response('{}', { status: 200 });
+  });
+  assert.equal(result, undefined);
+  assert.equal(called, false, '没有可选项就不该发请求');
+});
+
+await test('日志记的是打开行的编号', async () => {
+  const mounted = mount({
+    rows: [
+      { enabled: false, description: '暂时关掉的', provider: 'g1api', model: 'gpt-x', effort: 'high' },
+      { description: '评审代码', provider: 'a6api', model: 'kimi-k3', effort: 'high' },
+    ],
+  });
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+  const logRoute = mounted.routes.find((route) => route.path === '/api/dsh-subagent-judge-dispatch/log');
+  await judgeOnce(mounted.handlers, childAgent('child-log-number'), answer('1'));
+  const body = await (await logRoute.fetch(new Request('http://host/api/log'), {})).json();
+  assert.equal(body.entries[0].typeId, 1, '关掉的行不占编号，第二条那行是 1');
+  assert.equal(body.entries[0].model, 'kimi-k3');
+});
+
 await test('发送的请求体形状：一个问题、编号为键、描述为值', async () => {
   let body;
   await judgeOnce(handlers, childAgent('child-body', '评审一处改动', '评审 src 下这一组改动'), async (_url, init) => {

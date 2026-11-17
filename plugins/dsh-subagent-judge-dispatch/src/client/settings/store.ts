@@ -34,6 +34,7 @@ export interface TypeRowDraft {
   provider: string;
   model: string;
   effort: string;
+  enabled: boolean;
 }
 
 /** One selectable model and the efforts it declares. */
@@ -231,6 +232,7 @@ export function readRow(value: unknown): TypeRowDraft {
     provider: text('provider'),
     model: text('model'),
     effort: text('effort'),
+    enabled: record.enabled !== false,
   };
 }
 
@@ -406,6 +408,7 @@ export function exportRowsJson(rows: readonly TypeRowDraft[]): string {
       provider: row.provider,
       model: row.model,
       effort: row.effort,
+      enabled: row.enabled,
     })),
     null,
     2,
@@ -455,13 +458,14 @@ export function parseRowsJson(text: string): RowsImport {
     // 字段存在但不是文字，是形状不对；缺字段当作空串，那是合法的残缺记录。
     const wrongType = ['description', 'provider', 'model', 'effort']
       .some((key) => record[key] !== undefined && typeof record[key] !== 'string');
-    if (wrongType) return { ok: false, error: 'shape' };
+    if (wrongType || (record.enabled !== undefined && typeof record.enabled !== 'boolean')) return { ok: false, error: 'shape' };
     const field = (key: string): string => (typeof record[key] === 'string' ? (record[key] as string) : '');
     const row = {
       description: field('description'),
       provider: field('provider'),
       model: field('model'),
       effort: field('effort'),
+      enabled: record.enabled !== false,
     };
     // 空白行照收不误、直接跳过：导出会带来这种行，拒收会让这份 JSON 自己读不回来。
     if (isBlankRow(row)) continue;
@@ -758,7 +762,7 @@ export class DispatchCardStore {
   }
 
   /** Stage one cell of one row; a text cell commits on blur, a menu choice at once. */
-  cell(index: number, key: keyof TypeRowDraft, value: string): void {
+  cell(index: number, key: Exclude<keyof TypeRowDraft, 'enabled'>, value: string): void {
     const rows = this.state.rows.map((row, at) => (at === index ? { ...row, [key]: value } : row));
     // Choosing a model drops an effort that model does not declare, so a write can
     // never carry an effort the selected route cannot run.
@@ -781,7 +785,7 @@ export class DispatchCardStore {
 
   /** Append an empty row and write it: a new row is a decision like any other. */
   addRow(): void {
-    this.stage({ rows: [...this.state.rows, { description: '', provider: '', model: '', effort: '' }] });
+    this.stage({ rows: [...this.state.rows, { description: '', provider: '', model: '', effort: '', enabled: true }] });
     void this.commit('rows');
   }
 
@@ -795,7 +799,7 @@ export class DispatchCardStore {
    * @param rows - the rows read from the pasted JSON.
    */
   replaceRows(rows: readonly TypeRowDraft[]): void {
-    this.stage({ rows: rows.map((row) => ({ ...row })) });
+    this.stage({ rows: rows.map(readRow) });
     void this.commit('rows');
   }
 
@@ -814,6 +818,20 @@ export class DispatchCardStore {
       judgeModel: draft.judgeModel,
     });
     void this.commit('judge');
+  }
+
+  toggleRow(index: number, enabled: boolean): void {
+    this.stage({ rows: this.state.rows.map((row, at) => at === index ? { ...row, enabled } : row) });
+    void this.commit('rows');
+  }
+
+  moveRow(from: number, to: number): void {
+    if (from === to || from < 0 || to < 0 || from >= this.state.rows.length || to >= this.state.rows.length) return;
+    const rows = [...this.state.rows];
+    const [moved] = rows.splice(from, 1);
+    rows.splice(to, 0, moved);
+    this.stage({ rows });
+    void this.commit('rows');
   }
 
   /** Delete one row and write the rest; the remaining rows renumber themselves. */

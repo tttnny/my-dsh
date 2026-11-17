@@ -11,7 +11,7 @@
  * (`resolveChildAgentOptions` deletes it when a route changes without one).
  */
 
-import { isSelectableRow } from './judge-prompt.ts';
+import { isOfferedRow } from './judge-prompt.ts';
 import type { FallbackReason, JudgeOutcome, TypeRow } from './types.ts';
 
 /** The three fields a rewrite carries, all present or none at all. */
@@ -39,9 +39,9 @@ export type DispatchDecision =
 export function decideRewrite(outcome: JudgeOutcome): DispatchDecision {
   if (outcome.kind !== 'matched') return { kind: 'none' };
   const row: TypeRow = outcome.row;
-  // A row the judge could select but that is missing a piece is not a rewrite
-  // this plugin may make; leaving the child alone is always safe.
-  if (!isSelectableRow(row)) return { kind: 'none' };
+  // A row the judge could select but that is switched off or missing a piece is
+  // not a rewrite this plugin may make; leaving the child alone is always safe.
+  if (!isOfferedRow(row)) return { kind: 'none' };
   return {
     kind: 'rewrite',
     rewrite: {
@@ -58,8 +58,9 @@ export function decideRewrite(outcome: JudgeOutcome): DispatchDecision {
  * The judge answering nothing, the judge answering a number this list does not
  * have, an unreachable endpoint and an expired budget are four different fixes
  * for the reader — "it answered nothing" points at the endpoint, "no listed
- * type" points at the descriptions. A selected row that turned out to be missing
- * a field is a fifth: the judgement worked, the row it named was not usable.
+ * type" points at the descriptions. A selected row that turned out to be switched
+ * off or missing a field is a fifth: the judgement worked, the row it named was
+ * not usable.
  *
  * A judgement that produced a rewrite has no reason at all.
  *

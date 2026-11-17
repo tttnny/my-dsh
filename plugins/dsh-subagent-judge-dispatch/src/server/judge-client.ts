@@ -80,6 +80,7 @@ export async function probeJudge(
     // different option means the endpoint did not read the request it was sent.
     return readJudgeAnswer(payload, [{
       id: Number(PROBE_OPTION_ID),
+      enabled: true,
       description: '',
       provider: '',
       model: '',

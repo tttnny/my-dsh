@@ -159,11 +159,12 @@ const CARD_CSS = `
 .dsh-judge-table td { padding: 6px 8px 6px 0; vertical-align: middle; }
 .dsh-judge-table tbody tr + tr td { border-top: 0.5px solid var(--dsw-alias-border-l3); }
 .dsh-judge-table td:last-child, .dsh-judge-table th:last-child { padding-right: 0; }
-.dsh-judge-col-no { width: 84px; }
+.dsh-judge-col-drag { width: 36px; }
+.dsh-judge-drag { border: 0; padding: 4px; background: transparent; cursor: grab; color: var(--dsw-alias-label-tertiary); font: inherit; }
+.dsh-judge-drag:active { cursor: grabbing; }
 .dsh-judge-col-model { width: 188px; }
 .dsh-judge-col-effort { width: 124px; }
-.dsh-judge-col-actions { width: 96px; }
-.dsh-judge-no { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); font-variant-numeric: tabular-nums; }
+.dsh-judge-col-actions { width: 130px; }
 .dsh-judge-row-off .dsh-judge-field { opacity: 0.6; }
 .dsh-judge-cell-actions { display: flex; gap: 6px; }
 .dsh-judge-log { display: flex; flex-direction: column; gap: 4px; font: var(--dsw-font-xxs-12); }
@@ -230,6 +231,7 @@ export function JudgeDispatchPanel(
 
   const [state, setState] = useState<PageState>(() => dispatchCardStore.getState());
   const [tab, setTab] = useState<'design' | 'log'>('design');
+  const dragIndex = React.useRef<number | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [probing, setProbing] = useState(false);
@@ -340,21 +342,38 @@ export function JudgeDispatchPanel(
       : null
   );
 
-  /** One task-type row as three cells plus its row number and its actions. */
+  /** One editable task-type row. */
   const row = (draft: TypeRowDraft, index: number): React.ReactElement => {
     const efforts = dispatchCardStore.effortsFor(draft);
     const usable = dispatchCardStore.rowUsable(draft);
     // 只有「目录读到了、且这个路由确实声明了档位」时才给下拉；否则自由填写。
     const catalogOffersEffort = state.catalogRead && efforts.length > 0;
     return (
-      <tr key={index} className={usable ? undefined : 'dsh-judge-row-off'}>
-        <td className="dsh-judge-col-no">
-          <span className="dsh-judge-no">{index + 1}</span>
+      <tr key={index} className={usable && draft.enabled ? undefined : 'dsh-judge-row-off'}
+        onDragOver={(event) => { if (dragIndex.current !== null) event.preventDefault(); }}
+        onDrop={(event) => {
+          event.preventDefault();
+          if (dragIndex.current !== null) dispatchCardStore.moveRow(dragIndex.current, index);
+          dragIndex.current = null;
+          setOpenMenu(null);
+        }}
+      >
+        <td className="dsh-judge-col-drag">
+          <button type="button" className="dsh-judge-drag" draggable={state.writable} disabled={!state.writable} aria-label={`${t('rows.drag')}: ${draft.description}`}
+            onDragStart={(event) => { dragIndex.current = index; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); }}
+            onDragEnd={() => { dragIndex.current = null; }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                event.preventDefault();
+                dispatchCardStore.moveRow(index, index + (event.key === 'ArrowUp' ? -1 : 1));
+              }
+            }}
+          >⠿</button>
+        </td>
+        <td>
           {rowHints(state.rows, index, t).map((hint) => (
             <span key={hint} className="dsh-judge-off">{hint}</span>
           ))}
-        </td>
-        <td>
           <Input
             type="text"
             className="dsh-judge-field"
@@ -450,6 +469,8 @@ export function JudgeDispatchPanel(
         </td>
         <td className="dsh-judge-col-actions">
           <div className="dsh-judge-cell-actions">
+            <Switch checked={draft.enabled} onChange={(next: boolean) => dispatchCardStore.toggleRow(index, next)}
+              label={`${t('rows.enabled')}: ${draft.description}`} disabled={!state.writable} />
             <Button
               variant="outline"
               size="sm"
@@ -650,7 +671,7 @@ export function JudgeDispatchPanel(
           <table className="dsh-judge-table">
             <thead>
               <tr>
-                <th className="dsh-judge-col-no">{t('rows.colId')}</th>
+                <th className="dsh-judge-col-drag" />
                 <th>{t('rows.colType')}</th>
                 <th className="dsh-judge-col-model">{t('rows.colModel')}</th>
                 <th className="dsh-judge-col-effort">{t('rows.colEffort')}</th>
