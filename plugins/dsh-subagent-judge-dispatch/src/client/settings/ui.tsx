@@ -247,6 +247,7 @@ export function JudgeDispatchPanel(
   const [importError, setImportError] = useState('');
   /** What the last export did, shown in the section that did it. */
   const [copyNote, setCopyNote] = useState<{ ok: boolean; text: string; section: ImportSection } | null>(null);
+  const [logCopyResult, setLogCopyResult] = useState<boolean | null>(null);
 
   useEffect(() => {
     setState(dispatchCardStore.getState());
@@ -706,10 +707,20 @@ export function JudgeDispatchPanel(
       <div className="dsh-judge-section">
         <div className="dsh-judge-head">
           <span className="dsh-judge-title">{t('log.title')}</span>
-          <Button variant="outline" size="sm" onClick={() => void dispatchCardStore.refreshLog()}>
-            {t('log.refresh')}
-          </Button>
+          <div className="dsh-judge-actions-group">
+            <Button variant="outline" size="sm" onClick={() => void writeClipboard(t('log.analysisPrompt')).then(setLogCopyResult)}>
+              {t('log.copyAnalysis')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void dispatchCardStore.refreshLog()}>
+              {t('log.refresh')}
+            </Button>
+          </div>
         </div>
+        {logCopyResult !== null && (
+          <div className={logCopyResult ? 'dsh-judge-note-ok' : 'dsh-judge-note-bad'} role="status">
+            {t(logCopyResult ? 'log.analysisCopied' : 'log.analysisCopyFailed')}
+          </div>
+        )}
         <div className="dsh-judge-desc">{t('log.desc')}</div>
         {state.logFailed && <div className="dsh-judge-note-bad">{t('log.loadFailed')}</div>}
         {state.logLoaded && state.log.length === 0 && (

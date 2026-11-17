@@ -518,6 +518,23 @@ await test('点开日志页后，六列按顺序摆好', async () => {
   );
 });
 
+await test('日志页复制分析提示词并反馈结果', async () => {
+  const head = container.querySelector('.dsh-judge-section .dsh-judge-head');
+  assert.deepEqual([...head.querySelectorAll('button')].map(node => node.textContent.trim()), [zh['log.copyAnalysis'], zh['log.refresh']]);
+  clipboard.text = null;
+  clipboardWorks = true;
+  await click(buttonByText(zh['log.copyAnalysis']));
+  assert.equal(clipboard.text, zh['log.analysisPrompt']);
+  assert.match(clipboard.text, /最近 100 条/);
+  assert.match(clipboard.text, /judgements\.json/);
+  assert.match(clipboard.text, /当次请求/);
+  assert.equal(container.querySelector('[role=status]')?.textContent, zh['log.analysisCopied']);
+  clipboardWorks = false;
+  await click(buttonByText(zh['log.copyAnalysis']));
+  assert.equal(container.querySelector('[role=status]')?.textContent, zh['log.analysisCopyFailed']);
+  clipboardWorks = true;
+});
+
 await test('「结果」列写「类型 3」与「未判成」，不写编号以外的花话', async () => {
   const rows = [...container.querySelectorAll('.dsh-judge-log-row:not(.dsh-judge-log-head)')];
   assert.equal(rows.length, 2);
