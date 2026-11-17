@@ -30,7 +30,9 @@ if ! printf '%s' "$subject" | grep -Eq '^(feat|fix|docs|chore|refactor|test|perf
   exit 1
 fi
 
-length=$(printf '%s' "$subject" | wc -m | tr -d ' ')
+# 按字符数算，不按字节：不指定 UTF-8 时 wc -m 在 C locale 下数的是字节，
+# 一句中文标题会被算成三倍长度（本仓库踩过）。
+length=$(printf '%s' "$subject" | LC_ALL=C.UTF-8 wc -m | tr -d ' ')
 if [ "$length" -gt 72 ]; then
   echo "commit-msg: 标题 $length 个字符，超过 72 —— 细节放正文" >&2
   exit 1
