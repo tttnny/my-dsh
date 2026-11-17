@@ -72,6 +72,11 @@ const ledger = run(['node', join(root, 'tools/assert-ledger.mjs')], root, !json)
 results.push({ name: '（仓库台账）', command: 'node tools/assert-ledger.mjs', ...ledger });
 if (!json) console.log(ledger.status === 0 ? 'check: 台账通过' : 'check: 台账不通过');
 
+// 详情文档与配图：每个包都要有 meta.detail、成对的文档与自包含 SVG，发布后才读得到。
+const detail = run(['node', join(root, 'tools/assert-detail.mjs')], root, !json);
+results.push({ name: '（详情文档与配图）', command: 'node tools/assert-detail.mjs', ...detail });
+if (!json) console.log(detail.status === 0 ? 'check: 详情文档与配图通过' : 'check: 详情文档与配图不通过');
+
 let blocked = false;
 if (!ledgerOnly) {
   for (const entry of listPackages(root)) {

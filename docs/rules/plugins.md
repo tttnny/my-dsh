@@ -6,7 +6,7 @@
 
 一个插件一个目录：目录名 `dsh-<name>`，npm 包名 `@lynn123411/dsh-<name>`，目录内含 `README.md`。发布形态是 **bundle 包**：`package.json` 声明 `dsh.bundle.patch`，安装时包名自动登记进 profile 的 `dsh.profile.bundles`；形态标在根 `README.md` 的「说明」列。
 
-新建插件用 `node tools/new-plugin.mjs dsh-<name>`（`--host-only` 只铺宿主半边）：它按当前内核基线生成 package.json、tsconfig、build.mjs、`cordis.patch.yml`、两半边的自检骨架、README（三节：`## 功能` / `## 特性` / `## 安装`）、locale 与图标，生成即 `pnpm check` 绿；收尾只有两步（根 README 加一行、改 `src/` 里的 TODO），它会把这两步打出来。
+新建插件用 `node tools/new-plugin.mjs dsh-<name>`（`--host-only` 只铺宿主半边）：它按当前内核基线生成 package.json、tsconfig、build.mjs、`cordis.patch.yml`、两半边的自检骨架、README（七节）、`docs/` 下的详情文档与占位配图、locale 与图标，生成即 `pnpm check` 绿；收尾只有两步（根 README 加一行、改 `src/` 里的 TODO），它会把这两步打出来。
 
 ## 许可
 
@@ -14,9 +14,11 @@
 
 ## 插件 README
 
-正文固定三节（范例 `plugins/dsh-model-submenu/README.md`），顺序与名称都不改：一级标题 `# @lynn123411/dsh-<name>` 下面先用一段话概括这个插件是什么，然后依次是 `## 功能`——用 `- **功能名**：说明` 列表，只写用户能做什么；`## 特性`——用同一种列表，写实现形态、分工边界与硬保证；`## 安装`——给 `dsh plugin --profile web add @lynn123411/dsh-<name>` 代码块。这三节之外**不再加节**：装配形态、配置说明、开发副本、验证清单这类长篇内容放同目录的 `DETAILS.md`，README 里留一句指针（npm 的 `files` 要带上它）。
+正文固定七节（范例 `plugins/dsh-notify-user/README.md`），顺序与名称都不改：一级标题 `# @lynn123411/dsh-<name>` 下面先用一段话概括这个插件是什么，然后依次是 `## 概述`、`## 安装与开关`、`## 配置`、`## 实现`、`## 模型体验`、`## 限制`、`## 验证`。README 是包的唯一长文档：装配形态、配置项、实现细节、验证清单都写在这里，不再另设 `DETAILS.md`。
 
-只写现状：每条都是当前行为，不写版本号、变更叙事、上游来源（形态标在根 `README.md` 表格）。要写验证记录（实测日期、对照实验）就写进 `DETAILS.md`，README 只留验证怎么做、结果在哪。
+插件页的详情文档是另一份：`docs/DETAIL.md` 与 `docs/DETAIL.zh.md` 各一行图，配图放同目录的 `docs/preview.svg` 与 `docs/preview.zh.svg`；`locale/<语言>.json` 的 `meta.detail` 指向它，`files` 带 `docs`。文件成对与图片形态由 `node tools/assert-detail.mjs` 检查；配图怎么选材（画效果，不画页面下方已有的配置卡）、怎么取真实界面、怎么量数值、怎么比对，见 [plugin-preview.md](./plugin-preview.md)。
+
+只写现状：每条都是当前行为，不写版本号、变更叙事、上游来源（形态标在根 `README.md` 表格）。实测记录不进文档，验证一节只写怎么验、由哪条断言守着。
 
 ## 版本与依赖
 
@@ -24,7 +26,7 @@
 - 所有 `@deepseek-ai/dsh-*` 的 `peerDependencies` / `devDependencies` 与 `engines.dsh` 写**同一个**范围字符串；改完跑 `pnpm install --lockfile-only` 同步 lock 的 importers 段。
 - `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 是独立基线，照各自现值声明，不参与上面这条。
 - **内核升版后的批量跟随**：`node tools/dsh-baseline.mjs --write` 一次改齐全部包的上面三处（目标值从运行中内核读，没有运行实例时取最近启动的实例；有依赖声明的包改完跑 `pnpm install`，没有依赖的包跳过安装并删掉空 lock）；`--bump patch` 顺带升版本号。哪一处漂了由 `node tools/assert-ledger.mjs` 抓，落盘前可以先跑一次 `dsh-baseline.mjs --check` 看齐没齐。
-- **手工写死的内核版本也要跟**：包内自检脚本的断言与注释、`README.md` 等文档、patch 中写到的内核版本，必须与本包 `engines.dsh` 中 `>=` 后的版本号一致。历史实测记录写进 `DETAILS.md`，`skills/`、`upstream/` 的 vendored 内容保留原文。
+- **手工写死的内核版本也要跟**：包内自检脚本的断言与注释、`README.md` 等文档、patch 中写到的内核版本，必须与本包 `engines.dsh` 中 `>=` 后的版本号一致。历史实测记录不进文档，`skills/`、`upstream/` 的 vendored 内容保留原文。
 - **字面量检查范围**：`assert-ledger.mjs` 判据 10 扫描包目录内的 `.md`、`.yml` / `.yaml` 与 `.mjs` / `.js` / `.ts` / `.tsx` / `.jsx`。脚本只查同一行含「内核 / dsh / engines」语境词的版本号，文档与 YAML 直接扫描；以 `DETAILS` 开头的文件及 `skills/`、`upstream/`、`lib/`、`dist/`、`tmp/` 等目录跳过。完整范围与匹配规则见[判据实现](../../tools/assert-ledger.mjs)。
 - 兄弟 preset 的同一规则见 [presets.md](./presets.md)「版本与依赖」。
 - **一次完整跟随**（先看宿主变动、再 preset、再 plugins、最后按 CI 重跑）见 [kernel-upgrade.md](./kernel-upgrade.md)；这一节只写声明怎么改。
@@ -39,9 +41,9 @@
 
 **内核基线**由 `node tools/dsh-baseline.mjs --check` 比较在用内核与全部包声明，是提交闸门的第 0 道检查；它与台账的分工、读不到内核时的处理见 [.githooks/pre-commit](../../.githooks/pre-commit) 头部。
 
-跨文件一致性由 `node tools/assert-ledger.mjs` 检查，判据与编号见[脚本头部](../../tools/assert-ledger.mjs)。改工具 schema 时，同步 `README.md` / `DETAILS.md` 中写死的字段数与描述条数；数字以实际注册的工具定义为准。
+跨文件一致性由 `node tools/assert-ledger.mjs` 检查，判据与编号见[脚本头部](../../tools/assert-ledger.mjs)。改工具 schema 时，同步 `README.md` 中写死的字段数与描述条数；数字以实际注册的工具定义为准。
 
-**仓库级一次跑齐**：`node tools/check.mjs` 跑「台账 + 每个包自己的 `check` + 产物新鲜度（`assert-artifacts`，放在最后）」，CI（[.github/workflows/check.yml](../../.github/workflows/check.yml)）跑的就是它。它不替你在包的目录里 `pnpm install`——缺依赖会明说并回退出码 2，别把「没跑」当成「通过」。
+**仓库级一次跑齐**：`node tools/check.mjs` 跑「台账 + 详情文档与配图（`assert-detail`）+ 每个包自己的 `check` + 产物新鲜度（`assert-artifacts`，放在最后）」，CI（[.github/workflows/check.yml](../../.github/workflows/check.yml)）跑的就是它。它不替你在包的目录里 `pnpm install`——缺依赖会明说并回退出码 2，别把「没跑」当成「通过」。
 
 ### 证明断言有牙齿（变异测试）
 

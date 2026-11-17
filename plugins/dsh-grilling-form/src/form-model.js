@@ -138,7 +138,7 @@ export const GATE_KEY = 'grillingFormPending';
  *   1. `src/index.js`：工具描述与那条投出后的说明里对作答行形的说法（模型照着它认这块文本）；
  *   2. 写死这些字面量的自检：`scripts/test-form-model.mjs`、`scripts/test-form-session.mjs`、
  *      `scripts/test-render.mjs`、`scripts/smoke-host.mjs`；
- *   3. 本包 `README.md`、`DETAILS.md` 与仓库根 `README.md` 的插件表；
+ *   3. 本包 `README.md`、`docs/DETAIL.md` / `docs/DETAIL.zh.md` 与仓库根 `README.md` 的插件表；
  *   4. 仓库根 `GLOSSARY.md` 的「拷问作答块」词条；
  *   5. 本包 `skills/grilling/SKILL.md`：工具改名时正文里那句工具名要跟着改。它随包发布，
  *      `scripts/test-skill-provider.mjs` 看得见它。

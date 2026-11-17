@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "Chat translate",
-    "description": "Translates foreign prose in assistant replies into Simplified Chinese and keeps passages already in Chinese as they are; code blocks and thinking chains are untouched."
+    "description": "Translates foreign prose in assistant replies into Simplified Chinese and keeps passages already in Chinese as they are; code blocks and thinking chains are untouched.",
+    "detail": "docs/DETAIL.md"
   }
 }

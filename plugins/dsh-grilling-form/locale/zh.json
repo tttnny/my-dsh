@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "拷问表单",
-    "description": "把一整轮拷问问题作为一张可交互表单投进对话，作答经原生输入框带回。"
+    "description": "把一整轮拷问问题作为一张可交互表单投进对话，作答经原生输入框带回。",
+    "detail": "docs/DETAIL.zh.md"
   }
 }

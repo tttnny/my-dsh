@@ -6,6 +6,8 @@
 | --- | --- |
 | 找 `dsh` 二进制、在用的内核与已装清单、内核包仓、内核自带的官方 preset、DSH 源码 checkout、profile、正在跑那个实例的日志 | `node tools/dsh-env.mjs [--json] [--dsh <版本>]` |
 | 改完包 / 根 README / 规则文档后查台账一致性 | `node tools/assert-ledger.mjs [--dsh <版本>] [--quiet]` |
+| 查插件页的详情文档与配图：`meta.detail` 指向、文件成对、SVG 自包含、成对大小、`files` 覆盖 | `node tools/assert-detail.mjs` |
+| 画插件页配图：场景 JSON 渲成 SVG，文字转路径（要 python3 + fontTools，字体见 [plugin-preview.md](../docs/rules/plugin-preview.md)） | `python3 tools/preview-svg/gen.py --scene tmp/scene.json --out plugins/dsh-<name>/docs/preview.svg` |
 | 仓库级检查，验证顺序见 [plugins.md](../docs/rules/plugins.md)「验证」；`--ledger-only` 跳过包级 `check`，仍查台账与产物新鲜度 | `node tools/check.mjs [--ledger-only] [--json]` |
 | 铺一个新插件的骨架（宿主 + 浏览器两半边，生成即 `pnpm check` 绿；默认还会跑 `pnpm install`） | `node tools/new-plugin.mjs dsh-<name> [--title 中文名] [--tool 工具名] [--host-only] [--no-install] [--link] [--out 目录]` |
 | 内核升版后把全部包的版本声明改齐；`--check` 比较在用内核与全部包声明，提交闸门的分工见 [.githooks/pre-commit](../.githooks/pre-commit) 头部 | `node tools/dsh-baseline.mjs [--write] [--bump patch] [--check] [--dsh <版本>] [--only <包名>]` |

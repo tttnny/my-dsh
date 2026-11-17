@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "KimiCU desktop control",
-    "description": "Connects this machine's KimiCU (macOS / Windows) so the model can see and operate open app windows; the plugin page detects the install and shows the platform's install command."
+    "description": "Connects this machine's KimiCU (macOS / Windows) so the model can see and operate open app windows; the plugin page detects the install and shows the platform's install command.",
+    "detail": "docs/DETAIL.md"
   }
 }

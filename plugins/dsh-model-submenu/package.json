@@ -37,7 +37,7 @@
     "README.md",
     "locale",
     "assets",
-    "DETAILS.md"
+    "docs"
   ],
   "dsh": {
     "bundle": {

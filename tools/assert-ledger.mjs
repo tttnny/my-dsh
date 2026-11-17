@@ -8,7 +8,7 @@
  *   3. `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 写区间（不是精确版本），同包内与跨包同串
  *   4. 许可只由 `package.json` 的 `license` 声明，各层目录不附带许可文书
  *   5. `files` 与 `dsh.bundle.patch` 指的条目在目录里存在
- *   6. 插件与 preset README 的三节固定形状（`## 功能` / `## 特性` / `## 安装`），`## 安装` 里给的是本包名，README 指的 .md 都在目录里
+ *   6. README 的固定形状：插件七节（`## 概述` / `## 安装与开关` / `## 配置` / `## 实现` / `## 模型体验` / `## 限制` / `## 验证`），preset 三节（`## 功能` / `## 特性` / `## 安装`）；安装一节里给的是本包名，README 指的 .md 都在目录里
  *   7. 根 `README.md` 与包目录互相覆盖（都指向对方，且没有指向不存在目录的链接）
  *   8. `docs/rules/presets.md` 的 order 台账与各 preset 的 `<id>.patch.yml` 一致
  *   9. web 开发 profile 里的自有包是软链、指向本仓库、版本号与仓库一致（没装这个 profile 的机器跳过这一项）
@@ -299,7 +299,7 @@ for (const entry of packages) {
   }
 }
 
-// ── 6. README 三节（插件与 preset 同形：一级标题 + 功能 / 特性 / 安装） ────────
+// ── 6. README 形状（插件七节，preset 三节） ───────────────────────────────────
 for (const entry of packages) {
   const path = join(entry.dir, 'README.md');
   if (!existsSync(path)) {
@@ -314,14 +314,23 @@ for (const entry of packages) {
   if (head !== expected) {
     fail(`${entry.rel}/README.md`, `一级标题要以 ${expected} 开头（现为 ${JSON.stringify(heading ?? '')}）`);
   }
-  for (const section of ['## 功能', '## 特性', '## 安装']) {
-    if (!text.includes(section)) fail(`${entry.rel}/README.md`, `缺「${section}」一节（README 正文是固定三节：功能 / 特性 / 安装）`);
+  const plugin = entry.kind === 'plugin';
+  const sections = plugin
+    ? ['## 概述', '## 安装与开关', '## 配置', '## 实现', '## 模型体验', '## 限制', '## 验证']
+    : ['## 功能', '## 特性', '## 安装'];
+  for (const section of sections) {
+    if (!text.includes(section)) {
+      fail(`${entry.rel}/README.md`, plugin
+        ? `缺「${section}」一节（插件 README 是固定七节：概述 / 安装与开关 / 配置 / 实现 / 模型体验 / 限制 / 验证）`
+        : `缺「${section}」一节（preset README 是固定三节：功能 / 特性 / 安装）`);
+    }
   }
-  const install = text.slice(text.indexOf('## 安装'));
+  const installHeading = plugin ? '## 安装与开关' : '## 安装';
+  const install = text.slice(text.indexOf(installHeading));
   if (!install.includes(`add ${entry.name}`)) {
-    fail(`${entry.rel}/README.md`, `「## 安装」里要给 dsh plugin --profile web add ${entry.name}`);
+    fail(`${entry.rel}/README.md`, `「${installHeading}」里要给 dsh plugin --profile web add ${entry.name}`);
   }
-  // README 指向的同包文档（DETAILS.md 这类）必须真的在目录里，否则装出来就是个死链。
+  // README 指向的同包文档（docs/DETAIL.md 这类）必须真的在目录里，否则装出来就是个死链。
   for (const match of text.matchAll(/\]\((?!https?:|#)([^)#\s]+\.md)(?:#[^)\s]*)?\)/g)) {
     const target = join(entry.dir, decodeURI(match[1]));
     if (!existsSync(target)) fail(`${entry.rel}/README.md`, `链接指向的 ${match[1]} 在目录里不存在`);
@@ -461,7 +470,7 @@ for (const entry of packages) {
         if (match[2] === expected) continue;
         fail(
           `${repoPath}:${index + 1}`,
-          `写着内核版本 ${match[2]}，本包 engines.dsh 是 ${engine}——冒烟与自检都要跟到当前内核；历史实测记录写进 DETAILS.md，那里不查`,
+          `写着内核版本 ${match[2]}，本包 engines.dsh 是 ${engine}——冒烟与自检都要跟到当前内核；历史实测记录不进文档，那里不查`,
         );
       }
     }

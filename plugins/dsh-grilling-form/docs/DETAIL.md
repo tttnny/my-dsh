@@ -1,0 +1,1 @@
+![The tail of a completed turn: the "Completed in 2s" row, then the first question of a grilling form with its number and type, the question text, a background note, and two single-choice options with the recommended one marked and selected](preview.svg)

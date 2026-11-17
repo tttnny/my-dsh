@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "Native Plus",
-    "description": "Polishes conversation typography on top of the colors DSH already ships: a blue scale for the six heading levels, quotes and tables, code blocks, line height and paragraph spacing."
+    "description": "Polishes conversation typography on top of the colors DSH already ships: a blue scale for the six heading levels, quotes and tables, code blocks, line height and paragraph spacing.",
+    "detail": "docs/DETAIL.md"
   }
 }

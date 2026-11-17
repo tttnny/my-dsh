@@ -1,0 +1,1 @@
+![The web_gui_login tool call row expanded in a conversation: it takes no parameters, and its output is the tokenized GUI URL plus the two curl commands that exchange it for a session cookie](preview.svg)

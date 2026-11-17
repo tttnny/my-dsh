@@ -1,0 +1,1 @@
+![A reply body styled by the plugin: a blue h2 heading, a quoted line with a blue bar on a tinted panel, a two-column table with a tinted rounded header, and a code block with a hairline border and a js banner](preview.svg)

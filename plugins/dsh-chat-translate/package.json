@@ -61,7 +61,7 @@
     "locale",
     "cordis.patch.yml",
     "README.md",
-    "DETAILS.md"
+    "docs"
   ],
   "scripts": {
     "build": "node build.mjs",

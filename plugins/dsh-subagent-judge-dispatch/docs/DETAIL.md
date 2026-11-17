@@ -1,0 +1,1 @@
+![The Task types section of the plugin page: a card with Import, Export and Add a row actions, a line naming the official setting it depends on, and a table whose rows each hold a criterion text, a model and an effort](preview.svg)

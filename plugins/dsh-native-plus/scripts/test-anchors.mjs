@@ -188,7 +188,6 @@ test('药丸与整圆的每条规则都配了 corner-shape: round', () => {
 test('文档里写死的数字与实际一致', () => {
   // 这几处数字改一次代码就会过期一次，写进自检比靠人记可靠。
   const readme = readFileSync(join(root, 'README.md'), 'utf8');
-  const details = readFileSync(join(root, 'DETAILS.md'), 'utf8');
   const schema = readFileSync(join(root, 'src/client/schema.ts'), 'utf8');
   const index = readFileSync(join(root, 'src/client/index.ts'), 'utf8');
 
@@ -203,9 +202,9 @@ test('文档里写死的数字与实际一致', () => {
   const fields = (schema.match(/^\s*\{ key: '/gm) ?? []).length;
   const sheetsCount = (index.match(/^\s*\['[a-z]+\.css',/gm) ?? []).length;
 
-  assert.ok(says(details, fields, '个字段'), 'DETAILS 里的字段数不是 ' + fields);
+  assert.ok(says(readme, fields, '个字段'), 'README 里的字段数不是 ' + fields);
   assert.ok(says(readme, fields, '个可调项'), 'README 里的可调项数不是 ' + fields);
-  assert.ok(says(details, sheetsCount, '张样式表'), 'DETAILS 里的样式表数不是 ' + sheetsCount);
+  assert.ok(says(readme, sheetsCount, '张样式表'), 'README 里的样式表数不是 ' + sheetsCount);
 });
 
 /**
