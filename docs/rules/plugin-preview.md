@@ -29,7 +29,7 @@ dsh --profile prev-<name> --port <端口> --no-open                  # 另起实
 
 ## 三、量、写、画、比
 
-1. **截图**：`DSH_WEB_URL=http://127.0.0.1:<端口> DSH_WEB_AUTH_URL=<启动时打印的带 token 地址> node tools/gui-shot.mjs --eval "<打开目标界面的脚本>" --shot tmp/<pkg>/real.png`。
+1. **截图**：`DSH_WEB_URL=http://127.0.0.1:<端口> DSH_WEB_AUTH_URL=<启动时打印的带 token 地址> node tools/gui-shot.mjs --eval "<打开目标界面的脚本>" --shot tmp/<pkg>/real.png`。插件页本身用 `--plugin <插件标题>` 直接拍（它替你点侧栏「插件」、找卡片、进详情页、滚回顶部），不用自己写点击链。
 2. **量**：同一次 `--eval` 里读 `getBoundingClientRect()` 与 `getComputedStyle()`，把每个元素的 x / y / 宽高、字号、行高、圆角、颜色、间距打成 JSON。坐标以父容器为基准记，不要目测。
 3. **组件单独渲染**：只属于本插件的组件用 `node tools/ui-preview.mjs --pkg plugins/dsh-<name> --entry src/client/Xxx.tsx --mount Xxx --props tmp/<pkg>/props.mjs --shot tmp/<pkg>/component.png`，它用宿主真实样式表，且不受别的插件影响。
 4. **写场景**：在 `tools/preview-svg/examples/<包目录名>.py` 写一份场景脚本（每个包一份，和配图一起进版本库，改图时改它），元素用 `tools/preview-svg/ui.py` 里的助手函数拼，坐标与颜色抄第 2、3 步的读数；`--zh` 出中文场景。
@@ -68,6 +68,7 @@ Noto 的拉丁字母比 macOS 的 PingFang 宽一点，长串英文用 `condense
 
 - 画布 640×300，`width="640" height="300" viewBox="0 0 640 300"`。
 - 自包含：没有 `text`、`foreignObject`、`script`、`style`、动画元素与外部引用；文字全部转成路径。
+- 首行带来源标记 `<!-- preview-svg: tools/preview-svg/examples/<包>.py -->`：`gen.py` 自动写，`assert-detail` 校验它指向的脚本存在。手改 SVG 会被拦下——要改图就改场景脚本再重新生成。
 - 中英各一张，放在 `docs/` 下，与 `DETAIL.md` / `DETAIL.zh.md` 同目录；两份 `DETAIL` 的 alt 写清图里画了什么。
 - 尺寸、成对关系与替代文字由 `node tools/assert-detail.mjs` 检查；它查不了「画得像不像」，那一步只能靠比对。
 

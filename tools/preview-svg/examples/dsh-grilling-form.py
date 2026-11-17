@@ -16,6 +16,7 @@ getComputedStyle 读数：题号与题型 14px、#ADB2B8；题干 14px/24px、#0
   python3 tmp/team/finish-svg.py tmp/team/dsh-grilling-form/native.svg plugins/dsh-grilling-form/docs/preview.svg 0.918220
 """
 import json
+import os
 import sys
 
 sys.path.insert(0, "tools/preview-svg")
@@ -99,6 +100,7 @@ custom = [
 scene = {
     "width": 720,
     "height": 333,
+    "canvas": [640, 300],
     "background": "#FFFFFF",
     "elements": [
         *turn,
@@ -111,4 +113,5 @@ scene = {
     ],
 }
 
+scene["source"] = os.path.relpath(__file__)
 json.dump(scene, sys.stdout, ensure_ascii=False)

@@ -23,7 +23,7 @@ DSH 把这些工具注册为 `mcp__kimi-cu__<name>`（例如 `mcp__kimi-cu__list
 
 1. 目标不明确时优先用 `list_apps(running_only:true)` / `list_windows` 定位已打开的应用和窗口，避免输出全部安装目录。需要找尚未启动的应用时才用 `list_apps(running_only:false)`；不传参数同样包含已安装用户应用，内部 helper 和系统后台组件已过滤。需要把尚未运行的应用启动起来时用 `launch_app`，它只启动，不激活。
 2. 用 MCP `get_app_state` 观察目标；后续 index 和坐标必须来自这次观察。`mode:"full"` 返回树和图，`mode:"image"` 适合看图、浮层和视觉验证，`mode:"ax"` 适合读文本及按 index 操作；`ax_filter` 可缩小树的输出。
-3. 只需要某一个窗口（尤其是浮窗）时，用 `get_window_state` 传 `window_id`，用 `include_screenshot` / `include_text` 选择截图与 AX 文本；`get_window` 只用来把窗口标识解析成 app、pid 与标题。
+3. 只需要某一个窗口（尤其是浮窗）时，用 `get_window_state` 传 `window_id`，**同时要给 `app` 或 `pid`**（只给 `window_id` 会报 `app or pid required`）；用 `include_screenshot` / `include_text` 选择截图与 AX 文本；`get_window` 只用来把窗口标识解析成 app、pid 与标题。
 4. 执行动作；页面切换、滚动、弹窗或布局变化影响目标时，重新观察再决定下一步。
 5. 验证任务要求的结果。投递成功不等于生效；尤其检查 `verified`、`verification_required`、`effect`，必要时再次观察。
 
@@ -71,6 +71,7 @@ DSH 注册的是 KimiCU MCP 的 18 个直接工具：`list_apps`、`launch_app`�
 
 - 歧义窗口、坐标越界或旧 index：按前文重新绑定窗口和观察，不重装或抢前台。
 - 缺图/黑图：先看 `screenshot_diagnosis`，区分最小化、窗口关闭、其他 Space、锁屏、未渲染和权限问题。需要用户恢复窗口或切回所在桌面时明确说明，不自行切 Space。
+- **连续两次截图字节完全相同**：窗口被遮挡或停在别的 Space 时，截图会一直返回同一帧，看着像「按键没生效」。别据此重试投递——先 `activate_window` 或看 `screenshot_diagnosis`，再判断动作到底有没有落下去。
 - 窗口在另一个 Space 或另一块屏幕上时，AX 树照常可读、动作照常可投递，但截图取不到（`screenshot_diagnosis` 报 `not on-screen` 或 `no shareable content`）。这时用 AX 文本验证结果，不要据此判断权限丢失或动作失败；`activate_window` 的 `foreground_changed:true` 也不证明窗口已经来到当前 Space。
 - 空 AX 树也可能是自绘或远程渲染控件；有可用截图时可按图操作，不直接认定权限丢失。
 - `unknown field` / `KIMI_CU_UNKNOWN_FIELD`：先核对当前入口的 schema；刚升级时优先排查旧 MCP 桥和 JS 内核，不能据此直接断言新功能不存在。

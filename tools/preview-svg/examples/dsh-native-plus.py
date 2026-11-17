@@ -11,6 +11,7 @@ gui-shot 量出来的 getBoundingClientRect / getComputedStyle，坐标已减去
 """
 import json
 import re
+import os
 import sys
 
 sys.path.insert(0, "tools/preview-svg")
@@ -169,4 +170,5 @@ scene = {
     ],
 }
 
+scene["source"] = os.path.relpath(__file__)
 json.dump(scene, sys.stdout, ensure_ascii=False)

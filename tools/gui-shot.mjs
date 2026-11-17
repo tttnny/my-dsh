@@ -117,16 +117,31 @@ try {
   refuse(error.message)
 }
 /** 认不得的参数：静默忽略会让人以为写了就生效（`--sessoin` 这种手滑最贵）。 */
+/** 取一个空闲端口：并发跑时不会撞上别人。 */
+async function freePort() {
+  const net = await import('node:net')
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const { port: picked } = server.address()
+      server.close(() => { resolve(picked) })
+    })
+  })
+}
+
 const KNOWN = new Set([
-  'port', 'shot', 'size', 'wait', 'click', 'eval', 'session',
+  'port', 'shot', 'size', 'wait', 'click', 'eval', 'session', 'plugin',
   'auth-wait', 'after-click-wait', 'allow-mutation',
 ])
 for (const key of Object.keys(args)) {
   if (!KNOWN.has(key)) refuse(`认不得的参数 --${key}`)
 }
 
-const port = Number(args.port ?? 9223)
-const profile = 'tmp/chrome-profile'
+// 端口与用户目录都按进程分开：多个 agent 同时跑时，写死的 9223 与 tmp/chrome-profile
+// 会互相踢（ENOTEMPTY、端口被占、僵尸 Chrome）。给了 --port 就照给。
+const port = args.port === undefined ? await freePort() : Number(args.port)
+const profile = `tmp/chrome-profile-${String(process.pid)}`
 const shotPath = String(args.shot ?? 'tmp/ui.png')
 const authUrl = process.env.DSH_WEB_AUTH_URL
 const webUrl = process.env.DSH_WEB_URL
@@ -251,6 +266,56 @@ if (args.session) {
   })()`)
   console.log(`session ${id}: ${opened.ok ? 'ok' : opened.reason}`)
   if (!opened.ok) failures.push(`--session ${id}: ${opened.reason}`)
+}
+
+/**
+ * 拍到某个插件的详情页：插件页也没有 URL 路由，只能从侧栏进「插件」再点卡片。
+ *
+ * 卡片是列表里的一个 `li`，标题就是 locale 的 `meta.title`；点开之后列表换成详情页，
+ * 标题出现在页面的标题元素里——拿它判断「已经进去了」，比等固定毫秒可靠。
+ */
+if (args.plugin) {
+  const name = String(args.plugin)
+  const opened = await evaluate(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    // 侧栏是应用启动后才渲染的：入口本身也要轮询，不能只看一眼。
+    let nav = null
+    for (let i = 0; i < 40 && nav === null; i++) {
+      await sleep(300)
+      nav = [...document.querySelectorAll('a,button,[role="button"],[role="tab"]')]
+        .find((e) => e.textContent.trim() === '插件') ?? null
+    }
+    if (nav === null) return { ok: false, reason: '侧栏里没有「插件」入口' }
+    nav.click()
+    let card = null
+    for (let i = 0; i < 40 && card === null; i++) {
+      await sleep(300)
+      card = [...document.querySelectorAll('li')]
+        .find((e) => e.textContent.trim().startsWith(${JSON.stringify(name)})) ?? null
+    }
+    if (card === null) return { ok: false, reason: '插件列表里没有以「' + ${JSON.stringify(name)} + '」开头的卡片' }
+    card.scrollIntoView({ block: 'center' })
+    await sleep(200)
+    const open = card.querySelector('button')
+    if (!open) return { ok: false, reason: '卡片上没有可点的按钮' }
+    open.click()
+    for (let i = 0; i < 40; i++) {
+      await sleep(300)
+      const heading = [...document.querySelectorAll('h1,h2,h3')]
+        .some((h) => h.textContent.includes(${JSON.stringify(name)}))
+      if (heading) {
+        const scrollers = [...document.querySelectorAll('*')]
+          .filter((e) => e.scrollHeight > e.clientHeight + 10 && getComputedStyle(e).overflowY !== 'visible')
+        for (const el of scrollers) el.scrollTop = 0
+        document.scrollingElement.scrollTop = 0
+        await sleep(300)
+        return { ok: true }
+      }
+    }
+    return { ok: false, reason: '点了卡片，但详情页没出来（标题没出现在页面标题里）' }
+  })()`)
+  console.log(`plugin ${name}: ${opened.ok ? 'ok' : opened.reason}`)
+  if (!opened.ok) failures.push(`--plugin ${name}: ${opened.reason}`)
 }
 
 /**

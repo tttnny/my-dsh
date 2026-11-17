@@ -10,6 +10,7 @@ getComputedStyle。菜单在截图里位于 (770.88, 331)，画布上放在 (172
   python3 tools/preview-svg/gen.py --scene tools/preview-svg/examples/dsh-model-submenu.json --out plugins/dsh-model-submenu/docs/preview.svg
 """
 import json
+import os
 import sys
 
 sys.path.insert(0, "tools/preview-svg")
@@ -110,4 +111,5 @@ scene = {
     ],
 }
 
+scene["source"] = os.path.relpath(__file__)
 json.dump(scene, sys.stdout, ensure_ascii=False)

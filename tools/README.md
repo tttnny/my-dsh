@@ -21,7 +21,8 @@
 | 宿主半边能不能装载（不重启正在服务的实例） | `node tools/host-smoke.mjs [--compose-only]` |
 | preset 的组合解析（`--dump-config`） | `node tools/preset-compose.mjs <id \| --all>` |
 | 「页面真的换上新产物了吗」 | `node tools/verify-client.mjs <包> --needle '<新写的类名或文案>' [--build]` |
-| 看一眼界面：点一下、量几何、拍图（会改会话状态，默认拦下并报警；等不到、点不到、页面报错一律退出码 1） | `node tools/gui-shot.mjs --click '<选择器>' --shot tmp/ui.png [--allow-mutation]` |
+| 看一眼界面：点一下、量几何、拍图（会改会话状态，默认拦下并报警；等不到、点不到、页面报错一律退出码 1）；Chrome 用户目录与调试端口按进程分开，可并发跑 | `node tools/gui-shot.mjs --click '<选择器>' --shot tmp/ui.png [--allow-mutation]` |
+| 直接拍某个插件的详情页（插件页没有 URL 路由，它替你点侧栏「插件」、找卡片、滚回顶部） | `node tools/gui-shot.mjs --plugin <插件标题> --shot tmp/plugin.png` |
 | 直接拍某个会话的页面（会话页没有 URL 路由，它替你展开侧栏组再点进去） | `node tools/gui-shot.mjs --session session-<id> --shot tmp/session.png` |
 | 不碰正在服务的实例，把**真的**插件组件单独渲染出来拍图（ui-primitives 用薄壳替身、样式取宿主真表） | `node tools/ui-preview.mjs --pkg <plugins/dsh-xxx> --entry src/client/X.jsx --mount Xxx --props tmp/p.json --shot tmp/x.png`（`--props` 收 JSON，也收 `.mjs` 模块） |
 | 要在用户自己那个浏览器引擎下、或按用户已登录的站点验界面（`gui-shot` 起的是 Playwright 缓存里的 Chrome for Testing，每趟清掉临时用户目录） | 换 `ego-browser`，用法先跑 `ego-browser skill`；条件与要守的硬要求见 [plugin-ui.md](../docs/rules/plugin-ui.md)「换用 ego-browser 的条件」 |

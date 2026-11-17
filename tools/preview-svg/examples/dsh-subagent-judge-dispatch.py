@@ -9,6 +9,7 @@
   python3 tools/preview-svg/gen.py --scene scene-zh.json --out plugins/dsh-subagent-judge-dispatch/docs/preview.zh.svg
 """
 import json
+import os
 import sys
 
 sys.path.insert(0, "tools/preview-svg")
@@ -145,4 +146,5 @@ for index, row in enumerate(rows):
     elements.extend(button(COL_ACTIONS, field_top + 2, remove_width, 28, labels["remove"]))
 
 scene = {"width": 640, "height": 300, "background": "#FFFFFF", "elements": elements}
+scene["source"] = os.path.relpath(__file__)
 json.dump(scene, sys.stdout, ensure_ascii=False)

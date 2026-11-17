@@ -1,0 +1,39 @@
+#!/bin/sh
+# my-dsh commit-msg：第一行必须是 type(scope): 摘要，且不能带字面反斜杠 n。
+#
+# 为什么要有这一道：用 git commit -m "$(node -e '...JSON.stringify(msg)...')" 传多段
+# 信息时，引号里的换行转义不会被 shell 展开，整段会变成标题里的一串字面反斜杠 n，
+# 提交历史里读不出来（本仓库发生过一次，只能 amend）。机器能查的就不靠人记。
+#
+# 跳过一次：SKIP_CHECK=1 git commit ...
+
+set -u
+
+if [ "$(printenv SKIP_CHECK 2>/dev/null || true)" = "1" ]; then
+  echo "commit-msg: SKIP_CHECK=1，跳过"
+  exit 0
+fi
+
+msg_file="$1"
+subject=$(head -n 1 "$msg_file")
+
+case "$subject" in
+  *'\n'*)
+    echo "commit-msg: 标题里有字面反斜杠 n —— 多段信息用 -F 文件或多次 -m，别把 JSON 串塞进 -m" >&2
+    exit 1
+    ;;
+esac
+
+if ! printf '%s' "$subject" | grep -Eq '^(feat|fix|docs|chore|refactor|test|perf|build|ci|style|revert)(\([a-z0-9._-]+\))?: .+'; then
+  echo "commit-msg: 标题要写成 type(scope): 摘要，type 取 feat / fix / docs / chore / refactor / test / perf / build / ci / style / revert" >&2
+  echo "           现在是：$subject" >&2
+  exit 1
+fi
+
+length=$(printf '%s' "$subject" | wc -m | tr -d ' ')
+if [ "$length" -gt 72 ]; then
+  echo "commit-msg: 标题 $length 个字符，超过 72 —— 细节放正文" >&2
+  exit 1
+fi
+
+exit 0

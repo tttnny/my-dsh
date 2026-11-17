@@ -9,6 +9,7 @@ getComputedStyle）。换一个插件时照这个结构写，改的是内容与�
   python3 tools/preview-svg/gen.py --scene tmp/scene.json --out plugins/dsh-notify-user/docs/preview.svg
 """
 import json
+import os
 import sys
 
 sys.path.insert(0, "tools/preview-svg")
@@ -66,4 +67,5 @@ scene = {
     ],
 }
 
+scene["source"] = os.path.relpath(__file__)
 json.dump(scene, sys.stdout, ensure_ascii=False)

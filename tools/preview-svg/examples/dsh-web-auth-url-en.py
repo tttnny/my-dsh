@@ -15,6 +15,7 @@ getBoundingClientRect / getComputedStyle / Range.getClientRects，取景原点 (
 """
 import json
 import re
+import os
 import sys
 
 sys.path.insert(0, "tools/preview-svg")
@@ -183,4 +184,5 @@ scene = {
     "elements": [*header, *card, *out_lines, *reply],
 }
 
+scene["source"] = os.path.relpath(__file__)
 json.dump(scene, sys.stdout, ensure_ascii=False)

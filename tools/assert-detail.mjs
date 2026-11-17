@@ -8,7 +8,8 @@
  *     不以 `/` 开头、不是 URL；文件存在。
  *  3. 文档只由一行图片引用组成，没有别的正文；引用的图片在文档旁边存在。
  *  4. 配图是自包含 SVG：640×300 画布，不含 `text`、`foreignObject`、`script`、`style`、
- *     动画元素与外部引用。
+ *     动画元素与外部引用；首行带 `<!-- preview-svg: tools/preview-svg/examples/<名>.py -->`
+ *     来源标记，且该脚本存在——配图只能由场景脚本生成，手改 SVG 会被拦下。
  *  5. 中英两份文档引用的不是同一个文件，两张图内容不同。
  *  6. 两张配图合计不超过 1 MiB。
  *  7. `package.json` 的 `files` 覆盖 `meta.detail` 的顶层目录，发布后才读得到。
@@ -77,6 +78,12 @@ function hasOtherContent(markdown) {
 function checkImage(pkg, path) {
   const svg = readFileSync(path, 'utf8')
   const label = relative(ROOT, path)
+  const marker = /^<!-- preview-svg: (\S+) -->/.exec(svg)
+  if (marker === null) {
+    fail(pkg, `${label} 没有来源标记（配图要由 tools/preview-svg/gen.py 生成）`)
+  } else if (!marker[1].startsWith('tools/preview-svg/examples/') || !existsSync(join(ROOT, marker[1]))) {
+    fail(pkg, `${label} 的来源标记 ${marker[1]} 不是 tools/preview-svg/examples/ 下的现有脚本`)
+  }
   if (!CANVAS.test(svg)) fail(pkg, `${label} 不是 640×300 画布`)
   for (const [pattern, what] of [
     [/<text[\s>]/, 'text 元素'],

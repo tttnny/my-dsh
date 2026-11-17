@@ -10,6 +10,7 @@
 
 场景 JSON：
   {
+    "source": "tools/preview-svg/examples/<包目录名>.py",   // 必填：写进 SVG 的来源标记
     "width": 640, "height": 300, "background": "#FFFFFF",
     "defs": ["<filter id=...>...</filter>"],          // 可选，原样放进 <defs>
     "elements": [
@@ -160,6 +161,10 @@ def main():
 
     width = scene.get("width", 640)
     height = scene.get("height", 300)
+    # 取景框比画布宽时（真实界面按 1:1 量的），整幅等比缩进画布，不能裁字。
+    canvas = scene.get("canvas")
+    out_width, out_height = (canvas[0], canvas[1]) if canvas else (width, height)
+    scale_x, scale_y = out_width / width, out_height / height
     defs = list(scene.get("defs", []))
     if any(element.get("shadow") for element in scene["elements"]):
         shadow = next(element["shadow"] for element in scene["elements"] if element.get("shadow"))
@@ -170,14 +175,20 @@ def main():
             "</filter>"
         )
 
-    out = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" fill="none">',
-    ]
+    out = []
+    # 来源标记：配图只能由场景脚本生成，手改 SVG 会被 tools/assert-detail.mjs 拦下。
+    if scene.get("source"):
+        out.append(f'<!-- preview-svg: {scene["source"]} -->')
+    out.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{out_width}" height="{out_height}" viewBox="0 0 {out_width} {out_height}" fill="none">')
     if defs:
         out.append("<defs>" + "".join(defs) + "</defs>")
+    if (scale_x, scale_y) != (1, 1):
+        out.append(f'<g transform="scale({scale_x:.6f} {scale_y:.6f})">')
     out.append(f'<rect width="{width}" height="{height}" fill="{scene.get("background", "#FFFFFF")}"/>')
     for element in scene["elements"]:
         out.append(render(element))
+    if (scale_x, scale_y) != (1, 1):
+        out.append("</g>")
     out.append("</svg>")
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)

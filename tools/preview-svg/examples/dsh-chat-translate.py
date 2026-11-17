@@ -14,6 +14,7 @@ getComputedStyle 读数：正文 14px/24px、颜色 #0F1115；过程行「已完
   python3 tmp/team/finish-svg.py tmp/team/dsh-chat-translate/native.svg plugins/dsh-chat-translate/docs/preview.svg 0.918220
 """
 import json
+import os
 import sys
 
 sys.path.insert(0, "tools/preview-svg")
@@ -152,6 +153,7 @@ footer = [
 scene = {
     "width": 697,
     "height": 327,
+    "canvas": [640, 300],
     "background": "#FFFFFF",
     "elements": [
         *turn,
@@ -163,4 +165,5 @@ scene = {
     ],
 }
 
+scene["source"] = os.path.relpath(__file__)
 json.dump(scene, sys.stdout, ensure_ascii=False)
