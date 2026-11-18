@@ -447,14 +447,14 @@ await test('导入是粘贴，粘进来的清单直接替换并立即写入', as
   const rows = [...container.querySelectorAll('.dsh-judge-table tbody tr')];
   // 第二格是描述；模型与强度各有自己的格子。
   assert.deepEqual(
-    rows.map((line) => line.children[1].querySelector('input').value),
+    rows.map((line) => line.children[1].querySelector('textarea').value),
     ['评审代码', '跑测试'],
     '表里换成了粘进来的两条',
   );
   assert.deepEqual(
     rows.map((line) => line.children[2].querySelector('input').value),
-    ['a6api/kimi-k3', 'magpie/deepseek/deepseek-flash'],
-    '模型也跟着换了',
+    ['kimi-k3', 'deepseek/deepseek-flash'],
+    '模型格显示完整模型 ID',
   );
   assert.deepEqual(
     rows.map((line) => line.children[3].querySelector('input').value),

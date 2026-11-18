@@ -132,6 +132,21 @@ const CARD_CSS = `
    所以要撑的是它，只给 input 写宽度没用。 */
 .dsh-judge-field { display: flex; box-sizing: border-box; width: 100%; min-width: 0; }
 .dsh-judge-field input { box-sizing: border-box; width: 100%; min-width: 0; }
+.dsh-judge-description {
+  field-sizing: content;
+  display: block;
+  min-height: 32px;
+  max-height: 40vh;
+  resize: vertical;
+  padding: 6px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  font: inherit;
+  line-height: 1.4;
+}
+.dsh-judge-description:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .dsh-judge-key-line { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; }
 .dsh-judge-off { display: block; color: var(--dsw-alias-state-warn-label); font: var(--dsw-font-xxxs-11); }
 /* 标题行右端的一组动作：试通、导入、导出、加一行都排在这里。 */
@@ -375,13 +390,14 @@ export function JudgeDispatchPanel(
           {rowHints(state.rows, index, t).map((hint) => (
             <span key={hint} className="dsh-judge-off">{hint}</span>
           ))}
-          <Input
-            type="text"
-            className="dsh-judge-field"
+          <textarea
+            className="dsh-judge-field dsh-judge-description"
+            rows={2}
+            readOnly={!state.writable}
             value={draft.description}
             placeholder={t('rows.descriptionPlaceholder')}
             aria-label={`${t('rows.colDescription')} ${index + 1}`}
-            onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+            onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) =>
               dispatchCardStore.cell(index, 'description', event.target.value)}
             onBlur={commitRows}
           />
@@ -393,7 +409,7 @@ export function JudgeDispatchPanel(
               type="text"
               className="dsh-judge-field"
               readOnly
-              value={draft.model === '' ? '' : `${draft.provider}/${draft.model}`}
+              value={draft.model}
               placeholder={t('rows.modelPlaceholder')}
               aria-label={`${t('rows.colModel')} ${index + 1}`}
               aria-haspopup="listbox"
@@ -407,7 +423,7 @@ export function JudgeDispatchPanel(
                 ? []
                 : state.models.map((option) => ({
                   id: routeKey(option.provider, option.model),
-                  label: `${option.provider}/${option.label}`,
+                  label: `${option.provider}/${option.model}`,
                 }))),
             ]}
             selectedId={draft.model === '' ? undefined : routeKey(draft.provider, draft.model)}
