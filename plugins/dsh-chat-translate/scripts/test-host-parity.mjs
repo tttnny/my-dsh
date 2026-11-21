@@ -20,7 +20,7 @@ import * as path from 'node:path';
 const CANDIDATES = [
   process.env.DSH_SOURCE_DIR,
   process.env.DSH_CHECKOUT,
-  '/Users/tny/Desktop/work/other/deepseek-harness',
+  '/Users/tny/Desktop/work/github/deepseek-harness',
 ].filter((value) => typeof value === 'string' && value !== '');
 
 const HOST_FILE = 'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx';

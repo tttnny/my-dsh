@@ -191,7 +191,7 @@ await build({
 });
 
 /** 宿主那几份真实样式表：主题变量、字号 token，加上本插件用到的那些控件。 */
-const dshRoot = process.env.DSH_SOURCE ?? resolve(root, '..', 'other', 'deepseek-harness');
+const dshRoot = process.env.DSH_SOURCE ?? resolve(root, '..', 'github', 'deepseek-harness');
 const primitivesRoot = join(pkg.dir, 'node_modules/@deepseek-ai/dsh-client-ui-primitives/lib');
 const hostSheets = [
   // 主题的四份表都要在：design-platform 只给色板，圆角、字号与卡片材料在 base 里，

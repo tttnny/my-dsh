@@ -2,7 +2,7 @@
 
 `my-dsh` 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(DSH)的插件/preset合集。
 
-DSH 源码已拉取到本地 `/Users/tny/Desktop/work/other/deepseek-harness`，发布 tag 是 `dsh-v<版本>`；查宿主实现、契约类型与官方门禁，以及两版之间的差异时直接读它。`node tools/dsh-env.mjs` 会打出这个目录（默认按 `$DSH_SOURCE`、仓库同级 `../other/deepseek-harness`、`../deepseek-harness` 的顺序找，见 `tools/lib/dsh-source.mjs`）。
+查 DSH 宿主实现、契约类型、官方门禁或版本差异时，用 `node tools/dsh-env.mjs` 查源码目录。本机源码位于 `/Users/tny/Desktop/work/github/deepseek-harness`，发布 tag 格式为 `dsh-v<版本>`。
 
 ## 硬约束
 

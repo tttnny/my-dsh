@@ -125,6 +125,6 @@ cd plugins/dsh-native-plus && pnpm check
 - `test-anchors.mjs`：宿主锚点仍存在、没有哈希类名、文档里写死的数字与实际一致。
 - `assert-lib-untracked.mjs`：`lib/` 是构建镜像，不入 git。
 
-锚点自检要能找到宿主源码（`DSH_SOURCE` 或仓库同级的 `../other/deepseek-harness`），找不到时这一条跳过而不是失败。
+锚点自检要能找到宿主源码（`DSH_SOURCE` 或仓库同级的 `../github/deepseek-harness`），找不到时这一条跳过而不是失败。
 
 浏览器里验收：打开任意会话，正文的标题应是蓝色、引用带蓝竖线、表格表头浅蓝、代码块有发丝边框；切到插件页改行高或段距，当前页面立刻跟着变。侧边栏找一个有会话在跑的工作区，行右端应有一个呼吸的圆点；把鼠标移到那一行，圆点让位给操作条。

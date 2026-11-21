@@ -77,7 +77,7 @@ if (args.list === true) {
   if (fromSource) {
     const source = dshSourceDir(root);
     if (source === undefined) {
-      console.error('kernel-diff: 找不到 DSH 源码 checkout；用 DSH_SOURCE 指定（默认找仓库同级的 ../other/deepseek-harness）');
+      console.error('kernel-diff: 找不到 DSH 源码 checkout；用 DSH_SOURCE 指定（默认找仓库同级的 ../github/deepseek-harness）');
       process.exit(2);
     }
     for (const tag of sourceTags(source)) console.log(`${tag.slice('dsh-v'.length)}\t${source}`);
@@ -110,7 +110,7 @@ function isDirectory(path) {
 if (fromSource) {
   const source = dshSourceDir(root);
   if (source === undefined) {
-    console.error('kernel-diff: 找不到 DSH 源码 checkout；用 DSH_SOURCE 指定（默认找仓库同级的 ../other/deepseek-harness）');
+    console.error('kernel-diff: 找不到 DSH 源码 checkout；用 DSH_SOURCE 指定（默认找仓库同级的 ../github/deepseek-harness）');
     process.exit(2);
   }
   let newerVersion = args._[1];

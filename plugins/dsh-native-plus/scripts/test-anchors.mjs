@@ -209,7 +209,7 @@ test('文档里写死的数字与实际一致', () => {
 
 /**
  * 宿主源码根：优先用 --source，其次按仓库工具脚本同一套顺序找
- * （DSH_SOURCE、仓库同级的 ../other/deepseek-harness、再上一层的 ../deepseek-harness）。
+ * （DSH_SOURCE、仓库同级的 ../github/deepseek-harness、再上一层的 ../deepseek-harness）。
  * 与 tools/lib/dsh-source.mjs 保持同样三个位置，路径里不写死任何人的机器。
  */
 function findHostSource() {
@@ -217,7 +217,7 @@ function findHostSource() {
   if (explicit !== undefined) return resolve(explicit);
   const candidates = [
     process.env.DSH_SOURCE,
-    resolve(root, '../../../other/deepseek-harness'),
+    resolve(root, '../../../github/deepseek-harness'),
     resolve(root, '../../../deepseek-harness'),
   ].filter((value) => typeof value === 'string' && value !== '');
   return candidates.find((candidate) => existsSync(join(candidate, 'packages/client')));

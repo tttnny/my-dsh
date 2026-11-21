@@ -122,7 +122,7 @@ if (args.json === true) {
     ['dsh 二进制', `${report.dshBin}${report.dshBinExists ? '' : '（不存在）'}`],
     ['内核对齐目标', `engines.dsh >=${report.baselines.dsh} · cordis ${report.baselines.cordis ?? '（内核未声明）'} · schemastery ${report.baselines.schemastery ?? '（内核未声明）'}`],
     ['启动器', report.launcherDir ?? '（找不到）'],
-    ['DSH 源码', report.sourceDir ?? '（找不到：默认找仓库同级的 ../other/deepseek-harness，或设 DSH_SOURCE）'],
+    ['DSH 源码', report.sourceDir ?? '（找不到：默认找仓库同级的 ../github/deepseek-harness，或设 DSH_SOURCE）'],
   ];
   for (const instance of report.running) {
     lines.push(['运行中实例', `${instance.url}\n${' '.repeat(16)}实例日志 ${instance.log}`]);

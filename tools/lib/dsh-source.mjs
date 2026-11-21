@@ -3,7 +3,7 @@
  *
  * 已装内核只保留最新一版，而「这一版到底改了什么」要跟上一版比。源码 checkout 上的
  * `dsh-v<版本>` tag 一直在，所以它才是常规路径的比对来源。位置默认取仓库同级目录
- * `../other/deepseek-harness`（本机布局），可用 `DSH_SOURCE` 指定。
+ * `../github/deepseek-harness`（本机布局），可用 `DSH_SOURCE` 指定。
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -17,7 +17,7 @@ import { join, resolve } from 'node:path';
 export function dshSourceDir(root) {
   const candidates = [
     process.env.DSH_SOURCE,
-    resolve(root, '..', 'other', 'deepseek-harness'),
+    resolve(root, '..', 'github', 'deepseek-harness'),
     resolve(root, '..', 'deepseek-harness'),
   ].filter((dir) => typeof dir === 'string' && dir !== '');
   return candidates.find((dir) => existsSync(join(dir, '.git')));
