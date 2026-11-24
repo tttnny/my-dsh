@@ -1,18 +1,16 @@
 ---
 name: grilling
-description: Grill the user relentlessly about a plan, decision, or idea. Use when the user wants to stress-test their thinking, or uses any 'grill' trigger phrases.
+description: "围绕计划、决策或想法逐轮追问。用户想检验自己的想法是否经得起推敲，或用了 grill 一类的触发词时，使用此技能。"
 ---
 
-Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.
+不断追问，直到你和用户达成共识。把要讨论的决策整理成一棵**设计树**，每项决策下面挂着依赖它的决策。
 
-Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled: the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round.
+按**轮次**推进。把前置决策已定、现在就能问的所有问题归入**可提问集合**。一轮问完其中的全部问题，逐一给出建议答案。等用户回答后再开始下一轮。
 
-Each round is a single `grilling_form` call. How each question should be written, and which approaches the tool rejects immediately, are governed by the tool's own instructions. The entire frontier enters this one call, so don't write the round as prose.
+每轮只调用一次 `grilling_form`，把当前可提问集合里的问题都交给表单。题目与选项按工具说明填写，表单负责编号。工具拒绝输入时，按返回的错误说明修正后重调 `grilling_form`，本轮继续用表单出题。
 
-The round does **not** end when input is rejected: fix according to the violation list and resubmit the same call. Rejection never justifies a prose rewrite: do not revert to prose.
+用户每回答一轮，就根据已定的决策更新设计树。重新算出可提问集合，再开始下一轮。依赖本轮某个尚未回答的问题的决策，留到后续轮次再问。
 
-Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
+**事实由你查，决策由用户做。** 如果当前的问题需要查证文件、工具等环境里的事实，用 `subagent` 启动一个使用全新上下文的子代理去查。调研期间，先问其余已经能问的问题，只有依赖这项调研的问题要等它回报。每项决策都交给用户，并等待答复。
 
-Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, etc.), dispatch a sub-agent with a fresh context window to find it; don't ask the user for anything you could look up yourself. Don't block on it: a running exploration is an unsettled prerequisite, so only the questions downstream of it wait for the sub-agent to report; ask the rest of the frontier now. The _decisions_ are the user's: put each to them and wait.
-
-The session is done when the frontier is empty **and** every sub-agent this session dispatched has reported: a research task still running is an unsettled prerequisite, so an empty frontier on its own is not enough. By then every branch of the design tree is visited, with nothing left silently assumed. Do not act on it until the user confirms you have reached a shared understanding.
+只有可提问集合为空，**且本次会话派出的所有子代理都已回报**，这次访谈才结束。调研仍在运行时，对应的前置条件仍未解决。结束时，设计树的每条分支都应已讨论过，所有假设都应说清楚。等用户确认双方已达成共识，再执行讨论中的方案。

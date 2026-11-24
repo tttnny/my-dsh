@@ -1,45 +1,52 @@
 ---
 name: implement-spec
-description: "Implement the result of /to-spec and /to-tickets in code."
+description: "把 /to-spec 和 /to-tickets 产出的规格和工单落实到代码中。"
 disable-model-invocation: true
 ---
 
-You have been provided a spec. This spec should have tickets associated with it, describing how to implement the spec.
+你会收到一份规格，以及说明如何实现这份规格的相关工单。
 
-The issue tracker should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
+如果还没有提供工单跟踪系统的信息，请告知用户运行 `/setup-matt-pocock-skills`。
 
-The goal is the entire spec implemented on a single **integration branch**, with every ticket resolved the way the issue tracker closes work.
+目标是在同一个**集成分支**上实现整份规格，并按工单跟踪系统的流程处理每张工单。
 
-The tickets are not a list of steps. They are a **task graph** with blocking relationships between them. This means there is always a **frontier** of tickets which are ready to be grabbed.
+这些工单不是线性步骤列表，而是一张带阻塞关系的**任务依赖图**。当前所有前置工单都已合并进集成分支、可以开工的工单，组成**可开工集合**。
 
-A ticket gets its worktree when it joins the frontier, cut from the integration branch tip of that moment. A blocked ticket holds no worktree: a base cut before its blockers landed is already behind by the time it starts, and turns a merge that should be a fast-forward into a conflict resolution.
+分派工单时，从集成分支当时的最新提交为该工单创建 Git 工作树。仍有依赖的工单先等前置工单合并，再创建工作树。过早创建会让基线在开工前就落后，原本能快进的合并也可能需要解决冲突。
 
-Start every subagent with `subagent`, never `subagent_fork`: a fork inherits this conversation's completed turns, which is the context a worker was meant to start without.
-Communication to and from subagents should be sparse. Communicate primarily through **context pointers**: to the spec, tickets, research notes, and previous commits. Don't duplicate information already available via pointers.
+用 `subagent` 启动每个子代理，使它从全新的上下文开始。`subagent_fork` 会继承当前会话已完成的轮次。
 
-**Implementer subagents** run in the background without being asked, so issue their spawns in one message and then stop working. Each completion notice starts a new turn for you, which keeps concurrency at the graph's maximum.
+与子代理之间的沟通应尽量精简，主要通过**上下文指针**传递信息：指向规格、工单、探索笔记和已有提交的位置。通过指针能查到的信息无需重复。
 
-## Steps
+**实现子代理**默认在后台运行。把同批分派的调用放在同一条消息中。有子代理还在运行且当前无事可做时，用 `wait_agent` 等待回报。
 
-1. Read the spec and tickets to understand the task graph.
+## 步骤
 
-2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. Ensure the exploration subagent can save files - it should save its markdown notes in a directory outside the repo, accessible by all future subagents. This lets **implementer subagents** focus on implementation rather than exploration. **When you take this step, its notes gate the run: no implementer starts until the exploration subagent has reported back and the notes exist.**
+1. 阅读规格和工单，梳理出完整的**任务依赖图**，并据此确定首批**可开工集合**。运行期间由主代理自行记录哪些工单已合并进集成分支，以此更新可开工集合。
 
-3. Create the integration branch. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge in step 6 (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
+2. （可选）按工单需要，使用**探索子代理**查看相关代码库文件或外部文档，并将 Markdown 探索笔记写到仓库之外、后续子代理都能访问的目录。这样**实现子代理**就可以专注于实现工作，而不是探索工作。**如果安排了探索，必须等探索子代理回报并确认探索笔记路径后，再进入第 4 步分派实现子代理。**
 
-4. Staff the **frontier**: for each ready ticket, and only for those, use a fresh **implementer subagent**, create the worktree and branch from that commit, and spawn it with `cwd` set to that worktree, so `read`, `edit` and `write` land there along with `bash`. If step 2 was taken, don't start any of this until the exploration notes exist. Each implementer subagent:
-   - confirms its worktree is based on the integration branch tip it was handed, and resets onto it if not;
-   - calls the Skill tool with `tdd` to build the ticket;
-   - merges the integration branch tip into its own branch before reporting done
+3. 准备集成分支和集成工作树，记录集成工作树的绝对路径和开始实现前的提交 SHA。主代理从这个工作树协调后续工作：
+   - 如果主代理会话已在本次任务专用的干净工作树（非主工作树、非默认主分支）上启动，直接使用该工作树作为集成工作树，使用它已检出的分支作为集成分支。
+   - 其他情况下，创建集成分支和检出该分支的专属 Git 工作树，主代理切换到这个工作树。
 
-5. Create the **dedicated merger subagent** once, before the first merge, and give it every finished branch to merge for the rest of the run, rather than a new merger per branch. One merger for the whole run keeps merge standards consistent, and creating it before the first merge means no merge waits on a subagent being spawned.
+4. 从**可开工集合**中分派尚未启动的工单，并在当前并发上限内尽可能并行推进：
+   - **分派顺序**：按每张工单合并后能立即让多少其他工单进入可开工集合，从多到少分派（只统计届时所有前置工单都已合并的工单）。
+   - **创建环境**：为每张分派的工单从集成分支当前的最新提交创建独立分支和 Git 工作树，用 `subagent` 启动一个新的**实现子代理**，将 `cwd` 设为该工作树的绝对路径，并传入基线提交和指向规格、工单及探索笔记的路径（如有）。
+   - **实现子代理的要求**：
+     - 在开始之前确认其工作树基于分派时给出的提交，如果没有则重新设置；
+     - 通过 `skill` 工具加载 `tdd`，按其步骤实现工单；
+     - 在报告完成前，把集成分支的最新提交合并到自己的分支中。
 
-6. The moment an **implementer subagent** reports, send its branch to the **dedicated merger subagent**, ahead of whatever else you were about to do. A report left sitting holds back every ticket blocked behind it and widens the gap between that worktree's base and the integration branch. Once the merge lands, re-read the **frontier** and the integration branch tip, then staff each newly ready ticket as in step 4, so concurrency stays at the graph's maximum.
+5. 持续接收**实现子代理**的回报，依次合并并继续分派，直到所有工单都合并进集成分支：
+   - **立即移交合并**：实现子代理一回报，优先把它的分支交给**专职合并子代理**，再处理手头的其他工作。拖延会挡住依赖这张工单的其他工单，也会让其他工作树的基线越来越落后。
+   - **复用专职合并子代理**：首次收到回报时，启动一个**专职合并子代理**，把 `cwd` 设为第 3 步记录的集成工作树绝对路径。后续所有完成的分支都用 `send_message` 交给同一个专职合并子代理依次合并。如果合并遇到冲突，由它在集成工作树中解决并重新验证后再完成合并。主代理等它报告合并完成，再读取集成分支的新提交。
+   - **按需创建草稿 PR**：如果工单跟踪系统通过 PR 关闭工单，或用户要求开 PR，在第一次合并完成后创建草稿 PR，注明该 PR 会关闭规格及相关工单（集成分支至少比主分支多一个提交后再创建）。
+   - **继续分派**：每次合并完成后，读取集成分支的最新提交，更新可开工集合，按第 4 步重新排序尚未分派的工单，并在空出并发名额后继续分派。
+   - **纠偏**：实现子代理偏离任务时，用 `interrupt_agent` 停止它当前的工作，再用 `send_message` 说明如何继续，让它沿用已读过的上下文。
 
-An implementer that has gone the wrong way keeps its history: `interrupt_agent` stops its turn, and `send_message` redirects it. That is cheaper than respawning, which pays for the reading again.
+6. 所有工单都合并完成后，通过 `skill` 工具加载 `code-review`，以第 3 步记录的提交为参照点，按原始规格审查整个集成分支。如果审查提出问题，从集成分支最新提交创建独立分支和工作树，用 `subagent` 启动一个新的**实现子代理**，将 `cwd` 设为修复工作树的绝对路径，由它修复全部问题。完成后同样交给**专职合并子代理**合并进集成分支。合并后只验证已修复的问题，随后进入下一步。
 
-7. Once all tickets are complete, call the Skill tool with `code-review` on the integration branch. Fix all issues raised by the code review in a single fresh **implementer subagent**.
+7. 如果已创建草稿 PR，将它标记为可审查；否则按工单跟踪系统的流程关闭各张工单，并向用户报告集成分支的名称。
 
-8. If a draft PR exists, mark it ready for review. Otherwise, resolve each ticket the way the issue tracker closes work, and report the integration branch.
-
-9. Clean up all **implementer subagent** worktrees.
+8. 清理所有**实现子代理**（包括审查修复子代理）的工作树及对应临时分支，保留集成工作树供后续查看或推送。

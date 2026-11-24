@@ -112,7 +112,7 @@ dsh plugin --profile web add @lynn123411/dsh-grilling-form
 
 ### 技能覆盖
 
-`skills/grilling/SKILL.md`、`skills/implement-spec/SKILL.md`、`skills/code-review/SKILL.md` 是三个技能的 DSH 适配版，只带 SKILL.md（DSH 不读 `agents/openai.yaml`），许可随正文放在 `skills/LICENSE`。
+`skills/grilling/SKILL.md`、`skills/implement-spec/SKILL.md`、`skills/code-review/SKILL.md` 是三个技能的中文 DSH 适配版。插件读取各技能的 `SKILL.md`，许可随正文放在 `skills/LICENSE`。
 
 预设把 `skill-filesystem` 挂在 preset 层，注册表先合并全局层、再按 scope 链覆盖，近的层直接赢，rank 只在同一层里比；根层注册的 rank 0 也压不过 preset 层。所以 provider 在 `agent/created` 时通过 `agent.ctx` 挂进 agent 层（比 preset 更近），插件比 agent 晚挂上时用 `agents.list()` 补一遍。`skills` 服务缺席时跳过这个 agent，工具照常注册；每个 provider 的卸载句柄按 agent 记在插件里，`agent/disposed` 与插件卸下都调用它，预设层那份回来。
 

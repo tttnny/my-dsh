@@ -97,25 +97,29 @@ await test('调用策略照 frontmatter：implement-spec 只给用户调，另�
 
 await test('正文带着适配与增强：grilling 的表单轮与收工条件', () => {
   const content = definitions.get('grilling').content;
-  assert.match(content, /grilling_form/);
-  assert.match(content, /every sub-agent this session dispatched has reported/);
+  assert.match(content, /每轮只调用一次 `grilling_form`/);
+  assert.match(content, /工具拒绝输入时，.*重调 `grilling_form`/);
+  assert.match(content, /本次会话派出的所有子代理都已回报/);
 });
 
-await test('正文带着适配与增强：implement-spec 的 subagent、cwd、纠偏与 frontier/merger', () => {
+await test('正文带着适配与增强：implement-spec 按解锁数分派，在集成工作树依次合并', () => {
   const content = definitions.get('implement-spec').content;
   assert.match(content, /subagent_fork/);
-  assert.match(content, /\`cwd\`/);
+  assert.match(content, /将 `cwd` 设为该工作树的绝对路径/);
   assert.match(content, /interrupt_agent/);
-  assert.match(content, /A ticket gets its worktree when it joins the frontier/);
-  assert.match(content, /dedicated merger subagent/);
-  assert.match(content, /exploration notes/);
+  assert.match(content, /分派工单时，从集成分支当时的最新提交/);
+  assert.match(content, /等探索子代理回报并确认探索笔记路径/);
+  assert.match(content, /按每张工单合并后能立即让多少其他工单进入可开工集合，从多到少分派/);
+  assert.match(content, /把 `cwd` 设为第 3 步记录的集成工作树绝对路径/);
+  assert.match(content, /用 `send_message` 交给同一个专职合并子代理依次合并/);
 });
 
-await test('正文带着适配与增强：code-review 的命名、纠偏与两处只读约束', () => {
+await test('正文带着适配与增强：code-review 的命名、等待回报、纠偏与两处只读约束', () => {
   const content = definitions.get('code-review').content;
-  assert.match(content, /standards-review/);
+  assert.match(content, /standards-review.*spec-review/);
+  assert.match(content, /用 `wait_agent` 等待所有已启动的审查子代理回报/);
   assert.match(content, /interrupt_agent/);
-  assert.equal(content.match(/Review only: do not modify the working tree or create commits\./g).length, 2);
+  assert.equal(content.match(/只做审查，不修改工作树，不创建提交。/g)?.length, 2);
 });
 
 await test('provider：三个候选 rank 为 SKILL_RANK，get 取回同一份定义', async () => {
