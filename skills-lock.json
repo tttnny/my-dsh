@@ -3,17 +3,17 @@
   "skills": {
     "ask-matt": {
       "source": "tttnny/matt-skills-lynn",
-      "commit": "90c40b3b27bd941b9edffc4f9748b4dd16fe0566",
+      "commit": "db72d72ff080a8be04f316961986ec2caa1191de",
       "sourceType": "github",
       "skillPath": "skills/engineering/ask-matt/SKILL.md",
-      "computedHash": "7ff2383b40fe9d8f3e753d267d964fb2b44d120a948fd2a57c3b26ddfc318370"
+      "computedHash": "26031aa5ded046ea7444c6709f3b35c4578a41b176da4e8a36feaa5bc0d8c5be"
     },
     "code-review": {
       "source": "tttnny/matt-skills-lynn",
-      "commit": "90c40b3b27bd941b9edffc4f9748b4dd16fe0566",
+      "commit": "db72d72ff080a8be04f316961986ec2caa1191de",
       "sourceType": "github",
       "skillPath": "skills/engineering/code-review/SKILL.md",
-      "computedHash": "86e98e2995da5a6a34ffbfeb472ef54eb88249e710267f55edf593dc45875a0c"
+      "computedHash": "4daff14bfd69b34ac10eb71657e8ee5a3bbd8f498c48f3fdd6f5b473af93defe"
     },
     "codebase-design": {
       "source": "tttnny/matt-skills-lynn",
@@ -52,10 +52,10 @@
     },
     "grilling": {
       "source": "tttnny/matt-skills-lynn",
-      "commit": "90c40b3b27bd941b9edffc4f9748b4dd16fe0566",
+      "commit": "db72d72ff080a8be04f316961986ec2caa1191de",
       "sourceType": "github",
       "skillPath": "skills/productivity/grilling/SKILL.md",
-      "computedHash": "f018fdaa69f385b723936f4b03435044feb463ec01b7a495a26a8f2413742286"
+      "computedHash": "b76428bb51adfe034ff3283e51071ab3ba329b25fc87aea79c208db64806a506"
     },
     "handoff": {
       "source": "tttnny/matt-skills-lynn",
@@ -73,10 +73,10 @@
     },
     "implement-spec": {
       "source": "tttnny/matt-skills-lynn",
-      "commit": "90c40b3b27bd941b9edffc4f9748b4dd16fe0566",
+      "commit": "db72d72ff080a8be04f316961986ec2caa1191de",
       "sourceType": "github",
       "skillPath": "skills/engineering/implement-spec/SKILL.md",
-      "computedHash": "65e45e112af6684ccf6a91cb1f7e10e247ab2f20fab00a0b3a3a1ed61fe0b42c"
+      "computedHash": "f2dce82b41f659a7c8d528da2262c1b6d59cc40c07ea32d70b34533b733f158f"
     },
     "improve-codebase-architecture": {
       "source": "tttnny/matt-skills-lynn",
