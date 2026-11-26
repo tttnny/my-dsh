@@ -22,7 +22,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import { listPackages, repoRoot } from './lib/repo.mjs';
+import { hasDependencies, listPackages, repoRoot } from './lib/repo.mjs';
 
 /** 逐个解析 `--k v` 与 `--flag`。 */
 function parseArgs(argv) {
@@ -48,8 +48,6 @@ const json = args.json === true;
 const ledgerOnly = args['ledger-only'] === true;
 
 const root = repoRoot(resolve(join(import.meta.dirname, '..')));
-const hasDependencies = (pkg) => ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
-  .some((field) => Object.keys(pkg[field] ?? {}).length > 0);
 
 /** 在一个目录跑一条命令，回传结果（输出在非 json 模式下原样透传）。 */
 function run(command, cwd, passthrough) {

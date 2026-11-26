@@ -8,7 +8,7 @@
 
 1. **先把版本号加上去**：`npm publish` 同版本第二次必被 registry 拒绝，白跑一遍。改该包 `package.json` 的 `version`（`dsh-baseline --write --bump patch` 只在声明真改了时才加位——内核升版那一轮已顺带加过，日常发版要自己改）。完成判据：该包的 `version` 与 `npm view @lynn123411/dsh-<name> version` 答的不一样。
 2. **scoped 包带 `publishConfig.access: "public"`**：不带就发不出去或发成受限包。`node tools/new-plugin.mjs` 生成的骨架默认写这一项；手写新包漏了它，`node tools/assert-ledger.mjs` 判据 15 会在提交时拦下。
-3. 各包自己的 `check`（见 [plugins.md](./plugins.md)「验证」）、`node tools/assert-ledger.mjs`（清单与目录的一致性）与 `npm pack --dry-run` 清单。
+3. 跑仓库级检查（见 [plugins.md](./plugins.md)「验证」），实际打包并检查产物清单。
 
 `publish` 工作流在干净 runner 上先执行 `pnpm install --frozen-lockfile` 与 `node tools/check.mjs`，通过后才执行 `npm publish`。本机是否补跑 `node tools/ci-check.mjs`，按 [plugins.md](./plugins.md)「仓库级 check 与 CI」的适用条件判断。`git push` 同样只在用户下令后执行。
 
@@ -21,18 +21,17 @@ gh workflow run publish.yml --repo tttnny/my-dsh -f packages=<包名> [-f dry_ru
 gh run watch
 ```
 
-- `packages` 留空时自动挑「本地版本 registry 上还没有」的包；也可以写包名、目录名或 `plugins/<目录>`，逗号或空格分隔。
-- 第一步是 `node tools/publish-plan.mjs` 挑包：版本号没改（registry 上已有同版本）时在这里就红，不会白跑后面的安装与 check。
-- 然后按 `check.yml` 的装法装依赖、跑 `node tools/check.mjs`，再逐个包 `npm pack --dry-run` 与 `npm publish --access public --tag <dist-tag>`。
-- `dry_run` 勾上时只跑门禁与 `npm pack`，不执行 `npm publish`。
-- 一次性准备：仓库 Settings → Secrets and variables → Actions 加 `NPM_TOKEN`（npm 发布令牌）；缺它时发布那一步报错退出。
+- `packages` 留空时自动挑 registry 上没有的本地版本。也可以写包名、目录名或包路径，以逗号或空格分隔。正式发布指定了已有版本时，计划阶段直接失败。
+- `dry_run` 可在任意分支运行，执行安装、检查和打包。显式指定包时可演练已发布的版本，无需 `NPM_TOKEN`。
+- 正式发布选择 `main`。工作流按 `check.yml` 的装法安装依赖，跑 `node tools/check.mjs`，再为整批包生成压缩包并检查内容。上传步骤使用经过上述检查的压缩包，并写入标签和逐包结果。上传需要仓库 Actions secret `NPM_TOKEN`。
+- 批量发布中途失败时，从任务摘要取剩余包名，只触发这些包。如果上传结果不明，先核对报错的包是否已发。
 - 推送事件要几分钟才进 Actions 队列：`gh run list` 立刻看不到运行不等于没触发，过几分钟再查；要立刻跑就用 `gh workflow run <工作流>` 手动触发。
 
-版本号不在工作流里改：发布前先改要发的包 `package.json` 的 `version` 并提交，触发时选的分支就是发出去的那份代码。
+发布前改好各包 `package.json` 的 `version` 并提交。工作流摘要记录本次使用的提交 SHA。
 
 ## 发布后索引重建
 
-`plugins/` 与 `presets/` 同时发布成一份 DSH 插件索引（`https://tttnny.github.io/my-dsh/index.json`，见根 [README](../../README.md)「插件索引」）。索引是生成物、不入库：`publish` 工作流发完包后调用 `market` 工作流重建并部署，推进 `main` 也会重建一次。索引读的是 npm registry，所以刚发完的版本要等 registry 的完整 packument 更新后才进索引。
+`plugins/` 与 `presets/` 同时发布成一份 DSH 插件索引（`https://tttnny.github.io/my-dsh/index.json`，见根 [README](../../README.md)「插件索引」）。索引是生成物。推进 `main` 后，相关改动触发 `market` 重建并部署。普通重建会报告并跳过 npm 返回 404 的包。`publish` 把已成功发布的包名、版本和标签传给 `market`，等 registry 的完整 packument 能列出这些版本才部署。等待上限为 3 分钟。超时时，按日志中的包名、版本和标签单独重跑 `market`，可用其 `expected` 输入指定这批目标。
 
 ## 发布不回装
 
@@ -42,7 +41,7 @@ gh run watch
 
 - **产物不入库**：`build` 生成的镜像目录（`lib/` 这类与 `src/` 对应的副本）由包的 `.gitignore` 挡住、留在 `files` 里、并由 `check` 的产物门禁断言未被 git 跟踪——`files` 不含产物目录时 npm 会漏打运行入口。手写源码形式的 `lib/` 属源码，不受这条约束。
 - **镜像与 `src/` 一一对应**：`build` 必须在 emit 前清掉上一轮的声明产物（`rmSync('lib/types')`，见 `dsh-chat-translate` 的 `build.mjs`），因为 `tsc` 从不清理 `outDir`：删掉或改名的模块会把它旧的 `.d.ts` 一直留在 `lib/types` 里，而 `files` 含 `lib`，旧声明会随发布包发出去。这条只能由「清镜像」保证——`lib` 是 gitignore 的、`git status` 不显示，「产物未被跟踪」那道门禁也看不见陈旧文件。目前只有 `dsh-chat-translate` 发声明产物，它靠 `build.mjs` 的两处保证一致：先 `rmSync('lib/types')`，再让 `tsc` 重新 emit，emit 失败置 `process.exitCode = 1`（只 `warn` 会让整个声明镜像静默消失）。要再加一道逐文件对账的闸门（陈旧与缺失两个方向都查），`archive/` 下某个已归档插件的 `scripts/assert-lib-mirror.mjs` 就是现成实现，抄一份进该包的 `check` 即可。
-- 构建产物由包自己的 `build` 生成。带 `scripts.prepack` 的包会在 `npm pack` / `npm publish` 时重建，发布产物可能不同于先前 `check` 验过的那份；其余包使用发布前 `check` 构建的产物。是否带 `prepack` 以本包 `package.json` 为准。
+- 构建产物由包自己的 `build` 生成。带 `scripts.prepack` 的包在 `npm pack` 时重建。工作流检查压缩包包含运行入口、bundle patch 和详情资源，记录 SHA-256，上传前复核摘要并直接发布压缩包。
 - 内核升版后各包声明的批量跟随与版本号，一次做完：`node tools/dsh-baseline.mjs --write --bump patch`（见 [plugins.md](./plugins.md)「版本与依赖」）。
 - 删掉任何文件时当场同步 `files`、`scripts` 与镜像断言，清单只写还存在的条目。许可声明见 [plugins.md](./plugins.md)「许可」。
 

@@ -70,10 +70,9 @@
 
 闸门自己坏了代价最大，改完必须验收一次：走一次**真实提交**，成功路径打出 `pre-commit: 通过（<包名>）`；再确认它真的装着——`git config --get core.hooksPath` 应回 `.githooks`（这条配置不进版本库，新克隆默认没有闸门）。`SKIP_CHECK=1` 只在确实跑不了时用；「检查全过的提交反而被钩子拦住」是钩子自己的 bug，去修钩子。
 
-### 仓库级 check 与 CI（`tools/check.mjs`、`.github/workflows/check.yml`、`.github/workflows/ledger.yml`）
+### 仓库级 check 与 CI（`tools/check.mjs`、`.github/workflows/check.yml`）
 
-CI 的 `check` 工作流在每个有依赖的包目录 `pnpm install --frozen-lockfile` 之后，跑上面的仓库级检查。它只在改动落到 `plugins/`、`presets/`、`tools/`、`.githooks/` 或工作流本身时跑；纯文档改动由 `ledger.yml` 跑 `node tools/check.mjs --ledger-only`：跳过包级 `check`，仍执行台账与产物新鲜度检查，不装依赖。
-
+`check` 工作流在每个 PR 和每次推送 `main` 时运行，任务名称固定为 `check`。包、仓库工具或工作流改动由 `node tools/install-dependencies.mjs` 逐包冻结安装，再跑完整检查。其他改动运行 `node tools/check.mjs --ledger-only`，查台账、详情文档与配图以及产物新鲜度。无法取得比较基准时跑全量。
 三件事它做不到，别把它读成「全绿就没问题」：它不装依赖（缺 node_modules 报退出码 2）；`tools/host-smoke.mjs` 这类要真内核的检查只在装了 DSH 的机器上有意义，CI 上跑不了——真装载仍要本机验收；`assert-ledger.mjs` 的判据 9（开发副本是不是软链）与判据 11（preset 抄本与运行中内核比对）都读本机的 `$DSH_HOME` 与内核，没装就跳过且退出码仍为 0，这两条不能靠 CI 兜底。
 
 **每个包的 `pnpm-workspace.yaml` 是安装契约的一部分，别当本机偏好**。pnpm 11 起有两条默认安全策略，干净环境（CI 就是这样）一定生效：拒绝安装发布不满 24 小时的包，并拒绝执行未登记的依赖构建脚本。本仓库刻意跟随内核的 alpha 版本线——升版当天就要装——所以这两条一定撞上，表现是 CI 的 `install` 一步红、而本机全绿。两处各治一半，缺一不可：

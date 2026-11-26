@@ -1,50 +1,52 @@
 name: check
 
-# 仓库级 check：台账 + 每个包自己的 check。本机的同一件事是 `.githooks/pre-commit`（只看改动的包），
-# 这里一次跑全部，换台机器或有人没装钩子时也拦得住。
-#
-# 只在改动落到包、仓库级工具或闸门本身时跑：逐包装依赖加自检要十分钟，纯文档改动不值得跑。
-# 文档与 README 的台账一致性由 ledger.yml 每次兜住。
 on:
   push:
     branches: [main]
-    paths:
-      - 'plugins/**'
-      - 'presets/**'
-      - 'tools/**'
-      - '.githooks/**'
-      - '.github/workflows/**'
   pull_request:
-    paths:
-      - 'plugins/**'
-      - 'presets/**'
-      - 'tools/**'
-      - '.githooks/**'
-      - '.github/workflows/**'
+
+permissions:
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-      # Node 版本随各包 `engines.node`（^22.19 || >=24）。
-      - uses: actions/setup-node@v4
+      - name: Select checks
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A missing base (first push or a force push) falls back to the full check.
+          if [[ -n "$BASE_SHA" ]] && git diff --quiet --no-renames "$BASE_SHA" HEAD -- plugins/ presets/ tools/ .githooks/ .github/; then
+            echo 'mode=ledger' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=full' >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
+          package-manager-cache: false
 
-      - run: corepack enable
-
-      # 仓库根不放 package.json、不放依赖（根 AGENTS.md 第 7 条），所以在每个有依赖的包目录里装。
-      # 冻结 lock：CI 不重解版本，`engines.dsh` 那条区间怎么解由各包已提交的 pnpm-lock.yaml 说了算。
-      - name: install
+      - name: Install dependencies
+        if: steps.scope.outputs.mode == 'full'
         run: |
-          for dir in plugins/* presets/*; do
-            if [ -f "$dir/package.json" ] && grep -qE '"(dependencies|devDependencies|peerDependencies)"' "$dir/package.json"; then
-              echo "== $dir"
-              (cd "$dir" && pnpm install --frozen-lockfile)
-            fi
-          done
+          corepack enable
+          node tools/install-dependencies.mjs
 
-      - name: check
-        run: node tools/check.mjs
+      - name: Check repository
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+        run: |
+          if [[ "$MODE" == ledger ]]; then
+            node tools/check.mjs --ledger-only
+          else
+            node tools/check.mjs
+          fi

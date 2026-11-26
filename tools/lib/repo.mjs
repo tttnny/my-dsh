@@ -77,6 +77,12 @@ export function listPackages(root) {
   return out;
 }
 
+/** 有依赖声明的包需要单独安装。 */
+export function hasDependencies(pkg) {
+  return ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
+    .some((field) => Object.keys(pkg[field] ?? {}).length > 0);
+}
+
 /**
  * 读一个包声明的版本范围清单：peerDependencies / devDependencies / dependencies 三处里
  * 以 `@deepseek-ai/` 开头的名字。

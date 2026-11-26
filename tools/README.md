@@ -8,15 +8,16 @@
 | 改完包 / 根 README / 规则文档后查台账一致性 | `node tools/assert-ledger.mjs [--dsh <版本>] [--quiet]` |
 | 查插件页的详情文档与配图：`meta.detail` 指向、文件成对、SVG 自包含、成对大小、`files` 覆盖 | `node tools/assert-detail.mjs` |
 | 画插件页配图：场景 JSON 渲成 SVG，文字转路径（要 python3 + fontTools，字体见 [plugin-preview.md](../docs/rules/plugin-preview.md)） | `python3 tools/preview-svg/gen.py --scene tmp/scene.json --out plugins/dsh-<name>/docs/preview.svg` |
-| 仓库级检查，验证顺序见 [plugins.md](../docs/rules/plugins.md)「验证」；`--ledger-only` 跳过包级 `check`，仍查台账与产物新鲜度 | `node tools/check.mjs [--ledger-only] [--json]` |
+| 仓库级检查，验证顺序见 [plugins.md](../docs/rules/plugins.md)「验证」；`--ledger-only` 跳过包级 `check`，仍查台账、详情文档与配图、产物新鲜度 | `node tools/check.mjs [--ledger-only] [--json]` |
 | 铺一个新插件的骨架（宿主 + 浏览器两半边，生成即 `pnpm check` 绿；默认还会跑 `pnpm install`） | `node tools/new-plugin.mjs dsh-<name> [--title 中文名] [--tool 工具名] [--host-only] [--no-install] [--link] [--out 目录]` |
 | 内核升版后把全部包的版本声明改齐；`--check` 比较在用内核与全部包声明，提交闸门的分工见 [.githooks/pre-commit](../.githooks/pre-commit) 头部 | `node tools/dsh-baseline.mjs [--write] [--bump patch] [--check] [--dsh <版本>] [--only <包名>]` |
 | 两版之间改了什么：默认比已装内核的安装产物；`--from-source` 比源码 tag（旧内核没装也能用），不给新版本就比当前已装内核；`--declared` 只看本仓声明过的包，`--presets` 在包差异之后附加一节官方 preset，`--all` 连 `package.json` 的版本号变动一起列，`--all-paths` 列出 `packages/` 之外的变动，`--list` 只列这台机器装了哪些内核 | `node tools/kernel-diff.mjs <旧版本> [<新版本>] [--from-source] [--declared] [--presets] [--all] [--only <包名>]`、`node tools/kernel-diff.mjs --list` |
 | 抄本与官方 preset：差异 / 两版官方差异 / 重抄 / 提示词变量 | `node tools/preset-copy.mjs <id> [--diff \| --official-diff \| --recopy \| --variables]` |
 | preset 随包技能的真装载（只装载内核的 skill provider，不起第二实例） | `node tools/probes/preset-skills.mjs --preset <id>`（另有 `--skills <目录>`、`--kernel <内核树>`、`--dsh <版本>`，见脚本头部） |
+| 在每个声明了依赖的包目录冻结安装（要联网） | `node tools/install-dependencies.mjs` |
 | 按 CI 的方式重跑安装与 check（要联网）；适用条件见 [plugins.md](../docs/rules/plugins.md)「仓库级 check 与 CI」 | `node tools/ci-check.mjs [--keep]` |
-| 发布前挑包：列出本地版本 registry 上还没有的包，并说明哪些包发不了（版本没改、缺 `publishConfig.access`）；Actions 的 `publish` 工作流第一步就是它 | `node tools/publish-plan.mjs [--packages <包名或目录>] [--json]` |
-| 生成插件索引（DSH「发现」页的索引源）：从 npm registry 取本仓各包已发布的版本，连同图标写到输出目录 | `node tools/market-index.mjs [--out <目录>] [--url <索引 URL>] [--registry <registry>] [--json]` |
+| 发布前挑包：列出本地版本 registry 上还没有的包，并说明哪些包发不了（版本没改、缺 `publishConfig.access`）；Actions 的 `publish` 工作流第一步就是它 | `node tools/publish-plan.mjs [--packages <包名或目录>] [--dry-run] [--json]` |
+| 生成插件索引（DSH「发现」页的索引源）：从 npm registry 取本仓各包已发布的版本，连同图标写到输出目录 | `node tools/market-index.mjs [--out <目录>] [--url <索引 URL>] [--registry <registry>] [--expected '<JSON>'] [--json]` |
 | 变异测试：改一处、跑一条命令、默认还原（未提交的文件也能用） | `node tools/mutate.mjs --file <f> --from <旧> --to <新> -- <命令>`（另有 `--dry-run` 只数命中、`--keep` 留下变异） |
 | 宿主半边能不能装载（不重启正在服务的实例） | `node tools/host-smoke.mjs [--compose-only]` |
 | preset 的组合解析（`--dump-config`） | `node tools/preset-compose.mjs <id \| --all>` |

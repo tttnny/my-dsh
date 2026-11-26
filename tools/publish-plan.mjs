@@ -3,7 +3,7 @@
  * 发布规划：挑出这次要发到 npm 的包，并把不能发的原因一次说清。
  *
  * 发布流程写在 docs/rules/release.md：先改 package.json 的 version，再跑各包的 check、台账与
- * `npm pack --dry-run`，最后 `npm publish`。这个脚本只做第一道判定——哪些包该发、哪些发不了——
+ * `npm pack`，最后发布已核对的压缩包。这个脚本只做第一道判定——哪些包该发、哪些发不了——
  * 不改文件、不发布。GitHub Actions 的 publish 工作流用它挑包，本机也能直接跑。
  *
  * 判定依据是 registry 上已有的版本：本地版本已经在 registry 上，说明版本号没改，发出去必被拒绝
@@ -13,6 +13,7 @@
  *   node tools/publish-plan.mjs                    # 自动：本地版本 registry 上还没有的包
  *   node tools/publish-plan.mjs --packages dsh-chat-translate,plugin-upgrade-cordis
  *   node tools/publish-plan.mjs --json             # 机器读；人读的摘要走 stderr
+ *   node tools/publish-plan.mjs --packages <包> --dry-run  # 演练时允许指定已发布的版本
  * 退出码：0 有包可发且没有包被拦下，1 没有可发的包或有包被拦下，2 跑不起来（参数不对、查不到 registry）。
  */
 import { spawnSync } from 'node:child_process';
@@ -39,11 +40,12 @@ function stop(message, code = 2) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const known = new Set(['packages', 'json']);
+const known = new Set(['packages', 'json', 'dry-run']);
 for (const key of Object.keys(args)) {
-  if (!known.has(key)) stop(`认不得的参数 --${key}；只认 --packages 与 --json`);
+  if (!known.has(key)) stop(`认不得的参数 --${key}；只认 --packages、--json 与 --dry-run`);
 }
 const json = args.json === true;
+const dryRun = args['dry-run'] === true;
 const packagesArg = typeof args.packages === 'string' ? args.packages : '';
 
 const root = repoRoot(import.meta.dirname);
@@ -93,7 +95,7 @@ if (!explicit) {
   for (const token of tokens) {
     const entry = index.get(token);
     if (entry === undefined) {
-      stop(`认不得的包 ${token}；给包名（@lynn123411/dsh-x）、目录名（dsh-x）或 plugins/<目录>`);
+      stop(`认不得的包 ${token}；给包名、目录名或 plugins/、presets/ 下的包路径`);
     }
     if (seen.has(entry.rel)) continue;
     seen.add(entry.rel);
@@ -117,7 +119,7 @@ for (const entry of candidates) {
     plan.blocked.push({ ...record, reason: 'package.json 没有 version' });
     continue;
   }
-  if (publishedVersions(entry.name).includes(version)) {
+  if (!(explicit && dryRun) && publishedVersions(entry.name).includes(version)) {
     if (explicit) {
       plan.blocked.push({ ...record, reason: `registry 上已有 ${version}；先改 package.json 的 version` });
     } else {
@@ -130,10 +132,10 @@ for (const entry of candidates) {
 
 const lines = [];
 lines.push(explicit ? 'publish-plan: 按 --packages 指定的包判定' : 'publish-plan: 自动挑包（registry 上已有本地版本的包不列）');
-for (const entry of plan.publish) lines.push(`发布  ${entry.name}@${entry.version}  ${entry.rel}`);
+for (const entry of plan.publish) lines.push(`${dryRun ? '打包' : '发布'}  ${entry.name}@${entry.version}  ${entry.rel}`);
 for (const entry of plan.skip) lines.push(`跳过  ${entry.name}@${entry.version}  ${entry.rel}  ${entry.reason}`);
 for (const entry of plan.blocked) lines.push(`拦下  ${entry.name}@${entry.version}  ${entry.rel}  ${entry.reason}`);
-lines.push(`publish-plan: 可发 ${plan.publish.length} 个，跳过 ${plan.skip.length} 个，拦下 ${plan.blocked.length} 个`);
+lines.push(`publish-plan: ${dryRun ? '可打包' : '可发'} ${plan.publish.length} 个，跳过 ${plan.skip.length} 个，拦下 ${plan.blocked.length} 个`);
 if (plan.publish.length === 0 && plan.blocked.length === 0) {
   lines.push('publish-plan: 没有可发的包——先改要发的包 package.json 的 version');
 }

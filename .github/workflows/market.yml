@@ -1,28 +1,28 @@
 name: market
 
-# 插件索引（DSH「发现」页的索引源）：从 npm registry 现生成 index.json 与 icons/，部署到 GitHub Pages。
-# 索引是生成物，不入库——仓库里不放一份会过期的副本，每次都由 tools/market-index.mjs 现算。
-#
-# 三处触发：推进 main、Actions 页面手动跑、以及 publish 工作流发完包之后调用（新版本要立刻进索引）。
-# 一次性准备：仓库 Settings → Pages 的 Source 选 GitHub Actions。
 on:
   push:
     branches: [main]
-    # 索引只由包与生成器决定：文档改动不重建、不重新部署。
     paths:
       - 'plugins/**'
       - 'presets/**'
       - 'tools/market-index.mjs'
+      - 'tools/lib/repo.mjs'
       - '.github/workflows/market.yml'
   workflow_dispatch:
+    inputs:
+      expected:
+        description: '等待指定 npm 版本（可选 JSON 数组，每项为 name、version、tag）'
+        type: string
+        default: ''
   workflow_call:
+    inputs:
+      expected:
+        type: string
+        default: ''
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: {}
 
-# 同一时间只跑一个：两次部署交错会抢同一个 Pages 站点。
 concurrency:
   group: market
   cancel-in-progress: false
@@ -30,30 +30,38 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
-      # Node 版本随各包 engines.node（^22.19 || >=24）。
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
+          package-manager-cache: false
 
-      # 仓库根不放 package.json、不放依赖（根 AGENTS.md 第 7 条），这个脚本零依赖直接跑。
-      # 索引 URL 由 origin 推出（https://<owner>.github.io/<repo>/index.json），相对图标按它解析。
-      - name: generate
-        run: node tools/market-index.mjs --out site
+      - name: Generate plugin index
+        env:
+          EXPECTED: ${{ inputs.expected }}
+        run: node tools/market-index.mjs --out tmp/market --expected "$EXPECTED"
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5.0.0
         with:
-          path: site
+          path: tmp/market
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5.0.1

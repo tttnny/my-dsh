@@ -16,11 +16,13 @@
  *   node tools/market-index.mjs --url <索引 URL>        # 相对图标按这个 URL 解析；默认由 origin 推出
  *   node tools/market-index.mjs --registry <registry>  # 换 registry（默认 https://registry.npmjs.org）
  *   node tools/market-index.mjs --json                 # 机器读
- * 退出码：0 成功，1 生成的索引不过自检，2 跑不起来（网络、参数、包没发布）。
+ *   node tools/market-index.mjs --expected '<JSON>'    # 等待 [{name, version, tag}] 可列入索引
+ * 退出码：0 成功，1 生成失败，2 参数或运行环境不满足。
  */
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { listPackages, readJson, repoRoot, writeJson } from './lib/repo.mjs';
 
@@ -32,6 +34,8 @@ const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/u;
 const RANGE = /^[0-9A-Za-z.+<>=^~|* -]+$/u;
 const PACKAGE_NAME_MAX_LENGTH = 214;
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org';
+const REGISTRY_WAIT_MS = 180_000;
+const REGISTRY_RETRY_MS = 5_000;
 
 /** 逐个解析 --k v 与 --flag。 */
 function parseArgs(argv) {
@@ -46,14 +50,24 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const known = new Set(['out', 'url', 'registry', 'json']);
+const known = new Set(['out', 'url', 'registry', 'json', 'expected']);
 for (const key of Object.keys(args)) {
   if (!known.has(key)) {
-    console.error(`market-index: 认不得的参数 --${key}；只认 --out、--url、--registry 与 --json`);
+    console.error(`market-index: 认不得的参数 --${key}；只认 --out、--url、--registry、--json 与 --expected`);
     process.exit(2);
   }
 }
 const json = args.json === true;
+let expected;
+try {
+  expected = JSON.parse(args.expected || '[]');
+  if (!Array.isArray(expected) || expected.some((item) => (
+    !PACKAGE_NAME.test(item?.name ?? '') || !SEMVER.test(item?.version ?? '') || typeof item?.tag !== 'string' || !item.tag
+  ))) throw new Error();
+} catch {
+  console.error('market-index: --expected 应为 [{name, version, tag}]');
+  process.exit(2);
+}
 
 const root = repoRoot(resolve(join(import.meta.dirname, '..')));
 const outDir = resolve(root, typeof args.out === 'string' ? args.out : 'tmp/market');
@@ -154,27 +168,60 @@ function toRepository(value) {
 }
 
 /** 取一个包的 packument；scoped 名字按 registry 认的 @scope%2Fname 形式转义。 */
-async function fetchPackument(name) {
+async function fetchPackument(name, timeout = 30_000) {
   const url = `${registry}/${name.replace('/', '%2F')}`;
   let response;
   try {
-    response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(30000) });
+    response = await fetch(url, {
+      headers: { accept: 'application/json' }, cache: 'no-store', signal: AbortSignal.timeout(timeout),
+    });
   } catch (error) {
-    throw new Error(`读不到 ${url}：${error instanceof Error ? error.message : String(error)}`);
+    throw Object.assign(new Error('读不到 ' + url + '：' + error.message), { retryable: true });
   }
-  if (!response.ok) throw new Error(`读不到 ${url}：HTTP ${response.status}`);
+  if (response.status === 404) return undefined;
+  if (!response.ok) {
+    throw Object.assign(new Error('读不到 ' + url + '：HTTP ' + response.status), {
+      retryable: response.status === 429 || response.status >= 500,
+    });
+  }
   return response.json();
+}
+
+async function loadPackument(name, targets) {
+  if (targets.length === 0) return fetchPackument(name);
+  const deadline = Date.now() + REGISTRY_WAIT_MS;
+  let pending = targets;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      const packument = await fetchPackument(name, Math.min(30_000, Math.max(1, deadline - Date.now())));
+      lastError = undefined;
+      pending = targets.filter(({ version, tag }) => (
+        !Object.hasOwn(packument?.versions ?? {}, version) || packument['dist-tags']?.[tag] !== version
+      ));
+      if (pending.length === 0) return packument;
+    } catch (error) {
+      if (!error.retryable) throw error;
+      lastError = error;
+    }
+    const delay = Math.min(REGISTRY_RETRY_MS, deadline - Date.now());
+    if (delay > 0) await sleep(delay);
+  }
+  const details = pending.map(({ version, tag }) => version + '（' + tag + '）').join('、');
+  throw new Error(name + ' 等待 npm 元数据超时：' + details, { cause: lastError });
 }
 
 /**
  * 把一个包变成索引里的一条。
  * @param {{kind: 'plugin'|'preset', dir: string, name: string, pkg: any}} info - listPackages 给出的一条。
- * @returns {Promise<{entry: any, notes: string[]}>} 索引条目与生成过程中的说明。
+ * @param {{version: string, tag: string}[]} targets - 本次发布后必须列出的版本和标签。
+ * @returns {Promise<{entry?: any, notes: string[]}>} 索引条目与生成过程中的说明。
  */
-async function buildEntry(info) {
+async function buildEntry(info, targets) {
   const { kind, dir, name, pkg } = info;
   const notes = [];
-  const packument = await fetchPackument(name);
+  const packument = await loadPackument(name, targets);
+  if (!packument) return { notes: [name + ' 在 registry 上返回 404，暂不列入索引'] };
   const listed = new Set();
   const versions = [];
   for (const [version, manifest] of Object.entries(packument.versions ?? {})) {
@@ -225,6 +272,10 @@ async function buildEntry(info) {
   const distTags = {};
   for (const [tag, target] of Object.entries(packument['dist-tags'] ?? {})) {
     if (listed.has(target)) distTags[tag] = target;
+  }
+
+  for (const { version, tag } of targets) {
+    if (distTags[tag] !== version) throw new Error(name + '@' + version + ' 无法列入索引，目标标签为 ' + tag);
   }
 
   const entry = {
@@ -323,13 +374,14 @@ if (infos.length === 0) {
   process.exit(2);
 }
 
-const entries = [];
-const notes = [];
-for (const info of infos) {
-  const result = await buildEntry(info);
-  entries.push(result.entry);
-  notes.push(...result.notes);
+const packageNames = new Set(infos.map(({ name }) => name));
+for (const { name } of expected) {
+  if (!packageNames.has(name)) throw new Error(name + ' 不在当前索引的包清单中');
 }
+const results = await Promise.all(infos.map((info) => buildEntry(info, expected.filter(({ name }) => name === info.name))));
+const entries = results.flatMap(({ entry }) => entry ? [entry] : []);
+const notes = results.flatMap(({ notes }) => notes);
+if (entries.length === 0) throw new Error('没有已发布的包可列入索引');
 
 const index = {
   format: 1,

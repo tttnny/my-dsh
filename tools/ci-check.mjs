@@ -24,7 +24,7 @@ import { cpSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, join, resolve } from 'node:path';
 
-import { listPackages, repoRoot } from './lib/repo.mjs';
+import { repoRoot } from './lib/repo.mjs';
 
 /** 逐个解析 `--k v` 与 `--flag`。 */
 function parseArgs(argv) {
@@ -91,20 +91,10 @@ if (run('corepack', ['enable', '--install-directory', binDir], workRepo) !== 0) 
   stop('corepack enable 失败；这台机器没有可用的 corepack（Node 22+ 自带）');
 }
 
-const packages = listPackages(workRepo).filter((entry) => ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
-  .some((field) => Object.keys(entry.pkg[field] ?? {}).length > 0));
 console.log(`ci-check: 干净 HOME ${workHome}`);
 console.log(`ci-check: 工作区副本 ${workRepo}`);
-console.log(`ci-check: 要装依赖的 ${packages.length} 个包`);
-
-for (const entry of packages) {
-  console.log(`\n=== ${entry.rel} → pnpm install --frozen-lockfile`);
-  const status = run('pnpm', ['install', '--frozen-lockfile'], entry.dir);
-  if (status !== 0) {
-    console.error(`ci-check: ${entry.rel} 的 install 退出码 ${status}；现场保留在 ${work}`);
-    process.exit(1);
-  }
-}
+const installStatus = run('node', ['tools/install-dependencies.mjs'], workRepo);
+if (installStatus !== 0) stop(`安装失败；现场保留在 ${work}`, installStatus);
 
 console.log('\n=== node tools/check.mjs');
 const checkStatus = run('node', ['tools/check.mjs'], workRepo);
