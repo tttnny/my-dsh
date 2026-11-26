@@ -30,9 +30,9 @@ dsh plugin --profile web add @lynn123411/dsh-subagent-judge-dispatch
       name: '@lynn123411/dsh-subagent-judge-dispatch'
 ```
 
-这条行同时承载两个半边：宿主半边在那条行下注册插件本体，浏览器半边由 Web shell 按 root loader 的 enabled entry 依据 `dsh.client` 声明服务 `lib/client.js`。行不写 `config`——配置一律经插件页的卡片读写，避免出现第二处真相。
+这条行同时承载两个半边：宿主半边在那条行下注册插件本体，浏览器半边由 Web shell 按 root loader 的 enabled entry 依据 `dsh.client` 声明服务 `lib/client.js`。行不写 `config`——插件页的卡片与会话菜单读写同一份插件配置。
 
-开关有两个，都在插件页的配置卡片上：「改写子代理的模型与强度」关掉后不判断、也不记日志；「记录日志」关掉后照常判断，只是不写日志文件。整条 loader entry 关掉时插件完全不加载。任务类型清单里每一行还有自己的开关，关掉的行不参与判断，也不占编号。
+模型与推理等级菜单中可以按会话开关判断；关闭后该会话及其嵌套子代理的派工不判断，也不记日志。插件页的配置卡片可以设置会话默认是否开启，安装后默认开启；会话自己的选择优先于默认值。「记录日志」关掉后照常判断，只是不写日志文件。整条 loader entry 关掉时插件完全不加载。任务类型清单里每一行还有自己的开关，关掉的行不参与判断，也不占编号。
 
 宿主半边声明的服务（`inject`）：`credentials`、`sessions`、`sessionTitle`；`connection` 经 `ctx.inject` 取，取不到时插件照常加载、只是没有那三条读取通道；`settings` 同样经 `ctx.inject` 取，用来声明本条目不走宿主自动生成的设置页。
 
@@ -49,7 +49,8 @@ dsh plugin --profile web add @lynn123411/dsh-subagent-judge-dispatch
 
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
-| `enabled` | true | 判断能不能改写子代理的模型与强度。 |
+| `enabled` | true | 没有单独选择的会话是否默认开启判断。 |
+| `sessionOverrides` | `{}` | 会话 id 对应的开关选择，优先于默认值；切回默认值时通常删除该记录，若基础配置会恢复相反的值则保留明确选择。 |
 | `logEnabled` | true | 判断结果写不写进日志文件。 |
 | `endpointUrl` | 空 | 判断服务地址，按读者填的原样存，发请求时才补路径。 |
 | `judgeModel` | 空 | 判断模型 id。 |

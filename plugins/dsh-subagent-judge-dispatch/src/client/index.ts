@@ -3,11 +3,13 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-locale/client';
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
+import { SETTINGS_NAMESPACE } from '../enablement.ts';
+import { MODEL_OPTIONS_SLOT, SessionToggle } from './SessionToggle.tsx';
 import { injectCardStyles, setupSettingsUi } from './settings/ui.tsx';
-import { apply as registerDictionaries, en, zh } from './locales.ts';
+import { apply as registerDictionaries, NS, en, zh } from './locales.ts';
 
 /**
- * 浏览器半边：把配置卡片挂到宿主的「插件」页上。
+ * 浏览器半边：在插件页挂配置卡，在模型菜单挂会话开关。
  *
  * `inject` 是 cordis 服务名（`remote.credentials` 是判断密钥的写入通道）；
  * `package.json` 的 `dsh.client.inject` 是包名。
@@ -24,6 +26,12 @@ export const inject = ['slots', 'configForms', 'remote', 'remote.session', 'remo
 export function apply(ctx: ClientContext): void {
   injectCardStyles();
   registerDictionaries(ctx);
+  ctx.slots.inject(MODEL_OPTIONS_SLOT, () => ctx.slots.register({
+    name: MODEL_OPTIONS_SLOT,
+    id: 'subagent-judge-dispatch-enabled',
+    locale: NS,
+    inject: () => ({ form: ctx.configForms.get<Record<string, unknown>>(SETTINGS_NAMESPACE) }),
+  }, SessionToggle));
   ctx.effect(
     () => {
       setupSettingsUi(ctx as never);

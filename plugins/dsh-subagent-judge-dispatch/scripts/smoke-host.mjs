@@ -65,6 +65,7 @@ async function test(label, fn) {
 function makeConfig(overrides = {}) {
   const value = {
     enabled: true,
+    sessionOverrides: {},
     logEnabled: true,
     endpointUrl: 'http://judge.invalid',
     judgeModel: 'jev-latest',
@@ -77,6 +78,7 @@ function makeConfig(overrides = {}) {
   const ref = (key) => ({ get: () => value[key] });
   return {
     enabled: ref('enabled'),
+    sessionOverrides: ref('sessionOverrides'),
     logEnabled: ref('logEnabled'),
     endpointUrl: ref('endpointUrl'),
     judgeModel: ref('judgeModel'),
@@ -300,9 +302,16 @@ function mount(configOverrides = {}, options = {}) {
     describe: async () => ({ configured: true, writable: true }),
   };
   ctx.sessions = {
-    get: (id) => (id === 'session-main' ? (options.parentSession ?? { header: {}, snapshotEvents: () => [] }) : undefined),
+    get: (id) => (id === 'session-main'
+      ? (options.parentSession ?? { header: {}, snapshotEvents: () => [] })
+      : options.otherSessions?.[id]),
   };
   ctx.sessionTitle = { get: () => ({ title: options.parentTitle ?? '主对话标题' }) };
+  if (options.storedHeaders) {
+    ctx.provide('sessionPersistence', {
+      stat: async (id) => options.storedHeaders[id] && { header: options.storedHeaders[id] },
+    });
+  }
   // 插件的三条读取挂在 connection 的 /api 通道上：给了这个服务，页面读日志那条路
   // 才会被注册，下面「日志里存的就是发出去的请求」才有地方读。
   const routes = [];
@@ -439,6 +448,55 @@ await test('改写开关关着时不判断也不改写', async () => {
   });
   assert.equal(result, undefined);
   assert.equal(called, false);
+});
+
+await test('新安装默认开启，旧配置保留关闭状态且允许单个会话打开', async () => {
+  const defaults = plugin.Config({});
+  const existing = plugin.Config({ enabled: false });
+  assert.equal(defaults.enabled.get(), true);
+  assert.deepEqual(defaults.sessionOverrides.get(), {});
+  assert.equal(existing.enabled.get(), false);
+
+  const { handlers: configured } = mount({ enabled: false, sessionOverrides: { 'session-main': true } });
+  const result = await judgeOnce(configured, childAgent('child-enabled'), answer('2'));
+  assert.equal(result?.model, 'kimi-k3');
+});
+
+await test('根会话的选择作用于直接和嵌套派工，切回默认值后立即生效', async () => {
+  const { session: parent } = childAgent('child-parent');
+  const sessionOverrides = { 'session-main': false, 'child-parent': true };
+  const mounted = mount({ sessionOverrides }, {
+    otherSessions: { 'child-parent': parent },
+    storedHeaders: { 'child-dormant': { parentSession: 'session-main', origin: 'subagent' } },
+  });
+  const nested = childAgent('child-nested');
+  nested.session.header = { parentSession: 'child-parent', delegationDepth: 2 };
+  let calls = 0;
+  const stub = async () => { calls += 1; return answer('2')(); };
+  assert.equal(await judgeOnce(mounted.handlers, childAgent('child-direct'), stub), undefined);
+  assert.equal(await judgeOnce(mounted.handlers, nested, stub), undefined);
+  const reloaded = childAgent('child-reloaded');
+  reloaded.session.header = { parentSession: 'child-dormant', delegationDepth: 2 };
+  assert.equal(await judgeOnce(mounted.handlers, reloaded, stub), undefined);
+  assert.equal(calls, 0);
+  const logRoute = mounted.routes.find(route => route.path.endsWith('/log'));
+  const body = await (await logRoute.fetch(new Request('http://host/api/log'), {})).json();
+  assert.deepEqual(body.entries, []);
+
+  delete sessionOverrides['session-main'];
+  assert.equal((await judgeOnce(mounted.handlers, nested, stub))?.model, 'kimi-k3');
+  assert.equal(calls, 1);
+});
+
+await test('普通分叉会话的派工使用它自己的开关', async () => {
+  const fork = { header: { parentSession: 'session-main' }, snapshotEvents: () => [] };
+  const { handlers: configured } = mount(
+    { sessionOverrides: { 'session-main': false } },
+    { otherSessions: { 'session-fork': fork } },
+  );
+  const child = childAgent('child-forked-root');
+  child.session.header.parentSession = 'session-fork';
+  assert.equal((await judgeOnce(configured, child, answer('2')))?.model, 'kimi-k3');
 });
 
 await test('清单里没有填全的行时不判断', async () => {

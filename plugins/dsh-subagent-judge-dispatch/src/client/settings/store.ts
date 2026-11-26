@@ -22,6 +22,7 @@
  * credentials service, which is why no key value is ever part of this state.
  */
 
+import { DEFAULT_ENABLED } from '../../enablement.ts';
 import { isSelectableRow } from '../../server/judge-prompt.ts';
 import { JUDGE_API_KEY_REF, type CredentialsRemoteLike } from '../../server/credentials.ts';
 
@@ -120,8 +121,7 @@ export interface PageState {
   logFailed: boolean;
 }
 
-/** Profile entry id (== settings namespace). */
-export const SETTINGS_NAMESPACE = 'dsh-subagent-judge-dispatch';
+export { SETTINGS_NAMESPACE } from '../../enablement.ts';
 
 /** The Host's own allowlist namespace, which the card reads for model options. */
 export const ALLOWED_MODELS_NAMESPACE = 'subagent-model-selection-settings';
@@ -137,10 +137,9 @@ export interface ConfigFormLike {
     status: 'loading' | 'ready' | 'unavailable';
     value?: Record<string, unknown>;
     writable: boolean;
-    revision?: number;
   };
   subscribe(listener: () => void): () => void;
-  mutate(ops: readonly SettingsPathOpLike[], expectedRevision?: number): Promise<boolean>;
+  mutate(ops: readonly SettingsPathOpLike[]): Promise<boolean>;
 }
 
 /** The `remote.session` face the model catalogue is read through. */
@@ -565,7 +564,7 @@ export class DispatchCardStore {
   private state: PageState = {
     available: false,
     writable: false,
-    enabled: true,
+    enabled: DEFAULT_ENABLED,
     logEnabled: true,
     endpointUrl: '',
     judgeModel: '',
@@ -573,7 +572,7 @@ export class DispatchCardStore {
     models: [],
     catalogRead: false,
     committed: {
-      enabled: true,
+      enabled: DEFAULT_ENABLED,
       logEnabled: true,
       endpointUrl: '',
       judgeModel: '',
@@ -708,7 +707,7 @@ export class DispatchCardStore {
     if (value === undefined) return;
     const rows = Array.isArray(value.rows) ? (value.rows as unknown[]).map(readRow) : [];
     const committed = {
-      enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+      enabled: typeof value.enabled === 'boolean' ? value.enabled : DEFAULT_ENABLED,
       logEnabled: typeof value.logEnabled === 'boolean' ? value.logEnabled : true,
       endpointUrl: typeof value.endpointUrl === 'string' ? value.endpointUrl : '',
       judgeModel: typeof value.judgeModel === 'string' ? value.judgeModel : '',
@@ -841,13 +840,11 @@ export class DispatchCardStore {
   }
 
   /**
-   * Write one section's staged edits as one revision-fenced batch.
+   * Write one section's staged edits as one batch.
    *
-   * Commits are queued rather than overlapped: the Host fences each write on a
-   * revision, and two controls left in quick succession would otherwise have the
-   * second write fenced against a revision the first one just replaced. The queue
-   * also makes a write read the drafts as they stand when it runs, so a burst of
-   * edits coalesces into the fewest writes that still land the latest value.
+   * The card queues commits so each one reads the latest drafts and committed
+   * values after the previous commit settles. The shared form orders these
+   * writes with the session menu's writes and supplies their revision fences.
    *
    * The judgement section also writes a typed key, so leaving the key field and
    * leaving the endpoint field are one kind of gesture. The type rows are written
@@ -922,7 +919,7 @@ export class DispatchCardStore {
     }
     if (failure === '' && ops.length > 0) {
       try {
-        const landed = await form.mutate(ops, form.getSnapshot().revision);
+        const landed = await form.mutate(ops);
         // `false` is a refusal, not a rejection: the Host answered and did not
         // accept, so reporting success here would show a saved page over a
         // document that still holds the old value.

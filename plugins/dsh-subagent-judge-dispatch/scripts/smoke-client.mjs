@@ -100,6 +100,8 @@ const services = {
       const record = {
         name: options.name,
         key: options.key,
+        id: options.id,
+        inject: options.inject,
         locale: options.locale,
         component,
         disposed: false,
@@ -197,6 +199,13 @@ check('卡片声明了凭据服务（判断密钥的写入通道）', (exported.
 check('卡片以「宿主在服务本插件条目」为挂载条件', JSON.stringify(servedWatches[0]) === '["dsh-subagent-judge-dispatch"]');
 check('store 订阅了共享配置表单', formSubscribes > 0);
 check('字典注册上了', locales.includes('subagentjudgedispatch'));
+const toggle = registrations.find(record => record.id === 'subagent-judge-dispatch-enabled');
+check('会话开关注册在模型菜单并使用同一份配置表单',
+  toggle?.name === 'conversation.input.model.options'
+    && toggle.locale === 'subagentjudgedispatch'
+    && injects.includes('slot:conversation.input.model.options')
+    && toggle?.inject()?.form === form
+    && formLookups.at(-1) === 'dsh-subagent-judge-dispatch');
 check('没有占用设置页', registrations.every((record) => record.name !== 'settings.section'));
 
 check('样式表在 apply() 时追加一次，且带 id 便于判重', appendedStyles.length === 1 && appendedStyles[0].id === 'dsh-subagent-judge-dispatch-styles');

@@ -7,9 +7,10 @@ export const NS = 'subagentjudgedispatch';
 export const en = {
   'tab.design': 'Design',
   'tab.log': 'Log',
-  'switch.rewrite.title': 'Rewrite subagent model and effort',
-  'switch.rewrite.desc':
-    'Every subagent is judged once when it is delegated. While this is off, nothing is judged and nothing is logged.',
+  'switch.rewrite.title': 'Enable judge dispatch by default',
+  'switch.rewrite.desc': 'Applies to conversations without their own choice in the model menu.',
+  'sessionToggle.label': 'Subagent judge dispatch',
+  'sessionToggle.failed': 'Could not save judge dispatch for this conversation.',
   'switch.log.title': 'Record the log',
   'switch.log.desc': 'Write every judgement to a file under the DSH home, so it survives a restart.',
   'judge.title': 'Judgement service',
@@ -124,8 +125,10 @@ export const en = {
 export const zh: Record<keyof typeof en, string> = {
   'tab.design': '设计',
   'tab.log': '日志',
-  'switch.rewrite.title': '改写子代理的模型与强度',
-  'switch.rewrite.desc': '每个子代理在派工那一刻判断一次。这个开关关着时不判断，也不记日志。',
+  'switch.rewrite.title': '默认开启判断式子代理指派',
+  'switch.rewrite.desc': '会话在模型菜单中没有单独设置时，使用此默认值。',
+  'sessionToggle.label': '判断式子代理指派',
+  'sessionToggle.failed': '本会话的判断式子代理指派设置未能保存。',
   'switch.log.title': '记录日志',
   'switch.log.desc': '把每次判断写进 DSH 家目录里的一个文件，重启之后照样在。',
   'judge.title': '判断服务',

@@ -609,6 +609,7 @@ await test('端点地址：没带路径时自动补上，已经带了就不再�
 await test('配置读取：编号按清单顺序给，永远从 1 连着', () => {
   const refs = {
     enabled: { get: () => true },
+    sessionOverrides: { get: () => ({}) },
     logEnabled: { get: () => true },
     endpointUrl: { get: () => 'http://judge.invalid' },
     judgeModel: { get: () => 'judge-x' },
@@ -629,6 +630,7 @@ await test('配置读取：编号按清单顺序给，永远从 1 连着', () =>
 await test('配置读取：关掉的行留在清单里但不占编号', () => {
   const refs = {
     enabled: { get: () => true },
+    sessionOverrides: { get: () => ({}) },
     logEnabled: { get: () => true },
     endpointUrl: { get: () => 'http://judge.invalid' },
     judgeModel: { get: () => 'judge-x' },

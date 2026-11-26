@@ -1,8 +1,8 @@
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
+import { SETTINGS_NAMESPACE } from './enablement.ts';
 import {
   isJudgeUsable,
   readPluginConfig,
-  SETTINGS_NAMESPACE,
   type PluginConfigRefs,
   type ResolvedConfig,
 } from './server/config.ts';
@@ -13,6 +13,7 @@ import {
   readChildLabel,
   readDelegatedTask,
   resolveRootSessionId,
+  type SessionHeaderLike,
   type SessionLike,
 } from './server/identity.ts';
 import { judgeTaskType } from './server/judge-client.ts';
@@ -64,6 +65,7 @@ interface HostContext {
   sessionTitle: SessionTitleLike;
   settings: SettingsLike;
   fiber: unknown;
+  get(name: 'sessionPersistence'): { stat(id: string): Promise<{ header: SessionHeaderLike } | undefined> } | undefined;
   on(event: string, listener: (...args: any[]) => unknown): () => void;
   effect(factory: () => void | (() => void), label?: string): unknown;
   inject(names: string[] | string, callback: (ctx: HostContext) => void | (() => void)): void;
@@ -176,19 +178,20 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
    */
   ctx.on('agent/created', async (payload: { agent?: RequestAgent }) => {
     const agent = payload?.agent;
-    if (agent === undefined) return;
-    const cfg = resolvedConfig();
-    // Only subagents, and only while the model-rewrite switch is on: with it off
-    // nothing is judged and nothing is logged, so the log only ever holds
-    // judgements that actually ran.
-    if (!isSubagent(agent) || !cfg.enabled) return;
-    if (judged.has(agent.id)) return;
-    if (!isJudgeUsable(cfg)) return;
-    judged.add(agent.id);
+    if (agent === undefined || !isSubagent(agent) || judged.has(agent.id)) return;
 
     try {
+      const lookup = (id: string) => ctx.sessions.get(id) as SessionLike | undefined;
+      const parentId = agent.session.header.parentSession;
+      const rootId = parentId ? await resolveRootSessionId(parentId, async (id) =>
+        lookup(id)?.header ?? (await ctx.get('sessionPersistence')?.stat(id))?.header
+      ) : undefined;
+      const cfg = resolvedConfig();
+      if (!isJudgeUsable(cfg, rootId) || judged.has(agent.id)) return;
+      judged.add(agent.id);
+
       const label = readChildLabel(agent);
-      const taskText = readDelegatedTask(agent, (id) => ctx.sessions.get(id) as SessionLike | undefined);
+      const taskText = readDelegatedTask(agent, lookup);
       const inherited = agent.model.current() ?? { provider: '', model: '' };
       const outcome = await judgeTaskType(
         { url: cfg.endpointUrl, model: cfg.judgeModel, apiKey },
@@ -211,7 +214,7 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
         // Wait for the stored log before appending, so the first judgement of a
         // run does not overwrite the history it was about to join.
         await logReady;
-        log.append(buildEntry(ctx, agent, inherited, decision, outcome, label, taskText));
+        log.append(buildEntry(ctx, rootId, inherited, decision, outcome, label, taskText));
       }
     } catch {
       // A judge outage, an unreadable parent log or a Host rejection of the
@@ -261,7 +264,7 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
  */
 function buildEntry(
   ctx: HostContext,
-  agent: RequestAgent,
+  rootId: string | undefined,
   resolved: RouteSelection,
   decision: ReturnType<typeof decideRewrite>,
   outcome: Awaited<ReturnType<typeof judgeTaskType>>,
@@ -280,7 +283,7 @@ function buildEntry(
     ...reason === undefined ? {} : { reason },
     at: Date.now(),
     latencyMs: outcome.latencyMs,
-    parentTitle: readParentTitle(ctx, agent.session.header.parentSession),
+    parentTitle: readParentTitle(ctx, rootId),
     childLabel: truncate(label !== '' ? label : taskText),
     prompt: outcome.prompt,
   };
@@ -290,16 +293,15 @@ function buildEntry(
  * Name the conversation that delegated, the way the reader sees it in the
  * session list: its title, falling back to the session id when it has none.
  */
-function readParentTitle(ctx: HostContext, parentId: string | undefined): string {
-  if (typeof parentId !== 'string' || parentId === '') return '';
+function readParentTitle(ctx: HostContext, rootId: string | undefined): string {
+  if (rootId === undefined) return '';
   try {
-    const rootId = resolveRootSessionId(parentId, (id) => ctx.sessions.get(id) as SessionLike | undefined);
     const session = ctx.sessions.get(rootId);
     if (session === undefined) return rootId;
     const title = ctx.sessionTitle.get(session)?.title;
     return typeof title === 'string' && title.trim() !== '' ? title.trim() : rootId;
   } catch {
-    return parentId;
+    return rootId;
   }
 }
 

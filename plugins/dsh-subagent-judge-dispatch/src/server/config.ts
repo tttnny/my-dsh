@@ -20,14 +20,7 @@ import type Schema from '@deepseek-ai/schemastery';
 import { resolveEndpointUrl } from './endpoint.ts';
 import { numberTypeRows, selectableRows } from './judge-prompt.ts';
 import type { TypeRow } from './types.ts';
-
-/**
- * The settings namespace this plugin owns. A namespace IS the Profile entry id,
- * so the user-editable layer is this plugin's own row in the active profile's
- * patch — the same literal as the `id` in `cordis.patch.yml`, and a different
- * literal from the npm package name the card is keyed by.
- */
-export const SETTINGS_NAMESPACE = 'dsh-subagent-judge-dispatch';
+import { DEFAULT_ENABLED, enabledFor, type SessionOverrides } from '../enablement.ts';
 
 /** One type-list row as the configuration document stores it. */
 const TypeRowSchema = z.object({
@@ -45,8 +38,9 @@ const TypeRowSchema = z.object({
 
 /** This plugin's live configuration. */
 export const Config: Schema = z.object({
-  /** Whether a judgement may rewrite a subagent's model and effort. */
-  enabled: z.boolean().default(true).volatile(),
+  /** Default for conversations without their own choice. */
+  enabled: z.boolean().default(DEFAULT_ENABLED).volatile(),
+  sessionOverrides: z.dict(z.boolean()).default({}).volatile(),
   /** Whether judgements are written to the plugin's own log. */
   logEnabled: z.boolean().default(true).volatile(),
   /** Judge service address, as the reader typed it; the path is appended when a call is made. */
@@ -60,6 +54,7 @@ export const Config: Schema = z.object({
 /** Fields of this plugin's Config as the runtime resolved them. */
 export interface PluginConfigRefs {
   readonly enabled: Volatile<boolean>;
+  readonly sessionOverrides: Volatile<SessionOverrides>;
   readonly logEnabled: Volatile<boolean>;
   readonly endpointUrl: Volatile<string>;
   readonly judgeModel: Volatile<string>;
@@ -79,6 +74,7 @@ export interface StoredRow {
 /** A detached plain read of this plugin's configuration. */
 export interface ResolvedConfig {
   enabled: boolean;
+  sessionOverrides: SessionOverrides;
   logEnabled: boolean;
   /** Full judge URL: the stored address with the service path applied. */
   endpointUrl: string;
@@ -105,7 +101,8 @@ export function readPluginConfig(refs: PluginConfigRefs): ResolvedConfig {
     effort: typeof row?.effort === 'string' ? row.effort : '',
   })));
   return {
-    enabled: refs.enabled.get() !== false,
+    enabled: refs.enabled.get() ?? DEFAULT_ENABLED,
+    sessionOverrides: refs.sessionOverrides.get(),
     logEnabled: refs.logEnabled.get() !== false,
     endpointUrl: resolveEndpointUrl(refs.endpointUrl.get()),
     judgeModel: typeof refs.judgeModel.get() === 'string' ? refs.judgeModel.get() : '',
@@ -114,15 +111,11 @@ export function readPluginConfig(refs: PluginConfigRefs): ResolvedConfig {
 }
 
 /**
- * Whether a judgement would do anything at all: the model-rewrite switch is on,
- * a judge endpoint and model are named, and at least one row is switched on and
- * filled in.
- *
- * @param config - the resolved configuration.
- * @returns whether a delegation would be judged.
+ * Whether a delegation would be judged given the root conversation's choice
+ * and the available judgement service and task types.
  */
-export function isJudgeUsable(config: ResolvedConfig): boolean {
-  if (!config.enabled) return false;
+export function isJudgeUsable(config: ResolvedConfig, rootSessionId?: string): boolean {
+  if (!enabledFor(config.sessionOverrides, config.enabled, rootSessionId)) return false;
   if (config.endpointUrl.trim() === '' || config.judgeModel.trim() === '') return false;
   return selectableRows(config.rows).length > 0;
 }

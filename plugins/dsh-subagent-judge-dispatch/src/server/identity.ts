@@ -17,10 +17,17 @@
  * descriptor label and the parent conversation's first message.
  */
 export interface SessionLike {
-  readonly header: { readonly parentSession?: string; readonly delegationDepth?: number };
+  readonly header: SessionHeaderLike;
   readonly inheritedEventCount?: number;
   ownEvents?(): readonly SessionEventLike[];
   snapshotEvents(from?: number): readonly SessionEventLike[];
+}
+
+/** Lineage metadata available on both live and persisted session headers. */
+export interface SessionHeaderLike {
+  readonly parentSession?: string;
+  readonly delegationDepth?: number;
+  readonly origin?: 'subagent';
 }
 
 /** One session event as this module reads it. */
@@ -314,22 +321,24 @@ function textBlocksOf(data: unknown): string[] {
  *
  * A nested subagent's direct parent is another subagent, and the log's job is to
  * name the conversation the reader recognises — so the walk continues until a
- * session names no parent. The walk is bounded, because a resumed or forged
- * lineage must not be able to spin this loop.
+ * session is a top-level conversation. A normal session fork is itself a
+ * conversation, even when its header names a parent. The walk is bounded to
+ * tolerate a damaged lineage.
  *
  * @param startId - the child's direct parent session id.
- * @param lookup - resolves a session id to its live session.
- * @returns the top-level session id, or the starting id when the walk stops.
+ * @param lookup - reads the header of a live or persisted session.
+ * @returns the top-level session id, or the last id reached when the walk stops.
  */
-export function resolveRootSessionId(
+export async function resolveRootSessionId(
   startId: string,
-  lookup: (id: string) => SessionLike | undefined,
-): string {
+  lookup: (id: string) => SessionHeaderLike | undefined | Promise<SessionHeaderLike | undefined>,
+): Promise<string> {
   const seen = new Set<string>([startId]);
   let current = startId;
   for (let hop = 0; hop < 32; hop += 1) {
-    const session = lookup(current);
-    const parent = session?.header.parentSession;
+    const header = await lookup(current);
+    if (header === undefined || (header.origin !== 'subagent' && (header.delegationDepth ?? 0) < 1)) return current;
+    const parent = header.parentSession;
     if (typeof parent !== 'string' || parent === '' || seen.has(parent)) return current;
     seen.add(parent);
     current = parent;

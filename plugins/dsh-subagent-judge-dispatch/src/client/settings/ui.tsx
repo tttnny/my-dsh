@@ -109,6 +109,24 @@ function LogCell({ text, hint }: { text: string; hint?: string }): React.ReactEl
 const CARD_CSS = `
 .dsh-judge-card { display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; width: 100%; color: var(--dsw-alias-label-primary); }
 .dsh-judge-panel { display: flex; flex-direction: column; gap: 16px; }
+.dsh-judge-session-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-13);
+}
+.dsh-judge-session-toggle .dsh-judge-session-switch { position: static; }
+.dsh-judge-session-switch::after { content: ''; position: absolute; inset: 0; border-radius: var(--dsw-radius-md); }
+.dsh-judge-session-toggle:has(.dsh-judge-session-switch:focus-visible) { background: var(--dsw-alias-interactive-bg-hover); }
+@media (hover: hover) {
+  .dsh-judge-session-toggle:has(.dsh-judge-session-switch:not(:disabled)):hover { background: var(--dsw-alias-interactive-bg-hover); }
+}
 .dsh-judge-section {
   display: flex;
   flex-direction: column;

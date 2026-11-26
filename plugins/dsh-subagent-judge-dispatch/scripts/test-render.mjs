@@ -87,9 +87,10 @@ const primitives = primitivesStub({
     { type: 'button', disabled: disabled === true ? true : undefined, onClick },
     children,
   ),
-  Switch: ({ checked, onChange, label }) => createElement('input', {
+  Switch: ({ checked, onChange, label, disabled }) => createElement('input', {
     type: 'checkbox',
     checked,
+    disabled,
     'aria-label': label,
     onChange: (event) => onChange(event.target.checked),
   }),
@@ -140,24 +141,66 @@ const primitives = primitivesStub({
 
 const exported = await loadClientBundle({ root, primitives });
 
-/** 宿主那份配置表单：记下每次写入，并把值真的改掉。 */
-let hostValue = {
-  enabled: true,
+/** 表单替身保留宿主的写入队列、revision 检查和会话配置的分层。 */
+let hostBase = {};
+let hostUser = {
   logEnabled: true,
   endpointUrl: 'http://127.0.0.1:3425',
   judgeModel: 'bailian-decision/decision-model-preview',
   rows: [{ description: '机械修改', provider: 'magpie', model: 'deepseek/deepseek-flash', effort: 'low' }],
 };
+let hostRevision = 1;
+let writeQueue = Promise.resolve();
+let writeGeneration = 0;
+let pendingRevision;
+let pauseWrite;
 const writes = [];
+const subscribers = new Set();
+const hostSnapshot = () => ({
+  status: 'ready', writable: true, revision: hostRevision,
+  base: hostBase, user: hostUser,
+  value: { ...hostBase, ...hostUser, sessionOverrides: { ...hostBase.sessionOverrides, ...hostUser.sessionOverrides } },
+});
+let snapshot = hostSnapshot();
+function publishHost() {
+  snapshot = hostSnapshot();
+  for (const listener of subscribers) listener();
+}
 const hostForm = {
-  getSnapshot: () => ({ status: 'ready', writable: true, revision: 1, value: hostValue }),
-  subscribe: () => () => {},
-  mutate: async (ops) => {
-    writes.push(ops);
-    for (const op of ops) {
-      if (op.op === 'set') hostValue = { ...hostValue, [op.path[0]]: op.value };
-    }
-    return true;
+  getSnapshot: () => snapshot,
+  subscribe: (listener) => {
+    subscribers.add(listener);
+    return () => subscribers.delete(listener);
+  },
+  mutate: (ops, expectedRevision) => {
+    const generation = ++writeGeneration;
+    const write = writeQueue.then(async () => {
+      const revision = expectedRevision ?? pendingRevision ?? snapshot.revision;
+      const pause = pauseWrite;
+      pauseWrite = undefined;
+      await pause;
+      writes.push(ops);
+      const accepted = revision === hostRevision;
+      if (accepted) {
+        for (const op of ops) {
+          const [field, id] = op.path;
+          if (field === 'sessionOverrides') {
+            const overrides = { ...hostUser.sessionOverrides };
+            if (op.op === 'set') overrides[id] = op.value;
+            else delete overrides[id];
+            hostUser = { ...hostUser, sessionOverrides: overrides };
+          } else if (op.op === 'set') hostUser = { ...hostUser, [field]: op.value };
+        }
+        hostRevision += 1;
+      }
+      if (generation === writeGeneration) {
+        pendingRevision = undefined;
+        publishHost();
+      } else if (accepted) pendingRevision = hostRevision;
+      return accepted;
+    });
+    writeQueue = write;
+    return write;
   },
 };
 
@@ -258,6 +301,16 @@ const test = async (label, fn) => {
     throw error;
   }
 };
+
+await test('配置页默认开关初始打开，点击立即写入原有 enabled 字段', async () => {
+  const control = container.querySelector(`input[aria-label="${zh['switch.rewrite.title']}"]`);
+  assert.equal(control?.checked, true);
+  await click(control);
+  assert.equal(control.checked, false);
+  assert.deepEqual(writes.at(-1), [{ op: 'set', path: ['enabled'], value: false }]);
+  await click(control);
+  assert.equal(control.checked, true);
+});
 
 await test('没有保存按钮：试通在判断服务标题行，导入导出与加一行在任务类型标题行，预览在卡片最下面', () => {
   // 断言要有牙齿：字典里没有那个键，页面上也没有那颗按钮——重新加回保存按钮时这里必须红。
@@ -624,4 +677,101 @@ await test('这次没发出请求时，弹窗说清楚，而不是给一个空�
   assert.equal(dialog.textContent?.includes(zh['log.promptEmpty']), true);
 });
 
+const { options: menuSeat, component: MenuToggle } = registrations.find(entry => entry.options.name === 'conversation.input.model.options');
+const toggleFailures = [];
+const menuProps = {
+  ...menuSeat.inject(), t, sessionId: 'session-a', locked: false,
+  reportFailure: (message) => toggleFailures.push(message),
+  useSession: (select) => select({ subagent: null }),
+  useSessions: (select) => select({ byId: {} }),
+};
+const renderMenu = async (overrides) => {
+  await act(async () => { reactRoot.render(createElement(MenuToggle, { ...menuProps, ...overrides })); });
+};
+const toggle = () => container.querySelector(`input[aria-label="${zh['sessionToggle.label']}"]`);
+
+await test('只有根会话显示开关，保存单个会话的选择并允许回到默认值', async () => {
+  await renderMenu();
+  assert.equal(toggle()?.checked, true);
+  await click(toggle());
+  assert.equal(toggle()?.checked, false);
+  assert.deepEqual(writes.at(-1), [{ op: 'set', path: ['sessionOverrides', 'session-a'], value: false }]);
+  await renderMenu({ sessionId: 'session-b' });
+  assert.equal(toggle()?.checked, true);
+  await renderMenu({ useSession: (select) => select({ subagent: {} }) });
+  assert.equal(toggle(), null);
+  await renderMenu({ useSessions: (select) => select({ byId: { 'session-a': { origin: 'subagent' } } }) });
+  assert.equal(toggle(), null);
+  await renderMenu();
+  assert.equal(toggle()?.checked, false);
+  await click(toggle());
+  assert.equal(toggle()?.checked, true);
+  assert.deepEqual(writes.at(-1), [{ op: 'unset', path: ['sessionOverrides', 'session-a'] }]);
+});
+
+await test('会话继承了与默认值相反的设置时，开关仍能切到选中的状态', async () => {
+  const previousBase = hostBase;
+  const previousUser = hostUser;
+  hostBase = { enabled: false, sessionOverrides: { inherited: true, 'other-inherited': true } };
+  hostUser = { ...hostUser, enabled: false, sessionOverrides: { 'other-override': true } };
+  try {
+    await act(async () => { publishHost(); });
+    await renderMenu({ sessionId: 'inherited' });
+    assert.equal(toggle()?.checked, true);
+    await click(toggle());
+    assert.deepEqual(toggleFailures, []);
+    assert.equal(toggle()?.checked, false, '宿主接受写入后应当显示用户选中的关闭');
+    assert.deepEqual(hostForm.getSnapshot().value.sessionOverrides, {
+      inherited: false, 'other-inherited': true, 'other-override': true,
+    });
+  } finally {
+    hostBase = previousBase;
+    hostUser = previousUser;
+    await act(async () => { publishHost(); });
+  }
+});
+
+await test('前一会话仍在保存时切换会话，两次开关选择都能保存', async () => {
+  const { promise, resolve: releaseWrite } = Promise.withResolvers();
+  pauseWrite = promise;
+  await renderMenu({ sessionId: 'queued-a' });
+  assert.equal(toggle()?.checked, true);
+  await click(toggle());
+  assert.equal(toggle()?.disabled, true, '第一笔写入还未返回');
+  await renderMenu({ sessionId: 'queued-b' });
+  assert.equal(toggle()?.disabled, false);
+  await click(toggle());
+  assert.equal(toggle()?.disabled, true, '第二笔写入也已入队');
+  await act(async () => {
+    releaseWrite();
+    await writeQueue;
+  });
+  assert.deepEqual(toggleFailures, []);
+  assert.equal(toggle()?.checked, false);
+  await renderMenu({ sessionId: 'queued-a' });
+  assert.equal(toggle()?.checked, false);
+  assert.deepEqual(hostForm.getSnapshot().user.sessionOverrides, { 'queued-a': false, 'queued-b': false });
+});
+
+await test('会话设置仍在保存时，配置卡也能保存另一项设置', async () => {
+  const { promise, resolve: releaseWrite } = Promise.withResolvers();
+  pauseWrite = promise;
+  await renderMenu({ sessionId: 'queued-with-card' });
+  await click(toggle());
+  assert.equal(toggle()?.disabled, true, '会话设置还在写入');
+  await render();
+  const control = container.querySelector(`input[aria-label="${zh['switch.log.title']}"]`);
+  const before = control.checked;
+  await click(control);
+  assert.equal(exported.dispatchCardStore.getState().writing, 'judge');
+  await act(async () => {
+    releaseWrite();
+    await writeQueue;
+  });
+  assert.equal(hostForm.getSnapshot().value.sessionOverrides['queued-with-card'], false);
+  assert.equal(hostForm.getSnapshot().value.logEnabled, !before, '配置卡的写入也应当落地');
+  assert.equal(exported.dispatchCardStore.getState().writeFailed, '');
+});
+
+await act(async () => { reactRoot.unmount(); });
 console.log(`${passed}/${total} passed`);
