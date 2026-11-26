@@ -8,7 +8,7 @@
  *   3. `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 写区间（不是精确版本），同包内与跨包同串
  *   4. 许可只由 `package.json` 的 `license` 声明，各层目录不附带许可文书
  *   5. `files` 与 `dsh.bundle.patch` 指的条目在目录里存在
- *   6. README 的固定形状：插件七节（`## 概述` / `## 安装与开关` / `## 配置` / `## 实现` / `## 模型体验` / `## 限制` / `## 验证`），preset 三节（`## 功能` / `## 特性` / `## 安装`）；安装一节里给的是本包名，README 指的 .md 都在目录里
+ *   6. README 的固定形状：插件七节（`## 概述` / `## 安装与开关` / `## 配置` / `## 实现` / `## 模型体验` / `## 限制` / `## 验证`，带第三方内容的包可另加 `## 上游`），preset 三节（`## 功能` / `## 特性` / `## 安装`）；安装一节里给的是本包名，README 指的 .md 都在目录里
  *   7. 根 `README.md` 与包目录互相覆盖（都指向对方，且没有指向不存在目录的链接）
  *   8. `docs/rules/presets.md` 的 order 台账与各 preset 的 `<id>.patch.yml` 一致
  *   9. web 开发 profile 里的自有包是软链、指向本仓库、版本号与仓库一致（没装这个 profile 的机器跳过这一项）
@@ -299,7 +299,7 @@ for (const entry of packages) {
   }
 }
 
-// ── 6. README 形状（插件七节，preset 三节） ───────────────────────────────────
+// ── 6. README 形状（插件七节 + 可选「上游」，preset 三节） ─────────────────────
 for (const entry of packages) {
   const path = join(entry.dir, 'README.md');
   if (!existsSync(path)) {
@@ -433,6 +433,7 @@ for (const profile of localProfiles) {
 // 紧跟字母与 `.-/:`（排除 `127.0.0.1`、`1e0.1.7`、`transform 1.21.21-1.79` 这类）。
 // 文档与 patch 是「现状说明」，不套行内语境词：一行只写「agent-loop 注册了哪些变量」也可能
 // 带着内核版本（UPSTREAM.md 的提示词变量扫描就是这样），漏查一次就静默落后一版。
+// README 的「上游」一节跳过：那一节记上游产物的版本与地址，与本包跟的内核版本无关。
 const NUMBER_LITERAL = /(^|[^\w./:-])(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/g;
 const KERNEL_CONTEXT = /内核|[dD][sS][hH]|engines/;
 const PROSE_FACE = /\.(md|yml|yaml)$/;
@@ -464,7 +465,14 @@ for (const entry of packages) {
   for (const path of literalFiles(entry.dir)) {
     const repoPath = rel(path);
     if (literalExempt.has(repoPath)) continue;
+    // 「上游」一节记的是上游产物的版本与产物地址，不是本包要跟的内核版本。
+    let upstreamSection = false;
     for (const [index, line] of readFileSync(path, 'utf8').split('\n').entries()) {
+      if (PROSE_FACE.test(path)) {
+        if (/^##\s+上游\s*$/.test(line.trim())) { upstreamSection = true; continue; }
+        if (upstreamSection && /^##\s/.test(line)) upstreamSection = false;
+        if (upstreamSection) continue;
+      }
       if (!PROSE_FACE.test(path) && !KERNEL_CONTEXT.test(line)) continue;
       for (const match of line.matchAll(NUMBER_LITERAL)) {
         if (match[2] === expected) continue;

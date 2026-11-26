@@ -137,3 +137,11 @@ cd plugins/dsh-kimi-cu && pnpm check
 - `tools/probes/preset-skills.mjs` 各跑一次 `skills/macos` 与 `skills/windows`：随包技能能被内核的技能发现机制找到。
 
 浏览器里验收：打开插件页本插件的详情页，状态卡应显示「本机检查通过」与探测到的版本、路径；点「重新检测」应重新跑一次探测；把 KimiCU 的安装移走再检测，状态应变成「未安装」并给出官方安装命令。真装载用 `node tools/host-smoke.mjs`。
+
+## 上游
+
+- KimiCU（Kimi Computer Use）由 Moonshot AI 提供，许可 `Proprietary`。本包只接本机装的 KimiCU MCP 服务与官方更新通道，不重新分发 app；两份 `kimi-cu` 技能正文写在本仓库，按两个平台各自的直接工具面维护。
+- 官方插件包 `https://cdn.kimi.com/kimi-computer-use/latest/kimi-cu-plugin.zip` 里有 `kimi.plugin.json`、`skills/kimi-cu/SKILL.md` 与 `bin/kimi-cu-mcp`。`bin/kimi-cu-mcp` 写死 `MINIMUM_APP_VERSION`（当前 `0.7.7`），并固定加 `--surface codeact`，只暴露 `js` / `js_reset`；同一地址下单独的 `skills/kimi-cu/SKILL.md` 只对应经典直接工具面，比插件包里的旧。
+- 本包两个平台都走经典直接工具面（`mcp -s user`：macOS 18 个工具，Windows 13 个），没有切到 CodeAct。
+- 安装命令与更新清单：macOS `https://cdn.kimi.com/kimi-computer-use/latest/setup_macos.sh`、`https://cdn.kimi.com/kimi-computer-use/latest/version.json`；Windows `https://cdn.kimi.com/kimi-computer-use-windows/latest/setup_windows.ps1`、`https://cdn.kimi.com/kimi-computer-use-windows/latest/version.json`。
+- 上游文档：`https://www.kimi.com/code/docs/kimi-code-cli/customization/plugins.html`（英文版在 `/en/` 下同名路径）。

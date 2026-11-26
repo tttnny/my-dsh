@@ -14,11 +14,11 @@
 
 ## 插件 README
 
-正文固定七节（范例 `plugins/dsh-notify-user/README.md`），顺序与名称都不改：一级标题 `# @lynn123411/dsh-<name>` 下面先用一段话概括这个插件是什么，然后依次是 `## 概述`、`## 安装与开关`、`## 配置`、`## 实现`、`## 模型体验`、`## 限制`、`## 验证`。README 是包的唯一长文档：装配形态、配置项、实现细节、验证清单都写在这里，不再另设 `DETAILS.md`。
+正文固定七节（范例 `plugins/dsh-notify-user/README.md`），顺序与名称都不改：一级标题 `# @lynn123411/dsh-<name>` 下面先用一段话概括这个插件是什么，然后依次是 `## 概述`、`## 安装与开关`、`## 配置`、`## 实现`、`## 模型体验`、`## 限制`、`## 验证`。随包带第三方内容的包（vendored 技能、上游产物）在 `## 验证` 之后另加一节 `## 上游`，写清来源地址、取的是哪一份产物、许可与本地改动；没有第三方内容的包不写这一节。README 是包的唯一长文档：装配形态、配置项、实现细节、验证清单都写在这里，不再另设 `DETAILS.md`。
 
 插件页的详情文档是另一份：`docs/DETAIL.md` 与 `docs/DETAIL.zh.md` 各一行图，配图放同目录的 `docs/preview.svg` 与 `docs/preview.zh.svg`；`locale/<语言>.json` 的 `meta.detail` 指向它，`files` 带 `docs`。文件成对与图片形态由 `node tools/assert-detail.mjs` 检查；配图怎么选材（画效果，不画页面下方已有的配置卡）、怎么取真实界面、怎么量数值、怎么比对，见 [plugin-preview.md](./plugin-preview.md)。
 
-只写现状：每条都是当前行为，不写版本号、变更叙事、上游来源（形态标在根 `README.md` 表格）。实测记录不进文档，验证一节只写怎么验、由哪条断言守着。
+只写现状：每条都是当前行为，不写本包的版本号与变更叙事（形态标在根 `README.md` 表格）。上游来源集中写在 `## 上游`，不散落到其余各节；上游的版本号只在这一节里出现。实测记录不进文档，验证一节只写怎么验、由哪条断言守着。
 
 ## 版本与依赖
 
@@ -27,7 +27,7 @@
 - `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 是独立基线，照各自现值声明，不参与上面这条。
 - **内核升版后的批量跟随**：`node tools/dsh-baseline.mjs --write` 一次改齐全部包的上面三处（目标值从运行中内核读，没有运行实例时取最近启动的实例；有依赖声明的包改完跑 `pnpm install`，没有依赖的包跳过安装并删掉空 lock）；`--bump patch` 顺带升版本号。哪一处漂了由 `node tools/assert-ledger.mjs` 抓，落盘前可以先跑一次 `dsh-baseline.mjs --check` 看齐没齐。
 - **手工写死的内核版本也要跟**：包内自检脚本的断言与注释、`README.md` 等文档、patch 中写到的内核版本，必须与本包 `engines.dsh` 中 `>=` 后的版本号一致。历史实测记录不进文档，`skills/`、`upstream/` 的 vendored 内容保留原文。
-- **字面量检查范围**：`assert-ledger.mjs` 判据 10 扫描包目录内的 `.md`、`.yml` / `.yaml` 与 `.mjs` / `.js` / `.ts` / `.tsx` / `.jsx`。脚本只查同一行含「内核 / dsh / engines」语境词的版本号，文档与 YAML 直接扫描；以 `DETAILS` 开头的文件及 `skills/`、`upstream/`、`lib/`、`dist/`、`tmp/` 等目录跳过。完整范围与匹配规则见[判据实现](../../tools/assert-ledger.mjs)。
+- **字面量检查范围**：`assert-ledger.mjs` 判据 10 扫描包目录内的 `.md`、`.yml` / `.yaml` 与 `.mjs` / `.js` / `.ts` / `.tsx` / `.jsx`。脚本只查同一行含「内核 / dsh / engines」语境词的版本号，文档与 YAML 直接扫描，README 的 `## 上游` 一节除外（记的是上游产物的版本）；以 `DETAILS` 开头的文件及 `skills/`、`upstream/`、`lib/`、`dist/`、`tmp/` 等目录跳过。完整范围与匹配规则见[判据实现](../../tools/assert-ledger.mjs)。
 - 兄弟 preset 的同一规则见 [presets.md](./presets.md)「版本与依赖」。
 - **一次完整跟随**（先看宿主变动、再 preset、再 plugins、最后按 CI 重跑）见 [kernel-upgrade.md](./kernel-upgrade.md)；这一节只写声明怎么改。
 
