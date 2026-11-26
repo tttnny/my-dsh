@@ -167,9 +167,9 @@ await test('根层行挂本包，不带平台守卫', () => {
 });
 
 await test('探测器给出的 MCP 命令就是各平台的真实路径', () => {
-  const mac = resolveInstall({ platform: 'darwin', env: {}, exists: (path) => path === MACOS_BINARY });
-  assert.equal(mac.mcp.command, MACOS_BINARY, 'KimiCU 的命令行在 app 包里，不是 PATH 上的命令');
-  assert.deepEqual(mac.mcp.args, ['mcp', '-s', 'user'], 'macOS 的 MCP 需要 -s user');
+  const mac = resolveInstall({ platform: 'darwin', env: {}, exists: () => true });
+  assert.equal(mac.mcp.command, '/Applications/KimiCU.app/Contents/Resources/kimi-cu-mcp', 'macOS 要使用官方启动脚本');
+  assert.deepEqual(mac.mcp.args, ['mcp', '-s', 'user', '--surface', 'codeact'], 'macOS 的 MCP 使用 CodeAct');
   const win = resolveInstall({
     platform: 'win32',
     env: { LOCALAPPDATA: 'C:\\Users\\t\\AppData\\Local' },

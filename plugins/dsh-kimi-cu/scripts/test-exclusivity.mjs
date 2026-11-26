@@ -97,7 +97,10 @@ class FakeMcpManager extends Service {
     super(ctx, 'mcpManager');
     this.calls = [];
     this.disposed = 0;
+    this.status = { state: 'connecting' };
   }
+
+  list() { return this.calls.map(({ name }) => ({ name, status: this.status })); }
 
   register(name, entry) {
     this.calls.push({ name, entry });
@@ -121,6 +124,22 @@ await test('组合里没有 computerUse 时行为不变：照常注册 MCP 连�
   plugin.apply(ctx, { detect: fakeDetect });
   await waitFor(() => mcp.calls.length === 1, '没有独占服务时应当照常交出工具');
   assert.equal(mcp.calls[0].name, 'kimi-cu');
+});
+
+await test('状态工具返回实时 MCP 连接失败与恢复', async () => {
+  const ctx = host();
+  const mcp = new FakeMcpManager(ctx);
+  plugin.apply(ctx, { detect: fakeDetect });
+  await waitFor(() => mcp.calls.length === 1, '注册 MCP');
+  const tool = ctx.tools.get('kimi_cu_status');
+  const exec = { signal: new AbortController().signal };
+  mcp.status = { state: 'failed', lastError: 'launcher failed' };
+  let status = JSON.parse((await tool.execute({}, exec)).status);
+  assert.equal(status.mcpStatus.state, 'failed');
+  assert.equal(status.mcpStatus.lastError, 'launcher failed');
+  mcp.status = { state: 'connected' };
+  status = JSON.parse((await tool.execute({}, exec)).status);
+  assert.equal(status.mcpStatus.state, 'connected');
 });
 
 await test('槽位空着时先占位，占到了才注册 MCP 连接', async () => {

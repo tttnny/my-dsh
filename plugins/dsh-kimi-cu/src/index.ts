@@ -70,6 +70,7 @@ interface McpManagerFace {
    * @returns 重建完成时 resolve。
    */
   restart?: (name: string) => Promise<void>;
+  list?: () => Array<{ name: string; status: { state: string; lastError?: string } }>;
 }
 
 /**
@@ -96,12 +97,17 @@ type Detector = (refresh?: boolean) => Promise<KimiCuStatus>;
  * @param options - 可选注入；只给测试换探测器用，宿主调用时不传。
  */
 export function apply(ctx: Context, options?: { detect?: Detector }): void {
-  const detect = options?.detect ?? defaultStatusDetector();
+  const detectBase = options?.detect ?? defaultStatusDetector();
 
   // MCP 连接交给管理器；更新成功后要用它重连，所以这几样先声明再交给更新器。
   let mcpCtx: (Context & { mcpManager: McpManagerFace }) | undefined;
   let disposeMcp: (() => void) | undefined;
   let desktopDenied = false;
+  const detect: Detector = async (refresh) => {
+    const status = await detectBase(refresh);
+    const connection = mcpCtx?.mcpManager.list?.().find((item) => item.name === MCP_SERVER_NAME)?.status;
+    return { ...status, mcpStatus: connection ?? null };
+  };
 
   /** 更新成功后重建 MCP 连接；没有管理器或它不支持重启时返回 false。 */
   const reconnect = async (): Promise<boolean> => {

@@ -10,6 +10,7 @@ import {
   DOCS_URL,
   DOCS_URL_EN,
   MACOS_BINARY,
+  MACOS_MCP_LAUNCHER,
   MACOS_INSTALL_COMMAND,
   WINDOWS_DIR_NAME,
   WINDOWS_EXE_NAME,
@@ -113,9 +114,9 @@ export function resolveInstall(input: ResolveInput): ResolvedInstall {
       supported: true,
       installed,
       path: installed ? MACOS_BINARY : null,
-      mcp: { command: MACOS_BINARY, args: ['mcp', '-s', 'user'] },
+      mcp: { command: MACOS_MCP_LAUNCHER, args: ['mcp', '-s', 'user', '--surface', 'codeact'] },
       install: installPlan('darwin'),
-      notes: [],
+      notes: installed && !input.exists(MACOS_MCP_LAUNCHER) ? ['mcp-command-missing'] : [],
     };
   }
 

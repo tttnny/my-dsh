@@ -38,7 +38,13 @@ export function parseDoctor(platform: KimiCuPlatform, raw: string): ParsedDoctor
 
   if (platform === 'darwin') {
     const checks: DoctorCheck[] = [];
+    // 新版 doctor 区分服务与调用进程；后者的权限不决定服务是否可用。
+    const hasServiceSection = lines.some((line) => /^Service \(authoritative/i.test(line));
+    let inServiceSection = !hasServiceSection;
     for (const line of lines) {
+      if (/^Service \(authoritative/i.test(line)) { inServiceSection = true; continue; }
+      if (/^This process \(diagnostic/i.test(line)) { inServiceSection = false; continue; }
+      if (!inServiceSection) continue;
       const mark = line.slice(0, 1);
       if (mark !== '✅' && mark !== '❌') continue;
       const label = line.slice(1).trim();

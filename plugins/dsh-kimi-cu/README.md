@@ -4,7 +4,7 @@
 
 ## 概述
 
-- **读写本机 app 界面**：模型能看到并操作已打开的应用窗口——观察、点击、输入、滚动、拖拽，以及列出应用和窗口。macOS 走后台静默操作；Windows 走前台真实输入，会短暂占用鼠标键盘。
+- **读写本机界面**：macOS 通过 CodeAct 操作应用和浏览器，默认在后台执行；Windows 使用前台真实输入，会短暂占用鼠标键盘。
 - **安装检测与引导**：插件页详情页的状态卡显示「未安装 / 已安装但本机检查未通过 / 本机检查通过」，给出当前平台的官方安装命令、复制按钮与重新检测；模型也可以用 `kimi_cu_status` 工具查同样的状态。
 - **一键更新**：卡片读 KimiCU 官方的更新清单，有新版时按钮显示「更新到 x.y.z」；点一下由 KimiCU 自己的 `upgrade` 通道下载、校验签名并替换安装，过程中显示阶段文字，完成后就地更新版本号并重连 MCP。
 - **随包带操作技能**：`kimi-cu` 技能说明怎么绑定目标窗口、什么时候重新观察、坐标与 index 怎么用、投递成功与真的生效怎么区分；macOS 与 Windows 各一份。
@@ -61,7 +61,7 @@ MCP 连接不占 patch 行：宿主半边探测到可执行文件之后调用 `m
 
 Windows 的路径公式只在 `resolve.ts` 的 `windowsMcpCommand` 里有一份。覆盖值存在时只用覆盖值，不回退到默认目录；旧目录安装会同时标 `legacy-install` 与 `mcp-command-missing`，卡片按「本机检查未通过」处理，不会在连接指向的文件不存在时报「本机检查通过」。
 
-`doctor` 只检查调用者上下文，所以「本机检查通过」不表示后台 Service 已就绪——服务权限要看 `xpc-ping`（见随包 macOS 技能）。
+`doctor` 报告服务与调用者上下文的检查；服务不可达时可用 `xpc-ping` 进一步诊断（见随包 macOS 技能）。
 
 ### 更新链路
 
@@ -86,15 +86,15 @@ macOS 与 Windows 各有一份更新清单，版本号互不可比。页面打�
 
 ### 技能按平台分两条
 
-两份技能的工具面与操作语义不同：macOS 是后台静默、AX 树，带 `paste` / `drag_paths` / `js`；Windows 是前台真实输入、UIA 树，带 `turn_ended`，没有 `paste` / `drag_paths` / `js`。合成一份会让模型在错误的平台上调用不存在的工具，所以各扫各的目录，技能名都叫 `kimi-cu`。
+两份技能的工具面与操作语义不同：macOS 使用 CodeAct 的 `js` / `js_reset` 和 AX 树，Windows 使用直接工具、前台真实输入和 UIA 树。各平台分别扫描对应目录，技能名都叫 `kimi-cu`；实际工具以已连接服务的 schema 为准。
 
 两条技能行都写 `providerName: kimi-cu` 与 `includeDefaultRoots: false`，只扫本包对应平台的 `skills/`；项目与用户技能目录仍归内核那条默认行。技能目录用 `createRequire(baseUrl).resolve(...)` 算成绝对路径：bundle patch 的 `!!js` 以 profile 目录为 `baseUrl`，写相对路径会解析到别处。
 
 ### 工具调用上限与连接数
 
-注册给管理器的条目把单次工具调用上限设成 5 分钟：内核 `mcp-client` 的默认值更短，KimiCU 的 `js` cell 可以跑循环和批量操作，超时会被客户端取消；更长的任务拆成多个 cell。
+注册给管理器的条目把单次工具调用上限设成 5 分钟；超时会被客户端取消，长任务应拆成可验证的步骤。macOS 的官方启动脚本检查系统和 App 版本，App 低于脚本要求时可能自动升级。
 
-宿主只起一个 KimiCU MCP 连接，所有 session 共用。KimiCU 的快照与 index 缓存是连接级的：两个 session 同时操作同一个应用，后一次观察会顶掉前一次的参照。
+宿主只起一个 KimiCU MCP 连接，所有 session 共用。macOS 的持久 JS 会话和观察状态也随连接共享；多个 session 应错开操作，重新观察后再使用目标标识。
 
 ## 模型体验
 
@@ -104,17 +104,17 @@ macOS 与 Windows 各有一份更新清单，版本号互不可比。页面打�
 
 参数一个：`refresh`（布尔，绕过缓存重新探测）。返回一段 JSON，含平台、是否安装、路径、版本、`doctor` 结果、MCP 命令、安装计划与附注。
 
-MCP 工具在模型侧的名字是 `mcp__kimi-cu__<name>`（例如 `mcp__kimi-cu__list_apps`）。随包技能说明这些工具的用法与边界，并要求在 `mcp__kimi-cu__*` 缺失或连接失败时先调 `kimi_cu_status`，把安装或修复步骤转告用户，不要在缺装时假装能操作。
+MCP 工具在模型侧的名字是 `mcp__kimi-cu__<name>`（例如 macOS 的 `mcp__kimi-cu__js`，或 Windows 的 `mcp__kimi-cu__list_apps`）。随包技能说明这些工具的用法与边界，并要求在 `mcp__kimi-cu__*` 缺失或连接失败时先调 `kimi_cu_status`，把安装或修复步骤转告用户，不要在缺装时假装能操作。
 
 ## 限制
 
 - **桌面操作是独占能力**：槽位被别的后端占着时不交出 `mcp__kimi-cu__*` 工具，只写一条 warning；槽位后来空出来要重启 DSH 才会补位——宿主的登记没有变更事件可订阅。
-- **一条连接服务所有 session**：两个 session 同时操作同一个应用时要错开，技能要求每次动作前重新观察。
-- **`doctor` 只检查调用者上下文**：「本机检查通过」不表示后台 Service 已就绪，服务权限要看 `xpc-ping`。
-- **安装只给命令**：插件不执行安装脚本，权限授予只能在系统设置里由用户确认。
+- **一条连接服务所有 session**：macOS 的持久 JS 变量、句柄和 reset 在会话间共享，`scope:"cell"` 也能读取已有持久变量；多个 session 必须错开操作，无法保证会话隔离。
+- **服务权限诊断**：服务不可达时使用 `xpc-ping` 检查后台 Service 的状态与权限。
+- **安装与升级**：首次安装由用户执行安装命令；macOS 官方启动脚本在 App 版本过低时可能自动执行升级。系统权限由用户授予。
 - **更新超时只放弃等待**：5 分钟到点后卡片报超时，子进程可能仍在跑。
 - **平台不受支持时不连**：卡片说明一句，不注册 MCP，模型看不到 `mcp__kimi-cu__*`。
-- **Windows 走旧 13 工具 MCP**：没有 `paste`、`drag_paths`、`js`、`list_windows`、`get_window`，多一个 `turn_ended`；前台真实输入会短暂占用鼠标键盘。
+- **Windows 使用前台真实输入**：会短暂占用鼠标键盘；具体工具以已连接服务的 schema 为准。
 - **技能目录按包名解析**：bundle patch 里不能写相对路径。
 
 ## 验证
@@ -140,8 +140,8 @@ cd plugins/dsh-kimi-cu && pnpm check
 
 ## 上游
 
-- KimiCU（Kimi Computer Use）由 Moonshot AI 提供，许可 `Proprietary`。本包只接本机装的 KimiCU MCP 服务与官方更新通道，不重新分发 app；两份 `kimi-cu` 技能正文写在本仓库，按两个平台各自的直接工具面维护。
-- 官方插件包 `https://cdn.kimi.com/kimi-computer-use/latest/kimi-cu-plugin.zip` 里有 `kimi.plugin.json`、`skills/kimi-cu/SKILL.md` 与 `bin/kimi-cu-mcp`。`bin/kimi-cu-mcp` 写死 `MINIMUM_APP_VERSION`（当前 `0.7.7`），并固定加 `--surface codeact`，只暴露 `js` / `js_reset`；同一地址下单独的 `skills/kimi-cu/SKILL.md` 只对应经典直接工具面，比插件包里的旧。
-- 本包两个平台都走经典直接工具面（`mcp -s user`：macOS 18 个工具，Windows 13 个），没有切到 CodeAct。
+- KimiCU（Kimi Computer Use）由 Moonshot AI 提供，许可 `Proprietary`。本包只接本机装的 KimiCU MCP 服务与官方更新通道，不重新分发 app；两份 `kimi-cu` 技能正文写在本仓库，按两个平台各自的工具面维护。
+- 官方 macOS 插件包 `https://cdn.kimi.com/kimi-computer-use/latest/kimi-cu-plugin.zip` 提供 CodeAct 技能与启动脚本；本包的 macOS 技能按其工具面自行维护。
+- macOS 使用 App 内的官方 `Contents/Resources/kimi-cu-mcp` 启动 CodeAct；Windows 使用 `kimi-cu.exe mcp`。实际工具取决于安装的服务版本。
 - 安装命令与更新清单：macOS `https://cdn.kimi.com/kimi-computer-use/latest/setup_macos.sh`、`https://cdn.kimi.com/kimi-computer-use/latest/version.json`；Windows `https://cdn.kimi.com/kimi-computer-use-windows/latest/setup_windows.ps1`、`https://cdn.kimi.com/kimi-computer-use-windows/latest/version.json`。
 - 上游文档：`https://www.kimi.com/code/docs/kimi-code-cli/customization/plugins.html`（英文版在 `/en/` 下同名路径）。

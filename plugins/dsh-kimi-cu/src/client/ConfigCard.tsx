@@ -194,7 +194,8 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
   const legacy = status.notes.includes('legacy-install');
   const commandMissing = status.notes.includes('mcp-command-missing');
   const doctorFailed = status.installed && status.doctor.ran && !status.doctor.ok;
-  const notReady = doctorFailed || (status.installed && commandMissing);
+  const mcpFailed = status.mcpStatus?.state === 'failed' || status.mcpStatus?.state === 'reconnecting';
+  const notReady = doctorFailed || (status.installed && (commandMissing || mcpFailed));
   const showInstall = !status.installed || legacy || commandMissing;
   const badge = !status.installed
     ? t('status.missing.title')
@@ -244,6 +245,7 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
           {status.installed && !notReady && !legacy ? (
             <div className="dsh-kimi-cu-hint">{t('status.ready.hint')}</div>
           ) : null}
+          {mcpFailed ? <div className="dsh-kimi-cu-hint">{t('status.mcpFailed')}{status.mcpStatus?.lastError ? ': ' + status.mcpStatus.lastError : ''}</div> : null}
           {status.notes.map((note) => (
             NOTE_KEYS[note] === undefined
               ? null

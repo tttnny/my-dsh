@@ -60,6 +60,8 @@ export interface KimiCuStatus {
   doctor: DoctorReport;
   /** 插件里那条 MCP 行会用的命令；不支持当前平台时是 null。 */
   mcp: { command: string; args: string[] } | null;
+  /** 宿主 MCP 管理器的实时状态；不可用或尚未注册时为 null。 */
+  mcpStatus?: { state: string; lastError?: string } | null;
   /** 当前平台的安装引导；不支持当前平台时是 null。 */
   install: InstallPlan | null;
   /** 机器可读的附注，例如 `legacy-install`。 */
@@ -73,6 +75,9 @@ export const STATUS_ROUTE_PATH = '/api/dsh-kimi-cu/status';
 
 /** macOS 的 KimiCU 命令行在 app 包里，不是 PATH 上的命令。 */
 export const MACOS_BINARY = '/Applications/KimiCU.app/Contents/MacOS/kimi-cu';
+
+/** 官方 MCP 启动脚本负责兼容性检查并默认启用 CodeAct。 */
+export const MACOS_MCP_LAUNCHER = '/Applications/KimiCU.app/Contents/Resources/kimi-cu-mcp';
 
 /** Windows 运行时的可执行文件名。 */
 export const WINDOWS_EXE_NAME = 'kimi-cu.exe';

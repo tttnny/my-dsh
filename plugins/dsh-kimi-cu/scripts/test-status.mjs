@@ -12,6 +12,7 @@ import {
   DOCS_URL,
   DOCS_URL_EN,
   MACOS_BINARY,
+  MACOS_MCP_LAUNCHER,
   MACOS_INSTALL_COMMAND,
   WINDOWS_INSTALL_COMMAND,
 } from '../src/shared/status.ts';
@@ -72,12 +73,12 @@ await test('不支持的平台没有安装计划', () => {
   assert.equal(installPlan('other'), null);
 });
 
-await test('macOS：找到二进制时 installed 为真，MCP 命令带 -s user', () => {
-  const resolved = resolveInstall({ platform: 'darwin', env: {}, exists: (path) => path === MACOS_BINARY });
+await test('macOS：找到二进制和官方启动脚本时使用 CodeAct', () => {
+  const resolved = resolveInstall({ platform: 'darwin', env: {}, exists: (path) => [MACOS_BINARY, MACOS_MCP_LAUNCHER].includes(path) });
   assert.equal(resolved.supported, true);
   assert.equal(resolved.installed, true);
   assert.equal(resolved.path, MACOS_BINARY);
-  assert.deepEqual(resolved.mcp, { command: MACOS_BINARY, args: ['mcp', '-s', 'user'] });
+  assert.deepEqual(resolved.mcp, { command: MACOS_MCP_LAUNCHER, args: ['mcp', '-s', 'user', '--surface', 'codeact'] });
   assert.deepEqual(resolved.notes, []);
 });
 
@@ -85,7 +86,14 @@ await test('macOS：没找到二进制时 installed 为假，但 MCP 命令仍�
   const resolved = resolveInstall({ platform: 'darwin', env: {}, exists: () => false });
   assert.equal(resolved.installed, false);
   assert.equal(resolved.path, null);
-  assert.equal(resolved.mcp.command, MACOS_BINARY);
+  assert.equal(resolved.mcp.command, MACOS_MCP_LAUNCHER);
+});
+
+await test('macOS：启动脚本缺失时报告未就绪，不回退旧入口', () => {
+  const resolved = resolveInstall({ platform: 'darwin', env: {}, exists: (path) => path === MACOS_BINARY });
+  assert.equal(resolved.installed, true);
+  assert.deepEqual(resolved.notes, ['mcp-command-missing']);
+  assert.equal(resolved.mcp.command, MACOS_MCP_LAUNCHER);
 });
 
 await test('Windows：新目录存在时用它，MCP 命令与 patch 表达式一致', () => {
@@ -169,6 +177,20 @@ await test('macOS doctor：五项全绿时 ok 为真，id 映射对得上', () =
     'signed-keyboard',
   ]);
   assert.equal(parsed.version, null);
+});
+
+await test('macOS doctor：以服务权限为准，忽略调用进程的权限', () => {
+  const raw = [
+    'Service (authoritative — the launchd Service performs the actions):',
+    '✅ Accessibility (AX)', '✅ Screen Recording', '✅ Runtime control channel: listening',
+    'This process (diagnostic only — a terminal’s TCC grants differ from the Service’s):',
+    '❌ Screen Recording',
+  ].join('\n');
+  const report = parseDoctor('darwin', raw);
+  assert.equal(report.ok, true);
+  assert.equal(report.checks.length, 3);
+  const failed = parseDoctor('darwin', raw.replace('✅ Accessibility (AX)', '❌ Accessibility (AX)'));
+  assert.equal(failed.ok, false);
 });
 
 await test('macOS doctor：有一项失败时 ok 为假', () => {

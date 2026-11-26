@@ -266,7 +266,15 @@ await test('MCP 命令缺失：即使 doctor 全绿也显示本机检查未通�
   });
   const text = container.textContent ?? '';
   assert.match(text, /已安装 KimiCU，但本机检查未通过/);
-  assert.match(text, /MCP 行要启动的文件不存在/);
+  assert.match(text, /MCP 启动文件不存在/);
+});
+
+await test('MCP 连接失败时显示原因，即使本机检查通过', async () => {
+  const { container } = await mount({ ...BASE, installed: true, path: '/Applications/KimiCU.app/Contents/MacOS/kimi-cu', doctor: { ran: true, ok: true, checks: [], raw: '' }, mcpStatus: { state: 'failed', lastError: 'launcher failed' } });
+  const text = container.textContent ?? '';
+  assert.match(text, /MCP 连接失败或正在重连/);
+  assert.match(text, /launcher failed/);
+  assert.match(text, /本机检查未通过/);
 });
 
 await test('重新检测请求带 refresh=1', async () => {
