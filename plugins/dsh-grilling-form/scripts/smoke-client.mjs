@@ -209,12 +209,15 @@ test('中英文字典键集逐条对齐（丢一条就是页面上某一处空�
   assert.ok(Object.keys(zh).length > 0, '字典是空的，下面的断言是空转');
   assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort());
 });
-test('样式注入一次，带有包身份并随插件卸载', () => {
+test('样式带有包身份，随插件卸载和重新启用', () => {
   assert.equal(styles.length, 1);
   assert.equal(styles[0].dataset.pluginCss, `${pkgName}/GrillingForm.css`);
   assert.ok(styles[0].textContent.includes('.dsg-form'));
-  for (const dispose of effects.reverse()) dispose();
+  for (const dispose of effects.splice(0).reverse()) dispose();
   assert.equal(styles.length, 0);
+  exported.apply(makeCtx(exported.inject, effects));
+  assert.equal(styles.length, 1);
+  for (const dispose of effects.splice(0).reverse()) dispose();
 });
 
 // class 名在 JSX 与 CSS 之间单边漂移 = 样式静默失效，构建与运行都不报错

@@ -7,6 +7,7 @@
  */
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
 import { dirname, join, resolve } from 'node:path';
 import { loadClientBundle, syncedConfig } from './lib/client-bundle.mjs';
 
@@ -20,6 +21,8 @@ const check = (label, ok) => {
   else { console.error(`  FAIL ${label}`); failures.push(label); }
 };
 
+const dom = new JSDOM();
+globalThis.document = dom.window.document;
 const { exported, requires } = await loadClientBundle(root);
 
 const locales = [];
@@ -27,6 +30,7 @@ const registrations = [];
 const definitions = [];
 const whileServedCalls = [];
 const errors = [];
+const effects = [];
 
 /** 可变的配置表单：改字段会通知订阅者，用来验「位置切换会重挂定义」。 */
 let configValue = {
@@ -108,7 +112,11 @@ function makeCtx(label, declared = []) {
   const table = services();
   const base = {
     label,
-    effect: (fn) => { fn(); return () => {}; },
+    effect: (fn) => {
+      const dispose = fn();
+      if (typeof dispose === 'function') effects.push(dispose);
+      return dispose;
+    },
     on: () => () => {},
     inject: (names, callback) => {
       const list = Array.isArray(names) ? names : [names];
@@ -197,6 +205,17 @@ check('配置卡注册在 plugins.bundle.config 且 key 是包名', configCard?.
 check('配置卡带本插件的字典命名空间', configCard?.options?.locale === 'notifyUser');
 check('配置卡通过 whileServed 读本插件的命名空间', JSON.stringify(whileServedCalls[0]) === '["dsh-notify-user"]');
 check('配置卡注入了一张配置表单', typeof configCard?.options?.inject === 'function' && configCard.options.inject().form !== undefined);
+
+const styleKeys = () => [...document.head.querySelectorAll(`style[data-plugin="${pkgName}"]`)]
+  .map((tag) => tag.dataset.pluginCss).sort();
+const expectedStyles = ['ConfigCard.css', 'EnabledToggle.css', 'NotifyCard.css'].map((file) => `${pkgName}/${file}`);
+check('启用后每张样式各有一份', JSON.stringify(styleKeys()) === JSON.stringify(expectedStyles));
+for (const dispose of effects.splice(0).reverse()) dispose();
+check('停用后不残留插件样式', styleKeys().length === 0);
+exported.apply(makeCtx('restarted', exported.inject ?? []), synced);
+check('重新启用后每张样式各有一份', JSON.stringify(styleKeys()) === JSON.stringify(expectedStyles));
+for (const dispose of effects.splice(0).reverse()) dispose();
+dom.window.close();
 
 check('apply 期间没有接线错误', errors.length === 0);
 for (const error of errors) console.error(`       ${error}`);

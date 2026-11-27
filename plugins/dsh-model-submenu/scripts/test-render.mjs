@@ -837,6 +837,7 @@ await test('当前模型缺失时工具栏入口打开同一个弹窗', async ()
 })
 
 await test('样式随客户端启用和停用，清理仅移除该次启用的样式', () => {
+  assert.equal(document.querySelectorAll(pluginStyle).length, 1)
   const first = document.querySelector(pluginStyle)
   assert.ok(first?.textContent.includes('sliderCell'))
   const disposeFirst = disposers.get('dsh-model-submenu: styles')
@@ -846,7 +847,10 @@ await test('样式随客户端启用和停用，清理仅移除该次启用的�
   disposeFirst()
   assert.equal(document.querySelector(pluginStyle), next)
   disposers.get('dsh-model-submenu: styles')()
-  assert.equal(document.querySelector(pluginStyle), null)
+  assert.equal(document.querySelectorAll(pluginStyle).length, 0)
+  exported.apply(ctx)
+  assert.equal(document.querySelectorAll(pluginStyle).length, 1)
+  disposers.get('dsh-model-submenu: styles')()
 })
 
 unmount()

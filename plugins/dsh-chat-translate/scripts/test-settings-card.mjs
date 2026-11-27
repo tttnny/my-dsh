@@ -287,7 +287,7 @@ await test('提示词一改，浏览器保留当前行译文，后续行使用�
   await act(async () => { await settle(); });
 });
 
-await test('配置卡卸载移除自己的样式，Client effect 卸载移除助手行样式', () => {
+await test('配置卡和助手行样式随卸载与重新启用更新', async () => {
   const assistantStyle = 'head style[data-plugin-css]';
   const settingsStyle = 'style[data-tidy-settings]';
   assert.equal(document.querySelectorAll(assistantStyle).length, 1);
@@ -296,9 +296,16 @@ await test('配置卡卸载移除自己的样式，Client effect 卸载移除助
   act(() => rootHandle.unmount());
   assert.equal(document.querySelector(settingsStyle), null);
   assert.equal(document.querySelectorAll(assistantStyle).length, 1);
-  act(() => { for (const dispose of effects.reverse()) dispose(); });
+  act(() => { for (const dispose of effects.splice(0).reverse()) dispose(); });
   assert.equal(document.querySelector(assistantStyle), null);
   assert.equal(chatTranslate.getState('probe-row'), undefined, '卸载清掉行内状态');
+
+  act(() => exported.apply(ctx));
+  await mountCard();
+  assert.equal(document.querySelectorAll(assistantStyle).length, 1);
+  assert.equal(document.querySelectorAll(settingsStyle).length, 1);
+  act(() => rootHandle.unmount());
+  act(() => { for (const dispose of effects.splice(0).reverse()) dispose(); });
 });
 console.log(`${passed}/${total} passed`);
 process.exit(passed === total ? 0 : 1);

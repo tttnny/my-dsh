@@ -63,7 +63,9 @@ node tools/assert-ledger.mjs
 
 第一条把 `plugins/` 与 `presets/` 下全部包的 `engines.dsh`、peer / dev 里的内核串改到新版本，并给有改动的包各加一位版本号、重写各自的 lock——第 3 步不再手改这两处。第二步会列出所有还没跟齐的手写字面量（自检断言、注释、README、patch 头部），逐个改到新版本。然后各包在自己目录跑 `pnpm check`。
 
-**完成判据**：整仓升版用 `node tools/dsh-baseline.mjs --check` 核对。分阶段升版时，给 `--write` 和 `--check` 都加 `--only <包列表>`，记录尚未升版的包。提交钩子按实际改动的包检查基线。两种情形都跑 `node tools/assert-ledger.mjs` 和已改动包的 `pnpm check`。
+**完成判据**：整仓升版收尾必须跑 `node tools/dsh-baseline.mjs --check`，核对全部现役插件和 preset 的声明。逐包记录兼容目标与允许的功能改动。用户要求保留某项功能时，仍把该包纳入兼容检查。分阶段升版时，给 `--write` 和 `--check` 都加 `--only <包列表>`，记录延后升版的包。提交钩子只检查实际改动的包。两种情形都跑 `node tools/assert-ledger.mjs` 和已改动包的 `pnpm check`。
+
+用户授权发布后，按 [发版与退役](./release.md#在-github-actions-里发) 逐项核对预期发布的包名和版本。
 
 ## 5. 宿主与浏览器
 

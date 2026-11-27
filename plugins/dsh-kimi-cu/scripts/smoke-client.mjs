@@ -6,6 +6,7 @@
  * 跑法：pnpm test / node scripts/smoke-client.mjs
  */
 import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
 import { dirname, join, resolve } from 'node:path';
 
 import { loadClientBundle } from './lib/client-bundle.mjs';
@@ -19,34 +20,15 @@ const check = (label, ok) => {
   else { console.error('  FAIL ' + label); failures.push(label); }
 };
 
-// --- 浏览器环境的最小替身：插件 apply 期间不碰真实 DOM，只碰样式表那几样 ---
-const stubElement = {
-  dataset: {}, style: {}, appendChild() {}, remove() {}, setAttribute() {},
-  addEventListener() {}, removeEventListener() {}, classList: { add() {}, remove() {} },
-};
-const appendedStyles = [];
-globalThis.document = {
-  ...stubElement,
-  documentElement: stubElement,
-  body: stubElement,
-  head: {
-    ...stubElement,
-    appendChild: (node) => { appendedStyles.push(node); },
-    querySelector: () => null,
-    querySelectorAll: () => [],
-  },
-  createElement: () => ({ ...stubElement, id: '', textContent: '' }),
-  createTextNode: () => ({}),
-  getElementById: () => null,
-  querySelector: () => null,
-  querySelectorAll: () => [],
-};
+const dom = new JSDOM();
+globalThis.document = dom.window.document;
 
 const { exported, requires } = await loadClientBundle(root);
 
 const locales = [];
 const registrations = [];
 const errors = [];
+const effects = [];
 
 /** cordis 忠实的上下文：读未声明的服务抛 cannot get property "x" without inject。 */
 function makeCtx(label, declared = []) {
@@ -72,7 +54,11 @@ function makeCtx(label, declared = []) {
   };
   const base = {
     label,
-    effect: (fn) => { fn(); return () => {}; },
+    effect: (fn) => {
+      const dispose = fn();
+      if (typeof dispose === 'function') effects.push(dispose);
+      return dispose;
+    },
     inject: () => () => {},
     get: (name) => table[name],
   };
@@ -116,6 +102,15 @@ const card = registrations.find((entry) => entry.options?.name === 'plugins.bund
 check('状态卡注册在 plugins.bundle.config 且 key 是包名', card?.options?.key === pkgName);
 check('状态卡带本插件的字典命名空间', card?.options?.locale === 'kimiCu');
 check('状态卡组件是个函数', typeof card?.component === 'function');
+
+const pluginStyles = () => document.head.querySelectorAll(`style[data-plugin="${pkgName}"]`);
+check('启用后挂载插件样式', pluginStyles().length === 1);
+for (const dispose of effects.splice(0).reverse()) dispose();
+check('停用后不残留插件样式', pluginStyles().length === 0);
+exported.apply(makeCtx('restarted', exported.inject ?? []));
+check('重新启用后每张样式各有一份', pluginStyles().length === 1);
+for (const dispose of effects.splice(0).reverse()) dispose();
+dom.window.close();
 
 check('apply 期间没有接线错误', errors.length === 0);
 for (const error of errors) console.error('       ' + error);

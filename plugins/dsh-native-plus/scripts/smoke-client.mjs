@@ -365,5 +365,11 @@ check('卸载后根元素不留变量', leftVars.length === 0, leftVars.join('�
 check('卸载后样式标签全删了', document.head.querySelectorAll('style[data-plugin]').length === 0);
 check('卸载后行上的运行标记全清', document.querySelectorAll('[data-np-running]').length === 0);
 
+const restarted = makeCtx('restarted', exported.inject ?? []);
+exported.apply(restarted);
+const restartedKeys = [...document.head.querySelectorAll('style[data-plugin]')].map((tag) => tag.getAttribute('data-plugin-css'));
+check('重新启用后每张样式表各有一份', JSON.stringify(restartedKeys) === JSON.stringify(styleKeys));
+for (const dispose of restarted.effects.splice(0)) dispose();
+
 console.log(failures.length === 0 ? '\nsmoke: PASS' : '\nsmoke: FAIL (' + failures.length + ')');
 process.exit(failures.length === 0 ? 0 : 1);

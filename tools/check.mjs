@@ -3,7 +3,7 @@
  * 仓库级 check：把 `.githooks/pre-commit` 对本次改动做的事，对**全部包**跑一遍。
  *
  * 提交闸门只看改动的包，且只在这台装了钩子的机器上生效；CI 或换台机器想一次跑齐时用它。
- * 顺序是：先台账（`assert-ledger.mjs`，含内核版本字面量与 preset 抄本比对），再每个包在自己
+ * 顺序是：先台账（`assert-ledger.mjs`）、详情文档与诊断输出，再每个包在自己
  * 目录跑它 `scripts` 里的 `check`，最后一道是产物新鲜度（`assert-artifacts.mjs`：`lib/` 不能比
  * `src/` 旧）。它放最后是因为多数包的 `check` 自带构建，跑完就修好了；留在这里抓的是「check
  * 跑完产物还旧」——那说明这个包的 check 不构建、而自检里有读 `lib/` 的脚本。
@@ -12,8 +12,8 @@
  * 这个脚本不替你 install，缺 node_modules 就报出来。CI 的装法见 `.github/workflows/check.yml`。
  *
  * 用法：
- *   node tools/check.mjs                 # 台账 + 全部包的 check + 产物新鲜度
- *   node tools/check.mjs --ledger-only   # 台账 + 产物新鲜度，跳过包级 check，不安装依赖
+ *   node tools/check.mjs                 # 仓库级检查 + 全部包的 check
+ *   node tools/check.mjs --ledger-only   # 只跑仓库级检查，不安装依赖
  *   node tools/check.mjs --json          # 机器读；可与 --ledger-only 同用
  * 退出码：0 全通过，1 有检查返回非零，2 有包因缺 node_modules 被跳过或参数不对。
  * 子命令无法启动会记录状态 2；未触发上述缺依赖标记时，汇总退出码仍为 1。
@@ -74,6 +74,10 @@ if (!json) console.log(ledger.status === 0 ? 'check: 台账通过' : 'check: 台
 const detail = run(['node', join(root, 'tools/assert-detail.mjs')], root, !json);
 results.push({ name: '（详情文档与配图）', command: 'node tools/assert-detail.mjs', ...detail });
 if (!json) console.log(detail.status === 0 ? 'check: 详情文档与配图通过' : 'check: 详情文档与配图不通过');
+
+const diagnostics = run([process.execPath, '--test', join(root, 'tools/test-dsh-env.mjs')], root, !json);
+results.push({ name: '（环境诊断脱敏）', command: 'node --test tools/test-dsh-env.mjs', ...diagnostics });
+if (!json) console.log(diagnostics.status === 0 ? 'check: 环境诊断脱敏通过' : 'check: 环境诊断脱敏不通过');
 
 let blocked = false;
 if (!ledgerOnly) {
