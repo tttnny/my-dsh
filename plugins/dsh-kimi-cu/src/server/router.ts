@@ -1,7 +1,7 @@
 /**
  * 状态路由：插件页卡片走 Connection 的 /api 通道读它。
  *
- * 只读；`?refresh=1` 绕过探测缓存。探测失败返回 500 与错误文本，卡片据此显示重试。
+ * `?refresh=1` 绕过探测缓存并重新同步 MCP 注册。状态和更新路由均由 Connection 限定为 owner。
  */
 
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection';

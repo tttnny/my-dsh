@@ -32,8 +32,6 @@ const { createElement, cloneElement, Fragment, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { createPortal } = await import('react-dom');
 
-const FAILED_FOR_LEGIBILITY = '原文很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长的一段主代理标题';
-
 /** 一份按宿主形状返回的日志：一条判成、一条没判成。 */
 const ENTRIES = [
   {
@@ -43,9 +41,7 @@ const ENTRIES = [
     effort: 'high',
     at: Date.parse('2026-10-23T17:33:26+08:00'),
     latencyMs: 251,
-    parentTitle: FAILED_FOR_LEGIBILITY,
-    childLabel: 'Map admin audio pipeline',
-    prompt: '{\n  "model": "bailian-decision/decision-model-preview",\n  "state": {\n    "message": "Map admin audio pipeline"\n  }\n}',
+    metrics: { judgeModel: 'decision-model-preview', optionCount: 3, subjectLength: 54 },
   },
   {
     typeId: null,
@@ -55,9 +51,6 @@ const ENTRIES = [
     reason: 'unmatched',
     at: Date.parse('2026-10-23T22:27:04+08:00'),
     latencyMs: 229,
-    parentTitle: '另一个主代理',
-    childLabel: '跑一下测试',
-    prompt: '',
   },
 ];
 
@@ -207,10 +200,8 @@ const hostForm = {
 /** 本测试直接拿座位组件来画，不关心注册细节。 */
 const registrations = [];
 /** 插件页导航替身：记下「回到插件页列表」被叫了几次。 */
-let openedList = 0;
 const ctx = {
   effect: (fn) => { fn(); return () => {} },
-  get: (name) => (name === 'pluginNavigation' ? { openList: () => { openedList += 1; } } : undefined),
   inject: (_names, fn) => { fn(ctx); return () => {} },
   slots: {
     inject: (_key, register) => { register(); return () => {} },
@@ -357,31 +348,9 @@ await test('没有保存按钮：试通在判断服务标题行，导入导出�
   assert.ok(preview.closest('.dsh-judge-footer') !== null, '预览应当落在卡片最下面那条栏里');
 });
 
-await test('任务类型那一节写明依赖的官方配置，点了跳到那张卡片', async () => {
-  const section = rowsSection();
-  assert.equal(
-    section?.textContent?.includes(zh['rows.dependsOn']),
-    true,
-    '写明依赖哪份官方配置',
-  );
-  const open = buttonIn(section, zh['rows.dependsOnOpen']);
-  assert.ok(open !== undefined, '去设置的入口应当在场');
-
-  // 宿主插件页上的那张官方卡片：按下它会打开官方配置页。
-  const card = document.createElement('li');
-  card.setAttribute('data-plugin-item', 'subagent');
-  const cardButton = document.createElement('button');
-  cardButton.textContent = '子智能体';
-  card.appendChild(cardButton);
-  document.body.appendChild(card);
-  let openedCard = 0;
-  cardButton.addEventListener('click', () => { openedCard += 1; });
-
-  const before = openedList;
-  await click(open);
-  assert.equal(openedList, before + 1, '先回到插件页列表');
-  assert.equal(openedCard, 1, '再按下那张官方卡片');
-  card.remove();
+await test('任务类型一节说明官方配置位置', () => {
+  assert.ok(rowsSection()?.textContent?.includes(zh['rows.dependsOn']));
+  assert.ok(buttonIn(rowsSection(), '去设置') === undefined);
 });
 
 await test('文字格离开才写，写的是这一格的新值', async () => {
@@ -560,14 +529,14 @@ await test('粘进来的不是清单时说清楚是哪一种问题', async () =>
   assert.equal(container.querySelector('textarea.dsh-judge-paste'), null, '取消之后弹窗关掉');
 });
 
-await test('点开日志页后，六列按顺序摆好', async () => {
+await test('点开日志页后，四列按顺序摆好', async () => {
   await click([...container.querySelectorAll('[role="tab"]')].find((node) => node.textContent === zh['tab.log']));
   const head = container.querySelector('.dsh-judge-log-head');
   assert.ok(head !== null, '日志表应当画出来了');
   assert.deepEqual(
     [...head.children].map((cell) => cell.textContent),
-    [zh['log.colResult'], zh['log.colChoice'], zh['log.colParent'], zh['log.colChild'], zh['log.colTime'], zh['log.colLatency']],
-    '列的顺序就是读者扫一眼的顺序：结果最左，然后是选择、主代理、子代理',
+    [zh['log.colResult'], zh['log.colChoice'], zh['log.colTime'], zh['log.colLatency']],
+    '列的顺序就是读者扫一眼的顺序：结果最左，然后是选择、时间、耗时',
   );
 });
 
@@ -580,7 +549,7 @@ await test('日志页复制分析提示词并反馈结果', async () => {
   assert.equal(clipboard.text, zh['log.analysisPrompt']);
   assert.match(clipboard.text, /最近 100 条/);
   assert.match(clipboard.text, /judgements\.json/);
-  assert.match(clipboard.text, /当次请求/);
+  assert.match(clipboard.text, /失败原因/);
   assert.equal(container.querySelector('[role=status]')?.textContent, zh['log.analysisCopied']);
   clipboardWorks = false;
   await click(buttonByText(zh['log.copyAnalysis']));
@@ -616,14 +585,6 @@ await test('「选择」列只写模型与强度，悬停才带上供应商', ()
   assert.equal(document.getElementById(missing)?.textContent, 'magpie · deepseek/deepseek-flash');
 });
 
-await test('「主代理」与「子代理」两列各放各的内容', () => {
-  const rows = [...container.querySelectorAll('.dsh-judge-log-row:not(.dsh-judge-log-head)')];
-  assert.equal(rows[0].children[2].textContent, FAILED_FOR_LEGIBILITY);
-  assert.equal(rows[0].children[3].textContent, 'Map admin audio pipeline');
-  assert.equal(rows[1].children[2].textContent, '另一个主代理');
-  assert.equal(rows[1].children[3].textContent, '跑一下测试');
-});
-
 await test('未判成的那一格只写「未判成」，原因留给悬停', () => {
   const rows = [...container.querySelectorAll('.dsh-judge-log-row:not(.dsh-judge-log-head)')];
   const cell = rows[1].children[0];
@@ -638,29 +599,24 @@ await test('未判成的那一格只写「未判成」，原因留给悬停', ()
 
 await test('放不下的那几格要能截断，不写出格', () => {
   const rows = [...container.querySelectorAll('.dsh-judge-log-row:not(.dsh-judge-log-head)')];
-  for (const index of [1, 2, 3]) {
-    assert.ok(rows[0].children[index].classList.contains('dsh-judge-cell-clip'), '这一格要能截断');
-  }
+  assert.ok(rows[0].children[1].classList.contains('dsh-judge-cell-clip'), '这一格要能截断');
 });
 
-await test('点一行开出来的弹窗只讲这段提示词', async () => {
+await test('点一行显示请求统计', async () => {
   const rows = [...container.querySelectorAll('.dsh-judge-log-row:not(.dsh-judge-log-head)')];
   await click(rows[0]);
   const dialog = document.querySelector('[role="dialog"]');
   assert.ok(dialog !== null, '弹窗应当打开');
   assert.equal(dialog.getAttribute('data-title'), zh['log.promptTitle']);
-  assert.equal(dialog.querySelector('pre')?.getAttribute('data-code'), ENTRIES[0].prompt, '弹窗里就是那条请求体');
+  assert.equal(dialog.querySelector('pre')?.getAttribute('data-code'), JSON.stringify(ENTRIES[0].metrics, null, 2), '弹窗显示结构化指标');
   // 请求体外面这一层负责两件事：正文自己换行，高了在框里滚动。
   assert.ok(dialog.querySelector('pre')?.closest('.dsh-judge-prompt') !== null, '请求体应当套在会滚动的框里');
-  // 行上已有的标签不在弹窗里再列一遍。只看标签，不看正文：提示词里本来就会有
-  // 主代理写的任务文字，那是它该有的内容，不是「重复列了一遍」。
   const labels = [...dialog.querySelectorAll('*')]
     .filter((node) => node.children.length === 0 && node !== dialog.querySelector('p'))
     .map((node) => node.textContent?.trim());
-  for (const label of [zh['log.colResult'], zh['log.colChoice'], zh['log.colParent'], zh['log.colChild'], zh['log.colTime'], zh['log.colLatency']]) {
+  for (const label of [zh['log.colResult'], zh['log.colChoice'], zh['log.colTime'], zh['log.colLatency']]) {
     assert.equal(labels.includes(label), false, `弹窗不该再有一行「${label}」`);
   }
-  // 这些值只该在提示词正文里出现，不该作为一行标签旁边的值再列一次。
   const paragraphs = [...dialog.querySelectorAll('p')].map((node) => node.textContent);
   for (const value of ['类型 3', 'magpie · deepseek/deepseek-flash · high', '251 毫秒']) {
     assert.equal(paragraphs.includes(value), false, `弹窗不该把「${value}」再列一遍`);

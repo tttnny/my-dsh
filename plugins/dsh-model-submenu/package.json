@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-model-submenu",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "description": "增强输入框的模型菜单：第一行直接打开跨供应商的模型弹窗，第二行的推理等级是可拖动的滑块，档位带配色。",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
@@ -10,7 +10,7 @@
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.2.2-rc.3"
+    "dsh": ">=0.2.3-alpha.2"
   },
   "main": "lib/index.js",
   "exports": {
@@ -64,8 +64,8 @@
     "test": "node scripts/test-favorites.mjs && node scripts/test-facts.mjs && node scripts/test-commit.mjs && node scripts/test-rows.mjs && node scripts/test-effort-memory.mjs && node scripts/test-slider.mjs && node scripts/test-render.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
+    "@deepseek-ai/cordis": "^4.2.0-alpha.1",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.3-alpha.2",
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
@@ -74,16 +74,17 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-api-remotes": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-api-session-controller": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-locale": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-conversation": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-model-selection": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.3",
+    "@deepseek-ai/cordis": "^4.2.0-alpha.1",
+    "@deepseek-ai/dsh-api-remotes": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-api-session-controller": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-conversation": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-model-selection": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-util-text-search": ">=0.2.3-alpha.2",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",

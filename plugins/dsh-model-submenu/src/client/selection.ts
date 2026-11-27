@@ -94,12 +94,16 @@ export function planModelCommit(
  * @returns the metadata, or undefined when no model is live or it advertises none.
  */
 export function liveReasoning(state: ModelDirectoryState): ModelReasoning | undefined {
+  return currentCatalogModel(state)?.reasoning
+}
+
+/** Find the current model by its provider and model IDs. */
+export function currentCatalogModel(state: ModelDirectoryState) {
   const current = state.current
   if (current === null) return undefined
   return state.groups
     .find((group) => group.id === current.provider)
     ?.models.find((model) => model.id === current.model)
-    ?.reasoning
 }
 
 /**

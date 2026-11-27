@@ -38,9 +38,9 @@ export function createUpdateRoute(updater: Updater): ConnectionFetchRoute {
       }
 
       const encoder = new TextEncoder();
+      let closed = false;
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
-          let closed = false;
           const emit = (event: UpdateEvent): void => {
             if (closed) return;
             try {
@@ -58,6 +58,11 @@ export function createUpdateRoute(updater: Updater): ConnectionFetchRoute {
               closed = true;
               controller.close();
             });
+        },
+        cancel() {
+          // The response can disappear while the installer is replacing the runtime.
+          // The updater still owns the process and its single-flight lock.
+          closed = true;
         },
       });
 

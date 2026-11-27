@@ -2,17 +2,19 @@
 
 运行中的 DSH 升了一版，本仓库按固定顺序跟一遍：**先看宿主变了什么，再改 preset，再改 plugins，最后按 CI 重跑**。命令的参数细节在 [tools/README.md](../../tools/README.md)，这里写顺序、判断点与完成判据。
 
-上一版号就是仓库里现在的 `engines.dsh`（每个包的 `package.json` 都写着，也是上一次跟到的版本）；新版本号看下一步的 `dsh-env`。
-
 ## 1. 认目标版本与上一版
 
 ```bash
-node tools/dsh-env.mjs
+node tools/dsh-env.mjs --json
 ```
 
-看 `内核` 与 `官方 preset` 两行；`DSH 源码` 一行给出源码 checkout。后面按 `dsh-v<版本>` tag 比差异。
+`kernelVersion` 是运行目标，`sourceDir` 是源码 checkout。旧运行版本从已装清单、启动记录或提交历史核实；各包 `engines.dsh` 只是兼容范围，preset 抄本基线读 patch 顶部的 `# from dsh`。两者可能先后更新。旧运行版本不明时，按各包声明与锁文件选取待核查区间。
 
-**完成判据**：知道新版本号与上一版号。
+有 `cordis_inspect` 时，先列 provider，再查运行版本与当前服务、事件或 slot。离线复核用上面定位的安装目录和目标 tag。
+
+启动自建 npm 或源码实例前，核对目标 CLI `package.json` 的 `engines.node`，用实际启动二进制的 `--version` 验证。打包运行时也以实际随包二进制为准。
+
+**完成判据**：记录目标版本、已核实的旧运行版本或候选区间、各包兼容基线及 preset 抄本基线。
 
 ## 2. 看宿主这一版改了什么
 
@@ -21,9 +23,11 @@ node tools/kernel-diff.mjs <上一版> --from-source --declared
 node tools/kernel-diff.mjs <上一版> --from-source --declared --presets
 ```
 
-第一条只看本仓包声明过的宿主包；`--presets` 是在包差异之后**附加一节**判四份官方 preset 动没动，它不参与包过滤——只想看那一节就配上 `--declared` 把上半截缩到本仓声明过的包。`--from-source` 用源码 tag，**不需要旧内核还装着**；两版都装着时去掉它，比安装产物。
+`--from-source` 按 `dsh-v<版本>` tag 比源码，旧内核无需安装。去掉它可以比较两版安装产物。`--declared` 仅覆盖依赖声明，另按插件实际使用的工具、服务、事件、slot、配置与存储契约核查。`--presets` 在包清单后附上官方 preset 文件差异。
 
-**完成判据**：能说出「我们依赖的包里哪几个动了、动了哪些文件」与「官方 preset 动没动」。官方 preset 动了就进第 3 步重抄；一字未动就只跟版本号。
+先读目标安装的 `docs/upgrade-guide/README.md`。按发布顺序从旧版目录查到目标版前一版，目录名对应离开的版本。目标为预发布版时，用目标 tag 或已装实现核对目标版目录中的变更是否已包含。迁移笔记列出命中的接口和验证方式。
+
+**完成判据**：每个实用契约都有核查结论，并判定本仓的官方抄本是否需要合并。第 3 步以抄本与目标版的归一比对为准。
 
 另有一条只在复核源码时才会踩：本机 checkout 的 HEAD **不保证**等于目标 `dsh-v<版本>` tag——它可能领先若干提交，也可能尚未合入该发布线。凡是从**工作树**读宿主源码的自检（`plugins/*/scripts/test-host-parity.mjs`、`plugins/*/scripts/test-anchors.mjs`）默认验的是 HEAD 而不是目标版本，绿灯不代表契约在目标版本上成立。复核时先把 tag 抽成目录再指过去：
 
@@ -39,11 +43,10 @@ DSH_SOURCE=<仓库绝对路径>/tmp/host-source DSH_SOURCE_DIR=<仓库绝对路�
 
 ```bash
 cd presets/plugin-upgrade-cordis
-node ../../tools/preset-copy.mjs plugin-upgrade-cordis --official-diff
-# 官方动了：
-node ../../tools/preset-copy.mjs plugin-upgrade-cordis --recopy
-pnpm check
+node ../../tools/preset-copy.mjs plugin-upgrade-cordis --diff
 ```
+
+归一比对有差异时，用 `--official-diff` 查上游改动，再用 `--recopy` 合并。之后在 preset 目录跑 `pnpm check`。
 
 `engines.dsh` 与版本号**不在这里手改**：第 4 步的 `dsh-baseline --write --bump patch` 一次覆盖 `plugins/` 与 `presets/` 下的全部包，而它按「声明真的变了」决定加不加版本号——先手改过一遍的包在它眼里已经没有改动，反而不会加位。
 
@@ -60,7 +63,7 @@ node tools/assert-ledger.mjs
 
 第一条把 `plugins/` 与 `presets/` 下全部包的 `engines.dsh`、peer / dev 里的内核串改到新版本，并给有改动的包各加一位版本号、重写各自的 lock——第 3 步不再手改这两处。第二步会列出所有还没跟齐的手写字面量（自检断言、注释、README、patch 头部），逐个改到新版本。然后各包在自己目录跑 `pnpm check`。
 
-**完成判据**：`node tools/dsh-baseline.mjs --check` 通过（这条是「整仓有没有跟上在用内核」的唯一闸门，已接进 `.githooks/pre-commit` 第 0 道）；`tools/assert-ledger.mjs` 通过；每个包的 `pnpm check` 通过。
+**完成判据**：整仓升版用 `node tools/dsh-baseline.mjs --check` 核对。分阶段升版时，给 `--write` 和 `--check` 都加 `--only <包列表>`，记录尚未升版的包。提交钩子按实际改动的包检查基线。两种情形都跑 `node tools/assert-ledger.mjs` 和已改动包的 `pnpm check`。
 
 ## 5. 宿主与浏览器
 

@@ -130,6 +130,7 @@ export class ChatTranslateStore {
   private rows = new Map<string, RowState>();
   private listeners = new Set<() => void>();
   private version = 0;
+  private generation = 0;
   private fetch: ReplyFetcher;
   /** 已送达的译文，按原文内容寻址：跨行、跨代复用同一段文本的结果。 */
   private translated = new Map<string, string>();
@@ -148,21 +149,29 @@ export class ChatTranslateStore {
     return this.version;
   }
 
-  /**
-   * 丢弃池里全部已送达的译文，让下一轮按现在的提示词重新翻。
-   *
-   * 提示词换了措辞，池里那些译文是旧措辞的产物：留着它们，读者改了提示词却看不到
-   * 任何变化——已经翻过的段落照旧是旧调子，一个请求都不发。宿主半边的磁盘池按提示词
-   * 世代作废，这里跟着作废，两边的「换一代」说的是同一件事。
-   *
-   * 已经显示在屏幕上的译文不动（行状态里那份还在），下一轮需要新译文时才重发。
-   * @returns 池里原本是否有东西可丢。
-   */
-  dropTranslations(): boolean {
-    if (this.translated.size === 0) return false;
+  getGeneration(): number {
+    return this.generation;
+  }
+
+  /** 配置变更只作废可复用的译文与在途请求，行内已经落下的结果继续显示。 */
+  dropTranslations(): void {
+    this.generation += 1;
     this.translated.clear();
+    for (const [rowKey, request] of this.pending) {
+      const row = this.rows.get(rowKey);
+      if (row === undefined) continue;
+      // 记住已点过的补跑，下一次 ensure 还能接着跑。首跑只要补齐空结果位。
+      const retrying = [...request.texts].filter(([index, text]) => row.texts[index] === text && row.outcomes[index]?.ok === false);
+      this.rows.set(rowKey, { ...row, retrying: retrying.map(([index]) => index) });
+    }
+    this.pending.clear();
     this.bump();
-    return true;
+  }
+
+  /** Client 卸载时同时清掉行内结果。 */
+  reset(): void {
+    this.rows.clear();
+    this.dropTranslations();
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -190,26 +199,31 @@ export class ChatTranslateStore {
    * @returns 是否发出了新的请求。
    */
   ensure(rowKey: string, texts: readonly string[], options: EnsureOptions = {}): boolean {
+    const generation = this.generation;
     const next = [...texts];
     const frozen = clampFrozen(options.frozen ?? next.length, next.length);
-    const retries = normalizeRetries(options.retries);
-
     const current = this.rows.get(rowKey);
-    const settledThrough = current?.settledThrough ?? 0;
+    const inflight = this.pending.get(rowKey);
+    let retries = normalizeRetries(options.retries);
     let seed: (BlockOutcome | null)[] | null = null;
     let previousFrozen = 0;
+    let resuming = false;
 
     const sameGeneration = current !== undefined && sameTexts(current.texts, next);
-    if (current !== undefined && (sameGeneration || isAppendOnly(current.texts, next))) {
-      // 在途：再点是空操作——↻ 此刻正转着圈，本身就是「已在跑」的答复。
-      if (sameGeneration && current.status === 'pending') return false;
-      if (retries.length === 0 && frozen <= settledThrough && sameGeneration) return false;
-      seed = current.outcomes.map((outcome) => (outcome === null ? null : { ...outcome }));
+    // 流式尾块可以继续长，已写定的前缀仍属于同一行。
+    if (current !== undefined && (sameGeneration || isAppendOnly(current.texts.slice(0, current.settledThrough), next))) {
+      resuming = current.status === 'pending' && inflight === undefined;
+      // 配置换代会撤销请求认领，但行内结果保留。重新登记时只补未完成的块。
+      if (resuming) retries = normalizeRetries([...retries, ...current.retrying]);
+      else {
+        if (sameGeneration && current.status === 'pending') return false;
+        if (retries.length === 0 && frozen <= current.settledThrough && sameGeneration) return false;
+      }
       previousFrozen = Math.min(current.settledThrough, next.length);
+      seed = current.outcomes.map((outcome) => (outcome === null ? null : { ...outcome }));
     }
 
-    const inflight = this.pending.get(rowKey);
-    const plan = this.planFor(next, frozen, retries, previousFrozen, seed, current?.texts, inflight);
+    const plan = this.planFor(next, frozen, retries, resuming ? 0 : previousFrozen, seed, inflight);
 
     // 本轮新发的请求记进在飞账本（下标 + 它们认领的那一份文本）。还在飞的那些
     // 块由上一轮继续负责，新代只接手它们的结果位，不重发。
@@ -227,14 +241,14 @@ export class ChatTranslateStore {
       status: work || (inflight !== undefined && inflight.texts.size > 0) ? 'pending' : 'settled',
       texts: next,
       outcomes: plan.outcomes,
-      settledThrough: settleThrough(settledThrough, frozen),
+      settledThrough: settleThrough(previousFrozen, frozen),
       retrying: work ? plan.retrying : [],
     });
     this.prune();
     this.bump();
 
-    if (!work) return false;
-    void this.run(rowKey, next, frozen, plan.indexes, plan.sending);
+    if (!work || generation !== this.generation) return false;
+    void this.run(generation, rowKey, next, frozen, plan.indexes, plan.sending);
     return true;
   }
 
@@ -250,7 +264,6 @@ export class ChatTranslateStore {
     retries: readonly number[],
     previousFrozen: number,
     seed: readonly (BlockOutcome | null)[] | null,
-    seedTexts: readonly string[] | undefined,
     inflight: { texts: Map<number, string> } | undefined
   ): { indexes: number[]; sending: string[]; outcomes: (BlockOutcome | null)[]; retrying: number[] } {
     const outcomes: (BlockOutcome | null)[] = texts.map((_, index) => seed?.[index] ?? null);
@@ -265,7 +278,9 @@ export class ChatTranslateStore {
         outcomes[index] = null;
         continue;
       }
-      const cached = this.translated.get(cacheKey(text));
+      const kept = seed?.[index];
+      if (kept?.ok === true) continue;
+      const cached = this.translated.get(text);
       if (cached !== undefined) {
         outcomes[index] = { translated: cached, ok: true };
         continue;
@@ -284,14 +299,7 @@ export class ChatTranslateStore {
         sending.push(text);
         continue;
       }
-      const kept = seed?.[index];
-      if (kept !== null && kept !== undefined && seedTexts?.[index] === text) {
-        // 上一代这个位置的文本与此刻一字不差：结果留着，等新块的那一轮结束后
-        // 由内容池统一兜底（下一轮 ensure 命中缓存）。留着的意义是换代那一帧
-        // 不闪——已经看到的中文不会因为后面又有新块写定而退回原文。
-        outcomes[index] = { ...kept };
-        continue;
-      }
+      if (kept !== null && kept !== undefined) continue;
       if (index < previousFrozen) continue;
       if (outcomes[index] === null) {
         indexes.push(index);
@@ -303,6 +311,7 @@ export class ChatTranslateStore {
   }
 
   private async run(
+    generation: number,
     rowKey: string,
     body: readonly string[],
     frozen: number,
@@ -317,6 +326,7 @@ export class ChatTranslateStore {
 
     let cursor = 0;
     for (const batch of chunkTexts(sending)) {
+      if (generation !== this.generation) return;
       let results: ReplyBlockResult[] = [];
       try {
         results = await this.fetch(batch);
@@ -325,6 +335,7 @@ export class ChatTranslateStore {
         // 防的是 fetcher 实现抛错的形态——异常说不出细节，悬停只报「翻译失败」。
         results = [];
       }
+      if (generation !== this.generation) return;
       for (let i = 0; i < batch.length; i++) {
         const index = indexes[cursor + i];
         if (index === undefined) break;
@@ -333,7 +344,7 @@ export class ChatTranslateStore {
         if (result !== undefined && result.ok && result.translated && result.translated.trim()) {
           collected.set(index, { translated: result.translated, ok: true });
           // 成功才进内容池：失败不进，点 ↻ 因此会真重发，别的行也捡不到坏结果。
-          this.translated.set(cacheKey(text), result.translated);
+          this.translated.set(text, result.translated);
         } else {
           const detail = typeof result?.detail === 'string' && result.detail !== '' ? result.detail : undefined;
           collected.set(index, {
@@ -347,7 +358,7 @@ export class ChatTranslateStore {
       cursor += batch.length;
       this.commit(rowKey, frozen, indexes, sent, collected);
     }
-    this.commit(rowKey, frozen, indexes, sent, collected, true);
+    if (generation === this.generation) this.commit(rowKey, frozen, indexes, sent, collected, true);
   }
 
   /**
@@ -412,11 +423,6 @@ export class ChatTranslateStore {
       }
     }
   }
-}
-
-/** 内容池的键：与宿主磁盘池同口径（trim 后小写），只有空白差异的块算同一段。 */
-function cacheKey(text: string): string {
-  return text.trim().toLowerCase();
 }
 
 /**

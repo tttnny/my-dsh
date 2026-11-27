@@ -7,6 +7,7 @@
  * 跑法：pnpm test / node scripts/test-notify-node.mjs
  */
 import assert from 'node:assert/strict';
+import { syncedConfig } from './lib/client-bundle.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { loadClientBundle } from './lib/client-bundle.mjs';
@@ -40,7 +41,7 @@ const ctx = {
   inject: (_names, callback) => { callback(ctx); return () => {}; },
   ...services,
 };
-exported.apply(ctx);
+exported.apply(ctx, syncedConfig());
 
 let passed = 0;
 let total = 0;
@@ -288,6 +289,29 @@ test('没有正文时仍出节点，标题兜底交给渲染器', () => {
   const contexts = feed(registered, [callEvent('call-1', {})]);
   const node = registered.buildViewNode(contexts.get(registered.kind + ':call-1'));
   assert.deepEqual(node.data, { message: '', time: 1000, settled: false });
+});
+
+test('直接调用失败时只显示失败状态和错误原因', () => {
+  const failure = resultEvent('direct-failure', { title: '未发送的进度' });
+  failure.data.message.isError = true;
+  failure.data.message.content = [{ type: 'text', text: 'Missing message' }];
+  const contexts = feed(registered, [callEvent('direct-failure'), failure]);
+  const node = registered.buildViewNode(contexts.get(registered.kind + ':direct-failure'));
+  assert.deepEqual(node.data, { message: '', time: 1000, settled: true, failure: { detail: 'Missing message' } });
+  const resultOnly = feed(registered, [failure]);
+  assert.deepEqual(registered.buildViewNode(resultOnly.get(registered.kind + ':direct-failure')).data,
+    { ...node.data, time: failure.time });
+});
+
+test('PTC 失败交给原生子调用行，撤掉进度卡', () => {
+  const failure = ptcResultEvent('ptc-failure');
+  failure.data.isError = true;
+  failure.data.error = { name: 'InvalidArguments', code: 'INVALID_ARGUMENTS' };
+  assert.deepEqual(registered.match(failure), { id: 'ptc-failure', role: 'update' });
+  const contexts = feed(registered, [ptcStartEvent('ptc-failure'), failure]);
+  assert.equal(registered.buildViewNode(contexts.get(registered.kind + ':ptc-failure')).visibility, 'hidden');
+  const resultOnly = feed(registered, [failure]);
+  assert.equal(registered.buildViewNode(resultOnly.get(registered.kind + ':ptc-failure')), null);
 });
 
 console.log('\nnotify-node: ' + passed + '/' + total + ' passed');

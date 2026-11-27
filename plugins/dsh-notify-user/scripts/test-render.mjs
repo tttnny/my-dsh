@@ -16,6 +16,7 @@
  * 运行：node scripts/test-render.mjs
  */
 import assert from 'node:assert/strict';
+import { syncedConfig } from './lib/client-bundle.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
@@ -82,7 +83,7 @@ const form = {
   },
 };
 
-exported.apply(ctx);
+exported.apply(ctx, syncedConfig());
 
 const entry = registrations.find((candidate) => candidate.options?.name === 'conversation.input.model.options');
 assert.ok(entry !== undefined, '菜单开关没有注册到 conversation.input.model.options');

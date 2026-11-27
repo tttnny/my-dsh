@@ -136,3 +136,9 @@
 [data-chat-flow-kind="notify-user"] + * {
   --dsh-chat-flow-gap: 12px;
 }
+
+.dsh-notify-failure {
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

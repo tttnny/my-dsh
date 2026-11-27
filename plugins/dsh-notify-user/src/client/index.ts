@@ -7,6 +7,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client';
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client';
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
+import type { SyncedConfig } from '@deepseek-ai/dsh-client-config/types';
+import type { PluginConfig } from '../config.js';
 import { NOTIFY_TOOL_NAME } from '../shared/config.js';
 import { ConfigCard } from './ConfigCard.js';
 import {
@@ -15,11 +17,11 @@ import {
   DEFAULT_CARD_PLACEMENT,
   MODEL_OPTIONS_SLOT,
   SETTINGS_NAMESPACE,
-  readConfig,
 } from './config.js';
 import { EnabledToggle } from './EnabledToggle.js';
 import { NS, en, zh } from './locales.js';
 import { NOTIFY_NODE_KIND, createNotifyDefinition } from './notify-node.js';
+import type { CardHooks } from './NotifyCard.js';
 import { NotifyNodeView } from './NotifyNodeView.js';
 import { NotifyRow } from './NotifyRow.js';
 import configCss from './ConfigCard.css';
@@ -34,8 +36,7 @@ export { NS } from './locales.js';
  * 四件事各有归属：
  *   1. 对话节点定义把 `notify_user` 的每次调用投影成声明了 `process` 位置的节点，
  *      卡片因此站在步骤组外，前后各断一个原生子折叠。
- *   2. `tool.call.toolview` 保留同一张卡片的兜底渲染：通用工具定义拿得到工具名时
- *      （例如节点定义没注册上），它补建的工具行由这里画成同一张卡。
+ *   2. `tool.call.toolview` 在跟随工具行模式下，把通用工具定义建出的行画成进度卡。
  *   3. `conversation.input.model.options` 画按会话的「主动汇报」开关，与官方智能体
  *      团队开关同处一个菜单；写回的是本插件配置里的按会话字典。
  *   4. `plugins.bundle.config` 画配置卡；宿主没服务这份配置时整块不出现，
@@ -81,8 +82,16 @@ function removeStyles(): void {
 /**
  * 插件本体。
  * @param ctx - 客户端根上下文。
+ * @param config - 宿主下发的同步配置引用。
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: ClientContext, config: SyncedConfig<PluginConfig>): void {
+  const cardHooks: CardHooks = {
+    collapsible: config.collapsible,
+    summaryOnly: config.summaryOnly,
+    summaryRender: config.summaryRender,
+    bodyExpandedByDefault: config.bodyExpandedByDefault,
+    showTime: config.showTime,
+  };
   ctx.effect(() => {
     injectStyles();
     return () => { removeStyles(); };
@@ -90,41 +99,38 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-notify-user: dictionaries');
 
-  // 位置是 `boundary` 时注册对话节点定义，卡片站在步骤组外；`inline` 时撤掉定义，
-  // 通用工具定义建出的工具行由 toolview 画成同一张卡，卡片随组折叠。
+  // 边界模式接管进度节点，跟随工具行模式只接管工具座位。边界模式下失败的 PTC 子调用走原生工具行。
   ctx.effect(() => {
-    const form = ctx.configForms.get(SETTINGS_NAMESPACE);
+    let placement: 'boundary' | 'inline' | undefined;
     let dispose: (() => void) | undefined;
     const sync = (): void => {
-      const placement = readConfig(form)?.cardPlacement ?? DEFAULT_CARD_PLACEMENT;
-      if (placement === 'boundary') {
-        dispose ??= ctx.uiConversation.events.register(createNotifyDefinition());
-        return;
-      }
+      const next = config.cardPlacement.get() === 'inline' ? 'inline' : DEFAULT_CARD_PLACEMENT;
+      if (next === placement) return;
       dispose?.();
-      dispose = undefined;
+      placement = next;
+      dispose = next === 'boundary'
+        ? ctx.uiConversation.events.register(createNotifyDefinition())
+        : ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
+          name: 'tool.call.toolview',
+          key: NOTIFY_TOOL_NAME,
+          locale: NS,
+          inject: () => ({ hooks: cardHooks }),
+        }, NotifyRow));
     };
     sync();
-    const unsubscribe = form.subscribe(sync);
+    const unsubscribe = config.cardPlacement.subscribe(sync);
     return () => {
       unsubscribe();
       dispose?.();
     };
-  }, 'dsh-notify-user: notify node definition');
+  }, 'dsh-notify-user: card placement');
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: NOTIFY_NODE_KIND,
     locale: NS,
-    inject: () => ({ form: ctx.configForms.get(SETTINGS_NAMESPACE) }),
+    inject: () => ({ hooks: cardHooks }),
   }, NotifyNodeView));
-
-  ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
-    name: 'tool.call.toolview',
-    key: NOTIFY_TOOL_NAME,
-    locale: NS,
-    inject: () => ({ form: ctx.configForms.get(SETTINGS_NAMESPACE) }),
-  }, NotifyRow));
 
   // 按会话的开关住在模型与推理等级菜单里，与官方智能体团队开关同处一个菜单。
   ctx.slots.inject(MODEL_OPTIONS_SLOT, () => ctx.slots.register({

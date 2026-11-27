@@ -6,7 +6,7 @@
  * 一路绿灯，而真正要验的东西根本没被加载。这条规矩原来只写在 docs/rules/plugins.md「证明断言
  * 有牙齿」里靠人记，这里把它变成能判定的状态。
  *
- * 「手写 lib」的包不受这条约束：`lib/` 本身是源码、跟着 git 走（`dsh-web-auth-url` 就是），
+ * 「手写 lib」的包不受这条约束：`lib/` 本身是源码，随 git 跟踪，
  * 它没有 `src/` 可对应，判据是「`src/` 存在且 `lib/` 未被 git 跟踪」。
  *
  * 用法：node tools/assert-artifacts.mjs [--json]

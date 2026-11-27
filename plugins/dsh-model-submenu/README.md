@@ -4,7 +4,7 @@
 
 ## 概述
 
-- **第一行就是入口**：菜单里的「模型」点下去直接打开弹窗；顶部搜索框同时搜模型名与供应商名，每个有模型的供应商一个标签页。
+- **第一行就是入口**：菜单里的「模型」点下去直接打开弹窗。当前模型还未选定或已不在目录中时，输入框工具栏会显示「浏览模型」，也能打开同一个弹窗。顶部搜索框同时搜模型名与供应商名，每个有模型的供应商一个标签页。
 - **第二行是滑块**：推理等级不再下钻到档位列表，拖动时旋钮跟着指针走、松手吸附到最近一档并切换，键盘左右键逐档调整；轨道上的刻度点数就是该模型可选的档位数，旋钮比轨道大一圈。
 - **档位有颜色**：Off 是灰色，往上从蓝走到紫，只有最高档的填充是渐变；输入框触发器上的档位文字跟着同一套颜色走。
 - **默认档位是一个状态**：点最左边的「推理等级」四个字切回 provider default——轨道空着、旋钮是空心环，不会被误认成最低档；再拖一下滑块就回到明确档位。
@@ -21,7 +21,7 @@ dsh plugin --profile web add @lynn123411/dsh-model-submenu
 
 这条命令把包名写进 profile 的 `dependencies`，并登记进 `dsh.profile.bundles`；包内 `cordis.patch.yml` 随之插入一条根层行（`id: lynn-model-submenu`），这一行同时承载两个半边。行不写 `config`——写了当场抛，免得拼错的行静默什么都不注册。
 
-开关在插件页「已安装插件」里本插件那一行。关掉之后菜单退回宿主原来的样子：第一格下钻到当前供应商的模型列表，第二格下钻到档位列表。
+开关在插件页「已安装插件」里本插件那一行。关掉之后会移除插件样式和「浏览模型」按钮，恢复宿主原有的模型菜单和推理档位列表。
 
 ## 配置
 
@@ -38,15 +38,16 @@ dsh plugin --profile web add @lynn123411/dsh-model-submenu
 
 ### 装配
 
-宿主渲染模型菜单是 `{open && createPortal(...)}`：菜单一关，整棵子树卸载。所以本插件拆成三处贡献，前两处之间用一个插件自己的 store 传递「哪个会话要开弹窗」：
+宿主渲染模型菜单是 `{open && createPortal(...)}`：菜单一关，整棵子树卸载。模型菜单、工具栏入口和弹窗共用一个 store，传递要为哪个会话打开弹窗。
 
 | 贡献 | 槽位 | 职责 |
 | --- | --- | --- |
 | `ModelMenuBridge` | `conversation.input.model.options`（list，`id: model-menu-bridge`） | 渲染一个隐藏标记；在根菜单打开期间于菜单面板上装捕获阶段的点击监听：命中第一格就拦下、调宿主的 `dismiss()`、写 store；命中第二格就拦下下钻——点标签切回 provider default，点别处把焦点交给滑块；同时把 `EffortSlider` 挂进第二格 |
 | `ModelPickerHost` | `conversation.input.overlay`（list，`id: model-picker`） | 常驻；store 指向本会话时渲染弹窗、收藏、思考等级记忆与提交 |
+| `ModelPickerFallback` | `conversation.input.right`（list，`id: model-picker-fallback`） | 当前模型未选定或不在目录时显示「浏览模型」。此时宿主触发按钮会直接进入原生模型列表，跳过根菜单与 options 槽。 |
 | `EffortTint` | `conversation.input.overlay`（list，`id: model-effort-tint`） | 常驻；把输入框触发器上的档位文字染成当前档位的颜色。它必须常驻，因为那处文字在菜单之外 |
 
-`picker-state.ts` 的 store 只有 `open` / `close` / `getSnapshot` / `subscribe` 四个动作，重复 open 同一会话不重复通知。这一形态与宿主自己的 `ui-commands`（`PopupSelectController` + `PopupSelectView`）一致。
+`picker-state.ts` 的 store 只有 `open` / `close` / `getSnapshot` / `subscribe` 四个动作，重复 open 同一会话不重复通知。这一形态与宿主自己的 `ui-commands`（`PopupSelectController` + `PopupSelectView`）一致。CSS Modules 构建时导出类名和样式文本，客户端启用时插入样式表。停用时由 Cordis effect 清理这次启用创建的样式节点。
 
 客户端半边声明的服务（`dsh.client.inject`）：`@deepseek-ai/dsh-api-remotes`、`@deepseek-ai/dsh-client-locale`、`@deepseek-ai/dsh-client-ui-conversation`、`@deepseek-ai/dsh-client-ui-model-selection`、`@deepseek-ai/dsh-client-ui-settings`、`@deepseek-ai/dsh-client-ui-slots`。少声明一个不会报错，只会让插件在页面里消失。
 
@@ -57,7 +58,7 @@ dsh plugin --profile web add @lynn123411/dsh-model-submenu
 根菜单的前两格（模型、推理等级）由宿主 `ui-model-selection` 的 `ModelSelect` 自己画，点击写死在组件里，槽位没有给这两格留注入点。要改这两格，只有两条路，而其中一条走不通：
 
 - **接管 `conversation.input.model`**：`renderSlot` 的授权按注册项发放（`entry.children`），而 `conversation.input.model.options` 这个子槽已经被宿主的注册声明，再声明一次当场抛 `already declared`。所以一旦以 `priority: -100` 盖住宿主座位，本插件拿不到 `renderSlot`，`ui-agent-team` 的团队协作开关整行消失。
-- **改道这两格**：不动座位，只在根菜单打开期间（这条贡献的挂载期）于菜单面板 `[data-menu-material]` 上装捕获阶段的监听，认面板的直接 `role="menuitem"` 子元素为宿主的两格。捕获阶段拦在面板上，事件到不了 React 根容器的冒泡监听，宿主写死的下钻不会执行。
+- **改道这两格**：不动座位，只在根菜单打开期间（这条贡献的挂载期）于菜单面板 `[data-model-menu][role="menu"]` 上装捕获阶段的监听，认面板的直接 `role="menuitem"` 子元素为宿主的两格。捕获阶段拦在面板上，事件到不了 React 根容器的冒泡监听，宿主写死的下钻不会执行。
 
 这条路的代价是依赖宿主根菜单的 DOM 形状，所以认不出来时**什么都不做**：点击退回宿主原来的下钻，插件其余部分照常工作。
 
@@ -67,8 +68,8 @@ dsh plugin --profile web add @lynn123411/dsh-model-submenu
 
 | 认什么 | 怎么认 |
 | --- | --- |
-| 菜单面板 | 标记 span 的 `closest('[data-menu-material]')` |
-| 两格 | `panel.querySelectorAll(':scope > button[role="menuitem"]')`：`[0]` 模型格、`[1]` 推理等级格。槽位输出在各自的 `[data-slot]` 包裹层里，别的插件往 options 槽加行不会混进这个列表 |
+| 菜单面板 | 标记 span 的 `closest('[data-model-menu][role="menu"]')` |
+| 两格 | `panel.querySelectorAll(':scope > button[role="menuitem"]')`：`[0]` 模型格、`[1]` 推理等级格。只处理同时具有标签、数值和箭头的按钮。槽位输出在各自的 `[data-slot]` 包裹层里，别的插件往 options 槽加行不会混进这个列表 |
 | 标签 | `span[class*='cellLabel']`（哈希前缀随构建变，局部名不变） |
 | 档位文字 | `span[class*='cellValue']` |
 | 箭头 | `svg[class*='cellChevron']` |
@@ -127,14 +128,14 @@ cd plugins/dsh-model-submenu && pnpm check
 
 `check` = `typecheck` + `build`（tsdown）+ `smoke` + `test` + `assert:lib-untracked`。
 
-- `smoke-client.mjs`：按 Web shell 的方式装载构建产物 `lib/client.js`（`window.__ModuleLoader__.load` 桩件），喂假 cordis 服务，断言导出身份、`inject` 表逐字相等、三处贡献各自的 list `id`、前两处共用同一个 store、着色那条读同一个目录、产物里走的是共享的 `Modal`、产物里带着认宿主菜单面板与两格的四段选择器、滑块以 `role="slider"` 暴露给辅助技术、字典键集中英对齐，以及 store 自身的契约（起始关闭、open 发布目标、重复 open 不通知、close 清空、退订后静默）。
+- `smoke-client.mjs`：按 Web shell 的方式装载构建产物 `lib/client.js`（`window.__ModuleLoader__.load` 桩件），喂假 cordis 服务，断言导出身份、`inject` 表逐字相等、四处贡献的 list `id`、三个弹窗相关贡献共用同一个 store、着色读同一个目录、产物里走的是共享的 `Modal`、产物里带着认宿主菜单面板与两格的四段选择器、滑块以 `role="slider"` 暴露给辅助技术、字典键集中英对齐，以及 store 自身的契约（起始关闭、open 发布目标、重复 open 不通知、close 清空、退订后静默）。
 - `test-favorites.mjs`：收藏表的键名、读写、坏值降级、跨供应商靠前排序。
 - `test-facts.mjs`：设置值到上下文窗口与图片输入的映射、两类适配器的字段差异、缺字段整段略去。
 - `test-commit.mjs`：点模型立即提交、已选中的模型不重复提交、记住的档位不在可选档里时不强塞。
 - `test-rows.mjs`：目录拍平、标签页派生、搜索的两把钥匙。
 - `test-effort-memory.mjs`：按模型记档位，切走再切回来恢复的是这个模型自己的那一档。
 - `test-slider.mjs`：滑块几何与配色——档位到轨道比例、拖动位置是连续比例而不是逐档跳、比例换回最近一档且跨过中点才变、指针到最近档、两端夹取、单档与零宽轨道的退路、填充圆弧始终藏在旋钮底下且末档铺满轨道、Off 的中性灰、蓝到紫的两端、只有最高档用渐变。
-- `test-render.mjs`：用真 react 把菜单桥、触发器着色与弹窗画进 jsdom，锁住「点宿主第一格 → 关菜单 → store → 弹窗」这条链、宿主那两格的下钻确实没执行、点标签切回默认、刻度数与旋钮位置、数值与箭头隐藏、三种配色、触发器档位文字跟着变色、默认态空轨道与空心旋钮、拖动松手才提交一次、被拒走宿主提示、单档与无档位不挂滑块、卸载后样式写回，以及弹窗侧的收藏置顶、星标独立、提交与拒绝、思考等级记忆、加载与失败、会话不可选时整块不渲染。
+- `test-render.mjs`：用真 react 把菜单桥、触发器着色与弹窗画进 jsdom，锁住「点宿主第一格 → 关菜单 → store → 弹窗」这条链、宿主那两格的下钻确实没执行、点标签切回默认、刻度数与旋钮位置、数值与箭头隐藏、三种配色、触发器档位文字跟着变色、默认态空轨道与空心旋钮、拖动松手才提交一次、被拒走宿主提示、单档与无档位不挂滑块、卸载后样式写回，以及弹窗侧的收藏置顶、星标独立、提交与拒绝、思考等级记忆、加载与失败、会话不可选时整块不渲染。另验证当前模型缺失时工具栏能打开同一个弹窗，客户端停用时仅清理该次启用插入的样式。
 - `assert:lib-untracked`：`lib/` 是构建产物镜像，不入 git。
 
-浏览器里验收：打开输入框的模型菜单，第一行点下去应直接弹出跨供应商弹窗（顶部搜索框、供应商标签页、每行右侧星标）；第二行应是滑块，轨道上的刻度点数等于该模型的档位数，拖到最右应变成蓝→紫渐变、触发器上的档位文字同步变色；点「推理等级」四个字应切回 provider default（空轨道、空心旋钮）。
+在浏览器打开输入框的模型菜单。第一行点下去应直接弹出跨供应商弹窗（顶部搜索框、供应商标签页、每行右侧星标）；第二行应是滑块，轨道上的刻度点数等于该模型的档位数，拖到最右应变成蓝→紫渐变、触发器上的档位文字同步变色；点「推理等级」四个字应切回 provider default（空轨道、空心旋钮）。当前模型缺失时，点输入框工具栏的「浏览模型」应打开同一个弹窗。

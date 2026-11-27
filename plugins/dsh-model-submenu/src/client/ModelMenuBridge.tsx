@@ -2,24 +2,19 @@
  * Bridge the Host's own model menu: the model cell opens the all-provider
  * picker, and the effort cell carries the reasoning-level slider.
  *
- * The Host draws the root menu's first two cells itself: the model cell drills
- * into the current provider's list, the effort cell into the levels. This plugin
- * wants the first to open its dialog and the second to stop drilling, and the
- * Host exposes no hook for either. This entry is mounted exactly while the root
- * pane is open, so it can take the click on the menu surface before the cells'
- * own handlers run and mount the slider into the effort cell.
+ * The Host owns the root menu's model and effort cells and opens a submenu for each.
+ * While the root pane is open, this entry redirects the first cell to the model
+ * dialog and mounts the slider in the second cell.
  *
- * The cells are recognized as the menu surface's direct `role="menuitem"`
- * children, which is the Host's root-menu shape; the options slot output sits in
- * its own wrapper, so other plugins' rows never join that list. When the second
- * cell is missing the model declares no reasoning levels and the row is left
- * alone; when the first is missing the click falls through to the Host.
+ * Only the model menu's own direct buttons with the expected label, value and
+ * chevron are recognized. The options slot output sits in its own wrapper,
+ * so other plugins' rows never join that list.
  *
  * Clicking the cell's label switches to the provider default, which is a state
  * rather than a detent: the slider shows it as an empty track under a hollow
  * knob, so it never reads as the weakest level.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
@@ -27,6 +22,17 @@ import { EffortSlider } from './EffortSlider.tsx';
 import type { PickerStore } from './picker-state.ts';
 import { effortChoices, liveReasoning, planEffortCommit, selectionOf, type Selection } from './selection.ts';
 import css from './ModelOptions.module.css';
+
+const cellLabel = ':scope > span[class*="cellLabel"]';
+const cellValue = ':scope > span[class*="cellValue"]';
+const cellChevron = ':scope > svg[class*="cellChevron"]';
+
+/** Match only the host-owned buttons in the root model menu. */
+function hostCell(surface: HTMLElement, index: number): HTMLButtonElement | null {
+  const button = surface.querySelectorAll<HTMLButtonElement>(':scope > button[role="menuitem"]')[index];
+  if (!button?.querySelector(cellLabel) || !button.querySelector(cellValue) || !button.querySelector(cellChevron)) return null;
+  return button;
+}
 
 /** Props of the bridge: menu state, the owning session, and the seat's injected face. */
 export type ModelMenuBridgeProps = PropsRuntime<'conversation.input.model.options'>
@@ -45,7 +51,7 @@ export type ModelMenuBridgeProps = PropsRuntime<'conversation.input.model.option
  * @returns an inert marker plus the slider while the effort cell is present.
  */
 export function ModelMenuBridge({
-  sessionId, picker, dismiss, reportFailure, available, directory, select, t,
+  sessionId, picker, locked, dismiss, reportFailure, available, directory, select, t,
 }: ModelMenuBridgeProps) {
   const markerRef = useRef<HTMLSpanElement | null>(null);
   const sliderRef = useRef<HTMLDivElement | null>(null);
@@ -69,28 +75,24 @@ export function ModelMenuBridge({
   const defaultActive = current !== null && current.reasoningEffort === undefined;
   const currentIndex = chosen >= 0 ? chosen : declared >= 0 ? declared : 0;
   const defaultIndex = declared >= 0 ? declared : 0;
-  const canDefault = !defaultActive;
-  const busy = state.pending !== null;
+  const busy = locked || state.pending !== null;
+  const canDefault = !busy && !defaultActive;
   // One detent is not a choice: leave the Host's row exactly as it is.
   const showSlider = available && levels.length >= 2 && effortRow !== null;
 
   // The Host rebuilds its cells on every render, so the surface and the effort
   // cell are re-read after each one; the identity guards keep that from looping.
   useLayoutEffect(() => {
-    const foundSurface = markerRef.current?.closest('[data-menu-material]');
-    const nextSurface = foundSurface instanceof HTMLElement ? foundSurface : null;
+    const nextSurface = markerRef.current?.closest<HTMLElement>('[data-model-menu][role="menu"]') ?? null;
     if (nextSurface !== surface) setSurface(nextSurface);
-    const cells = nextSurface === null
-      ? []
-      : [...nextSurface.querySelectorAll<HTMLElement>(':scope > button[role="menuitem"]')];
-    const nextRow = cells.length >= 2 ? cells[1] ?? null : null;
+    const nextRow = nextSurface === null ? null : hostCell(nextSurface, 1);
     if (nextRow !== effortRow) setEffortRow(nextRow);
-    const nextLabel = nextRow?.querySelector("span[class*='cellLabel']")?.textContent?.trim() ?? '';
+    const nextLabel = nextRow?.querySelector(cellLabel)?.textContent?.trim() ?? '';
     if (nextLabel !== (rowLabel ?? '')) setRowLabel(nextLabel);
   });
 
   const submit = (selection: Selection | null): void => {
-    if (selection === null) return;
+    if (selection === null || busy || directory.getSnapshot().pending !== null) return;
     void select(selection).then((result) => {
       if (result === undefined || result.ok) return;
       reportFailure(result.error.code === 'session/writer-held'
@@ -112,35 +114,35 @@ export function ModelMenuBridge({
 
   // The Host rebuilds `dismiss` on every render, so the listener reads the
   // current one through a ref instead of being torn down and reinstalled.
-  const latest = useRef({ sessionId, picker, dismiss, showSlider, canDefault, commitDefault });
-  latest.current = { sessionId, picker, dismiss, showSlider, canDefault, commitDefault };
+  const latest = useRef({ sessionId, picker, dismiss, available, busy, showSlider, effortRow, canDefault, commitDefault });
+  useLayoutEffect(() => {
+    latest.current = { sessionId, picker, dismiss, available, busy, showSlider, effortRow, canDefault, commitDefault };
+  });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (surface === null) return;
     const redirect = (event: MouseEvent): void => {
       const target = event.target;
-      if (!(target instanceof Node)) return;
-      const cells = [...surface.querySelectorAll<HTMLElement>(':scope > button[role="menuitem"]')];
-      const modelCell = cells[0];
-      if (modelCell !== undefined && modelCell.contains(target)) {
+      const request = latest.current;
+      if (!(target instanceof Node) || event.defaultPrevented || !request.available) return;
+      const modelCell = hostCell(surface, 0);
+      if (modelCell?.contains(target)) {
         // Capture on the surface runs before the React root's bubble listener, so
         // stopping here keeps the cell's own drill handler from ever running.
         event.preventDefault();
         event.stopPropagation();
-        const request = latest.current;
+        if (request.busy) return;
         request.dismiss();
         request.picker.open(request.sessionId);
         return;
       }
-      const row = cells[1];
-      if (row === undefined || !row.contains(target) || !latest.current.showSlider) return;
-      // The slider owns its own presses; only the label and the value are inert.
-      if (sliderRef.current?.contains(target) === true) return;
+      const row = request.effortRow;
+      if (row === null || !surface.contains(row) || !row.contains(target) || !request.showSlider) return;
       event.preventDefault();
       event.stopPropagation();
-      const label = row.querySelector("span[class*='cellLabel']");
-      if (latest.current.canDefault && label !== null && label.contains(target)) {
-        latest.current.commitDefault();
+      if (request.busy || sliderRef.current?.contains(target)) return;
+      if (request.canDefault && row.querySelector(cellLabel)?.contains(target)) {
+        request.commitDefault();
         return;
       }
       sliderRef.current?.querySelector<HTMLElement>('[role="slider"]')?.focus();
@@ -156,9 +158,9 @@ export function ModelMenuBridge({
   // row no longer drills anywhere. Every write is recorded and put back.
   useLayoutEffect(() => {
     if (effortRow === null || !showSlider) return;
-    const label = effortRow.querySelector<HTMLElement>("span[class*='cellLabel']");
-    const value = effortRow.querySelector<HTMLElement>("span[class*='cellValue']");
-    const chevron = effortRow.querySelector<SVGElement>("svg[class*='cellChevron']");
+    const label = effortRow.querySelector<HTMLElement>(cellLabel);
+    const value = effortRow.querySelector<HTMLElement>(cellValue);
+    const chevron = effortRow.querySelector<SVGElement>(cellChevron);
     const saved = {
       value: value?.style.display ?? '',
       chevron: chevron?.style.display ?? '',
@@ -187,6 +189,7 @@ export function ModelMenuBridge({
     {showSlider && effortRow !== null && createPortal(
       <div ref={sliderRef} className={css.sliderCell}>
         <EffortSlider
+          key={JSON.stringify([current?.provider, current?.model])}
           steps={levels}
           current={currentIndex}
           defaultActive={defaultActive}

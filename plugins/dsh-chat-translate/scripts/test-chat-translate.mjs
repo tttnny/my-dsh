@@ -590,33 +590,99 @@ await test('行往后追加（新块写定）时，在途那一块的迟到结�
   assert.equal(state.outcomes[1].translated, '新代:two');
 });
 
-await test('丢掉译文池：同一段原文下次要重新请求，屏幕上已有的译文不动', async () => {
-  // 提示词换了措辞，池里那些是旧措辞的产物。不丢的话读者改了提示词却看不到任何
-  // 变化——已经翻过的段落照样取旧译文，一个请求都不发。
+await test('配置换代保留行内译文，未完成的块改用新配置，旧请求不能回写', async () => {
+  const old = deferred();
+  const fresh = deferred();
   const sent = [];
   const store = createTranslateStore(async (texts) => {
     sent.push([...texts]);
-    return texts.map((t) => ({ translated: '译' + sent.length + ':' + t, ok: true }));
+    const call = sent.length;
+    if (call === 2) await old.promise;
+    if (call === 3) await fresh.promise;
+    return texts.map((text) => ({ translated: `译${call}:${text}`, ok: true }));
   });
-  store.ensure('a1', ['same']);
+  store.ensure('displayed', ['done']);
   await flush();
-  assert.equal(store.getState('a1').outcomes[0].translated, '译1:same');
+  store.ensure('pending', ['done', 'waiting']);
 
-  assert.equal(store.dropTranslations(), true, '池里本来有东西，返回 true');
-  // 屏幕上那一份还在：丢掉的是「以后复用」的账，不是已经显示出来的译文。
-  assert.equal(store.getState('a1').outcomes[0].translated, '译1:same', '已显示的不动');
+  const originalGeneration = store.getGeneration();
+  store.dropTranslations(); // A → B
+  store.dropTranslations(); // B → A
+  assert.equal(store.getGeneration(), originalGeneration + 2);
+  assert.equal(store.getState('displayed').outcomes[0].translated, '译1:done');
+  assert.equal(store.ensure('displayed', ['done']), false, '已显示的行不会重发');
+  assert.equal(store.ensure('pending', ['done', 'waiting']), true, '只恢复未完成的块');
 
-  store.ensure('a2', ['same']);
+  old.resolve();
   await flush();
-  assert.deepEqual(sent, [['same'], ['same']], '同一段原文重新走一次通道');
-  assert.equal(store.getState('a2').outcomes[0].translated, '译2:same', '拿到的是新措辞的产物');
+  assert.deepEqual(store.getState('pending').outcomes, [{ translated: '译1:done', ok: true }, null]);
+  assert.equal(store.ensure('fresh-waiting', ['waiting']), true, '迟到结果不能写入内容池');
+  assert.equal(store.ensure('fresh-done', ['done']), true, '新行不能复用旧配置的译文');
+  await flush();
+  fresh.resolve();
+  await flush();
+  assert.deepEqual(sent, [['done'], ['waiting'], ['waiting'], ['waiting'], ['done']]);
+  assert.deepEqual(store.getState('pending').outcomes.map((outcome) => outcome.translated), ['译1:done', '译3:waiting']);
+  assert.equal(store.getState('pending').status, 'settled');
+  assert.equal(store.ensure('displayed', ['done', 'new block']), true);
+  await flush();
+  assert.deepEqual(sent.at(-1), ['new block'], '新增块使用新配置，已显示的原样保留');
+  assert.equal(store.getState('displayed').outcomes[0].translated, '译1:done');
 });
 
-await test('池空时丢掉是空操作，不惊动订阅者', async () => {
-  const store = createTranslateStore(async (texts) => texts.map((t) => ({ translated: t, ok: true })));
-  const before = store.getVersion();
-  assert.equal(store.dropTranslations(), false);
-  assert.equal(store.getVersion(), before, '没东西可丢就不发通知');
+await test('换代后的流式尾块继续增长，保留已经翻完的前缀', async () => {
+  const sent = [];
+  const store = createTranslateStore(async (texts) => {
+    sent.push(texts);
+    return texts.map((text) => ({ translated: `译:${text}`, ok: true }));
+  });
+  store.ensure('stream', ['done', 'grow'], { frozen: 1 });
+  await flush();
+  store.dropTranslations();
+  assert.equal(store.ensure('stream', ['done', 'growing'], { frozen: 1 }), false);
+  assert.equal(store.getState('stream').outcomes[0].translated, '译:done');
+  store.ensure('stream', ['done', 'growing']);
+  await flush();
+  assert.deepEqual(sent, [['done'], ['growing']]);
+});
+
+await test('配置变化使在途补跑使用新配置继续，已落定的失败仍需手点', async () => {
+  const old = deferred();
+  const sent = [];
+  const store = createTranslateStore(async (texts) => {
+    sent.push(texts);
+    if (sent.length === 1) return texts.map((text) => ({ translated: text, ok: false }));
+    if (sent.length === 2) await old.promise;
+    return texts.map((text) => ({ translated: `译${sent.length}:${text}`, ok: true }));
+  });
+  store.ensure('row', ['retry', 'failed']);
+  await flush();
+  store.ensure('row', ['retry', 'failed'], { retries: [0] });
+  store.dropTranslations();
+  assert.equal(store.ensure('row', ['retry', 'failed']), true);
+  await flush();
+  old.resolve();
+  await flush();
+  assert.deepEqual(sent, [['retry', 'failed'], ['retry'], ['retry']]);
+  assert.deepEqual(store.getState('row').outcomes.map((outcome) => outcome.ok), [true, false]);
+  assert.deepEqual(store.getState('row').retrying, []);
+});
+
+await test('逐字匹配缓存键：大小写与 Markdown 的首尾空白都保留', async () => {
+  const sent = [];
+  const store = createTranslateStore(async (texts) => {
+    sent.push(...texts);
+    return texts.map((text) => ({ translated: `译:${text}`, ok: true }));
+  });
+  const blocks = ['`Widget`', '`widget`', ' `Widget` '];
+  for (const [index, text] of blocks.entries()) {
+    store.ensure(`a${index}`, [text]);
+    await flush();
+    assert.equal(store.getState(`a${index}`).outcomes[0].translated, `译:${text}`);
+  }
+  store.ensure('reuse', [blocks[0]]);
+  assert.deepEqual(sent, blocks);
+  assert.equal(store.getState('reuse').outcomes[0].translated, `译:${blocks[0]}`);
 });
 
 await test('内容寻址：同一段原文在另一行出现直接复用，不再打通道', async () => {

@@ -1,5 +1,5 @@
 /**
- * The model picker: the centered dialog opened from the menu's last row.
+ * The model picker: the centered dialog opened from the menu's model row.
  *
  * It is the one place every provider is visible at once — a search field, a tab
  * per provider with a model, and one flat list with each model's metadata line.
@@ -14,7 +14,6 @@ import {
   Input,
   Modal,
   ShortcutKeys,
-  rankByName,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -28,7 +27,7 @@ import {
   pickerTabs,
   reasoningOf,
   rowsForTab,
-  searchRows,
+  createModelSearch,
   type CatalogModel,
   type ModelRow as CatalogRow,
 } from './rows.ts'
@@ -80,35 +79,26 @@ export function ModelPicker({
   open, resolveText, state, live, facts, favorites, busy, rememberedOf, onPick, onToggleFavorite, onReload, onClose, t,
 }: ModelPickerProps & PropsLocale<'modelSubmenu'>) {
   const id = useId()
-  const searchRef = useRef<HTMLInputElement | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState(ALL_TAB)
 
   const tabs = useMemo(() => pickerTabs(state.groups, t('picker.all')), [state.groups, t])
   const reason = useMemo(() => reasoningOf(state.groups), [state.groups])
-  const rows = useMemo(() => orderWithFavorites(
-    rowsForTab(flattenGroups(state.groups), tab),
-    (row) => isFavorite(favorites, row.provider, row.model),
-  ), [state.groups, tab, favorites])
-  // Search runs inside the favorite partition, never across it: a query must not
-  // pull an unstarred model above a starred one, because favorites lead the list
-  // whether or not a query is typed.
+  const search = useMemo(
+    () => createModelSearch(rowsForTab(flattenGroups(state.groups), tab)),
+    [state.groups, tab],
+  )
   const visible = useMemo(() => orderWithFavorites(
-    searchRows(rows, query, rankByName),
+    search.search(query),
     (row) => isFavorite(favorites, row.provider, row.model),
-  ), [rows, query, favorites])
+  ), [search, query, favorites])
 
   useEffect(() => {
     if (!open) return
     setQuery('')
     setTab(ALL_TAB)
     if (listRef.current !== null) listRef.current.scrollTop = 0
-    // 粗指针设备不自动聚焦文本输入：移动端弹键盘会顶起布局，宿主座位也这样守。
-    const frame = requestAnimationFrame(() => {
-      if (!isMobileDevice()) searchRef.current?.focus()
-    })
-    return () => { cancelAnimationFrame(frame) }
   }, [open])
 
   if (!open) return null
@@ -135,7 +125,6 @@ export function ModelPicker({
     >
       <div className={css.pickerSearch}>
         <Input
-          ref={searchRef}
           className={css.pickerSearchInput ?? ''}
           type="text"
           role="searchbox"
@@ -146,7 +135,7 @@ export function ModelPicker({
           value={query}
           readOnly={busy}
           onChange={(event) => { setQuery(event.target.value) }}
-          data-modal-autofocus=""
+          data-modal-autofocus={isMobileDevice() ? undefined : ''}
         />
       </div>
       <div className={css.pickerTabs} role="tablist" aria-label={t('picker.title')}>

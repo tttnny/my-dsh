@@ -30,6 +30,10 @@
 | 查开发软链、bundle 登记与孤儿软链；默认只查开发 profile `web`（本仓库只管它），`--all-profiles` 看全部，修复范围见 [dev-copy.md](../docs/rules/dev-copy.md)「建立与校验」 | `node tools/dev-link.mjs [--all-profiles \| --profile <name>] [--write] [--package <包名或目录名>]` |
 | 一个会话（连同它派出去的子会话）改过哪些文件、提交过什么 | `node tools/session-changes.mjs [<会话 id>] [--json] [--since <毫秒>]` |
 
+## 验证 Web 实例
+
+`gui-shot.mjs` 和 `verify-client.mjs` 用 `DSH_WEB_URL` 或 `--url` 接收干净的 Web 根地址。启动器在运行清单登记了同地址实例时，脚本在进程内完成登录。验证单独启动的实例时，`--login-file` 指向本机只含该实例单行启动入口的文件。文件只给当前用户读写，用完清理。`dsh-env.mjs` 只显示实例的 HTTP origin。
+
 ## 约定
 
 - 参数写成 `--k v`；`--json` 给机器读；退出码 `0` 通过、`1` 不通过、`2` 跑不起来。看到 `2` 先查是不是缺 `node_modules`（`check.mjs` 对缺依赖的包报 2）或参数写错，别当成「检查不通过」去改代码。

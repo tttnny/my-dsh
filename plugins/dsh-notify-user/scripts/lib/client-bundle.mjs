@@ -46,3 +46,14 @@ export async function loadClientBundle(root) {
   await import(join(root, 'lib/client.js') + '?bundle=' + Date.now());
   return { exported, requires };
 }
+
+/** 给自检提供和宿主同形的同步字段引用。 */
+export function syncedConfig(read = () => undefined, subscribe = () => () => {}) {
+  return Object.fromEntries(
+    ['cardPlacement', 'collapsible', 'summaryOnly', 'summaryRender', 'bodyExpandedByDefault', 'showTime']
+      .map(field => {
+        const get = () => read(field);
+        return [field, { get, getSnapshot: get, subscribe }];
+      }),
+  );
+}

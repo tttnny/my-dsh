@@ -8,7 +8,8 @@
  *     --click 'button[aria-haspopup="menu"]' --eval '<读几何的 JS>' --shot tmp/ui.png
  *   node tools/gui-shot.mjs --session session-<id> --shot tmp/session.png
  *
- * 登录靠 $DSH_WEB_URL / $DSH_WEB_AUTH_URL（先访问 auth URL 拿会话 cookie，再进应用）。
+ * 用 DSH_WEB_URL 或 --url 选择实例。若实例由你单独启动，用 --login-file 指定启动入口文件。
+ * Node 交换 Cookie，Chrome 直接打开不含凭据的应用根地址。
  * 细节与坑见 docs/rules/plugin-ui.md「看一眼界面」。
  *
  * ── 等不到、点不到都是失败 ─────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { exchangeWebLogin, resolveWebLogin } from './lib/web-login.mjs'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -132,7 +134,7 @@ async function freePort() {
 
 const KNOWN = new Set([
   'port', 'shot', 'size', 'wait', 'click', 'eval', 'session', 'plugin',
-  'auth-wait', 'after-click-wait', 'allow-mutation',
+  'url', 'login-file', 'after-click-wait', 'allow-mutation',
 ])
 for (const key of Object.keys(args)) {
   if (!KNOWN.has(key)) refuse(`认不得的参数 --${key}`)
@@ -143,9 +145,14 @@ for (const key of Object.keys(args)) {
 const port = args.port === undefined ? await freePort() : Number(args.port)
 const profile = `tmp/chrome-profile-${String(process.pid)}`
 const shotPath = String(args.shot ?? 'tmp/ui.png')
-const authUrl = process.env.DSH_WEB_AUTH_URL
-const webUrl = process.env.DSH_WEB_URL
-if (!authUrl || !webUrl) refuse('DSH_WEB_URL / DSH_WEB_AUTH_URL 没设：这两条是登录用的')
+let rootUrl, cookie
+try {
+  const { root, login } = resolveWebLogin(args.url ?? process.env.DSH_WEB_URL, args['login-file'])
+  rootUrl = root
+  cookie = await exchangeWebLogin(login)
+} catch (error) {
+  refuse(error.message)
+}
 
 mkdirSync('tmp', { recursive: true })
 rmSync(profile, { recursive: true, force: true })
@@ -210,11 +217,34 @@ const evaluate = async (expression) => {
   return result.value
 }
 
-// 登录：auth URL 答 303 并种 cookie，然后才是应用本身。
-await cdp.send('Page.navigate', { url: authUrl }, sessionId)
-await sleep(Number(args['auth-wait'] ?? 1200))
-await cdp.send('Page.navigate', { url: webUrl }, sessionId)
-await evaluate(`window.__errors = []; window.addEventListener('error', e => window.__errors.push(String(e.message)))`)
+try {
+  const result = await cdp.send('Network.setCookie', {
+    ...cookie, url: rootUrl.href, path: '/', httpOnly: true, sameSite: 'Strict',
+  }, sessionId)
+  if (!result.success) throw new Error()
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `window.__errors = []; window.addEventListener('error', e => window.__errors.push(String(e.message)))`,
+  }, sessionId)
+  const page = await cdp.send('Page.navigate', { url: rootUrl.href }, sessionId)
+  if (page.errorText) throw new Error()
+} catch {
+  console.error('gui-shot: 无法在浏览器中打开已登录的 Web GUI')
+  ws.close()
+  finish(2)
+}
+
+let booted = false
+for (let attempt = 0; attempt < 60 && !booted; attempt++) {
+  try {
+    booted = await evaluate(`location.href === ${JSON.stringify(rootUrl.href)} && !!globalThis.__DSH_BOOT__`)
+  } catch {}
+  if (!booted) await sleep(250)
+}
+if (!booted) {
+  console.error('gui-shot: 浏览器没有收到 Web GUI 启动数据，请检查实例的鉴权与页面装载')
+  ws.close()
+  finish(2)
+}
 
 /** 这一趟没做成的事。都不中止：照样落图，最后一起以退出码 1 报出来。 */
 const failures = []

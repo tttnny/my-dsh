@@ -11,6 +11,8 @@
 
 自绘一个浮层，等于把上面那一串自己实现一遍、再逐个踩它们的坑：位置与高度上限自己算，resize / scroll 各自重算，Esc 与外部点击各自挂一遍，还要处理和宿主其它浮层的遮挡与焦点。仓库里还留着的自绘件是判断题，不是可以照抄的样板。
 
+模型菜单扩展用 `conversation.input.model.options` 添加入口，通过 `openPane` 打开 `conversation.input.model.pane` 的 keyed 内容。入口的 `data-model-menu-pane` 与 pane key 对齐，让返回焦点落回入口。模型行与推理等级行由宿主管理。优先复用宿主的跨供应商搜索与选择。`dsh-model-submenu` 保留原位弹窗和推理滑块，目标宿主尚无这两行的公开替换点。兼容逻辑集中在 `ModelMenuBridge.tsx`，用结构和语义缩小匹配范围，识别失败时保留宿主交互。当前模型缺失且宿主跳过根菜单时，通过 `conversation.input.right` 提供弹窗入口。升版时核对宿主菜单结构，验收弹窗、滑块和焦点回收。
+
 ## 三条样式规则
 
 - **浮起来的面（弹窗、菜单、浮层、面板、浮层按钮、输入区）写 `border: 0` + `box-shadow: var(--dsw-elevation-prominent | panel | soft)`**。中性描边那根 0.5px 发丝线是阴影的第一层替你画的，再自己写一根 `border: 1px solid var(--dsw-alias-border-*)` 就成了两条边叠着（宿主 `docs/web-styling.md`「Component rules」明写这对搭配不允许）。卡片不在浮起面之列：它用 `--dsw-alias-settings-card-fill` 填充加 0.5px `--dsw-alias-settings-card-stroke` 描边分层，也不要给它加阴影来跟标签页区分（宿主 `docs/ui-radius.md`「Settings card materials」）。
@@ -29,9 +31,7 @@
 
 - 只赢「同优先级」：宿主用元素选择器或更高优先级的地方，单类选择器赢不了。
 - 宿主的内部类名是 CSS Modules 的哈希串（`_body_o6lrb_115`），别照抄。用它给的钩子（`className` / `contentClassName` / 组件自己的语义类）或结构选择器（如 `.dsh-picker-content > :last-child`——`Modal` 的正文行是 `.content` 的最后一个子元素，让它自己滚，标题栏就钉住了）。
-- **样式在 `apply()`（或模块工厂）里注入，标签写全两个归属键**：卸载与换代码时，client-modules 按 `style[data-plugin=<包名>]` 把标签全部删掉（宿主 `packages/client/modules/src/client/entry-lifecycle.ts` 的 `removeOwnedStyles`），归属键就是那条清除的唯一依据。所以标签写成 `<style data-plugin="<包名>" data-plugin-css="<包名>/<文件名>">`，用 `data-plugin-css` 查重做幂等。没打 `data-plugin` 的标签还有一次被认领的机会：物化这个包的工厂期间新冒出来的，会被自动打上包名（`system.ts` 的 `claimStyles`）；**渲染期**注入的标签已经错过这个窗口，没打键就永远归不了档，插件重载后旧表还叠在页面上。宿主自己的构建期注入器就按这个形状生成（宿主 `packages/client/tsdown.client.ts` 的 `styleInjectionModule`），本仓照做的是 `plugins/dsh-grilling-form/src/client/index.js` 的 `injectStyles()`。
-
-反例是 `plugins/dsh-chat-translate/src/client/settings/ui.tsx`：`ensureSettingsStyles()` 在卡片组件体内（渲染期）才调用，标签只打了一个自定义属性 `data-tidy-settings`、没有 `data-plugin`，所以那份设置卡片样式不参与卸载清理。
+- **样式跟随模块或组件卸载**。使用宿主 Client tsdown 预设时，构建器通过 `meta().stylesheets` 声明样式，renderer 的 `DocumentStyles` 负责安装、排序与移除，标签带 `data-plugin` 和 `data-path`。本仓自建 bundle 可在组件内渲染局部 `<style>`，或在 `apply()` 里用 `ctx.effect` 注入全局样式并返回移除函数。标签可带包名和文件标记便于诊断。验证启停或热更新后旧样式已移除，新样式只有一份。
 
 ## 看一眼界面
 

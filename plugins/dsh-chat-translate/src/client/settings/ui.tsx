@@ -14,16 +14,6 @@ import { NS, en, zh } from '../locales.ts';
 import { BUNDLE_CONFIG_KEY, BUNDLE_CONFIG_SLOT, setupPluginPage } from './plugin-page.ts';
 import { testServerChannel } from '../translate/api.ts';
 
-let stylesInjected = false;
-function ensureSettingsStyles(): void {
-  if (stylesInjected || typeof document === 'undefined') return;
-  const el = document.createElement('style');
-  el.dataset.tidySettings = 'true';
-  el.textContent = SETTINGS_CSS;
-  document.head.appendChild(el);
-  stylesInjected = true;
-}
-
 /** Path the credentials Remote API persists the key to (technical sample). */
 const CREDENTIALS_PATH = '~/.dsh/.credentials.yaml';
 
@@ -59,7 +49,6 @@ export function TidySettingsPanel(
   props: PropsRuntime<'plugins.bundle.config'> & PropsLocale<typeof NS>
 ): React.ReactElement {
   const { t } = props;
-  ensureSettingsStyles();
 
   const [state, setState] = useState<SettingsPageState>(() => settingsStore.getState());
   const [testing, setTesting] = useState<{ running: boolean; ok?: boolean; message?: string } | null>(null);
@@ -101,6 +90,7 @@ export function TidySettingsPanel(
 
   return (
     <div className="dsh-tidy-settings">
+      <style data-tidy-settings="true">{SETTINGS_CSS}</style>
       {/* 1. 总开关：拨了就生效（输入框下方那颗「译」胶囊是同一个状态，它没有保存按钮） */}
       <div className="dsh-tidy-card">
         <div className="dsh-tidy-title">

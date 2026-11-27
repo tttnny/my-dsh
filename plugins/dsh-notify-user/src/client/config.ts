@@ -1,8 +1,7 @@
 /**
  * 配置卡、菜单开关与宿主配置表单之间的接线：座位、包名，以及「读当前配置」。
  *
- * 卡片（`ConfigCard.tsx`）、菜单开关（`EnabledToggle.tsx`）、进度卡（`NotifyRow.tsx` /
- * `NotifyNodeView.tsx`）与自检（`scripts/smoke-client.mjs`）都从这里取字面量，所以
+ * 配置卡、菜单开关与自检都从这里取字面量，所以
  * 「key 写歪一个字符」这类静默失败不会两边各写一份。与宿主共用的命名空间/默认值/
  * 按会话的判定在 `src/shared/config.ts`，这里只再导出。
  */
@@ -89,7 +88,7 @@ export interface ClientConfig {
   sessionOverrides: SessionOverrides;
 }
 
-/** 字段缺失或配置表单还没就绪时的那份快照；默认值只在这里写一遍。 */
+/** 字段缺失或配置还没就绪时的那份快照；默认值只在这里写一遍。 */
 export const DEFAULT_CLIENT_CONFIG: ClientConfig = {
   nudgeAfter: DEFAULT_NUDGE_AFTER,
   resetOnProse: DEFAULT_RESET_ON_PROSE,

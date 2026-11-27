@@ -2,13 +2,12 @@
  * Catalog flattening, tab derivation, and query matching for the picker.
  *
  * The model catalog groups models by provider; the picker shows one flat list
- * with a tab per provider, so both surfaces read from these rows. Matching
- * delegates to the shell's own ranker, which is why a query behaves the same
- * here as in the built-in menu: case-insensitive, ordered subsequence, prefix
- * hits first.
+ * with a tab per provider. The shared text search index matches model and
+ * provider names and IDs.
  */
 
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
+import { TextSearchIndex } from '@deepseek-ai/dsh-util-text-search'
 
 /** One provider group of the shared catalog. */
 export type ProviderGroup = ModelDirectoryState['groups'][number]
@@ -76,21 +75,11 @@ export function rowsForTab(rows: readonly ModelRow[], tab: string): readonly Mod
   return tab === ALL_TAB ? rows : rows.filter((row) => row.provider === tab)
 }
 
-/** One row handed to the shell's ranker, carrying both searchable keys. */
-export interface SearchCandidate {
-  readonly name: string
-  readonly label: string
-  readonly row: ModelRow
-}
-
-/**
- * Shape rows as the shell's ranker candidates: the model name is the name, the
- * provider display name is the second key, so a query reaches either.
- * @param rows - the rows to search.
- * @returns candidates in row order.
- */
-export function searchCandidates(rows: readonly ModelRow[]): readonly SearchCandidate[] {
-  return rows.map((row) => ({ name: row.entry.name, label: row.providerName, row }))
+/** Build a reusable search index for the rows in the current provider tab. */
+export function createModelSearch(rows: readonly ModelRow[]): TextSearchIndex<ModelRow> {
+  return new TextSearchIndex(rows, (row) => ({
+    fuzzy: [row.entry.name, row.model, row.providerName, row.provider],
+  }))
 }
 
 /**
@@ -105,21 +94,4 @@ export function reasoningOf(
     .find((group) => group.id === provider)
     ?.models.find((candidate) => candidate.id === model)
     ?.reasoning
-}
-
-/**
- * Filter rows by a query over the model name and the provider name.
- * @param rows - the rows to search.
- * @param query - the typed text; an empty or blank query keeps every row.
- * @param rank - the shell's own ranker, so this search behaves like every other one.
- * @returns the matching rows.
- */
-export function searchRows(
-  rows: readonly ModelRow[],
-  query: string,
-  rank: (items: readonly SearchCandidate[], query: string) => readonly SearchCandidate[],
-): readonly ModelRow[] {
-  const trimmed = query.trim()
-  if (trimmed === '') return rows
-  return rank(searchCandidates(rows), trimmed).map((match) => match.row)
 }

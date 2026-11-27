@@ -4,9 +4,9 @@
 
 ## 概述
 
-`notify_user` 是一个不结束本轮的工具。模型在干活途中调它，对话流里立刻出现一张进度卡；本轮继续，不阻塞，也不等用户回答。
+`notify_user` 是一个不结束本轮的工具。模型在干活途中调它，成功后对话流里出现一张进度卡；本轮继续，不阻塞，也不等用户回答。
 
-连续多次根工具调用没有汇报时，插件在下一步之前注入一条提醒，让模型把当前结论和下一步发出来。汇报过、写了散文正文、开了新回合或用户插话，计数都清零。
+连续多次根工具调用没有汇报时，插件在下一步之前注入一条提醒，让模型把当前结论和下一步发出来。汇报成功、写了散文正文、开了新回合或用户插话，计数都清零。
 
 进度卡站在步骤组外：两次汇报之间的工具调用各自折成一个原生子折叠，卡片本身不会被折进组里。回合进行中始终可见，回合结束后随「工作过程」一起折叠。
 
@@ -28,7 +28,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 关掉之后两处一起变：催办状态机不催，计数一并清零，重新打开从零开始；`notify_user` 用 `ctx.tools.register(def, { when })` 按会话收放，关掉的会话在这一步的声明与派发里都没有它。
 
-子代理会话里不画这一行：催办本来就不进子代理。判定同时看当前会话快照的 `subagent` 与会话列表里的 `origin`。
+子代理会话没有汇报工具和催办，也不显示这个开关。判定同时看当前会话快照的 `subagent` 与会话列表里的 `origin`。
 
 点开关先按新值重画，写入交给设置表单排队；宿主拒收就退回宿主上的值，并通过菜单宿主的 `reportFailure` 报一次。写入在途时开关禁用。
 
@@ -40,7 +40,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 | --- | --- | --- | --- |
 | `defaultEnabled` | true | 布尔 | 会话没有自己的选择时，主动汇报开不开。 |
 | `sessionOverrides` | `{}` | 会话 id → 布尔 | 按会话的选择；只留与默认值不同的会话。 |
-| `nudgeAfter` | 10 | 0–100 | 连续多少次根工具调用没有汇报时催一次；0 关闭催办。 |
+| `nudgeAfter` | 10 | 0–100 | 连续多少次根工具调用没有汇报时催一次；0 关闭催办，仍可主动汇报。 |
 | `resetOnProse` | true | 布尔 | 助手消息里写了正文就清零计数。 |
 | `collapsible` | true | 布尔 | 卡片带不带折叠键；关掉后正文始终展开。 |
 | `summaryOnly` | false | 布尔 | 模型只写一行标题，卡片只显示标题行。 |
@@ -51,7 +51,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 配置卡把 `summaryOnly` 画成「结构化正文 / 只报摘要」两选一，把 `collapsible` 与 `bodyExpandedByDefault` 合成「始终展开 / 默认收起 / 默认展开」三选一，把 `showTime` 画成一个开关；只报摘要时「正文显示」整行不出现，改出现「摘要呈现」，摘要按散文渲染时根本不画卡片，「显示时间」整行随之不出现。
 
-字段都标了 `.volatile()`：改它们不重挂这条 loader entry。催办状态机每次 `pre-step` 现读 `nudgeAfter`、`summaryOnly` 与 `defaultEnabled`/`sessionOverrides`；进度卡与菜单开关通过注册项的 `inject` 拿到同一张配置表单并订阅，改完当前页面的卡片与开关立刻跟着变。
+字段都标了 `.volatile()`：改它们不重挂这条 loader entry。催办状态机每次 `pre-step` 现读 `nudgeAfter`、`summaryOnly` 与 `defaultEnabled`/`sessionOverrides`；浏览器用宿主下发的同步配置引用决定进度卡的位置、汇报形态、展开方式和时间显示。配置页与会话开关通过配置表单读写。
 
 宿主没服务这份配置时卡片整块不出现。插件同时用 `ctx.settings.configure({ auto: false })` 关掉内核按 schema 自动生成的那份设置页。
 
@@ -62,7 +62,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 这一行同时承载两个半边：
 
 - 宿主半边注册 `notify_user` 工具，并把催办状态机接到 `tools/result`（纯观察）、`session/event`（助手消息落定）与 `agent/pre-step` 三条事件上；
-- 浏览器半边注册对话节点定义、进度卡渲染器（`conversation.chat.node`，key 是 `notify-user`）、工具行兜底渲染（`tool.call.toolview`，key 是 `notify_user`）、菜单开关（`conversation.input.model.options`，id 是 `notify-user-enabled`）与插件页配置卡（`plugins.bundle.config`，key 是包名）。
+- 浏览器半边注册对话节点定义、进度卡渲染器（`conversation.chat.node`，key 是 `notify-user`）、跟随工具行时的渲染（`tool.call.toolview`，key 是 `notify_user`）、菜单开关（`conversation.input.model.options`，id 是 `notify-user-enabled`）与插件页配置卡（`plugins.bundle.config`，key 是包名）。
 
 行 id 同时是配置命名空间：宿主 `Config` 与浏览器 `ctx.configForms.get('dsh-notify-user')` 读写的是同一份值。
 
@@ -79,13 +79,13 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 | `tool/call` | 工具名是 `notify_user` |
 | `tool/result` | 追加写法，且 callId 在调用事件里见过 |
 | `assistant/live-chunk` | 带工具名的增量与块结束事件 |
-| `tool/ptc-dispatch-start` / `tool/ptc-dispatch` | 工具名是 `notify_user` |
+| `tool/ptc-dispatch-start` / `tool/ptc-dispatch` | 工具名是 `notify_user`。失败的结果也交给宿主通用工具定义。 |
 
-结果事件不带工具名，只能按调用事件记下的 callId 认领；结果先到的上下文（窗口从调用中间开始加载）按结果事件补出节点。窗口里连调用事件都没有时认领不到，通用工具定义补建一条没有工具名的工具行，画成通用行——`tool.call.toolview` 的兜底只在通用定义拿得到工具名时生效。
+结果事件不带工具名，按调用事件记下的 callId 认领。失败的直接调用显示失败提示和原始错误。PTC 子调用的失败结果带工具名和父调用，宿主在 `run_code` 下显示原生错误行，插件隐藏对应的进度卡。窗口里找不到调用时，宿主通用定义会补建一条没有工具名的工具行。
 
-认领是 target 级的：同一次调用的事件不再交给别的 chat 定义，回合过程的工具调用计数与助手行的流式块列表因此少这一次，两者都不上屏。
+独占认领的事件不再交给其他 chat 定义，回合过程的工具调用计数与助手行的流式块列表因此少这一次。
 
-位置设成 `inline` 时不注册这份定义：通用工具定义建出工具行，`tool.call.toolview` 把卡片画在行里，卡片随组折叠。切换位置会重挂定义，对话流当场重排。
+位置设成 `inline` 时不注册这份定义：通用工具定义建出工具行，`tool.call.toolview` 把卡片画在行里，卡片随组折叠。失败时工具行显示失败提示和原始错误。切换位置会重挂定义，对话流当场重排。
 
 ### 只报摘要
 
@@ -97,9 +97,9 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 ### 计数口径
 
-- `notify_user` 工具在计数第一次到阈值之前不向模型声明；到阈值那一步放行，之后本会话一直可用。放行标志一旦置上就不随清零回退；阈值运行中调小后按新值立即判定。
+- 开启主动汇报的主会话立即提供 `notify_user`，催办阈值只控制提醒。
 - 只数根调用：原生模式下是模型每次直接发起的调用（同一轮里的并行调用各算一次）；PTC 模式下是每次 `run_code`，程序内部的子调用不算。
-- `notify_user` 无论根调用还是 PTC 子调用都清零。
+- `notify_user` 成功才清零，根调用和 PTC 子调用都适用。直接调用失败仍按一次根调用计数，失败的 PTC 子调用保留已有计数。
 - 助手消息里带非空白正文时清零，`resetOnProse` 关掉则不算；`reasoning` 块不算正文，失败、重试、取消的尝试也不清零。
 - 新回合（`step === 1`）或用户插话清零。回合边界取宿主给的 `step`，不按消息来源枚举。
 - 子代理会话不计数、不注入。
@@ -115,7 +115,7 @@ dsh plugin --profile web add @lynn123411/dsh-notify-user
 
 ## 模型体验
 
-工具在计数第一次到阈值之前不向模型声明；到阈值那一步起，本会话一直可见。关掉主动汇报的会话始终没有它。
+开启主动汇报的主会话从第一步起就能调用 `notify_user`。
 
 结构化正文模式的工具描述：
 
@@ -146,14 +146,14 @@ cd plugins/dsh-notify-user && pnpm check
 `check` 链上每一步：
 
 - `typecheck`：`src` 的类型闸门。
-- `smoke-host.mjs`：真 cordis + 真 `ToolRuntime`，断言配置形状、工具注册与执行、装配行，以及催办接线在真 `ctx.waterfall` 下的行为（满阈值注入、汇报/散文/新回合/用户插话/阈值 0 清零、只有思考块不清零、失败尝试不清零、散文开关关掉不清零、上下文注入不清零、PTC 子调用不计数、嵌套汇报清零、子代理不注入、下游拒绝时不追加），以及按会话开关与工具放行。
-- `smoke-client.mjs`：按 Web shell 方式装载浏览器 bundle，断言对话节点定义、位置切换会重挂定义、四处座位注册（进度卡、兜底行、菜单开关、配置卡）、字典键集与「未声明服务读取会抛」的守卫。
-- `test-nudge.mjs`：催办状态机的纯逻辑（阈值、四条清零路径、阈值与散文开关现读、按会话隔离、散文判定、开关关掉时不催且计数清零、计数首次到阈值放行工具且之后不回退、运行中调小阈值时工具解析就认出放行）。
+- `smoke-host.mjs`：真 cordis + 真 `ToolRuntime`，断言配置形状、工具注册与执行、装配行，以及催办接线在真 `ctx.waterfall` 下的行为（满阈值注入、汇报/散文/新回合/用户插话/阈值 0 清零、只有思考块不清零、失败尝试不清零、散文开关关掉不清零、上下文注入不清零、PTC 子调用不计数、嵌套汇报清零、子代理不注入、下游拒绝时不追加），以及按会话开关、零阈值仍可汇报，以及直接和 PTC 调用失败后保留计数、重试成功后清零。
+- `smoke-client.mjs`：按 Web shell 方式装载浏览器 bundle，断言对话节点定义、位置切换会重挂定义、四处座位注册（进度卡、跟随工具行、菜单开关、配置卡）、同步展示配置、字典键集与「未声明服务读取会抛」的守卫。
+- `test-nudge.mjs`：催办状态机的纯逻辑（阈值、四条清零路径、阈值与散文开关现读、按会话隔离、散文判定、开关关掉时不催且计数清零）。
 - `test-config.mjs`：按会话开关的纯逻辑（默认值、会话自己的选择优先、脏数据与原型键不算记录、写入时只留与默认值不同的会话）。
 - `test-render.mjs`：用真 react 把菜单开关画进 jsdom（默认值、写入规则、宿主拒收回退并报失败、写入在途禁用、子代理会话不画、配置不可用不画、锁住不可点）。
-- `test-card.mjs`：用真 react 把进度卡与配置卡画进 jsdom（只报摘要时只有标题行、折叠键长在圆点里、正文三种显示形态、配置卡汇报形态两选一与正文显示三选一及各自写入、配置晚到时默认展开在就绪后生效）。
+- `test-card.mjs`：用真 react 把进度卡与配置卡画进 jsdom（只报摘要时只有标题行、折叠键长在圆点里、正文三种显示形态、配置卡汇报形态两选一与正文显示三选一及各自写入、同步配置晚到时默认展开在就绪后生效、失败行显示宿主错误）。
 - `test-row-model.mjs`：进度卡数据视图的三条来路（`meta` / PTC 参数 / start 参数）与标题回退。
-- `test-notify-node.mjs`：对话节点定义的认领范围、节点位置与卡片数据（原生调用、结果落定、流式增量与块结束、PTC 子调用、结果先到、没有正文时的兜底）。
+- `test-notify-node.mjs`：对话节点定义的认领范围、节点位置与卡片数据（原生调用、结果落定、流式增量与块结束、PTC 子调用、直接调用失败、PTC 失败交给原生行、结果先到、没有正文时的兜底）。
 - `assert-lib-untracked.mjs`：`lib/` 是构建镜像，不入 git。
 
 浏览器里验收：打开跑过 `notify_user` 的会话，展开回合后进度卡应站在步骤组外、前后各有一条折叠组。DOM 判据是 `[data-chat-flow-kind="notify-user"]` 的节点不在 `[data-step-process-body]` 里，`[data-step-process]` 的组头成对出现在卡片之间。

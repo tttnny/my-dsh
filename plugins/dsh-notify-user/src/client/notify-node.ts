@@ -4,8 +4,8 @@
  * 位置写 `process`：节点站在步骤组外，客户端分组逻辑遇到它就结束当前组，
  * 于是两次汇报之间的工具调用各自成组，卡片本身不会被折进组里。
  *
- * 通用工具定义也会匹配同一次调用的全部事件。这里用 `exclusive` 认领它们，
- * 通用定义就不再为这次调用建节点——否则会多出一条跟着组折叠的工具行。
+ * 成功汇报用 `exclusive` 认领，免得进度卡旁再出现一条工具行。PTC 的失败结果也交给
+ * 宿主通用定义，它可以把错误直接挂到父调用上。
  * 结果事件不带工具名，只能按调用事件记下的 callId 认领；装配器按 seq 顺序喂事件，
  * 结果到达时调用一定已经记下。这张表跨会话共用，按调用上限淘汰最早记下的一条。
  */
@@ -16,7 +16,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client';
 import { NOTIFY_TOOL_NAME } from '../shared/config.js';
-import { parseArgs, parseUpdate, type NotifyCardData, type Update } from './row-model.js';
+import { failureOf, parseArgs, parseUpdate, type NotifyCardData, type Update } from './row-model.js';
 
 /** 节点 kind，同时是 `conversation.chat.node` 座位的 key。 */
 export const NOTIFY_NODE_KIND = 'notify-user';
@@ -28,6 +28,8 @@ const MAX_REMEMBERED_CALLS = 4096;
 interface NotifyNodeState extends NotifyCardData {
   /** 持久事件的位置；只有流式事件时没有，此时不出节点。 */
   readonly anchorSeq?: number;
+  /** 宿主接手 PTC 错误时，已发布过的节点必须按同一个 key 转成隐藏。 */
+  readonly useNativeError?: true;
 }
 
 declare module '@deepseek-ai/dsh-client-ui-chat/client' {
@@ -69,6 +71,21 @@ function settledState(current: NotifyNodeState, update: Update | null): NotifyNo
   };
 }
 
+/** 直接调用的结果足以判定失败；失败时忽略原先的汇报标题和正文。 */
+function rootResultState(
+  event: Extract<ConversationMatch['event'], { type: 'tool/result' }>,
+  current?: NotifyNodeState,
+): NotifyNodeState {
+  if (event.data.message.isError) {
+    return {
+      ...stateOf(null, current?.time ?? event.time, true, current?.anchorSeq ?? event.seq),
+      failure: failureOf(event.data.message.content, event.data.error),
+    };
+  }
+  const update = parseUpdate(event.data.meta);
+  return current === undefined ? stateOf(update, event.time, true, event.seq) : settledState(current, update);
+}
+
 /**
  * 结果先到的上下文（窗口从调用中间开始加载）没有 start，状态只能从结果事件补。
  * @param context - 当前上下文。
@@ -77,10 +94,9 @@ function settledState(current: NotifyNodeState, update: Update | null): NotifyNo
 function fallbackState(context: ConversationNodeContext<NotifyNodeState>): NotifyNodeState | undefined {
   for (let index = context.matches.length - 1; index >= 0; index -= 1) {
     const event = context.matches[index].event;
-    if (event.type === 'tool/result') {
-      return { ...parseUpdate(event.data.meta) ?? { message: '' }, time: event.time, settled: true, anchorSeq: event.seq };
-    }
+    if (event.type === 'tool/result') return rootResultState(event);
     if (event.type === 'tool/ptc-dispatch') {
+      if (event.data.isError) return undefined;
       return {
         ...parseUpdate(event.data.meta) ?? parseUpdate(event.data.arguments) ?? { message: '' },
         time: event.time,
@@ -134,6 +150,10 @@ export function createNotifyDefinition(): ConversationNodeDefinition<NotifyNodeS
         case 'tool/ptc-dispatch-start':
         case 'tool/ptc-dispatch': {
           if (event.data.name !== NOTIFY_TOOL_NAME) return null;
+          if (event.type === 'tool/ptc-dispatch' && event.data.isError) {
+            // PTC 结果本身有名字与父调用 id，宿主无需看到子调用开始事件就能画错误行。
+            return { id: String(event.data.subCallId), role: 'update' };
+          }
           return {
             id: String(event.data.subCallId),
             role: event.type === 'tool/ptc-dispatch-start' ? 'start' : 'update',
@@ -164,8 +184,9 @@ export function createNotifyDefinition(): ConversationNodeDefinition<NotifyNodeS
       if (event.type === 'tool/call') {
         return stateOf(parseArgs(event.data.arguments) ?? { message: current.message }, event.time, current.settled, event.seq);
       }
-      if (event.type === 'tool/result') return settledState(current, parseUpdate(event.data.meta));
+      if (event.type === 'tool/result') return rootResultState(event, current);
       if (event.type === 'tool/ptc-dispatch') {
+        if (event.data.isError) return { ...current, useNativeError: true };
         return settledState(current, parseUpdate(event.data.meta) ?? parseUpdate(event.data.arguments));
       }
       return current;
@@ -181,13 +202,14 @@ export function createNotifyDefinition(): ConversationNodeDefinition<NotifyNodeS
         target: 'chat',
         anchorSeq: state.anchorSeq,
         location: context.start?.location ?? context.matches[0]?.location ?? { kind: 'unresolved' },
-        groupTree: 'process',
-        visibility: 'visible',
+        groupTree: state.failure === undefined ? 'process' : undefined,
+        visibility: state.useNativeError ? 'hidden' : 'visible',
         data: {
           ...state.title === undefined ? {} : { title: state.title },
           message: state.message,
           time: state.time,
           settled: state.settled,
+          ...state.failure === undefined ? {} : { failure: state.failure },
         },
       };
       return node;

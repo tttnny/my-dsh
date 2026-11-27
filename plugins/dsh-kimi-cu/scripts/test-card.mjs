@@ -64,6 +64,7 @@ const t = (key) => zh[key] ?? key;
 const DEFAULT_UPDATE = { current: '0.7.5', latest: '0.7.5', hasUpdate: false, error: null, checkedAt: 1 };
 
 let fetchUrl = '';
+let statusUrl = '';
 let fetchMethod = 'GET';
 let fetchBody = null;
 let fetchCode = 200;
@@ -86,6 +87,7 @@ globalThis.fetch = async (url, init = {}) => {
       headers: { 'Content-Type': 'application/json' },
     });
   }
+  statusUrl = fetchUrl;
   return new Response(JSON.stringify(fetchBody), {
     status: fetchCode,
     headers: { 'Content-Type': 'application/json' },
@@ -108,7 +110,7 @@ const BASE = {
   mcp: { command: '/Applications/KimiCU.app/Contents/MacOS/kimi-cu', args: ['mcp', '-s', 'user'] },
   install: {
     command: 'curl -fsSL https://cdn.kimi.com/kimi-computer-use/latest/setup_macos.sh | bash',
-    steps: ['install', 'grant-permissions', 'reload-plugin'],
+    steps: ['install', 'grant-permissions', 'recheck'],
     docsUrl: 'https://example.com/zh',
     docsUrlEn: 'https://example.com/en',
   },
@@ -189,6 +191,7 @@ await test('本机检查通过：显示版本与恢复提示，不再展示安�
     installed: true,
     path: '/Applications/KimiCU.app/Contents/MacOS/kimi-cu',
     version: '0.6.8',
+    mcpStatus: { state: 'connected' },
     doctor: { ran: true, ok: true, checks: [{ id: 'accessibility', label: 'Accessibility (AX)', ok: true }], raw: '' },
   });
   const text = container.textContent ?? '';
@@ -272,9 +275,23 @@ await test('MCP 命令缺失：即使 doctor 全绿也显示本机检查未通�
 await test('MCP 连接失败时显示原因，即使本机检查通过', async () => {
   const { container } = await mount({ ...BASE, installed: true, path: '/Applications/KimiCU.app/Contents/MacOS/kimi-cu', doctor: { ran: true, ok: true, checks: [], raw: '' }, mcpStatus: { state: 'failed', lastError: 'launcher failed' } });
   const text = container.textContent ?? '';
-  assert.match(text, /MCP 连接失败或正在重连/);
+  assert.match(text, /MCP 连接失败/);
   assert.match(text, /launcher failed/);
-  assert.match(text, /本机检查未通过/);
+  assert.match(text, /MCP 尚未就绪/);
+});
+
+await test('本机检查通过但连接未建立时显示实际状态', async () => {
+  for (const [mcpStatus, hint] of [
+    [null, /MCP 未连接/],
+    [{ state: 'connecting' }, /正在连接 MCP/],
+    [{ state: 'reconnecting', lastError: 'launcher failed' }, /正在重新连接 MCP.*launcher failed/],
+    [{ state: 'conflict', lastError: 'cua-driver-mcp' }, /桌面操作已由其他后端占用.*cua-driver-mcp/],
+  ]) {
+    const { container, reactRoot } = await mount({ ...BASE, installed: true, doctor: { ...BASE.doctor, ran: true, ok: true }, mcpStatus });
+    assert.match(container.textContent ?? '', hint);
+    assert.doesNotMatch(container.textContent ?? '', /本机检查通过|MCP 连接失败/);
+    await act(async () => { reactRoot.unmount(); });
+  }
 });
 
 await test('重新检测请求带 refresh=1', async () => {
@@ -285,7 +302,7 @@ await test('重新检测请求带 refresh=1', async () => {
     button.click();
     await new Promise((done) => setTimeout(done, 0));
   });
-  assert.match(fetchUrl, /refresh=1/);
+  assert.match(statusUrl, /refresh=1/);
 });
 
 const INSTALLED = {
@@ -384,6 +401,18 @@ await test('更新失败：显示分类文案、可展开原始输出与重试',
   assert.match(text, /查看原始输出/);
   assert.match(text, /SHA-256/);
   assert.ok(buttonByText(container, '重试') !== undefined);
+});
+
+await test('更新流提前结束时显示结果未知，恢复重新检测', async () => {
+  const { container } = await mount(INSTALLED, { update: NEWER });
+  await act(async () => { buttonByText(container, '更新到 0.7.6').click(); });
+  await act(async () => {
+    postController.enqueue(new TextEncoder().encode('{"type":"stage","stage":"installing"}\n'));
+    postController.close();
+  });
+  await flush();
+  assert.match(container.textContent ?? '', /更新结果未知/);
+  assert.equal(buttonByText(container, '重新检测').disabled, false);
 });
 
 console.log('\ntest-card: ' + passed + '/' + total + ' 条断言通过');

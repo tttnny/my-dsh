@@ -1,6 +1,6 @@
 # 开发副本（`link:` 软链接）
 
-开发 profile 里的自有包一律 `link:` 到本仓库目录——**仓库文件就是已安装内容**，改完即生效。**界面是新的、路由 404** 或撞 `Cannot find package '…'` 时查这一份。
+开发 profile 里的自有包一律 `link:` 到本仓库目录。构建和重组的条件见「生效时机」。**界面是新的、路由 404** 或撞 `Cannot find package '…'` 时查这一份。
 
 **本仓库只管 `web` 这个开发 profile。** 自有包只在它里面是 `link:` 开发副本；`desktop`、`headless`、`acp`、`diagnose` 按 npm 包安装、不跟随本仓库，**物化成 registry 版本是设计如此，不是漂移**。这条约定登记在 `tools/lib/repo.mjs` 的 `DEV_PROFILE` 一处：`dev-link.mjs` 默认只查它，`assert-ledger.mjs` 判据 9 只查它，提交门禁因此不会被别的 profile 拖红。
 
@@ -23,8 +23,9 @@
 ## 生效时机
 
 - **自带构建的插件（`src/` → `lib/`）先 `pnpm build`**：链接过去的是构建产物，编辑 `src/` 不 build 等于没改。
-- **客户端半边**：刷新页面即生效（bundle 按 `rev` 下发并带长期缓存；`rev` 是产物文件 `mtime`、`ctime`、`size` 三样的哈希，不含内容，所以文件被重写而统计值没变时不换 `rev`，必要时硬刷新 `Cmd+Shift+R`）。想确认这一次到底拿到哪份产物：`node tools/verify-client.mjs <包> --needle '<你新写的类名或文案>'`（`--build` 连构建一起做）——它抄首页上那条带 `rev` 的地址、带 cookie 取回 bundle、在产物里找那段新东西，找不到就 FAIL。这条命令要两个环境变量 `DSH_WEB_URL` 与 `DSH_WEB_AUTH_URL`（在 DSH 会话里跑就有，也可用 `--url` / `--auth` 给），缺一个就以 2 退出；它读的是**正在跑那个实例**的首页清单，所以先让那个实例重新组合、浏览器刷新拿到新地址，再跑它——否则判的是旧 `rev` 那一份。
-- **宿主半边**：**Web profile 不用重启进程**。改 `lib/` 之后触发一次 profile 重新组合就换上新代码：在插件页或 `plugin_manager` 里把插件关一次再开一次，或者改存 profile 的 `cordis.patch.yml`（HMR 盯着它）。重新组合会把已装载模块与磁盘逐一比对身份（inode、大小、修改时间），变了的模块先逐出、再由 Loader 重新 `import`，拿到的是磁盘上最新的文件；`link:` 包的目标目录同样在比对范围内。loader 不监听文件，所以什么都不做不会自己生效。
+- **客户端半边**：Web 的 `dsh-client-hmr` 经已鉴权的 `pluginEvents/follow` 同步图与重建结果。自动更新要有指向当前 checkout 的构建 watcher、入口产物 revision 变化和当前页面对应的 Remote 权限。宿主 checkout 的 `pnpm run dev:web --no-serve` 只负责重建它自己的包，本仓 `link:` 包仍在各包目录构建。构建涉及多个文件时先写依赖文件，最后更新入口。没有有效同步链路时，构建、重组并刷新，按 [客户端接线](./client-wiring.md) 排查。
+- **核对客户端下载**：`node tools/verify-client.mjs <包> --needle '<新类名或文案>'`（`--build` 可一起构建）从当前实例的首页清单取带 `rev` 的 bundle，并检查新标记。用 `DSH_WEB_URL` 或 `--url` 指定干净根地址，鉴权见 [工具规则](../../tools/README.md)「验证 Web 实例」。`rev` 随入口文件 `mtime`、`ctime`、`size` 改变。浏览器里另核对新标记和交互。
+- **宿主半边**：**Web profile 不用重启进程**。改 `lib/` 之后触发一次 profile 重新组合就换上新代码：可用 `plugin_manager` 的 `set_plugin` 对已启用行提交 `enabled: true`，也可改存 profile 的 `cordis.patch.yml` 或正在使用的 `--patch` 文件。重新组合会把已装载模块与磁盘逐一比对身份（inode、大小、修改时间），变了的模块先逐出、再由 Loader 重新 `import`，拿到的是磁盘上最新的文件；`link:` 包的目标目录同样在比对范围内。loader 不监听文件，所以什么都不做不会自己生效。
 - **没有 `hmr` 的 profile**（headless、SDK、ACP 在 YAML 里把它关了）仍旧重启才生效。
 - **这几种情况必须重启**：操作结果是 `restart-required`，`restartReason` 说明理由——`no-hmr`（没有 HMR）、`package-moved`（某个安装映射换了目录）、`module-comparison`（模块缓存无法与磁盘比对），以及待处理模块标着 `host-module` / `unmanaged-plugin`（进程入口静态图里的模块，比如把 DSH 自己的包软链进 profile）。
 - **增删 `link:` 包**：走插件页 / `plugin_manager` 安装时，重新组合重算映射并启动新行；在 profile 里手工 `pnpm add` 之后要靠 `cordis.patch.yml` 或 `dsh.profile.bundles` 的变化触发重新组合，而映射变动被拒时结果仍是 `restart-required`（`package-moved`）。
@@ -39,8 +40,8 @@
 | 插件如何被引用 | 何时挂 | 报错长相 |
 | --- | --- | --- |
 | bundle 层（列在 profile `dsh.profile.bundles` 里） | profile 启动时 | `dsh: skipping profile bundle "<包名>": Error: dsh: cannot resolve profile bundle "<包名>" …`——这一层被跳过，实例照常起来（所以「页面里东西少了」不会报错） |
-| 该行必须激活（根 include，以及内核写死的那几行：`agent-loop`、`webserver`、`web-runtime`、`modules`、`connection`、`headless-runner`、`acp`、`sdk-jsonrpc-server`），而它 import 不到 | profile 启动即失败 | `dsh: plugin tree failed to load: …` 后跟 `Failed plugins (N):` 与 `<id>` / `Package: <包名>` / `failed to import: Error [ERR_MODULE_NOT_FOUND]: Cannot find package '<包名>' imported from <profile 目录>`——进程以 1 退出，启动器转入 diagnose |
-| 普通行（不必激活的行）import 不到 | DSH 正常启动 | 启动日志一行 `<id> (<包名>): failed to import: Error [ERR_MODULE_NOT_FOUND]: Cannot find package '<包名>' imported from <baseUrl>`，这一行不挂、其余照常 |
+| 该行必须激活（根 include，以及内核写死的那几行：`agent-loop`、`webserver`、`web-runtime`、`modules`、`connection`、`headless-runner`、`acp`、`sdk-jsonrpc-server`），而它 import 不到 | profile 启动即失败 | `dsh: plugin tree failed to load: …` 后跟 `Failed plugins (N):` 与 `<id>` / `Package: <包名>` / `ERR_MODULE_NOT_FOUND`——进程以 1 退出，启动器转入 diagnose |
+| 普通行（不必激活的行）import 不到 | DSH 正常启动 | 启动日志一行 `<id> (<包名>)` 与 `ERR_MODULE_NOT_FOUND`，这一行不挂、其余照常 |
 | 只被 preset 的工具行引用（**不在** bundles 里） | DSH 正常启动，切换该 preset 时失败 | `<id> (<包名>): never started`——preset 的审计只按「fiber 建没建起来」判，缺包连 fiber 都没有；整份 preset 因此挂载失败 |
 
 诊断时记两条：`Cannot find package` 的解析失败被 Node **缓存在进程内**，同进程重试仍是同一条错，要换新进程复现；客户端半边的 `@deepseek-ai/*` 由浏览器侧模块表供给、不参与 Node 解析，缺包只在宿主日志里现形。

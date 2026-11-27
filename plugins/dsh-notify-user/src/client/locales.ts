@@ -4,6 +4,7 @@ export const NS = 'notifyUser';
 /** 英文文案。 */
 export const en = {
   'row.preparing': 'Sending update…',
+  'row.failed': 'Could not send update',
   'row.fallbackTitle': 'Update',
   'markdown.copy': 'Copy',
   'markdown.copied': 'Copied',
@@ -15,10 +16,10 @@ export const en = {
   'config.defaultEnabled.label': 'On by default',
   'config.defaultEnabled.hint': 'New sessions start with proactive updates on; change a single session in the model and reasoning menu.',
   'config.threshold.label': 'Nudge after',
-  'config.threshold.hint': 'Tool calls without an update before the model is nudged; 0 turns nudging off.',
+  'config.threshold.hint': 'Tool calls without an update before the model is nudged; 0 turns nudging off and leaves the update tool available.',
   'config.threshold.unit': 'calls',
   'config.resetOnProse.label': 'Reset on prose',
-  'config.resetOnProse.hint': 'Any assistant reply with text counts as an update and resets the count; turn it off to reset only on notify_user, a new turn, or a user message.',
+  'config.resetOnProse.hint': 'Any assistant reply with text counts as an update and resets the count; turn it off to reset only on a successful update, a new turn, or a user message.',
   'config.reportMode.label': 'Update format',
   'config.reportMode.hint': 'Summary only: the model writes one line and the card shows just the title; structured body: the model writes a title and a body.',
   'config.reportMode.structured': 'Structured body',
@@ -45,6 +46,7 @@ export const en = {
 /** 中文文案。键集与英文逐一对齐（smoke-client 会查这一条）。 */
 export const zh = {
   'row.preparing': '正在汇报…',
+  'row.failed': '汇报失败',
   'row.fallbackTitle': '更新',
   'markdown.copy': '复制',
   'markdown.copied': '已复制',
@@ -56,10 +58,10 @@ export const zh = {
   'config.defaultEnabled.label': '默认开启',
   'config.defaultEnabled.hint': '新会话默认打开主动汇报；单个会话的开关在模型与推理等级菜单里。',
   'config.threshold.label': '催办阈值',
-  'config.threshold.hint': '连续多少次工具调用没有汇报时催一次；0 关闭催办。',
+  'config.threshold.hint': '连续多少次工具调用没有汇报时催一次；0 关闭催办，仍可主动汇报。',
   'config.threshold.unit': '次',
   'config.resetOnProse.label': '散文回复清零',
-  'config.resetOnProse.hint': '模型在助手消息里写了正文就算汇报过，计数清零；关掉后只在 notify_user、新回合或用户插话时清零。',
+  'config.resetOnProse.hint': '模型在助手消息里写了正文就算汇报过，计数清零；关掉后只在汇报成功、新回合或用户插话时清零。',
   'config.reportMode.label': '汇报形态',
   'config.reportMode.hint': '只报摘要时模型只写一行标题，卡片只显示标题行；结构化正文时模型写标题与正文。',
   'config.reportMode.structured': '结构化正文',

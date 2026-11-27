@@ -1,6 +1,6 @@
 {
   "name": "@lynn123411/dsh-native-plus",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "在 DSH 自带的蓝白黑之上增强对话正文的排版与装饰：六级标题的蓝阶、引用与表格、代码块、行高与段距；侧边栏工作区行显示运行标记。",
   "type": "module",
   "main": "lib/index.js",
@@ -57,21 +57,21 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.3",
-    "@deepseek-ai/schemastery": "^3.19.0",
+    "@deepseek-ai/cordis": "^4.2.0-alpha.1",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.3-alpha.2",
+    "@deepseek-ai/schemastery": "^3.20.0-alpha.1",
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-client-locale": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.3",
-    "@deepseek-ai/schemastery": "^3.19.0",
+    "@deepseek-ai/cordis": "^4.2.0-alpha.1",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.3-alpha.2",
+    "@deepseek-ai/schemastery": "^3.20.0-alpha.1",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.18",
     "esbuild": "^0.25.0",
@@ -81,7 +81,7 @@
     "typescript": "^6.0.0"
   },
   "engines": {
-    "dsh": ">=0.2.2-rc.3",
+    "dsh": ">=0.2.3-alpha.2",
     "node": "^22.19 || >=24"
   },
   "packageManager": "pnpm@11.7.0",

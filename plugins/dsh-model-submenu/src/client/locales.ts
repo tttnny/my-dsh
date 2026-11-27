@@ -13,6 +13,7 @@ export type ModelSubmenuLocaleKey =
   | 'error.action'
   | 'error.sessionInUse'
   | 'picker.title'
+  | 'picker.browse'
   | 'picker.close'
   | 'picker.search'
   | 'picker.searchEmpty'
@@ -43,6 +44,7 @@ export const zh: Record<ModelSubmenuLocaleKey, string> = {
   'error.action': '模型操作失败：{message}',
   'error.sessionInUse': '当前会话已被占用，可能是其他正在运行的 DSH 导致的（如其他 dsh web、桌面端），请退出其他正在运行的 DSH 后重试。',
   'picker.title': '切换模型',
+  'picker.browse': '浏览模型',
   'picker.close': '关闭',
   'picker.search': '搜索模型或提供商…',
   'picker.searchEmpty': '没有匹配的模型。',
@@ -67,6 +69,7 @@ export const en: Record<ModelSubmenuLocaleKey, string> = {
   'error.action': 'Model operation failed: {message}',
   'error.sessionInUse': 'This session is already in use, possibly by another running DSH instance (such as dsh web or the desktop app). Quit other running DSH instances and try again.',
   'picker.title': 'Switch model',
+  'picker.browse': 'Browse models',
   'picker.close': 'Close',
   'picker.search': 'Search models or providers…',
   'picker.searchEmpty': 'No matching models.',

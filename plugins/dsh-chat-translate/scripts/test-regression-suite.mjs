@@ -236,7 +236,7 @@ await testAsync('Markdown shape drift is accepted, never discarded', async () =>
   const result = (await dispatcher.translateReplyBlocks([source]))[0];
   assert.equal(result.ok, true, '散文重排不是破损，译文照常展示');
   assert.ok(result.translated.includes('阅读调度器'), '模型的译文被采纳');
-  assert.ok(cache.get(source.toLowerCase()), '照收的译文进缓存');
+  assert.ok(cache.get(source), '照收的译文进缓存');
 });
 
 await testAsync('Text that came back short keeps the original instead of dropping paragraphs', async () => {
@@ -340,7 +340,7 @@ await testAsync('LruDiskCache drops malformed entries while loading from disk', 
     JSON.stringify({
       // 盘上那份必须是**当前提示词的世代**（`cacheGeneration()` 的产物），
       // 不是裸的修订号：两者形状不同，写错一个字符整池就被当成陌生代际丢掉。
-      rev: cacheGeneration(''),
+      rev: cacheGeneration(),
       entries: {
         ok: { v: '正常译文' },
         // 非字符串译文与不成形的条目：陌生形态，读取时被丢掉。

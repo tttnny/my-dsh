@@ -13,15 +13,12 @@ import type { Context } from '@deepseek-ai/cordis';
  * 同一个模型动作，算进去会让催办在一个程序之后就触发。
  *
  * 清零有四条路，计数键都是**会话**（`agent.session`）：
- * `notify_user` 无论根调用还是 PTC 子调用都清零，与计数单位无关；助手消息里写了
+ * `notify_user` 成功时清零，无论是根调用还是 PTC 子调用，与计数单位无关；助手消息里写了
  * 散文正文也清零（开关见 `resetOnProse`）；新回合（`step === 1`）或用户插话也清零
  * ——回合边界取宿主给的 `step`，不按消息来源枚举。
  *
  * 会话关掉主动汇报时（`readEnabled` 为假）不催，计数也一并清零：重新打开时从零
  * 开始算，不会一开就催。
- *
- * `notify_user` 工具在计数第一次到阈值之前不向模型声明；到阈值那一步放行，之后
- * 本会话一直可用。散文清零照常生效，所以一直写散文的会话既不会催办，也不放行工具。
  *
  * 注入走 `agent/pre-step` 的 `enter.messages`：消息落进该步的 user 批次并被日志
  * 记录，来源不是 `user`，所以对话流里画成一行 context 而不是用户发言。
@@ -77,8 +74,6 @@ export interface NudgeController {
   prose(session: Session): void;
   /** 一次根工具调用：计数 +1。 */
   toolCall(session: Session): void;
-  /** 工具是否已放行：计数到过阈值，或当前现读阈值已被计数达到；放行后一直为真。 */
-  isUnlocked(session: Session): boolean;
   /**
    * 一步开始前问一次要不要催。
    * @param session - 这一步所属的会话。
@@ -107,7 +102,6 @@ export interface NudgeOptions {
  */
 export function createNudgeController(options: NudgeOptions): NudgeController {
   const counts = new WeakMap<Session, number>();
-  const unlocked = new WeakSet<Session>();
 
   return {
     notify(session) {
@@ -118,17 +112,11 @@ export function createNudgeController(options: NudgeOptions): NudgeController {
       counts.set(session, 0);
     },
     toolCall(session) {
-      const count = (counts.get(session) ?? 0) + 1;
-      counts.set(session, count);
-      const threshold = options.readThreshold();
-      if (threshold > 0 && options.readEnabled(session) && count >= threshold) unlocked.add(session);
-    },
-    isUnlocked(session) {
-      if (unlocked.has(session)) return true;
-      // 阈值现读：运行中调小阈值后，工具解析发生在 pre-step 之前，
-      // 这里必须认出当前计数已经够催办，否则模型收到催办却拿不到工具。
-      const threshold = options.readThreshold();
-      return threshold > 0 && options.readEnabled(session) && (counts.get(session) ?? 0) >= threshold;
+      if (!options.readEnabled(session) || options.readThreshold() <= 0) {
+        counts.delete(session);
+        return;
+      }
+      counts.set(session, (counts.get(session) ?? 0) + 1);
     },
     step(session, freshInput) {
       // 关掉的会话不催，也不留计数：重新打开时从零开始，不会一开就催。
@@ -144,9 +132,6 @@ export function createNudgeController(options: NudgeOptions): NudgeController {
       const count = counts.get(session) ?? 0;
       if (count < threshold) return null;
       counts.set(session, 0);
-      // 催办真发出去才置粘性标志：阈值运行中调小的情况在这里补上，
-      // 否则下一步计数归零后工具又会消失。
-      unlocked.add(session);
       return createUserMessage({
         content: [{ type: 'text', text: renderNudge(count, options.readSummaryOnly()) }],
         source: { ...NUDGE_SOURCE, form: 'notice', summary: nudgeSummary(count) },
@@ -160,14 +145,14 @@ export function createNudgeController(options: NudgeOptions): NudgeController {
  * @param session - 待判定的会话。
  * @returns 子代理会话为真。
  */
-function isSubagentSession(session: Session): boolean {
+export function isSubagentSession(session: Session): boolean {
   return session.header.origin === 'subagent';
 }
 
 /**
  * 把状态机接到宿主的三条事件上。
  *
- * `tools/result` 是纯观察事件（无 `next`），只在结果落定后读一次：`notify_user` 清零，
+ * `tools/result` 是纯观察事件（无 `next`），只在结果落定后读一次：成功的 `notify_user` 清零，
  * 其余**根调用**计数。派发前就被取消的调用（`ABORTED_BEFORE_DISPATCH`）没真正执行，
  * 与旧口径一致、不计数。
  * `session/event` 是落盘后的 append 广播：`assistant/message` 带非空白正文时清零。
@@ -176,7 +161,7 @@ function isSubagentSession(session: Session): boolean {
  * 新回合与用户插话在这里清零。
  * @param ctx - 宿主插件上下文。
  * @param controller - 催办状态机。
- * @param toolName - 汇报工具的名字；结果事件里出现它时清零。
+ * @param toolName - 汇报工具的名字；结果事件里确认成功时清零。
  */
 export function installNudge(ctx: Context, controller: NudgeController, toolName: string): void {
   ctx.on('tools/result', (exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): undefined => {
@@ -184,7 +169,7 @@ export function installNudge(ctx: Context, controller: NudgeController, toolName
     if (result.isError && result.error.info?.code === 'ABORTED_BEFORE_DISPATCH') return undefined;
     const session = exec.agent?.session;
     if (session !== undefined && !isSubagentSession(session)) {
-      if (exec.name === toolName) controller.notify(session);
+      if (exec.name === toolName && !result.isError) controller.notify(session);
       else if (exec.parent === undefined) controller.toolCall(session);
     }
     return undefined;

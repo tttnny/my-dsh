@@ -62,12 +62,6 @@
       <td><code>dsh plugin --profile web add @lynn123411/dsh-notify-user</code></td>
     </tr>
     <tr>
-      <td><b>📱 设备访问</b><br><i>浏览器与服务地址的登录、挂载</i></td>
-      <td><a href="./plugins/dsh-web-auth-url"><code>@lynn123411/dsh-web-auth-url</code></a></td>
-      <td><b>GUI 登录</b><br>模型调用一次工具就拿到这个 GUI 带 token 的地址：用它换一次会话 cookie，之后照常访问干净地址。</td>
-      <td><code>dsh plugin --profile web add @lynn123411/dsh-web-auth-url</code></td>
-    </tr>
-    <tr>
       <td><b>🖥️ 桌面操作</b><br><i>读写本机 app 的界面</i></td>
       <td><a href="./plugins/dsh-kimi-cu"><code>@lynn123411/dsh-kimi-cu</code></a></td>
       <td><b>KimiCU 桌面操作</b><br>接上本机 KimiCU（macOS / Windows），让模型看见并操作已打开的应用窗口；插件页检测安装状态并给出对应平台的安装命令。</td>

@@ -9,6 +9,8 @@
  * Run: node scripts/test-decision.mjs
  */
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { rmSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -25,7 +27,6 @@ import {
   composeJudgeSubject,
   isRowEnabled,
   numberTypeRows,
-  QUESTION_INSTRUCTIONS,
   readChoice,
   readJudgeAnswer,
   selectableRows,
@@ -66,7 +67,7 @@ function newLog(fileName = 'judgements.json') {
 function entryAt(typeId) {
   return {
     typeId, provider: 'p', model: 'm', effort: 'low', at: typeId,
-    latencyMs: 1, parentTitle: 'p', childLabel: 'c', prompt: '',
+    latencyMs: 1, metrics: { judgeModel: 'judge-x', optionCount: 2, subjectLength: 5 },
   };
 }
 
@@ -424,54 +425,8 @@ await test('判断调用：成功时带回选中的行与耗时', async () => {
   assert.equal(outcome.kind, 'matched');
   assert.equal(outcome.row.description, '评审代码');
   assert.ok(Number.isFinite(outcome.latencyMs));
-  // 弹窗里给读者看的就是这次真正发出去的那段：任务文字也在里面，不是预览里那个占位。
-  assert.deepEqual(JSON.parse(outcome.prompt), {
-    model: 'judge-x',
-    state: { message: '任务正文' },
-    questions: {
-      task_type: {
-        type: 'choice',
-        instructions: QUESTION_INSTRUCTIONS,
-        criteria: { '2': '评审代码' },
-      },
-    },
-  });
-});
-
-await test('判断调用：失败时也带回那次发出去的请求体', async () => {
-  const outcome = await judgeTaskType(
-    { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
-    [row({ id: 1 })],
-    '任务正文',
-    async () => new Response('nope', { status: 500 }),
-  );
-  assert.equal(outcome.kind, 'fallback');
-  assert.equal(JSON.parse(outcome.prompt).state.message, '任务正文', '没判成也要能看发出去的请求');
-});
-
-await test('判断调用：没发出请求时提示词为空，页面据此说「没有发出请求」', async () => {
-  const outcome = await judgeTaskType(
-    { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
-    [],
-    '任务正文',
-    async () => new Response('{}', { status: 200 }),
-  );
-  assert.equal(outcome.kind, 'fallback');
-  assert.equal(outcome.prompt, '');
-});
-
-await test('页面显示的提示词与实际发出去的请求体逐字一致', async () => {
-  let sent;
-  const outcome = await judgeTaskType(
-    { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
-    [row({ id: 1 }), row({ id: 2, description: '评审代码' })],
-    '任务正文',
-    async (_url, init) => {
-      sent = JSON.parse(init.body);
-      return new Response(JSON.stringify({ answers: { task_type: { choice: '1' } } }), { status: 200 });
-    },
-  );
-  assert.deepEqual(JSON.parse(outcome.prompt), sent);
+  assert.deepEqual(outcome.metrics, { judgeModel: 'judge-x', optionCount: 1, subjectLength: 4 });
+  assert.equal(Object.hasOwn(outcome, 'prompt'), false);
 });
 
 await test('判断调用：没有清单可选项时不发请求', async () => {
@@ -487,25 +442,28 @@ await test('判断调用：没有清单可选项时不发请求', async () => {
   );
   assert.equal(called, false, '空清单不该发出请求');
   assert.equal(outcome.kind, 'fallback');
+  assert.equal(outcome.metrics, undefined);
 });
 
 await test('判断调用：超时走 timeout，且不重试', async () => {
   let calls = 0;
+  let signal;
+  let finishResponse;
   const outcome = await judgeTaskType(
     { url: 'http://judge.invalid', model: 'judge-x', apiKey: '' },
     [row()],
     '任务正文',
     async (_url, init) => {
       calls += 1;
-      // 永不 resolve，只等自己的中止信号
-      return new Promise((_resolve, reject) => {
-        init.signal.addEventListener('abort', () => reject(new Error('aborted')));
-      });
+      signal = init.signal;
+      return new Promise((resolve) => { finishResponse = resolve; });
     },
   );
   assert.equal(calls, 1, '不重试');
   assert.equal(outcome.kind, 'fallback');
   assert.equal(outcome.reason, 'timeout');
+  assert.equal(signal.aborted, true);
+  finishResponse(new Response('{}'));
 });
 
 await test('日志：文件留最近 200 条，新的在前', async () => {
@@ -535,28 +493,84 @@ await test('日志：换了进程也读得回来', async () => {
   const file = join(tmpHome, 'restart.json');
   const first = new LogStore(file);
   await first.init();
-  first.append({ ...entryAt(1), childLabel: '重启前的那次', prompt: '{"model":"judge-x"}' });
+  first.append(entryAt(1));
   await first.flush();
 
   const second = new LogStore(file);
   await second.init();
   const list = second.list();
   assert.equal(list.length, 1);
-  assert.equal(list[0].childLabel, '重启前的那次');
-  assert.equal(list[0].prompt, '{"model":"judge-x"}');
+  assert.deepEqual(list[0], entryAt(1));
+});
+
+await test('日志：多个进程从同一个初始快照追加时写入只保留最新记录', async () => {
+  const file = join(tmpHome, 'shared.json');
+  const url = new URL('../src/server/log-store.ts', import.meta.url).href;
+  const writer = [
+    `import { LogStore } from ${JSON.stringify(url)};`,
+    `import { once } from 'node:events';`,
+    'const store = new LogStore(process.argv[1]);',
+    'await store.init();',
+    'const go = once(process.stdin, "data");',
+    'process.stdout.write("ready\\n");',
+    'await go;',
+    'const block = Number(process.argv[2]);',
+    'for (let index = 1; index <= 60; index++) {',
+    '  const at = block * 60 + index;',
+    '  store.append({ at, typeId: at, provider: "p", model: "m", effort: "low", latencyMs: 1 });',
+    '}',
+    'await store.flush();',
+  ].join('\n');
+  const workers = Array.from({ length: 4 }, (_, index) => {
+    const child = spawn(process.execPath, ['--input-type=module', '--eval', writer, file, String(index)], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+    });
+    const closed = once(child, 'close');
+    const ready = Promise.race([
+      once(child.stdout, 'data'),
+      closed.then(() => { throw new Error('日志子进程未就绪'); }),
+    ]);
+    return { child, ready, closed };
+  });
+  try {
+    await Promise.all(workers.map(({ ready }) => ready));
+    for (const { child } of workers) child.stdin.end('go');
+    for (const { closed } of workers) assert.deepEqual(await closed, [0, null]);
+    const reader = new LogStore(file);
+    const entries = await reader.readLatest();
+    assert.deepEqual(entries.map(({ at }) => at), Array.from({ length: LOG_KEEP }, (_, index) => 240 - index));
+  } finally {
+    for (const { child } of workers) child.stdin.end();
+    await Promise.allSettled(workers.map(({ closed }) => closed));
+  }
+});
+
+await test('日志：旧记录或调用者携带的自由文本不会落盘或返回', async () => {
+  const file = join(tmpHome, 'private.json');
+  const withText = (id) => ({
+    ...entryAt(id),
+    requestSummary: 'task text', childLabel: 'task label', parentTitle: 'title text',
+    metrics: { ...entryAt(id).metrics, extra: 'private criteria' },
+  });
+  await fs.writeFile(file, JSON.stringify([withText(1)]), 'utf8');
+  const store = new LogStore(file);
+  assert.deepEqual(await store.readLatest(), [entryAt(1)]);
+  store.append(withText(2));
+  await store.flush();
+  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), [entryAt(2), entryAt(1)]);
 });
 
 await test('日志：先追加后读盘时，刚记下的一条不会被旧记录盖掉', async () => {
   const file = join(tmpHome, 'race.json');
-  await fs.writeFile(file, JSON.stringify([{ ...entryAt(1), childLabel: '上一轮留下的' }]), 'utf-8');
+  await fs.writeFile(file, JSON.stringify([entryAt(1)]), 'utf-8');
   const store = new LogStore(file);
   // 故意不等 init：追加发生在读盘回来之前，两条都要留住。
   const loading = store.init();
-  store.append({ ...entryAt(2), childLabel: '这一轮刚记下的' });
+  store.append(entryAt(2));
   await loading;
   await store.flush();
   const list = store.list();
-  assert.deepEqual(list.map((entry) => entry.childLabel), ['这一轮刚记下的', '上一轮留下的']);
+  assert.deepEqual(list, [entryAt(2), entryAt(1)]);
 });
 
 await test('日志：文件缺失或残缺都不抛，从空日志起步', async () => {
@@ -583,14 +597,10 @@ await test('日志：文件缺失或残缺都不抛，从空日志起步', async
 await test('日志：读出来的副本改不动内部记录', async () => {
   const store = newLog('copy.json');
   await store.init();
-  store.append({
-    typeId: 1, provider: 'p', model: 'm', effort: 'low', at: 1,
-    latencyMs: 1, parentTitle: 'p', childLabel: 'c', prompt: '{"model":"judge-x"}',
-  });
+  store.append(entryAt(1));
   store.list()[0].model = 'tampered';
-  store.list()[0].prompt = 'tampered';
-  assert.equal(store.list()[0].model, 'm');
-  assert.equal(store.list()[0].prompt, '{"model":"judge-x"}');
+  store.list()[0].metrics.judgeModel = 'tampered';
+  assert.deepEqual(store.list()[0], entryAt(1));
 });
 
 await test('端点地址：没带路径时自动补上，已经带了就不再补', () => {
@@ -743,12 +753,21 @@ await test('探测路由：一条类型都没有也照样去测端点', async ()
     apiKey: () => '',
   }).find((candidate) => candidate.path === PROBE_ROUTE_PATH);
   assert.ok(route, '探测路由注册上了');
-  const response = await route.fetch(new Request('http://host/api/probe', { method: 'POST' }), {});
-  const body = await response.json();
-  // 空清单不该再出现「还没有一条填全的类型」这种事：那不是端点的问题。
-  assert.notEqual(body.reason, 'no_rows');
-  assert.equal(body.ok, false, '这个域名连不上，所以是失败——但原因是连通性，不是清单');
-  assert.equal(body.reason, 'unreachable');
+  const realFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    throw new Error('connection refused');
+  };
+  try {
+    const response = await route.fetch(new Request('http://host/api/probe', { method: 'POST' }), {});
+    const body = await response.json();
+    assert.equal(requests, 1);
+    assert.equal(body.ok, false);
+    assert.equal(body.reason, 'unreachable');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 await test('探测路由：地址与模型都在、端点答得出时算通（清单仍是空的）', async () => {

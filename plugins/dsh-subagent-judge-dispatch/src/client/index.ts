@@ -24,7 +24,7 @@ export const inject = ['slots', 'configForms', 'remote', 'remote.session', 'remo
  * @param ctx - 客户端根上下文。
  */
 export function apply(ctx: ClientContext): void {
-  injectCardStyles();
+  ctx.effect(injectCardStyles, 'dsh-subagent-judge-dispatch: card styles');
   registerDictionaries(ctx);
   ctx.slots.inject(MODEL_OPTIONS_SLOT, () => ctx.slots.register({
     name: MODEL_OPTIONS_SLOT,

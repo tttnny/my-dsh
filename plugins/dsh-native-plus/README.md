@@ -54,7 +54,7 @@ dsh plugin --profile web add @lynn123411/dsh-native-plus
 - **宿主半边**（`lib/index.js`）：由字段表生成 `Config` 的形状，并登记 `settings.configure({ auto: false })`——配置界面在「插件」页上，不让内核按 schema 再生成一份同字段的设置页。
 - **浏览器半边**（`lib/client.js`）：注入四张样式表（tokens / markdown / card / sidebar）、把配置投影到 `<html>` 上、在「插件」页上挂配置卡片、给侧边栏工作区行打运行标记。
 
-声明的服务：宿主半边只要 `settings`；浏览器半边要 `configForms`（读本插件那一行的配置）、`slots` 与 `locale`（画卡片）。侧边栏标记另要 `workspaces` 与 `sessions`，经 `ctx.inject` 声明为可选依赖：服务缺席时只少这一个功能，其余照常。本插件**不声明 `theme`**：它不碰宿主的主题通道。`package.json` 的 `dsh.client.inject` 另列了它依赖的插件契约包，两层都要声明，漏一层整条 loader entry 会静默变成 failed。
+声明的服务：宿主半边只要 `settings`；浏览器半边要 `configForms`（读本插件那一行的配置）、`slots` 与 `locale`（画卡片）。侧边栏标记通过 `ctx.inject` 声明 `workspaces`、`sessions`、`uiSession` 与 `uiSession.sessionStatus`。这几项服务挂载后，插件才开始同步运行标记。本插件**不声明 `theme`**：它不碰宿主的主题通道。`package.json` 的 `dsh.client.inject` 另列了它依赖的插件契约包，两层都要声明，漏一层整条 loader entry 会静默变成 failed。
 
 样式表按「包名/文件名」拼归属键写在 `data-plugin` 与 `data-plugin-css` 上：热更时新内容覆盖旧标签，卸载时整批删。
 
@@ -92,11 +92,11 @@ dsh plugin --profile web add @lynn123411/dsh-native-plus
 
 | 事实 | 来源 |
 | --- | --- |
-| 回合在跑 | 会话列表快照的 `running`（宿主 `api-session/status` 事件实时更新，与 `uiSession.sessionStatus` 同源） |
-| 子代理在跑 | 会话列表快照里 `projectionsBySession[父会话].values.subagentCatalog` 各项是否 running |
+| 回合在跑 | 优先读 `uiSession.sessionStatus` 的实时 `running`，状态未知时读 `sessions.list` 的会话摘要 |
+| 子代理在跑 | 从 `projectionsBySession[父会话].values.subagentCatalog` 找到子代理，再用相同的状态判据 |
 | 会话属于哪个工作区 | `workspaces.list` 的 `items[].sessionIds`；不在任何工作区的归未分组桶 |
 
-为什么要写属性而不是纯 CSS：宿主折叠工作区时不渲染里面的会话行（`sessions: expanded ? … : []`），`:has()` 拿不到任何信号。所以判据在 [src/client/workspace-activity.ts](./src/client/workspace-activity.ts) 里算，行上只留本插件自己的 `data-np-running`，样式表认这个属性。行被重建（分组方式切换、工作区增删）时由 `MutationObserver` 补回，观察器只认增删节点里带 `data-row-key` 的，对话流的高频变更不会触发重放。
+为什么要写属性而不是纯 CSS：宿主折叠工作区时不渲染里面的会话行（`sessions: expanded ? … : []`），`:has()` 拿不到任何信号。所以判据在 [src/client/workspace-activity.ts](./src/client/workspace-activity.ts) 里算，行上只留本插件自己的 `data-np-running`，样式表认这个属性。侧边栏列表挂载后，`MutationObserver` 只观察 `[data-sidebar-list-area]` 内的工作区行和祖先的直接子节点变化。列表或工作区行被替换时补回标记。
 
 ## 模型体验
 
@@ -106,7 +106,7 @@ dsh plugin --profile web add @lynn123411/dsh-native-plus
 
 - 只改助手正文的排版：推理块、工具行、侧边栏会话行与设置页都不受影响。
 - 装饰依赖宿主那几个不带哈希的语义属性。宿主改名时样式不会报错，只会静默不生效——`scripts/test-anchors.mjs` 去宿主源码里逐个确认它们还在。
-- 侧边栏运行标记要 `workspaces` 与 `sessions` 两个服务；服务缺席时只少这一个功能，正文排版与配置卡片照常。
+- 侧边栏运行标记随宿主的会话状态服务和工作区列表挂载。
 - 不提供配色开关：颜色全部来自宿主令牌，插件没有自己的色板可以调。
 - 行高与段距只作用于正文，不改变其它区域的字号与行距。
 
@@ -120,7 +120,7 @@ cd plugins/dsh-native-plus && pnpm check
 
 - `smoke-host.mjs`：真 cordis `Context` + 真 settings 服务的登记面，断言宿主半边只声明配置形状并登记 `auto: false`，且字段集与 `src/client/schema.ts` 的 `FIELDS` 一一对上。
 - `test-projection.mjs`：脏输入的收拢（越界夹回、脏类型丢掉、缺字段补默认）、投影写了什么、卸载后不留痕迹、投影不产生颜色。
-- `smoke-client.mjs`：按 Web shell 的方式装载 `lib/client.js`，验样式表归属键、投影落点、卡片注册进 `plugins.bundle.config` 且 key 是包名、主题通道一次都没被碰、运行标记按会话状态落到正确的行上（回合在跑、子代理在跑、未分组桶、行重建、卸载），并带一条「未声明服务读取必须抛」的反例断言。
+- `smoke-client.mjs`：按 Web shell 的方式装载 `lib/client.js`，验样式表归属键、投影落点、卡片注册进 `plugins.bundle.config` 且 key 是包名、主题通道一次都没被碰、运行标记按实时状态和完整归属落到正确的行上（同组并发、子代理、未分组、侧边栏挂载与重建、卸载），并带一条「未声明服务读取必须抛」的反例断言。
 - `test-tokens.mjs`：样式表里没有写死的色值、标题六档都取变量、蓝阶两端在两套纸面上都过 WCAG AA。
 - `test-anchors.mjs`：宿主锚点仍存在、没有哈希类名、文档里写死的数字与实际一致。
 - `assert-lib-untracked.mjs`：`lib/` 是构建镜像，不入 git。

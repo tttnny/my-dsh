@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { basename, resolve as resolvePath, dirname } from 'node:path'
+import { resolve as resolvePath, dirname } from 'node:path'
 import { defineConfig, type UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
@@ -62,7 +62,7 @@ const clientBundle: UserConfig = {
     resolveId(source: string) {
       if (!source.startsWith('@deepseek-ai/')) return null
       if (CLIENT_EXTERNALS.includes(source)) return null
-      if (VENDORED_LIBRARY.test(source)) return null
+      if (VENDORED_LIBRARY.test(source) || source === '@deepseek-ai/dsh-util-text-search') return null
       if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null
       throw new Error(
         `client bundle purity: "${source}" is not a platform module — `
@@ -95,21 +95,7 @@ const clientBundle: UserConfig = {
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       for (const [local, name] of classEntries) classMap[local] = name
       return [
-        `const css = ${JSON.stringify(code.toString())};`,
-        `const tagId = ${JSON.stringify(`${PACKAGE_ID}/${basename(fileId)}`)};`,
-        'if (typeof document !== \'undefined\') {',
-        // Keyed on the file, not the content: a same-document module
-        // re-execution (HMR reload after a rebuild) must REPLACE the sheet,
-        // or the new hashed class names run against the stale old CSS.
-        '  let tag = document.querySelector(\'style[data-plugin-css=\' + JSON.stringify(tagId) + \']\');',
-        '  if (tag === null) {',
-        '    tag = document.createElement(\'style\');',
-        `    tag.dataset.plugin = ${JSON.stringify(PACKAGE_ID)};`,
-        '    tag.dataset.pluginCss = tagId;',
-        '    document.head.appendChild(tag);',
-        '  }',
-        '  tag.textContent = css;',
-        '}',
+        `export const stylesheet = ${JSON.stringify(code.toString())};`,
         `export default ${JSON.stringify(classMap)};`,
       ].join('\n')
     },

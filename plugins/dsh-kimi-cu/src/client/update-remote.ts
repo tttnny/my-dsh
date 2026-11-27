@@ -32,32 +32,44 @@ export async function fetchUpdateCheck(): Promise<UpdateCheckResult> {
  * @param onEvent - 每收到一个事件回调一次。
  * @returns 流正常结束或失败的原因。
  */
-export async function startUpdate(onEvent: (event: UpdateEvent) => void): Promise<{ ok: boolean; message?: string }> {
+type UpdateOutcome = { kind: 'complete' | 'interrupted' } | { kind: 'error'; message: string };
+
+export async function startUpdate(onEvent: (event: UpdateEvent) => void): Promise<UpdateOutcome> {
+  let accepted = false;
   try {
     const response = await fetch(UPDATE_ROUTE_PATH, { method: 'POST', cache: 'no-store' });
-    if (!response.ok) return { ok: false, message: 'HTTP ' + String(response.status) };
-    if (response.body === null) return { ok: false, message: 'empty response' };
+    if (!response.ok) return { kind: 'error', message: 'HTTP ' + String(response.status) };
+    accepted = true;
+    if (response.body === null) return { kind: 'interrupted' };
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let pending = '';
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) break;
-      pending += decoder.decode(value, { stream: true });
+      pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
       const lines = pending.split('\n');
-      pending = lines.pop() ?? '';
+      pending = done ? '' : (lines.pop() ?? '');
       for (const line of lines) {
         if (line.trim() === '') continue;
+        let event: UpdateEvent;
         try {
-          onEvent(JSON.parse(line) as UpdateEvent);
+          event = JSON.parse(line) as UpdateEvent;
         } catch {
-          // 半行或坏行：忽略，等下一块。
+          continue;
+        }
+        if (event?.type !== 'stage' && event?.type !== 'done' && event?.type !== 'error') continue;
+        onEvent(event);
+        if (event.type !== 'stage') {
+          void reader.cancel().catch(() => {});
+          return { kind: 'complete' };
         }
       }
+      if (done) return { kind: 'interrupted' };
     }
-    return { ok: true };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    // Even a failed fetch can mean that the host accepted the POST and lost the response.
+    if (accepted || error instanceof TypeError) return { kind: 'interrupted' };
+    return { kind: 'error', message: error instanceof Error ? error.message : String(error) };
   }
 }

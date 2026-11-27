@@ -108,10 +108,10 @@ function snapshotStore(initial) {
   };
 }
 
-/** 侧边栏那两个可选服务的快照：工作区归属与会话列表。 */
+/** 工作区归属、会话列表和原生实时状态。 */
 const workspaceStore = snapshotStore({
   items: [
-    { workspaceId: 'ws-running', sessionIds: ['s-running'] },
+    { workspaceId: 'ws-running', sessionIds: ['s-running', 's-second'] },
     { workspaceId: 'ws-idle', sessionIds: ['s-idle'] },
   ],
 });
@@ -122,8 +122,9 @@ const workspaceStore = snapshotStore({
  */
 function sessionsWith(running) {
   return {
-    ids: ['s-running', 's-idle', 's-loose'],
+    ids: ['s-running', 's-second', 's-idle', 's-loose'],
     byId: {
+      's-second': { running: running.includes('s-second') },
       's-running': { running: running.includes('s-running') },
       's-idle': { running: running.includes('s-idle') },
       's-loose': { running: running.includes('s-loose') },
@@ -133,6 +134,7 @@ function sessionsWith(running) {
   };
 }
 const sessionStore = snapshotStore(sessionsWith([]));
+const statusStore = snapshotStore(new Map());
 
 const form = fakeForm({});
 const localeRegistrations = [];
@@ -176,6 +178,7 @@ function services() {
     },
     workspaces: { list: workspaceStore },
     sessions: { list: sessionStore },
+    uiSession: { sessionStatus: statusStore },
   };
 }
 
@@ -205,6 +208,14 @@ function makeCtx(label, declared = [], effects = []) {
     get(target, prop) {
       if (typeof prop === 'symbol' || prop === 'then') return undefined;
       if (prop in target) return target[prop];
+      if (prop === 'uiSession' && declared.includes(prop)) {
+        return new Proxy(table.uiSession, {
+          get(target, nested) {
+            if (declared.includes(`uiSession.${nested}`)) return target[nested];
+            throw new Error('cannot get property "uiSession.' + nested + '" without inject');
+          },
+        });
+      }
       if (declared.includes(prop)) return table[prop];
       throw new Error('cannot get property "' + prop + '" without inject');
     },
@@ -229,12 +240,12 @@ try {
 }
 
 /* ---- 侧边栏：两行有归属的工作区行，一行归未分组桶 ---- */
-document.body.innerHTML = [
-  '<div data-sidebar-scrollport>',
-  '<div data-row-key="workspace:ws-running">token额度计算</div>',
+const sidebarMarkup = [
+  '<aside><div data-sidebar-list-area>',
+  '<div data-row-key="workspace:ws-running" aria-expanded="false">项目</div>',
   '<div data-row-key="workspace:ws-idle">笔记</div>',
   '<div data-row-key="workspace:">未分组</div>',
-  '</div>',
+  '</div></aside>',
 ].join('');
 
 const rootElement = document.documentElement;
@@ -286,16 +297,29 @@ check('每条文案都非空', enKeys.every((key) => typeof dictionary.en[key] =
 
 /* ---- 侧边栏运行标记：判据与宿主会话行一致 ---- */
 /** 取一行工作区行；不存在时返回 null。 */
-const rowOf = (key) => document.querySelector('[data-row-key="' + key + '"]');
+const rowOf = (key) => document.querySelector('[data-sidebar-list-area] [data-row-key="' + key + '"]');
 /** 该行是否带着运行标记。 */
 const marked = (key) => rowOf(key)?.hasAttribute('data-np-running') === true;
 
 sessionStore.push(sessionsWith(['s-running']));
-check('回合在跑：命中所属工作区行', marked('workspace:ws-running'));
+document.body.insertAdjacentHTML('beforeend', sidebarMarkup);
+await Promise.resolve();
+check('侧边栏晚于插件挂载时，折叠行也显示运行标记', marked('workspace:ws-running'));
 check('回合在跑：别的工作区不受影响', !marked('workspace:ws-idle'));
 
+sessionStore.push(sessionsWith(['s-running', 's-second']));
+check('同组两个会话同时运行：只标记所属工作区', marked('workspace:ws-running') && !marked('workspace:'));
+
 sessionStore.push(sessionsWith(['s-sub']));
-check('子代理在跑也算（父会话的 subagentCatalog）', marked('workspace:ws-running'));
+check('实时状态未知时，使用会话列表里的子代理运行摘要', marked('workspace:ws-running'));
+statusStore.push(new Map([['s-sub', { running: false }]]));
+check('明确停止的实时状态覆盖旧摘要', !marked('workspace:ws-running'));
+
+sessionStore.push(sessionsWith([]));
+statusStore.push(new Map([['s-sub', { running: true }], ['s-idle', { running: true }]]));
+check('实时状态更新同样能点亮子代理所属组与另一个工作区',
+  marked('workspace:ws-running') && marked('workspace:ws-idle') && !marked('workspace:'));
+statusStore.push(new Map());
 
 sessionStore.push(sessionsWith([]));
 check('都停了：标记撤掉', !marked('workspace:ws-running'));
@@ -304,12 +328,27 @@ sessionStore.push(sessionsWith(['s-loose']));
 check('不在任何工作区的会话归未分组桶', marked('workspace:'));
 
 sessionStore.push(sessionsWith(['s-running']));
-const rebuiltRow = rowOf('workspace:ws-running');
-rebuiltRow.remove();
-await new Promise((resolve) => setTimeout(resolve, 0));
-document.querySelector('[data-sidebar-scrollport]').append(rebuiltRow);
-await new Promise((resolve) => setTimeout(resolve, 0));
+const originalRow = rowOf('workspace:ws-running');
+const rebuiltRow = originalRow.cloneNode(true);
+rebuiltRow.removeAttribute('data-np-running');
+originalRow.replaceWith(rebuiltRow);
+await Promise.resolve();
 check('行被重建后标记补回来', marked('workspace:ws-running'));
+
+const otherPanel = document.createElement('main');
+otherPanel.append(rebuiltRow.cloneNode(true));
+otherPanel.firstElementChild.removeAttribute('data-np-running');
+document.body.append(otherPanel);
+await Promise.resolve();
+sessionStore.push(sessionsWith([]));
+sessionStore.push(sessionsWith(['s-running']));
+check('侧边栏之外同键的行不会被标记', !otherPanel.firstElementChild.hasAttribute('data-np-running'));
+
+const previousSidebar = document.querySelector('aside');
+previousSidebar.outerHTML = sidebarMarkup;
+await Promise.resolve();
+check('侧边栏整体替换后标记补回来', marked('workspace:ws-running'));
+check('替换下来的侧边栏已清除标记', previousSidebar.querySelector('[data-np-running]') === null);
 
 /* ---- 卸载：痕迹撤干净 ---- */
 form.push({ lineHeight: 1.75, paragraphGap: 10 });

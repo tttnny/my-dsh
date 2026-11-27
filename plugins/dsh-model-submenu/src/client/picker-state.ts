@@ -12,6 +12,8 @@
 export interface PickerSnapshot {
   /** Session whose picker is open, or null when none is. */
   readonly sessionId: string | null
+  /** Toolbar button to refocus after the dialog closes, when still present. */
+  readonly returnFocus?: HTMLButtonElement
 }
 
 /** Open and close verbs plus the observable the overlay view subscribes to. */
@@ -20,8 +22,8 @@ export interface PickerStore {
   readonly getSnapshot: () => PickerSnapshot
   /** @param listener - called after every change. @returns the unsubscribe. */
   readonly subscribe: (listener: () => void) => () => void
-  /** @param sessionId - open the picker for one session, replacing any other. */
-  readonly open: (sessionId: string) => void
+  /** Open the picker for one session, optionally returning focus to its toolbar button. */
+  readonly open: (sessionId: string, returnFocus?: HTMLButtonElement) => void
   /** Close whatever is open. */
   readonly close: () => void
 }
@@ -45,8 +47,8 @@ export function createPickerStore(): PickerStore {
         listeners.delete(listener);
       };
     },
-    open: (sessionId) => {
-      publish({ sessionId });
+    open: (sessionId, returnFocus) => {
+      publish(returnFocus === undefined ? { sessionId } : { sessionId, returnFocus });
     },
     close: () => {
       publish({ sessionId: null });

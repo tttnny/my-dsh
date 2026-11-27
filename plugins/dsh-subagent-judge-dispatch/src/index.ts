@@ -9,18 +9,19 @@ import {
 import { JUDGE_API_KEY_REF, type CredentialsServiceLike } from './server/credentials.ts';
 import { decideRewrite, outcomeReason } from './server/dispatch.ts';
 import {
+  hasRecordedRoute,
   isSubagent,
-  readChildLabel,
   readDelegatedTask,
   resolveRootSessionId,
   type SessionHeaderLike,
   type SessionLike,
 } from './server/identity.ts';
+import { JudgeBudget } from './server/judge-budget.ts';
 import { judgeTaskType } from './server/judge-client.ts';
 import { composeJudgeSubject, selectableRows } from './server/judge-prompt.ts';
 import { LogStore } from './server/log-store.ts';
 import { createFetchRoutes } from './server/router.ts';
-import type { LogEntry } from './server/types.ts';
+import type { FallbackReason, LogEntry } from './server/types.ts';
 
 /**
  * Stable Cordis loader name; the same literal as the `id` of this plugin's row
@@ -30,20 +31,14 @@ export const name = SETTINGS_NAMESPACE;
 
 /**
  * Declared services. `credentials` is the DSH-owned secret surface the judge key
- * is read through; `sessions` and `sessionTitle` turn a child Agent's id into the
- * conversation title the log shows. The Fetch routes ride Connection's
- * authenticated transport, which only a Web carrier composes, so they are taken
+ * is read through. `sessions` finds the task the parent delegated. The Fetch
+ * routes ride Connection's authenticated transport, which only a Web carrier composes, so they are taken
  * through `ctx.inject` and the plugin still loads without one.
  */
-export const inject = ['credentials', 'sessions', 'sessionTitle'];
+export const inject = ['credentials', 'sessions'];
 
 export { Config } from './server/config.ts';
 export { JUDGE_API_KEY_REF } from './server/credentials.ts';
-
-/** Minimal structural shape of the `sessionTitle` service. */
-interface SessionTitleLike {
-  get(session: unknown): { title: string } | undefined;
-}
 
 /** Minimal structural shape of this plugin's own `settings` usage. */
 interface SettingsLike {
@@ -62,19 +57,23 @@ interface SettingsLike {
 interface HostContext {
   credentials: CredentialsServiceLike;
   sessions: { get(id: string): unknown };
-  sessionTitle: SessionTitleLike;
   settings: SettingsLike;
   fiber: unknown;
   get(name: 'sessionPersistence'): { stat(id: string): Promise<{ header: SessionHeaderLike } | undefined> } | undefined;
+  get(name: 'subagentModelSelection'): { allowedRoutes(): readonly ModelRoute[] | undefined } | undefined;
+  get(name: 'llm'): { resolveCallConfig(selection: RouteSelection, signal?: AbortSignal): Promise<unknown> } | undefined;
   on(event: string, listener: (...args: any[]) => unknown): () => void;
-  effect(factory: () => void | (() => void), label?: string): unknown;
+  effect(factory: () => void | (() => void | Promise<void>), label?: string): unknown;
   inject(names: string[] | string, callback: (ctx: HostContext) => void | (() => void)): void;
 }
 
 /** The route a child runs on; the three fields travel together. */
-interface RouteSelection {
+interface ModelRoute {
   provider: string;
   model: string;
+}
+
+interface RouteSelection extends ModelRoute {
   reasoningEffort?: string;
 }
 
@@ -131,14 +130,12 @@ class JudgedChildren {
  */
 export function apply(ctx: HostContext, config: PluginConfigRefs): void {
   const log = new LogStore();
+  const lifetime = new AbortController();
   /** Children already judged, so a ten-step child is asked about once. */
   const judged = new JudgedChildren();
   let apiKey = '';
 
-  // The log outlives the process: read what a previous run wrote before the
-  // first append could overwrite it. `init` never rejects — a missing or broken
-  // file just leaves the log empty.
-  const logReady = log.init();
+  void log.init();
 
   const resolvedConfig = (): ResolvedConfig => readPluginConfig(config);
 
@@ -176,49 +173,65 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
    * awaited because the Host awaits this hook, so it can add up to the judge
    * budget to that one delegation.
    */
-  ctx.on('agent/created', async (payload: { agent?: RequestAgent }) => {
-    const agent = payload?.agent;
-    if (agent === undefined || !isSubagent(agent) || judged.has(agent.id)) return;
+  ctx.on('agent/created', async ({ agent, source, signal }: {
+    agent?: RequestAgent; source: string; signal?: AbortSignal;
+  }) => {
+    const cancellation = signal === undefined ? lifetime.signal : AbortSignal.any([signal, lifetime.signal]);
+    if (agent === undefined || !isSubagent(agent) || judged.has(agent.id) || cancellation.aborted) return;
+    if (source !== 'startup' && source !== 'resume') return;
 
+    const budget = new JudgeBudget(cancellation);
     try {
       const lookup = (id: string) => ctx.sessions.get(id) as SessionLike | undefined;
       const parentId = agent.session.header.parentSession;
-      const rootId = parentId ? await resolveRootSessionId(parentId, async (id) =>
-        lookup(id)?.header ?? (await ctx.get('sessionPersistence')?.stat(id))?.header
-      ) : undefined;
+      const rootId = parentId ? await budget.run(() => resolveRootSessionId(parentId, async (id) => {
+        budget.check();
+        return lookup(id)?.header ?? (await ctx.get('sessionPersistence')?.stat(id))?.header;
+      })) : undefined;
       const cfg = resolvedConfig();
-      if (!isJudgeUsable(cfg, rootId) || judged.has(agent.id)) return;
+      if (cancellation.aborted || !isJudgeUsable(cfg, rootId) || judged.has(agent.id)) return;
+      const task = readDelegatedTask(agent, lookup, source === 'resume');
+      if (task === undefined || task.explicitRoute) return;
       judged.add(agent.id);
 
-      const label = readChildLabel(agent);
-      const taskText = readDelegatedTask(agent, lookup);
+      const { label, text: taskText } = task;
       const inherited = agent.model.current() ?? { provider: '', model: '' };
       const outcome = await judgeTaskType(
         { url: cfg.endpointUrl, model: cfg.judgeModel, apiKey },
         selectableRows(cfg.rows),
         composeJudgeSubject(label, taskText),
+        fetch,
+        budget,
       );
-      const decision = decideRewrite(outcome);
-
-      // A judgement that produced no usable row writes nothing: the child keeps
-      // exactly the route the Host resolved for it.
+      let decision = decideRewrite(outcome);
+      let routeFailure: FallbackReason | undefined;
       if (decision.kind === 'rewrite') {
-        agent.model.select({
-          provider: decision.rewrite.provider,
-          model: decision.rewrite.model,
-          reasoningEffort: decision.rewrite.reasoningEffort,
-        });
+        const route = decision.rewrite;
+        const llm = ctx.get('llm');
+        const allowed = (): boolean => ctx.get('subagentModelSelection')?.allowedRoutes()?.some(
+          (pair) => pair.provider === route.provider && pair.model === route.model,
+        ) === true;
+        try {
+          if (llm === undefined || !allowed()) throw new Error('Unavailable child route');
+          await budget.run((preflightSignal) => llm.resolveCallConfig(route, preflightSignal));
+          if (!allowed()) throw new Error('Child route no longer allowed');
+          if (cancellation.aborted || !isJudgeUsable(resolvedConfig(), rootId) || hasRecordedRoute(agent.session)) return;
+          budget.check();
+          agent.model.select(route);
+        } catch {
+          decision = { kind: 'none' };
+          routeFailure = budget.expired() ? 'timeout' : 'unavailable-route';
+        }
       }
 
-      if (cfg.logEnabled) {
-        // Wait for the stored log before appending, so the first judgement of a
-        // run does not overwrite the history it was about to join.
-        await logReady;
-        log.append(buildEntry(ctx, rootId, inherited, decision, outcome, label, taskText));
+      if (resolvedConfig().logEnabled && !cancellation.aborted) {
+        log.append(buildEntry(inherited, decision, outcome, budget.elapsed(), routeFailure));
       }
     } catch {
       // A judge outage, an unreadable parent log or a Host rejection of the
       // selection costs this delegation latency and nothing else.
+    } finally {
+      budget.dispose();
     }
   });
 
@@ -228,12 +241,7 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
   ctx.inject(['connection'], (connectionCtx) => {
     const routes = createFetchRoutes({
       config: resolvedConfig,
-      // 路由可能在磁盘读完之后才被问到，也可能在之前：先等那一次读，别把「还没读完」
-      // 报成「一条都没有」。
-      log: async () => {
-        await logReady;
-        return log.list();
-      },
+      log: () => log.readLatest(),
       apiKey: () => apiKey,
     });
     const disposers = routes.map((route) =>
@@ -247,7 +255,8 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
   // 每次追加都立刻开写；卸载时再等一次在飞的写落地，卸载不丢最后那条。
   ctx.effect(
     () => () => {
-      void log.flush();
+      lifetime.abort();
+      return log.flush();
     },
     'dsh-subagent-judge-dispatch: judgement log flush',
   );
@@ -258,21 +267,17 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
  *
  * A fallback row reports the route the child actually keeps — the main agent's
  * resolved provider, model and effort — rather than a blank, because the point
- * of the row is what the child ran on. The subagent column carries the
- * delegation's own label; the task text is part of the request shown in the
- * row's detail, not repeated in the table.
+ * of the row is what the child ran on.
  */
 function buildEntry(
-  ctx: HostContext,
-  rootId: string | undefined,
   resolved: RouteSelection,
   decision: ReturnType<typeof decideRewrite>,
   outcome: Awaited<ReturnType<typeof judgeTaskType>>,
-  label: string,
-  taskText: string,
+  latencyMs: number,
+  routeFailure: FallbackReason | undefined,
 ): LogEntry {
   const matched = decision.kind === 'rewrite';
-  const reason = outcomeReason(outcome, decision);
+  const reason = routeFailure ?? outcomeReason(outcome, decision);
   return {
     typeId: matched && outcome.kind === 'matched' ? outcome.row.id : null,
     provider: matched ? decision.rewrite.provider : resolved.provider,
@@ -282,31 +287,7 @@ function buildEntry(
       : typeof resolved.reasoningEffort === 'string' ? resolved.reasoningEffort : '',
     ...reason === undefined ? {} : { reason },
     at: Date.now(),
-    latencyMs: outcome.latencyMs,
-    parentTitle: readParentTitle(ctx, rootId),
-    childLabel: truncate(label !== '' ? label : taskText),
-    prompt: outcome.prompt,
+    latencyMs,
+    ...outcome.metrics === undefined ? {} : { metrics: outcome.metrics },
   };
-}
-
-/**
- * Name the conversation that delegated, the way the reader sees it in the
- * session list: its title, falling back to the session id when it has none.
- */
-function readParentTitle(ctx: HostContext, rootId: string | undefined): string {
-  if (rootId === undefined) return '';
-  try {
-    const session = ctx.sessions.get(rootId);
-    if (session === undefined) return rootId;
-    const title = ctx.sessionTitle.get(session)?.title;
-    return typeof title === 'string' && title.trim() !== '' ? title.trim() : rootId;
-  } catch {
-    return rootId;
-  }
-}
-
-/** Keep one log label to a readable length. */
-function truncate(text: string, max = 60): string {
-  const collapsed = text.replace(/\s+/g, ' ').trim();
-  return collapsed.length <= max ? collapsed : `${collapsed.slice(0, max - 1)}…`;
 }

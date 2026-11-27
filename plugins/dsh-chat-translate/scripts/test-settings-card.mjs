@@ -36,10 +36,11 @@ const exported = await loadClientBundle({ root, primitives });
 
 const registrations = [];
 const disposed = [];
+const effects = [];
 const ctx = {
   effect: (fn) => {
     const disposer = fn();
-    return typeof disposer === 'function' ? disposer : () => {};
+    if (typeof disposer === 'function') effects.push(disposer);
   },
   // 这一页没有 ui-deliverables：可选的文件提及服务缺席，回调不运行。
   inject: () => ({}),
@@ -87,7 +88,7 @@ const form = {
 };
 
 // 两个接口都挡掉网络：保存后的通道探测回一份成功，正文翻译按块回「译:…」，
-// 这样译文池里真的会落下东西，换代那条断言才有东西可丢。
+// 让换代测试能够区分已登记的行与内容缓存。
 globalThis.fetch = async (url, init) => {
   if (String(url).includes('translate-reply')) {
     const blocks = JSON.parse(init.body).blocks;
@@ -268,32 +269,36 @@ await test('没有保存按钮：改 Base URL 后离开输入框就写盘', asyn
   assert.equal(settingsStore.getState().committed.baseUrl, 'https://api.changed.example/v1');
 });
 
-await test('提示词一改，浏览器这一侧的译文池跟着换代', async () => {
-  // 不换代的话，本页里已经翻过的段落会一直取旧措辞的译文，一个请求都不发——
-  // 读者改了提示词却看不到任何变化。接线在 src/client/index.ts 的订阅里。
-  const seeded = chatTranslate.ensure('probe-row', ['A paragraph worth translating']);
-  await act(async () => {
-    await settle();
-    await settle();
-  });
-  const before = chatTranslate.getState('probe-row');
-  assert.ok(before !== undefined, '前置：这一行有状态');
-  assert.equal(chatTranslate.dropTranslations(), true, '前置：池里确实有译文可丢');
+await test('提示词一改，浏览器保留当前行译文，后续行使用新配置', async () => {
+  const text = 'A paragraph worth translating';
+  assert.equal(chatTranslate.ensure('probe-row', [text]), true);
+  await act(async () => { await settle(); });
+  assert.equal(chatTranslate.getState('probe-row').outcomes[0].translated, `译:${text}`);
+  const generation = chatTranslate.getGeneration();
 
-  // 真改一次提示词：写进配置文档，宿主通知回来，订阅把它换成新一代。
   await act(async () => {
     await form.mutate([{ op: 'set', path: ['prompt'], value: '一套新说法' }]);
-    await settle();
   });
   assert.equal(settingsStore.getState().committed.prompt, '一套新说法');
-  assert.equal(
-    chatTranslate.dropTranslations(),
-    false,
-    '池里已经空了：说明订阅在提示词变化时丢掉过一遍'
-  );
-  assert.ok(seeded !== undefined, 'ensure 的返回值不影响这次断言，只用来占位说明前置动作');
+  assert.equal(chatTranslate.getGeneration(), generation + 1);
+  assert.equal(chatTranslate.getState('probe-row').outcomes[0].translated, `译:${text}`);
+  assert.equal(chatTranslate.ensure('probe-row', [text]), false, '同一行不重发');
+  assert.equal(chatTranslate.ensure('new-probe-row', [text]), true, '新行的相同文本要用新配置');
+  await act(async () => { await settle(); });
 });
 
-act(() => rootHandle.unmount());
+await test('配置卡卸载移除自己的样式，Client effect 卸载移除助手行样式', () => {
+  const assistantStyle = 'head style[data-plugin-css]';
+  const settingsStyle = 'style[data-tidy-settings]';
+  assert.equal(document.querySelectorAll(assistantStyle).length, 1);
+  assert.equal(container.querySelectorAll(settingsStyle).length, 1);
+  assert.equal(document.head.querySelector(settingsStyle), null);
+  act(() => rootHandle.unmount());
+  assert.equal(document.querySelector(settingsStyle), null);
+  assert.equal(document.querySelectorAll(assistantStyle).length, 1);
+  act(() => { for (const dispose of effects.reverse()) dispose(); });
+  assert.equal(document.querySelector(assistantStyle), null);
+  assert.equal(chatTranslate.getState('probe-row'), undefined, '卸载清掉行内状态');
+});
 console.log(`${passed}/${total} passed`);
 process.exit(passed === total ? 0 : 1);

@@ -36,6 +36,7 @@ const primitives = primitivesStub({
       createElement('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, '×'),
       children)
     : null,
+  Button: ({ variant, size, ...props }) => createElement('button', { type: 'button', ...props }),
   Input: ({ icon, className, ...rest }) => createElement('input', { ...rest, className }),
   ShortcutKeys: ({ keys }) => createElement('span', null, keys.join('')),
   Toast: ({ text }) => createElement('div', { role: 'status' }, text),
@@ -46,18 +47,19 @@ const primitives = primitivesStub({
   IconSearchOutlineRegular: () => createElement('span', null),
   Tag: ({ tone, className, children }) => createElement('span', { 'data-tone': tone, className }, children),
   isMobileDevice: () => false,
-  rankByName: (items, query) => {
-    const needle = query.toLowerCase()
-    return items.filter((item) => item.name.toLowerCase().includes(needle) || item.label.toLowerCase().includes(needle))
-  },
 })
 
 const exported = await loadClientBundle({ root, primitives })
 
 /** 注册项：本测试直接拿两个组件来画。 */
 const registrations = []
+const disposers = new Map()
 const ctx = {
-  effect: (fn) => { fn(); return () => {} },
+  effect: (fn, label) => {
+    const dispose = fn()
+    disposers.set(label, dispose)
+    return () => dispose?.()
+  },
   get: () => undefined,
   inject: (_names, fn) => { fn(ctx); return () => {} },
   slots: {
@@ -78,12 +80,16 @@ const ctx = {
   modelDirectories: { directoryFor: () => null },
   sessions: { subagentAddress: () => undefined },
 }
+const pluginStyle = 'style[data-plugin-css="@lynn123411/dsh-model-submenu/ModelOptions.module.css"]'
+assert.equal(document.querySelector(pluginStyle), null, '加载模块时不写入样式')
 exported.apply(ctx)
 const bridgeEntry = registrations.find((entry) => entry.options.name === 'conversation.input.model.options')
 const hostEntry = registrations.find((entry) => entry.options.id === 'model-picker')
+const fallbackEntry = registrations.find((entry) => entry.options.name === 'conversation.input.right')
 const tintEntry = registrations.find((entry) => entry.options.id === 'model-effort-tint')
 assert.ok(bridgeEntry !== undefined, '菜单桥没有注册')
 assert.ok(hostEntry !== undefined, '浮层弹窗没有注册')
+assert.ok(fallbackEntry !== undefined, '工具栏兜底入口没有注册')
 assert.ok(tintEntry !== undefined, '触发器着色没有注册')
 
 // ── 共享目录：两个供应商，magpie 三个模型，a6api 一个 ─────────────────────────
@@ -143,6 +149,7 @@ const closePicker = () => { act(() => { picker.close() }) }
 
 const table = {
   'picker.title': '切换模型',
+  'picker.browse': '浏览模型',
   'picker.all': '全部',
   'picker.search': '搜索模型或提供商…',
   'picker.close': '关闭',
@@ -228,7 +235,8 @@ function hostCell(name, label, value) {
  */
 function mountBridge(element) {
   surface = document.createElement('div')
-  surface.setAttribute('data-menu-material', '')
+  surface.setAttribute('data-model-menu', '')
+  surface.setAttribute('role', 'menu')
   surface.append(hostCell('model', '模型', 'Model A'), hostCell('effort', '推理等级', 'High'))
   document.body.append(surface)
   container = document.createElement('div')
@@ -289,10 +297,12 @@ const click = (element) => {
 }
 // jsdom has no PointerEvent; React dispatches by native event type, so a
 // MouseEvent carrying the pointer type drives the same handler.
-const pointer = (type, element, clientX) => {
-  act(() => {
-    element.dispatchEvent(new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX }))
-  })
+const pointerEvent = (type, clientX, pointerId = 1, button = 0) => {
+  const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX, button })
+  return Object.assign(event, { pointerId })
+}
+const pointer = (type, element, clientX, pointerId, button) => {
+  act(() => { element.dispatchEvent(pointerEvent(type, clientX, pointerId, button)) })
 }
 const key = (element, name) => {
   act(() => {
@@ -347,6 +357,22 @@ await test('点宿主的第一格：先关菜单，再把开合请求交给 stor
   assert.deepEqual(dismissals, ['dismiss'])
   assert.equal(picker.getSnapshot().sessionId, 'session-1')
   assert.deepEqual(hostCellClicks, [], '宿主那格的下钻必须被拦下')
+})
+
+await test('宿主锁定时模型行和推理等级都不能提交', () => {
+  closePicker()
+  dismissals.length = 0
+  hostCellClicks.length = 0
+  selections.length = 0
+  mountFreshBridge({ ...bridgeProps, locked: true })
+  click(cell('model'))
+  click(cell('effort').querySelector("span[class*='cellLabel']"))
+  key(slider(), 'ArrowRight')
+  assert.equal(slider().getAttribute('aria-disabled'), 'true')
+  assert.equal(picker.getSnapshot().sessionId, null)
+  assert.deepEqual(dismissals, [])
+  assert.deepEqual(hostCellClicks, [])
+  assert.deepEqual(selections, [])
 })
 
 await test('点「推理等级」四个字切回 provider default', async () => {
@@ -436,11 +462,26 @@ await test('按下与松手落在同一个任务里也不丢提交', async () =>
   // No flush between the two: the release must read the drag it just started
   // rather than a render that has not run yet.
   act(() => {
-    slider().dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 75 }))
-    slider().dispatchEvent(new dom.window.MouseEvent('pointerup', { bubbles: true, cancelable: true, clientX: 75 }))
+    slider().dispatchEvent(pointerEvent('pointerdown', 75))
+    slider().dispatchEvent(pointerEvent('pointerup', 75))
   })
   await flush()
   assert.deepEqual(selections, [{ provider: 'magpie', model: 'a', reasoningEffort: 'max' }])
+})
+
+await test('副键、其他指针和取消捕获都不会提交档位', () => {
+  mountFreshBridge()
+  selections.length = 0
+  withTrack()
+  pointer('pointerdown', slider(), 75, 1, 2)
+  assert.equal(slider().hasAttribute('data-dragging'), false)
+  pointer('pointerdown', slider(), 75, 1)
+  pointer('pointerup', slider(), 75, 2)
+  assert.equal(slider().hasAttribute('data-dragging'), true)
+  pointer('lostpointercapture', slider(), 75, 1)
+  pointer('pointerup', slider(), 75, 1)
+  assert.equal(slider().hasAttribute('data-dragging'), false)
+  assert.deepEqual(selections, [])
 })
 
 await test('拖动时旋钮跟着指针走，不停在刻度上', () => {
@@ -605,11 +646,11 @@ await test('供应商标签页各列各的模型', () => {
   click(tab('全部'))
 })
 
-await test('搜索按名字过滤', () => {
+await test('共享搜索索引同时匹配模型名和供应商名', () => {
   const input = search()
   act(() => {
     const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
-    setter.call(input, 'kimi')
+    setter.call(input, 'km a6api')
     input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
   })
   assert.deepEqual(rowButtons().map((row) => row.getAttribute('title')), ['Kimi K3'])
@@ -664,6 +705,23 @@ await test('提交被拒时留在弹窗并弹提示', async () => {
   await flush()
   assert.equal(document.querySelector('[role="status"]')?.textContent, '会话被占用')
   assert.notEqual(dialog(), null, '被拒时弹窗必须留着，好让用户换一个')
+  closePicker()
+})
+
+await test('旧的选择完成后不会关掉重新打开的弹窗', async () => {
+  setState(snapshot())
+  unmount()
+  let resolveSelection
+  const selection = new Promise((resolve) => { resolveSelection = resolve })
+  mount(createElement(hostEntry.component, { ...face, select: () => selection }))
+  openPicker()
+  click(rowByName('Model B'))
+  closePicker()
+  openPicker()
+  resolveSelection({ ok: true, value: undefined })
+  await flush()
+  assert.equal(picker.getSnapshot().sessionId, 'session-1')
+  assert.notEqual(dialog(), null)
   closePicker()
 })
 
@@ -748,6 +806,47 @@ await test('关闭按钮把 store 清空', async () => {
   await flush()
   assert.equal(picker.getSnapshot().sessionId, null)
   assert.equal(dialog(), null)
+})
+
+await test('当前模型缺失时工具栏入口打开同一个弹窗', async () => {
+  unmount()
+  closePicker()
+  setState(snapshot({ current: null }))
+  mount([
+    createElement(fallbackEntry.component, { ...face, key: 'fallback' }),
+    createElement(hostEntry.component, { ...face, key: 'picker' }),
+  ])
+  const fallback = () => container.querySelector('button[aria-haspopup="dialog"]')
+  assert.equal(fallback()?.textContent, '浏览模型')
+  click(fallback())
+  await flush()
+  assert.notEqual(dialog(), null)
+  search().focus()
+  assert.equal(document.activeElement, search())
+  click(dialog().querySelector('button[aria-label="关闭"]'))
+  assert.equal(dialog(), null)
+  assert.equal(document.activeElement, fallback())
+  setState(snapshot({ current: { provider: 'missing-provider', model: 'a' } }))
+  assert.ok(fallback())
+  setState(snapshot({ current: { provider: 'magpie', model: 'missing-model' } }))
+  assert.ok(fallback())
+  setState(snapshot({ current: null, pending: { provider: 'magpie', model: 'a' } }))
+  assert.equal(fallback()?.disabled, true)
+  setState(snapshot())
+  assert.equal(fallback(), null)
+})
+
+await test('样式随客户端启用和停用，清理仅移除该次启用的样式', () => {
+  const first = document.querySelector(pluginStyle)
+  assert.ok(first?.textContent.includes('sliderCell'))
+  const disposeFirst = disposers.get('dsh-model-submenu: styles')
+  exported.apply(ctx)
+  const next = document.querySelectorAll(pluginStyle)[1]
+  assert.ok(next instanceof dom.window.HTMLStyleElement)
+  disposeFirst()
+  assert.equal(document.querySelector(pluginStyle), next)
+  disposers.get('dsh-model-submenu: styles')()
+  assert.equal(document.querySelector(pluginStyle), null)
 })
 
 unmount()

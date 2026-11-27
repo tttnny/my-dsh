@@ -82,19 +82,22 @@ assert.ok(row !== undefined, '助手行渲染器没有注册进 conversation.cha
 
 const { settingsStore, chatTranslate, createTranslateStore } = exported;
 
-settingsStore.attach(
-  {
-    getSnapshot: () => ({
-      status: 'ready',
-      value: { enabled: true, baseUrl: 'https://api.example.com/v1', model: 'test-model' },
-      writable: true,
-      revision: 1,
-    }),
-    subscribe: () => () => {},
-    mutate: async () => true,
-  },
-  { describe: async () => ({ ok: true, value: { TRANSLATE_API_KEY: { configured: true } } }) }
-);
+function attachSettings(model = 'test-model') {
+  settingsStore.attach(
+    {
+      getSnapshot: () => ({
+        status: 'ready',
+        value: { enabled: true, baseUrl: 'https://api.example.com/v1', model },
+        writable: true,
+        revision: 1,
+      }),
+      subscribe: () => () => {},
+      mutate: async () => true,
+    },
+    { describe: async () => ({ ok: true, value: { TRANSLATE_API_KEY: { configured: true } } }) }
+  );
+}
+attachSettings();
 // refreshKeyStatus 是异步的：等它把 aiConfigured 折进来再渲染。
 await act(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -740,6 +743,32 @@ await test('座位下发折叠钩子时，思考行的隐藏交给它而不是�
   assert.equal(typeof groupCalls[0].reveal, 'function', '揭示回调也要一并交出');
 });
 act(() => rootI.unmount());
+
+await test('改模型后当前行保留译文，另一个会话的同锚点同正文按新配置首跑', async () => {
+  const first = document.createElement('div');
+  const next = document.createElement('div');
+  document.body.append(first, next);
+  const text = 'Same anchor and text in different sessions';
+  const firstRoot = renderRow('a100', text, first, undefined, row.options.inject('session-one'));
+  await act(async () => {});
+  assert.equal(first.querySelector('.md').textContent, `【译】${text}`);
+  const before = replyCalls;
+
+  await act(async () => { attachSettings('new-model'); });
+  assert.equal(first.querySelector('.md').textContent, `【译】${text}`);
+  assert.equal(replyCalls, before, '配置变更不重发当前行');
+
+  const nextRoot = renderRow('a100', text, next, undefined, row.options.inject('session-two'));
+  await act(async () => {});
+  assert.equal(next.querySelector('.md').textContent, `【译】${text}`);
+  assert.equal(replyCalls, before + 1, '新会话不能沿用旧行状态');
+  act(() => {
+    firstRoot.unmount();
+    nextRoot.unmount();
+  });
+  first.remove();
+  next.remove();
+});
 
 console.log(`${passed}/${total} passed`);
 process.exit(passed === total ? 0 : 1);

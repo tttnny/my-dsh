@@ -10,6 +10,9 @@ import assert from 'node:assert/strict';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { Context } from '@deepseek-ai/cordis';
+import { ConnectionAuthentication, HostConnectionService } from '@deepseek-ai/dsh-client-connection';
+
 import {
   classifyFailure,
   compareVersions,
@@ -18,6 +21,9 @@ import {
   parseManifest,
   parseStage,
 } from '../src/server/update.ts';
+
+import { createStatusRoute } from '../src/server/router.ts';
+import { createUpdateRoute } from '../src/server/update-router.ts';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 
@@ -196,11 +202,12 @@ await test('run：有新版时先报阶段再执行，版本变了才重连', as
   assert.equal(calls.upgrade[0].version, null, 'macOS 不带版本号，让 KimiCU 自己判断');
 });
 
-await test('run：版本没变就不重连', async () => {
+await test('run：版本低于目标时报告无法确认且不重连', async () => {
   const { updater, calls } = harness({
     runUpgrade: async () => ({ code: 0, raw: '✓ 升级完成', timedOut: false, whenExited: Promise.resolve() }),
   });
-  await collect(updater);
+  const events = await collect(updater);
+  assert.equal(events.at(-1).kind, 'unconfirmed');
   assert.equal(calls.reconnect, 0);
 });
 
@@ -244,7 +251,7 @@ await test('run：并发调用被单飞锁挡住', async () => {
   release();
   await first;
   const third = await collect(updater);
-  assert.equal(third.at(-1).type, 'done', '锁要在结束后释放');
+  assert.equal(third.at(-1).kind, 'unconfirmed', '锁要在结束后释放');
 });
 
 await test('run：超时归类为 timeout', async () => {
@@ -291,7 +298,7 @@ await test('run：超时后锁留到子进程真的退出', async () => {
   exit();
   await new Promise((done) => setTimeout(done, 0));
   const third = await collect(updater);
-  assert.equal(third.at(-1).type, 'done', '进程退出后锁要放');
+  assert.equal(third.at(-1).kind, 'unconfirmed', '进程退出后锁要放');
 });
 
 await test('run：升级后版本读不出来不算确认变化，不重连', async () => {
@@ -306,7 +313,96 @@ await test('run：升级后版本读不出来不算确认变化，不重连', as
   });
   const events = await collect(updater);
   assert.equal(calls.reconnect, 0);
-  assert.equal(events.at(-1).reconnect, 'skipped');
+  assert.equal(events.at(-1).kind, 'unconfirmed');
+});
+
+await test('浏览器断流后升级继续，原进程退出前拒绝第二次升级', async () => {
+  const started = Promise.withResolvers();
+  const finish = Promise.withResolvers();
+  const reconnected = Promise.withResolvers();
+  let version = '0.7.5';
+  const { updater, calls } = harness({
+    current: async () => ({ path: '/fake/kimi-cu', version }),
+    runUpgrade: async () => {
+      started.resolve();
+      await finish.promise;
+      version = '0.7.6';
+      return { code: 0, raw: '', timedOut: false, whenExited: Promise.resolve() };
+    },
+    reconnect: async () => { reconnected.resolve(); return true; },
+  });
+  const route = createUpdateRoute(updater);
+  const request = () => new Request('https://example.test' + route.path, { method: 'POST' });
+  const first = await route.fetch(request());
+  await started.promise;
+  await first.body.cancel();
+  const second = await route.fetch(request());
+  assert.deepEqual(JSON.parse(await second.text()), { type: 'error', kind: 'busy', raw: '' });
+  finish.resolve();
+  await reconnected.promise;
+  assert.equal(version, '0.7.6');
+  assert.equal(calls.upgrade.length, 1);
+});
+
+await test('Connection 精确路由仅允许已认证的 owner 读状态、重检和更新', async () => {
+  const ctx = new Context();
+  const authentication = new ConnectionAuthentication(ctx);
+  const connection = new HostConnectionService(ctx, []);
+  const guest = connection.createPeer({ principal: { kind: 'guest' } });
+  authentication.register({
+    authenticate({ headers }) {
+      switch (headers.get('x-test-peer')) {
+        case 'owner': return connection.browserPeer;
+        case 'guest': return guest;
+        default: return undefined;
+      }
+    },
+  });
+
+  const detections = [];
+  const statusRoute = createStatusRoute(async (refresh) => {
+    detections.push(refresh);
+    return { version: '0.7.5' };
+  });
+  const { updater, calls } = harness();
+  const updateRoute = createUpdateRoute(updater);
+  connection.fetch.register(statusRoute);
+  connection.fetch.register(updateRoute);
+  const shared = connection.createSharedFetchHandler('/api');
+
+  const dispatch = (path, method, role) => {
+    const headers = { host: 'localhost' };
+    if (role !== undefined) headers['x-test-peer'] = role;
+    const request = new Request('http://localhost' + path, { method, headers });
+    const admission = connection.admit(request);
+    return 'rejection' in admission
+      ? new Response(null, { status: admission.rejection })
+      : shared.fetch(request, admission.peer);
+  };
+
+  const routes = [
+    [statusRoute.path, 'GET'],
+    [statusRoute.path + '?refresh=1', 'GET'],
+    [updateRoute.path, 'GET'],
+    [updateRoute.path, 'POST'],
+  ];
+  for (const [path, method] of routes) {
+    assert.equal((await dispatch(path, method)).status, 401);
+    assert.equal((await dispatch(path, method, 'guest')).status, 403);
+  }
+  assert.deepEqual(detections, []);
+  assert.equal(calls.fetch.length, 0);
+  assert.equal(calls.upgrade.length, 0);
+
+  for (const [path, method] of routes) {
+    const response = await dispatch(path, method, 'owner');
+    assert.equal(response.status, 200);
+    await response.text();
+  }
+  assert.deepEqual(detections, [false, true]);
+  assert.equal(calls.fetch.length, 2);
+  assert.equal(calls.upgrade.length, 1);
+  await guest.dispose();
 });
 
 await test('路由常量与包内约定一致', async () => {

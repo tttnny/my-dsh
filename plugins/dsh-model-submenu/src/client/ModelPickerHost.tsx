@@ -1,12 +1,12 @@
 /**
  * The composer overlay's picker view: the dialog, its catalog, and its verbs.
  *
- * It lives in `conversation.input.overlay` rather than beside the row, because
- * the Host unmounts the model menu as soon as a row is clicked. Everything the
- * dialog reads arrives through this entry's injected face.
+ * It lives in `conversation.input.overlay` so it can open after the Host's menu
+ * closes or from the toolbar when the current model is missing. Its data comes
+ * from the slot entry's injected face.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { IconWarningOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Button, IconWarningOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import { ModelPicker } from './ModelPicker.tsx';
@@ -23,7 +23,7 @@ import {
   rememberEffort,
   type RememberedEffort,
 } from './effort-memory.ts';
-import { selectionOf, type Selection } from './selection.ts';
+import { currentCatalogModel, selectionOf, type Selection } from './selection.ts';
 import type { PickerStore } from './picker-state.ts';
 import css from './ModelOptions.module.css';
 
@@ -55,10 +55,19 @@ export function ModelPickerHost({
   const toastSeq = useRef(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const busy = state.status === 'selecting';
+  const busy = state.pending !== null;
   const live = useMemo(() => selectionOf(state), [state]);
   const facts = useSyncExternalStore((listener) => factsSource.subscribe(listener), () => factsSource.getSnapshot());
-  const open = request.sessionId === sessionId;
+  const open = available && request.sessionId === sessionId;
+  useEffect(() => {
+    const trigger = request.returnFocus;
+    if (!open || trigger === undefined) return;
+    return () => {
+      if (picker.getSnapshot().sessionId === null && trigger.isConnected && !trigger.closest('[inert], [hidden]')) {
+        trigger.focus({ preventScroll: true });
+      }
+    };
+  }, [open, picker, request]);
   // The injected face is cached per entry and session, but the read goes through
   // a ref anyway: a catalog load writes the store, so an unstable `load` in the
   // dependency list would reload on every render it caused.
@@ -92,12 +101,14 @@ export function ModelPickerHost({
     setToast({ seq: toastSeq.current, text });
   };
   const submit = (selection: Selection): void => {
+    if (directory.getSnapshot().pending !== null) return;
     void select(selection).then((result) => {
-      if (result === undefined || result.ok) {
+      if (result?.ok) {
         setMemory(rememberEffort(storageOf(), selection.provider, selection.model, selection.reasoningEffort));
-        picker.close();
+        if (picker.getSnapshot() === request) picker.close();
         return;
       }
+      if (result === undefined || picker.getSnapshot() !== request) return;
       raiseToast(result.error.code === 'session/writer-held'
         ? t('error.sessionInUse')
         : t('error.action', { message: `${result.error.code}: ${result.error.message}` }));
@@ -134,6 +145,20 @@ export function ModelPickerHost({
       }}
     />}
   </div>;
+}
+
+/** The Host skips the root menu when the current model is absent from its catalog. */
+export function ModelPickerFallback({ sessionId, picker, available, directory, t }: Pick<
+  ModelPickerHostProps, 'sessionId' | 'picker' | 'available' | 'directory' | 't'
+>) {
+  const state = useSyncExternalStore((listener) => directory.subscribe(listener), () => directory.getSnapshot());
+  if (!available || currentCatalogModel(state) !== undefined) return null;
+
+  return <Button variant="toolbar" size="sm" aria-haspopup="dialog" disabled={state.pending !== null} onClick={(event) => {
+    if (directory.getSnapshot().pending === null) picker.open(sessionId, event.currentTarget);
+  }}>
+    {t('picker.browse')}
+  </Button>;
 }
 
 /** Isolate the browser's storage so a locked-down browser reads as "no favorites". */

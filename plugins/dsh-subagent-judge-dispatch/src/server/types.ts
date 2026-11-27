@@ -35,7 +35,16 @@ export type FallbackReason =
   /** The answer named no option this list offers. */
   | 'unmatched'
   /** The answer selected a row whose model or effort is not filled in. */
-  | 'incomplete';
+  | 'incomplete'
+  /** The Host disallowed the route or could not resolve the exact model and effort. */
+  | 'unavailable-route';
+
+/** Structured information about a judge request, without its text. */
+export interface JudgeMetrics {
+  judgeModel: string;
+  optionCount: number;
+  subjectLength: number;
+}
 
 /** What the judge decided, and where the final route came from. */
 export type JudgeOutcome =
@@ -46,8 +55,7 @@ export type JudgeOutcome =
     row: TypeRow;
     /** How long the judgement call took, in milliseconds. */
     latencyMs: number;
-    /** The request body that went out, pretty-printed; '' when none was sent. */
-    prompt: string;
+    metrics: JudgeMetrics;
   }
   | {
     /** The judgement did not produce a rewrite. */
@@ -56,8 +64,7 @@ export type JudgeOutcome =
     reason: FallbackReason;
     /** How long the judgement call took, in milliseconds. */
     latencyMs: number;
-    /** The request body that went out, pretty-printed; '' when none was sent. */
-    prompt: string;
+    metrics?: JudgeMetrics;
   };
 
 /** What one connectivity check found. */
@@ -91,10 +98,6 @@ export interface LogEntry {
   at: number;
   /** How long the judgement took, in milliseconds. */
   latencyMs: number;
-  /** Title of the main conversation that delegated, or its id when untitled. */
-  parentTitle: string;
-  /** The subagent's delegation description. */
-  childLabel: string;
-  /** The exact request body sent to the judge, pretty-printed; '' when none went out. */
-  prompt: string;
+  /** Request measurements, present when the judge request was attempted. */
+  metrics?: JudgeMetrics;
 }

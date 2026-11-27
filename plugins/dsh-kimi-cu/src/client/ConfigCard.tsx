@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 import { Button, Tag } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 
-import type { DoctorCheck, InstallPlan } from '../shared/status.ts';
+import { isMcpConnecting, type DoctorCheck, type InstallPlan } from '../shared/status.ts';
 import type { UpdateCheck, UpdateFailureKind, UpdateStage } from '../shared/update.ts';
 import { NS } from './locales.ts';
 import { fetchStatus, type StatusResult } from './status-remote.ts';
@@ -25,6 +25,7 @@ type UpdateState =
 type RunState =
   | { kind: 'idle' }
   | { kind: 'running'; stage: UpdateStage }
+  | { kind: 'interrupted' }
   | { kind: 'done'; upToDate: boolean; version: string | null; reconnect: 'done' | 'failed' | 'skipped' }
   | { kind: 'failed'; failure: UpdateFailureKind; raw: string };
 
@@ -35,6 +36,18 @@ const NOTE_KEYS: Record<string, string> = {
   'mcp-command-missing': 'note.mcp-command-missing',
   'detection-failed': 'note.detection-failed',
 };
+
+function mcpHintKey(state: string | undefined): string | null {
+  switch (state) {
+    case 'connected': return null;
+    case 'connecting': return 'status.mcpConnecting';
+    case 'reconnecting': return 'status.mcpReconnecting';
+    case 'conflict': return 'status.mcpConflict';
+    case 'failed':
+    case 'registration-failed': return 'status.mcpFailed';
+    default: return 'status.mcpDisconnected';
+  }
+}
 
 /** doctor 检查 id 到文案键的映射；未知项直接显示原始标签。 */
 const CHECK_KEYS: Record<string, string> = {
@@ -114,13 +127,31 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
     };
   }, []);
 
+  useEffect(() => {
+    const mcpState = state.kind === 'ok' ? state.status.mcpStatus?.state : undefined;
+    if (!isMcpConnecting(mcpState)) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      void fetchStatus(false).then((result) => {
+        if (alive) setState(result);
+      });
+    }, 1_000);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [state]);
+
   const recheck = (): void => {
     setState({ kind: 'loading' });
     setCopied(false);
     setCopyFailed(false);
     setRun({ kind: 'idle' });
-    loadUpdate();
-    void fetchStatus(true).then((result) => setState(result));
+    setUpdate({ kind: 'checking' });
+    void fetchStatus(true).then((result) => {
+      setState(result);
+      loadUpdate();
+    });
   };
 
   const copy = (command: string): void => {
@@ -148,10 +179,11 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
         return;
       }
       setRun({ kind: 'done', upToDate: event.upToDate, version: event.version, reconnect: event.reconnect });
-      void fetchStatus(true).then((result) => setState(result));
+      void fetchStatus(false).then((result) => setState(result));
       loadUpdate();
     }).then((outcome) => {
-      if (!outcome.ok) setRun({ kind: 'failed', failure: 'unknown', raw: outcome.message ?? '' });
+      if (outcome.kind === 'interrupted') setRun({ kind: 'interrupted' });
+      if (outcome.kind === 'error') setRun({ kind: 'failed', failure: 'unknown', raw: outcome.message });
     });
   };
 
@@ -193,19 +225,21 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
   const docs = install === null ? null : docsUrl(install);
   const legacy = status.notes.includes('legacy-install');
   const commandMissing = status.notes.includes('mcp-command-missing');
-  const doctorFailed = status.installed && status.doctor.ran && !status.doctor.ok;
-  const mcpFailed = status.mcpStatus?.state === 'failed' || status.mcpStatus?.state === 'reconnecting';
-  const notReady = doctorFailed || (status.installed && (commandMissing || mcpFailed));
+  const doctorFailed = status.installed && !status.doctor.ok;
+  const mcpHint = mcpHintKey(status.mcpStatus?.state);
+  const localCheckFailed = doctorFailed || commandMissing;
+  const notReady = localCheckFailed || mcpHint !== null;
   const showInstall = !status.installed || legacy || commandMissing;
   const badge = !status.installed
     ? t('status.missing.title')
-    : notReady
+    : localCheckFailed
       ? t('status.notReady.title')
-      : t('status.ready.title');
+      : mcpHint === null ? t('status.ready.title') : t('status.mcpNotReady');
 
   const updateHint = ((): string => {
     if (run.kind === 'running') return tr('update.stage.' + run.stage);
     if (run.kind === 'failed') return tr('update.failed.' + run.failure);
+    if (run.kind === 'interrupted') return t('update.interrupted');
     if (run.kind === 'done') {
       if (run.upToDate || run.version === null) return t('update.hint.latest');
       return t('update.done') + ' ' + run.version;
@@ -218,6 +252,7 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
   const updateLabel = ((): string => {
     if (run.kind === 'running') return t('update.running');
     if (run.kind === 'failed') return t('status.retry');
+    if (run.kind === 'interrupted') return t('update.action');
     if (run.kind === 'done') return t('update.latest');
     if (update.kind === 'ready') {
       return update.check.hasUpdate
@@ -230,6 +265,7 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
 
   const updateDisabled = run.kind === 'running'
     || run.kind === 'done'
+    || run.kind === 'interrupted'
     || update.kind === 'checking'
     || (update.kind === 'ready' && !update.check.hasUpdate);
   // 清单读不到时也允许点：macOS 会交给 KimiCU 自己判断，Windows 会报网络错误。
@@ -245,7 +281,9 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
           {status.installed && !notReady && !legacy ? (
             <div className="dsh-kimi-cu-hint">{t('status.ready.hint')}</div>
           ) : null}
-          {mcpFailed ? <div className="dsh-kimi-cu-hint">{t('status.mcpFailed')}{status.mcpStatus?.lastError ? ': ' + status.mcpStatus.lastError : ''}</div> : null}
+          {status.installed && mcpHint !== null ? (
+            <div className="dsh-kimi-cu-hint">{tr(mcpHint)}{status.mcpStatus?.lastError ? ' · ' + status.mcpStatus.lastError : ''}</div>
+          ) : null}
           {status.notes.map((note) => (
             NOTE_KEYS[note] === undefined
               ? null
@@ -301,7 +339,7 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
         </>
       ) : null}
 
-      {notReady ? (
+      {doctorFailed ? (
         <div className="dsh-kimi-cu-row">
           <div className="dsh-kimi-cu-label">{t('status.checks')}</div>
           <div className="dsh-kimi-cu-span">
@@ -316,11 +354,9 @@ export function ConfigCard(props: ConfigCardProps): ReactElement {
                 ))}
               </ul>
             )}
-            {doctorFailed ? (
-              <div className="dsh-kimi-cu-hint">
-                {status.platform === 'darwin' ? t('fix.macos') : t('fix.windows')}
-              </div>
-            ) : null}
+            <div className="dsh-kimi-cu-hint">
+              {status.platform === 'darwin' ? t('fix.macos') : t('fix.windows')}
+            </div>
           </div>
         </div>
       ) : null}

@@ -8,7 +8,7 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { loadClientBundle } from './lib/client-bundle.mjs';
+import { loadClientBundle, syncedConfig } from './lib/client-bundle.mjs';
 
 const require = createRequire(import.meta.url);
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -52,6 +52,17 @@ const configForm = {
     return true;
   },
 };
+
+let syncedPlacement = 'boundary';
+const syncedListeners = new Set();
+const synced = syncedConfig(field => field === 'cardPlacement' ? syncedPlacement : undefined, listener => {
+  syncedListeners.add(listener);
+  return () => { syncedListeners.delete(listener); };
+});
+function setSyncedPlacement(placement) {
+  syncedPlacement = placement;
+  for (const listener of syncedListeners) listener();
+}
 const services = () => ({
   locale: {
     register: (ns, dictionaries) => { locales.push({ ns, dictionaries }); return () => {}; },
@@ -60,15 +71,16 @@ const services = () => ({
   slots: {
     inject: (_slot, register) => {
       try {
-        register();
+        return register();
       } catch (error) {
         errors.push(`slots.inject threw: ${error?.message}`);
       }
       return () => {};
     },
     register: (options, component) => {
-      registrations.push({ options, component });
-      return () => {};
+      const entry = { options, component };
+      registrations.push(entry);
+      return () => { registrations.splice(registrations.indexOf(entry), 1); };
     },
   },
   configForms: {
@@ -134,7 +146,7 @@ try {
 }
 
 try {
-  exported.apply(makeCtx('root', exported.inject ?? []));
+  exported.apply(makeCtx('root', exported.inject ?? []), synced);
   check('apply() 过得了 inject 守卫', true);
 } catch (error) {
   check('apply() 过得了 inject 守卫', false);
@@ -154,21 +166,25 @@ check('定义的目标是 chat', definition?.target === 'chat');
 check('定义会投影节点', typeof definition?.buildViewNode === 'function');
 
 await configForm.set('cardPlacement', 'inline');
+check('表单值先变化时图仍按同步值投影', definitions.length === 1);
+check('边界模式把工具行交给宿主', !registrations.some(entry => entry.options?.name === 'tool.call.toolview'));
+setSyncedPlacement('inline');
 check('切到跟随工具行后撤掉对话节点定义', definitions.length === 0);
-await configForm.set('cardPlacement', 'boundary');
-check('切回步骤组边界后重新注册定义', definitions.length === 1);
 
 const nodeView = registrations.find((entry) => entry.options?.name === 'conversation.chat.node');
 check('进度卡注册在 conversation.chat.node 且 key 是 notify-user', nodeView?.options?.key === 'notify-user');
 check('节点渲染器带本插件的字典命名空间', nodeView?.options?.locale === 'notifyUser');
 check('节点渲染器是个函数', typeof nodeView?.component === 'function');
-check('节点渲染器注入了一张配置表单', typeof nodeView?.options?.inject === 'function' && nodeView.options.inject().form !== undefined);
+check('节点渲染器注入同步展示配置', typeof nodeView?.options?.inject === 'function' && nodeView.options.inject().hooks.showTime === synced.showTime);
 
 const toolview = registrations.find((entry) => entry.options?.name === 'tool.call.toolview');
 check('兜底进度卡注册在 tool.call.toolview 且 key 是 notify_user', toolview?.options?.key === 'notify_user');
 check('兜底进度卡带本插件的字典命名空间', toolview?.options?.locale === 'notifyUser');
 check('兜底进度卡组件是个函数', typeof toolview?.component === 'function');
-check('兜底进度卡注入了一张配置表单', typeof toolview?.options?.inject === 'function' && toolview.options.inject().form !== undefined);
+check('工具行注入同步展示配置', typeof toolview?.options?.inject === 'function' && toolview.options.inject().hooks.summaryOnly === synced.summaryOnly);
+setSyncedPlacement('boundary');
+check('切回步骤组边界后重新注册定义', definitions.length === 1);
+check('切回后撤销工具行注册', !registrations.some(entry => entry.options?.name === 'tool.call.toolview'));
 
 const menuToggle = registrations.find((entry) => entry.options?.name === 'conversation.input.model.options');
 check('菜单开关注册在模型与推理等级菜单的选项座位', menuToggle?.options?.id === 'notify-user-enabled');

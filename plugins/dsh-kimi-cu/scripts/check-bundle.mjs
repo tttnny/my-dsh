@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 /**
- * 包内自检：这个 bundle 装上之后，patch 里那五行真的各就各位，平台分流与技能目录都对。
+ * 包内自检：这个 bundle 装上之后，patch 里那三行真的各就各位，平台分流与技能目录都对。
  *
  * 三层断言，越往下越贴近真实装载：
  *   1. 清单面：files 点名的都在、bundle patch 指得到、exports 与 main 都在、dsh.client 声明了
  *      web 与四个契约包、两个语言的标题与说明齐备、两份技能的 frontmatter 合规。
- *   2. 文本面：patch 只插五行、id 与内核包名对、四条平台行各带自己的守卫、macOS/Windows 两条
- *      MCP 行的命令与参数分开、两条技能行各扫自己的目录。这一层不需要内核，CI 上照跑。
- *   3. 契约面（本机装了内核才有）：拿内核自带 include 的 entryListSchema——就是装载时用的那份
- *      YAML 方言——读这份 patch，再把两条 MCP 行与两条技能行的 config 交给内核包的真 Config
- *      schema 校验；Windows 那条用假的 process 求值，并断言结果与 resolveInstall 一致。
+ *   2. 文本面：patch 只插三行、id 与内核包名一致、两条技能行各带自己的平台守卫与目录。这一层不需要内核，CI 上照跑。
+ *   3. 契约面（本机装了内核才有）：用内核 Include 的 parseEntryYaml 读 patch，再把两条技能行的 config
+ *      交给 skill-filesystem 的 Config schema 校验。
  *
  * 随包技能能不能被真发现与真装载不在这里：那是 tools/probes/preset-skills.mjs 的事，check 里
  * 对两个技能根各跑一次。
@@ -19,7 +17,6 @@
  */
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -139,11 +136,12 @@ await test('两条平台行各带自己的守卫，根层行没有守卫', () =>
 });
 
 await test('MCP 连接由宿主半边注册给 mcpManager，命令取自探测器', () => {
-  const source = readFileSync(join(packageDir, 'src', 'index.ts'), 'utf8');
-  assert.match(source, /ctx\.inject\(\['mcpManager'\]/, '管理器走可选注入，没有它插件照常加载');
-  assert.match(source, /mcpManager\.register\(MCP_SERVER_NAME/, '要注册到管理器，而不是自己起一条 mcp-client');
-  assert.match(source, /command: status\.mcp\.command/, '命令必须取自探测器，与状态卡、工具同源');
-  assert.match(source, /args: status\.mcp\.args/, '参数同样取自探测器');
+  const entry = readFileSync(join(packageDir, 'src', 'index.ts'), 'utf8');
+  const source = readFileSync(join(packageDir, 'src', 'server', 'mcp.ts'), 'utf8');
+  assert.match(entry, /ctx\.inject\(\['mcpManager'\]/, '管理器走可选注入，没有它插件照常加载');
+  assert.match(source, /activeManager\.register\(MCP_SERVER_NAME/, '要注册到管理器，而不是自己起一条 mcp-client');
+  assert.match(source, /command: command\.command/, '命令必须取自探测器，与状态卡、工具同源');
+  assert.match(source, /args: command\.args/, '参数同样取自探测器');
   const timeout = Number(/MCP_TOOL_TIMEOUT_MS = ([\d_]+)/.exec(source)?.[1].replaceAll('_', ''));
   assert.ok(timeout >= 120000, '工具调用上限要覆盖长任务，现为 ' + timeout);
 });
@@ -223,8 +221,6 @@ function evaluateExpression(expression, baseUrl, processScope = process) {
 
 const contractLabels = [
   'patch 能被内核装载时用的那份 YAML 方言读懂',
-  'macOS MCP 行的 config 通过内核 mcp-client 的真 Config schema',
-  'Windows MCP 行的 config 通过内核 mcp-client 的真 Config schema，且与 resolveInstall 一致',
   '两条技能行的 config 通过内核 skill-filesystem 的真 Config schema，表达式落回对应目录',
 ];
 
@@ -242,14 +238,13 @@ function localKernel() {
 }
 
 /**
- * 内核里这三样齐了才能验契约面；缺哪样就说哪样。
+ * 内核里这两个包齐了才能验契约面；缺哪样就说哪样。
  * @param kernel - 内核安装树。
- * @returns 三个包目录或 undefined。
+ * @returns 两个包目录或 undefined。
  */
 function contractDirs(kernel) {
   const dirs = {
     include: kernelPackageDir(kernel, '@deepseek-ai/cordis-plugin-include'),
-    client: kernelPackageDir(kernel, '@deepseek-ai/dsh-mcp-client'),
     skills: kernelPackageDir(kernel, '@deepseek-ai/dsh-skill-filesystem'),
   };
   const missing = Object.entries(dirs).filter(([, dir]) => dir === undefined).map(([name]) => name);
@@ -266,9 +261,8 @@ function contractDirs(kernel) {
  * @returns id 到行的映射。
  */
 async function parseRows(includeDir) {
-  const { entryListSchema } = await import(pathToFileURL(join(includeDir, 'lib/index.js')).href);
-  const jsYaml = createRequire(join(includeDir, 'package.json'))('js-yaml');
-  const entries = jsYaml.load(patchText, { schema: entryListSchema });
+  const { parseEntryYaml } = await import(pathToFileURL(join(includeDir, 'lib/index.js')).href);
+  const entries = parseEntryYaml(patchText);
   const rows = new Map();
   for (const patch of entries) for (const row of patch.insert ?? []) rows.set(row.id, row);
   return rows;

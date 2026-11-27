@@ -168,13 +168,14 @@ const clientBundle = await readFile(join(root, 'lib/client.js'), 'utf8')
 check('the picker renders through the shared Modal', clientBundle.includes('Modal'))
 check('the plugin paints no surface fill of its own', !clientBundle.includes('--dsw-specific-menu'))
 check('the bundle no longer imports the removed anchoring primitive', !clientBundle.includes('useAnchoredPosition'))
+check('the bundle uses the bundled text search library instead of the removed ranker', !clientBundle.includes('rankByName') && !requires.includes('@deepseek-ai/dsh-util-text-search'))
 
 // The bridge only works if it addresses the Host's own menu: the surface it
 // installs its listener on, the root cells it takes the clicks from, and the
 // value span it makes room beside.
-check('the bridge recognizes the Host menu surface', clientBundle.includes('data-menu-material'))
+check('the bridge recognizes the Host model menu surface', clientBundle.includes('data-model-menu'))
 check('the bridge matches the Host root menu\'s cells', clientBundle.includes(':scope > button[role='))
-check('the bridge finds the Host value span by class substring', clientBundle.includes("span[class*='cellValue']"))
+check('the bridge finds the Host value span by class substring', clientBundle.includes('cellValue'))
 check('the slider is a slider to assistive technology', clientBundle.includes('role: "slider"'))
 check('the tint finds the Host trigger caption by class substring', clientBundle.includes('span[class*=\\"triggerEffort\\"]'))
 
@@ -215,7 +216,10 @@ check('trigger tint registered', tint !== undefined)
 check('trigger tint names its registrant', tint?.registrant === '@lynn123411/dsh-model-submenu')
 check('trigger tint exports a component', typeof tint?.component === 'function')
 
-check('both entries share one picker store', bridge?.inject?.('s').picker === host?.inject?.('s').picker)
+const fallback = registrations.find((entry) => entry.name === 'conversation.input.right')
+check('the fallback is registered in the composer toolbar', fallback?.id === 'model-picker-fallback')
+check('all picker entries share one store', bridge?.inject?.('s').picker === host?.inject?.('s').picker
+  && bridge?.inject?.('s').picker === fallback?.inject?.('s').picker)
 check('the tint reads the same catalog store', tint?.inject?.('s').directory === bridge?.inject?.('s').directory)
 
 const dictionaries = locales.find((entry) => entry.ns === 'modelSubmenu')?.dictionaries

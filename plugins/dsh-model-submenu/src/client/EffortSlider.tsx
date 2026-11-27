@@ -53,6 +53,7 @@ export function EffortSlider({
   // The drag position lives in a ref as well as in state: a press and a release
   // can arrive in one task, and the release must not read a render that never ran.
   const dragRef = useRef<number | null>(null);
+  const pointerRef = useRef<number | null>(null);
   // While dragging this is where the pointer is along the travel, not a level:
   // the knob has to move with the pointer, or the drag reads as a series of jumps.
   const [drag, setDrag] = useState<number | null>(null);
@@ -74,7 +75,13 @@ export function EffortSlider({
   // The hold ends as soon as the write does, whether it landed on the new level
   // or was rejected: the displayed level is the truth again either way.
   useEffect(() => {
-    if (!busy) setHold(null);
+    if (!busy) {
+      setHold(null);
+      return;
+    }
+    pointerRef.current = null;
+    dragRef.current = null;
+    setDrag(null);
   }, [busy]);
   useEffect(() => {
     setHold(null);
@@ -88,12 +95,13 @@ export function EffortSlider({
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
-    if (busy) return;
+    if (busy || event.button !== 0 || pointerRef.current !== null) return;
     // The Host's menu cell owns this subtree; without these the press would
     // also settle the cell and pull focus out of the slider.
     event.preventDefault();
     event.stopPropagation();
     setHold(null);
+    pointerRef.current = event.pointerId;
     beginDrag(fractionAtPointer(event.clientX));
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -104,15 +112,16 @@ export function EffortSlider({
   };
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
-    if (dragRef.current === null || busy) return;
+    if (pointerRef.current !== event.pointerId || busy) return;
     beginDrag(fractionAtPointer(event.clientX));
   };
 
   const settle = (event: PointerEvent<HTMLDivElement>, commit: boolean): void => {
-    if (dragRef.current === null) return;
-    const next = detentAt(fractionAtPointer(event.clientX), steps.length);
+    if (pointerRef.current !== event.pointerId) return;
+    pointerRef.current = null;
     beginDrag(null);
-    if (!commit) return;
+    if (!commit || busy) return;
+    const next = detentAt(fractionAtPointer(event.clientX), steps.length);
     // Leaving the provider default is a change even when the knob lands where
     // the default already pointed.
     if (next !== current || defaultActive) {
@@ -122,7 +131,7 @@ export function EffortSlider({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (busy) return;
+    if (event.nativeEvent.isComposing) return;
     const last = steps.length - 1;
     const next = event.key === 'ArrowRight' || event.key === 'ArrowUp'
       ? Math.min(active + 1, last)
@@ -137,7 +146,7 @@ export function EffortSlider({
     // The menu walks rows with the arrow keys; a slider keeps them for itself.
     event.preventDefault();
     event.stopPropagation();
-    if (next !== current || defaultActive) onCommit(next);
+    if (!busy && (next !== current || defaultActive)) onCommit(next);
   };
 
   const offset = knobOffset(knobFraction);
@@ -164,6 +173,7 @@ export function EffortSlider({
     onPointerMove={onPointerMove}
     onPointerUp={(event) => { settle(event, true); }}
     onPointerCancel={(event) => { settle(event, false); }}
+    onLostPointerCapture={(event) => { settle(event, false); }}
     onKeyDown={onKeyDown}
     onClick={(event) => { event.stopPropagation(); }}
   >

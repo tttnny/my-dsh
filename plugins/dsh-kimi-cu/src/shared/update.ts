@@ -31,7 +31,7 @@ export interface UpdateCheck {
 export type UpdateStage = 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting';
 
 /** 更新失败的分类，卡片据此挑一句人话。 */
-export type UpdateFailureKind = 'network' | 'verify' | 'permission' | 'busy' | 'timeout' | 'unknown';
+export type UpdateFailureKind = 'network' | 'verify' | 'permission' | 'busy' | 'timeout' | 'unconfirmed' | 'unknown';
 
 /** 更新过程中吐给卡片的事件，一行一个 JSON。 */
 export type UpdateEvent =

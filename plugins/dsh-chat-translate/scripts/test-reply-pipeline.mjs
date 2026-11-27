@@ -506,7 +506,7 @@ await test('正文译文进唯一的缓存池，命中后不再请求', async ()
   const first = await dispatcher.translateReplyBlocks(['A stable paragraph']);
   assert.equal(first[0].ok, true);
   assert.equal(calls, 1);
-  assert.equal(cache.get('a stable paragraph'), '译:A stable paragraph');
+  assert.equal(cache.get('A stable paragraph'), '译:A stable paragraph');
 
   const second = await dispatcher.translateReplyBlocks(['A stable paragraph']);
   assert.equal(calls, 1, '第二次必须命中缓存，不再打通道');
@@ -541,12 +541,39 @@ await test('缓存文档带提示词修订号：修订号变了旧池整池作�
 
 await test('缓存世代跟着提示词与采样参数走：任一变化都换一代', async () => {
   // 同样的原文、同样的指令，换一组采样参数产出的就是另一份译文，旧池不该再命中。
-  const base = cacheGeneration('');
-  assert.equal(cacheGeneration(''), base, '同一份设置稳定落进同一代');
-  assert.equal(cacheGeneration('   '), base, '空白等于没写过，仍是默认那一代');
-  assert.notEqual(cacheGeneration('把正文改写成人话。'), base, '改了提示词就换一代');
-  assert.ok(base.startsWith(PROMPT_REVISION + ':'), '世代带修订号前缀');
-  assert.ok(base.length > PROMPT_REVISION.length + 12, '后面跟着摘要');
+  const base = cacheGeneration();
+  assert.equal(cacheGeneration({}), base, '同一份设置稳定落进同一代');
+  assert.equal(cacheGeneration({ prompt: '   ', baseUrl: '', model: '' }), base, '空白等于没写过');
+  assert.notEqual(cacheGeneration({ prompt: '把正文改写成人话。' }), base, '改了提示词就换一代');
+  assert.notEqual(cacheGeneration({ baseUrl: 'https://another.example/v1' }), base, '换通道就换一代');
+  assert.notEqual(cacheGeneration({ model: 'alternative' }), base, '换模型就换一代');
+  assert.match(base, new RegExp(`^exact-text:${PROMPT_REVISION}:[a-f0-9]{12}$`));
+});
+
+await test('旧小写缓存空置后也会覆写，写盘期间的换代以最新快照为准', async () => {
+  const file = 'superseded-cache-test.json';
+  const dir = path.join(TMP_HOME, 'dsh-chat-translate');
+  const cacheFile = path.join(dir, file);
+  await fs.mkdir(dir, { recursive: true });
+  const oldRev = `${PROMPT_REVISION}:0123456789ab`;
+  await fs.writeFile(cacheFile, JSON.stringify({ rev: oldRev, entries: { widget: { v: '旧译文' } } }));
+  const cache = new LruDiskCache(50, file);
+  await cache.init();
+  assert.equal(cache.get('widget'), undefined);
+  await cache.flush();
+  assert.deepEqual(JSON.parse(await fs.readFile(cacheFile, 'utf8')), { rev: cacheGeneration(), entries: {} });
+
+  cache.set('Widget', '当前译文');
+  const previous = cache.flush();
+  await Promise.resolve();
+  const revision = cacheGeneration({ model: 'new-model' });
+  cache.setRevision(revision);
+  cache.set('__proto__', '与原文逐字匹配');
+  await Promise.all([previous, cache.flush()]);
+  const saved = JSON.parse(await fs.readFile(cacheFile, 'utf8'));
+  assert.equal(saved.rev, revision);
+  assert.deepEqual(Object.keys(saved.entries), ['__proto__']);
+  assert.equal(saved.entries.__proto__.v, '与原文逐字匹配');
 });
 
 await test('没有修订号的文档视为陌生代际，直接作废', async () => {
@@ -563,6 +590,50 @@ await test('没有修订号的文档视为陌生代际，直接作废', async ()
   const cache = new LruDiskCache(50, file, 'r1');
   await cache.init();
   assert.equal(cache.get('一段正文'), undefined, '陌生形态不得被当作现行池读取');
+});
+
+await test('大小写和首尾空白不同的原文分别送译并逐字命中', async () => {
+  const { dispatcher } = makeDispatcher();
+  const requested = [];
+  useFakeAdapter(dispatcher, async (text) => {
+    requested.push(text);
+    return `译:${text}`;
+  });
+  const blocks = ['`Widget`', '`widget`', ' `Widget` '];
+  for (const text of blocks) {
+    const [result] = await dispatcher.translateReplyBlocks([text]);
+    assert.equal(result.translated, text.startsWith(' ') ? ' 译:`Widget` ' : `译:${text}`);
+  }
+  const [reused] = await dispatcher.translateReplyBlocks([blocks[0]]);
+  assert.equal(reused.translated, `译:${blocks[0]}`);
+  assert.deepEqual(requested, ['`Widget`', '`widget`', '`Widget`']);
+});
+
+await test('配置 A → B → A 后迟到的旧请求不能返回旧译文或写回缓存', async () => {
+  const { cache, source, dispatcher } = makeDispatcher({ prompt: '配置 A' });
+  const unwatch = dispatcher.watchConfig();
+  const { promise: started, resolve: signalStarted } = Promise.withResolvers();
+  const { promise: release, resolve: unblock } = Promise.withResolvers();
+  let calls = 0;
+  useFakeAdapter(dispatcher, async (text) => {
+    if (++calls === 1) {
+      signalStarted();
+      await release;
+      return `旧译:${text}`;
+    }
+    return `新译:${text}`;
+  });
+  const text = 'Old request';
+  const old = dispatcher.translateReplyBlocks([text]);
+  await started;
+  await source.update({ prompt: '配置 B' });
+  await source.update({ prompt: '配置 A' });
+  unblock();
+  assert.deepEqual(await old, [{ ok: false, translated: text }]);
+  assert.equal(cache.get(text), undefined);
+  const [fresh] = await dispatcher.translateReplyBlocks([text]);
+  assert.equal(fresh.translated, `新译:${text}`);
+  unwatch();
 });
 
 await test('正文请求串行执行，同时最多一个在途', async () => {

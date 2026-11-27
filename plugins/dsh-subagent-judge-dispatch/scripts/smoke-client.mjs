@@ -36,7 +36,13 @@ globalThis.document = {
     ...stubElement,
     appendChild: (node) => { appendedStyles.push(node); },
   },
-  createElement: () => ({ ...stubElement, id: '', textContent: '' }),
+  createElement: () => {
+    const node = { ...stubElement, dataset: {}, id: '', textContent: '', remove: () => {
+      const index = appendedStyles.indexOf(node);
+      if (index !== -1) appendedStyles.splice(index, 1);
+    } };
+    return node;
+  },
   createTextNode: () => ({}),
   getElementById: (id) => appendedStyles.find((node) => node.id === id) ?? null,
   querySelector: () => null, querySelectorAll: () => [],
@@ -74,6 +80,7 @@ const formLookups = [];
 /** 卡片以「宿主是否在服务这个命名空间」为条件挂载过的命名空间。 */
 const servedWatches = [];
 const errors = [];
+const effectDisposers = [];
 let formSubscribes = 0;
 
 /** `ConfigForm<T>` 的客户端形状：某个条目配置面的读写口。 */
@@ -137,7 +144,11 @@ const services = {
 function makeCtx(declared = []) {
   const base = {
     on: () => () => {},
-    effect: (fn) => { fn(); return () => {}; },
+    effect: (fn) => {
+      const dispose = fn();
+      if (typeof dispose === 'function') effectDisposers.push(dispose);
+      return dispose;
+    },
     inject: (names, callback) => {
       const list = Array.isArray(names) ? names : [names];
       try {
@@ -239,6 +250,12 @@ check('排版字号取自主题角色，不逐条写死 px', !/font-size:\s*\d+p
   check('按百分比定宽的盒子都声明了 border-box（宿主没有全局重置）',
     offenders.length === 0, `缺少 box-sizing 的规则：${offenders.join(', ')}`);
 }
+
+for (const dispose of effectDisposers.splice(0).reverse()) dispose();
+check('插件卸载时移除样式表', appendedStyles.length === 0);
+exported.apply(makeCtx(exported.inject ?? []));
+check('插件重新启用后只有一份样式表', appendedStyles.length === 1);
+for (const dispose of effectDisposers.splice(0).reverse()) dispose();
 
 // 字典键集：英文是键集的唯一来源，中文逐一对齐，且每条非空。
 const dictionaries = exported.__dictionaries;

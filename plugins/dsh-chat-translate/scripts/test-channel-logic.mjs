@@ -193,7 +193,7 @@ await testAsync('one failed block never blocks the other blocks', async () => {
   assert.match(results[0].detail, /500 server error/);
   assert.equal(results[1].ok, true, '同批的普通块必须照常译出');
   assert.ok(results[1].translated.startsWith('译:'));
-  assert.ok(cache.get(plain.toLowerCase()), '译出的普通块进了缓存池');
+  assert.ok(cache.get(plain), '译出的普通块进了缓存池');
 });
 
 await testAsync('a repeat of the same text is answered from the cache', async () => {

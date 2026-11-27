@@ -19,10 +19,6 @@ import {
   setupPluginPage,
 } from './plugin-page.ts';
 import {
-  createOfficialSettingsOpener,
-  type PluginNavigationLike,
-} from './official-settings.ts';
-import {
   ALLOWED_MODELS_NAMESPACE,
   createDispatchRemote,
   describeChoice,
@@ -170,11 +166,7 @@ const CARD_CSS = `
 /* 标题行右端的一组动作：试通、导入、导出、加一行都排在这里。 */
 .dsh-judge-actions-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* 任务类型那一节顶部的一行：依赖哪份官方配置，以及去那里的入口。 */
-.dsh-judge-dependency { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
-.dsh-judge-dependency .dsh-judge-desc { max-width: none; }
 /* 入口按链接的样子走：没有按钮的盒子和底色，只在悬停时加下划线。 */
-.dsh-judge-link { height: auto; padding: 0 2px; color: var(--dsw-alias-link); font: var(--dsw-font-xxs-12); }
-.dsh-judge-link:hover { color: var(--dsw-alias-link); background: none; text-decoration: underline; }
 /* 卡片最下面的出口：只有预览这一件跨节的动作，靠右与两节的右边缘对齐。 */
 .dsh-judge-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .dsh-judge-hint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); }
@@ -201,9 +193,8 @@ const CARD_CSS = `
 .dsh-judge-row-off .dsh-judge-field { opacity: 0.6; }
 .dsh-judge-cell-actions { display: flex; gap: 6px; }
 .dsh-judge-log { display: flex; flex-direction: column; gap: 4px; font: var(--dsw-font-xxs-12); }
-/* 六列的宽度按内容定：结果与时间是定长的，选择最长、主代理与子代理各占一份余量。
-   minmax(0, …) 是截断的前提——不给下限归零，长内容会把整列撑出去。 */
-.dsh-judge-log-row { display: grid; grid-template-columns: 72px minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 1.2fr) 62px 74px; gap: 8px; align-items: center; text-align: left; border: 0; background: none; padding: 6px 4px; border-radius: var(--dsw-radius-sm); cursor: pointer; color: inherit; font: inherit; }
+/* Allow the model column to shrink so long names can be clipped. */
+.dsh-judge-log-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 62px 74px; gap: 8px; align-items: center; text-align: left; border: 0; background: none; padding: 6px 4px; border-radius: var(--dsw-radius-sm); cursor: pointer; color: inherit; font: inherit; }
 .dsh-judge-cell-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dsh-judge-log-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .dsh-judge-log-head { font-weight: 600; color: var(--dsw-alias-label-tertiary); cursor: default; }
@@ -226,9 +217,8 @@ const CARD_CSS = `
  * later wins at equal specificity, and doing it once in apply() keeps that
  * order stable across remounts. The id makes the append idempotent.
  */
-export function injectCardStyles(): void {
-  if (typeof document === 'undefined') return;
-  if (document.getElementById(STYLE_ID) !== null) return;
+export function injectCardStyles(): () => void {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID) !== null) return () => {};
   const element = document.createElement('style');
   element.id = STYLE_ID;
   // 两个归属键缺一不可：client-modules 按 `data-plugin` 在卸载与换代码时整表清掉，
@@ -237,6 +227,7 @@ export function injectCardStyles(): void {
   element.dataset.pluginCss = `${PLUGIN_NAME}/settings/ui`;
   element.textContent = CARD_CSS;
   document.head.appendChild(element);
+  return () => element.remove();
 }
 
 /** DOM id of this card's stylesheet, so a remount does not append a second one. */
@@ -686,20 +677,7 @@ export function JudgeDispatchPanel(
             </Button>
           </div>
         </div>
-        {/* 这张表能选什么由宿主那份官方配置决定：写明依赖，入口按链接的样子排在句尾。 */}
-        <div className="dsh-judge-dependency">
-          <span className="dsh-judge-desc">{t('rows.dependsOn')}</span>
-          {dispatchCardStore.canOpenOfficialSettings() && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="dsh-judge-link"
-              onClick={() => dispatchCardStore.openOfficialSettings()}
-            >
-              {t('rows.dependsOnOpen')}
-            </Button>
-          )}
-        </div>
+        <div className="dsh-judge-desc">{t('rows.dependsOn')}</div>
         {state.models.length === 0 && <div className="dsh-judge-off">{t('rows.allowedEmpty')}</div>}
         {state.rows.length === 0 && <div className="dsh-judge-desc">{t('rows.empty')}</div>}
         {state.rows.length > 0 && (
@@ -765,8 +743,6 @@ export function JudgeDispatchPanel(
             <div className="dsh-judge-log-row dsh-judge-log-head">
               <span>{t('log.colResult')}</span>
               <span>{t('log.colChoice')}</span>
-              <span>{t('log.colParent')}</span>
-              <span>{t('log.colChild')}</span>
               <span>{t('log.colTime')}</span>
               <span>{t('log.colLatency')}</span>
             </div>
@@ -788,8 +764,6 @@ export function JudgeDispatchPanel(
                 >
                   <LogCell text={result.text} hint={result.hint} />
                   <LogCell text={describeModel(entry) || '—'} hint={describeChoice(entry)} />
-                  <LogCell text={entry.parentTitle || '—'} />
-                  <LogCell text={entry.childLabel || '—'} />
                   <span>{new Date(entry.at).toLocaleTimeString()}</span>
                   <span>{t('ms').replace('{value}', String(entry.latencyMs))}</span>
                 </button>
@@ -865,8 +839,6 @@ export function JudgeDispatchPanel(
         {importError !== '' && <div className="dsh-judge-note-bad" role="alert">{importError}</div>}
       </Modal>
 
-      {/* 判断详情这一处只回答一个问题：这次到底发给判断模型什么。行上那几列已经写清了
-          结果、选择、谁派的活、耗时，弹窗再列一遍只是把同一件事说两次。 */}
       <Modal
         open={detail !== null}
         onClose={() => setDetail(null)}
@@ -875,11 +847,11 @@ export function JudgeDispatchPanel(
         description={t('log.promptDesc')}
         className="dsh-judge-modal"
       >
-        {detail !== null && (detail.prompt === ''
+        {detail !== null && (detail.metrics === undefined
           ? <div className="dsh-judge-desc">{t('log.promptEmpty')}</div>
           : <div className="dsh-judge-prompt">
             <CodeBlock
-              code={detail.prompt}
+              code={JSON.stringify(detail.metrics, null, 2)}
               copyLabel={t('preview.copy')}
               copiedLabel={t('preview.copied')}
             />
@@ -892,8 +864,6 @@ export function JudgeDispatchPanel(
 /** The client context surface this file uses. */
 interface ClientContextLike {
   effect(factory: () => void | (() => void), label?: string): void;
-  /** Reflection read: services this plugin uses without declaring them. */
-  get?(name: string): unknown;
   slots?: {
     inject(name: string, register: () => unknown): () => void;
     register(options: Record<string, unknown>, component: unknown): () => void;
@@ -925,11 +895,6 @@ export function setupSettingsUi(ctx: ClientContextLike): void {
       remote: createDispatchRemote(),
       // The judgement key is written here; its value never rides a response.
       credentials: ctx.remote?.credentials ?? null,
-      // The type list's options come from the host's own official setting; this
-      // is the one jump to it the page can make.
-      officialSettingsOpener: createOfficialSettingsOpener(
-        ctx.get?.('pluginNavigation') as PluginNavigationLike | undefined,
-      ),
       t,
     });
   } catch (error) {

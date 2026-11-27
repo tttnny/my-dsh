@@ -172,14 +172,13 @@ export const RETRY_UNCONFIGURED_ATTR = 'data-unconfigured';
 /** ↻ 的转圈图标类名（转的是图标本身，按钮位置不动）。 */
 export const RETRY_SPIN_CLASS = 'dsh-ct-retry-spin';
 
-/** 注入接管样式；重复调用是空操作。 */
-export function ensureAssistantStyles(): void {
+/** 由 Client effect 挂载，插件卸载时随 effect 清理。 */
+export function mountAssistantStyles(): void | (() => void) {
   if (typeof document === 'undefined') return;
-  const selector = `style[data-plugin-css=${JSON.stringify(STYLE_TAG_ID)}]`;
-  if (document.querySelector(selector) !== null) return;
   const tag = document.createElement('style');
   tag.dataset.plugin = '@lynn123411/dsh-chat-translate';
   tag.dataset.pluginCss = STYLE_TAG_ID;
   tag.textContent = ASSISTANT_CSS;
   document.head.appendChild(tag);
+  return () => tag.remove();
 }

@@ -81,6 +81,16 @@ function stalePackages(instance) {
     .map((entry) => entry.rel);
 }
 
+/** Only the network origin is needed to identify an instance in diagnostics. */
+function instanceOrigin(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
 const report = {
   repo: root,
   dshHome: home,
@@ -100,7 +110,7 @@ const report = {
   launcherDir: launcher ?? null,
   sourceDir: sourceDir ?? null,
   running: running.map((instance) => ({
-    url: instance.url,
+    url: instanceOrigin(instance.url),
     log: instance.logPath,
     startedAt: instance.startedAt ?? null,
     stale: stalePackages(instance),
@@ -125,7 +135,7 @@ if (args.json === true) {
     ['DSH 源码', report.sourceDir ?? '（找不到：默认找仓库同级的 ../github/deepseek-harness，或设 DSH_SOURCE）'],
   ];
   for (const instance of report.running) {
-    lines.push(['运行中实例', `${instance.url}\n${' '.repeat(16)}实例日志 ${instance.log}`]);
+    lines.push(['运行中实例', `${instance.url ?? '（没有 HTTP 地址）'}\n${' '.repeat(16)}实例日志 ${instance.log}`]);
     if (instance.stale.length > 0) {
       lines.push(['实例产物', `${instance.stale.length} 个包的 lib/ 比实例启动新（宿主半边要重新组合才生效，见 docs/rules/dev-copy.md「生效时机」）`]);
     }

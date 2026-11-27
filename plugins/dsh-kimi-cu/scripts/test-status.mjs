@@ -57,7 +57,7 @@ await test('macOS 安装计划：官方命令、权限步骤、文档地址', ()
   const plan = installPlan('darwin');
   assert.equal(plan.command, MACOS_INSTALL_COMMAND);
   assert.match(plan.command, /setup_macos\.sh/);
-  assert.deepEqual(plan.steps, ['install', 'grant-permissions', 'reload-plugin']);
+  assert.deepEqual(plan.steps, ['install', 'grant-permissions', 'recheck']);
   assert.equal(plan.docsUrl, DOCS_URL);
   assert.equal(plan.docsUrlEn, DOCS_URL_EN);
 });
@@ -66,7 +66,7 @@ await test('Windows 安装计划：官方 PowerShell 命令、无权限步骤', 
   const plan = installPlan('win32');
   assert.equal(plan.command, WINDOWS_INSTALL_COMMAND);
   assert.match(plan.command, /setup_windows\.ps1/);
-  assert.deepEqual(plan.steps, ['install', 'reload-plugin']);
+  assert.deepEqual(plan.steps, ['install', 'recheck']);
 });
 
 await test('不支持的平台没有安装计划', () => {

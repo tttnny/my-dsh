@@ -4,21 +4,20 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { Session } from '@deepseek-ai/dsh-session';
 import type {} from '@deepseek-ai/dsh-settings';
 import { isEnabledFor, nudgeAfterOf, type PluginConfig } from './config.js';
-import { createNudgeController, installNudge } from './nudge.js';
+import { createNudgeController, installNudge, isSubagentSession } from './nudge.js';
 import { NOTIFY_TOOL_NAME, SUMMARY_ONLY_FIELD } from './shared/config.js';
 import { parseUpdate } from './client/row-model.js';
 
 /**
  * @lynn123411/dsh-notify-user —— 模型在干活途中主动汇报进度，久不汇报就催一条。
  *
- * 宿主半边做三件事：注册 `notify_user` 工具、把催办状态机接到两条宿主事件上、
+ * 宿主半边做三件事：注册 `notify_user` 工具、把催办状态机接到三条宿主事件上、
  * 声明本行的配置形状并关掉内核按 schema 自动生成的设置页（配置界面在浏览器
  * 半边的插件页卡片上）。浏览器半边与它同挂一条 root loader 行（见 cordis.patch.yml）。
  *
  * 主动汇报按会话开关：会话自己的选择优先，没有就用配置里的默认值。关掉的会话
  * 既不催，也不给它提供 `notify_user` 工具。
- *
- * `notify_user` 在计数第一次到阈值之前不声明；催办那一步放行，之后本会话一直可用。
+
  */
 
 /** 稳定 Cordis loader 名：与 cordis.patch.yml 那条行的 id、配置命名空间同字面量。 */
@@ -107,7 +106,7 @@ function notifyTool(summaryOnly: boolean): ToolDefinition {
  */
 export function apply(ctx: Context, config: PluginConfig): void {
   /** 这个会话是否开启主动汇报；催办与工具可用性问的是同一个问题。 */
-  const enabledIn = (session: Session): boolean => isEnabledFor(config, session.header.id);
+  const enabledIn = (session: Session): boolean => !isSubagentSession(session) && isEnabledFor(config, session.header.id);
 
   const controller = createNudgeController({
     readThreshold: () => nudgeAfterOf(config),
@@ -117,10 +116,9 @@ export function apply(ctx: Context, config: PluginConfig): void {
   });
   installNudge(ctx, controller, NOTIFY_TOOL_NAME);
 
-  // 计数第一次到阈值之前不声明；放行之后本会话一直可用。
-  // 关掉主动汇报的会话始终没有这个工具。
+  // 催办阈值只控制注入提醒；工具只受会话开关限制。
   const registerTool = (): (() => void) => ctx.tools.register(notifyTool(config.summaryOnly.get()), {
-    when: ({ agent }) => enabledIn(agent.session) && controller.isUnlocked(agent.session),
+    when: ({ agent }) => enabledIn(agent.session),
   });
   let disposeTool = registerTool();
 

@@ -256,7 +256,7 @@ if (source === undefined) {
 } else {
   // 本插件自己写的属性（data-native-plus / data-np-*）不归宿主发，不能拿去宿主源码里找。
   const anchors = new Set(
-    [...hostAttributes].filter((name) => !name.startsWith('data-native-plus') && !name.startsWith('data-np-')),
+    [...hostAttributes, 'data-sidebar-list-area'].filter((name) => !name.startsWith('data-native-plus') && !name.startsWith('data-np-')),
   );
   for (const anchor of [...anchors].sort()) {
     test('宿主还在发 ' + anchor, () => {

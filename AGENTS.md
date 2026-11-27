@@ -2,13 +2,13 @@
 
 `my-dsh` 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(DSH)的插件/preset合集。
 
-查 DSH 宿主实现、契约类型、官方门禁或版本差异时，用 `node tools/dsh-env.mjs` 查源码目录。本机源码位于 `/Users/tny/Desktop/work/github/deepseek-harness`，发布 tag 格式为 `dsh-v<版本>`。
+查 DSH 宿主实现、契约类型、官方门禁或版本差异时，按 [内核升版](docs/rules/kernel-upgrade.md) 确认运行版本、源码 tag 与迁移指南。
 
 ## 硬约束
 
 1. **发布听令，发完即止**：`npm publish` / `git push` 只在用户下令后执行（`npm publish` 走 Actions 的 `publish` 工作流：用户自己点 Run workflow，或让 agent 用 `gh workflow run` 触发，见 [docs/rules/release.md](docs/rules/release.md)）；发完不装、不查、不追问。
 2. **开发副本是 `link:`**：`~/.dsh/profiles/web/node_modules/@lynn123411/dsh-*` 保持软链到本仓库目录；仓库根不放 `node_modules`。
-3. **客户端半边只读已声明的服务**：漏声明不报错，只在页面里消失。
+3. **客户端半边只读已声明的服务**：按 [客户端接线](docs/rules/client-wiring.md) 声明依赖，并检查浏览器端的装载或同步诊断。
 4. **状态只登记一处**：版本号归各包 `package.json`，功能域清单归根 `README.md`，preset order 归 `docs/rules/presets.md`；其他文件只写规则 + 指针。
 5. **文档只写现状**：旧路径、旧命令、旧结论在改动当场删掉。
 6. **读者是 agent**：给人看的只有根 `README.md` 与各包 `README.md`；本文件、`docs/rules/`、`presets/`、技能都写给 agent。

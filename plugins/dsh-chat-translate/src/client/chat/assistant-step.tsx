@@ -53,7 +53,6 @@ import { rowCopy } from '../locales.ts';
 import type { AssistantBlockLike } from './row-plan.ts';
 import type { ProseMark } from './styles.ts';
 import {
-  ensureAssistantStyles,
   HINT_BUBBLE_CLASS,
   HOTSPOT_CLASS,
   PROSE_BASE_CLASS,
@@ -106,6 +105,7 @@ export interface AssistantStepProps {
    * 好把一行渲染成某个指定的结果态，而不必先让单例池产出那个结果。
    */
   readonly store?: RowTranslateStore;
+  readonly sessionId?: string;
   readonly node: {
     readonly data: NodeDataLike;
     /**
@@ -240,7 +240,7 @@ function useFallbackGroupAction(hidden: boolean, reveal: () => void): React.RefO
 const subscribeSettings = (listener: () => void): (() => void) => settingsStore.subscribe(listener);
 
 /** 行的翻译池：默认是客户端半边那一个单例，测试可以按座次注入自己的池。 */
-export type RowTranslateStore = Pick<ChatTranslateStore, 'ensure' | 'getState' | 'getVersion' | 'subscribe'>;
+export type RowTranslateStore = Pick<ChatTranslateStore, 'ensure' | 'getState' | 'getVersion' | 'getGeneration' | 'subscribe'>;
 
 /**
  * 行的视口在场状态（150px 缓冲）：进入视口才放行首跑请求。落定后的行不再
@@ -548,7 +548,6 @@ function ProseBlock({
 // ---- 助手行本体 ----
 
 export const AssistantStepView = memo(function AssistantStepView(props: AssistantStepProps): ReactElement | null {
-  ensureAssistantStyles();
   const { store, node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderFactorySlot, loadImage, fileMentions, usePresentation, useGroupAction, t } = props;
   const groupAction: GroupActionLike = typeof useGroupAction === 'function' ? useGroupAction : useFallbackGroupAction;
   const data = node.data;
@@ -567,9 +566,11 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     () => settingsStore.getState().committed.aiConfigured
   );
   useSyncExternalStore(subscribeStore, () => translate.getVersion());
+  const generation = translate.getGeneration();
 
   const channel: ChannelState = !enabled ? 'off' : aiConfigured ? 'ready' : 'unconfigured';
-  const rowKey = `a${node.anchorSeq ?? `t${data.turn}:s${data.step}`}`;
+  const anchor = `a${node.anchorSeq ?? `t${data.turn}:s${data.step}`}`;
+  const rowKey = props.sessionId === undefined ? anchor : JSON.stringify([props.sessionId, anchor]);
 
   const labels = useMemo(() => markdownLabels(t), [t]);
   const pathImages = useMemo<MarkdownPathImages>(
@@ -636,13 +637,12 @@ export const AssistantStepView = memo(function AssistantStepView(props: Assistan
     // 一冻结就送：进入视口后这一行的首跑（或下一批首跑）即刻发出，不等落定。
     if (!canTranslate || !inView || plan.entries === null || frozenCount === 0) return;
     translate.ensure(rowKey, plan.texts, { frozen: frozenCount });
-  }, [canTranslate, inView, rowKey, plan, frozenCount, translate]);
+  }, [canTranslate, inView, rowKey, plan, frozenCount, translate, generation]);
 
   const [originalKeys, setOriginalKeys] = useState<ReadonlySet<number>>(() => new Set());
 
-  // 只认同代登记：rowKey 是会话内锚点，跨会话可能重号——texts 逐位相等才把
-  // 旧 outcomes 挂上来，换代的那一帧（含换会话撞键）按「未登记」渲染——纯原文、
-  // 左缘不出现任何东西，随后 ensure 重新登记。
+  // 行键包含会话，文本还要逐位相等才挂上已登记的结果。正文改写后先用原文渲染，
+  // 随后由 ensure 按当前文本登记。
   const registered = translate.getState(rowKey);
   const rowState = registered !== undefined && sameTexts(registered.texts, plan.texts) ? registered : undefined;
   const displayed = useMemo(

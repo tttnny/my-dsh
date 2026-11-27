@@ -5,7 +5,7 @@
  * 查的都是「改了 A 忘了改 B」这类漂移，判据一条比一条机械：
  *   1. 包名与目录名对应（`plugins/dsh-<name>/` ↔ `@lynn123411/dsh-<name>`；`presets/<id>/` ↔ `@lynn123411/dsh-preset-<id>`）
  *   2. `engines.dsh` 是 `>=<版本>`，且本包全部 `@deepseek-ai/dsh-*`（peer 与 dev）与它同串
- *   3. `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 写区间（不是精确版本），同包内与跨包同串
+ *   3. `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 写 caret 区间，同包内及同一 engines.dsh 下界的包同串
  *   4. 许可只由 `package.json` 的 `license` 声明，各层目录不附带许可文书
  *   5. `files` 与 `dsh.bundle.patch` 指的条目在目录里存在
  *   6. README 的固定形状：插件七节（`## 概述` / `## 安装与开关` / `## 配置` / `## 实现` / `## 模型体验` / `## 限制` / `## 验证`，带第三方内容的包可另加 `## 上游`），preset 三节（`## 功能` / `## 特性` / `## 安装`）；安装一节里给的是本包名，README 指的 .md 都在目录里
@@ -226,14 +226,14 @@ for (const entry of packages) {
 }
 
 // ── 3. cordis / schemastery 基线 ─────────────────────────────────────────────
-const baselineRanges = new Map();
 for (const base of ['@deepseek-ai/cordis', '@deepseek-ai/schemastery']) {
-  baselineRanges.set(base, new Map());
-}
-for (const entry of packages) {
-  for (const base of baselineRanges.keys()) {
+  const rangesByKernel = new Map();
+  for (const entry of packages) {
     const decls = declaredRanges(entry.pkg, (name) => name === base);
     if (decls.length === 0) continue;
+    const engine = entry.pkg.engines?.dsh;
+    const seen = rangesByKernel.get(engine) ?? new Map();
+    rangesByKernel.set(engine, seen);
     const ranges = new Set(decls.map((decl) => decl.range));
     for (const decl of decls) {
       if (!decl.range.startsWith('^')) {
@@ -242,7 +242,6 @@ for (const entry of packages) {
           `${decl.field}.${base} = ${decl.range} 写死了精确版本；这是独立基线，要按现值写区间（^<版本>）`,
         );
       }
-      const seen = baselineRanges.get(base);
       if (!seen.has(decl.range)) seen.set(decl.range, []);
       seen.get(decl.range).push(`${entry.rel}(${decl.field})`);
     }
@@ -250,12 +249,10 @@ for (const entry of packages) {
       fail(`${entry.rel}/package.json`, `${base} 在同一个包里声明了多个区间：${[...ranges].join('、')}`);
     }
   }
-  // 声明了就必须在 files 里带上运行时要用的那一份？——不做推断，交给各包自己的 check。
-}
-for (const [base, seen] of baselineRanges) {
-  if (seen.size > 1) {
+  for (const [engine, seen] of rangesByKernel) {
+    if (seen.size <= 1) continue;
     const lines = [...seen].map(([range, where]) => `${range} ← ${where.join('、')}`);
-    fail('（跨包）', `${base} 在包与包之间不一致，跑 node tools/dsh-baseline.mjs --write 统一：\n      ${lines.join('\n      ')}`);
+    fail('（跨包）', `${base} 在 engines.dsh ${engine} 组内不一致：\n      ${lines.join('\n      ')}`);
   }
 }
 

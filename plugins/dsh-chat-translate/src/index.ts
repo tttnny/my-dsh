@@ -79,10 +79,10 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
     createLiveConfigSource((listener) => ctx.on('loader/volatile-update', listener), config),
     credentials
   );
-  // 缓存池的世代跟着「此刻生效的提示词」走：启动时就用当前提示词的世代去读盘，
-  // 否则一份提示词没改过的池会被当成上一代整池丢掉，每次重启都白翻一遍。
-  const cache = new LruDiskCache(1000, 'cache.json', cacheGeneration(configManager.getConfig().prompt));
+  const cache = new LruDiskCache(1000, 'cache.json', cacheGeneration(configManager.getConfig()));
   const dispatcher = new TranslationDispatcher(configManager, cache, credentials);
+  ctx.effect(() => dispatcher.watchConfig(), 'dsh-chat-translate: cache generation');
+  ctx.effect(() => () => { void cache.dispose(); }, 'dsh-chat-translate: disk cache');
 
   // This entry's configuration surface is the card in the DSH **Plugins** page,
   // not a kernel-derived settings form, so DSH must not also derive one for the
@@ -116,7 +116,6 @@ export function apply(ctx: HostContext, config: PluginConfigRefs): void {
     );
     return () => {
       void Promise.all(disposers.map((dispose) => dispose()))
-        .then(() => cache.dispose())
         .catch((err) => {
           console.warn('[dsh-chat-translate] Dispose translation routes error:', err);
         });

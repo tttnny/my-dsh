@@ -12,10 +12,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { EffortTint } from './EffortTint.tsx'
 import { ModelMenuBridge } from './ModelMenuBridge.tsx'
-import { ModelPickerHost } from './ModelPickerHost.tsx'
+import { ModelPickerFallback, ModelPickerHost } from './ModelPickerHost.tsx'
 import { createPickerStore } from './picker-state.ts'
 import { createFactsSource, type DescribeFace } from './facts-source.ts'
 import { NS, en, zh } from './locales.ts'
+import { stylesheet } from './ModelOptions.module.css'
 
 export { EffortTint } from './EffortTint.tsx'
 export { ModelMenuBridge } from './ModelMenuBridge.tsx'
@@ -46,16 +47,24 @@ export const inject = [
 
 /**
  * Client plugin body: register this plugin's dictionaries, then contribute the
- * bridge that turns the Host's model cell into the picker's door and its effort
- * cell into the reasoning-level slider, the overlay that renders the picker, and
- * the tint that keeps the collapsed trigger's effort caption on the same color.
+ * menu bridge, the toolbar entry for a missing current model, the picker
+ * overlay, and the tint for the collapsed trigger's effort caption.
  *
- * The two are separate entries because the Host unmounts the model menu the
- * moment a row is clicked; the overlay slot stays mounted, so the dialog
- * survives the menu's teardown.
+ * The overlay stays mounted when the Host closes the model menu, allowing the
+ * picker to open after the menu has been removed.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
+  if (typeof document !== 'undefined') {
+    ctx.effect(() => {
+      const style = document.createElement('style')
+      style.dataset.plugin = '@lynn123411/dsh-model-submenu'
+      style.dataset.pluginCss = '@lynn123411/dsh-model-submenu/ModelOptions.module.css'
+      style.textContent = stylesheet
+      document.head.append(style)
+      return () => style.remove()
+    }, 'dsh-model-submenu: styles')
+  }
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-model-submenu: dictionaries')
   ctx.inject(['slots', 'modelDirectories', 'configForms', 'remote'], (scope) => {
     const models = scope.modelDirectories
@@ -65,7 +74,7 @@ export function apply(ctx: ClientContext): void {
       describe: scope.configForms.describe() as DescribeFace,
       listProviders: () => scope.remote.llm.listConfigurableProviders(),
     })
-    ctx.effect(() => facts.start(), 'dsh-model-submenu: model metadata')
+    scope.effect(() => facts.start(), 'dsh-model-submenu: model metadata')
     /**
      * Build one entry's business face for a session.
      * @param sessionId - the slot's session scope.
@@ -106,6 +115,13 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: faceOf,
     }, ModelPickerHost))
+    scope.slots.inject('conversation.input.right', () => scope.slots.register({
+      name: 'conversation.input.right',
+      id: 'model-picker-fallback',
+      registrant: '@lynn123411/dsh-model-submenu',
+      locale: NS,
+      inject: faceOf,
+    }, ModelPickerFallback))
     // The trigger's effort caption lives outside the menu, so its tint needs an
     // entry that stays mounted for the whole session.
     scope.slots.inject('conversation.input.overlay', () => scope.slots.register({

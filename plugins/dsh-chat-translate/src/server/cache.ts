@@ -8,12 +8,7 @@ interface CacheEntry {
   v: string;
 }
 
-/**
- * The on-disk document: the prompt revision that wrote it, then the pool.
- * A document whose `rev` is not the current revision belongs to a superseded
- * prompt semantics and is dropped whole on load — replaying stale
- * translations into a new policy is exactly how a prompt fix "does nothing".
- */
+/** 磁盘文档记录生成译文的配置代，加载时只采用当前代。 */
 interface CacheDocument {
   rev: string;
   entries: Record<string, CacheEntry>;
@@ -24,10 +19,13 @@ export class LruDiskCache {
   private maxEntries: number;
   private filePath: string;
   private revision: string;
+  private revisionEpoch = 0;
   private saveTimer: NodeJS.Timeout | null = null;
   private dirty = false;
+  private saving: Promise<void> = Promise.resolve();
+  private disposed = false;
 
-  constructor(maxEntries = 1000, fileName = 'cache.json', revision: string = cacheGeneration('')) {
+  constructor(maxEntries = 1000, fileName = 'cache.json', revision: string = cacheGeneration()) {
     this.maxEntries = maxEntries;
     this.revision = revision;
     // Follow the DSH convention of component-owned home subdirectories
@@ -37,29 +35,23 @@ export class LruDiskCache {
     this.filePath = dshHomePath('dsh-chat-translate', fileName);
   }
 
-  /**
-   * Move the pool to the generation a prompt edit produced.
-   *
-   * Called whenever the prompt in force changes. A different revision means the
-   * entries already held were written under wording the reader has replaced, so
-   * they are dropped rather than served under the new prompt; the same revision
-   * is a no-op, so re-committing the same text costs nothing.
-   *
-   * @param revision - the generation the current prompt resolves to.
-   */
+  /** 配置换代时清空内存，并安排覆写磁盘中的旧池。 */
   setRevision(revision: string): void {
     if (revision === this.revision) return;
     this.revision = revision;
-    if (this.cache.size === 0) return;
+    this.revisionEpoch += 1;
     this.cache.clear();
     this.dirty = true;
     this.scheduleSave();
   }
 
   async init(): Promise<void> {
+    const epoch = this.revisionEpoch;
     try {
       const content = await fs.readFile(this.filePath, 'utf-8');
       const doc = JSON.parse(content) as unknown;
+      // An edit or new result that landed while reading takes precedence.
+      if (epoch !== this.revisionEpoch || this.dirty || this.cache.size > 0 || this.disposed) return;
       if (
         doc &&
         typeof doc === 'object' &&
@@ -68,9 +60,11 @@ export class LruDiskCache {
         (doc as CacheDocument).entries !== null
       ) {
         this.loadEntries((doc as CacheDocument).entries as Record<string, unknown>);
+      } else {
+        // Empty superseded documents too, even if no new result is requested.
+        this.dirty = true;
+        this.scheduleSave();
       }
-      // Any other document — missing, corrupt, or a superseded revision —
-      // leaves the pool empty; the next flush rewrites it under this revision.
     } catch {
       // Ignore missing or corrupt cache file
     }
@@ -98,6 +92,7 @@ export class LruDiskCache {
   }
 
   set(key: string, value: string): void {
+    if (this.disposed) return;
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else if (this.cache.size >= this.maxEntries) {
@@ -113,12 +108,11 @@ export class LruDiskCache {
   }
 
   private scheduleSave(): void {
-    if (this.saveTimer) return;
+    if (this.disposed || this.saveTimer) return;
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
       if (this.dirty) {
-        // flush() owns the dirty flag: cleared only on a committed write, so
-        // a failure keeps it set and schedules its own retry.
+        // A failed write marks the snapshot dirty again and schedules a retry.
         this.flush().catch((err) => {
           console.warn('[dsh-chat-translate] Failed to flush cache to disk:', err);
         });
@@ -126,45 +120,40 @@ export class LruDiskCache {
     }, 5000);
   }
 
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
 
+    this.saving = this.saving.then(() => this.writeSnapshot());
+    return this.saving;
+  }
+
+  private async writeSnapshot(): Promise<void> {
+    if (!this.dirty) return;
+    // New edits can set dirty again while this fixed snapshot is written.
+    this.dirty = false;
     const tmpPath = `${this.filePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
     try {
-      const entries: Record<string, CacheEntry> = {};
-      for (const [k, v] of this.cache.entries()) {
-        entries[k] = v;
-      }
-      const doc: CacheDocument = { rev: this.revision, entries };
+      const doc: CacheDocument = { rev: this.revision, entries: Object.fromEntries(this.cache) };
       await fs.mkdir(path.dirname(this.filePath), { recursive: true });
       await fs.writeFile(tmpPath, JSON.stringify(doc, null, 2), 'utf-8');
       await fs.rename(tmpPath, this.filePath);
-      // Only clear the dirty flag once the write actually committed; a failed
-      // flush must not silently drop pending entries.
-      this.dirty = false;
     } catch (err) {
+      this.dirty = true;
       console.warn('[dsh-chat-translate] Failed to write cache file atomically:', err);
       try {
         await fs.unlink(tmpPath);
       } catch {}
       // Schedule one retry so a transient disk failure does not lose the
       // pending entries; dispose() is the only caller that must not reschedule.
-      if (this.dirty) {
-        this.scheduleSave();
-      }
+      this.scheduleSave();
     }
   }
 
   async dispose(): Promise<void> {
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = null;
-    }
-    if (this.dirty) {
-      await this.flush();
-    }
+    this.disposed = true;
+    await this.flush();
   }
 }

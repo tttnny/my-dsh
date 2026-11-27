@@ -112,6 +112,8 @@ export class TranslationDispatcher {
   private configManager: ConfigManager;
   private cache: LruDiskCache;
   private adapters = new Map<string, ITranslationAdapter>();
+  private revision = '';
+  private generation = 0;
   /** 正文请求的串行队列尾，保证同时最多一个在途请求。 */
   private replyTail: Promise<void> = Promise.resolve();
 
@@ -121,6 +123,21 @@ export class TranslationDispatcher {
 
     // 正文只有一条通道。map 仍按 id 索引，测试可以换成同 id 的假适配器。
     this.registerAdapter(new OpenAiCompatibleAdapter(credentials ?? { getApiKey: () => '' }));
+  }
+
+  watchConfig(): () => void {
+    this.updateGeneration(this.configManager.getConfig());
+    return this.configManager.onConfigChange((config) => this.updateGeneration(config));
+  }
+
+  private updateGeneration(config: PluginConfig): number {
+    const revision = cacheGeneration(config);
+    if (revision !== this.revision) {
+      this.revision = revision;
+      this.generation += 1;
+      this.cache.setRevision(revision);
+    }
+    return this.generation;
   }
 
   private registerAdapter(adapter: ITranslationAdapter): void {
@@ -149,15 +166,12 @@ export class TranslationDispatcher {
    * 半截结果。
    */
   async translateReplyBlocks(blocks: string[]): Promise<ReplyBlockResult[]> {
-    const results: ReplyBlockResult[] = blocks.map((original) => ({
-      translated: original,
-      ok: false,
-    }));
+    const originals = (): ReplyBlockResult[] => blocks.map((translated) => ({ translated, ok: false }));
+    const results = originals();
 
     const config = this.configManager.getConfig();
-    // 提示词是配置页上可改的一项：先让缓存池换到当前提示词那一代，再读池——
-    // 否则读者刚改完提示词，旧措辞产出的译文还会照命中。同一代是空操作。
-    this.cache.setRevision(cacheGeneration(config.prompt));
+    const generation = this.updateGeneration(config);
+    const isCurrent = () => generation === this.updateGeneration(this.configManager.getConfig());
     // 总开关关着 = 用户明说不要翻译：不是失败，不给任何标记。
     if (!config.enabled) return results;
 
@@ -179,7 +193,7 @@ export class TranslationDispatcher {
     for (let block = 0; block < blocks.length; block++) {
       const raw = blocks[block] ?? '';
       if (raw.trim() === '') continue;
-      const cached = this.cache.get(raw.trim().toLowerCase());
+      const cached = this.cache.get(raw);
       if (cached) {
         results[block] = { translated: cached, ok: true };
         continue;
@@ -211,8 +225,9 @@ export class TranslationDispatcher {
     const translated = new Map<string, string>();
     for (const batch of packPieces(pieces)) {
       const outcome = await this.runReplySerial(() =>
-        this.translateReplyBatch(adapter, batch, config, ledger)
+        isCurrent() ? this.translateReplyBatch(adapter, batch, config, ledger, isCurrent) : undefined
       );
+      if (outcome === undefined || !isCurrent()) return originals();
       for (const [key, value] of outcome) translated.set(key, value);
     }
 
@@ -241,7 +256,7 @@ export class TranslationDispatcher {
       // 挂蓝线——与「模型原样返回也算翻过」同一语义，不另造第三种状态。
       const original = blocks[block]!;
       const finalText = parts.join('');
-      this.cache.set(original.trim().toLowerCase(), finalText);
+      this.cache.set(original, finalText);
       results[block] = { translated: finalText, ok: true };
     }
 
@@ -260,7 +275,8 @@ export class TranslationDispatcher {
     adapter: ITranslationAdapter,
     batch: ReplyPiece[],
     config: PluginConfig,
-    ledger: FailureLedger
+    ledger: FailureLedger,
+    isCurrent: () => boolean
   ): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     const stragglers: ReplyPiece[] = [];
@@ -296,6 +312,7 @@ export class TranslationDispatcher {
       let accepted: { answer: string; repair: ShapeRepair } | null = null;
       let packed = false;
       for (let attempt = 0; attempt < 2; attempt++) {
+        if (!isCurrent()) return out;
         let answer: string;
         try {
           answer = (await this.fetchReplyAnswers(adapter, [piece], config, packed))[0] ?? '';
@@ -403,7 +420,7 @@ export class TranslationDispatcher {
   }
 
   /** 串行执行器：同时最多一个在途请求。 */
-  private runReplySerial<T>(task: () => Promise<T>): Promise<T> {
+  private runReplySerial<T>(task: () => T | Promise<T>): Promise<T> {
     const next = this.replyTail.then(task, task);
     this.replyTail = next.then(
       () => undefined,

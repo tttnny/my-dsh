@@ -24,12 +24,18 @@
 
 - `engines.dsh` 写**大于等于当前版本**的 SemVer 范围（`>=` + 当前 DSH 版本），不写精确版本；当前版本以运行中的 DSH 为准，本文件不复述具体号。
 - 所有 `@deepseek-ai/dsh-*` 的 `peerDependencies` / `devDependencies` 与 `engines.dsh` 写**同一个**范围字符串；改完跑 `pnpm install --lockfile-only` 同步 lock 的 importers 段。
-- `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 是独立基线，照各自现值声明，不参与上面这条。
+- `@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 各自跟随目标内核声明。同一 `engines.dsh` 下界的包使用相同区间。用 `node tools/dsh-baseline.mjs --check` 查整仓偏差，阶段升版用 `--only` 核对实际改动的包。
 - **内核升版后的批量跟随**：`node tools/dsh-baseline.mjs --write` 一次改齐全部包的上面三处（目标值从运行中内核读，没有运行实例时取最近启动的实例；有依赖声明的包改完跑 `pnpm install`，没有依赖的包跳过安装并删掉空 lock）；`--bump patch` 顺带升版本号。哪一处漂了由 `node tools/assert-ledger.mjs` 抓，落盘前可以先跑一次 `dsh-baseline.mjs --check` 看齐没齐。
 - **手工写死的内核版本也要跟**：包内自检脚本的断言与注释、`README.md` 等文档、patch 中写到的内核版本，必须与本包 `engines.dsh` 中 `>=` 后的版本号一致。历史实测记录不进文档，`skills/`、`upstream/` 的 vendored 内容保留原文。
 - **字面量检查范围**：`assert-ledger.mjs` 判据 10 扫描包目录内的 `.md`、`.yml` / `.yaml` 与 `.mjs` / `.js` / `.ts` / `.tsx` / `.jsx`。脚本只查同一行含「内核 / dsh / engines」语境词的版本号，文档与 YAML 直接扫描，README 的 `## 上游` 一节除外（记的是上游产物的版本）；以 `DETAILS` 开头的文件及 `skills/`、`upstream/`、`lib/`、`dist/`、`tmp/` 等目录跳过。完整范围与匹配规则见[判据实现](../../tools/assert-ledger.mjs)。
 - 兄弟 preset 的同一规则见 [presets.md](./presets.md)「版本与依赖」。
 - **一次完整跟随**（先看宿主变动、再 preset、再 plugins、最后按 CI 重跑）见 [kernel-upgrade.md](./kernel-upgrade.md)；这一节只写声明怎么改。
+
+## 宿主契约
+
+版本范围声明与兼容验证分别核对。按插件实际调用的工具、服务、事件、slot 与数据契约查目标版，流程见 [内核升版](./kernel-upgrade.md)。Host 或 bundle patch 涉及 Loader 条目时，按 [preset 规则](./presets.md) 的「YAML 与 Loader 校验」验组合与真装载。直接读 patch 的自检使用目标 Loader 或 Include 的解析入口，覆盖 `!!js` 和 group 条目。
+
+Host HTTP 路由默认要求认证。使用路由参数传入的 Peer 判定访问权限，写操作另外核对 owner。Web 入口通过 `webserver/entry-url` 组装，Token Provider 负责登录交换。测试分别检查已认证请求与匿名请求。
 
 ## 配置界面
 
@@ -84,7 +90,7 @@ allowBuilds:
   esbuild: true
 ```
 
-前半条按包名放行内核版本线（写成别的 scope 不生效）；后半条给构建链（`esbuild`，有 `lightningcss` / `tsdown` 的包照加）放行构建脚本。`packageManager` 一并写进 `package.json` 钉住 pnpm 版本，否则 corepack 会在没钉的包里解析到另一个版本，同一份策略又要重踩一遍。`tools/new-plugin.mjs` 生成的骨架已带这两处。适用范围按包的依赖声明判定：有依赖的包必须有这份文件；没有声明 `esbuild` 的包不写 `allowBuilds`（`dsh-web-auth-url` 就只有前一条）；零依赖的包不建这份文件（`dsh-baseline.mjs` 对它们连 `pnpm install` 都跳过）。
+前半条按包名放行内核版本线（写成别的 scope 不生效）；后半条给构建链（`esbuild`，有 `lightningcss` / `tsdown` 的包照加）放行构建脚本。`packageManager` 一并写进 `package.json` 钉住 pnpm 版本，否则 corepack 会在没钉的包里解析到另一个版本，同一份策略又要重踩一遍。`tools/new-plugin.mjs` 生成的骨架已带这两处。适用范围按包的依赖声明判定：有依赖的包必须有这份文件；没有依赖构建脚本的包只写版本线放行项；零依赖的包不建这份文件（`dsh-baseline.mjs` 对它们连 `pnpm install` 都跳过）。
 
 **本机绿不等于 CI 绿**：pnpm 的用户级配置（macOS 上是 `~/Library/Preferences/pnpm/config.yaml`）若把 `minimumReleaseAge` 设成 0、或开了 `dangerouslyAllowAllBuilds`，本机就绕过了这两条策略，复现 CI 必须换一份干净 home：
 
@@ -100,7 +106,7 @@ HOME=./tmp/ci-home COREPACK_HOME=./tmp/ci-home/corepack corepack pnpm install --
 
 两类例外，各自成立的理由不同：
 
-- **手写源码形态**（`lib/` 直接发、没有 `build`、没有 `src/`，如 `dsh-web-auth-url`）：不补。为一件百来行的事拉进 `typescript` 与其类型依赖不划算，类型闸门该由它的 `smoke-host.mjs` 这类自检承担。
+- **手写源码形态**（`lib/` 直接发布、没有 `build` 和 `src/`）：不补。为一件百来行的事拉进 `typescript` 与其类型依赖不划算，类型闸门该由它的 `smoke-host.mjs` 这类自检承担。
 - **纯 JS 不等于不需要闸门**：`allowJs: true` + `checkJs: true` 后 `tsc` 照样看实现（只读 `.d.ts` 不看 `.js` 是没开这两项的结果）。纯 JS 包接进来时冒的错基本是**类型信息缺口**（JSDoc 没铺满、`isRecord` 这类判定函数没写成类型谓词），不是代码的错；`plugins/dsh-grilling-form` 是这类样本。
 
 首次接入的债要**先量清再消**：跑出完整清单、按错因分类贴回该包的票，再决定消哪些、哪些用写明理由的 `@ts-expect-error` 收口；不要在没看过清单的情况下直接接进 `check`，那会让 `check` 立刻变红。范围默认只放 `src`（含 `allowJs` 下的 `.js`/`.jsx`）；`scripts/*.mjs` 纳不纳入是各自包的单独立项。

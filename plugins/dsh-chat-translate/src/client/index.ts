@@ -4,7 +4,8 @@ import { setupComposerToggle } from './composer/dock-toggle.tsx';
 import { AssistantStepView } from './chat/assistant-step.tsx';
 import { chatPresentation } from './chat/presentation.ts';
 import { chatTranslate } from './chat/translate-store.ts';
-import { ensureAssistantStyles } from './chat/styles.ts';
+import { mountAssistantStyles } from './chat/styles.ts';
+import { translationConfigKey } from '../translation-config.ts';
 import { bindRowCopy } from './locales.ts';
 // Type-only, erased from the bundle: the renderer augments Context with the
 // `slots` service the keyed seats consume, and the settings contract declares
@@ -59,7 +60,7 @@ interface ClientContext {
  * @param ctx - DSH browser client context.
  */
 export function apply(ctx: ClientContext): void {
-  ensureAssistantStyles();
+  ctx.effect(mountAssistantStyles, 'dsh-chat-translate: assistant styles');
 
   // 0. 文件提及解析（`chatFileMentions`）由宿主 ui-deliverables 提供，是可选的：
   //    它缺席时提及链接停用，助手行接管与其余功能照常。这份依赖经 ctx.inject 声明，
@@ -96,6 +97,7 @@ export function apply(ctx: ClientContext): void {
           // fileMentions 由这条注册项自己提供（0.2.2 起不再走 owner props），
           // 服务缺席时返回 undefined，正文里的提及链接随之停用。
           inject: (sessionId: string) => ({
+            sessionId,
             hooks: { presentation: chatPresentation },
             fileMentions: (owner: unknown) => fileMentions?.forClosing(owner, sessionId),
           }),
@@ -123,20 +125,19 @@ export function apply(ctx: ClientContext): void {
   // 4. 「译」开关：输入框下方那一行，与设置页总开关同一个 enabled
   ctx.effect(() => setupComposerToggle(ctx), 'dsh-chat-translate: composer dock toggle');
 
-  // 5. 换了提示词就丢掉池里旧措辞的译文：不丢的话，读者改了提示词却看不到任何
-  //    变化——已经翻过的段落照样取旧译文，一个请求都不发。宿主半边的磁盘池按世代
-  //    作废，这是浏览器半边对应的那一半。
-  let lastPrompt = settingsStore.getState().committed.prompt;
-  ctx.effect(
-    () =>
-      settingsStore.subscribe(() => {
-        const next = settingsStore.getState().committed.prompt;
-        if (next === lastPrompt) return;
-        lastPrompt = next;
-        chatTranslate.dropTranslations();
-      }),
-    'dsh-chat-translate: relay pool follows the prompt'
-  );
+  ctx.effect(() => {
+    let current = translationConfigKey(settingsStore.getState().committed);
+    const unsubscribe = settingsStore.subscribe(() => {
+      const next = translationConfigKey(settingsStore.getState().committed);
+      if (next === current) return;
+      current = next;
+      chatTranslate.dropTranslations();
+    });
+    return () => {
+      unsubscribe();
+      chatTranslate.reset();
+    };
+  }, 'dsh-chat-translate: cache generation');
 
   // 行渲染器的私有文案（失败块的 ↻ 标签与败因泡泡）绑上本命名空间的活翻译器。
   // 放在最后：此时 setupSettingsUi 的 locale.register(NS) 已落地，bind 立刻可解析键。
@@ -147,7 +148,6 @@ export { AssistantStepView } from './chat/assistant-step.tsx';
 export { planAssistantRow } from './chat/row-plan.ts';
 export { chatTranslate, createTranslateStore } from './chat/translate-store.ts';
 export { chatPresentation, createChatPresentation, policyForMode } from './chat/presentation.ts';
-export { ensureAssistantStyles } from './chat/styles.ts';
 export { setupSettingsUi } from './settings/ui.tsx';
 export { setupComposerToggle, ComposerTranslateToggle } from './composer/dock-toggle.tsx';
 export { settingsStore } from './settings/store.ts';

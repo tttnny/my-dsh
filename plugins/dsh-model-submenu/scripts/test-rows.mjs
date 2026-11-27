@@ -10,8 +10,6 @@
  * Run: node scripts/test-rows.mjs
  */
 import assert from 'node:assert/strict'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import {
   ALL_TAB,
@@ -19,11 +17,8 @@ import {
   pickerTabs,
   reasoningOf,
   rowsForTab,
-  searchCandidates,
-  searchRows,
+  createModelSearch,
 } from '../src/client/rows.ts'
-
-const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'))
 
 let passed = 0
 let total = 0
@@ -79,52 +74,22 @@ await test('a provider tab keeps only that provider, in catalog order', () => {
   assert.equal(rowsForTab(rows, ALL_TAB).length, 3)
 })
 
-/** A ranker that records what it was handed, then keeps a named match only. */
-function recordingRanker(keep) {
-  const calls = []
-  const rank = (items, query) => {
-    calls.push({ items, query })
-    const needle = keep ?? query
-    return items.filter((item) => item.name.toLowerCase().includes(needle.toLowerCase()))
-  }
-  return { rank, calls }
-}
+const search = createModelSearch(rows)
 
-await test('each row reaches the ranker with the model name and the provider name', () => {
-  const spy = recordingRanker()
-  searchRows(rows, 'anything', spy.rank)
-  assert.equal(spy.calls.length, 1)
-  assert.deepEqual(spy.calls[0].items.map((item) => [item.name, item.label]), [
-    ['DeepSeek-V4.1-Flash · DeepSeek', 'Magpie'],
-    ['DeepSeek V4.1 Flash · d1api', 'Magpie'],
-    ['Kimi K3 · A6api', 'A6api'],
-  ])
+await test('a blank query keeps all rows in catalog order', () => {
+  assert.equal(search.search('   '), rows)
 })
 
-await test('the query reaches the ranker already trimmed', () => {
-  const spy = recordingRanker()
-  searchRows(rows, '  kimi  ', spy.rank)
-  assert.equal(spy.calls[0].query, 'kimi')
+await test('the shared index matches model names, provider names and model IDs', () => {
+  assert.deepEqual(search.search('  a6API  ').map((row) => row.model), ['kimi-k3'])
+  assert.equal(search.search('magpie').length, 2)
+  assert.equal(search.search('K3')[0]?.model, 'kimi-k3')
+  assert.equal(search.search('deepseek/deepseek-flash')[0]?.model, 'deepseek/deepseek-flash')
+  assert.deepEqual(search.search('zzz'), [])
 })
 
-await test('an empty or blank query never reaches the ranker', () => {
-  const spy = recordingRanker()
-  assert.deepEqual(searchRows(rows, '   ', spy.rank), rows)
-  assert.equal(spy.calls.length, 0)
-})
-
-await test('the ranked matches come back in the ranker\'s order, not the catalog order', () => {
-  const rank = (items, query) => [...items].reverse().filter((item) => item.name.includes(query))
-  assert.deepEqual(searchRows(rows, 'DeepSeek', rank).map((row) => row.model), ['d1api/deepseek-v4.1-flash', 'deepseek/deepseek-flash'])
-})
-
-await test('a query with no match returns nothing', () => {
-  const spy = recordingRanker()
-  assert.deepEqual(searchRows(rows, 'zzz', spy.rank), [])
-})
-
-await test('candidates are built in row order', () => {
-  assert.deepEqual(searchCandidates(rows).map((candidate) => candidate.row.model), rows.map((row) => row.model))
+await test('a multi-word query matches across model and provider fields', () => {
+  assert.deepEqual(search.search('Magpie d1api').map((row) => row.model), ['d1api/deepseek-v4.1-flash'])
 })
 
 await test('the reasoning lookup answers per provider and model', () => {

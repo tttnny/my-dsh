@@ -2,11 +2,19 @@
 
 同一个症状（插件不在页面上、宿主日志无异常）有几种成因，分节给判别与做法；其中「工具行没落成 root entry」与「多源判据」两节决定浏览器半边挂在哪一行。
 
+## 先看浏览器同步诊断
+
+插件页的同步提示显示浏览器端的下载、导入与激活失败，可重试当前图。再核对该页面是否获准使用 `pluginEvents/follow`。自定义 shell 通过 Connection 与 API Gateway Client 跟随 Remote 流，把每代 `baseline` 当成全量替换。需要重新取图时刷新页面。构建与重组步骤见 [开发副本](./dev-copy.md)「生效时机」。
+
 ## 客户端半边读了未声明的服务
 
 整条 loader entry 变 failed（宿主半边照常加载）。
 
-这类失败没有本地信号：随手搭个假 context 让它跑起来，读未声明服务不报错，本地全绿，只在 profile 里炸。判别力全在守卫上——假 context 读到未声明服务就抛内核那条 `cannot get property "x" without inject`，守卫自身还要有反例断言（如 `guard rejects an undeclared service read`）证明它仍会抛，守卫失效时那份绿灯是假的。守卫惯例名 `scripts/smoke-client.mjs`，并进所在包的 `check`（见 [plugins.md](./plugins.md)「验证」）；存量样本 `plugins/dsh-chat-translate/scripts/test-client-wiring.mjs`、`plugins/dsh-model-submenu/scripts/smoke-client.mjs`。
+普通假 context 会放过未声明服务，到了真实 profile 才会触发 Cordis 校验。判别力全在守卫上——假 context 读到未声明服务就抛内核那条 `cannot get property "x" without inject`，守卫自身还要有反例断言（如 `guard rejects an undeclared service read`）证明它仍会抛，守卫失效时那份绿灯是假的。守卫惯例名 `scripts/smoke-client.mjs`，并进所在包的 `check`（见 [plugins.md](./plugins.md)「验证」）；存量样本 `plugins/dsh-chat-translate/scripts/test-client-wiring.mjs`、`plugins/dsh-model-submenu/scripts/smoke-client.mjs`。
+
+## 客户端同步配置
+
+Host 在 schema 声明需要下发的 volatile 字段。Client 按 `@deepseek-ai/dsh-client-config/types` 的 `SyncedConfig` 接收引用，在使用时调用 `get()` 或作为 slot hook 注入。无同步字段且 Client 未导出 schema 时，`apply` 收到空对象。Host 有同步值时，移除 Client 自己的 `Config` 导出，避免同一行激活失败。逐字段处理 `undefined`，因为密钥永不下发，非 owner Peer 拿到 schema 默认值。配置修改后验证同一组件能收到新值且无需重挂载。
 
 ## 工具行没落成 root entry
 
@@ -46,6 +54,10 @@ client-modules: require("<说明符>") missed the module table — not a platfor
 ```
 
 它发生在**物化时**（页面第一次加载这个插件），宿主日志里没有对应条目，症状就是「插件不在页面上」。`dsh.client.inject` 只规定 factory 的**到达顺序**，不提供模块：要用的包不在种子表里，就得让那个包也有一条 `dsh.client` 行，并把说明符写进本包的 `dsh.client.external`。宿主把这条报错写成构建期纯净度门禁在运行时的镜像（`packages/client/modules/src/client/manifest.ts` 顶部那段模型说明）：构建期挡的是没进 external 的导入，运行时挡的是真的 `require` 到了。
+
+## 新增会话视图或分栏
+
+会话面板分栏用 `conversation.session.panel.section`，给出独立的 `id`、`order` 与 `label`。自行保留 Session 并在 `SessionProvider` 渲染 Conversation 时，调用 `sessions.retain(target, { source, facets: { conversation: true } })`；只执行 Session 操作的调用沿用现有形式。用主视图未打开的会话验证独立视图能收到新回复，并核对 `retainInfo()` 里的 `retainedFacets.conversation`。
 
 ## 接管座位与子座位
 

@@ -14,10 +14,10 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { listPackages, repoRoot } from './lib/repo.mjs';
+import { exchangeWebLogin, resolveWebLogin } from './lib/web-login.mjs';
 
 /** 逐个解析 `--k v` 与 `--flag`。 */
 function parseArgs(argv) {
@@ -38,7 +38,7 @@ const args = parseArgs(process.argv.slice(2));
 const root = repoRoot(resolve(join(import.meta.dirname, '..')));
 const wanted = args._[0];
 if (wanted === undefined) {
-  console.error('用法：node tools/verify-client.mjs <包名 | 包目录名> [--needle <文本>] [--build] [--json]');
+  console.error('用法：node tools/verify-client.mjs <包名 | 包目录名> [--needle <文本>] [--build] [--json] [--url <Web GUI 根地址>] [--login-file <启动入口文件>]');
   process.exit(2);
 }
 
@@ -57,11 +57,18 @@ if (entry.pkg.dsh?.client === undefined) {
   process.exit(2);
 }
 
-const webUrl = typeof args.url === 'string' ? args.url : process.env.DSH_WEB_URL;
-const authUrl = typeof args.auth === 'string' ? args.auth : process.env.DSH_WEB_AUTH_URL;
-if (webUrl === undefined || authUrl === undefined) {
-  console.error('verify-client: 需要 DSH_WEB_URL 与 DSH_WEB_AUTH_URL（在 DSH 会话里跑就有；也可用 --url/--auth 给）');
+function refuse(message) {
+  console.error(`verify-client: ${message}`);
   process.exit(2);
+}
+
+if ('auth' in args) refuse('请用 --login-file 提供独立验证实例的启动入口文件');
+
+let rootUrl, login;
+try {
+  ({ root: rootUrl, login } = resolveWebLogin(args.url ?? process.env.DSH_WEB_URL, args['login-file']));
+} catch (error) {
+  refuse(error.message);
 }
 
 // ── 1. 可选：先构建（改动在 src/ 时，不构建等于验的是旧产物） ─────────────────
@@ -81,27 +88,26 @@ if (args.build === true) {
 }
 
 // ── 2. 登录换 cookie，取首页 ────────────────────────────────────────────────
-const cookieJar = new Map();
-/** 带会话 cookie 请求一次；auth 那次会种下 cookie。 */
-async function request(target) {
-  const response = await fetch(target, {
-    redirect: 'manual',
-    headers: cookieJar.size === 0 ? {} : { cookie: [...cookieJar].map(([k, v]) => `${k}=${v}`).join('; ') },
-  });
-  for (const cookie of response.headers.getSetCookie?.() ?? []) {
-    const [pair] = cookie.split(';');
-    const at = pair.indexOf('=');
-    cookieJar.set(pair.slice(0, at), pair.slice(at + 1));
-  }
-  return response;
+let cookie;
+try {
+  cookie = await exchangeWebLogin(login);
+} catch (error) {
+  refuse(error.message);
 }
 
-const auth = await request(authUrl);
-if (auth.status !== 303 && cookieJar.size === 0) {
-  console.error(`verify-client: 换 cookie 失败（token 地址答 ${auth.status}）——实例还活着吗？`);
-  process.exit(2);
+async function request(relative) {
+  try {
+    return await fetch(new URL(relative, rootUrl), {
+      redirect: 'manual',
+      headers: { cookie: `${cookie.name}=${cookie.value}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    refuse('请求 Web GUI 失败');
+  }
 }
-const index = await request(new URL('/', webUrl).href);
+
+const index = await request('');
 if (index.status !== 200) {
   console.error(`verify-client: 首页答 ${index.status}`);
   process.exit(2);
@@ -123,11 +129,11 @@ const target = candidates[0];
 const rev = /[&?]rev=([^&"'\s]+)/.exec(target)?.[1];
 // 同一批里可能还有别的模块；只要这批地址里有它自己的 client.js，就说明这一条是它的入口。
 if (!target.includes(`${entry.name}/client.js`) && !target.includes(`${escaped}/client.js`)) {
-  console.error(`verify-client: 抄到的地址里没有这个包的 client.js：${target}`);
+  console.error('verify-client: 首页清单里的地址没有包含这个包的 client.js');
   process.exit(1);
 }
 
-const bundle = await request(new URL(target, webUrl).href);
+const bundle = await request(target);
 if (bundle.status !== 200) {
   console.error(`verify-client: bundle 答 ${bundle.status}（rev=${rev ?? '（首页里没写）'}）`);
   process.exit(1);

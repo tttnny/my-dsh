@@ -234,7 +234,7 @@ export function createUpdater(deps: UpdateDeps): Updater {
     let release = true;
     try {
       emit({ type: 'stage', stage: 'checking' });
-      const current = await readCurrent(false);
+      const current = await readCurrent(true);
       if (current.path === null) {
         emit({ type: 'error', kind: 'unknown', raw: 'KimiCU is not installed' });
         return;
@@ -280,8 +280,15 @@ export function createUpdater(deps: UpdateDeps): Updater {
       }
 
       const after = await readCurrent(true);
-      // 读不出来不算「确认变了」：版本为 null 时不能断定升级生效。
-      const changed = after.version !== null && after.version !== current.version;
+      const target = inspected.latest;
+      const targetOrder = after.version !== null && target !== null ? compareVersions(after.version, target) : null;
+      const previousOrder = after.version !== null && current.version !== null ? compareVersions(after.version, current.version) : null;
+      if (after.path === null || after.version === null || previousOrder === -1
+        || (target !== null && after.version !== target && (targetOrder === null || targetOrder < 0))) {
+        emit({ type: 'error', kind: 'unconfirmed', raw: outcome.raw });
+        return;
+      }
+      const changed = after.version !== current.version;
       let reconnect: 'done' | 'failed' | 'skipped' = 'skipped';
       if (changed && deps.reconnect !== null) {
         emit({ type: 'stage', stage: 'restarting' });
@@ -291,7 +298,7 @@ export function createUpdater(deps: UpdateDeps): Updater {
           reconnect = 'failed';
         }
       }
-      emit({ type: 'done', upToDate: false, version: after.version, reconnect, raw: outcome.raw });
+      emit({ type: 'done', upToDate: !changed, version: after.version, reconnect, raw: outcome.raw });
     } finally {
       if (release) running = false;
     }

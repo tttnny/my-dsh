@@ -21,6 +21,10 @@ preset 由**插件组合包（bundle）**声明：`package.json` 的 `dsh.bundle
 - `config.plugins` 里引用的**仓库外插件**必须在本包 `dependencies` 里声明：preset 行按 `name` 从声明它的那棵树解析，包不在 profile 里时那一行 import 失败、连 fiber 都没建起来，审计报的正是 `<id> (<包名>): never started`，整份 preset 因此挂载失败、带上诊断且不可选。判定办法：`node tools/preset-compose.mjs <id>` 通过只说明组合得出来（它不求值 `!!js`、不装载），缺包要在装了内核的机器上真装载才现形。
 - **提供服务的行必须套 `isolate`**：preset 挂载后会审「有没有把服务泄漏到根领域」，命中即整份挂载失败并抛 `Preset services require isolate realms: <服务名列表>`。给 preset 加自己的 provider（自定义 skill provider、工具注册表等）时，把那一行放进带 `isolate: { <服务名>: true }` 的分组，或用 `isolate` 字段逐个点名；判定办法是真装载一次（`node tools/host-smoke.mjs`），抛错会把泄漏的服务名直接列出来。
 
+## YAML 与 Loader 校验
+
+宿主按 YAML 1.2 core 解析 Include。`group: true` 要带 `config` 列表，空组写 `config: []`。`inject` 可写字符串列表或映射，`isolate` 必须是映射，值用 `true` 或字符串。按 `file:line:column` 查条目选项与配置问题。使用 `applyEntryPatches()` 的工具从结果的 `.data` 取条目。用 `--dump-config` 确认组合，再真装载确认各行激活。
+
 ## 版本与依赖
 
 - `engines.dsh` 是 preset **唯一**的版本声明位，取值规则见 [plugins.md](./plugins.md)「版本与依赖」——写大于等于当前版本的 SemVer 范围，不写精确版本。

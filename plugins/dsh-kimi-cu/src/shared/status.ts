@@ -1,14 +1,14 @@
 /**
  * 宿主与浏览器半边共用的状态形状、路由与常量。
  *
- * 这里只放类型与字面量：宿主用它产出状态，卡片用它渲染；两边不共享运行时代码。
+ * 宿主用它产出状态，卡片用它渲染，两边共用连接进行中的判断。
  */
 
 /** 当前平台的三分类：只支持 macOS 与 Windows，其余归到 other。 */
 export type KimiCuPlatform = 'darwin' | 'win32' | 'other';
 
 /** 安装引导里的步骤，卡片负责本地化。 */
-export type InstallStep = 'install' | 'grant-permissions' | 'reload-plugin' | 'upgrade';
+export type InstallStep = 'install' | 'grant-permissions' | 'recheck' | 'upgrade';
 
 /** `doctor` 的一项检查。 */
 export interface DoctorCheck {
@@ -46,6 +46,17 @@ export interface InstallPlan {
   docsUrlEn: string;
 }
 
+/** 宿主连接状态，或插件的独占冲突 / 注册失败。 */
+export interface KimiMcpStatus {
+  state: string;
+  lastError?: string;
+}
+
+/** MCP 管理器仍在建立连接。 */
+export function isMcpConnecting(state: string | undefined): state is 'connecting' | 'reconnecting' {
+  return state === 'connecting' || state === 'reconnecting';
+}
+
 /** 一次检测的完整结果。 */
 export interface KimiCuStatus {
   platform: KimiCuPlatform;
@@ -61,7 +72,7 @@ export interface KimiCuStatus {
   /** 插件里那条 MCP 行会用的命令；不支持当前平台时是 null。 */
   mcp: { command: string; args: string[] } | null;
   /** 宿主 MCP 管理器的实时状态；不可用或尚未注册时为 null。 */
-  mcpStatus?: { state: string; lastError?: string } | null;
+  mcpStatus?: KimiMcpStatus | null;
   /** 当前平台的安装引导；不支持当前平台时是 null。 */
   install: InstallPlan | null;
   /** 机器可读的附注，例如 `legacy-install`。 */

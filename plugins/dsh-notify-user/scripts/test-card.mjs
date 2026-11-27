@@ -21,6 +21,7 @@
  * 运行：node scripts/test-card.mjs
  */
 import assert from 'node:assert/strict';
+import { syncedConfig } from './lib/client-bundle.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
@@ -33,7 +34,7 @@ process.on('uncaughtException', (error) => { console.error(error); process.exit(
 process.on('unhandledRejection', (error) => { console.error(error); process.exit(1); });
 
 installDom(JSDOM);
-const { createElement, act } = await import('react');
+const { createElement, act, useSyncExternalStore } = await import('react');
 const { createRoot } = await import('react-dom/client');
 
 /** ui-primitives 替身：开关画成带 aria 的按钮，markdown 只把文本画出来。 */
@@ -122,7 +123,8 @@ const ctx = {
   uiConversation: { events: { register: () => () => {} } },
 };
 
-exported.apply(ctx);
+const synced = syncedConfig(field => field === 'cardPlacement' ? 'inline' : form.getSnapshot().value?.[field], form.subscribe);
+exported.apply(ctx, synced);
 
 const toolview = registrations.find((entry) => entry.options?.name === 'tool.call.toolview');
 const configCard = registrations.find((entry) => entry.options?.name === 'plugins.bundle.config');
@@ -135,6 +137,7 @@ const table = {
   'markdown.copy': '复制',
   'markdown.copied': '已复制',
   'markdown.footnotes': '脚注',
+  'row.failed': '汇报失败',
   'config.defaultEnabled.label': '默认开启',
   'config.threshold.label': '催办阈值',
   'config.threshold.unit': '次',
@@ -206,11 +209,15 @@ function reset(value = {}) {
 
 /** 画一张进度卡；默认是一张落定的、带标题与正文的卡。 */
 function renderCard({ meta = { title: '标题', message: '正文' }, ...props } = {}) {
+  const hooks = Object.fromEntries(Object.entries(toolview.options.inject().hooks).map(([name, ref]) => [
+    `use${name[0].toUpperCase()}${name.slice(1)}`,
+    selector => selector(useSyncExternalStore(ref.subscribe, ref.getSnapshot)),
+  ]));
   mount(createElement(toolview.component, {
     phase: 'result',
     block: { time: 1000, meta },
     openFile: () => {},
-    form,
+    ...hooks,
     t,
     ...props,
   }));
@@ -417,6 +424,21 @@ await test('配置晚到：默认展开在配置就绪后生效', () => {
   configStatus = 'ready';
   act(() => { for (const listener of listeners) listener(); });
   assert.equal(bodyText(), '正文');
+});
+
+await test('失败的工具行显示原因，即便开启摘要散文也不画成功卡', () => {
+  reset({ summaryOnly: true, summaryRender: 'prose' });
+  renderCard({ block: {
+    time: 1000,
+    isError: true,
+    content: [],
+    error: { name: 'ValidationError', code: 'INVALID_ARGUMENTS' },
+    meta: { title: '未送出的标题' },
+  } });
+  assert.match(container.textContent, /汇报失败/);
+  assert.match(container.textContent, /ValidationError: INVALID_ARGUMENTS/);
+  assert.doesNotMatch(container.textContent, /未送出的标题/);
+  assert.equal(container.querySelector('.dsh-notify-prose, .dsh-notify-card'), null);
 });
 
 act(() => { viewRoot.unmount(); });

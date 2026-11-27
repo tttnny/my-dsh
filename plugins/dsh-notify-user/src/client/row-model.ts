@@ -22,6 +22,17 @@ export interface NotifyCardData {
   readonly message: string;
   readonly time: number;
   readonly settled: boolean;
+  readonly failure?: { readonly detail: string };
+}
+
+/** 失败只显示宿主的错误内容；没有文本时使用结构化错误。 */
+export function failureOf(
+  content: readonly { readonly type: string; readonly text?: string }[],
+  error?: { readonly name: string; readonly code: string; readonly reason?: string },
+): NonNullable<NotifyCardData['failure']> {
+  const text = content.flatMap(block => block.type === 'text' && block.text?.trim() ? [block.text] : []).join('\n');
+  const detail = text || (error === undefined ? '' : error.reason || `${error.name}: ${error.code}`);
+  return { detail };
 }
 
 /**

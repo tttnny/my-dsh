@@ -65,7 +65,7 @@ export function installPlan(platform: KimiCuPlatform): InstallPlan | null {
   if (platform === 'darwin') {
     return {
       command: MACOS_INSTALL_COMMAND,
-      steps: ['install', 'grant-permissions', 'reload-plugin'],
+      steps: ['install', 'grant-permissions', 'recheck'],
       docsUrl: DOCS_URL,
       docsUrlEn: DOCS_URL_EN,
     };
@@ -73,7 +73,7 @@ export function installPlan(platform: KimiCuPlatform): InstallPlan | null {
   if (platform === 'win32') {
     return {
       command: WINDOWS_INSTALL_COMMAND,
-      steps: ['install', 'reload-plugin'],
+      steps: ['install', 'recheck'],
       docsUrl: DOCS_URL,
       docsUrlEn: DOCS_URL_EN,
     };
