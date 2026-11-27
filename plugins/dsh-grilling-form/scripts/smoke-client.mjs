@@ -34,18 +34,16 @@ const opened = [];
 /** 置 true 时假 sessions.fork 回一个会被拒的 Promise，用来验失败路径。 */
 let forkRejects = false;
 
-/** 假 <style>：只记 data-plugin-css 与内容。 */
+/** 模拟样式节点的挂载和移除。 */
 function makeStyleTag() {
-  const tag = { dataset: {}, textContent: '' };
+  const tag = { dataset: {}, textContent: '', remove: () => {
+    const index = styles.indexOf(tag);
+    if (index !== -1) styles.splice(index, 1);
+  } };
   return tag;
 }
 
 globalThis.document = {
-  querySelector: (selector) => {
-    const match = /^style\[data-plugin-css="(.*)"\]$/.exec(selector);
-    assert.ok(match !== null, `未预期的选择器：${selector}`);
-    return styles.find((tag) => tag.dataset.pluginCss === match[1]) ?? null;
-  },
   createElement: () => makeStyleTag(),
   head: { appendChild: (tag) => { styles.push(tag); } },
 };
@@ -82,7 +80,7 @@ globalThis.window = {
 await import(`${pathToFileURL(bundleEntry).href}?smoke=${String(Date.now())}`);
 
 /** 内核 inject 守卫的假上下文：声明过的服务可按属性读，其余抛，`get()` 不抛。 */
-function makeCtx(declared = []) {
+function makeCtx(declared = [], effects = []) {
   const services = {
     slots: {
       inject: (key, callback) => {
@@ -104,7 +102,11 @@ function makeCtx(declared = []) {
   };
   const base = {
     on: () => () => {},
-    effect: (fn) => { fn(); return () => {}; },
+    effect: (fn) => {
+      const dispose = fn();
+      if (typeof dispose === 'function') effects.push(dispose);
+      return dispose;
+    },
     get: (name) => services[name],
   };
   return new Proxy(base, {
@@ -151,8 +153,9 @@ test('守卫会拒绝未声明的服务读取（反例，否则下面的断言�
 });
 test('ctx.get 对未知服务不抛', () => assert.equal(makeCtx().get('nope'), undefined));
 
+const effects = [];
 test('apply() 在守卫下跑得通', () => {
-  exported.apply(makeCtx(exported.inject));
+  exported.apply(makeCtx(exported.inject, effects));
   assert.deepEqual(errors, []);
 });
 test('表单注册进轮次尾部槽位（自有 id），工具行按 wire 工具名照旧注册', () => {
@@ -206,10 +209,12 @@ test('中英文字典键集逐条对齐（丢一条就是页面上某一处空�
   assert.ok(Object.keys(zh).length > 0, '字典是空的，下面的断言是空转');
   assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort());
 });
-test('样式注入一次，标签带包身份', () => {
+test('样式注入一次，带有包身份并随插件卸载', () => {
   assert.equal(styles.length, 1);
   assert.equal(styles[0].dataset.pluginCss, `${pkgName}/GrillingForm.css`);
   assert.ok(styles[0].textContent.includes('.dsg-form'));
+  for (const dispose of effects.reverse()) dispose();
+  assert.equal(styles.length, 0);
 });
 
 // class 名在 JSX 与 CSS 之间单边漂移 = 样式静默失效，构建与运行都不报错

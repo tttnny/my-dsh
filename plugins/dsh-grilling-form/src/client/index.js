@@ -29,20 +29,15 @@ const CSS_TAG = `${PACKAGE_ID}/GrillingForm.css`;
  */
 export const inject = ['locale', 'slots', 'sessions', 'uiWorkspace'];
 
-/** 注入本插件的样式表：按标签键复用同一个 <style>，HMR 重跑时替换内容而不是叠一份。 */
+/** 样式表随当前插件实例挂载和卸载。 */
 function injectStyles() {
   if (typeof document === 'undefined') return;
-  /** @type {HTMLStyleElement|null} querySelector 只保证 Element，这里的选择器认的就是 <style>。 */
-  let tag = /** @type {HTMLStyleElement|null} */ (
-    document.querySelector('style[data-plugin-css=' + JSON.stringify(CSS_TAG) + ']')
-  );
-  if (tag === null) {
-    tag = document.createElement('style');
-    tag.dataset.plugin = PACKAGE_ID;
-    tag.dataset.pluginCss = CSS_TAG;
-    document.head.appendChild(tag);
-  }
+  const tag = document.createElement('style');
+  tag.dataset.plugin = PACKAGE_ID;
+  tag.dataset.pluginCss = CSS_TAG;
   tag.textContent = css;
+  document.head.appendChild(tag);
+  return () => tag.remove();
 }
 
 /**
@@ -56,7 +51,7 @@ function injectStyles() {
  * @returns {void}
  */
 export function apply(ctx) {
-  injectStyles();
+  ctx.effect(injectStyles, 'dsh-grilling-form: styles');
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-grilling-form: dictionaries');
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
