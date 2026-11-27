@@ -62,7 +62,7 @@ plugin-upgrade-cordis/
 | `dsh-v0.1.1-rc.1 → dsh-v0.2.2-alpha.3` | ✅ 32 个走廊逐边成卡，索引见 [references/README.md](skills/plugin-upgrade/references/README.md) |
 | `dsh-v0.1.7-rc.1 → dsh-v0.1.7-rc.2` | ❌ 未成卡（上游在 `v0.2.0-rc.1` 卡内声明） |
 | `dsh-v0.2.0-rc.2 → dsh-v0.2.1-alpha.5`、`dsh-v0.2.1-alpha.5 → dsh-v0.2.2-alpha.2` | ✅ 跳版卡 20 张与 6 张（跳版视图，不是走廊边） |
-| `dsh-v0.2.2-alpha.3 → dsh-v0.2.2-rc.3` | ❌ 上游尚无（在用的 0.2.2-rc.3 未成卡）；实测契约变更见下 |
+| `dsh-v0.2.2-alpha.3 → dsh-v0.2.3-alpha.2` | ❌ 上游尚无；部分实测契约变更见下 |
 
 `0.2.2-rc.1 → 0.2.2-rc.2`（1568 个提交、4645 个文件）实测到的插件侧契约变更，供没有卡时直接用：
 
@@ -140,6 +140,10 @@ node presets/plugin-upgrade-cordis/check-upstream.mjs
 `--verify` 只查形态与完整性，**不查技能发现**。要查发现跑 `node tools/probes/preset-skills.mjs --preset plugin-upgrade-cordis`：它用真实的 `@deepseek-ai/dsh-skill-filesystem`，以 `customSkillDirs=[<本目录>/skills]`、`includeDefaultRoots: false`、`watch: false` 构造 `FileSystemSkillProvider`，`list({ cwd })` 应给 12 个 `source=custom` 候选、0 条 `logger.warn`，逐个 `get()` 都能取到正文——这正是 preset 那一行在宿主里跑的同一条代码路径。
 
 **真装载**——隔离 `DSH_HOME` 的 profile 里 `dsh plugin add` 本目录后 boot（`--port 0 --no-open`），在新会话里选中本 preset，打开 `/` 菜单的「技能」段：应与官方的 `dsh-doc` 同时在列。实测记录见下。
+
+### 适配实测记录（0.2.3-alpha.2，2026-11-27）
+
+官方 `cordis` 的 `tool-skill` 增加 `excludedSkills: [official-plugins, personalized-pages]`，抄本已同步；归一比对通过。上游技能树与锁定提交一致，`pnpm check` 通过：组合解析、提示词变量和 12 个技能的加载均正常。
 
 ### 适配实测记录（0.2.2-rc.3，2026-11-13）
 
@@ -254,8 +258,8 @@ node presets/plugin-upgrade-cordis/check-upstream.mjs
 ## 已知边界
 
 - **上游技能正文按上游仓库根写**：`dsh-benchmark-case` 提到 `benchmark/tasks/`、`scripts/validate.mjs`，`plugin-release` / `plugin-test` 提到上游的 cohort 与快照目录。这些**不是本包内容**，本包只随 `skills/`——用到那些技能时按上游仓库（或用户自己的插件仓库）的实际布局走。上游的 `scripts/`、`benchmark/`、`paper/` 一律未收录。
-- **抄本的基线会随 DSH 漂**：`plugin-upgrade-cordis.patch.yml` 抄自 0.2.2-rc.3 的官方 `cordis`，官方每版都可能改它。升级 DSH 后要按新版官方文件重抄一遍（步骤见 [UPSTREAM.md](./UPSTREAM.md)「再抄官方 preset」）。抄本落后不会报错，只会静默地少几个插件行；**唯一会当场炸的是引用已被删掉的提示词变量**——那种情况下这一轮的请求会以 `unknown prompt variable` 失败，而 preset 照旧出现在选择器里。
-- **`engines.dsh` 按 semver 管不到预发布版**：`>=0.2.2-rc.3` 只容得下三位号完全相同的预发布版本；更旧的 `>=0.2.0-rc.2` 根本不收 `0.2.2-rc.3`（预发布只在 `[major, minor, patch]` 全等时进范围）。所以这个字段是**声明与文档**，不是闸门——真正强制的是插件的 `peerDependencies`。
+- **抄本的基线会随 DSH 漂**：`plugin-upgrade-cordis.patch.yml` 抄自 0.2.3-alpha.2 的官方 `cordis`，官方每版都可能改它。升级 DSH 后要按新版官方文件重抄一遍（步骤见 [UPSTREAM.md](./UPSTREAM.md)「再抄官方 preset」）。抄本落后不会报错，只会静默地少几个插件行；**唯一会当场炸的是引用已被删掉的提示词变量**——那种情况下这一轮的请求会以 `unknown prompt variable` 失败，而 preset 照旧出现在选择器里。
+- **`engines.dsh` 按 semver 管不到预发布版**：`>=0.2.3-alpha.2` 对预发布版的匹配受 semver 规则限制：只有版本范围中明确包含相同主、次、修订号的预发布版本才会匹配。
 - **技能正文逐字复制、不做本地改写**：要改内容就改上游，再按 [UPSTREAM.md](./UPSTREAM.md) 重新同步，否则下次同步会把本地改动冲掉。`check-upstream.mjs --verify` 就是用来抓这种「本地被改过」的。
 - **上游更新了要不要跟**：只看 `skills/` 下的变更——`node check-upstream.mjs` 说了算；上游的 `benchmark/` / `paper/` / CI 再热闹也与此无关。**卡缺口（见上「版本卡覆盖」）不是同步能解决的**，那种目标版本要用 `dsh-upgrade-audit` 自己产证据。
 - 上游 `skills/README.md` 的收录清单与作者表保留在 `upstream/`，便于对照。

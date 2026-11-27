@@ -1,7 +1,7 @@
 # Agent preset plugin-upgrade-cordis: the shipped `cordis` row copied verbatim
-# from dsh 0.2.2-rc.3 (`@deepseek-ai/dsh-web-app/presets/cordis.patch.yml`) —
+# from dsh 0.2.3-alpha.2 (`@deepseek-ai/dsh-web-app/presets/cordis.patch.yml`) —
 # same persona, same tool matrix, same sub-agent/compaction groups — plus the
-# 11 plugin-engineering skills vendored under ./skills/. See README.md.
+# 12 plugin-engineering skills vendored under ./skills/. See README.md.
 - insert:
     - id: preset-plugin-upgrade-cordis
       name: '@deepseek-ai/dsh-agent-preset'
@@ -140,6 +140,8 @@
                 - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@deepseek-ai/dsh-agent-preset/package.json')), 'skills')
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
+            config:
+              excludedSkills: [official-plugins, personalized-pages]
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
           - id: tool-plugin-manager
